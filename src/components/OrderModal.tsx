@@ -134,7 +134,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <User className="w-5 h-5 text-pink-600" />
                     <span>
                       {t('customer_information')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Customer Information)</span>}
                     </span>
                   </h3>
 
@@ -143,7 +142,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       <User className="w-4 h-4 text-gray-600" />
                       <span className="font-medium">
                         {t('name')}
-                        {isArabic && <span className="text-sm text-gray-500 mr-2">(Name)</span>}
                       </span>
                       <span>{order.client_name}</span>
                     </div>
@@ -156,7 +154,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <Package className="w-5 h-5 text-pink-600" />
                     <span>
                       {t('order_details')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Order Details)</span>}
                     </span>
                   </h3>
 
@@ -164,7 +161,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <div>
                       <span className="font-medium">
                         {t('description')}
-                        {isArabic && <span className="text-sm text-gray-500 mr-2">(Description)</span>}
                       </span>
                       <p className="mt-1">{order.description}</p>
                     </div>
@@ -172,7 +168,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       <div>
                         <span className="font-medium">
                           {t('fabric_type')}
-                          {isArabic && <span className="text-sm text-gray-500 mr-2">(Fabric Type)</span>}
                         </span>
                         <p className="mt-1">{order.fabric}</p>
                       </div>
@@ -187,7 +182,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                 <div className="space-y-3">
                   <h4 className="font-bold text-gray-800">
                     {t('status')}
-                    {isArabic && <span className="text-sm text-gray-500 mr-2">(Status)</span>}
                   </h4>
                   <span className={`px-3 py-2 rounded-full text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
                     {getStatusInfo(order.status).label}
@@ -199,7 +193,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <Calendar className="w-4 h-4" />
                     <span>
                       {t('order_date')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Order Date)</span>}
                     </span>
                   </h4>
                   <p>{formatDate(order.created_at)}</p>
@@ -210,7 +203,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <Clock className="w-4 h-4" />
                     <span>
                       {t('delivery_date')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Delivery Date)</span>}
                     </span>
                   </h4>
                   <p>{formatDate(getDisplayDeliveryDate(order.due_date))}</p>
@@ -223,7 +215,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                   <UserCheck className="w-5 h-5 text-pink-600" />
                   <span>
                     {t('assigned_worker')}
-                    {isArabic && <span className="text-sm text-gray-500 mr-2">(Assigned Worker)</span>}
                   </span>
                 </h3>
                 <div className="bg-gray-50 p-4 rounded-lg">
@@ -238,7 +229,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <Ruler className="w-5 h-5 text-pink-600" />
                     <span>
                       {t('measurements_cm')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Measurements)</span>}
                     </span>
                   </h3>
 
@@ -247,14 +237,12 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <div className="space-y-3">
                       <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
                         {t('basic_measurements')}
-                        {isArabic && <span className="text-sm text-gray-500 mr-2">(Basic Measurements)</span>}
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {order.measurements.shoulder && (
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('shoulder')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Shoulder)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.shoulder}</p>
                           </div>
@@ -263,7 +251,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('shoulder_circumference')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Shoulder Circumference)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.shoulderCircumference}</p>
                           </div>
@@ -272,7 +259,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('chest_bust')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Chest/Bust)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.chest}</p>
                           </div>
@@ -281,7 +267,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('waist')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Waist)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.waist}</p>
                           </div>
@@ -290,7 +275,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('hips')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Hips)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.hips}</p>
                           </div>
@@ -304,14 +288,12 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <div className="space-y-3">
                       <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
                         {t('advanced_tailoring_measurements')}
-                        {isArabic && <span className="text-sm text-gray-500 mr-2">(Advanced Tailoring)</span>}
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {order.measurements.dartLength && (
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('dart_length')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Dart Length)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.dartLength}</p>
                           </div>
@@ -320,7 +302,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('bodice_length')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Bodice Length)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.bodiceLength}</p>
                           </div>
@@ -329,7 +310,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('neckline')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Neckline)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.neckline}</p>
                           </div>
@@ -338,7 +318,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('armpit')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Armpit)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.armpit}</p>
                           </div>
@@ -352,14 +331,12 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <div className="space-y-3">
                       <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
                         {t('sleeve_measurements')}
-                        {isArabic && <span className="text-sm text-gray-500 mr-2">(Sleeve Measurements)</span>}
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {order.measurements.sleeveLength && (
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('sleeve_length')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Sleeve Length)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.sleeveLength}</p>
                           </div>
@@ -368,7 +345,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('forearm')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Forearm)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.forearm}</p>
                           </div>
@@ -377,7 +353,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('cuff')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Cuff)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.cuff}</p>
                           </div>
@@ -391,14 +366,12 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <div className="space-y-3">
                       <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
                         {t('length_measurements')}
-                        {isArabic && <span className="text-sm text-gray-500 mr-2">(Length Measurements)</span>}
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {order.measurements.frontLength && (
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('front_length')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Front Length)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.frontLength}</p>
                           </div>
@@ -407,7 +380,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('back_length')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Back Length)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.backLength}</p>
                           </div>
@@ -421,14 +393,12 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <div className="space-y-3">
                       <h4 className="text-md font-semibold text-gray-700 border-b border-gray-300 pb-1 text-gray-500">
                         {t('additional_measurements')}
-                        {isArabic && <span className="text-sm text-gray-500 mr-2">(Additional)</span>}
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {order.measurements.length && (
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('dress_length')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Dress Length)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.length}</p>
                           </div>
@@ -437,7 +407,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('shoulder_width')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Shoulder Width)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.shoulders}</p>
                           </div>
@@ -446,7 +415,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                           <div className="bg-gray-50 p-3 rounded-lg text-center">
                             <p className="text-sm text-gray-600">
                               {t('sleeve_length_old')}
-                              {isArabic && <span className="text-xs text-gray-400 block">(Sleeve Length)</span>}
                             </p>
                             <p className="text-lg font-bold">{order.measurements.sleeves}</p>
                           </div>
@@ -464,7 +432,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <ImageIcon className="w-5 h-5 text-pink-600" />
                     <span>
                       {t('design_images')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Design Images)</span>}
                     </span>
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -494,7 +461,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <MessageSquare className="w-5 h-5 text-pink-600" />
                     <span>
                       {t('notes')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Notes)</span>}
                     </span>
                   </h3>
                   <div className="bg-gray-50 p-4 rounded-lg">
@@ -510,7 +476,6 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     <MessageSquare className="w-5 h-5 text-pink-600" />
                     <span>
                       {t('voice_notes')}
-                      {isArabic && <span className="text-sm text-gray-500 mr-2">(Voice Notes)</span>}
                     </span>
                   </h3>
                   <VoiceNotes

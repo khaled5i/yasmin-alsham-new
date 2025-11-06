@@ -688,11 +688,11 @@ export default function WorkersPage() {
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div className="text-center p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg">
                     <div className="text-lg font-bold text-green-600">{worker.total_completed_orders || 0}</div>
-                    <div className="text-xs text-gray-600">{t('completed_orders') || 'طلبات مكتملة'}</div>
+                    <div className="text-xs text-gray-600">{t('completed_orders')}</div>
                   </div>
                   <div className="text-center p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
                     <div className="text-lg font-bold text-blue-600">{worker.experience_years || 0}</div>
-                    <div className="text-xs text-gray-600">سنوات الخبرة</div>
+                    <div className="text-xs text-gray-600">{t('experience_years')}</div>
                   </div>
                 </div>
 

@@ -69,12 +69,12 @@ export default function Hero() {
         {/* تخطيط للشاشات الصغيرة والمتوسطة */}
         <div className="lg:hidden">
           <div className="text-center space-y-8">
-            {/* العنوان الرئيسي والفرعي */}
+            {/* العنوان الرئيسي والفرعي - مخفي على الجوال */}
             <motion.div
               initial={{ opacity: 0, y: -30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8 }}
-              className="space-y-6"
+              className="space-y-6 hidden"
             >
               {/* العنوان الرئيسي */}
               <motion.h1

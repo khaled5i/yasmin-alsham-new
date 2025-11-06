@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2 } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
+import FabricSortOptions from '@/components/FabricSortOptions'
 import dynamic from 'next/dynamic'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
@@ -38,6 +39,7 @@ function FabricSkeleton() {
 export default function FabricsPage() {
   const { fabrics, loadFabrics, isLoading, error, getFilteredFabrics, filters, sortBy, setFilters, setSortBy, resetFilters } = useFabricStore()
   const [currentImageIndexes, setCurrentImageIndexes] = useState<{[key: string]: number}>({})
+  const [isSingleColumn, setIsSingleColumn] = useState(false)
   const [displayedFabrics, setDisplayedFabrics] = useState<Fabric[]>([])
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
@@ -95,6 +97,21 @@ export default function FabricsPage() {
   const prevImage = useCallback((fabricId: string, totalImages: number) => {
     setCurrentImageIndexes(prev => ({ ...prev, [fabricId]: ((prev[fabricId] || 0) - 1 + totalImages) % totalImages }))
   }, [])
+
+  // تحميل حالة العرض من localStorage
+  useEffect(() => {
+    const savedViewMode = localStorage.getItem('yasmin-fabrics-view-mode')
+    if (savedViewMode === 'single') {
+      setIsSingleColumn(true)
+    }
+  }, [])
+
+  // حفظ حالة العرض في localStorage
+  const toggleViewMode = () => {
+    const newMode = !isSingleColumn
+    setIsSingleColumn(newMode)
+    localStorage.setItem('yasmin-fabrics-view-mode', newMode ? 'single' : 'double')
+  }
 
   // فتح QuickView
   const openQuickView = (fabric: Fabric, e: React.MouseEvent) => {
@@ -187,13 +204,13 @@ export default function FabricsPage() {
             </div>
           </div>
 
-          {/* شريط الأدوات: الفلاتر والترتيب */}
+          {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
           <div className="flex flex-wrap items-center justify-between gap-4" dir="rtl">
-            {/* زر فتح الفلاتر (للهواتف) */}
+            {/* زر فتح الفلاتر (لجميع الأحجام) */}
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsFilterOpen(true)}
-                className="lg:hidden flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
                 aria-label="فتح الفلاتر"
               >
                 <SlidersHorizontal className="w-5 h-5 text-pink-600" />
@@ -201,38 +218,31 @@ export default function FabricsPage() {
               </button>
             </div>
 
-            {/* الترتيب */}
+            {/* الترتيب + تبديل العرض */}
             <div className="flex items-center gap-3">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className="px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all duration-300 text-sm font-medium text-gray-800 cursor-pointer"
-                dir="rtl"
+              <FabricSortOptions />
+
+              {/* زر تبديل العرض */}
+              <button
+                onClick={toggleViewMode}
+                className="sm:hidden bg-white border-2 border-pink-200 rounded-xl p-2.5 hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
               >
-                <option value="newest">الأحدث أولاً</option>
-                <option value="price-low">السعر: من الأقل إلى الأعلى</option>
-                <option value="price-high">السعر: من الأعلى إلى الأقل</option>
-                <option value="popular">الأكثر مبيعاً</option>
-                <option value="name">الاسم: أ-ي</option>
-              </select>
+                {isSingleColumn ? (
+                  <Grid2X2 className="w-5 h-5 text-pink-600" />
+                ) : (
+                  <Grid3X3 className="w-5 h-5 text-pink-600" />
+                )}
+              </button>
             </div>
           </div>
         </motion.div>
 
-        {/* Layout: Sidebar + Content */}
-        <div className="flex gap-8">
-          {/* Filter Sidebar - مخفي على الهواتف */}
-          <div className="hidden lg:block lg:w-64 flex-shrink-0">
-            <div className="sticky top-24">
-              <FabricFilterSidebar isOpen={true} onClose={() => {}} />
-            </div>
-          </div>
+        {/* Filter Sidebar - Modal لجميع الأحجام */}
+        <FabricFilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
 
-          {/* Filter Sidebar - للهواتف (Modal) */}
-          <FabricFilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
-
-          {/* Content Area */}
-          <div className="flex-1">
+        {/* Content Area */}
+        <div className="w-full">
             {/* رسالة خطأ */}
             {error && (
               <div className="bg-red-50 border-2 border-red-200 text-red-700 px-6 py-4 rounded-xl mb-6 shadow-sm">
@@ -242,7 +252,11 @@ export default function FabricsPage() {
 
             {/* حالة التحميل */}
             {isLoading && fabrics.length === 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
+              <div className={`grid gap-8 ${
+                isSingleColumn
+                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+              }`}>
                 {Array.from({ length: 12 }).map((_, index) => (
                   <FabricSkeleton key={index} />
                 ))}
@@ -271,7 +285,11 @@ export default function FabricsPage() {
             )}
 
             {displayedFabrics.length > 0 && (
-              <section className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 mb-12">
+              <section className={`grid gap-8 mb-12 ${
+                isSingleColumn
+                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+              }`} aria-label="قائمة الأقمشة">
                 {displayedFabrics.map((fabric, index) => {
                   const fabricImages = fabric.images || []
                   const currentIndex = currentImageIndexes[fabric.id] || 0
@@ -367,14 +385,24 @@ export default function FabricsPage() {
             {hasMore && displayedFabrics.length > 0 && (
               <>
                 <div ref={observerTarget} className="h-4" aria-hidden="true" />
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 mb-8">
+                <div className={`grid gap-8 mb-8 ${
+                  isSingleColumn
+                    ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                    : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                }`}>
                   {Array.from({ length: 4 }).map((_, index) => (
                     <FabricSkeleton key={`loading-${index}`} />
                   ))}
                 </div>
               </>
             )}
-          </div>
+
+            {/* رسالة نهاية القائمة */}
+            {!hasMore && displayedFabrics.length > 0 && (
+              <div className="text-center py-8" role="status" aria-live="polite">
+                <p className="text-gray-700 font-medium">تم عرض جميع الأقمشة</p>
+              </div>
+            )}
         </div>
       </div>
 

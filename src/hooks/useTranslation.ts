@@ -276,6 +276,7 @@ const arTranslations: Translations = {
   'for_client': 'للزبونة',
 
   // مفاتيح مكون تعديل الطلب
+  'edit_order': 'تعديل الطلب',
   'order_update_error': 'حدث خطأ أثناء تحديث الطلب',
   'price_sar_required': 'السعر (ريال سعودي) *',
   'status_pending': 'في الانتظار',
@@ -290,7 +291,34 @@ const arTranslations: Translations = {
   'fabrics': 'الأقمشة',
   'contact_us': 'تواصلي معنا',
   'yasmin_alsham': 'ياسمين الشام',
-  'custom_dress_tailoring': 'تفصيل فساتين حسب الطلب'
+  'custom_dress_tailoring': 'تفصيل فساتين حسب الطلب',
+
+  // مفاتيح مكون تفاصيل الطلب (OrderModal)
+  'customer_information': 'معلومات الزبونة',
+  'order_date': 'تاريخ الطلب',
+  'delivery_date': 'موعد التسليم',
+  'assigned_worker': 'العامل المسؤول',
+  'chest_bust': 'الصدر',
+  'advanced_tailoring_measurements': 'مقاسات التفصيل المتقدمة',
+  'additional_measurements': 'مقاسات إضافية',
+  'dress_length': 'طول الفستان',
+  'shoulder_width': 'عرض الكتف',
+  'sleeve_length_old': 'طول الكم',
+  'design_image_alt': 'صورة التصميم',
+  'completed_work_images': 'صور العمل المكتمل',
+  'completed_work_description': 'تم رفع صور العمل المكتمل من قبل العامل',
+  'completed_work_image_alt': 'صورة العمل المكتمل',
+
+  // مفاتيح صفحة الطلبات
+  'view_manage_orders': 'عرض وإدارة جميع الطلبات',
+  'order_date_label': 'تاريخ الطلب',
+  'delivery_date_label': 'موعد التسليم',
+  'worker_label': 'العامل',
+  'fabric_label': 'القماش:',
+  'notes_label': 'ملاحظات',
+
+  // مفاتيح صفحة العمال
+  'experience_years': 'سنوات الخبرة'
 }
 
 // الترجمات الإنجليزية
@@ -562,6 +590,7 @@ const enTranslations: Translations = {
   'for_client': 'For client',
 
   // مفاتيح مكون تعديل الطلب
+  'edit_order': 'Edit Order',
   'order_update_error': 'Error updating order',
   'price_sar_required': 'Price (SAR) *',
   'status_pending': 'Pending',
@@ -576,7 +605,34 @@ const enTranslations: Translations = {
   'fabrics': 'Fabrics',
   'contact_us': 'Contact Us',
   'yasmin_alsham': 'Yasmin Alsham',
-  'custom_dress_tailoring': 'Custom Dress Tailoring'
+  'custom_dress_tailoring': 'Custom Dress Tailoring',
+
+  // مفاتيح مكون تفاصيل الطلب (OrderModal)
+  'customer_information': 'Customer Information',
+  'order_date': 'Order Date',
+  'delivery_date': 'Delivery Date',
+  'assigned_worker': 'Assigned Worker',
+  'chest_bust': 'Chest/Bust',
+  'advanced_tailoring_measurements': 'Advanced Tailoring Measurements',
+  'additional_measurements': 'Additional Measurements',
+  'dress_length': 'Dress Length',
+  'shoulder_width': 'Shoulder Width',
+  'sleeve_length_old': 'Sleeve Length',
+  'design_image_alt': 'Design Image',
+  'completed_work_images': 'Completed Work Images',
+  'completed_work_description': 'Completed work images uploaded by worker',
+  'completed_work_image_alt': 'Completed Work Image',
+
+  // مفاتيح صفحة الطلبات
+  'view_manage_orders': 'View and manage all orders',
+  'order_date_label': 'Order Date',
+  'delivery_date_label': 'Delivery Date',
+  'worker_label': 'Worker',
+  'fabric_label': 'Fabric:',
+  'notes_label': 'Notes',
+
+  // مفاتيح صفحة العمال
+  'experience_years': 'Years of Experience'
 }
 
 // Hook للترجمة

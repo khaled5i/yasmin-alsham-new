@@ -211,9 +211,43 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                     </div>
                   )}
 
-                  {/* السعر */}
-                  <div className="text-3xl font-bold text-pink-600 mb-6">
-                    {formatPrice(product.price)}
+                  {/* السعر وحالة التوفر */}
+                  <div className="mb-6">
+                    {/* نسخة سطح المكتب - السعر فقط */}
+                    <div className="hidden md:block">
+                      <div className="text-3xl font-bold text-pink-600">
+                        {formatPrice(product.price)}
+                      </div>
+                    </div>
+
+                    {/* نسخة الجوال - السعر وحالة التوفر في نفس السطر */}
+                    <div className="md:hidden">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="text-2xl font-bold text-pink-600">
+                          {formatPrice(product.price)}
+                        </div>
+
+                        {/* حالة التوفر */}
+                        {product.is_available !== undefined && (
+                          <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${
+                            product.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}>
+                            {product.is_available ? 'متوفر' : 'غير متوفر'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* حالة التوفر لسطح المكتب */}
+                    {product.is_available !== undefined && (
+                      <div className="hidden md:block mt-3">
+                        <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${
+                          product.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {product.is_available ? 'متوفر' : 'غير متوفر'}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* الوصف */}

@@ -18,11 +18,14 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
     category: true,
     colors: true,
     availability: true,
-    priceRange: true
+    price: true
   })
 
   // فلاتر محلية مؤقتة (قبل التطبيق)
   const [tempFilters, setTempFilters] = useState(filters)
+
+  // نطاق السعر (min, max)
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000])
 
   // استخراج القيم الفريدة من الأقمشة
   const [uniqueCategories, setUniqueCategories] = useState<string[]>([])
@@ -32,6 +35,16 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
   useEffect(() => {
     setTempFilters(filters)
   }, [filters])
+
+  // حساب نطاق السعر من الأقمشة
+  useEffect(() => {
+    if (fabrics.length > 0) {
+      const prices = fabrics.map(f => f.price_per_meter)
+      const minPrice = Math.min(...prices, 0)
+      const maxPrice = Math.max(...prices, 1000)
+      setPriceRange([minPrice, maxPrice])
+    }
+  }, [fabrics])
 
   useEffect(() => {
     // استخراج الفئات الفريدة
@@ -91,12 +104,9 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
   }
 
   // معالج تغيير نطاق السعر
-  const handlePriceRangeChange = (maxPrice: number) => {
-    setTempFilters({ ...tempFilters, priceRange: { min: 0, max: maxPrice } })
+  const handlePriceChange = (min: number, max: number) => {
+    setTempFilters({ ...tempFilters, priceRange: { min, max } })
   }
-
-  // حساب أعلى سعر من الأقمشة
-  const maxFabricPrice = Math.max(...fabrics.map(f => f.price_per_meter || 0), 1000)
 
   // محتوى أقسام الفلاتر (بدون Header)
   const renderFilterSections = () => (
@@ -200,37 +210,63 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
       </div>
 
       {/* فلتر السعر */}
-      <div>
+      <div className="border-b border-gray-200 pb-4">
         <button
-          onClick={() => toggleSection('priceRange' as any)}
-          className="flex items-center justify-between w-full text-right font-semibold text-gray-800 hover:text-pink-600 transition-colors duration-200"
+          onClick={() => toggleSection('price' as any)}
+          className="w-full flex items-center justify-between mb-3"
+          aria-label="توسيع/طي قسم السعر"
         >
-          <span>السعر</span>
-          {(expandedSections as any).priceRange ? (
-            <ChevronUp className="w-5 h-5 text-gray-500" />
+          <h3 className="text-base font-semibold text-gray-800">السعر</h3>
+          {(expandedSections as any).price ? (
+            <ChevronUp className="w-4 h-4 text-gray-600" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-gray-500" />
+            <ChevronDown className="w-4 h-4 text-gray-600" />
           )}
         </button>
-        {(expandedSections as any).priceRange && (
-          <div className="mt-3 space-y-3">
-            <input
-              type="range"
-              min="0"
-              max={maxFabricPrice}
-              step="10"
-              value={tempFilters.priceRange?.max || maxFabricPrice}
-              onChange={(e) => handlePriceRangeChange(Number(e.target.value))}
-              className="w-full h-2 bg-pink-200 rounded-lg appearance-none cursor-pointer accent-pink-600"
-            />
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-600">من 0 ريال</span>
-              <span className="font-semibold text-pink-600">
-                إلى {tempFilters.priceRange?.max || maxFabricPrice} ريال
-              </span>
-            </div>
-          </div>
-        )}
+
+        <AnimatePresence>
+          {(expandedSections as any).price && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="space-y-3"
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  placeholder="من"
+                  step="10"
+                  min="0"
+                  value={tempFilters.priceRange?.min || priceRange[0]}
+                  onChange={(e) => handlePriceChange(
+                    Number(e.target.value),
+                    tempFilters.priceRange?.max || priceRange[1]
+                  )}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                  aria-label="السعر الأدنى"
+                />
+                <span className="text-gray-500">-</span>
+                <input
+                  type="number"
+                  placeholder="إلى"
+                  step="10"
+                  min="0"
+                  value={tempFilters.priceRange?.max || priceRange[1]}
+                  onChange={(e) => handlePriceChange(
+                    tempFilters.priceRange?.min || priceRange[0],
+                    Number(e.target.value)
+                  )}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                  aria-label="السعر الأعلى"
+                />
+              </div>
+              <div className="text-xs text-gray-500 text-center">
+                {priceRange[0]} - {priceRange[1]} ريال/متر
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </>
   )

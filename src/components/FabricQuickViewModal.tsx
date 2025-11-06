@@ -194,26 +194,69 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                     {fabric.name}
                   </h2>
 
-                  {/* السعر */}
+                  {/* السعر وحالة التوفر */}
                   <div className="mb-6">
-                    {fabric.discount_percentage && fabric.discount_percentage > 0 ? (
-                      <div className="flex items-center gap-3">
-                        <span className="text-3xl font-bold text-pink-600">
-                          {formatFabricPrice(finalPrice)}
-                        </span>
-                        <span className="text-xl text-gray-400 line-through">
+                    {/* نسخة سطح المكتب - السعر فقط */}
+                    <div className="hidden md:block">
+                      {fabric.discount_percentage && fabric.discount_percentage > 0 ? (
+                        <div className="flex items-center gap-3">
+                          <span className="text-3xl font-bold text-pink-600">
+                            {formatFabricPrice(finalPrice)}
+                          </span>
+                          <span className="text-xl text-gray-400 line-through">
+                            {formatFabricPrice(fabric.price_per_meter)}
+                          </span>
+                          <span className="bg-red-500 text-white px-2 py-1 rounded-full text-sm font-bold">
+                            -{fabric.discount_percentage}%
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-3xl font-bold text-pink-600">
                           {formatFabricPrice(fabric.price_per_meter)}
-                        </span>
-                        <span className="bg-red-500 text-white px-2 py-1 rounded-full text-sm font-bold">
-                          -{fabric.discount_percentage}%
-                        </span>
+                        </div>
+                      )}
+                      <p className="text-sm text-gray-500 mt-1">السعر للمتر الواحد</p>
+                    </div>
+
+                    {/* نسخة الجوال - السعر وحالة التوفر في نفس السطر */}
+                    <div className="md:hidden">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        {fabric.discount_percentage && fabric.discount_percentage > 0 ? (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-2xl font-bold text-pink-600">
+                              {formatFabricPrice(finalPrice)}
+                            </span>
+                            <span className="text-lg text-gray-400 line-through">
+                              {formatFabricPrice(fabric.price_per_meter)}
+                            </span>
+                            <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                              -{fabric.discount_percentage}%
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-2xl font-bold text-pink-600">
+                            {formatFabricPrice(fabric.price_per_meter)}
+                          </div>
+                        )}
+
+                        {/* حالة التوفر */}
+                        <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${
+                          fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {fabric.is_available ? 'متوفر' : 'غير متوفر'}
+                        </div>
                       </div>
-                    ) : (
-                      <div className="text-3xl font-bold text-pink-600">
-                        {formatFabricPrice(fabric.price_per_meter)}
+                      <p className="text-xs text-gray-500">السعر للمتر الواحد</p>
+                    </div>
+
+                    {/* حالة التوفر لسطح المكتب */}
+                    <div className="hidden md:block mt-3">
+                      <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${
+                        fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {fabric.is_available ? 'متوفر' : 'غير متوفر'}
                       </div>
-                    )}
-                    <p className="text-sm text-gray-500 mt-1">السعر للمتر الواحد</p>
+                    </div>
                   </div>
 
                   {/* الوصف */}
@@ -240,24 +283,94 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                     </div>
                   )}
 
-                  {/* المواصفات السريعة */}
-                  <div className="mb-6 space-y-2">
-                    {fabric.width && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">العرض:</span>
-                        <span className="font-semibold text-gray-800">{fabric.width} سم</span>
+                  {/* تفاصيل إضافية */}
+                  <div className="border-t border-gray-200 pt-6 space-y-4">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">تفاصيل إضافية</h3>
+
+                    {/* نوع القماش */}
+                    {fabric.type && (
+                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                          نوع القماش
+                        </h4>
+                        <p className="text-gray-700">{fabric.type}</p>
                       </div>
                     )}
-                    {fabric.composition && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">التركيب:</span>
-                        <span className="font-semibold text-gray-800">{fabric.composition}</span>
+
+                    {/* المميزات */}
+                    {fabric.features && fabric.features.length > 0 && (
+                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                          المميزات
+                        </h4>
+                        <ul className="space-y-1">
+                          {fabric.features.map((feature, index) => (
+                            <li key={index} className="text-gray-700 flex items-start gap-2">
+                              <span className="text-pink-500 mt-1">•</span>
+                              <span>{feature}</span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
-                    {fabric.weight && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">الوزن:</span>
-                        <span className="font-semibold text-gray-800">{fabric.weight} جم/م²</span>
+
+                    {/* مناسب لـ */}
+                    {fabric.suitable_for && fabric.suitable_for.length > 0 && (
+                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                          مناسب لـ
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {fabric.suitable_for.map((item, index) => (
+                            <span
+                              key={index}
+                              className="bg-white px-3 py-1 rounded-full text-sm text-gray-700 border border-pink-200"
+                            >
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* المناسبات */}
+                    {fabric.occasions && fabric.occasions.length > 0 && (
+                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                          المناسبات المناسبة
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {fabric.occasions.map((occasion, index) => (
+                            <span
+                              key={index}
+                              className="bg-white px-3 py-1 rounded-full text-sm text-gray-700 border border-pink-200"
+                            >
+                              {occasion}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* تعليمات العناية */}
+                    {fabric.care_instructions && fabric.care_instructions.length > 0 && (
+                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                          تعليمات العناية
+                        </h4>
+                        <ul className="space-y-1">
+                          {fabric.care_instructions.map((instruction, index) => (
+                            <li key={index} className="text-gray-700 flex items-start gap-2">
+                              <span className="text-pink-500 mt-1">•</span>
+                              <span>{instruction}</span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </div>

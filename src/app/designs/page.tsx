@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, Grid3X3, Grid2X2, Loader2, SlidersHorizontal, Eye } from 'lucide-react'
 import { useShopStore, formatPrice, Product } from '@/store/shopStore'
 import SearchBar from '@/components/SearchBar'
@@ -241,11 +240,11 @@ export default function DesignsPage() {
 
           {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
           <div className="flex flex-wrap items-center justify-between gap-4" dir="rtl">
-            {/* زر فتح الفلاتر (للهواتف) */}
+            {/* زر فتح الفلاتر (لجميع الأحجام) */}
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsFilterOpen(true)}
-                className="lg:hidden flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
                 aria-label="فتح الفلاتر"
               >
                 <SlidersHorizontal className="w-5 h-5 text-pink-600" />
@@ -273,20 +272,11 @@ export default function DesignsPage() {
           </div>
         </motion.div>
 
-        {/* Layout: Sidebar + Content */}
-        <div className="flex gap-8">
-          {/* Filter Sidebar - مخفي على الهواتف */}
-          <div className="hidden lg:block lg:w-64 flex-shrink-0">
-            <div className="sticky top-24">
-              <FilterSidebar isOpen={true} onClose={() => {}} />
-            </div>
-          </div>
+        {/* Filter Sidebar - Modal لجميع الأحجام */}
+        <FilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
 
-          {/* Filter Sidebar - للهواتف (Modal) */}
-          <FilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
-
-          {/* Main Content */}
-          <div className="flex-1">
+        {/* Main Content */}
+        <div className="w-full">
 
         {/* حالة التحميل الأولي مع Skeleton */}
         {isLoading && products.length === 0 && (
@@ -403,25 +393,13 @@ export default function DesignsPage() {
                       <div
                         className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
                       >
-                        {/* الصورة الحالية مع Next.js Image optimization */}
-                        {isExternalImage || isBase64 ? (
-                          <Image
-                            src={currentImage}
-                            alt={`${product.name} - صورة ${currentIndex + 1}`}
-                            fill
-                            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                            className="object-cover transition-opacity duration-300"
-                            loading="lazy"
-                            quality={75}
-                          />
-                        ) : (
-                          <img
-                            src={currentImage}
-                            alt={`${product.name} - صورة ${currentIndex + 1}`}
-                            className="w-full h-full object-cover transition-opacity duration-300"
-                            loading="lazy"
-                          />
-                        )}
+                        {/* الصورة الحالية - تم استبدال Next.js Image بـ img العادي لتحسين السرعة */}
+                        <img
+                          src={currentImage}
+                          alt={`${product.name} - صورة ${currentIndex + 1}`}
+                          className="w-full h-full object-cover transition-opacity duration-300"
+                          loading="lazy"
+                        />
 
                         {/* أزرار التنقل - تظهر فقط إذا كان هناك أكثر من صورة */}
                         {productImages.length > 1 && (
@@ -515,9 +493,7 @@ export default function DesignsPage() {
           </div>
         )}
 
-          </div>
         </div>
-
       </div>
 
       {/* QuickView Modal */}
