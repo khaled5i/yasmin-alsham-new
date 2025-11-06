@@ -5,12 +5,14 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useDataStore, Worker } from '@/store/dataStore'
+import { useWorkerStore } from '@/store/workerStore'
+import { useOrderStore } from '@/store/orderStore'
 import { useTranslation } from '@/hooks/useTranslation'
-import { 
-  ArrowRight, 
-  Users, 
-  Search, 
+import { supabase } from '@/lib/supabase'
+import {
+  ArrowRight,
+  Users,
+  Search,
   Plus,
   Edit,
   Trash2,
@@ -25,16 +27,21 @@ import {
 
 export default function WorkersPage() {
   const { user } = useAuthStore()
-  const { workers, addWorker, updateWorker, deleteWorker, orders } = useDataStore()
+  const { workers, isLoading, error, loadWorkers, createWorker, updateWorker: updateWorkerSupabase, deleteWorker: deleteWorkerSupabase, clearError } = useWorkerStore()
+  const { orders, loadOrders } = useOrderStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
 
-  // التحقق من الصلاحيات
+  // التحقق من الصلاحيات وتحميل العمال
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       router.push('/dashboard')
+    } else {
+      // تحميل العمال والطلبات من Supabase
+      loadWorkers()
+      loadOrders()
     }
-  }, [user, router])
+  }, [user, router, loadWorkers, loadOrders])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
@@ -63,29 +70,32 @@ export default function WorkersPage() {
     setMessage(null)
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      addWorker({
+      // استخدام workerStore الجديد مع Supabase
+      const result = await createWorker({
         email: newWorker.email,
         password: newWorker.password,
         full_name: newWorker.full_name,
         phone: newWorker.phone,
-        specialty: newWorker.specialty,
-        is_active: true
+        specialty: newWorker.specialty
       })
 
-      setMessage({ type: 'success', text: t('worker_added_success') })
-      setNewWorker({
-        email: '',
-        password: '',
-        full_name: '',
-        phone: '',
-        specialty: ''
-      })
-      setShowAddForm(false)
+      if (result.success) {
+        setMessage({ type: 'success', text: t('worker_added_success') || 'تم إضافة العامل بنجاح' })
+        setNewWorker({
+          email: '',
+          password: '',
+          full_name: '',
+          phone: '',
+          specialty: ''
+        })
+        setShowAddForm(false)
+      } else {
+        setMessage({ type: 'error', text: result.error || t('error_adding_worker') || 'خطأ في إضافة العامل' })
+      }
 
-    } catch (error) {
-      setMessage({ type: 'error', text: t('error_adding_worker') })
+    } catch (error: any) {
+      console.error('Error adding worker:', error)
+      setMessage({ type: 'error', text: error.message || t('error_adding_worker') || 'خطأ في إضافة العامل' })
     } finally {
       setIsSubmitting(false)
     }
@@ -94,8 +104,17 @@ export default function WorkersPage() {
   // تعديل عامل
   const handleEditWorker = (worker: any) => {
     setEditingWorker({
-      ...worker,
-      password: '' // Don't show current password
+      id: worker.id || '',
+      full_name: worker.user?.full_name || '',
+      email: worker.user?.email || '',
+      phone: worker.user?.phone || '',
+      specialty: worker.specialty || '',
+      password: '', // Don't show current password
+      is_available: worker.is_available ?? true,
+      is_active: worker.user?.is_active ?? true,
+      hourly_rate: worker.hourly_rate || 0,
+      bio: worker.bio || '',
+      experience_years: worker.experience_years || 0
     })
     setShowEditModal(true)
   }
@@ -104,8 +123,8 @@ export default function WorkersPage() {
   const handleSaveWorker = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!editingWorker || !editingWorker.email || !editingWorker.full_name || !editingWorker.phone || !editingWorker.specialty) {
-      setMessage({ type: 'error', text: t('fill_required_fields') })
+    if (!editingWorker || !editingWorker.full_name || !editingWorker.specialty) {
+      setMessage({ type: 'error', text: t('fill_required_fields') || 'يرجى ملء جميع الحقول المطلوبة' })
       return
     }
 
@@ -113,55 +132,119 @@ export default function WorkersPage() {
     setMessage(null)
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
+      // استخدام workerStore الجديد مع Supabase
       const updates: any = {
-        email: editingWorker.email,
-        full_name: editingWorker.full_name,
-        phone: editingWorker.phone,
+        // حقول جدول workers
         specialty: editingWorker.specialty,
-        is_active: editingWorker.is_active
+        is_available: editingWorker.is_available ?? true,
+
+        // حقول جدول users
+        full_name: editingWorker.full_name,
+        phone: editingWorker.phone
       }
 
-      // Add password only if it was changed
-      if (editingWorker.password) {
-        updates.password = editingWorker.password
+      // إضافة الحقول الاختيارية إذا كانت موجودة
+      if (editingWorker.hourly_rate !== undefined) updates.hourly_rate = editingWorker.hourly_rate
+      if (editingWorker.bio) updates.bio = editingWorker.bio
+      if (editingWorker.experience_years !== undefined) updates.experience_years = editingWorker.experience_years
+
+      console.log('📝 Updating worker with data:', updates)
+
+      const result = await updateWorkerSupabase(editingWorker.id, updates)
+
+      if (result.success) {
+        // تحديث كلمة المرور إذا تم إدخالها
+        if (editingWorker.password && editingWorker.password.trim() !== '') {
+          console.log('🔐 Updating password...')
+
+          const worker = workers.find(w => w.id === editingWorker.id)
+          if (worker?.user_id) {
+            const { data: { session } } = await supabase.auth.getSession()
+
+            const passwordResponse = await fetch('/api/workers/update-password', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+              },
+              body: JSON.stringify({
+                userId: worker.user_id,
+                password: editingWorker.password
+              })
+            })
+
+            const passwordResult = await passwordResponse.json()
+
+            if (!passwordResponse.ok) {
+              console.error('❌ Error updating password:', passwordResult.error)
+              setMessage({ type: 'error', text: `تم تحديث البيانات لكن فشل تحديث كلمة المرور: ${passwordResult.error}` })
+              return
+            }
+
+            console.log('✅ Password updated successfully')
+          }
+        }
+
+        setMessage({ type: 'success', text: t('worker_updated_success') || 'تم تحديث العامل بنجاح' })
+        setShowEditModal(false)
+        setEditingWorker(null)
+      } else {
+        setMessage({ type: 'error', text: result.error || t('error_updating_worker') || 'خطأ في تحديث العامل' })
       }
 
-      updateWorker(editingWorker.id, updates)
-
-      setMessage({ type: 'success', text: t('worker_updated_success') })
-      setShowEditModal(false)
-      setEditingWorker(null)
-
-    } catch (error) {
-      setMessage({ type: 'error', text: t('error_updating_worker') })
+    } catch (error: any) {
+      console.error('Error updating worker:', error)
+      setMessage({ type: 'error', text: error.message || t('error_updating_worker') || 'خطأ في تحديث العامل' })
     } finally {
       setIsSubmitting(false)
     }
   }
 
   // حذف عامل
-  const handleDeleteWorker = (workerId: string) => {
-    if (confirm(t('confirm_delete_worker'))) {
-      deleteWorker(workerId)
-      setMessage({ type: 'success', text: t('worker_deleted_success') })
+  const handleDeleteWorker = async (workerId: string) => {
+    if (confirm(t('confirm_delete_worker') || 'هل أنت متأكد من حذف هذا العامل؟')) {
+      setIsSubmitting(true)
+      try {
+        const result = await deleteWorkerSupabase(workerId)
+        if (result.success) {
+          setMessage({ type: 'success', text: t('worker_deleted_success') || 'تم حذف العامل بنجاح' })
+        } else {
+          setMessage({ type: 'error', text: result.error || 'خطأ في حذف العامل' })
+        }
+      } catch (error: any) {
+        console.error('Error deleting worker:', error)
+        setMessage({ type: 'error', text: error.message || 'خطأ في حذف العامل' })
+      } finally {
+        setIsSubmitting(false)
+      }
     }
   }
 
   // تبديل حالة العامل
-  const toggleWorkerStatus = (workerId: string, currentStatus: boolean) => {
-    updateWorker(workerId, { is_active: !currentStatus })
-    setMessage({
-      type: 'success',
-      text: currentStatus ? t('worker_deactivated') : t('worker_activated')
-    })
+  const toggleWorkerStatus = async (workerId: string, currentStatus: boolean) => {
+    setIsSubmitting(true)
+    try {
+      const result = await updateWorkerSupabase(workerId, { is_available: !currentStatus })
+      if (result.success) {
+        setMessage({
+          type: 'success',
+          text: currentStatus ? (t('worker_deactivated') || 'تم تعطيل العامل') : (t('worker_activated') || 'تم تفعيل العامل')
+        })
+      } else {
+        setMessage({ type: 'error', text: result.error || 'خطأ في تحديث حالة العامل' })
+      }
+    } catch (error: any) {
+      console.error('Error toggling worker status:', error)
+      setMessage({ type: 'error', text: error.message || 'خطأ في تحديث حالة العامل' })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // حساب عدد الطلبات المكتملة لكل عامل
   const getWorkerCompletedOrders = (workerId: string) => {
     return orders.filter(order =>
-      order.assignedWorker === workerId && order.status === 'completed'
+      order.worker_id === workerId && order.status === 'completed'
     ).length
   }
 
@@ -175,9 +258,9 @@ export default function WorkersPage() {
   }
 
   const filteredWorkers = workers.filter(worker =>
-    worker.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    worker.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    worker.specialty.toLowerCase().includes(searchTerm.toLowerCase())
+    worker.user?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    worker.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    worker.specialty?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   if (!user || user.role !== 'admin') {
@@ -236,6 +319,34 @@ export default function WorkersPage() {
             <span>{t('add_new_worker')}</span>
           </button>
         </motion.div>
+
+        {/* رسائل الحالة */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg mb-6"
+          >
+            <p className="font-medium">⚠️ خطأ: {error}</p>
+            <button
+              onClick={clearError}
+              className="text-sm underline mt-2"
+            >
+              إخفاء
+            </button>
+          </motion.div>
+        )}
+
+        {isLoading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-blue-50 border border-blue-200 text-blue-700 px-6 py-4 rounded-lg mb-6 flex items-center gap-3"
+          >
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p>جاري التحميل من Supabase...</p>
+          </motion.div>
+        )}
 
         {/* البحث */}
         <motion.div
@@ -418,7 +529,7 @@ export default function WorkersPage() {
                     </label>
                     <input
                       type="text"
-                      value={editingWorker.full_name}
+                      value={editingWorker.full_name || ''}
                       onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, full_name: e.target.value }))}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
@@ -431,7 +542,7 @@ export default function WorkersPage() {
                     </label>
                     <input
                       type="email"
-                      value={editingWorker.email}
+                      value={editingWorker.email || ''}
                       onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, email: e.target.value }))}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
@@ -444,7 +555,7 @@ export default function WorkersPage() {
                     </label>
                     <input
                       type="password"
-                      value={editingWorker.password}
+                      value={editingWorker.password || ''}
                       onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, password: e.target.value }))}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       placeholder={t('leave_empty_no_change')}
@@ -457,7 +568,7 @@ export default function WorkersPage() {
                     </label>
                     <input
                       type="tel"
-                      value={editingWorker.phone}
+                      value={editingWorker.phone || ''}
                       onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, phone: e.target.value }))}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
@@ -470,7 +581,7 @@ export default function WorkersPage() {
                     </label>
                     <input
                       type="text"
-                      value={editingWorker.specialty}
+                      value={editingWorker.specialty || ''}
                       onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, specialty: e.target.value }))}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
@@ -482,8 +593,8 @@ export default function WorkersPage() {
                       {t('status')}
                     </label>
                     <select
-                      value={editingWorker.is_active ? 'active' : 'inactive'}
-                      onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, is_active: e.target.value === 'active' }))}
+                      value={editingWorker.is_available ? 'active' : 'inactive'}
+                      onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, is_available: e.target.value === 'active' }))}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                     >
                       <option value="active">{t('active')}</option>
@@ -543,21 +654,21 @@ export default function WorkersPage() {
                       <User className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-gray-800">{worker.full_name}</h3>
+                      <h3 className="text-lg font-bold text-gray-800">{worker.user?.full_name || 'غير محدد'}</h3>
                       <p className="text-sm text-pink-600 font-medium">{worker.specialty}</p>
                     </div>
                   </div>
 
                   <div className="flex items-center space-x-2 space-x-reverse">
-                    {worker.is_active ? (
+                    {worker.is_available ? (
                       <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium flex items-center space-x-1 space-x-reverse">
                         <CheckCircle className="w-3 h-3" />
-                        <span>{t('active')}</span>
+                        <span>{t('active') || 'نشط'}</span>
                       </span>
                     ) : (
                       <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium flex items-center space-x-1 space-x-reverse">
                         <XCircle className="w-3 h-3" />
-                        <span>{t('inactive')}</span>
+                        <span>{t('inactive') || 'غير نشط'}</span>
                       </span>
                     )}
                   </div>
@@ -566,23 +677,27 @@ export default function WorkersPage() {
                 <div className="space-y-3 mb-6">
                   <div className="flex items-center space-x-2 space-x-reverse text-sm text-gray-600">
                     <Mail className="w-4 h-4" />
-                    <span>{worker.email}</span>
+                    <span>{worker.user?.email || 'غير محدد'}</span>
                   </div>
                   <div className="flex items-center space-x-2 space-x-reverse text-sm text-gray-600">
                     <Phone className="w-4 h-4" />
-                    <span>{worker.phone}</span>
+                    <span>{worker.user?.phone || 'غير محدد'}</span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 mb-6">
+                <div className="grid grid-cols-2 gap-4 mb-6">
                   <div className="text-center p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg">
-                    <div className="text-lg font-bold text-green-600">{getWorkerCompletedOrders(worker.id)}</div>
-                    <div className="text-xs text-gray-600">{t('completed_orders')}</div>
+                    <div className="text-lg font-bold text-green-600">{worker.total_completed_orders || 0}</div>
+                    <div className="text-xs text-gray-600">{t('completed_orders') || 'طلبات مكتملة'}</div>
+                  </div>
+                  <div className="text-center p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
+                    <div className="text-lg font-bold text-blue-600">{worker.experience_years || 0}</div>
+                    <div className="text-xs text-gray-600">سنوات الخبرة</div>
                   </div>
                 </div>
 
                 <div className="text-xs text-gray-500 mb-4">
-                  {t('joined_on')} {formatDate(worker.createdAt)}
+                  {t('joined_on') || 'انضم في'} {formatDate(worker.created_at)}
                 </div>
 
                 <div className="flex gap-2">
@@ -591,17 +706,17 @@ export default function WorkersPage() {
                     className="flex-1 btn-secondary py-2 text-sm inline-flex items-center justify-center space-x-1 space-x-reverse"
                   >
                     <Edit className="w-4 h-4" />
-                    <span>{t('edit')}</span>
+                    <span>{t('edit') || 'تعديل'}</span>
                   </button>
                   <button
-                    onClick={() => toggleWorkerStatus(worker.id, worker.is_active)}
+                    onClick={() => toggleWorkerStatus(worker.id, worker.is_available)}
                     className={`px-3 py-2 text-sm rounded-lg transition-all duration-300 ${
-                      worker.is_active
+                      worker.is_available
                         ? 'bg-red-100 text-red-700 hover:bg-red-200'
                         : 'bg-green-100 text-green-700 hover:bg-green-200'
                     }`}
                   >
-                    {worker.is_active ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                    {worker.is_available ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                   </button>
                   <button
                     onClick={() => handleDeleteWorker(worker.id)}

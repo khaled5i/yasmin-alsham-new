@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Calendar, Clock, MessageSquare, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
-import { useDataStore } from '@/store/dataStore'
+import { useAppointmentStore } from '@/store/appointmentStore'
 import NumericInput from '@/components/NumericInput'
 
 export default function BookAppointmentPage() {
@@ -12,6 +12,8 @@ export default function BookAppointmentPage() {
   const [selectedTime, setSelectedTime] = useState<string>('')
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
+  const [clientEmail, setClientEmail] = useState('')
+  const [serviceType, setServiceType] = useState('consultation')
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -20,11 +22,40 @@ export default function BookAppointmentPage() {
   const [isMounted, setIsMounted] = useState(false)
   const [formattedDates, setFormattedDates] = useState<{[key: string]: string}>({})
 
-  const { addAppointment, appointments } = useDataStore()
+  const { createAppointment, appointments, loadAppointments } = useAppointmentStore()
+
+  // إعادة تحميل المواعيد عند تغيير التاريخ المختار
+  useEffect(() => {
+    if (selectedDate) {
+      console.log('🔄 Reloading appointments for date:', selectedDate)
+      loadAppointments()
+    }
+  }, [selectedDate, loadAppointments])
 
   // Client-side date formatting to avoid hydration mismatch
   useEffect(() => {
     setIsMounted(true)
+
+    // مسح بيانات المواعيد القديمة من localStorage
+    try {
+      const oldDataStoreKey = 'data-store'
+      const storedData = localStorage.getItem(oldDataStoreKey)
+
+      if (storedData) {
+        const parsed = JSON.parse(storedData)
+        if (parsed.state?.appointments) {
+          console.log('🧹 Clearing old appointments from localStorage')
+          delete parsed.state.appointments
+          localStorage.setItem(oldDataStoreKey, JSON.stringify(parsed))
+        }
+      }
+    } catch (err) {
+      console.error('Error clearing old localStorage:', err)
+    }
+
+    // تحميل المواعيد من Supabase
+    console.log('📥 Loading appointments from Supabase...')
+    loadAppointments()
 
     // Format dates client-side only
     const dates = getAvailableDates()
@@ -46,7 +77,7 @@ export default function BookAppointmentPage() {
     })
 
     setFormattedDates(formatted)
-  }, [])
+  }, [loadAppointments])
 
   // توليد التواريخ المتاحة (اليوم الحالي + 30 يوم قادم، عدا الجمعة)
   const getAvailableDates = () => {
@@ -98,13 +129,21 @@ export default function BookAppointmentPage() {
       })
     }
 
-    // الحصول على الأوقات المحجوزة
+    // الحصول على الأوقات المحجوزة من Supabase
+    console.log(`🔍 Total appointments in store: ${appointments.length}`)
+    console.log(`🔍 Checking date: ${date}`)
+
     const bookedTimes = appointments
-      .filter(appointment =>
-        appointment.appointmentDate === date &&
-        appointment.status !== 'cancelled'
-      )
-      .map(appointment => appointment.appointmentTime)
+      .filter(appointment => {
+        const matches = appointment.appointment_date === date && appointment.status !== 'cancelled'
+        if (matches) {
+          console.log(`  ✓ Found booked appointment:`, appointment.appointment_time, appointment.customer_name)
+        }
+        return matches
+      })
+      .map(appointment => appointment.appointment_time)
+
+    console.log(`📅 Date: ${date}, Booked times:`, bookedTimes)
 
     return availableTimes.map(timeSlot => ({
       ...timeSlot,
@@ -138,22 +177,44 @@ export default function BookAppointmentPage() {
       return
     }
 
+    // التحقق من أن الوقت غير محجوز
+    const isTimeBooked = appointments.some(
+      apt => apt.appointment_date === selectedDate &&
+             apt.appointment_time === selectedTime &&
+             apt.status !== 'cancelled'
+    )
+
+    if (isTimeBooked) {
+      setMessage({ type: 'error', text: 'عذراً، هذا الوقت محجوز مسبقاً. يرجى اختيار وقت آخر.' })
+      return
+    }
+
     setIsSubmitting(true)
     setMessage(null)
 
     try {
-      // محاكاة تأخير الشبكة
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      console.log('📅 Booking appointment for guest:', clientName)
 
-      // إضافة الموعد إلى المتجر
-      addAppointment({
-        clientName,
-        clientPhone,
-        appointmentDate: selectedDate,
-        appointmentTime: selectedTime,
-        notes: notes || undefined,
-        status: 'scheduled'
+      // استخدام Supabase Store الجديد
+      const result = await createAppointment({
+        customer_name: clientName,
+        customer_phone: clientPhone,
+        customer_email: clientEmail || undefined,
+        appointment_date: selectedDate,
+        appointment_time: selectedTime,
+        service_type: serviceType,
+        notes: notes || undefined
       })
+
+      if (!result.success) {
+        setMessage({ type: 'error', text: result.error || 'خطأ في حجز الموعد' })
+        return
+      }
+
+      console.log('✅ Appointment booked successfully:', result.data?.id)
+
+      // إعادة تحميل المواعيد لتحديث الأوقات المحجوزة
+      await loadAppointments()
 
       setMessage({
         type: 'success',
@@ -165,10 +226,12 @@ export default function BookAppointmentPage() {
       setSelectedTime('')
       setClientName('')
       setClientPhone('')
+      setClientEmail('')
+      setServiceType('consultation')
       setNotes('')
 
     } catch (error) {
-      console.error('خطأ في حجز الموعد:', error)
+      console.error('❌ Error booking appointment:', error)
       setMessage({ type: 'error', text: 'حدث خطأ أثناء حجز الموعد. يرجى المحاولة مرة أخرى.' })
     } finally {
       setIsSubmitting(false)
@@ -405,6 +468,39 @@ export default function BookAppointmentPage() {
                       required
                       disabled={isSubmitting}
                     />
+                  </div>
+
+                  {/* البريد الإلكتروني */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      البريد الإلكتروني (اختياري)
+                    </label>
+                    <input
+                      type="email"
+                      value={clientEmail}
+                      onChange={(e) => setClientEmail(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                      placeholder="أدخلي بريدك الإلكتروني"
+                      disabled={isSubmitting}
+                    />
+                  </div>
+
+                  {/* نوع الخدمة */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      نوع الخدمة *
+                    </label>
+                    <select
+                      value={serviceType}
+                      onChange={(e) => setServiceType(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                      required
+                      disabled={isSubmitting}
+                    >
+                      <option value="consultation">استشارة تصميم</option>
+                      <option value="fitting">قياس وتجربة</option>
+                      <option value="delivery">استلام الطلب</option>
+                    </select>
                   </div>
 
                   {/* ملاحظات */}

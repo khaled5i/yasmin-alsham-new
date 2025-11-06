@@ -1,5 +1,25 @@
-import { supabase, isSupabaseConfigured } from './supabase'
-import { Appointment } from './database'
+// خدمة المواعيد المحلية - بدون Supabase
+// Local appointments service - without Supabase
+
+export interface Appointment {
+  id: string
+  client_id?: string
+  worker_id?: string
+  appointment_date: string
+  appointment_time: string
+  type: string
+  status: string
+  service_type: string
+  notes?: string
+  guest_name?: string
+  guest_phone?: string
+  guest_email?: string
+  is_guest_booking: boolean
+  reminder_sent: boolean
+  confirmation_sent: boolean
+  created_at: string
+  updated_at: string
+}
 
 export interface AppointmentSlot {
   date: string
@@ -100,16 +120,18 @@ export class AppointmentService {
     return days[date.getDay()]
   }
   
-  // حجز موعد جديد
-  static async bookAppointment(appointmentData: {
+  // حجز موعد جديد للضيوف (المستخدمين غير المسجلين)
+  static async bookGuestAppointment(appointmentData: {
     client_name: string
     client_phone: string
+    client_email?: string
     appointment_date: string
     appointment_time: string
+    service_type?: string
     notes?: string
-  }): Promise<{ appointment: Appointment | null, error: string | null }> {
+  }): Promise<{ appointment: any | null, error: string | null }> {
     try {
-      // للتطوير: محاكاة حجز الموعد
+      // محاكاة حجز الموعد
       await new Promise(resolve => setTimeout(resolve, 1000))
 
       // محاكاة التحقق من توفر الموعد
@@ -124,21 +146,36 @@ export class AppointmentService {
       }
 
       // محاكاة إنشاء الموعد
-      const appointment: Appointment = {
+      const appointment = {
         id: `apt_${Date.now()}`,
-        client_name: appointmentData.client_name,
-        client_phone: appointmentData.client_phone,
+        guest_name: appointmentData.client_name,
+        guest_phone: appointmentData.client_phone,
+        guest_email: appointmentData.client_email,
         appointment_date: appointmentData.appointment_date,
         appointment_time: appointmentData.appointment_time,
+        service_type: appointmentData.service_type || 'consultation',
         status: 'scheduled',
         notes: appointmentData.notes,
+        is_guest_booking: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
 
       return { appointment, error: null }
     } catch (error) {
+      console.error('Booking error:', error)
       return { appointment: null, error: 'خطأ في حجز الموعد' }
+    }
+  }
+
+  // البحث عن مواعيد الضيوف برقم الهاتف
+  static async getGuestAppointments(phoneNumber: string): Promise<{ appointments: any[], error: string | null }> {
+    try {
+      // للتطوير: إرجاع قائمة فارغة
+      return { appointments: [], error: null }
+    } catch (error) {
+      console.error('Get guest appointments error:', error)
+      return { appointments: [], error: 'خطأ في جلب المواعيد' }
     }
   }
   
@@ -159,24 +196,6 @@ export class AppointmentService {
     date?: string
     limit?: number
   }): Promise<Appointment[]> {
-    let query = supabase
-      .from('appointments')
-      .select('*')
-      .order('appointment_date', { ascending: true })
-      .order('appointment_time', { ascending: true })
-    
-    if (filters?.status) {
-      query = query.eq('status', filters.status)
-    }
-    
-    if (filters?.date) {
-      query = query.eq('appointment_date', filters.date)
-    }
-    
-    if (filters?.limit) {
-      query = query.limit(filters.limit)
-    }
-    
     // محاكاة البيانات للتطوير
     return []
   }

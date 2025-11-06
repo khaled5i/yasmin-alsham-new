@@ -16,7 +16,8 @@ import {
   CheckCircle,
   Image as ImageIcon
 } from 'lucide-react'
-import { Order, Worker } from '@/store/dataStore'
+import { Order } from '@/lib/services/order-service'
+import { Worker } from '@/lib/services/worker-service'
 import { useAuthStore } from '@/store/authStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import VoiceNotes from './VoiceNotes'
@@ -34,10 +35,10 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
 
   if (!order) return null
 
-  const getWorkerName = (workerId?: string) => {
+  const getWorkerName = (workerId?: string | null) => {
     if (!workerId) return t('not_specified')
     const worker = workers.find(w => w.id === workerId)
-    return worker ? worker.full_name : t('not_specified')
+    return worker ? (worker.user?.full_name || worker.id) : t('not_specified')
   }
 
   const getStatusInfo = (status: string) => {
@@ -144,7 +145,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                         {t('name')}
                         {isArabic && <span className="text-sm text-gray-500 mr-2">(Name)</span>}
                       </span>
-                      <span>{order.clientName}</span>
+                      <span>{order.client_name}</span>
                     </div>
                     {/* تم حذف عرض رقم الهاتف للعامل */}
                   </div>
@@ -201,7 +202,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       {isArabic && <span className="text-sm text-gray-500 mr-2">(Order Date)</span>}
                     </span>
                   </h4>
-                  <p>{formatDate(order.createdAt)}</p>
+                  <p>{formatDate(order.created_at)}</p>
                 </div>
 
                 <div className="space-y-3">
@@ -212,7 +213,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       {isArabic && <span className="text-sm text-gray-500 mr-2">(Delivery Date)</span>}
                     </span>
                   </h4>
-                  <p>{formatDate(getDisplayDeliveryDate(order.dueDate))}</p>
+                  <p>{formatDate(getDisplayDeliveryDate(order.due_date))}</p>
                 </div>
               </div>
 
@@ -226,7 +227,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                   </span>
                 </h3>
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-lg">{getWorkerName(order.assignedWorker)}</p>
+                  <p className="text-lg">{getWorkerName(order.worker_id)}</p>
                 </div>
               </div>
 
@@ -503,7 +504,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
               )}
 
               {/* الملاحظات الصوتية */}
-              {order.voiceNotes && order.voiceNotes.length > 0 && (
+              {order.voice_notes && order.voice_notes.length > 0 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <MessageSquare className="w-5 h-5 text-pink-600" />
@@ -513,7 +514,11 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     </span>
                   </h3>
                   <VoiceNotes
-                    voiceNotes={order.voiceNotes}
+                    voiceNotes={order.voice_notes.map((vn, idx) => ({
+                      id: `vn-${idx}`,
+                      data: vn,
+                      timestamp: Date.now()
+                    }))}
                     onVoiceNotesChange={() => {}} // للعرض فقط
                     disabled={true}
                   />

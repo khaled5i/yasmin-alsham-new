@@ -1,17 +1,18 @@
 import type { Metadata } from "next";
 import { Cairo, Noto_Kufi_Arabic } from "next/font/google";
 import "./globals.css";
-import { SupabaseDevStatus } from "@/components/SupabaseStatus";
 
 const cairo = Cairo({
   variable: "--font-cairo",
   subsets: ["arabic", "latin"],
+  weight: ["400", "500", "600", "700"],
   display: 'swap',
 });
 
 const notoKufi = Noto_Kufi_Arabic({
   variable: "--font-noto-kufi",
   subsets: ["arabic"],
+  weight: ["400", "500", "600", "700"],
   display: 'swap',
 });
 
@@ -36,9 +37,8 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <body
-        className={`${cairo.variable} ${notoKufi.variable} font-cairo antialiased bg-gradient-to-br from-rose-50 to-pink-50 min-h-screen`}
+        className={`${cairo.variable} ${notoKufi.variable} font-sans antialiased bg-gradient-to-br from-rose-50 to-pink-50 min-h-screen`}
       >
-        <SupabaseDevStatus />
         {children}
       </body>
     </html>

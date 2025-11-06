@@ -165,7 +165,15 @@ export default function Hero() {
                   className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
                 >
                   <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-                  <span>استكشفي تصاميمنا الجاهزة</span>
+                  <span>الفساتين الجاهزة</span>
+                </Link>
+
+                <Link
+                  href="/fabrics"
+                  className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
+                >
+                  <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+                  <span>متجر الأقمشة</span>
                 </Link>
               </div>
             </motion.div>
@@ -239,7 +247,15 @@ export default function Hero() {
                 className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
               >
                 <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-                <span>استكشفي تصاميمنا الجاهزة</span>
+                <span>الفساتين الجاهزة</span>
+              </Link>
+
+              <Link
+                href="/fabrics"
+                className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
+              >
+                <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+                <span>متجر الأقمشة</span>
               </Link>
             </motion.div>
           </motion.div>

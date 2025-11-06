@@ -5,7 +5,8 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useDataStore } from '@/store/dataStore'
+import { useOrderStore } from '@/store/orderStore'
+import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
@@ -32,16 +33,22 @@ import {
 
 export default function OrdersPage() {
   const { user } = useAuthStore()
-  const { orders, workers, updateOrder, deleteOrder, startOrderWork, completeOrder } = useDataStore()
+  const { orders, loadOrders, updateOrder, deleteOrder, startOrderWork, completeOrder } = useOrderStore()
+  const { workers, loadWorkers } = useWorkerStore()
   const { t, language, changeLanguage, isArabic } = useTranslation()
   const router = useRouter()
 
-  // التحقق من الصلاحيات
+  // التحقق من الصلاحيات وتحميل البيانات
   useEffect(() => {
     if (!user) {
       router.push('/login')
+      return
     }
-  }, [user, router])
+
+    // تحميل الطلبات والعمال
+    loadOrders()
+    loadWorkers()
+  }, [user, router, loadOrders, loadWorkers])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [searchType, setSearchType] = useState<'text' | 'orderNumber'>('text')
@@ -89,8 +96,28 @@ export default function OrdersPage() {
   }
 
   // حفظ التعديلات
-  const handleSaveOrder = (orderId: string, updates: any) => {
-    updateOrder(orderId, updates)
+  const handleSaveOrder = async (orderId: string, updates: any) => {
+    console.log('💾 Saving order updates:', orderId, updates)
+
+    // تحويل البيانات إلى صيغة Supabase
+    const supabaseUpdates: any = {}
+
+    if (updates.clientName) supabaseUpdates.client_name = updates.clientName
+    if (updates.clientPhone) supabaseUpdates.client_phone = updates.clientPhone
+    if (updates.description) supabaseUpdates.description = updates.description
+    if (updates.fabric !== undefined) supabaseUpdates.fabric = updates.fabric
+    if (updates.price !== undefined) supabaseUpdates.price = updates.price
+    if (updates.status) supabaseUpdates.status = updates.status
+    if (updates.assignedWorker !== undefined) supabaseUpdates.worker_id = updates.assignedWorker
+    if (updates.dueDate) supabaseUpdates.due_date = updates.dueDate
+    if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes
+    if (updates.voiceNotes !== undefined) {
+      supabaseUpdates.voice_notes = updates.voiceNotes.map((vn: any) => vn.data)
+    }
+    if (updates.images !== undefined) supabaseUpdates.images = updates.images
+    if (updates.measurements) supabaseUpdates.measurements = updates.measurements
+
+    await updateOrder(orderId, supabaseUpdates)
     setShowEditModal(false)
     setSelectedOrder(null)
   }
@@ -111,9 +138,10 @@ export default function OrdersPage() {
   }
 
   // تأكيد حذف الطلب
-  const confirmDeleteOrder = () => {
+  const confirmDeleteOrder = async () => {
     if (orderToDelete) {
-      deleteOrder(orderToDelete.id)
+      console.log('🗑️ Deleting order:', orderToDelete.id)
+      await deleteOrder(orderToDelete.id)
       setDeleteModalOpen(false)
       setOrderToDelete(null)
       setDeleteSuccess(true)
@@ -137,8 +165,8 @@ export default function OrdersPage() {
 
     setIsProcessing(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      startOrderWork(orderId, user.id)
+      console.log('▶️ Starting work on order:', orderId)
+      await startOrderWork(orderId)
     } finally {
       setIsProcessing(false)
     }
@@ -156,8 +184,8 @@ export default function OrdersPage() {
 
     setIsProcessing(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      completeOrder(selectedOrder.id, user.id, completedImages)
+      console.log('✅ Completing order:', selectedOrder.id)
+      await completeOrder(selectedOrder.id, completedImages)
       setShowCompleteModal(false)
       setSelectedOrder(null)
       setCompletedImages([])
@@ -178,13 +206,22 @@ export default function OrdersPage() {
 
   const filteredOrders = orders.filter(order => {
     // فلترة حسب الدور - العمال يرون طلباتهم فقط
-    const matchesRole = user?.role === 'admin' || order.assignedWorker === user?.id
+    // يجب مقارنة order.worker_id مع worker.id (وليس user.id)
+    let matchesRole = user?.role === 'admin'
+
+    if (!matchesRole && user?.role === 'worker') {
+      // البحث عن العامل الذي user_id يطابق user.id
+      const currentWorker = workers.find(w => w.user_id === user.id)
+      if (currentWorker) {
+        matchesRole = order.worker_id === currentWorker.id
+      }
+    }
 
     const matchesSearch = searchType === 'orderNumber'
-      ? order.id.toLowerCase().includes(searchTerm.toLowerCase())
-      : order.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.description.toLowerCase().includes(searchTerm.toLowerCase())
+      ? (order.order_number || order.id).toLowerCase().includes(searchTerm.toLowerCase())
+      : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (order.order_number || order.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (order.description || '').toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
@@ -368,10 +405,10 @@ export default function OrdersPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h3 className="text-xl font-bold text-gray-800 mb-1">
-                          {order.clientName}
+                          {order.client_name}
                         </h3>
                         <p className="text-pink-600 font-medium">{order.description}</p>
-                        <p className="text-sm text-gray-500">#{order.id}</p>
+                        <p className="text-sm text-gray-500">#{order.order_number || order.id}</p>
                       </div>
                       
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
@@ -382,16 +419,16 @@ export default function OrdersPage() {
                     <div className="space-y-2 text-sm text-gray-600">
                       <div className="flex items-center space-x-2 space-x-reverse">
                         <Calendar className="w-4 h-4" />
-                        <span>{t('order_date_label')}: {formatDate(order.createdAt)}</span>
+                        <span>{t('order_date_label')}: {formatDate(order.created_at)}</span>
                       </div>
                       <div className="flex items-center space-x-2 space-x-reverse">
                         <Clock className="w-4 h-4" />
-                        <span>{t('delivery_date_label')}: {formatDate(order.dueDate)}</span>
+                        <span>{t('delivery_date_label')}: {formatDate(order.due_date)}</span>
                       </div>
-                      {order.assignedWorker && (
+                      {order.worker_id && (
                         <div className="flex items-center space-x-2 space-x-reverse">
                           <User className="w-4 h-4" />
-                          <span>{t('worker_label')}: {getWorkerName(order.assignedWorker)}</span>
+                          <span>{t('worker_label')}: {getWorkerName(order.worker_id)}</span>
                         </div>
                       )}
                       {order.fabric && (
@@ -449,7 +486,7 @@ export default function OrdersPage() {
                     )}
 
                     {/* أزرار العامل */}
-                    {user.role === 'worker' && order.assignedWorker === user.id && (
+                    {user.role === 'worker' && order.worker_id === user.id && (
                       <>
                         {order.status === 'pending' && (
                           <button
@@ -491,7 +528,8 @@ export default function OrdersPage() {
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
             <div className="text-2xl font-bold text-yellow-600 mb-1">
               {orders.filter(o => {
-                const matchesRole = user.role === 'admin' || o.assignedWorker === user.id
+                const currentWorker = workers.find(w => w.user_id === user.id)
+                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
                 return matchesRole && o.status === 'pending'
               }).length}
             </div>
@@ -501,7 +539,8 @@ export default function OrdersPage() {
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
             <div className="text-2xl font-bold text-blue-600 mb-1">
               {orders.filter(o => {
-                const matchesRole = user.role === 'admin' || o.assignedWorker === user.id
+                const currentWorker = workers.find(w => w.user_id === user.id)
+                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
                 return matchesRole && o.status === 'in_progress'
               }).length}
             </div>
@@ -511,7 +550,8 @@ export default function OrdersPage() {
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
             <div className="text-2xl font-bold text-green-600 mb-1">
               {orders.filter(o => {
-                const matchesRole = user.role === 'admin' || o.assignedWorker === user.id
+                const currentWorker = workers.find(w => w.user_id === user.id)
+                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
                 return matchesRole && o.status === 'completed'
               }).length}
             </div>
@@ -521,7 +561,8 @@ export default function OrdersPage() {
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
             <div className="text-2xl font-bold text-purple-600 mb-1">
               {orders.filter(o => {
-                const matchesRole = user.role === 'admin' || o.assignedWorker === user.id
+                const currentWorker = workers.find(w => w.user_id === user.id)
+                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
                 return matchesRole && o.status === 'delivered'
               }).length}
             </div>
@@ -573,7 +614,7 @@ export default function OrdersPage() {
                     {t('order_label')} {selectedOrder.description}
                   </h4>
                   <p className="text-gray-600">
-                    {t('for_client')} {selectedOrder.clientName}
+                    {t('for_client')} {selectedOrder.client_name}
                   </p>
                 </div>
 

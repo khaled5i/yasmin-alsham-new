@@ -1,23 +1,123 @@
-// خدمة قاعدة البيانات الآمنة المحدثة v2.0 - مع بديل عندما لا يكون Supabase مُعد
-// Safe database service v2.0 with fallback for when Supabase is not configured
+// خدمة قاعدة البيانات المحلية v3.0 - بدون Supabase
+// Local database service v3.0 without Supabase
 
-import { supabase, isSupabaseConfigured } from './supabase'
-import { 
-  userService, 
-  workerService, 
-  designService, 
-  appointmentService, 
-  orderService, 
-  favoriteService, 
-  cartService,
-  type Design,
-  type Appointment,
-  type Order,
-  type Worker,
-  type User,
-  type Favorite,
-  type CartItem
-} from './database-v2'
+// ========================================
+// أنواع البيانات
+// ========================================
+
+export interface User {
+  id: string
+  email: string
+  full_name: string
+  phone?: string
+  avatar_url?: string
+  role: 'admin' | 'worker' | 'client'
+  is_active: boolean
+  email_verified: boolean
+  phone_verified: boolean
+  preferences: Record<string, any>
+  metadata: Record<string, any>
+  created_at: string
+  updated_at: string
+}
+
+export interface Worker {
+  id: string
+  user_id: string
+  specialty: string
+  experience_years: number
+  hourly_rate: number
+  performance_rating: number
+  total_completed_orders: number
+  skills: string[]
+  availability: Record<string, string>
+  bio: string
+  portfolio_images: string[]
+  is_available: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Design {
+  id: string
+  name: string
+  name_en: string
+  description: string
+  description_en: string
+  category: string
+  price: number
+  image_url: string
+  additional_images: string[]
+  is_featured: boolean
+  is_available: boolean
+  fabric_type: string
+  colors_available: string[]
+  sizes_available: string[]
+  estimated_days: number
+  difficulty_level: string
+  tags: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface Appointment {
+  id: string
+  client_id?: string
+  worker_id?: string
+  appointment_date: string
+  appointment_time: string
+  type: string
+  status: string
+  service_type: string
+  notes?: string
+  guest_name?: string
+  guest_phone?: string
+  guest_email?: string
+  is_guest_booking: boolean
+  reminder_sent: boolean
+  confirmation_sent: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Order {
+  id: string
+  client_id: string
+  design_id?: string
+  worker_id?: string
+  status: string
+  priority: string
+  price: number
+  deposit_paid: number
+  balance_due: number
+  start_date: string
+  due_date: string
+  completion_date?: string
+  notes?: string
+  special_requests?: string
+  fabric_details?: Record<string, any>
+  measurements?: Record<string, any>
+  progress_percentage: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Favorite {
+  id: string
+  user_id: string
+  design_id: string
+  created_at: string
+}
+
+export interface CartItem {
+  id: string
+  user_id: string
+  design_id: string
+  quantity: number
+  customization_notes?: string
+  created_at: string
+  updated_at: string
+}
 
 // بيانات تجريبية محدثة للتطوير عندما لا يكون Supabase مُعد
 const mockData = {
@@ -401,473 +501,268 @@ const mockData = {
   ]
 }
 
-// خدمة قاعدة البيانات الآمنة المحدثة
+// خدمة قاعدة البيانات المحلية
 export const safeDatabase = {
   // خدمة التصاميم
   designs: {
     async getAll(filters?: { category?: string; featured?: boolean }) {
-      if (!isSupabaseConfigured()) {
-        let designs = [...mockData.designs]
+      let designs = [...mockData.designs]
 
-        if (filters?.category) {
-          designs = designs.filter(d => d.category === filters.category)
-        }
-
-        if (filters?.featured) {
-          designs = designs.filter(d => d.is_featured === true)
-        }
-
-        return { data: designs, error: null }
+      if (filters?.category) {
+        designs = designs.filter(d => d.category === filters.category)
       }
 
-      try {
-        return await designService.getAllDesigns(filters)
-      } catch (error) {
-        console.warn('Supabase error, using mock data:', error)
-        return { data: mockData.designs, error: null }
+      if (filters?.featured) {
+        designs = designs.filter(d => d.is_featured === true)
       }
+
+      return { data: designs, error: null }
     },
 
     async getById(id: string) {
-      if (!isSupabaseConfigured()) {
-        const design = mockData.designs.find(d => d.id === id)
-        if (design) {
-          // محاكاة زيادة عداد المشاهدات
-          design.view_count += 1
-        }
-        return { data: design || null, error: design ? null : 'Design not found' }
+      const design = mockData.designs.find(d => d.id === id)
+      if (design) {
+        // محاكاة زيادة عداد المشاهدات
+        design.view_count += 1
       }
-
-      try {
-        return await designService.getDesign(id)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        const design = mockData.designs.find(d => d.id === id)
-        return { data: design || null, error: design ? null : 'Design not found' }
-      }
+      return { data: design || null, error: design ? null : 'Design not found' }
     },
 
     async create(design: any) {
-      if (!isSupabaseConfigured()) {
-        const newDesign = {
-          ...design,
-          id: `design-${Date.now()}`,
-          view_count: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        mockData.designs.push(newDesign)
-        return { data: newDesign, error: null }
+      const newDesign = {
+        ...design,
+        id: `design-${Date.now()}`,
+        view_count: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
-
-      try {
-        return await designService.createDesign(design)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to create design' }
-      }
+      mockData.designs.push(newDesign)
+      return { data: newDesign, error: null }
     }
   },
 
   // خدمة المواعيد
   appointments: {
     async getAll(filters?: { clientId?: string; workerId?: string; status?: string }) {
-      if (!isSupabaseConfigured()) {
-        let appointments = [...mockData.appointments]
+      let appointments = [...mockData.appointments]
 
-        if (filters?.clientId) {
-          appointments = appointments.filter(a => a.client_id === filters.clientId)
-        }
-
-        if (filters?.workerId) {
-          appointments = appointments.filter(a => a.worker_id === filters.workerId)
-        }
-
-        if (filters?.status) {
-          appointments = appointments.filter(a => a.status === filters.status)
-        }
-
-        return { data: appointments, error: null }
+      if (filters?.clientId) {
+        appointments = appointments.filter(a => a.client_id === filters.clientId)
       }
 
-      try {
-        return await appointmentService.getAllAppointments(filters)
-      } catch (error) {
-        console.warn('Supabase error, using mock data:', error)
-        return { data: mockData.appointments, error: null }
+      if (filters?.workerId) {
+        appointments = appointments.filter(a => a.worker_id === filters.workerId)
       }
+
+      if (filters?.status) {
+        appointments = appointments.filter(a => a.status === filters.status)
+      }
+
+      return { data: appointments, error: null }
     },
 
     async create(appointment: any) {
-      if (!isSupabaseConfigured()) {
-        const newAppointment = {
-          ...appointment,
-          id: `appointment-${Date.now()}`,
-          reminder_sent: false,
-          confirmation_sent: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        mockData.appointments.push(newAppointment)
-        return { data: newAppointment, error: null }
+      const newAppointment = {
+        ...appointment,
+        id: `appointment-${Date.now()}`,
+        reminder_sent: false,
+        confirmation_sent: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
-
-      try {
-        return await appointmentService.createAppointment(appointment)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to create appointment' }
-      }
+      mockData.appointments.push(newAppointment)
+      return { data: newAppointment, error: null }
     },
 
     async update(appointmentId: string, updates: any) {
-      if (!isSupabaseConfigured()) {
-        const appointmentIndex = mockData.appointments.findIndex(a => a.id === appointmentId)
-        if (appointmentIndex !== -1) {
-          mockData.appointments[appointmentIndex] = {
-            ...mockData.appointments[appointmentIndex],
-            ...updates,
-            updated_at: new Date().toISOString()
-          }
-          return { data: mockData.appointments[appointmentIndex], error: null }
+      const appointmentIndex = mockData.appointments.findIndex(a => a.id === appointmentId)
+      if (appointmentIndex !== -1) {
+        mockData.appointments[appointmentIndex] = {
+          ...mockData.appointments[appointmentIndex],
+          ...updates,
+          updated_at: new Date().toISOString()
         }
-        return { data: null, error: 'Appointment not found' }
+        return { data: mockData.appointments[appointmentIndex], error: null }
       }
-
-      try {
-        return await appointmentService.updateAppointment(appointmentId, updates)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to update appointment' }
-      }
+      return { data: null, error: 'Appointment not found' }
     }
   },
 
   // خدمة الطلبات
   orders: {
     async getAll(filters?: { clientId?: string; workerId?: string; status?: string }) {
-      if (!isSupabaseConfigured()) {
-        let orders = [...mockData.orders]
+      let orders = [...mockData.orders]
 
-        if (filters?.clientId) {
-          orders = orders.filter(o => o.client_id === filters.clientId)
-        }
-
-        if (filters?.workerId) {
-          orders = orders.filter(o => o.worker_id === filters.workerId)
-        }
-
-        if (filters?.status) {
-          orders = orders.filter(o => o.status === filters.status)
-        }
-
-        return { data: orders, error: null }
+      if (filters?.clientId) {
+        orders = orders.filter(o => o.client_id === filters.clientId)
       }
 
-      try {
-        return await orderService.getAllOrders(filters)
-      } catch (error) {
-        console.warn('Supabase error, using mock data:', error)
-        return { data: mockData.orders, error: null }
+      if (filters?.workerId) {
+        orders = orders.filter(o => o.worker_id === filters.workerId)
       }
+
+      if (filters?.status) {
+        orders = orders.filter(o => o.status === filters.status)
+      }
+
+      return { data: orders, error: null }
     },
 
     async getById(orderId: string) {
-      if (!isSupabaseConfigured()) {
-        const order = mockData.orders.find(o => o.id === orderId)
-        return { data: order || null, error: order ? null : 'Order not found' }
-      }
-
-      try {
-        return await orderService.getOrder(orderId)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        const order = mockData.orders.find(o => o.id === orderId)
-        return { data: order || null, error: order ? null : 'Order not found' }
-      }
+      const order = mockData.orders.find(o => o.id === orderId)
+      return { data: order || null, error: order ? null : 'Order not found' }
     },
 
     async create(orderData: any, orderItems: any[]) {
-      if (!isSupabaseConfigured()) {
-        const newOrder = {
-          ...orderData,
-          id: `order-${Date.now()}`,
-          order_number: `2025${String(mockData.orders.length + 1).padStart(3, '0')}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        mockData.orders.push(newOrder)
-        return { data: newOrder, error: null }
+      const newOrder = {
+        ...orderData,
+        id: `order-${Date.now()}`,
+        order_number: `2025${String(mockData.orders.length + 1).padStart(3, '0')}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
-
-      try {
-        return await orderService.createOrder(orderData, orderItems)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to create order' }
-      }
+      mockData.orders.push(newOrder)
+      return { data: newOrder, error: null }
     },
 
     async update(orderId: string, updates: any) {
-      if (!isSupabaseConfigured()) {
-        const orderIndex = mockData.orders.findIndex(o => o.id === orderId)
-        if (orderIndex !== -1) {
-          mockData.orders[orderIndex] = {
-            ...mockData.orders[orderIndex],
-            ...updates,
-            updated_at: new Date().toISOString()
-          }
-          return { data: mockData.orders[orderIndex], error: null }
+      const orderIndex = mockData.orders.findIndex(o => o.id === orderId)
+      if (orderIndex !== -1) {
+        mockData.orders[orderIndex] = {
+          ...mockData.orders[orderIndex],
+          ...updates,
+          updated_at: new Date().toISOString()
         }
-        return { data: null, error: 'Order not found' }
+        return { data: mockData.orders[orderIndex], error: null }
       }
-
-      try {
-        return await orderService.updateOrder(orderId, updates)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to update order' }
-      }
+      return { data: null, error: 'Order not found' }
     }
   },
 
   // خدمة العمال
   workers: {
     async getAll() {
-      if (!isSupabaseConfigured()) {
-        return { data: mockData.workers, error: null }
-      }
-
-      try {
-        return await workerService.getAllWorkers()
-      } catch (error) {
-        console.warn('Supabase error, using mock data:', error)
-        return { data: mockData.workers, error: null }
-      }
+      return { data: mockData.workers, error: null }
     },
 
     async getById(workerId: string) {
-      if (!isSupabaseConfigured()) {
-        const worker = mockData.workers.find(w => w.id === workerId)
-        return { data: worker || null, error: worker ? null : 'Worker not found' }
-      }
-
-      try {
-        return await workerService.getWorker(workerId)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        const worker = mockData.workers.find(w => w.id === workerId)
-        return { data: worker || null, error: worker ? null : 'Worker not found' }
-      }
+      const worker = mockData.workers.find(w => w.id === workerId)
+      return { data: worker || null, error: worker ? null : 'Worker not found' }
     }
   },
 
   // خدمة المفضلة
   favorites: {
     async getUserFavorites(userId: string) {
-      if (!isSupabaseConfigured()) {
-        const userFavorites = mockData.favorites
-          .filter(f => f.user_id === userId)
-          .map(f => ({
-            ...f,
-            design: mockData.designs.find(d => d.id === f.design_id)
-          }))
-        return { data: userFavorites, error: null }
-      }
-
-      try {
-        return await favoriteService.getUserFavorites(userId)
-      } catch (error) {
-        console.warn('Supabase error, using mock data:', error)
-        return { data: [], error: null }
-      }
+      const userFavorites = mockData.favorites
+        .filter(f => f.user_id === userId)
+        .map(f => ({
+          ...f,
+          design: mockData.designs.find(d => d.id === f.design_id)
+        }))
+      return { data: userFavorites, error: null }
     },
 
     async addToFavorites(userId: string, designId: string) {
-      if (!isSupabaseConfigured()) {
-        const newFavorite = {
-          id: `favorite-${Date.now()}`,
-          user_id: userId,
-          design_id: designId,
-          created_at: new Date().toISOString()
-        }
-        mockData.favorites.push(newFavorite)
-        return { data: newFavorite, error: null }
+      const newFavorite = {
+        id: `favorite-${Date.now()}`,
+        user_id: userId,
+        design_id: designId,
+        created_at: new Date().toISOString()
       }
-
-      try {
-        return await favoriteService.addToFavorites(userId, designId)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to add to favorites' }
-      }
+      mockData.favorites.push(newFavorite)
+      return { data: newFavorite, error: null }
     },
 
     async removeFromFavorites(userId: string, designId: string) {
-      if (!isSupabaseConfigured()) {
-        const favoriteIndex = mockData.favorites.findIndex(
-          f => f.user_id === userId && f.design_id === designId
-        )
-        if (favoriteIndex !== -1) {
-          mockData.favorites.splice(favoriteIndex, 1)
-        }
-        return { error: null }
+      const favoriteIndex = mockData.favorites.findIndex(
+        f => f.user_id === userId && f.design_id === designId
+      )
+      if (favoriteIndex !== -1) {
+        mockData.favorites.splice(favoriteIndex, 1)
       }
-
-      try {
-        return await favoriteService.removeFromFavorites(userId, designId)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { error: 'Failed to remove from favorites' }
-      }
+      return { error: null }
     }
   },
 
   // خدمة عربة التسوق
   cart: {
     async getCartItems(userId: string) {
-      if (!isSupabaseConfigured()) {
-        const userCartItems = mockData.cartItems
-          .filter(c => c.user_id === userId)
-          .map(c => ({
-            ...c,
-            design: c.design_id ? mockData.designs.find(d => d.id === c.design_id) : undefined
-          }))
-        return { data: userCartItems, error: null }
-      }
-
-      try {
-        return await cartService.getCartItems(userId)
-      } catch (error) {
-        console.warn('Supabase error, using mock data:', error)
-        return { data: [], error: null }
-      }
+      const userCartItems = mockData.cartItems
+        .filter(c => c.user_id === userId)
+        .map(c => ({
+          ...c,
+          design: c.design_id ? mockData.designs.find(d => d.id === c.design_id) : undefined
+        }))
+      return { data: userCartItems, error: null }
     },
 
     async addToCart(cartItemData: any) {
-      if (!isSupabaseConfigured()) {
-        const newCartItem = {
-          ...cartItemData,
-          id: `cart-${Date.now()}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        mockData.cartItems.push(newCartItem)
-        return { data: newCartItem, error: null }
+      const newCartItem = {
+        ...cartItemData,
+        id: `cart-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
-
-      try {
-        return await cartService.addToCart(cartItemData)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to add to cart' }
-      }
+      mockData.cartItems.push(newCartItem)
+      return { data: newCartItem, error: null }
     },
 
     async updateCartItem(cartItemId: string, updates: any) {
-      if (!isSupabaseConfigured()) {
-        const cartItemIndex = mockData.cartItems.findIndex(c => c.id === cartItemId)
-        if (cartItemIndex !== -1) {
-          mockData.cartItems[cartItemIndex] = {
-            ...mockData.cartItems[cartItemIndex],
-            ...updates,
-            updated_at: new Date().toISOString()
-          }
-          return { data: mockData.cartItems[cartItemIndex], error: null }
+      const cartItemIndex = mockData.cartItems.findIndex(c => c.id === cartItemId)
+      if (cartItemIndex !== -1) {
+        mockData.cartItems[cartItemIndex] = {
+          ...mockData.cartItems[cartItemIndex],
+          ...updates,
+          updated_at: new Date().toISOString()
         }
-        return { data: null, error: 'Cart item not found' }
+        return { data: mockData.cartItems[cartItemIndex], error: null }
       }
-
-      try {
-        return await cartService.updateCartItem(cartItemId, updates)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to update cart item' }
-      }
+      return { data: null, error: 'Cart item not found' }
     },
 
     async removeFromCart(cartItemId: string) {
-      if (!isSupabaseConfigured()) {
-        const cartItemIndex = mockData.cartItems.findIndex(c => c.id === cartItemId)
-        if (cartItemIndex !== -1) {
-          mockData.cartItems.splice(cartItemIndex, 1)
-        }
-        return { error: null }
+      const cartItemIndex = mockData.cartItems.findIndex(c => c.id === cartItemId)
+      if (cartItemIndex !== -1) {
+        mockData.cartItems.splice(cartItemIndex, 1)
       }
-
-      try {
-        return await cartService.removeFromCart(cartItemId)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { error: 'Failed to remove from cart' }
-      }
+      return { error: null }
     },
 
     async clearCart(userId: string) {
-      if (!isSupabaseConfigured()) {
-        mockData.cartItems = mockData.cartItems.filter(c => c.user_id !== userId)
-        return { error: null }
-      }
-
-      try {
-        return await cartService.clearCart(userId)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { error: 'Failed to clear cart' }
-      }
+      mockData.cartItems = mockData.cartItems.filter(c => c.user_id !== userId)
+      return { error: null }
     }
   },
 
   // خدمة المستخدمين
   users: {
     async getProfile(userId: string) {
-      if (!isSupabaseConfigured()) {
-        const user = mockData.users.find(u => u.id === userId)
-        return { data: user || null, error: user ? null : 'User not found' }
-      }
-
-      try {
-        return await userService.getUserProfile(userId)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to get user profile' }
-      }
+      const user = mockData.users.find(u => u.id === userId)
+      return { data: user || null, error: user ? null : 'User not found' }
     },
 
     async updateProfile(userId: string, updates: any) {
-      if (!isSupabaseConfigured()) {
-        const userIndex = mockData.users.findIndex(u => u.id === userId)
-        if (userIndex !== -1) {
-          mockData.users[userIndex] = {
-            ...mockData.users[userIndex],
-            ...updates,
-            updated_at: new Date().toISOString()
-          }
-          return { data: mockData.users[userIndex], error: null }
+      const userIndex = mockData.users.findIndex(u => u.id === userId)
+      if (userIndex !== -1) {
+        mockData.users[userIndex] = {
+          ...mockData.users[userIndex],
+          ...updates,
+          updated_at: new Date().toISOString()
         }
-        return { data: null, error: 'User not found' }
+        return { data: mockData.users[userIndex], error: null }
       }
-
-      try {
-        return await userService.updateUserProfile(userId, updates)
-      } catch (error) {
-        console.warn('Supabase error:', error)
-        return { data: null, error: 'Failed to update user profile' }
-      }
+      return { data: null, error: 'User not found' }
     }
   }
 }
 
 // دالة مساعدة للتحقق من حالة قاعدة البيانات
 export const getDatabaseStatus = () => {
-  const supabaseStatus = isSupabaseConfigured()
-
   return {
-    connected: supabaseStatus,
-    mode: supabaseStatus ? 'production' : 'development',
-    message: supabaseStatus
-      ? 'متصل بقاعدة البيانات - Connected to database'
-      : 'وضع التطوير - بيانات تجريبية - Development mode - Mock data',
+    connected: false,
+    mode: 'local',
+    message: 'وضع قاعدة البيانات المحلية - بيانات تجريبية - Local database mode - Mock data',
     mockDataStats: {
       designs: mockData.designs.length,
       appointments: mockData.appointments.length,

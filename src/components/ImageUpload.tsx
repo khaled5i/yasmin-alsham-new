@@ -2,41 +2,125 @@
 
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, Image as ImageIcon, Plus } from 'lucide-react'
+import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
+import { imageService, UploadProgress } from '@/lib/services/image-service'
 
 interface ImageUploadProps {
   images: string[]
   onImagesChange: (images: string[]) => void
   maxImages?: number
+  useSupabaseStorage?: boolean // استخدام Supabase Storage أو base64
 }
 
-export default function ImageUpload({ images, onImagesChange, maxImages = 10 }: ImageUploadProps) {
+interface FileProgress {
+  file: File
+  progress: UploadProgress
+}
+
+export default function ImageUpload({
+  images,
+  onImagesChange,
+  maxImages = 10,
+  useSupabaseStorage = true
+}: ImageUploadProps) {
   const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<Map<string, FileProgress>>(new Map())
+  const [errors, setErrors] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { t } = useTranslation()
 
-  const handleFileSelect = (files: FileList | null) => {
-    if (!files) return
+  const handleFileSelect = async (files: FileList | null) => {
+    if (!files || uploading) return
+
+    const remainingSlots = maxImages - images.length
+    const filesToUpload = Array.from(files).slice(0, remainingSlots)
+
+    if (filesToUpload.length === 0) return
+
+    setUploading(true)
+    setErrors([])
 
     const newImages: string[] = []
-    const remainingSlots = maxImages - images.length
+    const progressMap = new Map<string, FileProgress>()
 
-    Array.from(files).slice(0, remainingSlots).forEach(file => {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          const result = e.target?.result as string
-          if (result) {
-            newImages.push(result)
-            if (newImages.length === Math.min(files.length, remainingSlots)) {
-              onImagesChange([...images, ...newImages])
-            }
-          }
+    // تهيئة progress لكل ملف
+    filesToUpload.forEach(file => {
+      progressMap.set(file.name, {
+        file,
+        progress: {
+          fileName: file.name,
+          progress: 0,
+          status: 'uploading'
         }
-        reader.readAsDataURL(file)
-      }
+      })
     })
+    setUploadProgress(progressMap)
+
+    // رفع الصور
+    for (const file of filesToUpload) {
+      if (!file.type.startsWith('image/')) {
+        setErrors(prev => [...prev, `${file.name}: نوع الملف غير مدعوم`])
+        continue
+      }
+
+      if (useSupabaseStorage) {
+        // رفع إلى Supabase Storage
+        const { data, error } = await imageService.uploadImage(file, (progress) => {
+          setUploadProgress(prev => {
+            const newMap = new Map(prev)
+            const fileProgress = newMap.get(file.name)
+            if (fileProgress) {
+              fileProgress.progress = progress
+              newMap.set(file.name, fileProgress)
+            }
+            return newMap
+          })
+        })
+
+        if (error) {
+          setErrors(prev => [...prev, `${file.name}: ${error}`])
+        } else if (data) {
+          newImages.push(data.url)
+        }
+      } else {
+        // تحويل إلى base64 (الطريقة القديمة)
+        const { data, error } = await imageService.uploadAsBase64(file)
+
+        if (error) {
+          setErrors(prev => [...prev, `${file.name}: ${error}`])
+        } else if (data) {
+          newImages.push(data.url)
+        }
+
+        // تحديث progress يدوياً
+        setUploadProgress(prev => {
+          const newMap = new Map(prev)
+          const fileProgress = newMap.get(file.name)
+          if (fileProgress) {
+            fileProgress.progress = {
+              fileName: file.name,
+              progress: 100,
+              status: 'success'
+            }
+            newMap.set(file.name, fileProgress)
+          }
+          return newMap
+        })
+      }
+    }
+
+    // إضافة الصور الجديدة
+    if (newImages.length > 0) {
+      onImagesChange([...images, ...newImages])
+    }
+
+    // إعادة تعيين الحالة بعد 2 ثانية
+    setTimeout(() => {
+      setUploading(false)
+      setUploadProgress(new Map())
+    }, 2000)
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -68,29 +152,36 @@ export default function ImageUpload({ images, onImagesChange, maxImages = 10 }: 
     <div className="space-y-4">
       {/* منطقة رفع الصور */}
       <div
-        className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 cursor-pointer ${
-          dragOver
-            ? 'border-pink-400 bg-pink-50'
+        className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 ${
+          uploading
+            ? 'border-blue-400 bg-blue-50 cursor-wait'
+            : dragOver
+            ? 'border-pink-400 bg-pink-50 cursor-pointer'
             : images.length >= maxImages
             ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
-            : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50'
+            : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50 cursor-pointer'
         }`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onClick={images.length < maxImages ? openFileDialog : undefined}
+        onClick={!uploading && images.length < maxImages ? openFileDialog : undefined}
       >
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/jpg,image/png,image/webp"
           multiple
           onChange={(e) => handleFileSelect(e.target.files)}
           className="hidden"
-          disabled={images.length >= maxImages}
+          disabled={images.length >= maxImages || uploading}
         />
 
-        {images.length >= maxImages ? (
+        {uploading ? (
+          <div className="space-y-4">
+            <Loader2 className="w-12 h-12 text-blue-500 mx-auto animate-spin" />
+            <p className="text-lg font-medium text-blue-700">جاري رفع الصور...</p>
+          </div>
+        ) : images.length >= maxImages ? (
           <div className="space-y-2">
             <ImageIcon className="w-12 h-12 text-gray-400 mx-auto" />
             <p className="text-gray-500">{t('max_images_reached')} ({maxImages})</p>
@@ -103,7 +194,7 @@ export default function ImageUpload({ images, onImagesChange, maxImages = 10 }: 
                 {dragOver ? t('drop_images_here') : t('click_or_drag_images')}
               </p>
               <p className="text-sm text-gray-500">
-                {t('image_upload_format')} ({t('max_images_text')} {maxImages} {t('images_text')})
+                JPG, PNG, WEBP (الحد الأقصى: 5MB لكل صورة)
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 {images.length} {t('of')} {maxImages} {t('images_text')}
@@ -112,6 +203,70 @@ export default function ImageUpload({ images, onImagesChange, maxImages = 10 }: 
           </div>
         )}
       </div>
+
+      {/* شريط التقدم (Progress Bars) */}
+      {uploadProgress.size > 0 && (
+        <div className="space-y-2">
+          <h4 className="font-medium text-gray-700 text-sm">جاري الرفع:</h4>
+          {Array.from(uploadProgress.values()).map(({ file, progress }) => (
+            <div key={file.name} className="bg-white border border-gray-200 rounded-lg p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
+                {progress.status === 'success' && (
+                  <CheckCircle className="w-4 h-4 text-green-500 ml-2" />
+                )}
+                {progress.status === 'error' && (
+                  <AlertCircle className="w-4 h-4 text-red-500 ml-2" />
+                )}
+                {progress.status === 'uploading' && (
+                  <Loader2 className="w-4 h-4 text-blue-500 ml-2 animate-spin" />
+                )}
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    progress.status === 'success'
+                      ? 'bg-green-500'
+                      : progress.status === 'error'
+                      ? 'bg-red-500'
+                      : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${progress.progress}%` }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-xs text-gray-500">
+                  {progress.status === 'compressing' && 'جاري الضغط...'}
+                  {progress.status === 'uploading' && 'جاري الرفع...'}
+                  {progress.status === 'success' && 'تم بنجاح'}
+                  {progress.status === 'error' && progress.error}
+                </span>
+                <span className="text-xs text-gray-500">{progress.progress}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* رسائل الأخطاء */}
+      {errors.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="flex items-start">
+            <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 ml-2" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800 mb-1">حدثت أخطاء أثناء الرفع:</p>
+              <ul className="text-xs text-red-700 space-y-1">
+                {errors.map((error, index) => (
+                  <li key={index}>• {error}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* معرض الصور */}
       {images.length > 0 && (

@@ -2,160 +2,265 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { productService, Product as SupabaseProduct } from '@/lib/services/store-service'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
-// تعريف نوع المنتج
+// تعريف نوع المنتج (متوافق مع Supabase)
 export interface Product {
   id: string
-  name: string
+  name: string // سيتم تعيينه من title
   price: number
-  image: string
+  image: string // سيتم تعيينه من thumbnail_image أو أول صورة
   description?: string
-  category?: string
+  category?: string // سيتم تعيينه من category_name
   sizes?: string[]
   colors?: string[]
+  // حقول إضافية من Supabase
+  images?: string[]
+  fabric?: string
+  features?: string[]
+  occasions?: string[]
+  care_instructions?: string[]
+  rating?: number
+  reviews_count?: number
+  is_available?: boolean
+  is_featured?: boolean
+  is_on_sale?: boolean
+  sale_price?: number
+  stock_quantity?: number
 }
 
-// تعريف عنصر السلة
-export interface CartItem extends Product {
-  quantity: number
-  selectedSize?: string
-  selectedColor?: string
+
+
+// تعريف نوع الفلاتر
+export interface FilterState {
+  category: string[]
+  priceRange: [number, number] | null
+  colors: string[]
+  sizes: string[]
+  searchQuery: string
 }
+
+// تعريف نوع الترتيب
+export type SortOption = 'newest' | 'price-high' | 'price-low'
 
 // تعريف حالة المتجر
 interface ShopState {
-  // المفضلة
-  favorites: Product[]
-  addToFavorites: (product: Product) => void
-  removeFromFavorites: (productId: string) => void
-  isFavorite: (productId: string) => boolean
-  clearFavorites: () => void
+  // المنتجات من Supabase
+  products: Product[]
+  loadProducts: () => Promise<void>
+  getProductById: (id: string) => Product | undefined
 
-  // السلة
-  cart: CartItem[]
-  addToCart: (product: Product, quantity?: number, size?: string, color?: string) => void
-  removeFromCart: (productId: string) => void
-  isInCart: (productId: string) => boolean
-  updateCartItemQuantity: (productId: string, quantity: number) => void
-  clearCart: () => void
-  getCartTotal: () => number
-  getCartItemsCount: () => number
+  // الفلاتر والبحث
+  filters: FilterState
+  setFilters: (filters: Partial<FilterState>) => void
+  resetFilters: () => void
+
+  // الترتيب
+  sortBy: SortOption
+  setSortBy: (sort: SortOption) => void
+
+  // المنتجات المفلترة والمرتبة
+  getFilteredProducts: () => Product[]
 
   // حالة التحميل
   isLoading: boolean
   setLoading: (loading: boolean) => void
+  error: string | null
+  setError: (error: string | null) => void
 }
+
+// دالة مساعدة لتحويل منتج Supabase إلى Product
+const convertSupabaseProduct = (sp: SupabaseProduct): Product => ({
+  id: sp.id,
+  name: sp.title,
+  price: sp.is_on_sale && sp.sale_price ? sp.sale_price : sp.price,
+  image: sp.thumbnail_image || sp.images[0] || '',
+  description: sp.description,
+  category: sp.category_name || undefined,
+  sizes: sp.sizes,
+  colors: sp.colors,
+  images: sp.images,
+  fabric: sp.fabric || undefined,
+  features: sp.features,
+  occasions: sp.occasions,
+  care_instructions: sp.care_instructions,
+  rating: sp.rating,
+  reviews_count: sp.reviews_count,
+  is_available: sp.is_available,
+  is_featured: sp.is_featured,
+  is_on_sale: sp.is_on_sale,
+  sale_price: sp.sale_price || undefined
+})
 
 // إنشاء المتجر
 export const useShopStore = create<ShopState>()(
   persist(
     (set, get) => ({
-      // المفضلة
-      favorites: [],
-      
-      addToFavorites: (product: Product) => {
-        const { favorites } = get()
-        if (!favorites.find(item => item.id === product.id)) {
-          set({ favorites: [...favorites, product] })
+      // المنتجات من Supabase
+      products: [],
+
+      loadProducts: async () => {
+        // تحسين: تجنب إعادة التحميل إذا كانت المنتجات محملة بالفعل
+        const { products } = get()
+        if (products.length > 0) {
+          console.log('✅ المنتجات محملة بالفعل من cache - تخطي التحميل')
+          return
         }
-      },
 
-      removeFromFavorites: (productId: string) => {
-        const { favorites } = get()
-        set({ favorites: favorites.filter(item => item.id !== productId) })
-      },
-
-      isFavorite: (productId: string) => {
-        const { favorites } = get()
-        return favorites.some(item => item.id === productId)
-      },
-
-      clearFavorites: () => {
-        set({ favorites: [] })
-      },
-
-      // السلة
-      cart: [],
-
-      addToCart: (product: Product, quantity = 1, size?: string, color?: string) => {
-        const { cart } = get()
-        const existingItem = cart.find(item => 
-          item.id === product.id && 
-          item.selectedSize === size && 
-          item.selectedColor === color
-        )
-
-        if (existingItem) {
-          // إذا كان المنتج موجود، زيادة الكمية
-          set({
-            cart: cart.map(item =>
-              item.id === product.id && 
-              item.selectedSize === size && 
-              item.selectedColor === color
-                ? { ...item, quantity: item.quantity + quantity }
-                : item
-            )
+        set({ isLoading: true, error: null })
+        try {
+          const { data, error } = await productService.getAll({
+            is_available: true
           })
-        } else {
-          // إضافة منتج جديد
-          const newItem: CartItem = {
-            ...product,
-            quantity,
-            selectedSize: size,
-            selectedColor: color
+
+          if (error) {
+            console.error('❌ خطأ في تحميل المنتجات:', error)
+            set({ error, isLoading: false })
+            return
           }
-          set({ cart: [...cart, newItem] })
+
+          if (data) {
+            const products = data.map(convertSupabaseProduct)
+            console.log(`✅ تم تحميل ${products.length} منتج من Supabase`)
+            set({ products, isLoading: false })
+          }
+        } catch (error: any) {
+          console.error('❌ خطأ غير متوقع في تحميل المنتجات:', error)
+          set({ error: error.message, isLoading: false })
         }
       },
 
-      removeFromCart: (productId: string) => {
-        const { cart } = get()
-        set({ cart: cart.filter(item => item.id !== productId) })
+      getProductById: (id: string) => {
+        const { products } = get()
+        return products.find(p => p.id === id)
       },
 
-      isInCart: (productId: string) => {
-        const { cart } = get()
-        return cart.some(item => item.id === productId)
+      // ============================================
+      // الفلاتر والبحث
+      // ============================================
+
+      filters: {
+        category: [],
+        priceRange: null,
+        colors: [],
+        sizes: [],
+        searchQuery: ''
       },
 
-      updateCartItemQuantity: (productId: string, quantity: number) => {
-        const { cart } = get()
-        if (quantity <= 0) {
-          set({ cart: cart.filter(item => item.id !== productId) })
-        } else {
-          set({
-            cart: cart.map(item =>
-              item.id === productId ? { ...item, quantity } : item
+      setFilters: (newFilters: Partial<FilterState>) => {
+        set((state) => ({
+          filters: { ...state.filters, ...newFilters }
+        }))
+      },
+
+      resetFilters: () => {
+        set({
+          filters: {
+            category: [],
+            priceRange: null,
+            colors: [],
+            sizes: [],
+            searchQuery: ''
+          }
+        })
+      },
+
+      // ============================================
+      // الترتيب
+      // ============================================
+
+      sortBy: 'newest',
+
+      setSortBy: (sort: SortOption) => {
+        set({ sortBy: sort })
+      },
+
+      // ============================================
+      // المنتجات المفلترة والمرتبة
+      // ============================================
+
+      getFilteredProducts: () => {
+        const { products, filters, sortBy } = get()
+
+        // تطبيق الفلاتر
+        let filtered = products.filter(product => {
+          // فلتر الفئة (دعم فئات متعددة) - مع فحص أمان
+          const categories = Array.isArray(filters.category) ? filters.category : []
+          if (categories.length > 0 && !categories.includes(product.category || '')) {
+            return false
+          }
+
+          // فلتر السعر
+          if (filters.priceRange) {
+            const [min, max] = filters.priceRange
+            if (product.price < min || product.price > max) {
+              return false
+            }
+          }
+
+          // فلتر الألوان
+          if (filters.colors.length > 0) {
+            const hasMatchingColor = product.colors?.some(color =>
+              filters.colors.includes(color)
             )
-          })
-        }
-      },
+            if (!hasMatchingColor) return false
+          }
 
-      clearCart: () => {
-        set({ cart: [] })
-      },
+          // فلتر المقاسات
+          if (filters.sizes.length > 0) {
+            const hasMatchingSize = product.sizes?.some(size =>
+              filters.sizes.includes(size)
+            )
+            if (!hasMatchingSize) return false
+          }
 
-      getCartTotal: () => {
-        const { cart } = get()
-        return cart.reduce((total, item) => total + (item.price * item.quantity), 0)
-      },
+          // فلتر البحث
+          if (filters.searchQuery) {
+            const query = filters.searchQuery.toLowerCase()
+            const matchesName = product.name.toLowerCase().includes(query)
+            const matchesDescription = product.description?.toLowerCase().includes(query)
+            if (!matchesName && !matchesDescription) return false
+          }
 
-      getCartItemsCount: () => {
-        const { cart } = get()
-        return cart.reduce((total, item) => total + item.quantity, 0)
+          return true
+        })
+
+        // تطبيق الترتيب
+        filtered.sort((a, b) => {
+          switch (sortBy) {
+            case 'newest':
+              // افتراض أن المنتجات الأحدث لها id أكبر
+              return b.id.localeCompare(a.id)
+            case 'price-high':
+              return b.price - a.price
+            case 'price-low':
+              return a.price - b.price
+            default:
+              return 0
+          }
+        })
+
+        return filtered
       },
 
       // حالة التحميل
       isLoading: false,
       setLoading: (loading: boolean) => {
         set({ isLoading: loading })
+      },
+
+      error: null,
+      setError: (error: string | null) => {
+        set({ error })
       }
     }),
     {
       name: 'yasmin-alsham-shop',
       partialize: (state) => ({
-        favorites: state.favorites,
-        cart: state.cart
+        // حفظ الفلاتر والترتيب في localStorage
+        filters: state.filters,
+        sortBy: state.sortBy
       })
     }
   )
@@ -164,35 +269,4 @@ export const useShopStore = create<ShopState>()(
 // دالة مساعدة لتنسيق السعر
 export const formatPrice = (price: number): string => {
   return `${price.toLocaleString('en')} ريال`
-}
-
-// دالة مساعدة لإنشاء رسالة واتساب للسلة
-export const generateWhatsAppMessage = (cart: CartItem[]): string => {
-  if (cart.length === 0) return ''
-
-  let message = '🌸 *طلب جديد من ياسمين الشام* 🌸\n\n'
-  message += '📋 *تفاصيل الطلب:*\n'
-  
-  cart.forEach((item, index) => {
-    message += `\n${index + 1}. *${item.name}*\n`
-    message += `   💰 السعر: ${formatPrice(item.price)}\n`
-    message += `   📦 الكمية: ${item.quantity}\n`
-    
-    if (item.selectedSize) {
-      message += `   📏 المقاس: ${item.selectedSize}\n`
-    }
-    
-    if (item.selectedColor) {
-      message += `   🎨 اللون: ${item.selectedColor}\n`
-    }
-    
-    message += `   💵 المجموع الفرعي: ${formatPrice(item.price * item.quantity)}\n`
-  })
-
-  const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-  message += `\n💰 *إجمالي الطلب: ${formatPrice(total)}*\n\n`
-  message += '📞 يرجى التواصل معي لتأكيد الطلب وترتيب التسليم.\n'
-  message += '🙏 شكراً لكم'
-
-  return encodeURIComponent(message)
 }

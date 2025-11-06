@@ -4,43 +4,13 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Menu, X, Calendar, Search, Scissors, Palette, Home, Heart, ShoppingBag } from 'lucide-react'
-import { useShopStore } from '@/store/shopStore'
+import { Menu, X, Calendar, Search, Scissors, Palette, Home } from 'lucide-react'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [clickCount, setClickCount] = useState(0)
-  const [isHydrated, setIsHydrated] = useState(false)
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const router = useRouter()
-
-  // استخدام متجر التسوق
-  const { favorites, cart, getCartItemsCount } = useShopStore()
-
-  // Safe hydration for cart and favorites counts
-  const [cartItemsCount, setCartItemsCount] = useState(0)
-  const [favoritesCount, setFavoritesCount] = useState(0)
-
-  // Handle client-side hydration
-  useEffect(() => {
-    // Mark as hydrated and set initial counts
-    setIsHydrated(true)
-    setCartItemsCount(getCartItemsCount())
-    setFavoritesCount(favorites.length)
-  }, [])
-
-  // Update counts when store changes (only after hydration)
-  useEffect(() => {
-    if (isHydrated) {
-      setCartItemsCount(getCartItemsCount())
-    }
-  }, [cart, getCartItemsCount, isHydrated])
-
-  useEffect(() => {
-    if (isHydrated) {
-      setFavoritesCount(favorites.length)
-    }
-  }, [favorites, isHydrated])
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen)
 
@@ -113,39 +83,7 @@ export default function Header() {
             </div>
           </motion.div>
 
-          {/* أيقونات المفضلة والسلة - تظهر دائماً */}
-          <div className="flex flex-row items-center gap-x-1 lg:gap-x-4 lg:order-2 lg:justify-end lg:w-auto lg:pr-8">
-            <Link
-              href="/favorites"
-              className="group relative p-2 rounded-lg text-pink-600 lg:text-black hover:text-pink-600 lg:hover:bg-transparent lg:transition-colors lg:duration-300 flex items-center gap-x-2"
-            >
-              <Heart className="w-6 h-6 lg:w-5 lg:h-5" />
-              <span className="hidden lg:inline font-medium text-sm relative">
-                المفضلة
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-pink-400 to-rose-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-right"></span>
-              </span>
-              {isHydrated && favoritesCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                  {favoritesCount > 9 ? '9+' : favoritesCount}
-                </span>
-              )}
-            </Link>
-            <Link
-              href="/cart"
-              className="group relative p-2 rounded-lg text-pink-600 lg:text-black hover:text-pink-600 lg:hover:bg-transparent lg:transition-colors lg:duration-300 flex items-center gap-x-2"
-            >
-              <ShoppingBag className="w-6 h-6 lg:w-5 lg:h-5" />
-              <span className="hidden lg:inline font-medium text-sm relative">
-                السلة
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-pink-400 to-rose-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-right"></span>
-              </span>
-              {isHydrated && cartItemsCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                  {cartItemsCount > 9 ? '9+' : cartItemsCount}
-                </span>
-              )}
-            </Link>
-          </div>
+
 
           {/* القائمة الرئيسية - الشاشات الكبيرة */}
           <nav className="hidden lg:flex flex-1 items-center justify-end gap-x-8 gap-x-reverse lg:order-1">

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, AlertTriangle, Trash2, Eye, EyeOff } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useAuthStore } from '@/store/authStore'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
 interface DeleteOrderModalProps {
   isOpen: boolean
@@ -31,34 +32,74 @@ export default function DeleteOrderModal({ isOpen, onClose, onConfirm, orderInfo
     setError('')
     setIsLoading(true)
 
-    // التحقق من صحة البيانات
-    if (!email || !password) {
-      setError(t('please_fill_all_fields'))
+    try {
+      // التحقق من صحة البيانات
+      if (!email || !password) {
+        setError(t('please_fill_all_fields'))
+        setIsLoading(false)
+        return
+      }
+
+      // التحقق من أن البريد الإلكتروني يطابق بريد المدير المسجل
+      if (email !== user?.email) {
+        setError(t('email_does_not_match'))
+        setIsLoading(false)
+        return
+      }
+
+      // التحقق من كلمة المرور باستخدام Supabase Auth
+      if (isSupabaseConfigured()) {
+        console.log('🔐 Verifying password with Supabase Auth...')
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        })
+
+        if (error) {
+          console.error('❌ Password verification failed:', error.message)
+          setError(t('incorrect_password'))
+          setIsLoading(false)
+          return
+        }
+
+        if (!data.user) {
+          setError(t('incorrect_password'))
+          setIsLoading(false)
+          return
+        }
+
+        console.log('✅ Password verified successfully')
+      } else {
+        // Fallback: التحقق من localStorage (للتطوير فقط)
+        console.warn('⚠️ Supabase not configured, using localStorage fallback')
+
+        const storedUsers = localStorage.getItem('yasmin-users')
+        if (storedUsers) {
+          const users = JSON.parse(storedUsers)
+          const foundUser = users.find((u: any) => u.email === email && u.password === password)
+
+          if (!foundUser) {
+            setError(t('incorrect_password'))
+            setIsLoading(false)
+            return
+          }
+        } else {
+          setError(t('incorrect_password'))
+          setIsLoading(false)
+          return
+        }
+      }
+
+      // إذا وصلنا هنا، فإن كلمة المرور صحيحة
       setIsLoading(false)
-      return
-    }
-
-    // التحقق من أن البريد الإلكتروني يطابق بريد المدير المسجل
-    if (email !== user?.email) {
-      setError(t('email_does_not_match'))
+      onConfirm()
+      handleClose()
+    } catch (error: any) {
+      console.error('❌ Error in password verification:', error)
+      setError(error.message || t('incorrect_password'))
       setIsLoading(false)
-      return
     }
-
-    // محاكاة التحقق من كلمة المرور (في التطبيق الحقيقي، يجب التحقق من الخادم)
-    // هنا نفترض أن كلمة المرور الصحيحة هي "admin123" للمحاكاة
-    if (password !== 'admin123') {
-      setError(t('incorrect_password'))
-      setIsLoading(false)
-      return
-    }
-
-    // محاكاة تأخير الشبكة
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    setIsLoading(false)
-    onConfirm()
-    handleClose()
   }
 
   const handleClose = () => {

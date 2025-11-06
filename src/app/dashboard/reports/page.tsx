@@ -5,7 +5,9 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useDataStore } from '@/store/dataStore'
+import { useOrderStore } from '@/store/orderStore'
+import { useWorkerStore } from '@/store/workerStore'
+import { useAppointmentStore } from '@/store/appointmentStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import {
   ArrowRight,
@@ -22,9 +24,18 @@ import {
 
 export default function ReportsPage() {
   const { user } = useAuthStore()
-  const { orders, workers, appointments, getStats } = useDataStore()
+  const { orders, loadOrders, getStats: getOrderStats } = useOrderStore()
+  const { workers, loadWorkers } = useWorkerStore()
+  const { appointments, loadAppointments } = useAppointmentStore()
   const { t } = useTranslation()
   const router = useRouter()
+
+  // تحميل البيانات عند تحميل الصفحة
+  useEffect(() => {
+    loadOrders()
+    loadWorkers()
+    loadAppointments()
+  }, [loadOrders, loadWorkers, loadAppointments])
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -35,19 +46,16 @@ export default function ReportsPage() {
 
   const [selectedPeriod, setSelectedPeriod] = useState('month')
 
-  // حساب الإحصائيات الحقيقية
-  const stats = getStats()
-
   // حساب أفضل العمال
   const getTopWorkers = () => {
     const workerStats = workers.map(worker => {
       const workerOrders = orders.filter(order =>
-        order.assignedWorker === worker.id && order.status === 'completed'
+        order.worker_id === worker.id && order.status === 'completed'
       )
-      const revenue = workerOrders.reduce((sum, order) => sum + order.price, 0)
+      const revenue = workerOrders.reduce((sum, order) => sum + Number(order.price), 0)
 
       return {
-        name: worker.full_name,
+        name: worker.user?.full_name || worker.id,
         orders: workerOrders.length,
         revenue
       }
@@ -94,14 +102,14 @@ export default function ReportsPage() {
       const monthName = months[date.getMonth()]
 
       const monthOrders = orders.filter(order => {
-        const orderDate = new Date(order.createdAt)
+        const orderDate = new Date(order.created_at)
         return orderDate.getMonth() === date.getMonth() &&
                orderDate.getFullYear() === date.getFullYear()
       })
 
       const revenue = monthOrders
         .filter(order => order.status === 'completed')
-        .reduce((sum, order) => sum + order.price, 0)
+        .reduce((sum, order) => sum + Number(order.price), 0)
 
       trend.push({
         month: monthName,
@@ -113,6 +121,7 @@ export default function ReportsPage() {
     return trend
   }
 
+  const stats = getOrderStats()
   const reportData = {
     totalRevenue: stats.totalRevenue,
     revenueChange: 0, // يمكن حسابها بمقارنة الشهر الحالي مع السابق

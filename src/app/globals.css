@@ -135,3 +135,40 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(to bottom, #ec4899, #db2777);
 }
+
+/* تحسينات Accessibility - Focus Indicators */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 3px solid #f472b6;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #f472b6;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(244, 114, 182, 0.2);
+}
+
+/* تحسين Focus للأزرار */
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline: 3px solid #f472b6;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(244, 114, 182, 0.3);
+}
+
+/* تحسين Focus للبطاقات */
+.card:focus-visible {
+  outline: 3px solid #f472b6;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(244, 114, 182, 0.2);
+  transform: scale(1.02);
+}

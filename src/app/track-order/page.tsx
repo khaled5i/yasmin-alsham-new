@@ -4,7 +4,8 @@ import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
-import { useDataStore } from '@/store/dataStore'
+import { useOrderStore } from '@/store/orderStore'
+import { useWorkerStore } from '@/store/workerStore'
 import NumericInput from '@/components/NumericInput'
 
 export default function TrackOrderPage() {
@@ -14,7 +15,8 @@ export default function TrackOrderPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const { orders, workers } = useDataStore()
+  const { loadOrderByNumber, loadOrdersByPhone, currentOrder, orders } = useOrderStore()
+  const { workers } = useWorkerStore()
 
   // البحث عن الطلب
   const handleSearch = async (e: React.FormEvent) => {
@@ -30,48 +32,64 @@ export default function TrackOrderPage() {
     setOrderData(null)
 
     try {
-      // محاكاة تأخير الشبكة
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      let foundOrder = null
+      console.log('🔍 Searching for order:', searchTerm, 'type:', searchType)
 
       if (searchType === 'order') {
         // البحث برقم الطلب
-        foundOrder = orders.find(order =>
-          order.id.toLowerCase().includes(searchTerm.toLowerCase())
-        )
+        await loadOrderByNumber(searchTerm)
+
+        if (currentOrder) {
+          // تحويل البيانات إلى الصيغة المطلوبة
+          const orderInfo = {
+            order_number: currentOrder.order_number,
+            client_name: currentOrder.client_name,
+            client_phone: currentOrder.client_phone,
+            dress_type: currentOrder.description,
+            order_date: currentOrder.created_at,
+            due_date: currentOrder.due_date,
+            status: currentOrder.status,
+            estimated_price: currentOrder.price,
+            progress_percentage: getProgressPercentage(currentOrder.status),
+            notes: currentOrder.notes,
+            fabric: currentOrder.fabric,
+            measurements: currentOrder.measurements
+          }
+
+          setOrderData(orderInfo)
+          console.log('✅ Order found:', orderInfo)
+        } else {
+          setError('لم يتم العثور على طلب بهذا الرقم. يرجى التأكد من رقم الطلب والمحاولة مرة أخرى.')
+        }
       } else {
         // البحث برقم الهاتف
-        foundOrder = orders.find(order =>
-          order.clientPhone.includes(searchTerm)
-        )
-      }
+        await loadOrdersByPhone(searchTerm)
 
-      if (foundOrder) {
-        // تحويل البيانات إلى الصيغة المطلوبة
-        const orderInfo = {
-          order_number: foundOrder.id,
-          client_name: foundOrder.clientName,
-          client_phone: foundOrder.clientPhone,
-          dress_type: foundOrder.description,
-          order_date: foundOrder.createdAt,
-          due_date: foundOrder.dueDate,
-          status: foundOrder.status,
-          estimated_price: foundOrder.price,
-          progress_percentage: getProgressPercentage(foundOrder.status),
-          notes: foundOrder.notes,
-          fabric: foundOrder.fabric,
-          measurements: foundOrder.measurements
+        if (orders && orders.length > 0) {
+          // عرض أول طلب (يمكن تحسين هذا لعرض جميع الطلبات)
+          const foundOrder = orders[0]
+          const orderInfo = {
+            order_number: foundOrder.order_number,
+            client_name: foundOrder.client_name,
+            client_phone: foundOrder.client_phone,
+            dress_type: foundOrder.description,
+            order_date: foundOrder.created_at,
+            due_date: foundOrder.due_date,
+            status: foundOrder.status,
+            estimated_price: foundOrder.price,
+            progress_percentage: getProgressPercentage(foundOrder.status),
+            notes: foundOrder.notes,
+            fabric: foundOrder.fabric,
+            measurements: foundOrder.measurements
+          }
+
+          setOrderData(orderInfo)
+          console.log('✅ Order found by phone:', orderInfo)
+        } else {
+          setError('لم يتم العثور على طلبات مرتبطة بهذا الرقم. يرجى التأكد من رقم الهاتف والمحاولة مرة أخرى.')
         }
-
-        setOrderData(orderInfo)
-      } else {
-        setError(searchType === 'order'
-          ? 'لم يتم العثور على طلب بهذا الرقم. يرجى التأكد من رقم الطلب والمحاولة مرة أخرى.'
-          : 'لم يتم العثور على طلبات مرتبطة بهذا الرقم. يرجى التأكد من رقم الهاتف والمحاولة مرة أخرى.'
-        )
       }
     } catch (error) {
+      console.error('❌ Error searching for order:', error)
       setError('حدث خطأ أثناء البحث. يرجى المحاولة مرة أخرى.')
     } finally {
       setIsLoading(false)

@@ -5,18 +5,19 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useDataStore } from '@/store/dataStore'
+import { useOrderStore } from '@/store/orderStore'
+import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ImageUpload from '@/components/ImageUpload'
 import VoiceNotes from '@/components/VoiceNotes'
 import NumericInput from '@/components/NumericInput'
-import { 
-  ArrowRight, 
-  Upload, 
-  Save, 
-  User, 
-  FileText, 
+import {
+  ArrowRight,
+  Upload,
+  Save,
+  User,
+  FileText,
   Calendar,
   Ruler,
   MessageSquare,
@@ -27,9 +28,15 @@ import {
 
 function AddOrderContent() {
   const { user } = useAuthStore()
-  const { addOrder, workers } = useDataStore()
+  const { createOrder } = useOrderStore()
+  const { workers, loadWorkers } = useWorkerStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
+
+  // تحميل العمال عند تحميل الصفحة
+  useEffect(() => {
+    loadWorkers()
+  }, [loadWorkers])
 
   // حالة النموذج
   const [formData, setFormData] = useState({
@@ -124,46 +131,43 @@ function AddOrderContent() {
     setMessage(null)
 
     try {
-      // محاكاة تأخير الشبكة
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      console.log('📦 Submitting order...')
 
-      // إضافة الطلب إلى المتجر
-      addOrder({
-        clientName: formData.clientName,
-        clientPhone: formData.clientPhone,
-        description: formData.description,
-        fabric: formData.fabric,
-        measurements: {
-          // المقاسات الأساسية
-          shoulder: formData.measurements.shoulder ? Number(formData.measurements.shoulder) : undefined,
-          shoulderCircumference: formData.measurements.shoulderCircumference ? Number(formData.measurements.shoulderCircumference) : undefined,
-          chest: formData.measurements.chest ? Number(formData.measurements.chest) : undefined,
-          waist: formData.measurements.waist ? Number(formData.measurements.waist) : undefined,
-          hips: formData.measurements.hips ? Number(formData.measurements.hips) : undefined,
-
-          // مقاسات التفصيل المتقدمة
-          dartLength: formData.measurements.dartLength ? Number(formData.measurements.dartLength) : undefined,
-          bodiceLength: formData.measurements.bodiceLength ? Number(formData.measurements.bodiceLength) : undefined,
-          neckline: formData.measurements.neckline ? Number(formData.measurements.neckline) : undefined,
-          armpit: formData.measurements.armpit ? Number(formData.measurements.armpit) : undefined,
-
-          // مقاسات الأكمام
-          sleeveLength: formData.measurements.sleeveLength ? Number(formData.measurements.sleeveLength) : undefined,
-          forearm: formData.measurements.forearm ? Number(formData.measurements.forearm) : undefined,
-          cuff: formData.measurements.cuff ? Number(formData.measurements.cuff) : undefined,
-
-          // مقاسات الطول
-          frontLength: formData.measurements.frontLength ? Number(formData.measurements.frontLength) : undefined,
-          backLength: formData.measurements.backLength ? Number(formData.measurements.backLength) : undefined
-        },
-        price: Number(formData.price),
-        assignedWorker: formData.assignedWorker || undefined,
-        dueDate: formData.dueDate,
-        notes: formData.notes || undefined,
-        voiceNotes: formData.voiceNotes.length > 0 ? formData.voiceNotes : undefined,
-        images: formData.images.length > 0 ? formData.images : undefined,
-        status: 'pending'
+      // تحويل المقاسات إلى أرقام
+      const measurements: Record<string, number> = {}
+      Object.entries(formData.measurements).forEach(([key, value]) => {
+        if (value && value !== '') {
+          measurements[key] = Number(value)
+        }
       })
+
+      // تحويل الملاحظات الصوتية إلى مصفوفة من strings
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+
+      // إنشاء الطلب باستخدام Supabase
+      const result = await createOrder({
+        client_name: formData.clientName,
+        client_phone: formData.clientPhone,
+        description: formData.description,
+        fabric: formData.fabric || undefined,
+        measurements,
+        price: Number(formData.price),
+        worker_id: formData.assignedWorker || undefined,
+        due_date: formData.dueDate,
+        notes: formData.notes || undefined,
+        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        images: formData.images.length > 0 ? formData.images : undefined,
+        status: 'pending',
+        paid_amount: 0,
+        payment_status: 'unpaid'
+      })
+
+      if (!result.success) {
+        setMessage({ type: 'error', text: result.error || t('order_add_error') })
+        return
+      }
+
+      console.log('✅ Order created successfully:', result.data?.id)
 
       setMessage({
         type: 'success',
@@ -176,7 +180,7 @@ function AddOrderContent() {
       }, 2000)
 
     } catch (error) {
-      console.error('Error adding order:', error)
+      console.error('❌ Error adding order:', error)
       setMessage({ type: 'error', text: t('order_add_error') })
     } finally {
       setIsSubmitting(false)
@@ -340,7 +344,7 @@ function AddOrderContent() {
                       <option value="">{t('choose_worker')}</option>
                       {workers.map(worker => (
                         <option key={worker.id} value={worker.id}>
-                          {worker.full_name} - {worker.specialty}
+                          {worker.user?.full_name || worker.specialty} - {worker.specialty}
                         </option>
                       ))}
                     </select>

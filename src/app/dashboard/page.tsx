@@ -5,7 +5,9 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useDataStore } from '@/store/dataStore'
+import { useOrderStore } from '@/store/orderStore'
+import { useAppointmentStore } from '@/store/appointmentStore'
+import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import {
@@ -26,9 +28,18 @@ import {
 
 function DashboardContent() {
   const { user, signOut } = useAuthStore()
-  const { orders, appointments, getStats } = useDataStore()
+  const { orders, loadOrders, getStats: getOrderStats } = useOrderStore()
+  const { appointments, loadAppointments } = useAppointmentStore()
+  const { workers, loadWorkers } = useWorkerStore()
   const { t, language, changeLanguage, isArabic } = useTranslation()
   const router = useRouter()
+
+  // تحميل البيانات عند تحميل الصفحة
+  useEffect(() => {
+    loadOrders()
+    loadAppointments()
+    loadWorkers()
+  }, [loadOrders, loadAppointments, loadWorkers])
 
 
 
@@ -40,19 +51,23 @@ function DashboardContent() {
 
 
   // حساب الإحصائيات الحقيقية
-  const realStats = getStats()
+  const realStats = getOrderStats()
 
   // حساب المواعيد اليوم
   const todayAppointments = appointments.filter(appointment => {
     const today = new Date().toISOString().split('T')[0]
-    return appointment.appointmentDate === today && appointment.status !== 'cancelled'
+    return appointment.appointment_date === today && appointment.status !== 'cancelled'
   }).length
 
   // الإحصائيات حسب الدور
   const getStatsForRole = () => {
     if (user?.role === 'worker') {
       // إحصائيات العامل - طلباته فقط
-      const workerOrders = orders.filter(order => order.assignedWorker === user?.id)
+      // البحث عن العامل الذي user_id يطابق user.id
+      const currentWorker = workers.find(w => w.user_id === user?.id)
+      const workerOrders = currentWorker
+        ? orders.filter(order => order.worker_id === currentWorker.id)
+        : []
       const workerCompletedOrders = workerOrders.filter(order => order.status === 'completed')
       const workerActiveOrders = workerOrders.filter(order => ['pending', 'in_progress'].includes(order.status))
 
@@ -84,7 +99,7 @@ function DashboardContent() {
       return [
         {
           title: t('active_orders'),
-          value: realStats.activeOrders.toString(),
+          value: (realStats.activeOrders || 0).toString(),
           change: '+0%',
           icon: Package,
           color: 'from-blue-400 to-blue-600'
@@ -98,14 +113,14 @@ function DashboardContent() {
         },
         {
           title: t('completed_orders'),
-          value: realStats.completedOrders.toString(),
+          value: (realStats.completedOrders || 0).toString(),
           change: '+0%',
           icon: CheckCircle,
           color: 'from-purple-400 to-purple-600'
         },
         {
           title: t('total_orders'),
-          value: realStats.totalOrders.toString(),
+          value: (realStats.totalOrders || 0).toString(),
           change: '+0%',
           icon: Users,
           color: 'from-pink-400 to-pink-600'
@@ -121,19 +136,24 @@ function DashboardContent() {
     .filter(order => {
       // إذا كان المستخدم عامل، اعرض طلباته فقط
       if (user?.role === 'worker') {
-        return order.assignedWorker === user?.id
+        // البحث عن العامل الذي user_id يطابق user.id
+        const currentWorker = workers.find(w => w.user_id === user?.id)
+        if (currentWorker) {
+          return order.worker_id === currentWorker.id
+        }
+        return false
       }
       // إذا كان مدير، اعرض جميع الطلبات
       return true
     })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 3)
     .map(order => ({
       id: order.id,
-      client: order.clientName,
+      client: order.client_name,
       type: order.description,
       status: order.status,
-      dueDate: order.dueDate
+      dueDate: order.due_date
     }))
 
   const getStatusColor = (status: string) => {
@@ -518,7 +538,7 @@ function DashboardContent() {
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
                         {getStatusInfo(order.status).label}
                       </span>
-                      <p className="text-xs text-gray-500 mt-1">{formatDate(order.dueDate)}</p>
+                      <p className="text-xs text-gray-500 mt-1">{formatDate(order.due_date)}</p>
                     </div>
 
 
@@ -579,6 +599,14 @@ function DashboardContent() {
                 >
                   <Palette className="w-6 h-6 text-purple-600 mx-auto mb-2" />
                   <span className="text-sm font-medium text-purple-800">إدارة التصاميم الجاهزة</span>
+                </Link>
+
+                <Link
+                  href="/dashboard/fabrics"
+                  className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
+                >
+                  <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-rose-800">إدارة الأقمشة</span>
                 </Link>
 
                 <Link
@@ -669,7 +697,7 @@ function DashboardContent() {
                       </span>
                       <p className="text-xs text-gray-500 mt-1 flex items-center space-x-1 space-x-reverse">
                         <Clock className="w-3 h-3" />
-                        <span>{order.dueDate}</span>
+                        <span>{order.due_date}</span>
                       </p>
                     </div>
 
@@ -725,6 +753,14 @@ function DashboardContent() {
                 </Link>
 
                 <Link
+                  href="/dashboard/fabrics"
+                  className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
+                >
+                  <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-rose-800">إدارة الأقمشة</span>
+                </Link>
+
+                <Link
                   href="/dashboard/workers"
                   className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
@@ -753,6 +789,13 @@ function DashboardContent() {
                 >
                   <Palette className="w-6 h-6 text-purple-600 mx-auto mb-2" />
                   <span className="text-sm font-medium text-purple-800">إدارة التصاميم الجاهزة</span>
+                </Link>
+                <Link
+                  href="/dashboard/fabrics"
+                  className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
+                >
+                  <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-rose-800">Fabric Management</span>
                 </Link>
               </div>
 

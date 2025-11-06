@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
 // تعريف نوع المستخدم
 export interface AuthUser {
   id: string
   email: string
   full_name: string
-  role: 'admin' | 'worker'
+  role: 'admin' | 'worker' | 'client'
   is_active: boolean
   created_at: string
   updated_at: string
@@ -17,6 +18,7 @@ interface AuthState {
   user: AuthUser | null
   isLoading: boolean
   error: string | null
+  anonymousUserId: string | null
 
   // Actions
   signIn: (email: string, password: string) => Promise<boolean>
@@ -25,6 +27,7 @@ interface AuthState {
   clearError: () => void
   checkAuth: () => Promise<void>
   isAuthenticated: () => boolean
+  ensureAnonymousUser: () => Promise<string>
 }
 
 // بيانات المستخدمين الافتراضية (سيتم استبدالها بنظام إدارة العمال)
@@ -58,6 +61,54 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isLoading: false,
       error: null,
+      anonymousUserId: null,
+
+      ensureAnonymousUser: async () => {
+        const state = get()
+
+        // إذا كان المستخدم مسجل دخول، استخدم user_id الخاص به
+        if (state.user) {
+          return state.user.id
+        }
+
+        // إذا كان لدينا anonymous user ID محفوظ، استخدمه
+        if (state.anonymousUserId) {
+          return state.anonymousUserId
+        }
+
+        // إنشاء anonymous user جديد في Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            console.log('🔐 إنشاء مستخدم مجهول جديد...')
+
+            const { data, error } = await supabase.auth.signInAnonymously()
+
+            if (error) {
+              console.error('❌ خطأ في إنشاء مستخدم مجهول:', error.message)
+              throw error
+            }
+
+            if (data.user) {
+              console.log('✅ تم إنشاء مستخدم مجهول:', data.user.id)
+              set({ anonymousUserId: data.user.id })
+              return data.user.id
+            }
+          } catch (error: any) {
+            console.error('❌ خطأ في إنشاء مستخدم مجهول:', error)
+          }
+        }
+
+        // Fallback: استخدام session_id من localStorage
+        const sessionId = localStorage.getItem('yasmin-session-id')
+        if (sessionId) {
+          return sessionId
+        }
+
+        // إنشاء session_id جديد
+        const newSessionId = crypto.randomUUID()
+        localStorage.setItem('yasmin-session-id', newSessionId)
+        return newSessionId
+      },
 
       signIn: async (email: string, password: string) => {
         set({ isLoading: true, error: null })
@@ -65,17 +116,74 @@ export const useAuthStore = create<AuthState>()(
         try {
           console.log('🔐 بدء عملية تسجيل الدخول...', { email })
 
-          // محاكاة تأخير الشبكة
-          await new Promise(resolve => setTimeout(resolve, 1500))
+          // محاولة تسجيل الدخول عبر Supabase أولاً
+          if (isSupabaseConfigured()) {
+            console.log('🌐 محاولة تسجيل الدخول عبر Supabase...')
 
-          // البحث عن المستخدم في البيانات المحفوظة
+            const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+              email,
+              password
+            })
+
+            if (authError) {
+              console.error('❌ خطأ في تسجيل الدخول عبر Supabase:', authError.message)
+              // الانتقال إلى localStorage كـ fallback
+              console.log('⚠️ التحول إلى localStorage...')
+            } else if (authData.user) {
+              console.log('✅ تم تسجيل الدخول عبر Supabase:', authData.user.email)
+
+              // جلب بيانات المستخدم من جدول users
+              const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', authData.user.id)
+                .single()
+
+              if (userError || !userData) {
+                console.error('❌ خطأ في جلب بيانات المستخدم:', userError?.message)
+                set({
+                  isLoading: false,
+                  error: 'لم يتم العثور على بيانات المستخدم في قاعدة البيانات'
+                })
+                return false
+              }
+
+              const user: AuthUser = {
+                id: userData.id,
+                email: userData.email,
+                full_name: userData.full_name,
+                role: userData.role,
+                is_active: userData.is_active,
+                created_at: userData.created_at,
+                updated_at: userData.updated_at,
+                token: authData.session?.access_token
+              }
+
+
+
+              // حفظ في localStorage
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('yasmin-auth-user', JSON.stringify(user))
+                console.log('💾 تم حفظ المستخدم في localStorage')
+              }
+
+              set({ user, isLoading: false, error: null })
+              console.log('🎉 تم تسجيل الدخول بنجاح عبر Supabase!')
+              return true
+            }
+          }
+
+          // Fallback: استخدام localStorage
+          console.log('📦 استخدام localStorage للمصادقة...')
+          await new Promise(resolve => setTimeout(resolve, 1000))
+
           const users = getStoredUsers()
           const foundUser = users.find(
             (user: any) => user.email.toLowerCase() === email.toLowerCase() && user.password === password
           )
 
           if (foundUser) {
-            console.log('✅ تم العثور على المستخدم:', foundUser.full_name)
+            console.log('✅ تم العثور على المستخدم في localStorage:', foundUser.full_name)
 
             const user: AuthUser = {
               id: foundUser.id,
@@ -88,15 +196,13 @@ export const useAuthStore = create<AuthState>()(
               token: `demo-token-${foundUser.id}-${Date.now()}`
             }
 
-            // حفظ في localStorage أولاً
             if (typeof window !== 'undefined') {
               localStorage.setItem('yasmin-auth-user', JSON.stringify(user))
               console.log('💾 تم حفظ المستخدم في localStorage')
             }
 
-            // تحديث حالة المتجر
             set({ user, isLoading: false, error: null })
-            console.log('🎉 تم تسجيل الدخول بنجاح!')
+            console.log('🎉 تم تسجيل الدخول بنجاح عبر localStorage!')
 
             return true
           } else {
@@ -118,8 +224,11 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true })
 
         try {
-          // محاكاة تأخير تسجيل الخروج
-          await new Promise(resolve => setTimeout(resolve, 500))
+          // تسجيل الخروج من Supabase إذا كان متصلاً
+          if (isSupabaseConfigured()) {
+            console.log('🚪 تسجيل الخروج من Supabase...')
+            await supabase.auth.signOut()
+          }
 
           // مسح البيانات من localStorage
           if (typeof window !== 'undefined') {
@@ -127,6 +236,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           set({ user: null, isLoading: false, error: null })
+          console.log('👋 تم تسجيل الخروج بنجاح')
         } catch (error) {
           console.error('خطأ في تسجيل الخروج:', error)
           set({ isLoading: false, error: 'خطأ في تسجيل الخروج' })

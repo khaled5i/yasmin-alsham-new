@@ -20,15 +20,16 @@ import {
 import ImageUpload from './ImageUpload'
 import VoiceNotes from './VoiceNotes'
 import NumericInput from './NumericInput'
-import { Order, Worker } from '@/store/dataStore'
+import { Order } from '@/lib/services/order-service'
+import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
 
 interface EditOrderModalProps {
   order: Order | null
-  workers: Worker[]
+  workers: WorkerWithUser[]
   isOpen: boolean
   onClose: () => void
-  onSave: (orderId: string, updates: Partial<Order>) => void
+  onSave: (orderId: string, updates: any) => void
 }
 
 export default function EditOrderModal({ order, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
@@ -37,19 +38,33 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
+  // تسجيل البيانات للتحقق من قائمة العمال
+  useEffect(() => {
+    if (isOpen) {
+      console.log('🔍 EditOrderModal opened')
+      console.log('📋 Workers list:', workers)
+      console.log('📊 Workers count:', workers?.length || 0)
+      console.log('✅ Active workers:', workers?.filter(w => w.is_active).length || 0)
+    }
+  }, [isOpen, workers])
+
   useEffect(() => {
     if (order) {
       setFormData({
-        clientName: order.clientName,
-        clientPhone: order.clientPhone,
+        clientName: order.client_name,
+        clientPhone: order.client_phone,
         description: order.description,
-        fabric: order.fabric,
+        fabric: order.fabric || '',
         price: order.price,
         status: order.status,
-        assignedWorker: order.assignedWorker,
-        dueDate: order.dueDate,
-        notes: order.notes,
-        voiceNotes: order.voiceNotes || [],
+        assignedWorker: order.worker_id || '',
+        dueDate: order.due_date,
+        notes: order.notes || '',
+        voiceNotes: order.voice_notes?.map((vn, idx) => ({
+          id: `vn-${idx}`,
+          data: vn,
+          timestamp: Date.now()
+        })) || [],
         images: order.images || [],
         measurements: { ...order.measurements }
       })
@@ -301,7 +316,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                       <option value="">{t('choose_worker')}</option>
                       {workers.filter(w => w.is_active).map(worker => (
                         <option key={worker.id} value={worker.id}>
-                          {worker.full_name} - {worker.specialty}
+                          {worker.user?.full_name || worker.specialty} - {worker.specialty}
                         </option>
                       ))}
                     </select>

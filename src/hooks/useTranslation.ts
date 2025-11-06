@@ -130,6 +130,12 @@ const arTranslations: Translations = {
 
   // مفاتيح صفحة إضافة الطلبات
   'order_add_error': 'حدث خطأ أثناء إضافة الطلب',
+  'add_new_order_description': 'قم بإدخال تفاصيل الطلب الجديد بما في ذلك معلومات الزبونة والمقاسات',
+  'basic_information': 'المعلومات الأساسية',
+  'basic_measurements': 'المقاسات الأساسية',
+  'advanced_measurements': 'المقاسات المتقدمة',
+  'sleeve_measurements': 'مقاسات الأكمام',
+  'length_measurements': 'مقاسات الطول',
   'cm_placeholder': 'سم',
   'shoulder': 'الكتف',
   'shoulder_circumference': 'محيط الكتف',
@@ -410,6 +416,12 @@ const enTranslations: Translations = {
 
   // مفاتيح صفحة إضافة الطلبات
   'order_add_error': 'An error occurred while adding the order',
+  'add_new_order_description': 'Enter the new order details including client information and measurements',
+  'basic_information': 'Basic Information',
+  'basic_measurements': 'Basic Measurements',
+  'advanced_measurements': 'Advanced Measurements',
+  'sleeve_measurements': 'Sleeve Measurements',
+  'length_measurements': 'Length Measurements',
   'cm_placeholder': 'cm',
   'shoulder': 'Shoulder',
   'shoulder_circumference': 'Shoulder Circumference',

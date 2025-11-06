@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useDataStore } from '@/store/dataStore'
+import { useAppointmentStore } from '@/store/appointmentStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import {
   ArrowRight,
@@ -23,18 +23,21 @@ import {
 
 export default function AppointmentsPage() {
   const { user } = useAuthStore()
-  const { appointments, updateAppointment, deleteAppointment } = useDataStore()
+  const { appointments, loadAppointments, updateAppointment, deleteAppointment, isLoading } = useAppointmentStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
 
-  // التحقق من الصلاحيات
+  // التحقق من الصلاحيات وتحميل المواعيد
   useEffect(() => {
     if (!user) {
       router.push('/login')
     } else if (user.role !== 'admin') {
       router.push('/dashboard')
+    } else {
+      // تحميل المواعيد من Supabase
+      loadAppointments()
     }
-  }, [user, router])
+  }, [user, router, loadAppointments])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -51,16 +54,34 @@ export default function AppointmentsPage() {
   }
 
   // وظائف إدارة المواعيد
-  const handleConfirmAppointment = (id: string) => {
-    updateAppointment(id, { status: 'confirmed' })
+  const handleConfirmAppointment = async (id: string) => {
+    const result = await updateAppointment(id, { status: 'confirmed' })
+    if (result.success) {
+      console.log('✅ Appointment confirmed')
+    }
   }
 
-  const handleCompleteAppointment = (id: string) => {
-    updateAppointment(id, { status: 'completed' })
+  const handleCompleteAppointment = async (id: string) => {
+    const result = await updateAppointment(id, { status: 'completed' })
+    if (result.success) {
+      console.log('✅ Appointment completed')
+    }
   }
 
-  const handleCancelAppointment = (id: string) => {
-    updateAppointment(id, { status: 'cancelled' })
+  const handleCancelAppointment = async (id: string) => {
+    const result = await updateAppointment(id, { status: 'cancelled' })
+    if (result.success) {
+      console.log('✅ Appointment cancelled')
+    }
+  }
+
+  const handleDeleteAppointment = async (id: string) => {
+    if (confirm('هل أنت متأكد من حذف هذا الموعد؟')) {
+      const result = await deleteAppointment(id)
+      if (result.success) {
+        console.log('✅ Appointment deleted')
+      }
+    }
   }
 
   const formatDate = (dateString: string) => {
@@ -93,19 +114,19 @@ export default function AppointmentsPage() {
   }
 
   const filteredAppointments = appointments.filter(appointment => {
-    const matchesSearch = appointment.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         appointment.clientPhone.includes(searchTerm) ||
+    const matchesSearch = appointment.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         appointment.customer_phone.includes(searchTerm) ||
                          appointment.id.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || appointment.status === statusFilter
 
     let matchesDate = true
     if (dateFilter === 'today') {
-      matchesDate = isToday(appointment.appointmentDate)
+      matchesDate = isToday(appointment.appointment_date)
     } else if (dateFilter === 'tomorrow') {
-      matchesDate = isTomorrow(appointment.appointmentDate)
+      matchesDate = isTomorrow(appointment.appointment_date)
     } else if (dateFilter === 'week') {
-      const appointmentDate = new Date(appointment.appointmentDate)
+      const appointmentDate = new Date(appointment.appointment_date)
       const today = new Date()
       const weekFromNow = new Date()
       weekFromNow.setDate(today.getDate() + 7)
@@ -246,8 +267,8 @@ export default function AppointmentsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
                 className={`bg-white/80 backdrop-blur-sm rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg ${
-                  isToday(appointment.appointmentDate) 
-                    ? 'border-pink-300 bg-pink-50/50' 
+                  isToday(appointment.appointment_date)
+                    ? 'border-pink-300 bg-pink-50/50'
                     : 'border-pink-100'
                 }`}
               >
@@ -257,23 +278,23 @@ export default function AppointmentsPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h3 className="text-xl font-bold text-gray-800 mb-1">
-                          {appointment.clientName}
+                          {appointment.customer_name}
                         </h3>
                         <div className="space-y-1 text-sm text-gray-600">
                           <div className="flex items-center space-x-2 space-x-reverse">
                             <Phone className="w-4 h-4" />
-                            <span>{appointment.clientPhone}</span>
+                            <span>{appointment.customer_phone}</span>
                           </div>
                           <p className="text-xs text-gray-500">#{appointment.id}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2 space-x-reverse">
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusInfo(appointment.status).bgColor} ${getStatusInfo(appointment.status).color}`}>
                           {getStatusInfo(appointment.status).label}
                         </span>
-                        
-                        {isToday(appointment.appointmentDate) && (
+
+                        {isToday(appointment.appointment_date) && (
                           <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
                             {t('today')}
                           </span>
@@ -295,18 +316,18 @@ export default function AppointmentsPage() {
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2 space-x-reverse text-sm text-gray-600">
                           <Calendar className="w-4 h-4" />
-                          <span>{formatDate(appointment.appointmentDate)}</span>
+                          <span>{formatDate(appointment.appointment_date)}</span>
                         </div>
                         <div className="flex items-center space-x-2 space-x-reverse text-sm text-gray-600">
                           <Clock className="w-4 h-4" />
-                          <span>{formatTime(appointment.appointmentTime)}</span>
+                          <span>{formatTime(appointment.appointment_time)}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center space-x-2 space-x-reverse">
                       <div className="text-xs text-gray-500">
-                        {t('created_on')} {new Date(appointment.createdAt).toLocaleDateString(isArabic ? 'ar-US' : 'en-US')}
+                        {t('created_on')} {new Date(appointment.created_at).toLocaleDateString(isArabic ? 'ar-US' : 'en-US')}
                       </div>
                     </div>
                   </div>
@@ -339,6 +360,13 @@ export default function AppointmentsPage() {
                         {t('cancel_appointment')}
                       </button>
                     )}
+
+                    <button
+                      onClick={() => handleDeleteAppointment(appointment.id)}
+                      className="text-gray-600 hover:text-gray-700 py-2 px-4 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-all duration-300"
+                    >
+                      حذف
+                    </button>
                   </div>
                 </div>
               </motion.div>
