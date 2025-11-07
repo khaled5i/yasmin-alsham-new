@@ -64,7 +64,7 @@ export default function ReadyDesigns() {
 
 
   return (
-    <section className="py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
+    <section id="ready-designs" className="py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         {/* العنوان */}
         <motion.div

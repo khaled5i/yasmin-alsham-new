@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from 'framer-motion'
-import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus } from 'lucide-react'
+import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2 } from 'lucide-react'
 import ImageUpload from '@/components/ImageUpload'
 import Link from 'next/link'
 import { productService, Product, UpdateProductData, CreateProductData } from '@/lib/services/store-service'
@@ -15,6 +15,7 @@ export default function ReadyDesignsAdmin() {
   const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   // حالة إضافة منتج جديد
   const [isAddingNew, setIsAddingNew] = useState(false)
@@ -266,6 +267,39 @@ export default function ReadyDesignsAdmin() {
       }
     } catch (err: any) {
       console.error('❌ خطأ غير متوقع في إضافة المنتج:', err)
+      setError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // دالة حذف المنتج
+  const handleDelete = async (productId: string) => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      console.log('🗑️ حذف المنتج:', productId)
+      const { error } = await productService.delete(productId)
+
+      if (error) {
+        console.error('❌ خطأ في حذف المنتج:', error)
+        setError(error)
+        setIsLoading(false)
+        return
+      }
+
+      console.log('✅ تم حذف المنتج بنجاح')
+      // إزالة المنتج من القائمة المحلية
+      setProducts(prev => prev.filter(p => p.id !== productId))
+      setDeleteConfirmId(null)
+      setSuccess(true)
+
+      setTimeout(() => {
+        setSuccess(false)
+      }, 2000)
+    } catch (err: any) {
+      console.error('❌ خطأ غير متوقع في حذف المنتج:', err)
       setError(err.message)
     } finally {
       setIsLoading(false)
@@ -578,6 +612,253 @@ export default function ReadyDesignsAdmin() {
           </motion.div>
         )}
 
+        {/* نموذج تعديل منتج - عرض كامل */}
+        {editingId && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white/90 rounded-xl border-2 border-pink-300 shadow-2xl p-6 mb-8"
+          >
+            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Edit2 className="w-6 h-6 text-pink-600" />
+              تعديل الفستان
+            </h2>
+
+            <div className="space-y-4">
+              {/* رفع الصور */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">صور الفستان *</label>
+                <ImageUpload
+                  images={editData.images||[]}
+                  onImagesChange={imgs => handleEditChange('images', imgs)}
+                  maxImages={8}
+                  useSupabaseStorage={true}
+                />
+              </div>
+
+              {/* العنوان */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">عنوان الفستان *</label>
+                <input
+                  type="text"
+                  value={editData.title||''}
+                  onChange={e => handleEditChange('title', e.target.value)}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="مثال: فستان زفاف كلاسيكي أبيض"
+                />
+              </div>
+
+              {/* الوصف */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">وصف الفستان *</label>
+                <textarea
+                  value={editData.description||''}
+                  onChange={e => handleEditChange('description', e.target.value)}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="وصف تفصيلي للفستان..."
+                  rows={4}
+                />
+              </div>
+
+              {/* السعر والفئة */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">السعر (ريال) *</label>
+                  <input
+                    type="number"
+                    value={editData.price||''}
+                    onChange={e => handleEditChange('price', Number(e.target.value))}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="0"
+                    min="1"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">الفئة</label>
+                  <select
+                    value={editData.category_name||'فساتين زفاف'}
+                    onChange={e => handleEditChange('category_name', e.target.value)}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  >
+                    <option value="فساتين زفاف">فساتين زفاف</option>
+                    <option value="فساتين سهرة">فساتين سهرة</option>
+                    <option value="فساتين كوكتيل">فساتين كوكتيل</option>
+                    <option value="فساتين خطوبة">فساتين خطوبة</option>
+                    <option value="فساتين مناسبات">فساتين مناسبات</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* المقاسات */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">المقاسات المتوفرة</label>
+                <div className="flex flex-wrap gap-3">
+                  {["XS","S","M","L","XL","XXL"].map(size => (
+                    <label key={size} className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded-lg hover:bg-pink-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={editData.sizes?.includes(size) || false}
+                        onChange={() => handleEditChange('sizes', editData.sizes?.includes(size)
+                          ? (editData.sizes||[]).filter(s => s !== size)
+                          : [...(editData.sizes||[]), size])}
+                        className="accent-pink-600 w-4 h-4"
+                      />
+                      <span className="font-medium">{size}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* الألوان */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">الألوان المتوفرة</label>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={colorsInput}
+                    onChange={e => setColorsInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddColor() } }}
+                    className="border border-gray-300 rounded-lg p-3 flex-1 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="أدخل لون واضغط إضافة"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddColor}
+                    className="btn-secondary px-6 py-3 rounded-lg font-bold"
+                    disabled={!colorsInput.trim()}
+                  >
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(editData.colors||[]).map((color, idx) => (
+                    <span key={idx} className="bg-pink-100 text-pink-700 px-4 py-2 rounded-full flex items-center gap-2">
+                      {color}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveColor(color)}
+                        className="text-pink-600 hover:text-red-600 font-bold text-lg"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* نوع القماش */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">نوع القماش</label>
+                <input
+                  type="text"
+                  value={editData.fabric||''}
+                  onChange={e => handleEditChange('fabric', e.target.value)}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="مثال: حرير، ساتان، شيفون، دانتيل..."
+                />
+              </div>
+
+              {/* المميزات */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">المميزات</label>
+                <textarea
+                  value={Array.isArray(editData.features) ? editData.features.join(', ') : editData.features||''}
+                  onChange={e => handleEditChange('features', e.target.value.split(',').map(f => f.trim()).filter(f => f))}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="مثال: تطريز يدوي، أحجار كريستال، ذيل طويل... (افصل بفاصلة)"
+                  rows={2}
+                />
+                <p className="text-xs text-gray-500 mt-1">افصل المميزات بفاصلة (,)</p>
+              </div>
+
+              {/* المناسبات */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">المناسبات المناسبة</label>
+                <textarea
+                  value={Array.isArray(editData.occasions) ? editData.occasions.join(', ') : editData.occasions||''}
+                  onChange={e => handleEditChange('occasions', e.target.value.split(',').map(o => o.trim()).filter(o => o))}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="مثال: زفاف، خطوبة، حفلات، سهرات... (افصل بفاصلة)"
+                  rows={2}
+                />
+                <p className="text-xs text-gray-500 mt-1">افصل المناسبات بفاصلة (,)</p>
+              </div>
+
+              {/* تعليمات العناية */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">تعليمات العناية</label>
+                <textarea
+                  value={Array.isArray(editData.care_instructions) ? editData.care_instructions.join(', ') : editData.care_instructions||''}
+                  onChange={e => handleEditChange('care_instructions', e.target.value.split(',').map(c => c.trim()).filter(c => c))}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="مثال: تنظيف جاف فقط، لا تستخدم المبيض، كي بحرارة منخفضة... (افصل بفاصلة)"
+                  rows={2}
+                />
+                <p className="text-xs text-gray-500 mt-1">افصل التعليمات بفاصلة (,)</p>
+              </div>
+
+              {/* خيارات إضافية */}
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editData.is_available ?? true}
+                    onChange={e => handleEditChange('is_available', e.target.checked)}
+                    className="accent-pink-600 w-4 h-4"
+                  />
+                  <span className="text-gray-700">متوفر للبيع</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editData.is_featured ?? false}
+                    onChange={e => handleEditChange('is_featured', e.target.checked)}
+                    className="accent-pink-600 w-4 h-4"
+                  />
+                  <span className="text-gray-700">منتج مميز</span>
+                </label>
+              </div>
+
+              {/* رسالة نجاح */}
+              {success && (
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                  <p className="font-bold">✅ تم حفظ التعديلات بنجاح!</p>
+                </div>
+              )}
+
+              {/* أزرار الإجراءات */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={handleSave}
+                  disabled={isLoading}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>جاري الحفظ...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      <span>حفظ التعديلات</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={cancelEdit}
+                  disabled={isLoading}
+                  className="btn-secondary flex-1 flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <X className="w-5 h-5" />
+                  <span>إلغاء</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {/* عرض المنتجات */}
         {!isLoading && products.length === 0 && !error && !isAddingNew && (
           <div className="text-center py-20">
@@ -595,119 +876,99 @@ export default function ReadyDesignsAdmin() {
               transition={{ duration: 0.6 }}
               className="bg-white/80 rounded-xl border border-pink-100 shadow-lg p-4 flex flex-col"
             >
-              {editingId === product.id ? (
-                <>
-                  <ImageUpload images={editData.images||[]} onImagesChange={imgs => handleEditChange('images', imgs)} maxImages={8} />
-                  <input
-                    type="text"
-                    value={editData.title||''}
-                    onChange={e => handleEditChange('title', e.target.value)}
-                    className="block w-full border rounded p-2 mt-3 mb-2 focus:ring-2 focus:ring-pink-300"
-                    placeholder="اسم الفستان"
-                  />
-                  <textarea
-                    value={editData.description||''}
-                    onChange={e => handleEditChange('description', e.target.value)}
-                    className="block w-full border rounded p-2 mb-2 focus:ring-2 focus:ring-pink-300"
-                    placeholder="وصف الفستان"
-                  />
-                  <input
-                    type="number"
-                    value={editData.price||''}
-                    onChange={e => handleEditChange('price', Number(e.target.value))}
-                    className="block w-full border rounded p-2 mb-2 focus:ring-2 focus:ring-pink-300"
-                    placeholder="السعر"
-                    min="1"
-                  />
-                  {/* المقاسات */}
-                  <div className="mb-2">
-                    <label className="block font-medium mb-1">المقاسات المتوفرة</label>
-                    <div className="flex flex-wrap gap-2">
-                      {["XS","S","M","L","XL","XXL"].map(size => (
-                        <label key={size} className="flex items-center gap-1 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={editData.sizes?.includes(size) || false}
-                            onChange={() => handleEditChange('sizes', editData.sizes?.includes(size)
-                              ? (editData.sizes||[]).filter(s => s !== size)
-                              : [...(editData.sizes||[]), size])}
-                            className="accent-pink-600"
-                          />
-                          <span>{size}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  {/* الألوان */}
-                  <div className="mb-2">
-                    <label className="block font-medium mb-1">الألوان المتوفرة</label>
-                    <div className="flex gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={colorsInput}
-                        onChange={e => setColorsInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddColor() } }}
-                        className="border rounded p-2 flex-1 focus:ring-2 focus:ring-pink-300"
-                        placeholder="أدخل لون واضغط إضافة"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddColor}
-                        className="btn-secondary px-4 py-2 rounded-full text-sm font-bold"
-                        disabled={!colorsInput.trim()}
-                      >
-                        إضافة
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(editData.colors||[]).map((color, idx) => (
-                        <span key={idx} className="bg-pink-100 text-pink-700 px-3 py-1 rounded-full flex items-center gap-1 text-sm">
-                          {color}
-                          <button type="button" onClick={() => handleRemoveColor(color)} className="ml-1 text-pink-600 hover:text-red-600 font-bold">×</button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-4">
-                    <button onClick={handleSave} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                      <Save className="w-4 h-4" /> حفظ التعديلات
-                    </button>
-                    <button onClick={cancelEdit} className="btn-secondary flex-1 flex items-center justify-center gap-2">
-                      <X className="w-4 h-4" /> إلغاء
-                    </button>
-                  </div>
-                  {success && <p className="text-green-700 text-center font-bold mt-2">تم حفظ التعديلات بنجاح!</p>}
-                </>
-              ) : (
-                <>
-                  <div className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden rounded-xl mb-3">
-                    <img
-                      src={product.images && product.images.length > 0 ? product.images[0] : '/wedding-dress-1.jpg.jpg'}
-                      alt={product.title}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <h3 className="font-bold text-gray-800 mb-1">{product.title}</h3>
-                  <p className="text-sm text-gray-600 mb-2 line-clamp-2">{product.description}</p>
-                  <div className="text-lg font-bold text-pink-600 mb-2">السعر: {Number(product.price).toLocaleString('en')} ريال</div>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {(product.sizes||[]).map(size => (
-                      <span key={size} className="bg-pink-50 text-pink-700 px-2 py-0.5 rounded text-xs">{size}</span>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {(product.colors||[]).map(color => (
-                      <span key={color} className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs">{color}</span>
-                    ))}
-                  </div>
-                  <button onClick={() => startEdit(product)} className="btn-secondary w-full flex items-center justify-center gap-2 mt-auto">
-                    <Edit2 className="w-4 h-4" /> تعديل
-                  </button>
-                </>
-              )}
+              <div className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden rounded-xl mb-3">
+                <img
+                  src={product.images && product.images.length > 0 ? product.images[0] : '/wedding-dress-1.jpg.jpg'}
+                  alt={product.title}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <h3 className="font-bold text-gray-800 mb-1">{product.title}</h3>
+              <p className="text-sm text-gray-600 mb-2 line-clamp-2">{product.description}</p>
+              <div className="text-lg font-bold text-pink-600 mb-2">السعر: {Number(product.price).toLocaleString('en')} ريال</div>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {(product.sizes||[]).map(size => (
+                  <span key={size} className="bg-pink-50 text-pink-700 px-2 py-0.5 rounded text-xs">{size}</span>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1 mb-3">
+                {(product.colors||[]).map(color => (
+                  <span key={color} className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs">{color}</span>
+                ))}
+              </div>
+
+              {/* أزرار التحكم */}
+              <div className="flex gap-2 mt-auto">
+                <button
+                  onClick={() => startEdit(product)}
+                  disabled={editingId !== null || isAddingNew}
+                  className="btn-secondary flex-1 flex items-center justify-center gap-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  <span>تعديل</span>
+                </button>
+                <button
+                  onClick={() => setDeleteConfirmId(product.id)}
+                  disabled={editingId !== null || isAddingNew}
+                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>حذف</span>
+                </button>
+              </div>
             </motion.div>
           ))}
         </div>
+
+        {/* مودال تأكيد الحذف */}
+        {deleteConfirmId && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-800">تأكيد الحذف</h3>
+              </div>
+
+              <p className="text-gray-600 mb-6">
+                هل أنت متأكد من حذف هذا الفستان؟ لا يمكن التراجع عن هذا الإجراء.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleDelete(deleteConfirmId)}
+                  disabled={isLoading}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-bold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>جاري الحذف...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-5 h-5" />
+                      <span>نعم، احذف</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  disabled={isLoading}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-lg font-bold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </div>
     </div>
   )

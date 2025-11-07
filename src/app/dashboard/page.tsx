@@ -23,7 +23,10 @@ import {
   Plus,
   ArrowRight,
   Languages,
-  Palette
+  Palette,
+  Loader,
+  PackageCheck,
+  Truck
 } from 'lucide-react'
 
 function DashboardContent() {
@@ -437,80 +440,32 @@ function DashboardContent() {
           </div>
         </motion.div>
 
-        {/* الإحصائيات - تصميم مختلف للشاشات الصغيرة والكبيرة */}
 
-        {/* الإحصائيات للشاشات الكبيرة */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="hidden lg:grid lg:grid-cols-4 gap-6 mb-8"
-        >
-          {stats.map((stat, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.3 + index * 0.1 }}
-              className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-pink-100 hover:shadow-lg transition-all duration-300"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className={`w-12 h-12 bg-gradient-to-r ${stat.color} rounded-lg flex items-center justify-center`}>
-                  <stat.icon className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-sm font-medium text-green-600 flex items-center space-x-1">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>{stat.change}</span>
-                </span>
-              </div>
 
-              <h3 className="text-2xl font-bold text-gray-800 mb-1">{stat.value}</h3>
-              <p className="text-gray-600 text-sm">{stat.title}</p>
-            </motion.div>
-          ))}
-        </motion.div>
 
-        {/* الإحصائيات للشاشات الصغيرة - تصميم مضغوط */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="block lg:hidden mb-8"
-        >
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-pink-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center space-x-2 space-x-reverse">
-              <BarChart3 className="w-5 h-5 text-pink-600" />
-              <span>{t('statistics')}</span>
-            </h3>
-
-            <div className="grid grid-cols-3 gap-3">
-              {stats.map((stat, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.5, delay: 0.3 + index * 0.1 }}
-                  className="text-center p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border border-gray-200"
-                >
-                  <div className={`w-8 h-8 bg-gradient-to-r ${stat.color} rounded-lg flex items-center justify-center mx-auto mb-2`}>
-                    <stat.icon className="w-4 h-4 text-white" />
-                  </div>
-
-                  <h4 className="text-lg font-bold text-gray-800 mb-1">{stat.value}</h4>
-                  <p className="text-xs text-gray-600 leading-tight">{stat.title}</p>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
 
         {/* ترتيب مختلف للشاشات الصغيرة والكبيرة */}
         <div className="block lg:hidden space-y-8">
+          {/* مربع التذكير - للمدير فقط */}
+          {user?.role === 'admin' && (
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200"
+            >
+              <h4 className="font-medium text-gray-800 mb-2">{t('reminder')}</h4>
+              <p className="text-sm text-gray-600">
+                {t('you_have')} {todayAppointments} {t('today_appointments_reminder')} {t('and')} {realStats.activeOrders} {t('orders_need_follow')}
+              </p>
+            </motion.div>
+          )}
+
           {/* الطلبات الحديثة - للشاشات الصغيرة (في الأعلى) */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
+            transition={{ duration: 0.6, delay: 0.5 }}
             className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-pink-100"
           >
             <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
@@ -564,7 +519,7 @@ function DashboardContent() {
 
 
 
-          {/* الإجراءات السريعة - للمدير فقط في الشاشات الصغيرة */}
+          {/* لوحة التحكم - للمدير فقط في الشاشات الصغيرة */}
           {user?.role === 'admin' && (
             <motion.div
               initial={{ opacity: 0, y: 30 }}
@@ -574,7 +529,7 @@ function DashboardContent() {
             >
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <Settings className="w-5 h-5 text-pink-600" />
-                <span>{t('quick_actions')}</span>
+                <span>لوحة التحكم</span>
               </h3>
 
               <div className="grid gap-4 grid-cols-2">
@@ -585,12 +540,29 @@ function DashboardContent() {
                   <Plus className="w-6 h-6 text-pink-600 mx-auto mb-2" />
                   <span className="text-sm font-medium text-pink-800">{t('add_new_order')}</span>
                 </Link>
+
                 <Link
-                  href="/dashboard/add-dress"
-                  className="p-4 bg-gradient-to-r from-pink-50 to-pink-100 rounded-lg border border-pink-200 hover:shadow-md transition-all duration-300 text-center block"
+                  href="/dashboard/completed-orders"
+                  className="p-4 bg-gradient-to-r from-green-50 to-emerald-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
-                  <Palette className="w-6 h-6 text-pink-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-pink-800">إضافة فستان جديد</span>
+                  <PackageCheck className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-green-800">الطلبات المكتملة</span>
+                </Link>
+
+                <Link
+                  href="/dashboard/delivered-orders"
+                  className="p-4 bg-gradient-to-r from-purple-50 to-indigo-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
+                >
+                  <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-purple-800">الطلبات المسلمة</span>
+                </Link>
+
+                <Link
+                  href="/dashboard/reports"
+                  className="p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 rounded-lg border border-cyan-200 hover:shadow-md transition-all duration-300 text-center block"
+                >
+                  <BarChart3 className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-cyan-800">{t('reports')}</span>
                 </Link>
 
                 <Link
@@ -619,55 +591,138 @@ function DashboardContent() {
 
                 <Link
                   href="/dashboard/appointments"
-                  className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block col-span-2"
+                  className="p-4 bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-lg border border-indigo-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
-                  <Calendar className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-purple-800">{t('appointments')}</span>
+                  <Calendar className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-indigo-800">{t('appointments')}</span>
                 </Link>
-              </div>
-
-              <div className="mt-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
-                <h4 className="font-medium text-gray-800 mb-2">{t('reminder')}</h4>
-                <p className="text-sm text-gray-600">
-                  {t('you_have')} {todayAppointments} {t('today_appointments_reminder')} {t('and')} {realStats.activeOrders} {t('orders_need_follow')}
-                </p>
               </div>
             </motion.div>
           )}
 
 
 
-          {/* التقارير - للشاشات الصغيرة في الأسفل */}
+          {/* الإحصائيات - نقلها للأسفل */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.7 }}
+            className="mt-8"
+          >
+            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-pink-600" />
+              <span>{t('statistics')}</span>
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {stats.map((stat, index) => {
+                // تحديد الألوان والأيقونات بناءً على نوع الإحصائية
+                let bgGradient = 'from-blue-50 to-cyan-50'
+                let borderColor = 'border-blue-200'
+                let iconBg = 'from-blue-400 to-cyan-400'
+                let textColor = 'text-blue-700'
+                let textColorLight = 'text-blue-800'
+                let textColorLighter = 'text-blue-600'
+                let circleColor = 'bg-blue-200/30'
+                let IconComponent = stat.icon
+                let description = ''
+
+                // تحديد الألوان بناءً على العنوان
+                if (stat.title.includes(t('active_orders')) || stat.title.includes(t('my_active_orders'))) {
+                  bgGradient = 'from-yellow-50 to-orange-50'
+                  borderColor = 'border-yellow-200'
+                  iconBg = 'from-yellow-400 to-orange-400'
+                  textColor = 'text-yellow-700'
+                  textColorLight = 'text-yellow-800'
+                  textColorLighter = 'text-yellow-600'
+                  circleColor = 'bg-yellow-200/30'
+                  IconComponent = Clock
+                  description = t('orders_in_progress') || 'طلبات قيد التنفيذ'
+                } else if (stat.title.includes(t('today_appointments'))) {
+                  bgGradient = 'from-blue-50 to-cyan-50'
+                  borderColor = 'border-blue-200'
+                  iconBg = 'from-blue-400 to-cyan-400'
+                  textColor = 'text-blue-700'
+                  textColorLight = 'text-blue-800'
+                  textColorLighter = 'text-blue-600'
+                  circleColor = 'bg-blue-200/30'
+                  IconComponent = Calendar
+                  description = t('appointments_today') || 'مواعيد اليوم'
+                } else if (stat.title.includes(t('completed_orders')) || stat.title.includes(t('my_completed_orders'))) {
+                  bgGradient = 'from-green-50 to-emerald-50'
+                  borderColor = 'border-green-200'
+                  iconBg = 'from-green-400 to-emerald-400'
+                  textColor = 'text-green-700'
+                  textColorLight = 'text-green-800'
+                  textColorLighter = 'text-green-600'
+                  circleColor = 'bg-green-200/30'
+                  IconComponent = PackageCheck
+                  description = t('finished_orders') || 'طلبات منتهية'
+                } else if (stat.title.includes(t('total_orders')) || stat.title.includes(t('my_total_orders'))) {
+                  bgGradient = 'from-purple-50 to-pink-50'
+                  borderColor = 'border-purple-200'
+                  iconBg = 'from-purple-400 to-pink-400'
+                  textColor = 'text-purple-700'
+                  textColorLight = 'text-purple-800'
+                  textColorLighter = 'text-purple-600'
+                  circleColor = 'bg-purple-200/30'
+                  IconComponent = Package
+                  description = t('all_orders') || 'جميع الطلبات'
+                }
+
+                return (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, delay: 0.8 + index * 0.1 }}
+                    whileHover={{ scale: 1.05, y: -5 }}
+                    className={`relative overflow-hidden bg-gradient-to-br ${bgGradient} rounded-2xl p-5 border-2 ${borderColor} shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group`}
+                  >
+                    <div className={`absolute top-0 right-0 w-20 h-20 ${circleColor} rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-500`}></div>
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className={`w-12 h-12 bg-gradient-to-br ${iconBg} rounded-xl flex items-center justify-center shadow-md`}>
+                          <IconComponent className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-2xl sm:text-3xl font-bold ${textColor}`}>
+                            {stat.value}
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`text-sm font-semibold ${textColorLight}`}>{stat.title}</div>
+                      <div className={`text-xs ${textColorLighter} mt-1`}>{description}</div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
+        </div>
+
+        {/* التخطيط الأصلي للشاشات الكبيرة */}
+        <div className="hidden lg:block space-y-8">
+          {/* مربع التذكير - للمدير فقط */}
           {user?.role === 'admin' && (
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.8 }}
-              className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-pink-100"
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200"
             >
-              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-                <BarChart3 className="w-5 h-5 text-green-600" />
-                <span>{t('reports')}</span>
-              </h3>
-
-              <Link
-                href="/dashboard/reports"
-                className="w-full p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
-              >
-                <BarChart3 className="w-8 h-8 text-green-600 mx-auto mb-2" />
-                <span className="text-base font-medium text-green-800">{t('detailed_reports')}</span>
-              </Link>
+              <h4 className="font-medium text-gray-800 mb-2">{t('reminder')}</h4>
+              <p className="text-sm text-gray-600">
+                {t('you_have')} {todayAppointments} {t('today_appointments_reminder')} {t('and')} {realStats.activeOrders} {t('orders_need_follow')}
+              </p>
             </motion.div>
           )}
-        </div>
 
-        {/* التخطيط الأصلي للشاشات الكبيرة */}
-        <div className="hidden lg:grid lg:grid-cols-2 gap-8">
           {/* الطلبات الحديثة */}
           <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
             className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-pink-100"
           >
             <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
@@ -715,20 +770,20 @@ function DashboardContent() {
             </Link>
           </motion.div>
 
-          {/* الإجراءات السريعة - للمدير فقط */}
+          {/* لوحة التحكم - للمدير فقط */}
           {user?.role === 'admin' && (
             <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.6 }}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
               className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-pink-100"
             >
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <Settings className="w-5 h-5 text-pink-600" />
-                <span>{t('quick_actions')}</span>
+                <span>لوحة التحكم</span>
               </h3>
 
-              <div className="grid gap-4 grid-cols-2">
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                 <Link
                   href="/dashboard/add-order"
                   className="p-4 bg-gradient-to-r from-pink-50 to-pink-100 rounded-lg border border-pink-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -736,12 +791,29 @@ function DashboardContent() {
                   <Plus className="w-6 h-6 text-pink-600 mx-auto mb-2" />
                   <span className="text-sm font-medium text-pink-800">{t('add_new_order')}</span>
                 </Link>
+
                 <Link
-                  href="/dashboard/add-dress"
-                  className="p-4 bg-gradient-to-r from-pink-50 to-pink-100 rounded-lg border border-pink-200 hover:shadow-md transition-all duration-300 text-center block"
+                  href="/dashboard/completed-orders"
+                  className="p-4 bg-gradient-to-r from-green-50 to-emerald-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
-                  <Palette className="w-6 h-6 text-pink-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-pink-800">إضافة فستان جديد</span>
+                  <PackageCheck className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-green-800">الطلبات المكتملة</span>
+                </Link>
+
+                <Link
+                  href="/dashboard/delivered-orders"
+                  className="p-4 bg-gradient-to-r from-purple-50 to-indigo-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
+                >
+                  <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-purple-800">الطلبات المسلمة</span>
+                </Link>
+
+                <Link
+                  href="/dashboard/reports"
+                  className="p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 rounded-lg border border-cyan-200 hover:shadow-md transition-all duration-300 text-center block"
+                >
+                  <BarChart3 className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-cyan-800">{t('reports')}</span>
                 </Link>
 
                 <Link
@@ -769,44 +841,113 @@ function DashboardContent() {
                 </Link>
 
                 <Link
-                  href="/dashboard/reports"
-                  className="p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
-                >
-                  <BarChart3 className="w-6 h-6 text-green-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-green-800">{t('reports')}</span>
-                </Link>
-
-                <Link
                   href="/dashboard/appointments"
-                  className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
+                  className="p-4 bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-lg border border-indigo-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
-                  <Calendar className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-purple-800">{t('appointments')}</span>
+                  <Calendar className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
+                  <span className="text-sm font-medium text-indigo-800">{t('appointments')}</span>
                 </Link>
-                <Link
-                  href="/dashboard/ready-designs"
-                  className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
-                >
-                  <Palette className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-purple-800">إدارة التصاميم الجاهزة</span>
-                </Link>
-                <Link
-                  href="/dashboard/fabrics"
-                  className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
-                >
-                  <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-rose-800">Fabric Management</span>
-                </Link>
-              </div>
-
-              <div className="mt-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
-                <h4 className="font-medium text-gray-800 mb-2">{t('reminder')}</h4>
-                <p className="text-sm text-gray-600">
-                  {t('you_have')} {todayAppointments} {t('today_appointments_reminder')} {t('and')} {realStats.activeOrders} {t('orders_need_follow')}
-                </p>
               </div>
             </motion.div>
           )}
+
+          {/* الإحصائيات - نقلها للأسفل */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.5 }}
+            className="mt-8"
+          >
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+              <TrendingUp className="w-6 h-6 text-pink-600" />
+              <span>{t('statistics')}</span>
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {stats.map((stat, index) => {
+                // تحديد الألوان والأيقونات بناءً على نوع الإحصائية
+                let bgGradient = 'from-blue-50 to-cyan-50'
+                let borderColor = 'border-blue-200'
+                let iconBg = 'from-blue-400 to-cyan-400'
+                let textColor = 'text-blue-700'
+                let textColorLight = 'text-blue-800'
+                let textColorLighter = 'text-blue-600'
+                let circleColor = 'bg-blue-200/30'
+                let IconComponent = stat.icon
+                let description = ''
+
+                // تحديد الألوان بناءً على العنوان
+                if (stat.title.includes(t('active_orders')) || stat.title.includes(t('my_active_orders'))) {
+                  bgGradient = 'from-yellow-50 to-orange-50'
+                  borderColor = 'border-yellow-200'
+                  iconBg = 'from-yellow-400 to-orange-400'
+                  textColor = 'text-yellow-700'
+                  textColorLight = 'text-yellow-800'
+                  textColorLighter = 'text-yellow-600'
+                  circleColor = 'bg-yellow-200/30'
+                  IconComponent = Clock
+                  description = t('orders_in_progress') || 'طلبات قيد التنفيذ'
+                } else if (stat.title.includes(t('today_appointments'))) {
+                  bgGradient = 'from-blue-50 to-cyan-50'
+                  borderColor = 'border-blue-200'
+                  iconBg = 'from-blue-400 to-cyan-400'
+                  textColor = 'text-blue-700'
+                  textColorLight = 'text-blue-800'
+                  textColorLighter = 'text-blue-600'
+                  circleColor = 'bg-blue-200/30'
+                  IconComponent = Calendar
+                  description = t('appointments_today') || 'مواعيد اليوم'
+                } else if (stat.title.includes(t('completed_orders')) || stat.title.includes(t('my_completed_orders'))) {
+                  bgGradient = 'from-green-50 to-emerald-50'
+                  borderColor = 'border-green-200'
+                  iconBg = 'from-green-400 to-emerald-400'
+                  textColor = 'text-green-700'
+                  textColorLight = 'text-green-800'
+                  textColorLighter = 'text-green-600'
+                  circleColor = 'bg-green-200/30'
+                  IconComponent = PackageCheck
+                  description = t('finished_orders') || 'طلبات منتهية'
+                } else if (stat.title.includes(t('total_orders')) || stat.title.includes(t('my_total_orders'))) {
+                  bgGradient = 'from-purple-50 to-pink-50'
+                  borderColor = 'border-purple-200'
+                  iconBg = 'from-purple-400 to-pink-400'
+                  textColor = 'text-purple-700'
+                  textColorLight = 'text-purple-800'
+                  textColorLighter = 'text-purple-600'
+                  circleColor = 'bg-purple-200/30'
+                  IconComponent = Package
+                  description = t('all_orders') || 'جميع الطلبات'
+                }
+
+                return (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, delay: 0.6 + index * 0.1 }}
+                    whileHover={{ scale: 1.05, y: -5 }}
+                    className={`relative overflow-hidden bg-gradient-to-br ${bgGradient} rounded-2xl p-6 border-2 ${borderColor} shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group`}
+                  >
+                    <div className={`absolute top-0 right-0 w-24 h-24 ${circleColor} rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500`}></div>
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className={`w-14 h-14 bg-gradient-to-br ${iconBg} rounded-xl flex items-center justify-center shadow-md`}>
+                          <IconComponent className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-3xl font-bold ${textColor}`}>
+                            {stat.value}
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`text-sm font-semibold ${textColorLight}`}>{stat.title}</div>
+                      <div className={`text-xs ${textColorLighter} mt-1`}>{description}</div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
         </div>
       </div>
     </div>

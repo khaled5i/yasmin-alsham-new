@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useAppointmentStore } from '@/store/appointmentStore'
 import { useTranslation } from '@/hooks/useTranslation'
+import type { Appointment } from '@/lib/services/appointment-service'
 import {
   ArrowRight,
   Calendar,
@@ -18,7 +19,12 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Plus
+  Plus,
+  Edit2,
+  Save,
+  X,
+  Loader2,
+  Trash2
 } from 'lucide-react'
 
 export default function AppointmentsPage() {
@@ -42,6 +48,9 @@ export default function AppointmentsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState('all')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editData, setEditData] = useState<Partial<Appointment>>({})
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   const getStatusInfo = (status: string) => {
     const statusMap = {
@@ -54,10 +63,37 @@ export default function AppointmentsPage() {
   }
 
   // وظائف إدارة المواعيد
-  const handleConfirmAppointment = async (id: string) => {
-    const result = await updateAppointment(id, { status: 'confirmed' })
+  const startEdit = (appointment: Appointment) => {
+    setEditingId(appointment.id)
+    setEditData({
+      customer_name: appointment.customer_name,
+      customer_phone: appointment.customer_phone,
+      customer_email: appointment.customer_email || '',
+      appointment_date: appointment.appointment_date,
+      appointment_time: appointment.appointment_time,
+      service_type: appointment.service_type,
+      notes: appointment.notes || '',
+      status: appointment.status
+    })
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditData({})
+  }
+
+  const handleEditChange = (field: string, value: any) => {
+    setEditData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleSave = async () => {
+    if (!editingId) return
+
+    const result = await updateAppointment(editingId, editData)
     if (result.success) {
-      console.log('✅ Appointment confirmed')
+      console.log('✅ Appointment updated successfully')
+      setEditingId(null)
+      setEditData({})
     }
   }
 
@@ -68,19 +104,11 @@ export default function AppointmentsPage() {
     }
   }
 
-  const handleCancelAppointment = async (id: string) => {
-    const result = await updateAppointment(id, { status: 'cancelled' })
+  const handleDelete = async (appointmentId: string) => {
+    const result = await deleteAppointment(appointmentId)
     if (result.success) {
-      console.log('✅ Appointment cancelled')
-    }
-  }
-
-  const handleDeleteAppointment = async (id: string) => {
-    if (confirm('هل أنت متأكد من حذف هذا الموعد؟')) {
-      const result = await deleteAppointment(id)
-      if (result.success) {
-        console.log('✅ Appointment deleted')
-      }
+      console.log('✅ Appointment deleted')
+      setDeleteConfirmId(null)
     }
   }
 
@@ -246,6 +274,164 @@ export default function AppointmentsPage() {
           </div>
         </motion.div>
 
+        {/* نموذج تعديل الموعد - عرض كامل */}
+        {editingId && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white/90 rounded-xl border-2 border-pink-300 shadow-2xl p-6 mb-8"
+          >
+            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Edit2 className="w-6 h-6 text-pink-600" />
+              {t('edit_appointment') || 'تعديل الموعد'}
+            </h2>
+            <div className="space-y-4">
+              {/* اسم العميل ورقم الهاتف */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">
+                    {t('customer_name') || 'اسم العميل'} *
+                  </label>
+                  <input
+                    type="text"
+                    value={editData.customer_name || ''}
+                    onChange={(e) => handleEditChange('customer_name', e.target.value)}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="مثال: أحمد محمد"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">
+                    {t('phone') || 'رقم الهاتف'} *
+                  </label>
+                  <input
+                    type="tel"
+                    value={editData.customer_phone || ''}
+                    onChange={(e) => handleEditChange('customer_phone', e.target.value)}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="مثال: 0501234567"
+                  />
+                </div>
+              </div>
+
+              {/* البريد الإلكتروني */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">
+                  {t('email') || 'البريد الإلكتروني'}
+                </label>
+                <input
+                  type="email"
+                  value={editData.customer_email || ''}
+                  onChange={(e) => handleEditChange('customer_email', e.target.value)}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="example@email.com"
+                />
+              </div>
+
+              {/* التاريخ والوقت */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">
+                    {t('date') || 'التاريخ'} *
+                  </label>
+                  <input
+                    type="date"
+                    value={editData.appointment_date || ''}
+                    onChange={(e) => handleEditChange('appointment_date', e.target.value)}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">
+                    {t('time') || 'الوقت'} *
+                  </label>
+                  <input
+                    type="time"
+                    value={editData.appointment_time || ''}
+                    onChange={(e) => handleEditChange('appointment_time', e.target.value)}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* نوع الخدمة والحالة */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">
+                    {t('service_type') || 'نوع الخدمة'} *
+                  </label>
+                  <input
+                    type="text"
+                    value={editData.service_type || ''}
+                    onChange={(e) => handleEditChange('service_type', e.target.value)}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="مثال: استشارة، قياس، تجربة"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium mb-2 text-gray-700">
+                    {t('status') || 'الحالة'} *
+                  </label>
+                  <select
+                    value={editData.status || 'pending'}
+                    onChange={(e) => handleEditChange('status', e.target.value)}
+                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  >
+                    <option value="pending">{t('pending') || 'قيد الانتظار'}</option>
+                    <option value="confirmed">{t('confirmed') || 'مؤكد'}</option>
+                    <option value="completed">{t('completed') || 'مكتمل'}</option>
+                    <option value="cancelled">{t('cancelled') || 'ملغي'}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* الملاحظات */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">
+                  {t('notes') || 'ملاحظات'}
+                </label>
+                <textarea
+                  value={editData.notes || ''}
+                  onChange={(e) => handleEditChange('notes', e.target.value)}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder="أي ملاحظات إضافية..."
+                  rows={3}
+                />
+              </div>
+
+              {/* أزرار الحفظ والإلغاء */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={handleSave}
+                  disabled={isLoading}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>{t('saving') || 'جاري الحفظ...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      <span>{t('save_changes') || 'حفظ التعديلات'}</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={cancelEdit}
+                  disabled={isLoading}
+                  className="btn-secondary flex-1 flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <X className="w-5 h-5" />
+                  <span>{t('cancel') || 'إلغاء'}</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {/* قائمة المواعيد */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -334,38 +520,35 @@ export default function AppointmentsPage() {
 
                   {/* الإجراءات */}
                   <div className="flex flex-col gap-2">
-                    {appointment.status === 'pending' && (
-                      <button
-                        onClick={() => handleConfirmAppointment(appointment.id)}
-                        className="btn-primary py-2 px-4 text-sm"
-                      >
-                        {t('confirm_appointment')}
-                      </button>
-                    )}
+                    {/* زر التعديل */}
+                    <button
+                      onClick={() => startEdit(appointment)}
+                      disabled={editingId !== null}
+                      className="btn-secondary flex items-center justify-center gap-2 py-2 px-4 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      <span>{t('edit') || 'تعديل'}</span>
+                    </button>
 
+                    {/* زر وضع علامة حضور (فقط للمواعيد المؤكدة) */}
                     {appointment.status === 'confirmed' && (
                       <button
                         onClick={() => handleCompleteAppointment(appointment.id)}
-                        className="btn-secondary py-2 px-4 text-sm"
+                        disabled={editingId !== null}
+                        className="btn-primary py-2 px-4 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {t('mark_attended')}
+                        {t('mark_attended') || 'وضع علامة حضور'}
                       </button>
                     )}
 
-                    {appointment.status !== 'cancelled' && appointment.status !== 'completed' && (
-                      <button
-                        onClick={() => handleCancelAppointment(appointment.id)}
-                        className="text-red-600 hover:text-red-700 py-2 px-4 text-sm border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-300"
-                      >
-                        {t('cancel_appointment')}
-                      </button>
-                    )}
-
+                    {/* زر الحذف */}
                     <button
-                      onClick={() => handleDeleteAppointment(appointment.id)}
-                      className="text-gray-600 hover:text-gray-700 py-2 px-4 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-all duration-300"
+                      onClick={() => setDeleteConfirmId(appointment.id)}
+                      disabled={editingId !== null}
+                      className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 px-4 text-sm rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      حذف
+                      <Trash2 className="w-4 h-4" />
+                      <span>{t('delete') || 'حذف'}</span>
                     </button>
                   </div>
                 </div>
@@ -397,7 +580,7 @@ export default function AppointmentsPage() {
 
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
             <div className="text-2xl font-bold text-orange-600 mb-1">
-              {appointments.filter(a => isToday(a.appointmentDate)).length}
+              {appointments.filter(a => isToday(a.appointment_date)).length}
             </div>
             <div className="text-sm text-gray-600">{t('today')}</div>
           </div>
@@ -410,6 +593,54 @@ export default function AppointmentsPage() {
           </div>
         </motion.div>
       </div>
+
+      {/* مودال تأكيد الحذف */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-800">{t('confirm_delete') || 'تأكيد الحذف'}</h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              {t('confirm_delete_appointment_message') || 'هل أنت متأكد من حذف هذا الموعد؟ لا يمكن التراجع عن هذا الإجراء.'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleDelete(deleteConfirmId)}
+                disabled={isLoading}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-bold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>{t('deleting') || 'جاري الحذف...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-5 h-5" />
+                    <span>{t('yes_delete') || 'نعم، احذف'}</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setDeleteConfirmId(null)}
+                disabled={isLoading}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-lg font-bold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('cancel') || 'إلغاء'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

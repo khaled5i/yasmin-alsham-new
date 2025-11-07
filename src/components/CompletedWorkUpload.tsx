@@ -77,10 +77,14 @@ export default function CompletedWorkUpload({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <label className="block text-sm font-medium text-gray-700">
-          صور العمل المكتمل
+        <label className={`block text-sm font-medium ${
+          images.length === 0 ? 'text-red-700' : 'text-gray-700'
+        }`}>
+          صور العمل المكتمل <span className="text-red-600">*</span>
         </label>
-        <span className="text-xs text-gray-500">
+        <span className={`text-xs ${
+          images.length === 0 ? 'text-red-600 font-medium' : 'text-gray-500'
+        }`}>
           {images.length}/{maxImages} صور
         </span>
       </div>
@@ -93,9 +97,11 @@ export default function CompletedWorkUpload({
         onClick={openFileDialog}
         className={`
           relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all duration-300
-          ${isDragging 
-            ? 'border-pink-400 bg-pink-50' 
-            : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50'
+          ${isDragging
+            ? 'border-pink-400 bg-pink-50'
+            : images.length === 0
+              ? 'border-red-300 bg-red-50 hover:border-red-400'
+              : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
           ${images.length >= maxImages ? 'opacity-50 cursor-not-allowed' : ''}
@@ -112,17 +118,28 @@ export default function CompletedWorkUpload({
         />
 
         <div className="space-y-2">
-          <Camera className="w-12 h-12 text-gray-400 mx-auto" />
+          <Camera className={`w-12 h-12 mx-auto ${
+            images.length === 0 ? 'text-red-400' : 'text-gray-400'
+          }`} />
           <div>
-            <p className="text-sm font-medium text-gray-700">
-              {images.length >= maxImages 
+            <p className={`text-sm font-medium ${
+              images.length === 0 ? 'text-red-700' : 'text-gray-700'
+            }`}>
+              {images.length >= maxImages
                 ? 'تم الوصول للحد الأقصى من الصور'
-                : 'اضغط لرفع صور العمل المكتمل'
+                : images.length === 0
+                  ? 'اضغط لرفع صور العمل المكتمل (إلزامي)'
+                  : 'اضغط لرفع المزيد من الصور'
               }
             </p>
             {images.length < maxImages && (
-              <p className="text-xs text-gray-500 mt-1">
-                أو اسحب الصور هنا • JPG, PNG, GIF
+              <p className={`text-xs mt-1 ${
+                images.length === 0 ? 'text-red-600' : 'text-gray-500'
+              }`}>
+                {images.length === 0
+                  ? 'يجب رفع صورة واحدة على الأقل • JPG, PNG, GIF'
+                  : 'أو اسحب الصور هنا • JPG, PNG, GIF'
+                }
               </p>
             )}
           </div>

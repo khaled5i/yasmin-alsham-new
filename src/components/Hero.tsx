@@ -7,7 +7,7 @@ import { Calendar, Sparkles, Heart, Star } from 'lucide-react'
 
 export default function Hero() {
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-2 sm:pt-4 lg:pt-6">
+    <section className="relative min-h-screen overflow-hidden pt-20 sm:pt-24 lg:pt-28">
       {/* خلفية متدرجة */}
       <div className="absolute inset-0 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50"></div>
       
@@ -65,7 +65,7 @@ export default function Hero() {
         </motion.div>
       </div>
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 -mt-16 sm:-mt-24 lg:-mt-32">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-8 sm:pt-12 lg:pt-16">
         {/* تخطيط للشاشات الصغيرة والمتوسطة */}
         <div className="lg:hidden">
           <div className="text-center space-y-8">

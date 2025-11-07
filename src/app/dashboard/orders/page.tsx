@@ -28,7 +28,12 @@ import {
   User,
   X,
   Languages,
-  Trash2
+  Trash2,
+  TrendingUp,
+  Loader,
+  PackageCheck,
+  Truck,
+  Camera
 } from 'lucide-react'
 
 export default function OrdersPage() {
@@ -204,7 +209,21 @@ export default function OrdersPage() {
     })
   }
 
+  // الحصول على معرف العامل الحالي
+  const getCurrentWorkerId = () => {
+    if (user?.role !== 'worker') return null
+    const currentWorker = workers.find(w => w.user_id === user.id)
+    return currentWorker?.id || null
+  }
+
+  const currentWorkerId = getCurrentWorkerId()
+
   const filteredOrders = orders.filter(order => {
+    // استبعاد الطلبات المسلمة - يجب أن تظهر فقط في صفحة "الطلبات المسلمة"
+    if (order.status === 'delivered') {
+      return false
+    }
+
     // فلترة حسب الدور - العمال يرون طلباتهم فقط
     // يجب مقارنة order.worker_id مع worker.id (وليس user.id)
     let matchesRole = user?.role === 'admin'
@@ -296,60 +315,58 @@ export default function OrdersPage() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 mb-8"
         >
-          <div className="grid md:grid-cols-2 gap-4">
-            {/* البحث */}
-            <div className="space-y-3">
-              {/* أزرار تبديل نوع البحث */}
-              <div className="flex space-x-2 space-x-reverse">
-                <button
-                  onClick={() => {
-                    setSearchType('text')
-                    setSearchTerm('')
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    searchType === 'text'
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {t('search_by_text')}
-                </button>
-                <button
-                  onClick={() => {
-                    setSearchType('orderNumber')
-                    setSearchTerm('')
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    searchType === 'orderNumber'
-                      ? 'bg-pink-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {t('search_by_order_number')}
-                </button>
-              </div>
+          {/* أزرار تبديل نوع البحث */}
+          <div className="flex space-x-2 space-x-reverse mb-4">
+            <button
+              onClick={() => {
+                setSearchType('text')
+                setSearchTerm('')
+              }}
+              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
+                searchType === 'text'
+                  ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {t('search_by_text')}
+            </button>
+            <button
+              onClick={() => {
+                setSearchType('orderNumber')
+                setSearchTerm('')
+              }}
+              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
+                searchType === 'orderNumber'
+                  ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {t('search_by_order_number')}
+            </button>
+          </div>
 
-              {/* حقل البحث */}
-              <div className="relative">
-                <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                {searchType === 'orderNumber' ? (
-                  <NumericInput
-                    value={searchTerm}
-                    onChange={setSearchTerm}
-                    type="orderNumber"
-                    placeholder={t('enter_order_number')}
-                    className="pr-10"
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder={t('search_placeholder')}
-                  />
-                )}
-              </div>
+          {/* حقول البحث والفلترة */}
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* حقل البحث */}
+            <div className="relative">
+              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              {searchType === 'orderNumber' ? (
+                <NumericInput
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                  type="orderNumber"
+                  placeholder={t('enter_order_number')}
+                  className="pr-10"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                  placeholder={t('search_placeholder')}
+                />
+              )}
             </div>
 
             {/* فلتر الحالة */}
@@ -477,7 +494,7 @@ export default function OrdersPage() {
 
                         <button
                           onClick={() => handleDeleteOrder(order)}
-                          className="bg-red-500 hover:bg-red-600 text-white py-2 px-4 text-sm inline-flex items-center justify-center space-x-1 space-x-reverse rounded-lg transition-colors duration-200"
+                          className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 px-4 text-sm rounded-lg transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse"
                         >
                           <Trash2 className="w-4 h-4" />
                           <span>{t('delete')}</span>
@@ -485,17 +502,26 @@ export default function OrdersPage() {
                       </>
                     )}
 
-                    {/* أزرار العامل */}
-                    {user.role === 'worker' && order.worker_id === user.id && (
+                    {/* أزرار العامل - تحديث حالة الطلب */}
+                    {user.role === 'worker' && currentWorkerId && order.worker_id === currentWorkerId && (
                       <>
                         {order.status === 'pending' && (
                           <button
                             onClick={() => handleStartWork(order.id)}
                             disabled={isProcessing}
-                            className="bg-blue-600 text-white py-2 px-4 text-sm rounded-lg hover:bg-blue-700 transition-colors duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50"
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 text-sm rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
                           >
-                            <Package className="w-4 h-4" />
-                            <span>{t('start_work')}</span>
+                            {isProcessing ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                <span>{t('processing') || 'جاري المعالجة...'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Package className="w-4 h-4" />
+                                <span>{t('start_work') || 'بدء العمل'}</span>
+                              </>
+                            )}
                           </button>
                         )}
 
@@ -503,10 +529,19 @@ export default function OrdersPage() {
                           <button
                             onClick={() => handleOpenCompleteModal(order)}
                             disabled={isProcessing}
-                            className="bg-green-600 text-white py-2 px-4 text-sm rounded-lg hover:bg-green-700 transition-colors duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50"
+                            className="bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 text-sm rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
                           >
-                            <CheckCircle className="w-4 h-4" />
-                            <span>{t('complete_order')}</span>
+                            {isProcessing ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                <span>{t('processing') || 'جاري المعالجة...'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="w-4 h-4" />
+                                <span>{t('complete_order') || 'إنهاء الطلب'}</span>
+                              </>
+                            )}
                           </button>
                         )}
                       </>
@@ -523,50 +558,129 @@ export default function OrdersPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.6 }}
-          className="mt-12 grid grid-cols-2 lg:grid-cols-4 gap-6"
+          className="mt-12"
         >
-          <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
-            <div className="text-2xl font-bold text-yellow-600 mb-1">
-              {orders.filter(o => {
-                const currentWorker = workers.find(w => w.user_id === user.id)
-                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                return matchesRole && o.status === 'pending'
-              }).length}
-            </div>
-            <div className="text-sm text-gray-600">{t('pending')}</div>
-          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <TrendingUp className="w-6 h-6 text-pink-600" />
+            <span>{t('statistics') || 'الإحصائيات'}</span>
+          </h2>
 
-          <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
-            <div className="text-2xl font-bold text-blue-600 mb-1">
-              {orders.filter(o => {
-                const currentWorker = workers.find(w => w.user_id === user.id)
-                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                return matchesRole && o.status === 'in_progress'
-              }).length}
-            </div>
-            <div className="text-sm text-gray-600">{t('in_progress')}</div>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* قيد الانتظار */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.7 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              className="relative overflow-hidden bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-yellow-400 to-orange-400 rounded-xl flex items-center justify-center shadow-md">
+                    <Clock className="w-7 h-7 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-3xl font-bold text-yellow-700">
+                      {orders.filter(o => {
+                        const currentWorker = workers.find(w => w.user_id === user.id)
+                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
+                        return matchesRole && o.status === 'pending'
+                      }).length}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-sm font-semibold text-yellow-800">{t('pending')}</div>
+                <div className="text-xs text-yellow-600 mt-1">{t('awaiting_processing') || 'في انتظار المعالجة'}</div>
+              </div>
+            </motion.div>
 
-          <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
-            <div className="text-2xl font-bold text-green-600 mb-1">
-              {orders.filter(o => {
-                const currentWorker = workers.find(w => w.user_id === user.id)
-                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                return matchesRole && o.status === 'completed'
-              }).length}
-            </div>
-            <div className="text-sm text-gray-600">{t('completed')}</div>
-          </div>
+            {/* قيد التنفيذ */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.8 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-6 border-2 border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-md">
+                    <Loader className="w-7 h-7 text-white animate-spin" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-3xl font-bold text-blue-700">
+                      {orders.filter(o => {
+                        const currentWorker = workers.find(w => w.user_id === user.id)
+                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
+                        return matchesRole && o.status === 'in_progress'
+                      }).length}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-sm font-semibold text-blue-800">{t('in_progress')}</div>
+                <div className="text-xs text-blue-600 mt-1">{t('currently_working') || 'جاري العمل عليها'}</div>
+              </div>
+            </motion.div>
 
-          <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
-            <div className="text-2xl font-bold text-purple-600 mb-1">
-              {orders.filter(o => {
-                const currentWorker = workers.find(w => w.user_id === user.id)
-                const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                return matchesRole && o.status === 'delivered'
-              }).length}
-            </div>
-            <div className="text-sm text-gray-600">{t('delivered')}</div>
+            {/* مكتملة */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.9 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              className="relative overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-green-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-emerald-400 rounded-xl flex items-center justify-center shadow-md">
+                    <PackageCheck className="w-7 h-7 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-3xl font-bold text-green-700">
+                      {orders.filter(o => {
+                        const currentWorker = workers.find(w => w.user_id === user.id)
+                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
+                        return matchesRole && o.status === 'completed'
+                      }).length}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-sm font-semibold text-green-800">{t('completed')}</div>
+                <div className="text-xs text-green-600 mt-1">{t('ready_for_delivery') || 'جاهزة للتسليم'}</div>
+              </div>
+            </motion.div>
+
+            {/* تم التسليم */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 1.0 }}
+              whileHover={{ scale: 1.05, y: -5 }}
+              className="relative overflow-hidden bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-6 border-2 border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-purple-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center shadow-md">
+                    <Truck className="w-7 h-7 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-3xl font-bold text-purple-700">
+                      {orders.filter(o => {
+                        const currentWorker = workers.find(w => w.user_id === user.id)
+                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
+                        return matchesRole && o.status === 'delivered'
+                      }).length}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-sm font-semibold text-purple-800">{t('delivered')}</div>
+                <div className="text-xs text-purple-600 mt-1">{t('successfully_delivered') || 'تم التسليم بنجاح'}</div>
+              </div>
+            </motion.div>
           </div>
         </motion.div>
 
@@ -624,17 +738,52 @@ export default function OrdersPage() {
                   disabled={isProcessing}
                 />
 
-                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                {/* رسالة التحذير - رفع الصور إلزامي */}
+                <div className={`p-4 rounded-lg border ${
+                  completedImages.length === 0
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-yellow-50 border-yellow-200'
+                }`}>
                   <div className="flex items-start space-x-3 space-x-reverse">
-                    <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
+                      completedImages.length === 0
+                        ? 'text-red-600'
+                        : 'text-yellow-600'
+                    }`} />
                     <div>
-                      <p className="font-medium text-yellow-800 mb-1">{t('important_warning')}</p>
-                      <p className="text-yellow-700 text-sm">
-                        {t('complete_order_warning')}
+                      <p className={`font-medium mb-1 ${
+                        completedImages.length === 0
+                          ? 'text-red-800'
+                          : 'text-yellow-800'
+                      }`}>
+                        {completedImages.length === 0
+                          ? 'تنبيه مهم - رفع الصور إلزامي'
+                          : t('important_warning')}
+                      </p>
+                      <p className={`text-sm ${
+                        completedImages.length === 0
+                          ? 'text-red-700'
+                          : 'text-yellow-700'
+                      }`}>
+                        {completedImages.length === 0
+                          ? 'يجب رفع صورة واحدة على الأقل للعمل المكتمل قبل إنهاء الطلب. الصور ضرورية لتوثيق جودة العمل.'
+                          : t('complete_order_warning')}
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {/* رسالة التحقق عند عدم رفع صور */}
+                {completedImages.length === 0 && (
+                  <div className="bg-red-100 border-l-4 border-red-500 p-4 rounded">
+                    <div className="flex items-center space-x-2 space-x-reverse">
+                      <Camera className="w-5 h-5 text-red-600 flex-shrink-0" />
+                      <p className="text-sm font-medium text-red-800">
+                        لا يمكن إنهاء الطلب بدون رفع صور للعمل المكتمل
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-4 justify-end">
                   <button
@@ -646,7 +795,7 @@ export default function OrdersPage() {
                   </button>
                   <button
                     onClick={handleCompleteWork}
-                    disabled={isProcessing}
+                    disabled={isProcessing || completedImages.length === 0}
                     className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 space-x-reverse"
                   >
                     {isProcessing ? (

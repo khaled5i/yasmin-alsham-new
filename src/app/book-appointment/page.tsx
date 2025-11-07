@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Calendar, Clock, MessageSquare, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useAppointmentStore } from '@/store/appointmentStore'
 import NumericInput from '@/components/NumericInput'
 
@@ -17,12 +18,17 @@ export default function BookAppointmentPage() {
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [showErrorModal, setShowErrorModal] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+
+  const router = useRouter()
 
   // Hydration-safe state for date formatting
   const [isMounted, setIsMounted] = useState(false)
   const [formattedDates, setFormattedDates] = useState<{[key: string]: string}>({})
 
-  const { createAppointment, appointments, loadAppointments } = useAppointmentStore()
+  const { createAppointment, appointments, loadAppointments, isLoading } = useAppointmentStore()
 
   // إعادة تحميل المواعيد عند تغيير التاريخ المختار
   useEffect(() => {
@@ -141,7 +147,11 @@ export default function BookAppointmentPage() {
         }
         return matches
       })
-      .map(appointment => appointment.appointment_time)
+      .map(appointment => {
+        // Normalize time format: remove seconds if present (17:30:00 -> 17:30)
+        const time = appointment.appointment_time
+        return time.length > 5 ? time.substring(0, 5) : time
+      })
 
     console.log(`📅 Date: ${date}, Booked times:`, bookedTimes)
 
@@ -173,7 +183,8 @@ export default function BookAppointmentPage() {
     e.preventDefault()
 
     if (!selectedDate || !selectedTime || !clientName || !clientPhone) {
-      setMessage({ type: 'error', text: 'يرجى ملء جميع الحقول المطلوبة' })
+      setErrorMessage('يرجى ملء جميع الحقول المطلوبة')
+      setShowErrorModal(true)
       return
     }
 
@@ -185,7 +196,8 @@ export default function BookAppointmentPage() {
     )
 
     if (isTimeBooked) {
-      setMessage({ type: 'error', text: 'عذراً، هذا الوقت محجوز مسبقاً. يرجى اختيار وقت آخر.' })
+      setErrorMessage('عذراً، هذا الوقت محجوز مسبقاً. يرجى اختيار وقت آخر.')
+      setShowErrorModal(true)
       return
     }
 
@@ -207,7 +219,8 @@ export default function BookAppointmentPage() {
       })
 
       if (!result.success) {
-        setMessage({ type: 'error', text: result.error || 'خطأ في حجز الموعد' })
+        setErrorMessage(result.error || 'خطأ في حجز الموعد')
+        setShowErrorModal(true)
         return
       }
 
@@ -215,11 +228,6 @@ export default function BookAppointmentPage() {
 
       // إعادة تحميل المواعيد لتحديث الأوقات المحجوزة
       await loadAppointments()
-
-      setMessage({
-        type: 'success',
-        text: 'تم حجز موعدك بنجاح! سنرسل لك تذكيراً قبل الموعد بساعتين.'
-      })
 
       // إعادة تعيين النموذج
       setSelectedDate('')
@@ -230,9 +238,19 @@ export default function BookAppointmentPage() {
       setServiceType('consultation')
       setNotes('')
 
+      // عرض شاشة النجاح
+      setShowSuccessModal(true)
+
+      // الانتقال إلى الصفحة الرئيسية بعد 2.5 ثانية
+      setTimeout(() => {
+        setShowSuccessModal(false)
+        router.push('/#ready-designs')
+      }, 2500)
+
     } catch (error) {
       console.error('❌ Error booking appointment:', error)
-      setMessage({ type: 'error', text: 'حدث خطأ أثناء حجز الموعد. يرجى المحاولة مرة أخرى.' })
+      setErrorMessage('حدث خطأ أثناء حجز الموعد. يرجى المحاولة مرة أخرى.')
+      setShowErrorModal(true)
     } finally {
       setIsSubmitting(false)
     }
@@ -280,13 +298,13 @@ export default function BookAppointmentPage() {
               className="space-y-8"
             >
               <div className="bg-white/80 backdrop-blur-sm rounded-xl lg:rounded-2xl p-4 lg:p-8 border border-pink-100">
-                <h3 className="text-lg lg:text-2xl font-bold text-gray-800 mb-4 lg:mb-6 flex items-center space-x-2 lg:space-x-3 space-x-reverse">
+                <h3 className="text-lg lg:text-2xl font-bold text-gray-800 mb-4 lg:mb-6 flex items-center gap-2 lg:gap-3">
                   <Calendar className="w-5 h-5 lg:w-6 lg:h-6 text-pink-600" />
                   <span>معلومات المواعيد</span>
                 </h3>
 
                 <div className="space-y-4 lg:space-y-6">
-                  <div className="flex items-start space-x-3 lg:space-x-4 space-x-reverse">
+                  <div className="flex items-start gap-3 lg:gap-4">
                     <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gradient-to-br from-pink-400 to-rose-400 rounded-lg lg:rounded-xl flex items-center justify-center flex-shrink-0">
                       <Clock className="w-4 h-4 lg:w-6 lg:h-6 text-white" />
                     </div>
@@ -297,10 +315,10 @@ export default function BookAppointmentPage() {
                       </p>
                     </div>
                   </div>
-                  
 
-                  
-                  <div className="flex items-start space-x-3 lg:space-x-4 space-x-reverse">
+
+
+                  <div className="flex items-start gap-3 lg:gap-4">
                     <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gradient-to-br from-rose-400 to-purple-400 rounded-lg lg:rounded-xl flex items-center justify-center flex-shrink-0">
                       <MessageSquare className="w-4 h-4 lg:w-6 lg:h-6 text-white" />
                     </div>
@@ -317,13 +335,13 @@ export default function BookAppointmentPage() {
 
               {/* معلومات زمن التفصيل */}
               <div className="bg-white/80 backdrop-blur-sm rounded-xl lg:rounded-2xl p-4 lg:p-8 border border-pink-100">
-                <h3 className="text-lg lg:text-2xl font-bold text-gray-800 mb-4 lg:mb-6 flex items-center space-x-2 lg:space-x-3 space-x-reverse">
+                <h3 className="text-lg lg:text-2xl font-bold text-gray-800 mb-4 lg:mb-6 flex items-center gap-2 lg:gap-3">
                   <Clock className="w-5 h-5 lg:w-6 lg:h-6 text-pink-600" />
                   <span>معلومات زمن التفصيل</span>
                 </h3>
 
                 <div className="space-y-4 lg:space-y-6">
-                  <div className="flex items-start space-x-3 lg:space-x-4 space-x-reverse">
+                  <div className="flex items-start gap-3 lg:gap-4">
                     <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg lg:rounded-xl flex items-center justify-center flex-shrink-0">
                       <Calendar className="w-4 h-4 lg:w-6 lg:h-6 text-white" />
                     </div>
@@ -335,7 +353,7 @@ export default function BookAppointmentPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-start space-x-3 lg:space-x-4 space-x-reverse">
+                  <div className="flex items-start gap-3 lg:gap-4">
                     <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gradient-to-br from-orange-400 to-red-400 rounded-lg lg:rounded-xl flex items-center justify-center flex-shrink-0">
                       <AlertCircle className="w-4 h-4 lg:w-6 lg:h-6 text-white" />
                     </div>
@@ -411,30 +429,41 @@ export default function BookAppointmentPage() {
                       اختاري الوقت *
                     </label>
                     {selectedDate ? (
-                      <div className="grid grid-cols-2 gap-3">
-                        {getAllTimesForDate(selectedDate).map(timeSlot => (
-                          <button
-                            key={timeSlot.time}
-                            type="button"
-                            onClick={() => !timeSlot.isBooked && setSelectedTime(timeSlot.time)}
-                            disabled={timeSlot.isBooked}
-                            className={`p-3 rounded-lg border-2 transition-all duration-300 text-sm font-medium ${
-                              selectedTime === timeSlot.time
-                                ? 'border-pink-500 bg-pink-50 text-pink-700'
-                                : timeSlot.isBooked
-                                ? 'border-red-300 bg-red-100 text-red-600 cursor-not-allowed'
-                                : 'border-gray-300 bg-white text-gray-700 hover:border-pink-300 hover:bg-pink-50'
-                            }`}
-                          >
-                            <div className="text-center">
-                              <div className="font-bold">{timeSlot.display}</div>
-                              {timeSlot.isBooked && (
-                                <div className="text-xs mt-1">محجوز</div>
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                      isLoading ? (
+                        <div className="p-8 border-2 border-dashed border-gray-300 rounded-lg text-center">
+                          <div className="flex items-center justify-center gap-2 text-gray-500">
+                            <div className="w-5 h-5 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span>جاري تحميل الأوقات المتاحة...</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-2 gap-3">
+                            {getAllTimesForDate(selectedDate).map(timeSlot => (
+                              <button
+                                key={timeSlot.time}
+                                type="button"
+                                onClick={() => !timeSlot.isBooked && setSelectedTime(timeSlot.time)}
+                                disabled={timeSlot.isBooked}
+                                className={`p-3 rounded-lg border-2 transition-all duration-300 text-sm font-medium ${
+                                  selectedTime === timeSlot.time
+                                    ? 'border-pink-500 bg-pink-50 text-pink-700'
+                                    : timeSlot.isBooked
+                                    ? 'border-red-500 bg-red-50 text-red-700 cursor-not-allowed opacity-75'
+                                    : 'border-gray-300 bg-white text-gray-700 hover:border-pink-300 hover:bg-pink-50'
+                                }`}
+                              >
+                                <div className="text-center">
+                                  <div className="font-bold">{timeSlot.display}</div>
+                                  {timeSlot.isBooked && (
+                                    <div className="text-xs mt-1 font-semibold">محجوز</div>
+                                  )}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )
                     ) : (
                       <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg text-center text-gray-500">
                         يرجى اختيار التاريخ أولاً
@@ -499,8 +528,14 @@ export default function BookAppointmentPage() {
                     >
                       <option value="consultation">استشارة تصميم</option>
                       <option value="fitting">قياس وتجربة</option>
-                      <option value="delivery">استلام الطلب</option>
                     </select>
+
+                    {/* ملاحظة حول استلام الطلب */}
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-blue-800 text-sm text-center">
+                        ℹ️ استلام الطلب لا يحتاج لحجز موعد
+                      </p>
+                    </div>
                   </div>
 
                   {/* ملاحظات */}
@@ -524,12 +559,12 @@ export default function BookAppointmentPage() {
                     className="w-full btn-primary py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? (
-                      <div className="flex items-center justify-center space-x-2 space-x-reverse">
+                      <div className="flex items-center justify-center gap-2">
                         <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                         <span>جاري الحجز...</span>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center space-x-2 space-x-reverse">
+                      <div className="flex items-center justify-center gap-2">
                         <Calendar className="w-5 h-5" />
                         <span>احجزي الموعد</span>
                       </div>
@@ -540,6 +575,84 @@ export default function BookAppointmentPage() {
             </motion.div>
           </div>
         </div>
+
+        {/* Success Modal */}
+        <AnimatePresence>
+          {showSuccessModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ type: "spring", duration: 0.5 }}
+                className="bg-white rounded-3xl p-12 max-w-md mx-4 text-center shadow-2xl"
+              >
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                  className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6"
+                >
+                  <CheckCircle className="w-16 h-16 text-green-600" />
+                </motion.div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">
+                  تم حجز الموعد بنجاح
+                </h3>
+                <p className="text-gray-600">
+                  سيتم تحويلك إلى الصفحة الرئيسية...
+                </p>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Error Modal */}
+        <AnimatePresence>
+          {showErrorModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowErrorModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ type: "spring", duration: 0.5 }}
+                className="bg-white rounded-3xl p-12 max-w-md mx-4 text-center shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                  className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6"
+                >
+                  <AlertCircle className="w-16 h-16 text-red-600" />
+                </motion.div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-4">
+                  تنبيه
+                </h3>
+                <p className="text-gray-600 mb-6 text-lg">
+                  {errorMessage}
+                </p>
+                <button
+                  onClick={() => setShowErrorModal(false)}
+                  className="btn-primary px-8 py-3"
+                >
+                  حسناً
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

@@ -49,7 +49,6 @@ export default function NumericInput({
       {label && (
         <label htmlFor={id} className="block text-sm font-medium text-gray-700">
           {label}
-          {required && <span className="text-red-500 mr-1">*</span>}
         </label>
       )}
       

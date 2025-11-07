@@ -491,7 +491,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
               )}
 
               {/* صور العمل المكتمل - للمدراء فقط */}
-              {user?.role === 'admin' && order.completedImages && order.completedImages.length > 0 && (
+              {user?.role === 'admin' && order.completed_images && order.completed_images.length > 0 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <CheckCircle className="w-5 h-5 text-green-600" />
@@ -505,7 +505,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       </span>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {order.completedImages.map((image, index) => (
+                      {order.completed_images.map((image, index) => (
                         <div key={index} className="relative group">
                           <div className="aspect-square rounded-lg overflow-hidden border border-green-300">
                             <img
