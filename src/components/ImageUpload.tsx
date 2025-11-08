@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
+import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle, Camera } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { imageService, UploadProgress } from '@/lib/services/image-service'
 
@@ -28,7 +28,9 @@ export default function ImageUpload({
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<Map<string, FileProgress>>(new Map())
   const [errors, setErrors] = useState<string[]>([])
+  const [showOptions, setShowOptions] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const { t } = useTranslation()
 
   const handleFileSelect = async (files: FileList | null) => {
@@ -146,61 +148,141 @@ export default function ImageUpload({
 
   const openFileDialog = () => {
     fileInputRef.current?.click()
+    setShowOptions(false)
   }
+
+  const openCameraDialog = () => {
+    cameraInputRef.current?.click()
+    setShowOptions(false)
+  }
+
+  const handleUploadClick = () => {
+    if (uploading || images.length >= maxImages) return
+    setShowOptions(!showOptions)
+  }
+
+  // إغلاق القائمة عند النقر خارجها
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showOptions) {
+        setShowOptions(false)
+      }
+    }
+
+    if (showOptions) {
+      document.addEventListener('click', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [showOptions])
 
   return (
     <div className="space-y-4">
       {/* منطقة رفع الصور */}
-      <div
-        className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 ${
-          uploading
-            ? 'border-blue-400 bg-blue-50 cursor-wait'
-            : dragOver
-            ? 'border-pink-400 bg-pink-50 cursor-pointer'
-            : images.length >= maxImages
-            ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
-            : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50 cursor-pointer'
-        }`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={!uploading && images.length < maxImages ? openFileDialog : undefined}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/jpg,image/png,image/webp"
-          multiple
-          onChange={(e) => handleFileSelect(e.target.files)}
-          className="hidden"
-          disabled={images.length >= maxImages || uploading}
-        />
+      <div className="relative">
+        <div
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 ${
+            uploading
+              ? 'border-blue-400 bg-blue-50 cursor-wait'
+              : dragOver
+              ? 'border-pink-400 bg-pink-50 cursor-pointer'
+              : images.length >= maxImages
+              ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+              : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50 cursor-pointer'
+          }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={!uploading && images.length < maxImages ? handleUploadClick : undefined}
+        >
+          {/* Input للمعرض */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            multiple
+            onChange={(e) => handleFileSelect(e.target.files)}
+            className="hidden"
+            disabled={images.length >= maxImages || uploading}
+          />
 
-        {uploading ? (
-          <div className="space-y-4">
-            <Loader2 className="w-12 h-12 text-blue-500 mx-auto animate-spin" />
-            <p className="text-lg font-medium text-blue-700">جاري رفع الصور...</p>
-          </div>
-        ) : images.length >= maxImages ? (
-          <div className="space-y-2">
-            <ImageIcon className="w-12 h-12 text-gray-400 mx-auto" />
-            <p className="text-gray-500">{t('max_images_reached')} ({maxImages})</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <Upload className="w-12 h-12 text-gray-400 mx-auto" />
-            <div>
-              <p className="text-lg font-medium text-gray-700">
-                {dragOver ? t('drop_images_here') : t('click_or_drag_images')}
-              </p>
-              <p className="text-sm text-gray-500">
-                JPG, PNG, WEBP (الحد الأقصى: 5MB لكل صورة)
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                {images.length} {t('of')} {maxImages} {t('images_text')}
-              </p>
+          {/* Input للكاميرا */}
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => handleFileSelect(e.target.files)}
+            className="hidden"
+            disabled={images.length >= maxImages || uploading}
+          />
+
+          {uploading ? (
+            <div className="space-y-4">
+              <Loader2 className="w-12 h-12 text-blue-500 mx-auto animate-spin" />
+              <p className="text-lg font-medium text-blue-700">جاري رفع الصور...</p>
             </div>
-          </div>
+          ) : images.length >= maxImages ? (
+            <div className="space-y-2">
+              <ImageIcon className="w-12 h-12 text-gray-400 mx-auto" />
+              <p className="text-gray-500">{t('max_images_reached')} ({maxImages})</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <Upload className="w-12 h-12 text-gray-400 mx-auto" />
+              <div>
+                <p className="text-lg font-medium text-gray-700">
+                  {dragOver ? t('drop_images_here') : 'اضغط لرفع الصور'}
+                </p>
+                <p className="text-sm text-gray-500">
+                  التقط صورة أو اختر من المعرض • JPG, PNG, WEBP
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {images.length} {t('of')} {maxImages} {t('images_text')}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* قائمة الخيارات (كاميرا / معرض) */}
+        {showOptions && !uploading && images.length < maxImages && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-10"
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openCameraDialog()
+              }}
+              className="w-full px-4 py-3 text-right hover:bg-pink-50 transition-colors duration-200 flex items-center space-x-3 space-x-reverse border-b border-gray-100"
+            >
+              <Camera className="w-5 h-5 text-pink-600" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-800">التقاط صورة</p>
+                <p className="text-xs text-gray-500">استخدم الكاميرا لالتقاط صورة جديدة</p>
+              </div>
+            </button>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openFileDialog()
+              }}
+              className="w-full px-4 py-3 text-right hover:bg-pink-50 transition-colors duration-200 flex items-center space-x-3 space-x-reverse"
+            >
+              <ImageIcon className="w-5 h-5 text-pink-600" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-800">اختيار من المعرض</p>
+                <p className="text-xs text-gray-500">اختر صور موجودة من جهازك</p>
+              </div>
+            </button>
+          </motion.div>
         )}
       </div>
 
