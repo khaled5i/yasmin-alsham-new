@@ -14,7 +14,8 @@ import {
   UserCheck,
   Clock,
   CheckCircle,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Mail
 } from 'lucide-react'
 import { Order } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
@@ -145,7 +146,28 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       </span>
                       <span>{order.client_name}</span>
                     </div>
-                    {/* تم حذف عرض رقم الهاتف للعامل */}
+
+                    {/* رقم الهاتف - للمدراء فقط */}
+                    {user?.role === 'admin' && order.client_phone && (
+                      <div className="flex items-center space-x-3 space-x-reverse">
+                        <Phone className="w-4 h-4 text-gray-600" />
+                        <span className="font-medium">
+                          {t('phone')}
+                        </span>
+                        <span dir="ltr">{order.client_phone}</span>
+                      </div>
+                    )}
+
+                    {/* البريد الإلكتروني - للمدراء فقط */}
+                    {user?.role === 'admin' && order.client_email && (
+                      <div className="flex items-center space-x-3 space-x-reverse">
+                        <Mail className="w-4 h-4 text-gray-600" />
+                        <span className="font-medium">
+                          {t('email')}
+                        </span>
+                        <span dir="ltr">{order.client_email}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -172,7 +194,16 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                         <p className="mt-1">{order.fabric}</p>
                       </div>
                     )}
-                    {/* تم حذف عرض السعر للعامل */}
+
+                    {/* السعر - للمدراء فقط */}
+                    {user?.role === 'admin' && (
+                      <div className="flex items-center space-x-3 space-x-reverse">
+                        <span className="font-medium">
+                          {t('price')}:
+                        </span>
+                        <span className="text-gray-800">{order.price} {t('currency')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

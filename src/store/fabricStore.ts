@@ -74,7 +74,7 @@ export type SortOption = 'newest' | 'price-high' | 'price-low' | 'popular' | 'na
 interface FabricStoreState {
   // الأقمشة من Supabase
   fabrics: Fabric[]
-  loadFabrics: () => Promise<void>
+  loadFabrics: (forceReload?: boolean) => Promise<void>
   getFabricById: (id: string) => Fabric | undefined
 
   // الفلاتر والبحث
@@ -115,14 +115,15 @@ export const useFabricStore = create<FabricStoreState>()(
       // الأقمشة من Supabase
       fabrics: [],
 
-      loadFabrics: async () => {
+      loadFabrics: async (forceReload = false) => {
         // تحسين: تجنب إعادة التحميل إذا كانت الأقمشة محملة بالفعل
         const { fabrics } = get()
-        if (fabrics.length > 0) {
+        if (fabrics.length > 0 && !forceReload) {
           console.log('✅ الأقمشة محملة بالفعل من cache - تخطي التحميل')
           return
         }
 
+        console.log('🔄 تحميل الأقمشة من Supabase...')
         set({ isLoading: true, error: null })
         try {
           const { data, error } = await fabricService.getAll({

@@ -48,7 +48,7 @@ export type SortOption = 'newest' | 'price-high' | 'price-low'
 interface ShopState {
   // المنتجات من Supabase
   products: Product[]
-  loadProducts: () => Promise<void>
+  loadProducts: (forceReload?: boolean) => Promise<void>
   getProductById: (id: string) => Product | undefined
 
   // الفلاتر والبحث
@@ -100,10 +100,10 @@ export const useShopStore = create<ShopState>()(
       // المنتجات من Supabase
       products: [],
 
-      loadProducts: async () => {
-        // تحسين: تجنب إعادة التحميل إذا كانت المنتجات محملة بالفعل
+      loadProducts: async (forceReload = false) => {
+        // تحسين: تجنب إعادة التحميل إذا كانت المنتجات محملة بالفعل (إلا إذا كان forceReload = true)
         const { products } = get()
-        if (products.length > 0) {
+        if (products.length > 0 && !forceReload) {
           console.log('✅ المنتجات محملة بالفعل من cache - تخطي التحميل')
           return
         }

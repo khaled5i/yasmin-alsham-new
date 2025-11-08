@@ -56,8 +56,8 @@ export default function OrdersPage() {
   }, [user, router, loadOrders, loadWorkers])
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [searchType, setSearchType] = useState<'text' | 'orderNumber'>('text')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [searchType, setSearchType] = useState<'name' | 'phone'>('name')
+  const [statusFilter, setStatusFilter] = useState('pending')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showViewModal, setShowViewModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -236,11 +236,9 @@ export default function OrdersPage() {
       }
     }
 
-    const matchesSearch = searchType === 'orderNumber'
-      ? (order.order_number || order.id).toLowerCase().includes(searchTerm.toLowerCase())
-      : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (order.order_number || order.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (order.description || '').toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = searchType === 'phone'
+      ? (order.client_phone || '').toLowerCase().includes(searchTerm.toLowerCase())
+      : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
@@ -319,29 +317,29 @@ export default function OrdersPage() {
           <div className="flex space-x-2 space-x-reverse mb-4">
             <button
               onClick={() => {
-                setSearchType('text')
+                setSearchType('name')
                 setSearchTerm('')
               }}
               className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                searchType === 'text'
+                searchType === 'name'
                   ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {t('search_by_text')}
+              {t('search_by_name')}
             </button>
             <button
               onClick={() => {
-                setSearchType('orderNumber')
+                setSearchType('phone')
                 setSearchTerm('')
               }}
               className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                searchType === 'orderNumber'
+                searchType === 'phone'
                   ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {t('search_by_order_number')}
+              {t('search_by_phone')}
             </button>
           </div>
 
@@ -350,23 +348,13 @@ export default function OrdersPage() {
             {/* حقل البحث */}
             <div className="relative">
               <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              {searchType === 'orderNumber' ? (
-                <NumericInput
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                  type="orderNumber"
-                  placeholder={t('enter_order_number')}
-                  className="pr-10"
-                />
-              ) : (
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                  placeholder={t('search_placeholder')}
-                />
-              )}
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                placeholder={searchType === 'phone' ? t('enter_phone_number') : t('enter_client_name')}
+              />
             </div>
 
             {/* فلتر الحالة */}
@@ -377,11 +365,9 @@ export default function OrdersPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
               >
-                <option value="all">{t('all_orders')}</option>
                 <option value="pending">{t('pending')}</option>
                 <option value="in_progress">{t('in_progress')}</option>
                 <option value="completed">{t('completed')}</option>
-                <option value="delivered">{t('delivered')}</option>
               </select>
             </div>
           </div>
@@ -551,137 +537,6 @@ export default function OrdersPage() {
               </motion.div>
             ))
           )}
-        </motion.div>
-
-        {/* إحصائيات سريعة */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.6 }}
-          className="mt-12"
-        >
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-pink-600" />
-            <span>{t('statistics') || 'الإحصائيات'}</span>
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* قيد الانتظار */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.7 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
-            >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-yellow-400 to-orange-400 rounded-xl flex items-center justify-center shadow-md">
-                    <Clock className="w-7 h-7 text-white" />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold text-yellow-700">
-                      {orders.filter(o => {
-                        const currentWorker = workers.find(w => w.user_id === user.id)
-                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                        return matchesRole && o.status === 'pending'
-                      }).length}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-sm font-semibold text-yellow-800">{t('pending')}</div>
-                <div className="text-xs text-yellow-600 mt-1">{t('awaiting_processing') || 'في انتظار المعالجة'}</div>
-              </div>
-            </motion.div>
-
-            {/* قيد التنفيذ */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.8 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-6 border-2 border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
-            >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-md">
-                    <Loader className="w-7 h-7 text-white animate-spin" />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold text-blue-700">
-                      {orders.filter(o => {
-                        const currentWorker = workers.find(w => w.user_id === user.id)
-                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                        return matchesRole && o.status === 'in_progress'
-                      }).length}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-sm font-semibold text-blue-800">{t('in_progress')}</div>
-                <div className="text-xs text-blue-600 mt-1">{t('currently_working') || 'جاري العمل عليها'}</div>
-              </div>
-            </motion.div>
-
-            {/* مكتملة */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.9 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
-            >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-green-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-emerald-400 rounded-xl flex items-center justify-center shadow-md">
-                    <PackageCheck className="w-7 h-7 text-white" />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold text-green-700">
-                      {orders.filter(o => {
-                        const currentWorker = workers.find(w => w.user_id === user.id)
-                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                        return matchesRole && o.status === 'completed'
-                      }).length}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-sm font-semibold text-green-800">{t('completed')}</div>
-                <div className="text-xs text-green-600 mt-1">{t('ready_for_delivery') || 'جاهزة للتسليم'}</div>
-              </div>
-            </motion.div>
-
-            {/* تم التسليم */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 1.0 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-6 border-2 border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
-            >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-purple-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center shadow-md">
-                    <Truck className="w-7 h-7 text-white" />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold text-purple-700">
-                      {orders.filter(o => {
-                        const currentWorker = workers.find(w => w.user_id === user.id)
-                        const matchesRole = user.role === 'admin' || (currentWorker && o.worker_id === currentWorker.id)
-                        return matchesRole && o.status === 'delivered'
-                      }).length}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-sm font-semibold text-purple-800">{t('delivered')}</div>
-                <div className="text-xs text-purple-600 mt-1">{t('successfully_delivered') || 'تم التسليم بنجاح'}</div>
-              </div>
-            </motion.div>
-          </div>
         </motion.div>
 
         {/* النوافذ المنبثقة */}

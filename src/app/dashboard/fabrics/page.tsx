@@ -341,13 +341,6 @@ export default function FabricsAdmin() {
           </div>
         )}
 
-        {/* رسالة نجاح */}
-        {success && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6">
-            <p className="font-bold">✅ تم الحفظ بنجاح!</p>
-          </div>
-        )}
-
         {/* نموذج إضافة قماش جديد */}
         {isAddingNew && (
           <motion.div
@@ -376,15 +369,13 @@ export default function FabricsAdmin() {
 
                 <div>
                   <label className="block font-medium mb-2 text-gray-700">الفئة *</label>
-                  <select
-                    value={newFabricData.category || 'حرير'}
+                  <input
+                    type="text"
+                    value={newFabricData.category || ''}
                     onChange={(e) => handleNewFabricChange('category', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    {fabricCategories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                    placeholder="مثال: حرير"
+                  />
                 </div>
               </div>
 
@@ -639,15 +630,13 @@ export default function FabricsAdmin() {
                 </div>
                 <div>
                   <label className="block font-medium mb-2 text-gray-700">الفئة *</label>
-                  <select
-                    value={editData.category || 'حرير'}
+                  <input
+                    type="text"
+                    value={editData.category || ''}
                     onChange={(e) => handleEditChange('category', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    {fabricCategories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                    placeholder="مثال: حرير"
+                  />
                 </div>
               </div>
 
@@ -874,12 +863,12 @@ export default function FabricsAdmin() {
           </motion.div>
         )}
 
-        {/* قائمة الأقمشة */}
-        {isLoading && fabrics.length === 0 ? (
+        {/* قائمة الأقمشة - مخفية عند التعديل */}
+        {!editingId && isLoading && fabrics.length === 0 ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-12 h-12 text-pink-600 animate-spin" />
           </div>
-        ) : (
+        ) : !editingId ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {fabrics.map((fabric, index) => (
               <motion.div
@@ -972,7 +961,7 @@ export default function FabricsAdmin() {
               </motion.div>
             ))}
           </div>
-        )}
+        ) : null}
 
         {/* مودال تأكيد الحذف */}
         {deleteConfirmId && (
@@ -1018,6 +1007,25 @@ export default function FabricsAdmin() {
                   إلغاء
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* مودال رسالة النجاح */}
+        {success && (
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">تم إتمام الإجراء بنجاح</h3>
             </motion.div>
           </div>
         )}

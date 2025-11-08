@@ -22,7 +22,9 @@ import {
   XCircle,
   User,
   Phone,
-  Mail
+  Mail,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 
 export default function WorkersPage() {
@@ -56,6 +58,8 @@ export default function WorkersPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showEditPassword, setShowEditPassword] = useState(false)
 
   // إضافة عامل جديد
   const handleAddWorker = async (e: React.FormEvent) => {
@@ -437,14 +441,27 @@ export default function WorkersPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   {t('password_required')}
                 </label>
-                <input
-                  type="password"
-                  value={newWorker.password}
-                  onChange={(e) => setNewWorker(prev => ({ ...prev, password: e.target.value }))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                  placeholder={t('enter_password')}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={newWorker.password}
+                    onChange={(e) => setNewWorker(prev => ({ ...prev, password: e.target.value }))}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent pr-12"
+                    placeholder={t('enter_password')}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -553,13 +570,26 @@ export default function WorkersPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {t('new_password')}
                     </label>
-                    <input
-                      type="password"
-                      value={editingWorker.password || ''}
-                      onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, password: e.target.value }))}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                      placeholder={t('leave_empty_no_change')}
-                    />
+                    <div className="relative">
+                      <input
+                        type={showEditPassword ? "text" : "password"}
+                        value={editingWorker.password || ''}
+                        onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, password: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent pr-12"
+                        placeholder={t('leave_empty_no_change')}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEditPassword(!showEditPassword)}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors"
+                      >
+                        {showEditPassword ? (
+                          <EyeOff className="w-5 h-5" />
+                        ) : (
+                          <Eye className="w-5 h-5" />
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div>

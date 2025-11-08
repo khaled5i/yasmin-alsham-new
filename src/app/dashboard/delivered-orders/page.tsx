@@ -16,7 +16,9 @@ import {
   X,
   MessageSquare,
   Package,
-  CheckCircle
+  CheckCircle,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
@@ -25,10 +27,12 @@ import { useAuthStore } from '@/store/authStore'
 export default function DeliveredOrdersPage() {
   const router = useRouter()
   const { user } = useAuthStore()
-  const { orders, loadOrders } = useOrderStore()
+  const { orders, loadOrders, deleteOrder } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const [showViewModal, setShowViewModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // التحقق من الصلاحيات - المدراء فقط
   useEffect(() => {
@@ -73,9 +77,34 @@ export default function DeliveredOrdersPage() {
     setShowViewModal(true)
   }
 
+  // فتح نافذة تأكيد الحذف
+  const handleDeleteClick = (order: any) => {
+    setSelectedOrder(order)
+    setShowDeleteModal(true)
+  }
+
+  // حذف الطلب
+  const handleConfirmDelete = async () => {
+    if (!selectedOrder) return
+
+    setIsDeleting(true)
+    try {
+      await deleteOrder(selectedOrder.id)
+      setShowDeleteModal(false)
+      setSelectedOrder(null)
+      // إعادة تحميل الطلبات
+      await loadOrders()
+    } catch (error) {
+      console.error('Error deleting order:', error)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   // إغلاق النافذة
   const handleCloseModal = () => {
     setShowViewModal(false)
+    setShowDeleteModal(false)
     setSelectedOrder(null)
   }
 
@@ -193,14 +222,22 @@ export default function DeliveredOrdersPage() {
                     </div>
                   </div>
 
-                  {/* زر العرض */}
-                  <div className="flex items-center">
+                  {/* أزرار الإجراءات */}
+                  <div className="flex flex-col gap-3">
                     <button
                       onClick={() => handleViewOrder(order)}
                       className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-6 py-3 rounded-lg hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 shadow-md hover:shadow-lg inline-flex items-center justify-center gap-2"
                     >
                       <Eye className="w-5 h-5" />
                       <span className="font-medium">عرض التفاصيل</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteClick(order)}
+                      className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white px-6 py-3 rounded-lg hover:from-red-600 hover:to-red-700 transition-all duration-300 shadow-md hover:shadow-lg inline-flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      <span className="font-medium">حذف</span>
                     </button>
                   </div>
                 </div>
@@ -386,6 +423,67 @@ export default function DeliveredOrdersPage() {
                   إغلاق
                 </button>
               </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* نافذة تأكيد الحذف */}
+      {showDeleteModal && selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseModal} />
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
+          >
+            {/* أيقونة التحذير */}
+            <div className="flex justify-center mb-6">
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertTriangle className="w-12 h-12 text-red-600" />
+              </div>
+            </div>
+
+            {/* العنوان */}
+            <h3 className="text-2xl font-bold text-gray-800 text-center mb-4">
+              تأكيد حذف الطلب
+            </h3>
+
+            {/* الرسالة */}
+            <p className="text-gray-600 text-center mb-2">
+              هل أنت متأكد من حذف طلب <span className="font-bold text-gray-800">{selectedOrder.client_name}</span>؟
+            </p>
+            <p className="text-sm text-red-600 text-center mb-8">
+              لا يمكن التراجع عن هذا الإجراء!
+            </p>
+
+            {/* الأزرار */}
+            <div className="flex gap-4">
+              <button
+                onClick={handleCloseModal}
+                disabled={isDeleting}
+                className="flex-1 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-300 transition-all duration-300 font-medium disabled:opacity-50"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white px-6 py-3 rounded-lg hover:from-red-600 hover:to-red-700 transition-all duration-300 shadow-md hover:shadow-lg font-medium disabled:opacity-50 inline-flex items-center justify-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>جاري الحذف...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-5 h-5" />
+                    <span>حذف</span>
+                  </>
+                )}
+              </button>
             </div>
           </motion.div>
         </div>

@@ -15,7 +15,8 @@ export default function StockIndicator({
 }: StockIndicatorProps) {
 
   // عرض المؤشر فقط في حالة "غير متوفر"
-  const isOutOfStock = !isAvailable || stockQuantity === 0
+  // نعطي الأولوية لـ is_available - إذا كان true، المنتج متوفر بغض النظر عن stock_quantity
+  const isOutOfStock = !isAvailable
 
   // إذا كان المنتج متوفراً، لا نعرض أي مؤشر
   if (!isOutOfStock) {

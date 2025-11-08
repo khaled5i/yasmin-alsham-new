@@ -49,13 +49,9 @@ export default function FabricsPage() {
   const observerTarget = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (fabrics.length === 0) {
-      console.log('🔄 تحميل الأقمشة من Supabase...')
-      loadFabrics()
-    } else {
-      console.log(`✅ الأقمشة محملة بالفعل (${fabrics.length} قماش)`)
-    }
-  }, [loadFabrics, fabrics.length])
+    console.log('🔄 تحميل الأقمشة من Supabase...')
+    loadFabrics(true) // forceReload = true للحصول على أحدث الأقمشة
+  }, [loadFabrics])
 
   useEffect(() => {
     if (fabrics.length === 0) return
@@ -350,10 +346,10 @@ export default function FabricsPage() {
                               </div>
                             )}
 
-                            {/* زر نظرة سريعة */}
+                            {/* زر نظرة سريعة - مخفي على الجوال */}
                             <button
                               onClick={(e) => openQuickView(fabric, e)}
-                              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-pink-600 px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 flex items-center gap-1 sm:gap-2 z-20"
+                              className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-pink-600 px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 items-center gap-1 sm:gap-2 z-20"
                               aria-label="نظرة سريعة"
                             >
                               <Eye className="w-4 h-4 sm:w-5 sm:h-5" />

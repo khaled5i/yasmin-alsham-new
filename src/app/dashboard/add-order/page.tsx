@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
@@ -82,6 +82,7 @@ function AddOrderContent() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
 
   // معالجة تغيير الحقول
   const handleInputChange = (field: string, value: string | string[] | null) => {
@@ -169,15 +170,14 @@ function AddOrderContent() {
 
       console.log('✅ Order created successfully:', result.data?.id)
 
-      setMessage({
-        type: 'success',
-        text: t('order_added_success')
-      })
+      // إظهار رسالة النجاح المنبثقة
+      setShowSuccessModal(true)
 
-      // إعادة تعيين النموذج والتوجيه بعد 2 ثانية
+      // إخفاء الرسالة والتوجيه بعد 3.5 ثانية
       setTimeout(() => {
+        setShowSuccessModal(false)
         router.push('/dashboard/orders')
-      }, 2000)
+      }, 3500)
 
     } catch (error) {
       console.error('❌ Error adding order:', error)
@@ -635,6 +635,65 @@ function AddOrderContent() {
           </form>
         </motion.div>
       </div>
+
+      {/* رسالة النجاح المنبثقة */}
+      <AnimatePresence>
+        {showSuccessModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* الخلفية المعتمة */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            />
+
+            {/* النافذة المنبثقة */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="relative bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full border-2 border-green-500"
+            >
+              {/* أيقونة النجاح */}
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                className="flex justify-center mb-6"
+              >
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
+                  <CheckCircle className="w-12 h-12 text-green-600" />
+                </div>
+              </motion.div>
+
+              {/* النص */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="text-center"
+              >
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">
+                  {t('order_added_success')}
+                </h3>
+                <p className="text-gray-600">
+                  {t('redirecting_to_orders')}
+                </p>
+              </motion.div>
+
+              {/* شريط التقدم */}
+              <motion.div
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ duration: 3.5, ease: "linear" }}
+                className="h-1 bg-green-500 rounded-full mt-6 origin-left"
+              />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

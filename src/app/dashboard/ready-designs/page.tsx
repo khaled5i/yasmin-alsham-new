@@ -103,10 +103,13 @@ export default function ReadyDesignsAdmin() {
         thumbnail_image: editData.images?.[0],
         colors: editData.colors,
         sizes: editData.sizes,
-        fabric: editData.fabric,
+        fabric: editData.fabric ?? undefined,
         features: editData.features,
         occasions: editData.occasions,
-        care_instructions: editData.care_instructions
+        care_instructions: editData.care_instructions,
+        is_available: editData.is_available,
+        is_featured: editData.is_featured,
+        category_name: editData.category_name ?? undefined
       }
 
       console.log('🔄 تحديث المنتج في Supabase...', editingId)
@@ -227,7 +230,8 @@ export default function ReadyDesignsAdmin() {
         is_available: newProductData.is_available ?? true,
         is_featured: newProductData.is_featured ?? false,
         category_name: newProductData.category_name || 'فساتين زفاف',
-        fabric: newProductData.fabric,
+        published_at: new Date().toISOString(), // ✅ إضافة تاريخ النشر تلقائياً
+        fabric: newProductData.fabric ?? undefined,
         features: newProductData.features,
         occasions: newProductData.occasions,
         care_instructions: newProductData.care_instructions
@@ -247,6 +251,18 @@ export default function ReadyDesignsAdmin() {
         console.log('✅ تم إضافة المنتج بنجاح')
         // إضافة المنتج الجديد إلى القائمة المحلية
         setProducts(prev => [data, ...prev])
+
+        // ✅ تحديث المتجر الأمامي لإظهار المنتج الجديد فوراً
+        try {
+          const { useShopStore } = await import('@/store/shopStore')
+          const { loadProducts } = useShopStore.getState()
+          console.log('🔄 تحديث المتجر الأمامي...')
+          await loadProducts(true) // forceReload = true
+          console.log('✅ تم تحديث المتجر الأمامي بنجاح')
+        } catch (err) {
+          console.warn('⚠️ فشل تحديث المتجر الأمامي:', err)
+        }
+
         setSuccess(true)
 
         setTimeout(() => {
@@ -421,17 +437,13 @@ export default function ReadyDesignsAdmin() {
                 </div>
                 <div>
                   <label className="block font-medium mb-2 text-gray-700">الفئة</label>
-                  <select
-                    value={newProductData.category_name||'فساتين زفاف'}
+                  <input
+                    type="text"
+                    value={newProductData.category_name||''}
                     onChange={e => handleNewProductChange('category_name', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="فساتين زفاف">فساتين زفاف</option>
-                    <option value="فساتين سهرة">فساتين سهرة</option>
-                    <option value="فساتين كوكتيل">فساتين كوكتيل</option>
-                    <option value="فساتين خطوبة">فساتين خطوبة</option>
-                    <option value="فساتين مناسبات">فساتين مناسبات</option>
-                  </select>
+                    placeholder="مثال: فساتين زفاف"
+                  />
                 </div>
               </div>
 
@@ -573,13 +585,6 @@ export default function ReadyDesignsAdmin() {
                 </div>
               )}
 
-              {/* رسالة نجاح */}
-              {success && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-                  <p className="font-bold">✅ تم إضافة الفستان بنجاح!</p>
-                </div>
-              )}
-
               {/* أزرار الإجراءات */}
               <div className="flex gap-3 pt-4">
                 <button
@@ -676,17 +681,13 @@ export default function ReadyDesignsAdmin() {
                 </div>
                 <div>
                   <label className="block font-medium mb-2 text-gray-700">الفئة</label>
-                  <select
-                    value={editData.category_name||'فساتين زفاف'}
+                  <input
+                    type="text"
+                    value={editData.category_name||''}
                     onChange={e => handleEditChange('category_name', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="فساتين زفاف">فساتين زفاف</option>
-                    <option value="فساتين سهرة">فساتين سهرة</option>
-                    <option value="فساتين كوكتيل">فساتين كوكتيل</option>
-                    <option value="فساتين خطوبة">فساتين خطوبة</option>
-                    <option value="فساتين مناسبات">فساتين مناسبات</option>
-                  </select>
+                    placeholder="مثال: فساتين زفاف"
+                  />
                 </div>
               </div>
 
@@ -820,13 +821,6 @@ export default function ReadyDesignsAdmin() {
                 </label>
               </div>
 
-              {/* رسالة نجاح */}
-              {success && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-                  <p className="font-bold">✅ تم حفظ التعديلات بنجاح!</p>
-                </div>
-              )}
-
               {/* أزرار الإجراءات */}
               <div className="flex gap-3 pt-4">
                 <button
@@ -859,15 +853,16 @@ export default function ReadyDesignsAdmin() {
           </motion.div>
         )}
 
-        {/* عرض المنتجات */}
-        {!isLoading && products.length === 0 && !error && !isAddingNew && (
+        {/* عرض المنتجات - مخفي عند التعديل */}
+        {!editingId && !isLoading && products.length === 0 && !error && !isAddingNew && (
           <div className="text-center py-20">
             <p className="text-gray-600 text-lg">لا توجد منتجات حالياً</p>
             <p className="text-gray-500 text-sm mt-2">اضغط على "إضافة فستان جديد" لإضافة أول منتج</p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {!editingId && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {products.map(product => (
             <motion.div
               key={product.id}
@@ -918,7 +913,8 @@ export default function ReadyDesignsAdmin() {
               </div>
             </motion.div>
           ))}
-        </div>
+          </div>
+        )}
 
         {/* مودال تأكيد الحذف */}
         {deleteConfirmId && (
@@ -966,6 +962,25 @@ export default function ReadyDesignsAdmin() {
                   إلغاء
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* مودال رسالة النجاح */}
+        {success && (
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">تم إتمام الإجراء بنجاح</h3>
             </motion.div>
           </div>
         )}

@@ -10,9 +10,9 @@ export default function ReadyDesigns() {
   const { products, loadProducts, isLoading } = useShopStore()
   const [currentImageIndexes, setCurrentImageIndexes] = useState<{[key: string]: number}>({})
 
-  // تحميل المنتجات عند تحميل المكون
+  // تحميل المنتجات عند تحميل المكون - مع forceReload للحصول على أحدث البيانات
   useEffect(() => {
-    loadProducts()
+    loadProducts(true)
   }, [loadProducts])
 
   // تحديث مؤشرات الصور عند تحميل المنتجات
@@ -120,7 +120,7 @@ export default function ReadyDesigns() {
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: index * 0.1 }}
                   viewport={{ once: true }}
-                  className="group"
+                  className={`group ${index >= 2 ? 'hidden md:block' : ''}`}
                 >
                   <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
                     {/* الصورة */}

@@ -57,16 +57,11 @@ export default function DesignsPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
 
-  // تحميل المنتجات عند تحميل الصفحة
+  // تحميل المنتجات عند تحميل الصفحة (مع إعادة التحميل دائماً للحصول على أحدث البيانات)
   useEffect(() => {
-    // تحميل فقط إذا لم تكن المنتجات محملة بالفعل
-    if (products.length === 0) {
-      console.log('🔄 تحميل المنتجات من Supabase...')
-      loadProducts()
-    } else {
-      console.log(`✅ المنتجات محملة بالفعل (${products.length} منتج)`)
-    }
-  }, [loadProducts, products.length])
+    console.log('🔄 تحميل المنتجات من Supabase...')
+    loadProducts(true) // forceReload = true للحصول على أحدث المنتجات
+  }, [loadProducts])
 
   // Infinite Scroll: تحميل المزيد من المنتجات عند التمرير (مع الفلاتر)
   useEffect(() => {
@@ -436,10 +431,10 @@ export default function DesignsPage() {
                           </>
                         )}
 
-                        {/* زر نظرة سريعة */}
+                        {/* زر نظرة سريعة - مخفي على الجوال */}
                         <button
                           onClick={(e) => openQuickView(product, e)}
-                          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-pink-600 px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 flex items-center gap-1 sm:gap-2 z-20"
+                          className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-pink-600 px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 items-center gap-1 sm:gap-2 z-20"
                           aria-label="نظرة سريعة"
                         >
                           <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
