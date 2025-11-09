@@ -529,7 +529,7 @@ function DashboardContent() {
             >
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <Settings className="w-5 h-5 text-pink-600" />
-                <span>لوحة التحكم</span>
+                <span>{t('control_panel')}</span>
               </h3>
 
               <div className="grid gap-4 grid-cols-2">
@@ -546,7 +546,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-green-50 to-emerald-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <PackageCheck className="w-6 h-6 text-green-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-green-800">الطلبات المكتملة</span>
+                  <span className="text-sm font-medium text-green-800">{t('completed_orders_management')}</span>
                 </Link>
 
                 <Link
@@ -554,7 +554,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-purple-50 to-indigo-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-purple-800">الطلبات المسلمة</span>
+                  <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
                 </Link>
 
                 <Link
@@ -570,7 +570,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <Palette className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-purple-800">إدارة التصاميم الجاهزة</span>
+                  <span className="text-sm font-medium text-purple-800">{t('ready_designs_management')}</span>
                 </Link>
 
                 <Link
@@ -578,7 +578,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-rose-800">إدارة الأقمشة</span>
+                  <span className="text-sm font-medium text-rose-800">{t('fabrics_management')}</span>
                 </Link>
 
                 <Link
@@ -614,7 +614,7 @@ function DashboardContent() {
               <span>{t('statistics')}</span>
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {stats.map((stat, index) => {
                 // تحديد الألوان والأيقونات بناءً على نوع الإحصائية
                 let bgGradient = 'from-blue-50 to-cyan-50'
@@ -637,7 +637,7 @@ function DashboardContent() {
                   textColorLighter = 'text-yellow-600'
                   circleColor = 'bg-yellow-200/30'
                   IconComponent = Clock
-                  description = t('orders_in_progress') || 'طلبات قيد التنفيذ'
+                  description = t('orders_in_progress')
                 } else if (stat.title.includes(t('today_appointments'))) {
                   bgGradient = 'from-blue-50 to-cyan-50'
                   borderColor = 'border-blue-200'
@@ -647,7 +647,7 @@ function DashboardContent() {
                   textColorLighter = 'text-blue-600'
                   circleColor = 'bg-blue-200/30'
                   IconComponent = Calendar
-                  description = t('appointments_today') || 'مواعيد اليوم'
+                  description = t('appointments_today')
                 } else if (stat.title.includes(t('completed_orders')) || stat.title.includes(t('my_completed_orders'))) {
                   bgGradient = 'from-green-50 to-emerald-50'
                   borderColor = 'border-green-200'
@@ -657,7 +657,7 @@ function DashboardContent() {
                   textColorLighter = 'text-green-600'
                   circleColor = 'bg-green-200/30'
                   IconComponent = PackageCheck
-                  description = t('finished_orders') || 'طلبات منتهية'
+                  description = t('finished_orders')
                 } else if (stat.title.includes(t('total_orders')) || stat.title.includes(t('my_total_orders'))) {
                   bgGradient = 'from-purple-50 to-pink-50'
                   borderColor = 'border-purple-200'
@@ -667,7 +667,7 @@ function DashboardContent() {
                   textColorLighter = 'text-purple-600'
                   circleColor = 'bg-purple-200/30'
                   IconComponent = Package
-                  description = t('all_orders') || 'جميع الطلبات'
+                  description = t('all_orders')
                 }
 
                 return (
@@ -676,23 +676,23 @@ function DashboardContent() {
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 0.5, delay: 0.8 + index * 0.1 }}
-                    whileHover={{ scale: 1.05, y: -5 }}
-                    className={`relative overflow-hidden bg-gradient-to-br ${bgGradient} rounded-2xl p-5 border-2 ${borderColor} shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group`}
+                    whileHover={{ scale: 1.02, y: -2 }}
+                    className={`relative overflow-hidden bg-gradient-to-br ${bgGradient} rounded-xl p-3 sm:p-4 border-2 ${borderColor} shadow-md hover:shadow-lg transition-all duration-300 cursor-pointer group`}
                   >
-                    <div className={`absolute top-0 right-0 w-20 h-20 ${circleColor} rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-500`}></div>
+                    <div className={`absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 ${circleColor} rounded-full -mr-8 sm:-mr-10 -mt-8 sm:-mt-10 group-hover:scale-150 transition-transform duration-500`}></div>
                     <div className="relative">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className={`w-12 h-12 bg-gradient-to-br ${iconBg} rounded-xl flex items-center justify-center shadow-md`}>
-                          <IconComponent className="w-6 h-6 text-white" />
+                      <div className="flex items-center justify-between mb-2">
+                        <div className={`w-9 h-9 sm:w-11 sm:h-11 bg-gradient-to-br ${iconBg} rounded-lg flex items-center justify-center shadow-md`}>
+                          <IconComponent className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                         </div>
                         <div className="text-right">
-                          <div className={`text-2xl sm:text-3xl font-bold ${textColor}`}>
+                          <div className={`text-xl sm:text-2xl font-bold ${textColor}`}>
                             {stat.value}
                           </div>
                         </div>
                       </div>
-                      <div className={`text-sm font-semibold ${textColorLight}`}>{stat.title}</div>
-                      <div className={`text-xs ${textColorLighter} mt-1`}>{description}</div>
+                      <div className={`text-xs sm:text-sm font-semibold ${textColorLight} leading-tight`}>{stat.title}</div>
+                      <div className={`text-[10px] sm:text-xs ${textColorLighter} mt-0.5 sm:mt-1`}>{description}</div>
                     </div>
                   </motion.div>
                 )
@@ -780,7 +780,7 @@ function DashboardContent() {
             >
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <Settings className="w-5 h-5 text-pink-600" />
-                <span>لوحة التحكم</span>
+                <span>{t('control_panel')}</span>
               </h3>
 
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
@@ -797,7 +797,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-green-50 to-emerald-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <PackageCheck className="w-6 h-6 text-green-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-green-800">الطلبات المكتملة</span>
+                  <span className="text-sm font-medium text-green-800">{t('completed_orders_management')}</span>
                 </Link>
 
                 <Link
@@ -805,7 +805,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-purple-50 to-indigo-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-purple-800">الطلبات المسلمة</span>
+                  <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
                 </Link>
 
                 <Link
@@ -821,7 +821,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <Palette className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-purple-800">إدارة التصاميم الجاهزة</span>
+                  <span className="text-sm font-medium text-purple-800">{t('ready_designs_management')}</span>
                 </Link>
 
                 <Link
@@ -829,7 +829,7 @@ function DashboardContent() {
                   className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
                 >
                   <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-rose-800">إدارة الأقمشة</span>
+                  <span className="text-sm font-medium text-rose-800">{t('fabrics_management')}</span>
                 </Link>
 
                 <Link
@@ -886,7 +886,7 @@ function DashboardContent() {
                   textColorLighter = 'text-yellow-600'
                   circleColor = 'bg-yellow-200/30'
                   IconComponent = Clock
-                  description = t('orders_in_progress') || 'طلبات قيد التنفيذ'
+                  description = t('orders_in_progress')
                 } else if (stat.title.includes(t('today_appointments'))) {
                   bgGradient = 'from-blue-50 to-cyan-50'
                   borderColor = 'border-blue-200'
@@ -896,7 +896,7 @@ function DashboardContent() {
                   textColorLighter = 'text-blue-600'
                   circleColor = 'bg-blue-200/30'
                   IconComponent = Calendar
-                  description = t('appointments_today') || 'مواعيد اليوم'
+                  description = t('appointments_today')
                 } else if (stat.title.includes(t('completed_orders')) || stat.title.includes(t('my_completed_orders'))) {
                   bgGradient = 'from-green-50 to-emerald-50'
                   borderColor = 'border-green-200'
@@ -906,7 +906,7 @@ function DashboardContent() {
                   textColorLighter = 'text-green-600'
                   circleColor = 'bg-green-200/30'
                   IconComponent = PackageCheck
-                  description = t('finished_orders') || 'طلبات منتهية'
+                  description = t('finished_orders')
                 } else if (stat.title.includes(t('total_orders')) || stat.title.includes(t('my_total_orders'))) {
                   bgGradient = 'from-purple-50 to-pink-50'
                   borderColor = 'border-purple-200'
@@ -916,7 +916,7 @@ function DashboardContent() {
                   textColorLighter = 'text-purple-600'
                   circleColor = 'bg-purple-200/30'
                   IconComponent = Package
-                  description = t('all_orders') || 'جميع الطلبات'
+                  description = t('all_orders')
                 }
 
                 return (

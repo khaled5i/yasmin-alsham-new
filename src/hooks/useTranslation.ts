@@ -244,6 +244,7 @@ const arTranslations: Translations = {
   'this_quarter': 'هذا الربع',
   'this_year': 'هذا العام',
   'reports_analytics': 'التقارير والتحليلات',
+  'comprehensive_analysis': 'تحليل شامل لأداء الأعمال',
   'monthly_trend': 'الاتجاه الشهري',
   'revenue_label': 'الإيرادات',
 
@@ -322,7 +323,18 @@ const arTranslations: Translations = {
   'notes_label': 'ملاحظات',
 
   // مفاتيح صفحة العمال
-  'experience_years': 'سنوات الخبرة'
+  'experience_years': 'سنوات الخبرة',
+
+  // مفاتيح إضافية للوحة التحكم
+  'control_panel': 'لوحة التحكم',
+  'completed_orders_management': 'الطلبات المكتملة',
+  'delivered_orders_management': 'الطلبات المسلمة',
+  'ready_designs_management': 'إدارة التصاميم الجاهزة',
+  'fabrics_management': 'إدارة الأقمشة',
+  'orders_in_progress': 'طلبات قيد التنفيذ',
+  'appointments_today': 'مواعيد اليوم',
+  'finished_orders': 'طلبات منتهية',
+  'all_orders': 'جميع الطلبات'
 }
 
 // الترجمات الإنجليزية
@@ -562,6 +574,7 @@ const enTranslations: Translations = {
   'this_quarter': 'This Quarter',
   'this_year': 'This Year',
   'reports_analytics': 'Reports & Analytics',
+  'comprehensive_analysis': 'Comprehensive Business Performance Analysis',
   'monthly_trend': 'Monthly Trend',
   'revenue_label': 'Revenue',
 
@@ -640,7 +653,18 @@ const enTranslations: Translations = {
   'notes_label': 'Notes',
 
   // مفاتيح صفحة العمال
-  'experience_years': 'Years of Experience'
+  'experience_years': 'Years of Experience',
+
+  // مفاتيح إضافية للوحة التحكم
+  'control_panel': 'Control Panel',
+  'completed_orders_management': 'Completed Orders',
+  'delivered_orders_management': 'Delivered Orders',
+  'ready_designs_management': 'Ready Designs Management',
+  'fabrics_management': 'Fabrics Management',
+  'orders_in_progress': 'Orders in Progress',
+  'appointments_today': 'Today\'s Appointments',
+  'finished_orders': 'Finished Orders',
+  'all_orders': 'All Orders'
 }
 
 // Hook للترجمة

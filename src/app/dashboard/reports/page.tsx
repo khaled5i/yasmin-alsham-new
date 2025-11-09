@@ -46,6 +46,24 @@ import {
 } from 'lucide-react'
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+// دالة لتنسيق التاريخ بالميلادي مع أسماء الأشهر بالعربية
+const formatDateInArabic = (date: Date): string => {
+  const arabicMonths = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+  ]
+
+  const day = date.getDate()
+  const month = arabicMonths[date.getMonth()]
+  const year = date.getFullYear()
+
+  return `${day} ${month} ${year}`
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -466,28 +484,28 @@ export default function ReportsPage() {
           transition={{ duration: 0.8 }}
           className="mb-8"
         >
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-6">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sm:gap-6 mb-6">
             <div>
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold mb-2 sm:mb-3">
                 <span className="bg-gradient-to-r from-pink-600 via-purple-600 to-blue-600 bg-clip-text text-transparent">
                   {t('reports_analytics') || 'التقارير والتحليلات'}
                 </span>
               </h1>
-              <p className="text-base sm:text-lg text-gray-600 flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-pink-600" />
+              <p className="text-sm sm:text-base lg:text-lg text-gray-600 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
                 <span>{t('comprehensive_analysis') || 'تحليل شامل لأداء الأعمال'}</span>
               </p>
             </div>
 
             {/* Filters and Export Buttons */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               {/* Date Range Selector */}
               <div className="relative">
-                <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
                 <select
                   value={selectedPeriod}
                   onChange={(e) => setSelectedPeriod(e.target.value as DateRange)}
-                  className="pr-10 pl-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300 bg-white hover:border-pink-300 cursor-pointer text-sm font-medium"
+                  className="w-full sm:w-auto pr-9 sm:pr-10 pl-3 sm:pl-4 py-2 sm:py-2.5 border-2 border-gray-200 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300 bg-white hover:border-pink-300 cursor-pointer text-xs sm:text-sm font-medium"
                 >
                   <option value="today">اليوم</option>
                   <option value="week">هذا الأسبوع</option>
@@ -500,37 +518,37 @@ export default function ReportsPage() {
               {/* Export Buttons */}
               <div className="flex gap-2">
                 <button
-                  className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse px-4 py-2.5 text-sm"
+                  className="btn-secondary inline-flex items-center justify-center space-x-1.5 sm:space-x-2 space-x-reverse px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm flex-1 sm:flex-initial"
                   title="تصدير PDF"
                 >
-                  <FileText className="w-4 h-4" />
-                  <span className="hidden sm:inline">PDF</span>
+                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span>PDF</span>
                 </button>
 
                 <button
-                  className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse px-4 py-2.5 text-sm"
+                  className="btn-secondary inline-flex items-center justify-center space-x-1.5 sm:space-x-2 space-x-reverse px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm flex-1 sm:flex-initial"
                   title="تصدير Excel"
                 >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span className="hidden sm:inline">Excel</span>
+                  <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span>Excel</span>
                 </button>
 
                 <button
-                  className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse px-4 py-2.5 text-sm"
+                  className="btn-secondary inline-flex items-center justify-center space-x-1.5 sm:space-x-2 space-x-reverse px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm flex-1 sm:flex-initial"
                   title="طباعة"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span className="hidden sm:inline">طباعة</span>
+                  <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span>طباعة</span>
                 </button>
               </div>
             </div>
           </div>
 
           {/* Period Info */}
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-xl p-4">
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-lg sm:rounded-xl p-3 sm:p-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2 text-blue-800">
-                <Calendar className="w-5 h-5" />
+              <div className="flex items-center gap-1.5 sm:gap-2 text-blue-800 text-sm sm:text-base">
+                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
                 <span className="font-semibold">الفترة المحددة:</span>
                 <span className="font-bold">
                   {selectedPeriod === 'today' && 'اليوم'}
@@ -540,8 +558,8 @@ export default function ReportsPage() {
                   {selectedPeriod === 'year' && 'هذا العام'}
                 </span>
               </div>
-              <div className="text-sm text-blue-600">
-                {new Date(filteredData.dateRange.startDate).toLocaleDateString('ar-SA')} - {new Date(filteredData.dateRange.endDate).toLocaleDateString('ar-SA')}
+              <div className="text-xs sm:text-sm text-blue-600">
+                {formatDateInArabic(new Date(filteredData.dateRange.startDate))} - {formatDateInArabic(new Date(filteredData.dateRange.endDate))}
               </div>
             </div>
           </div>
@@ -554,42 +572,42 @@ export default function ReportsPage() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="mb-8"
         >
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <Target className="w-6 h-6 text-pink-600" />
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <Target className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
             <span>مؤشرات الأداء الرئيسية (KPIs)</span>
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
             {/* Total Revenue */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+              whileHover={{ scale: 1.02, y: -2 }}
+              className="relative overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-green-200 shadow-md sm:shadow-lg hover:shadow-lg sm:hover:shadow-xl transition-all duration-300 cursor-pointer group"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-green-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 bg-green-200/30 rounded-full -mr-8 sm:-mr-10 lg:-mr-12 -mt-8 sm:-mt-10 lg:-mt-12 group-hover:scale-150 transition-transform duration-500"></div>
               <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-emerald-400 rounded-xl flex items-center justify-center shadow-md">
-                    <DollarSign className="w-7 h-7 text-white" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-green-400 to-emerald-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
+                    <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
                   </div>
-                  <div className={`flex items-center space-x-1 space-x-reverse text-sm font-semibold ${
+                  <div className={`flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold ${
                     comprehensiveStats.revenueChange > 0 ? 'text-green-600' : comprehensiveStats.revenueChange < 0 ? 'text-red-600' : 'text-gray-600'
                   }`}>
                     {comprehensiveStats.revenueChange > 0 ? (
-                      <TrendingUp className="w-4 h-4" />
+                      <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
                     ) : comprehensiveStats.revenueChange < 0 ? (
-                      <TrendingDown className="w-4 h-4" />
+                      <TrendingDown className="w-3 h-3 sm:w-4 sm:h-4" />
                     ) : null}
                     <span>{Math.abs(comprehensiveStats.revenueChange)}%</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-green-700 mb-1">
+                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-green-700 mb-0.5 sm:mb-1 leading-tight">
                   {comprehensiveStats.currentRevenue.toLocaleString()} ر.س
                 </h3>
-                <p className="text-sm font-semibold text-green-800">إجمالي الإيرادات</p>
-                <p className="text-xs text-green-600 mt-1">من الطلبات المكتملة</p>
+                <p className="text-xs sm:text-sm font-semibold text-green-800 leading-tight">إجمالي الإيرادات</p>
+                <p className="text-[10px] sm:text-xs text-green-600 mt-0.5 sm:mt-1">من الطلبات المكتملة</p>
               </div>
             </motion.div>
 
@@ -598,31 +616,31 @@ export default function ReportsPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-6 border-2 border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+              whileHover={{ scale: 1.02, y: -2 }}
+              className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-blue-200 shadow-md sm:shadow-lg hover:shadow-lg sm:hover:shadow-xl transition-all duration-300 cursor-pointer group"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 bg-blue-200/30 rounded-full -mr-8 sm:-mr-10 lg:-mr-12 -mt-8 sm:-mt-10 lg:-mt-12 group-hover:scale-150 transition-transform duration-500"></div>
               <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-md">
-                    <Package className="w-7 h-7 text-white" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
+                    <Package className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
                   </div>
-                  <div className={`flex items-center space-x-1 space-x-reverse text-sm font-semibold ${
+                  <div className={`flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold ${
                     comprehensiveStats.ordersChange > 0 ? 'text-green-600' : comprehensiveStats.ordersChange < 0 ? 'text-red-600' : 'text-gray-600'
                   }`}>
                     {comprehensiveStats.ordersChange > 0 ? (
-                      <TrendingUp className="w-4 h-4" />
+                      <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
                     ) : comprehensiveStats.ordersChange < 0 ? (
-                      <TrendingDown className="w-4 h-4" />
+                      <TrendingDown className="w-3 h-3 sm:w-4 sm:h-4" />
                     ) : null}
                     <span>{Math.abs(comprehensiveStats.ordersChange)}%</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-blue-700 mb-1">
+                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-blue-700 mb-0.5 sm:mb-1 leading-tight">
                   {comprehensiveStats.totalOrders}
                 </h3>
-                <p className="text-sm font-semibold text-blue-800">إجمالي الطلبات</p>
-                <p className="text-xs text-blue-600 mt-1">في الفترة المحددة</p>
+                <p className="text-xs sm:text-sm font-semibold text-blue-800 leading-tight">إجمالي الطلبات</p>
+                <p className="text-[10px] sm:text-xs text-blue-600 mt-0.5 sm:mt-1">في الفترة المحددة</p>
               </div>
             </motion.div>
 
@@ -631,25 +649,25 @@ export default function ReportsPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5, delay: 0.5 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-6 border-2 border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+              whileHover={{ scale: 1.02, y: -2 }}
+              className="relative overflow-hidden bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-purple-200 shadow-md sm:shadow-lg hover:shadow-lg sm:hover:shadow-xl transition-all duration-300 cursor-pointer group"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-purple-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 bg-purple-200/30 rounded-full -mr-8 sm:-mr-10 lg:-mr-12 -mt-8 sm:-mt-10 lg:-mt-12 group-hover:scale-150 transition-transform duration-500"></div>
               <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center shadow-md">
-                    <CheckCircle className="w-7 h-7 text-white" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
+                    <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
                   </div>
-                  <div className="flex items-center space-x-1 space-x-reverse text-sm font-semibold text-purple-600">
-                    <Percent className="w-4 h-4" />
+                  <div className="flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold text-purple-600">
+                    <Percent className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span>{comprehensiveStats.completionRate}%</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-purple-700 mb-1">
+                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-purple-700 mb-0.5 sm:mb-1 leading-tight">
                   {comprehensiveStats.completedOrders}
                 </h3>
-                <p className="text-sm font-semibold text-purple-800">طلبات مكتملة</p>
-                <p className="text-xs text-purple-600 mt-1">معدل الإنجاز {comprehensiveStats.completionRate}%</p>
+                <p className="text-xs sm:text-sm font-semibold text-purple-800 leading-tight">طلبات مكتملة</p>
+                <p className="text-[10px] sm:text-xs text-purple-600 mt-0.5 sm:mt-1">معدل الإنجاز {comprehensiveStats.completionRate}%</p>
               </div>
             </motion.div>
 
@@ -658,25 +676,26 @@ export default function ReportsPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5, delay: 0.6 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="relative overflow-hidden bg-gradient-to-br from-orange-50 to-yellow-50 rounded-2xl p-6 border-2 border-orange-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group"
+              whileHover={{ scale: 1.02, y: -2 }}
+              className="relative overflow-hidden bg-gradient-to-br from-orange-50 to-yellow-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-orange-200 shadow-md sm:shadow-lg hover:shadow-lg sm:hover:shadow-xl transition-all duration-300 cursor-pointer group"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-orange-200/30 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 bg-orange-200/30 rounded-full -mr-8 sm:-mr-10 lg:-mr-12 -mt-8 sm:-mt-10 lg:-mt-12 group-hover:scale-150 transition-transform duration-500"></div>
               <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-yellow-400 rounded-xl flex items-center justify-center shadow-md">
-                    <Activity className="w-7 h-7 text-white" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-orange-400 to-yellow-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
+                    <Activity className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
                   </div>
-                  <div className="flex items-center space-x-1 space-x-reverse text-sm font-semibold text-orange-600">
-                    <Clock className="w-4 h-4" />
-                    <span>{comprehensiveStats.avgCompletionTime} يوم</span>
+                  <div className="flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold text-orange-600">
+                    <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">{comprehensiveStats.avgCompletionTime} يوم</span>
+                    <span className="sm:hidden">{comprehensiveStats.avgCompletionTime}د</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-orange-700 mb-1">
+                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-orange-700 mb-0.5 sm:mb-1 leading-tight">
                   {comprehensiveStats.averageOrderValue.toLocaleString()} ر.س
                 </h3>
-                <p className="text-sm font-semibold text-orange-800">متوسط قيمة الطلب</p>
-                <p className="text-xs text-orange-600 mt-1">متوسط وقت الإنجاز</p>
+                <p className="text-xs sm:text-sm font-semibold text-orange-800 leading-tight">متوسط قيمة الطلب</p>
+                <p className="text-[10px] sm:text-xs text-orange-600 mt-0.5 sm:mt-1">متوسط وقت الإنجاز</p>
               </div>
             </motion.div>
           </div>
@@ -687,62 +706,62 @@ export default function ReportsPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.7 }}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+          className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6 mb-8"
         >
           {/* Unique Customers */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-400 to-purple-400 rounded-lg flex items-center justify-center">
-                <Users className="w-6 h-6 text-white" />
+          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-indigo-400 to-purple-400 rounded-lg flex items-center justify-center">
+                <Users className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
               </div>
-              <div className={`text-sm font-semibold ${comprehensiveStats.customerGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <div className={`text-xs sm:text-sm font-semibold ${comprehensiveStats.customerGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {comprehensiveStats.customerGrowth >= 0 ? '+' : ''}{comprehensiveStats.customerGrowth}%
               </div>
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-1">{comprehensiveStats.uniqueCustomers}</h3>
-            <p className="text-sm text-gray-600">عملاء فريدون</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.uniqueCustomers}</h3>
+            <p className="text-xs sm:text-sm text-gray-600 leading-tight">عملاء فريدون</p>
           </div>
 
           {/* Total Appointments */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-lg flex items-center justify-center">
-                <Calendar className="w-6 h-6 text-white" />
+          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-lg flex items-center justify-center">
+                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
               </div>
-              <div className="text-sm font-semibold text-blue-600">
+              <div className="text-xs sm:text-sm font-semibold text-blue-600">
                 {comprehensiveStats.appointmentConversionRate}%
               </div>
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-1">{comprehensiveStats.totalAppointments}</h3>
-            <p className="text-sm text-gray-600">إجمالي المواعيد</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalAppointments}</h3>
+            <p className="text-xs sm:text-sm text-gray-600 leading-tight">إجمالي المواعيد</p>
           </div>
 
           {/* Payment Collection Rate */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-400 rounded-lg flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-white" />
+          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-green-400 to-emerald-400 rounded-lg flex items-center justify-center">
+                <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
               </div>
-              <div className="text-sm font-semibold text-green-600">
+              <div className="text-xs sm:text-sm font-semibold text-green-600">
                 {comprehensiveStats.paymentCollectionRate}%
               </div>
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-1">{comprehensiveStats.totalPaid.toLocaleString()} ر.س</h3>
-            <p className="text-sm text-gray-600">المبالغ المحصلة</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalPaid.toLocaleString()} ر.س</h3>
+            <p className="text-xs sm:text-sm text-gray-600 leading-tight">المبالغ المحصلة</p>
           </div>
 
           {/* Outstanding Balance */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-red-400 rounded-lg flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-white" />
+          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-orange-400 to-red-400 rounded-lg flex items-center justify-center">
+                <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
               </div>
-              <div className="text-sm font-semibold text-orange-600">
+              <div className="text-xs sm:text-sm font-semibold text-orange-600">
                 متبقي
               </div>
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-1">{comprehensiveStats.totalDue.toLocaleString()} ر.س</h3>
-            <p className="text-sm text-gray-600">المبالغ المستحقة</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalDue.toLocaleString()} ر.س</h3>
+            <p className="text-xs sm:text-sm text-gray-600 leading-tight">المبالغ المستحقة</p>
           </div>
         </motion.div>
 
@@ -753,93 +772,93 @@ export default function ReportsPage() {
           transition={{ duration: 0.6, delay: 0.8 }}
           className="mb-8"
         >
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <Package className="w-6 h-6 text-pink-600" />
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <Package className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
             <span>حالة الطلبات</span>
           </h2>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             {/* Pending */}
-            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-5 border-2 border-yellow-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <Clock className="w-8 h-8 text-yellow-600" />
-                <span className="text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-yellow-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <Clock className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-yellow-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-yellow-700 bg-yellow-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.ordersByStatus.pending / comprehensiveStats.totalOrders) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-yellow-700 mb-1">{comprehensiveStats.ordersByStatus.pending}</h3>
-              <p className="text-sm font-semibold text-yellow-800">قيد الانتظار</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-yellow-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.ordersByStatus.pending}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-yellow-800 leading-tight">قيد الانتظار</p>
             </div>
 
             {/* In Progress */}
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5 border-2 border-blue-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <Loader className="w-8 h-8 text-blue-600 animate-spin" />
-                <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-blue-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <Loader className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-blue-600 animate-spin" />
+                <span className="text-[10px] sm:text-xs font-semibold text-blue-700 bg-blue-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.ordersByStatus.in_progress / comprehensiveStats.totalOrders) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-blue-700 mb-1">{comprehensiveStats.ordersByStatus.in_progress}</h3>
-              <p className="text-sm font-semibold text-blue-800">قيد التنفيذ</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-blue-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.ordersByStatus.in_progress}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-blue-800 leading-tight">قيد التنفيذ</p>
             </div>
 
             {/* Completed */}
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border-2 border-green-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <PackageCheck className="w-8 h-8 text-green-600" />
-                <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-green-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <PackageCheck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-green-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-green-700 bg-green-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.ordersByStatus.completed / comprehensiveStats.totalOrders) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-green-700 mb-1">{comprehensiveStats.ordersByStatus.completed}</h3>
-              <p className="text-sm font-semibold text-green-800">مكتملة</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-green-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.ordersByStatus.completed}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-green-800 leading-tight">مكتملة</p>
             </div>
 
             {/* Delivered */}
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-5 border-2 border-purple-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <Truck className="w-8 h-8 text-purple-600" />
-                <span className="text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-purple-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <Truck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-purple-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-purple-700 bg-purple-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.ordersByStatus.delivered / comprehensiveStats.totalOrders) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-purple-700 mb-1">{comprehensiveStats.ordersByStatus.delivered}</h3>
-              <p className="text-sm font-semibold text-purple-800">تم التسليم</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-purple-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.ordersByStatus.delivered}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-purple-800 leading-tight">تم التسليم</p>
             </div>
 
             {/* Cancelled */}
-            <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-5 border-2 border-red-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <XCircle className="w-8 h-8 text-red-600" />
-                <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-red-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <XCircle className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-red-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-red-700 bg-red-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.ordersByStatus.cancelled / comprehensiveStats.totalOrders) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-red-700 mb-1">{comprehensiveStats.ordersByStatus.cancelled}</h3>
-              <p className="text-sm font-semibold text-red-800">ملغاة</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-red-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.ordersByStatus.cancelled}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-red-800 leading-tight">ملغاة</p>
             </div>
           </div>
         </motion.div>
 
-        <div className="grid lg:grid-cols-2 gap-8 mb-8">
+        <div className="grid lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-8">
           {/* Worker Performance */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.9 }}
-            className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300"
+            className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300"
           >
-            <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-              <Award className="w-6 h-6 text-pink-600" />
+            <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+              <Award className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
               <span>أداء العمال</span>
             </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {workerPerformance.slice(0, 5).map((worker, index) => (
-                <div key={worker.id} className="relative overflow-hidden bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl p-4 border border-pink-200 hover:shadow-md transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3 space-x-reverse flex-1">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md ${
+                <div key={worker.id} className="relative overflow-hidden bg-gradient-to-r from-pink-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-pink-200 hover:shadow-md transition-all duration-300">
+                  <div className="flex items-center justify-between gap-2 sm:gap-3">
+                    <div className="flex items-center space-x-2 sm:space-x-3 space-x-reverse flex-1 min-w-0">
+                      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md text-sm sm:text-base ${
                         index === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
                         index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500' :
                         index === 2 ? 'bg-gradient-to-br from-orange-400 to-orange-600' :
@@ -848,18 +867,19 @@ export default function ReportsPage() {
                         {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-gray-800 truncate">{worker.name}</h4>
-                        <div className="flex items-center gap-3 text-xs text-gray-600 mt-1">
-                          <span className="flex items-center gap-1">
+                        <h4 className="font-bold text-gray-800 truncate text-sm sm:text-base">{worker.name}</h4>
+                        <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-gray-600 mt-0.5 sm:mt-1 flex-wrap">
+                          <span className="flex items-center gap-0.5 sm:gap-1">
                             <Package className="w-3 h-3" />
-                            {worker.totalOrders} طلب
+                            <span className="hidden sm:inline">{worker.totalOrders} طلب</span>
+                            <span className="sm:hidden">{worker.totalOrders}</span>
                           </span>
-                          <span className="flex items-center gap-1">
+                          <span className="flex items-center gap-0.5 sm:gap-1">
                             <CheckCircle className="w-3 h-3" />
                             {worker.completionRate}%
                           </span>
                           {worker.avgCompletionTime > 0 && (
-                            <span className="flex items-center gap-1">
+                            <span className="hidden sm:flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {worker.avgCompletionTime} يوم
                             </span>
@@ -867,9 +887,9 @@ export default function ReportsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-green-600 text-lg">{worker.revenue.toLocaleString()} ر.س</p>
-                      <div className={`text-xs font-semibold px-2 py-1 rounded-full inline-block mt-1 ${
+                    <div className="text-right flex-shrink-0">
+                      <p className="font-bold text-green-600 text-sm sm:text-base lg:text-lg leading-tight">{worker.revenue.toLocaleString()} ر.س</p>
+                      <div className={`text-[10px] sm:text-xs font-semibold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full inline-block mt-0.5 sm:mt-1 ${
                         worker.efficiency === 'excellent' ? 'bg-green-100 text-green-700' :
                         worker.efficiency === 'good' ? 'bg-blue-100 text-blue-700' :
                         'bg-orange-100 text-orange-700'
@@ -895,14 +915,14 @@ export default function ReportsPage() {
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 1.0 }}
-            className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300"
+            className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300"
           >
-            <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-              <BarChart3 className="w-6 h-6 text-pink-600" />
+            <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+              <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
               <span>الطلبات حسب النوع</span>
             </h3>
 
-            <div className="space-y-5">
+            <div className="space-y-3 sm:space-y-4 lg:space-y-5">
               {ordersByType.map((type, index) => {
                 const colors = [
                   { bg: 'from-pink-500 to-rose-500', text: 'text-pink-700', light: 'bg-pink-50' },
@@ -914,25 +934,25 @@ export default function ReportsPage() {
                 const color = colors[index % colors.length]
 
                 return (
-                  <div key={index} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className={`font-bold ${color.text}`}>{type.type}</span>
-                      <div className="flex items-center space-x-3 space-x-reverse">
-                        <span className="text-sm text-gray-600">{type.count} طلب</span>
-                        <span className={`text-sm font-bold ${color.text} ${color.light} px-2 py-1 rounded-full`}>
+                  <div key={index} className="space-y-1.5 sm:space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`font-bold ${color.text} text-sm sm:text-base truncate`}>{type.type}</span>
+                      <div className="flex items-center space-x-2 sm:space-x-3 space-x-reverse flex-shrink-0">
+                        <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">{type.count} طلب</span>
+                        <span className={`text-xs sm:text-sm font-bold ${color.text} ${color.light} px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full`}>
                           {type.percentage}%
                         </span>
-                        <span className="text-sm font-semibold text-green-600">
+                        <span className="text-xs sm:text-sm font-semibold text-green-600">
                           {type.revenue.toLocaleString()} ر.س
                         </span>
                       </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 sm:h-3 overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${type.percentage}%` }}
                         transition={{ duration: 1, delay: 1.2 + index * 0.1 }}
-                        className={`bg-gradient-to-r ${color.bg} h-3 rounded-full shadow-sm`}
+                        className={`bg-gradient-to-r ${color.bg} h-2.5 sm:h-3 rounded-full shadow-sm`}
                       ></motion.div>
                     </div>
                   </div>
@@ -956,76 +976,76 @@ export default function ReportsPage() {
           transition={{ duration: 0.6, delay: 1.1 }}
           className="mb-8"
         >
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <CalendarCheck className="w-6 h-6 text-pink-600" />
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <CalendarCheck className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
             <span>تحليل المواعيد</span>
           </h2>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Pending Appointments */}
-            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-5 border-2 border-yellow-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <Clock className="w-8 h-8 text-yellow-600" />
-                <span className="text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-yellow-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <Clock className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-yellow-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-yellow-700 bg-yellow-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.pending / comprehensiveStats.totalAppointments) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-yellow-700 mb-1">{comprehensiveStats.appointmentsByStatus.pending}</h3>
-              <p className="text-sm font-semibold text-yellow-800">قيد الانتظار</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-yellow-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.pending}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-yellow-800 leading-tight">قيد الانتظار</p>
             </div>
 
             {/* Confirmed Appointments */}
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5 border-2 border-blue-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <CalendarCheck className="w-8 h-8 text-blue-600" />
-                <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-blue-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <CalendarCheck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-blue-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-blue-700 bg-blue-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.confirmed / comprehensiveStats.totalAppointments) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-blue-700 mb-1">{comprehensiveStats.appointmentsByStatus.confirmed}</h3>
-              <p className="text-sm font-semibold text-blue-800">مؤكدة</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-blue-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.confirmed}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-blue-800 leading-tight">مؤكدة</p>
             </div>
 
             {/* Completed Appointments */}
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border-2 border-green-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <UserCheck className="w-8 h-8 text-green-600" />
-                <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-green-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <UserCheck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-green-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-green-700 bg-green-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.completed / comprehensiveStats.totalAppointments) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-green-700 mb-1">{comprehensiveStats.appointmentsByStatus.completed}</h3>
-              <p className="text-sm font-semibold text-green-800">مكتملة</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-green-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.completed}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-green-800 leading-tight">مكتملة</p>
             </div>
 
             {/* Cancelled Appointments */}
-            <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-5 border-2 border-red-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-3">
-                <CalendarX className="w-8 h-8 text-red-600" />
-                <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-1 rounded-full">
+            <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-red-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <CalendarX className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-red-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-red-700 bg-red-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
                   {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.cancelled / comprehensiveStats.totalAppointments) * 100) : 0}%
                 </span>
               </div>
-              <h3 className="text-3xl font-bold text-red-700 mb-1">{comprehensiveStats.appointmentsByStatus.cancelled}</h3>
-              <p className="text-sm font-semibold text-red-800">ملغاة</p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-red-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.cancelled}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-red-800 leading-tight">ملغاة</p>
             </div>
           </div>
 
           {/* Conversion Rate Card */}
-          <div className="mt-6 bg-gradient-to-r from-purple-50 via-pink-50 to-rose-50 rounded-2xl p-6 border-2 border-purple-200">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl flex items-center justify-center shadow-lg">
-                  <Zap className="w-8 h-8 text-white" />
+          <div className="mt-4 sm:mt-6 bg-gradient-to-r from-purple-50 via-pink-50 to-rose-50 rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-purple-200">
+            <div className="flex items-center justify-between flex-wrap gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg">
+                  <Zap className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-purple-700">معدل التحويل: {comprehensiveStats.appointmentConversionRate}%</h3>
-                  <p className="text-sm text-purple-600">نسبة المواعيد التي تحولت إلى طلبات مكتملة</p>
+                  <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-purple-700 leading-tight">معدل التحويل: {comprehensiveStats.appointmentConversionRate}%</h3>
+                  <p className="text-xs sm:text-sm text-purple-600 mt-0.5">نسبة المواعيد التي تحولت إلى طلبات مكتملة</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm text-gray-600">المواعيد المكتملة</p>
-                <p className="text-3xl font-bold text-purple-700">{comprehensiveStats.appointmentsByStatus.completed}</p>
+                <p className="text-xs sm:text-sm text-gray-600">المواعيد المكتملة</p>
+                <p className="text-2xl sm:text-3xl font-bold text-purple-700 leading-tight">{comprehensiveStats.appointmentsByStatus.completed}</p>
               </div>
             </div>
           </div>
@@ -1038,44 +1058,44 @@ export default function ReportsPage() {
           transition={{ duration: 0.8, delay: 1.2 }}
           className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300 mb-8"
         >
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-pink-600" />
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
             <span>الاتجاه الشهري (آخر 6 أشهر)</span>
           </h2>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             {monthlyTrend.map((month, index) => (
               <motion.div
                 key={index}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 1.3 + index * 0.1 }}
-                className="relative overflow-hidden bg-gradient-to-br from-pink-50 to-rose-50 rounded-xl p-4 border-2 border-pink-200 hover:shadow-lg transition-all duration-300 group"
+                className="relative overflow-hidden bg-gradient-to-br from-pink-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 border-2 border-pink-200 hover:shadow-lg transition-all duration-300 group"
               >
-                <div className="absolute top-0 right-0 w-16 h-16 bg-pink-200/30 rounded-full -mr-8 -mt-8 group-hover:scale-150 transition-transform duration-500"></div>
+                <div className="absolute top-0 right-0 w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 bg-pink-200/30 rounded-full -mr-6 sm:-mr-7 lg:-mr-8 -mt-6 sm:-mt-7 lg:-mt-8 group-hover:scale-150 transition-transform duration-500"></div>
                 <div className="relative">
-                  <h4 className="font-bold text-gray-800 mb-3 text-center">{month.month}</h4>
-                  <div className="space-y-3">
-                    <div className="bg-white/70 rounded-lg p-2">
-                      <p className="text-xl font-bold text-green-600 text-center">{month.revenue.toLocaleString()}</p>
-                      <p className="text-xs text-gray-600 text-center">ر.س</p>
+                  <h4 className="font-bold text-gray-800 mb-2 sm:mb-3 text-center text-sm sm:text-base">{month.fullMonth}</h4>
+                  <div className="space-y-2 sm:space-y-3">
+                    <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
+                      <p className="text-base sm:text-lg lg:text-xl font-bold text-green-600 text-center leading-tight">{month.revenue.toLocaleString()}</p>
+                      <p className="text-[10px] sm:text-xs text-gray-600 text-center">ر.س</p>
                     </div>
-                    <div className="flex gap-2">
-                      <div className="flex-1 bg-white/70 rounded-lg p-2">
-                        <p className="text-lg font-bold text-blue-600 text-center">{month.orders}</p>
-                        <p className="text-xs text-gray-600 text-center">طلب</p>
+                    <div className="flex gap-1.5 sm:gap-2">
+                      <div className="flex-1 bg-white/70 rounded-lg p-1.5 sm:p-2">
+                        <p className="text-sm sm:text-base lg:text-lg font-bold text-blue-600 text-center leading-tight">{month.orders}</p>
+                        <p className="text-[10px] sm:text-xs text-gray-600 text-center">طلب</p>
                       </div>
-                      <div className="flex-1 bg-white/70 rounded-lg p-2">
-                        <p className="text-lg font-bold text-purple-600 text-center">{month.appointments}</p>
-                        <p className="text-xs text-gray-600 text-center">موعد</p>
+                      <div className="flex-1 bg-white/70 rounded-lg p-1.5 sm:p-2">
+                        <p className="text-sm sm:text-base lg:text-lg font-bold text-purple-600 text-center leading-tight">{month.appointments}</p>
+                        <p className="text-[10px] sm:text-xs text-gray-600 text-center">موعد</p>
                       </div>
                     </div>
-                    <div className="bg-white/70 rounded-lg p-2">
+                    <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
                       <div className="flex items-center justify-center gap-1">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <p className="text-sm font-bold text-green-600">{month.completedOrders}</p>
+                        <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" />
+                        <p className="text-xs sm:text-sm font-bold text-green-600">{month.completedOrders}</p>
                       </div>
-                      <p className="text-xs text-gray-600 text-center">مكتمل</p>
+                      <p className="text-[10px] sm:text-xs text-gray-600 text-center">مكتمل</p>
                     </div>
                   </div>
                 </div>
@@ -1096,25 +1116,25 @@ export default function ReportsPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 1.4 }}
-          className="bg-gradient-to-r from-pink-100 via-purple-100 to-blue-100 rounded-2xl p-6 border-2 border-pink-200"
+          className="bg-gradient-to-r from-pink-100 via-purple-100 to-blue-100 rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-200"
         >
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-500 rounded-xl flex items-center justify-center">
-                <FileText className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between flex-wrap gap-3 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-purple-500 rounded-lg sm:rounded-xl flex items-center justify-center">
+                <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-gray-800">تقرير شامل</h3>
-                <p className="text-sm text-gray-600">تم إنشاؤه في {new Date().toLocaleDateString('ar-SA')}</p>
+                <h3 className="text-base sm:text-lg font-bold text-gray-800">تقرير شامل</h3>
+                <p className="text-xs sm:text-sm text-gray-600">تم إنشاؤه في {formatDateInArabic(new Date())}</p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm">
-                <Download className="w-4 h-4" />
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button className="btn-primary inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm flex-1 sm:flex-initial">
+                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span>تحميل التقرير</span>
               </button>
-              <button className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm">
-                <Printer className="w-4 h-4" />
+              <button className="btn-secondary inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm flex-1 sm:flex-initial">
+                <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span>طباعة</span>
               </button>
             </div>
