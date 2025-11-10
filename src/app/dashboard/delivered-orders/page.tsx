@@ -33,6 +33,9 @@ export default function DeliveredOrdersPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchType, setSearchType] = useState<'name' | 'phone'>('name')
+  const [dateFilter, setDateFilter] = useState('')
 
   // التحقق من الصلاحيات - المدراء فقط
   useEffect(() => {
@@ -52,7 +55,17 @@ export default function DeliveredOrdersPage() {
   }, [user, router, loadOrders, loadWorkers])
 
   // فلترة الطلبات المسلمة فقط
-  const deliveredOrders = orders.filter(order => order.status === 'delivered')
+  const deliveredOrders = orders.filter(order => {
+    if (order.status !== 'delivered') return false
+
+    const matchesSearch = searchType === 'phone'
+      ? (order.client_phone || '').toLowerCase().includes(searchTerm.toLowerCase())
+      : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+
+    const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
+
+    return matchesSearch && matchesDate
+  })
 
   // الحصول على اسم العامل
   const getWorkerName = (workerId: string | null | undefined) => {
@@ -120,21 +133,97 @@ export default function DeliveredOrdersPage() {
           <span>العودة إلى لوحة التحكم</span>
         </button>
 
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4 space-x-reverse">
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
-              <Truck className="w-6 h-6 text-white" />
+        <div className="flex items-center space-x-4 space-x-reverse mb-6">
+          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
+            <Truck className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800">الطلبات المسلمة</h1>
+            <p className="text-gray-600">عرض جميع الطلبات التي تم تسليمها للعملاء</p>
+          </div>
+        </div>
+
+        {/* البحث والفلاتر */}
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-purple-100 mb-6">
+          {/* أزرار تبديل نوع البحث */}
+          <div className="flex space-x-2 space-x-reverse mb-4">
+            <button
+              onClick={() => {
+                setSearchType('name')
+                setSearchTerm('')
+              }}
+              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
+                searchType === 'name'
+                  ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              البحث بالاسم
+            </button>
+            <button
+              onClick={() => {
+                setSearchType('phone')
+                setSearchTerm('')
+              }}
+              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
+                searchType === 'phone'
+                  ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              البحث بالهاتف
+            </button>
+          </div>
+
+          {/* حقول البحث والفلترة */}
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* حقل البحث */}
+            <div className="relative">
+              <Package className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                placeholder={searchType === 'phone' ? 'أدخل رقم الهاتف...' : 'البحث في الطلبات المسلمة...'}
+              />
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-800">الطلبات المسلمة</h1>
-              <p className="text-gray-600">عرض جميع الطلبات التي تم تسليمها للعملاء</p>
+
+            {/* فلتر التاريخ */}
+            <div className="relative">
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+              />
             </div>
           </div>
 
-          <div className="bg-white px-6 py-3 rounded-lg border border-purple-200 shadow-sm">
-            <p className="text-sm text-gray-600">إجمالي الطلبات المسلمة</p>
-            <p className="text-2xl font-bold text-purple-600">{deliveredOrders.length}</p>
-          </div>
+          {/* زر إعادة تعيين الفلاتر */}
+          {(searchTerm || dateFilter) && (
+            <div className="mt-4 flex justify-between items-center">
+              <div className="text-sm text-gray-600">
+                عرض {deliveredOrders.length} طلب
+              </div>
+              <button
+                onClick={() => {
+                  setSearchTerm('')
+                  setDateFilter('')
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
+              >
+                <X className="w-4 h-4" />
+                <span>إعادة تعيين</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* عداد الطلبات */}
+        <div className="bg-white px-6 py-3 rounded-lg border border-purple-200 shadow-sm mb-6">
+          <p className="text-sm text-gray-600">إجمالي الطلبات المسلمة</p>
+          <p className="text-2xl font-bold text-purple-600">{deliveredOrders.length}</p>
         </div>
       </div>
 

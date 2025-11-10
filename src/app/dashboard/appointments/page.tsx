@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useAppointmentStore } from '@/store/appointmentStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import type { Appointment } from '@/lib/services/appointment-service'
+import ConfirmationModal from '@/components/ConfirmationModal'
 import {
   ArrowRight,
   Calendar,
@@ -46,21 +47,19 @@ export default function AppointmentsPage() {
   }, [user, router, loadAppointments])
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState('all')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<Appointment>>({})
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
-  const getStatusInfo = (status: string) => {
-    const statusMap = {
-      scheduled: { label: t('scheduled'), color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Clock },
-      confirmed: { label: t('confirmed'), color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
-      completed: { label: t('completed'), color: 'text-purple-600', bgColor: 'bg-purple-100', icon: CheckCircle },
-      cancelled: { label: t('cancelled'), color: 'text-red-600', bgColor: 'bg-red-100', icon: XCircle }
-    }
-    return statusMap[status as keyof typeof statusMap] || statusMap.scheduled
-  }
+  // حالة Modal التأكيد
+  const [confirmationModal, setConfirmationModal] = useState({
+    isOpen: false,
+    type: 'success' as 'success' | 'error',
+    message: ''
+  })
+
+
 
   // وظائف إدارة المواعيد
   const startEdit = (appointment: Appointment) => {
@@ -72,8 +71,7 @@ export default function AppointmentsPage() {
       appointment_date: appointment.appointment_date,
       appointment_time: appointment.appointment_time,
       service_type: appointment.service_type,
-      notes: appointment.notes || '',
-      status: appointment.status
+      notes: appointment.notes || ''
     })
   }
 
@@ -91,24 +89,40 @@ export default function AppointmentsPage() {
 
     const result = await updateAppointment(editingId, editData)
     if (result.success) {
-      console.log('✅ Appointment updated successfully')
       setEditingId(null)
       setEditData({})
+      setConfirmationModal({
+        isOpen: true,
+        type: 'success',
+        message: 'تم تحديث الموعد بنجاح!'
+      })
+    } else {
+      setConfirmationModal({
+        isOpen: true,
+        type: 'error',
+        message: result.error || 'فشل تحديث الموعد. يرجى المحاولة مرة أخرى.'
+      })
     }
   }
 
-  const handleCompleteAppointment = async (id: string) => {
-    const result = await updateAppointment(id, { status: 'completed' })
-    if (result.success) {
-      console.log('✅ Appointment completed')
-    }
-  }
+
 
   const handleDelete = async (appointmentId: string) => {
     const result = await deleteAppointment(appointmentId)
     if (result.success) {
-      console.log('✅ Appointment deleted')
       setDeleteConfirmId(null)
+      setConfirmationModal({
+        isOpen: true,
+        type: 'success',
+        message: 'تم حذف الموعد بنجاح!'
+      })
+    } else {
+      setDeleteConfirmId(null)
+      setConfirmationModal({
+        isOpen: true,
+        type: 'error',
+        message: result.error || 'فشل حذف الموعد. يرجى المحاولة مرة أخرى.'
+      })
     }
   }
 
@@ -146,8 +160,6 @@ export default function AppointmentsPage() {
                          appointment.customer_phone.includes(searchTerm) ||
                          appointment.id.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesStatus = statusFilter === 'all' || appointment.status === statusFilter
-
     let matchesDate = true
     if (dateFilter === 'today') {
       matchesDate = isToday(appointment.appointment_date)
@@ -161,7 +173,7 @@ export default function AppointmentsPage() {
       matchesDate = appointmentDate >= today && appointmentDate <= weekFromNow
     }
 
-    return matchesSearch && matchesStatus && matchesDate
+    return matchesSearch && matchesDate
   })
 
   if (!user) {
@@ -228,7 +240,7 @@ export default function AppointmentsPage() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 mb-8"
         >
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 gap-4">
             {/* البحث */}
             <div className="relative">
               <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -239,22 +251,6 @@ export default function AppointmentsPage() {
                 className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
                 placeholder={t('search_appointments_placeholder')}
               />
-            </div>
-
-            {/* فلتر الحالة */}
-            <div className="relative">
-              <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-              >
-                <option value="all">{t('all_statuses')}</option>
-                <option value="pending">{t('pending')}</option>
-                <option value="confirmed">{t('confirmed')}</option>
-                <option value="completed">{t('completed')}</option>
-                <option value="cancelled">{t('cancelled')}</option>
-              </select>
             </div>
 
             {/* فلتر التاريخ */}
@@ -274,19 +270,46 @@ export default function AppointmentsPage() {
           </div>
         </motion.div>
 
-        {/* نموذج تعديل الموعد - عرض كامل */}
-        {editingId && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white/90 rounded-xl border-2 border-pink-300 shadow-2xl p-6 mb-8"
-          >
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <Edit2 className="w-6 h-6 text-pink-600" />
-              {t('edit_appointment') || 'تعديل الموعد'}
-            </h2>
-            <div className="space-y-4">
+        {/* نموذج تعديل الموعد - Modal Overlay */}
+        <AnimatePresence>
+          {editingId && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={cancelEdit}
+              />
+
+              {/* Modal */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                transition={{ duration: 0.3, type: 'spring', damping: 25 }}
+                className="relative bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+              >
+                {/* Close Button */}
+                <button
+                  onClick={cancelEdit}
+                  disabled={isLoading}
+                  className="absolute top-4 left-4 w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="إغلاق"
+                >
+                  <X className="w-6 h-6 text-gray-600" />
+                </button>
+
+                <div className="p-6 sm:p-8">
+                  <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-br from-pink-400 to-purple-500 rounded-xl flex items-center justify-center">
+                      <Edit2 className="w-6 h-6 text-white" />
+                    </div>
+                    <span>{t('edit_appointment') || 'تعديل الموعد'}</span>
+                  </h2>
+                  <div className="space-y-5">
               {/* اسم العميل ورقم الهاتف */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -298,7 +321,7 @@ export default function AppointmentsPage() {
                     value={editData.customer_name || ''}
                     onChange={(e) => handleEditChange('customer_name', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    placeholder="مثال: أحمد محمد"
+                    placeholder={t('customer_name_placeholder')}
                   />
                 </div>
                 <div>
@@ -310,7 +333,7 @@ export default function AppointmentsPage() {
                     value={editData.customer_phone || ''}
                     onChange={(e) => handleEditChange('customer_phone', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    placeholder="مثال: 0501234567"
+                    placeholder={t('phone_placeholder')}
                   />
                 </div>
               </div>
@@ -325,7 +348,7 @@ export default function AppointmentsPage() {
                   value={editData.customer_email || ''}
                   onChange={(e) => handleEditChange('customer_email', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="example@email.com"
+                  placeholder={t('email_placeholder')}
                 />
               </div>
 
@@ -355,35 +378,18 @@ export default function AppointmentsPage() {
                 </div>
               </div>
 
-              {/* نوع الخدمة والحالة */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">
-                    {t('service_type') || 'نوع الخدمة'} *
-                  </label>
-                  <input
-                    type="text"
-                    value={editData.service_type || ''}
-                    onChange={(e) => handleEditChange('service_type', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    placeholder="مثال: استشارة، قياس، تجربة"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">
-                    {t('status') || 'الحالة'} *
-                  </label>
-                  <select
-                    value={editData.status || 'pending'}
-                    onChange={(e) => handleEditChange('status', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="pending">{t('pending') || 'قيد الانتظار'}</option>
-                    <option value="confirmed">{t('confirmed') || 'مؤكد'}</option>
-                    <option value="completed">{t('completed') || 'مكتمل'}</option>
-                    <option value="cancelled">{t('cancelled') || 'ملغي'}</option>
-                  </select>
-                </div>
+              {/* نوع الخدمة */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">
+                  {t('service_type') || 'نوع الخدمة'} *
+                </label>
+                <input
+                  type="text"
+                  value={editData.service_type || ''}
+                  onChange={(e) => handleEditChange('service_type', e.target.value)}
+                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                  placeholder={t('service_type_placeholder')}
+                />
               </div>
 
               {/* الملاحظات */}
@@ -395,42 +401,45 @@ export default function AppointmentsPage() {
                   value={editData.notes || ''}
                   onChange={(e) => handleEditChange('notes', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="أي ملاحظات إضافية..."
+                  placeholder={t('notes_placeholder')}
                   rows={3}
                 />
               </div>
 
-              {/* أزرار الحفظ والإلغاء */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={handleSave}
-                  disabled={isLoading}
-                  className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>{t('saving') || 'جاري الحفظ...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5" />
-                      <span>{t('save_changes') || 'حفظ التعديلات'}</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={cancelEdit}
-                  disabled={isLoading}
-                  className="btn-secondary flex-1 flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <X className="w-5 h-5" />
-                  <span>{t('cancel') || 'إلغاء'}</span>
-                </button>
-              </div>
+                    {/* أزرار الحفظ والإلغاء */}
+                    <div className="flex gap-3 pt-6 border-t border-gray-200">
+                      <button
+                        onClick={handleSave}
+                        disabled={isLoading}
+                        className="flex-1 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white px-6 py-4 rounded-xl font-bold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <span>{t('saving') || 'جاري الحفظ...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-5 h-5" />
+                            <span>{t('save_changes') || 'حفظ التعديلات'}</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        disabled={isLoading}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-4 rounded-xl font-bold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <X className="w-5 h-5" />
+                        <span>{t('cancel') || 'إلغاء'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
             </div>
-          </motion.div>
-        )}
+          )}
+        </AnimatePresence>
 
         {/* قائمة المواعيد */}
         <motion.div
@@ -471,21 +480,14 @@ export default function AppointmentsPage() {
                             <Phone className="w-4 h-4" />
                             <span>{appointment.customer_phone}</span>
                           </div>
-                          <p className="text-xs text-gray-500">#{appointment.id}</p>
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-2 space-x-reverse">
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusInfo(appointment.status).bgColor} ${getStatusInfo(appointment.status).color}`}>
-                          {getStatusInfo(appointment.status).label}
+                      {isToday(appointment.appointment_date) && (
+                        <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
+                          {t('today')}
                         </span>
-
-                        {isToday(appointment.appointment_date) && (
-                          <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
-                            {t('today')}
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
 
                     {appointment.notes && (
@@ -530,16 +532,7 @@ export default function AppointmentsPage() {
                       <span>{t('edit') || 'تعديل'}</span>
                     </button>
 
-                    {/* زر وضع علامة حضور (فقط للمواعيد المؤكدة) */}
-                    {appointment.status === 'confirmed' && (
-                      <button
-                        onClick={() => handleCompleteAppointment(appointment.id)}
-                        disabled={editingId !== null}
-                        className="btn-primary py-2 px-4 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {t('mark_attended') || 'وضع علامة حضور'}
-                      </button>
-                    )}
+
 
                     {/* زر الحذف */}
                     <button
@@ -562,20 +555,13 @@ export default function AppointmentsPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.6 }}
-          className="mt-12 grid grid-cols-2 lg:grid-cols-4 gap-6"
+          className="mt-12 grid grid-cols-2 lg:grid-cols-3 gap-6"
         >
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
-            <div className="text-2xl font-bold text-blue-600 mb-1">
-              {appointments.filter(a => a.status === 'pending').length}
+            <div className="text-2xl font-bold text-pink-600 mb-1">
+              {appointments.length}
             </div>
-            <div className="text-sm text-gray-600">{t('pending')}</div>
-          </div>
-
-          <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
-            <div className="text-2xl font-bold text-green-600 mb-1">
-              {appointments.filter(a => a.status === 'confirmed').length}
-            </div>
-            <div className="text-sm text-gray-600">{t('confirmed')}</div>
+            <div className="text-sm text-gray-600">{t('total_appointments') || 'إجمالي المواعيد'}</div>
           </div>
 
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
@@ -587,9 +573,9 @@ export default function AppointmentsPage() {
 
           <div className="text-center p-6 bg-white/80 backdrop-blur-sm rounded-xl border border-pink-100">
             <div className="text-2xl font-bold text-purple-600 mb-1">
-              {appointments.filter(a => a.status === 'completed').length}
+              {appointments.filter(a => isTomorrow(a.appointment_date)).length}
             </div>
-            <div className="text-sm text-gray-600">{t('completed')}</div>
+            <div className="text-sm text-gray-600">{t('tomorrow')}</div>
           </div>
         </motion.div>
       </div>
@@ -641,6 +627,16 @@ export default function AppointmentsPage() {
           </motion.div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmationModal.isOpen}
+        onClose={() => setConfirmationModal({ ...confirmationModal, isOpen: false })}
+        type={confirmationModal.type}
+        message={confirmationModal.message}
+        autoClose={true}
+        autoCloseDelay={3000}
+      />
     </div>
   )
 }

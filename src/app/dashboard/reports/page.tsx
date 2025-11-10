@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
-import { useAppointmentStore } from '@/store/appointmentStore'
+
 import { useTranslation } from '@/hooks/useTranslation'
 import {
   ArrowRight,
@@ -82,7 +82,6 @@ export default function ReportsPage() {
   const { user } = useAuthStore()
   const { orders, loadOrders, getStats: getOrderStats } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
-  const { appointments, loadAppointments } = useAppointmentStore()
   const { t } = useTranslation()
   const router = useRouter()
 
@@ -105,8 +104,7 @@ export default function ReportsPage() {
   useEffect(() => {
     loadOrders()
     loadWorkers()
-    loadAppointments()
-  }, [loadOrders, loadWorkers, loadAppointments])
+  }, [loadOrders, loadWorkers])
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -193,30 +191,20 @@ export default function ReportsPage() {
       isInDateRange(order.created_at, previousRange)
     )
 
-    // Filter appointments
-    const currentAppointments = appointments.filter(apt =>
-      isInDateRange(apt.created_at, dateRange)
-    )
-    const previousAppointments = appointments.filter(apt =>
-      isInDateRange(apt.created_at, previousRange)
-    )
-
     return {
       currentOrders,
       previousOrders,
-      currentAppointments,
-      previousAppointments,
       dateRange,
       previousRange
     }
-  }, [orders, appointments, selectedPeriod, customDateRange])
+  }, [orders, selectedPeriod, customDateRange])
 
   // ============================================================================
   // Comprehensive Statistics Calculations
   // ============================================================================
 
   const comprehensiveStats = useMemo(() => {
-    const { currentOrders, previousOrders, currentAppointments, previousAppointments } = filteredData
+    const { currentOrders, previousOrders } = filteredData
 
     // Orders Statistics
     const currentRevenue = currentOrders
@@ -267,17 +255,7 @@ export default function ReportsPage() {
       cancelled: currentOrders.filter(o => o.status === 'cancelled').length
     }
 
-    // Appointments Statistics
-    const appointmentsByStatus = {
-      pending: currentAppointments.filter(a => a.status === 'pending').length,
-      confirmed: currentAppointments.filter(a => a.status === 'confirmed').length,
-      completed: currentAppointments.filter(a => a.status === 'completed').length,
-      cancelled: currentAppointments.filter(a => a.status === 'cancelled').length
-    }
 
-    const appointmentConversionRate = currentAppointments.length > 0
-      ? Number(((appointmentsByStatus.completed / currentAppointments.length) * 100).toFixed(1))
-      : 0
 
     // Customer Insights
     const uniqueCustomers = new Set(currentOrders.map(o => o.client_phone)).size
@@ -310,11 +288,6 @@ export default function ReportsPage() {
       averageOrderValue,
       avgCompletionTime,
       ordersByStatus,
-
-      // Appointments
-      totalAppointments: currentAppointments.length,
-      appointmentsByStatus,
-      appointmentConversionRate,
 
       // Customers
       uniqueCustomers,
@@ -420,24 +393,17 @@ export default function ReportsPage() {
         .filter(order => order.status === 'completed' || order.status === 'delivered')
         .reduce((sum, order) => sum + Number(order.price || 0), 0)
 
-      const monthAppointments = appointments.filter(apt => {
-        const aptDate = new Date(apt.created_at)
-        return aptDate.getMonth() === date.getMonth() &&
-               aptDate.getFullYear() === date.getFullYear()
-      })
-
       trend.push({
         month: monthShort,
         fullMonth: monthName,
         revenue,
         orders: monthOrders.length,
-        appointments: monthAppointments.length,
         completedOrders: monthOrders.filter(o => o.status === 'completed' || o.status === 'delivered').length
       })
     }
 
     return trend
-  }, [orders, appointments])
+  }, [orders])
 
   // ============================================================================
   // Loading & Permission Check
@@ -722,19 +688,7 @@ export default function ReportsPage() {
             <p className="text-xs sm:text-sm text-gray-600 leading-tight">عملاء فريدون</p>
           </div>
 
-          {/* Total Appointments */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
-            <div className="flex items-center justify-between mb-2 sm:mb-3">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-lg flex items-center justify-center">
-                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
-              </div>
-              <div className="text-xs sm:text-sm font-semibold text-blue-600">
-                {comprehensiveStats.appointmentConversionRate}%
-              </div>
-            </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalAppointments}</h3>
-            <p className="text-xs sm:text-sm text-gray-600 leading-tight">إجمالي المواعيد</p>
-          </div>
+
 
           {/* Payment Collection Rate */}
           <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
@@ -969,87 +923,7 @@ export default function ReportsPage() {
           </motion.div>
         </div>
 
-        {/* Appointments Analytics */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 1.1 }}
-          className="mb-8"
-        >
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
-            <CalendarCheck className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
-            <span>تحليل المواعيد</span>
-          </h2>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Pending Appointments */}
-            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-yellow-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <Clock className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-yellow-600" />
-                <span className="text-[10px] sm:text-xs font-semibold text-yellow-700 bg-yellow-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
-                  {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.pending / comprehensiveStats.totalAppointments) * 100) : 0}%
-                </span>
-              </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-yellow-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.pending}</h3>
-              <p className="text-xs sm:text-sm font-semibold text-yellow-800 leading-tight">قيد الانتظار</p>
-            </div>
-
-            {/* Confirmed Appointments */}
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-blue-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <CalendarCheck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-blue-600" />
-                <span className="text-[10px] sm:text-xs font-semibold text-blue-700 bg-blue-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
-                  {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.confirmed / comprehensiveStats.totalAppointments) * 100) : 0}%
-                </span>
-              </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-blue-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.confirmed}</h3>
-              <p className="text-xs sm:text-sm font-semibold text-blue-800 leading-tight">مؤكدة</p>
-            </div>
-
-            {/* Completed Appointments */}
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-green-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <UserCheck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-green-600" />
-                <span className="text-[10px] sm:text-xs font-semibold text-green-700 bg-green-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
-                  {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.completed / comprehensiveStats.totalAppointments) * 100) : 0}%
-                </span>
-              </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-green-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.completed}</h3>
-              <p className="text-xs sm:text-sm font-semibold text-green-800 leading-tight">مكتملة</p>
-            </div>
-
-            {/* Cancelled Appointments */}
-            <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-red-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <CalendarX className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-red-600" />
-                <span className="text-[10px] sm:text-xs font-semibold text-red-700 bg-red-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
-                  {comprehensiveStats.totalAppointments > 0 ? Math.round((comprehensiveStats.appointmentsByStatus.cancelled / comprehensiveStats.totalAppointments) * 100) : 0}%
-                </span>
-              </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-red-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.appointmentsByStatus.cancelled}</h3>
-              <p className="text-xs sm:text-sm font-semibold text-red-800 leading-tight">ملغاة</p>
-            </div>
-          </div>
-
-          {/* Conversion Rate Card */}
-          <div className="mt-4 sm:mt-6 bg-gradient-to-r from-purple-50 via-pink-50 to-rose-50 rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-purple-200">
-            <div className="flex items-center justify-between flex-wrap gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg">
-                  <Zap className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-purple-700 leading-tight">معدل التحويل: {comprehensiveStats.appointmentConversionRate}%</h3>
-                  <p className="text-xs sm:text-sm text-purple-600 mt-0.5">نسبة المواعيد التي تحولت إلى طلبات مكتملة</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-xs sm:text-sm text-gray-600">المواعيد المكتملة</p>
-                <p className="text-2xl sm:text-3xl font-bold text-purple-700 leading-tight">{comprehensiveStats.appointmentsByStatus.completed}</p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
 
         {/* Monthly Trend - الاتجاه الشهري */}
         <motion.div
@@ -1080,15 +954,9 @@ export default function ReportsPage() {
                       <p className="text-base sm:text-lg lg:text-xl font-bold text-green-600 text-center leading-tight">{month.revenue.toLocaleString()}</p>
                       <p className="text-[10px] sm:text-xs text-gray-600 text-center">ر.س</p>
                     </div>
-                    <div className="flex gap-1.5 sm:gap-2">
-                      <div className="flex-1 bg-white/70 rounded-lg p-1.5 sm:p-2">
-                        <p className="text-sm sm:text-base lg:text-lg font-bold text-blue-600 text-center leading-tight">{month.orders}</p>
-                        <p className="text-[10px] sm:text-xs text-gray-600 text-center">طلب</p>
-                      </div>
-                      <div className="flex-1 bg-white/70 rounded-lg p-1.5 sm:p-2">
-                        <p className="text-sm sm:text-base lg:text-lg font-bold text-purple-600 text-center leading-tight">{month.appointments}</p>
-                        <p className="text-[10px] sm:text-xs text-gray-600 text-center">موعد</p>
-                      </div>
+                    <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
+                      <p className="text-sm sm:text-base lg:text-lg font-bold text-blue-600 text-center leading-tight">{month.orders}</p>
+                      <p className="text-[10px] sm:text-xs text-gray-600 text-center">طلب</p>
                     </div>
                     <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
                       <div className="flex items-center justify-center gap-1">

@@ -58,6 +58,7 @@ export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchType, setSearchType] = useState<'name' | 'phone'>('name')
   const [statusFilter, setStatusFilter] = useState('pending')
+  const [dateFilter, setDateFilter] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showViewModal, setShowViewModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -242,7 +243,9 @@ export default function OrdersPage() {
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
-    return matchesRole && matchesSearch && matchesStatus
+    const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
+
+    return matchesRole && matchesSearch && matchesStatus && matchesDate
   })
 
   if (!user) {
@@ -344,7 +347,7 @@ export default function OrdersPage() {
           </div>
 
           {/* حقول البحث والفلترة */}
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-3 gap-4">
             {/* حقل البحث */}
             <div className="relative">
               <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -365,12 +368,39 @@ export default function OrdersPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
               >
+                <option value="all">{t('all_orders')}</option>
                 <option value="pending">{t('pending')}</option>
                 <option value="in_progress">{t('in_progress')}</option>
-                <option value="completed">{t('completed')}</option>
               </select>
             </div>
+
+            {/* فلتر التاريخ */}
+            <div className="relative">
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+              />
+            </div>
           </div>
+
+          {/* زر إعادة تعيين الفلاتر */}
+          {(searchTerm || (statusFilter !== 'pending' && statusFilter !== 'all') || dateFilter) && (
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => {
+                  setSearchTerm('')
+                  setStatusFilter('pending')
+                  setDateFilter('')
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
+              >
+                <X className="w-4 h-4" />
+                <span>{t('reset_filters')}</span>
+              </button>
+            </div>
+          )}
         </motion.div>
 
         {/* قائمة الطلبات */}
