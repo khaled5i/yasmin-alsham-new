@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
@@ -57,7 +58,7 @@ export default function OrdersPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [searchType, setSearchType] = useState<'name' | 'phone'>('name')
-  const [statusFilter, setStatusFilter] = useState('pending')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -69,7 +70,6 @@ export default function OrdersPage() {
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<any>(null)
-  const [deleteSuccess, setDeleteSuccess] = useState(false)
 
   const getStatusInfo = (status: string) => {
     const statusMap = {
@@ -113,8 +113,13 @@ export default function OrdersPage() {
     if (updates.description) supabaseUpdates.description = updates.description
     if (updates.fabric !== undefined) supabaseUpdates.fabric = updates.fabric
     if (updates.price !== undefined) supabaseUpdates.price = updates.price
+    if (updates.paid_amount !== undefined) supabaseUpdates.paid_amount = updates.paid_amount
+    // ملاحظة: payment_status سيتم حسابه تلقائياً بواسطة trigger في قاعدة البيانات
     if (updates.status) supabaseUpdates.status = updates.status
-    if (updates.assignedWorker !== undefined) supabaseUpdates.worker_id = updates.assignedWorker
+    // تحويل string فارغ إلى null لحقول UUID
+    if (updates.assignedWorker !== undefined) {
+      supabaseUpdates.worker_id = updates.assignedWorker === '' ? null : updates.assignedWorker
+    }
     if (updates.dueDate) supabaseUpdates.due_date = updates.dueDate
     if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes
     if (updates.voiceNotes !== undefined) {
@@ -123,7 +128,22 @@ export default function OrdersPage() {
     if (updates.images !== undefined) supabaseUpdates.images = updates.images
     if (updates.measurements) supabaseUpdates.measurements = updates.measurements
 
-    await updateOrder(orderId, supabaseUpdates)
+    console.log('📤 Sending to Supabase:', JSON.stringify(supabaseUpdates, null, 2))
+
+    const result = await updateOrder(orderId, supabaseUpdates)
+
+    console.log('📥 Result from updateOrder:', result)
+
+    if (result.success) {
+      toast.success(t('order_updated_success') || 'تم تحديث الطلب بنجاح', {
+        icon: '✓',
+      })
+    } else {
+      toast.error(result.error || t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب', {
+        icon: '✗',
+      })
+    }
+
     setShowEditModal(false)
     setSelectedOrder(null)
   }
@@ -147,15 +167,20 @@ export default function OrdersPage() {
   const confirmDeleteOrder = async () => {
     if (orderToDelete) {
       console.log('🗑️ Deleting order:', orderToDelete.id)
-      await deleteOrder(orderToDelete.id)
+      const result = await deleteOrder(orderToDelete.id)
+
+      if (result.success) {
+        toast.success(t('order_deleted_success') || 'تم حذف الطلب بنجاح', {
+          icon: '✓',
+        })
+      } else {
+        toast.error(result.error || t('order_delete_error') || 'حدث خطأ أثناء حذف الطلب', {
+          icon: '✗',
+        })
+      }
+
       setDeleteModalOpen(false)
       setOrderToDelete(null)
-      setDeleteSuccess(true)
-
-      // إخفاء رسالة النجاح بعد 3 ثوان
-      setTimeout(() => {
-        setDeleteSuccess(false)
-      }, 3000)
     }
   }
 
@@ -172,7 +197,17 @@ export default function OrdersPage() {
     setIsProcessing(true)
     try {
       console.log('▶️ Starting work on order:', orderId)
-      await startOrderWork(orderId)
+      const result = await startOrderWork(orderId)
+
+      if (result.success) {
+        toast.success(t('work_started_success') || 'تم بدء العمل على الطلب', {
+          icon: '✓',
+        })
+      } else {
+        toast.error(result.error || t('work_start_error') || 'حدث خطأ أثناء بدء العمل', {
+          icon: '✗',
+        })
+      }
     } finally {
       setIsProcessing(false)
     }
@@ -191,10 +226,20 @@ export default function OrdersPage() {
     setIsProcessing(true)
     try {
       console.log('✅ Completing order:', selectedOrder.id)
-      await completeOrder(selectedOrder.id, completedImages)
-      setShowCompleteModal(false)
-      setSelectedOrder(null)
-      setCompletedImages([])
+      const result = await completeOrder(selectedOrder.id, completedImages)
+
+      if (result.success) {
+        toast.success(t('order_completed_success') || 'تم إنهاء العمل على الطلب بنجاح', {
+          icon: '✓',
+        })
+        setShowCompleteModal(false)
+        setSelectedOrder(null)
+        setCompletedImages([])
+      } else {
+        toast.error(result.error || t('order_complete_error') || 'حدث خطأ أثناء إنهاء العمل', {
+          icon: '✗',
+        })
+      }
     } finally {
       setIsProcessing(false)
     }
@@ -222,6 +267,11 @@ export default function OrdersPage() {
   const filteredOrders = orders.filter(order => {
     // استبعاد الطلبات المسلمة - يجب أن تظهر فقط في صفحة "الطلبات المسلمة"
     if (order.status === 'delivered') {
+      return false
+    }
+
+    // استبعاد الطلبات المكتملة - يجب أن تظهر فقط في صفحة "الطلبات المكتملة"
+    if (order.status === 'completed') {
       return false
     }
 
@@ -260,7 +310,7 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20">
+    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* التنقل */}
         <motion.div
@@ -274,7 +324,7 @@ export default function OrdersPage() {
             className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300"
           >
             <ArrowRight className="w-4 h-4" />
-            <span>{t('back_to_dashboard')} {t('dashboard')}</span>
+            <span>{t('back_to_dashboard')}</span>
           </Link>
         </motion.div>
 
@@ -385,22 +435,7 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* زر إعادة تعيين الفلاتر */}
-          {(searchTerm || (statusFilter !== 'pending' && statusFilter !== 'all') || dateFilter) && (
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => {
-                  setSearchTerm('')
-                  setStatusFilter('pending')
-                  setDateFilter('')
-                }}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
-              >
-                <X className="w-4 h-4" />
-                <span>{t('reset_filters')}</span>
-              </button>
-            </div>
-          )}
+
         </motion.div>
 
         {/* قائمة الطلبات */}
@@ -708,21 +743,6 @@ export default function OrdersPage() {
           onConfirm={confirmDeleteOrder}
           orderInfo={orderToDelete}
         />
-
-        {/* رسالة نجاح الحذف */}
-        {deleteSuccess && (
-          <div className="fixed top-4 right-4 z-50">
-            <motion.div
-              initial={{ opacity: 0, x: 100 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 100 }}
-              className="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2 space-x-reverse"
-            >
-              <CheckCircle className="w-5 h-5" />
-              <span>{t('order_deleted_successfully')}</span>
-            </motion.div>
-          </div>
-        )}
       </div>
     </div>
   )

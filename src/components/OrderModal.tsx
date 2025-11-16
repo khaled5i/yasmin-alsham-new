@@ -110,9 +110,9 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
             className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
           >
             {/* رأس النافذة */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 sm:p-6 rounded-t-2xl z-10">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-800">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-800">
                   {t('order_details')}
                 </h2>
                 <div className="flex items-center space-x-3 space-x-reverse">
@@ -120,88 +120,110 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     onClick={onClose}
                     className="p-2 text-gray-400 hover:text-gray-600 transition-colors duration-300"
                   >
-                    <X className="w-6 h-6" />
+                    <X className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
                 </div>
               </div>
             </div>
 
             {/* محتوى النافذة */}
-            <div className="p-6 space-y-8">
+            <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
               {/* معلومات أساسية */}
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <User className="w-5 h-5 text-pink-600" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                <div className="space-y-3 sm:space-y-4">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <User className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
                     <span>
                       {t('customer_information')}
                     </span>
                   </h3>
 
-                  <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
-                    <div className="flex items-center space-x-3 space-x-reverse">
-                      <User className="w-4 h-4 text-gray-600" />
-                      <span className="font-medium">
-                        {t('name')}
-                      </span>
-                      <span>{order.client_name}</span>
+                  <div className="space-y-3 bg-gray-50 p-3 sm:p-4 rounded-lg">
+                    <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-3 sm:space-x-reverse">
+                      <div className="flex items-center space-x-2 space-x-reverse text-gray-600">
+                        <User className="w-4 h-4 flex-shrink-0" />
+                        <span className="font-medium text-sm sm:text-base">
+                          {t('name')}:
+                        </span>
+                      </div>
+                      <span className="text-sm sm:text-base pr-6 sm:pr-0">{order.client_name}</span>
                     </div>
 
                     {/* رقم الهاتف - للمدراء فقط */}
                     {user?.role === 'admin' && order.client_phone && (
-                      <div className="flex items-center space-x-3 space-x-reverse">
-                        <Phone className="w-4 h-4 text-gray-600" />
-                        <span className="font-medium">
-                          {t('phone')}
-                        </span>
-                        <span dir="ltr">{order.client_phone}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-3 sm:space-x-reverse">
+                        <div className="flex items-center space-x-2 space-x-reverse text-gray-600">
+                          <Phone className="w-4 h-4 flex-shrink-0" />
+                          <span className="font-medium text-sm sm:text-base">
+                            {t('phone')}:
+                          </span>
+                        </div>
+                        <span className="text-sm sm:text-base pr-6 sm:pr-0" dir="ltr">{order.client_phone}</span>
                       </div>
                     )}
 
                     {/* البريد الإلكتروني - للمدراء فقط */}
                     {user?.role === 'admin' && order.client_email && (
-                      <div className="flex items-center space-x-3 space-x-reverse">
-                        <Mail className="w-4 h-4 text-gray-600" />
-                        <span className="font-medium">
-                          {t('email')}
-                        </span>
-                        <span dir="ltr">{order.client_email}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-3 sm:space-x-reverse">
+                        <div className="flex items-center space-x-2 space-x-reverse text-gray-600">
+                          <Mail className="w-4 h-4 flex-shrink-0" />
+                          <span className="font-medium text-sm sm:text-base">
+                            {t('email')}:
+                          </span>
+                        </div>
+                        <span className="text-sm sm:text-base pr-6 sm:pr-0 break-all" dir="ltr">{order.client_email}</span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Package className="w-5 h-5 text-pink-600" />
+                <div className="space-y-3 sm:space-y-4">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Package className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
                     <span>
                       {t('order_details')}
                     </span>
                   </h3>
 
-                  <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+                  <div className="space-y-3 bg-gray-50 p-3 sm:p-4 rounded-lg">
                     <div>
-                      <span className="font-medium">
-                        {t('description')}
+                      <span className="font-medium text-sm sm:text-base text-gray-700">
+                        {t('description')}:
                       </span>
-                      <p className="mt-1">{order.description}</p>
+                      <p className="mt-1 text-sm sm:text-base text-gray-800">{order.description}</p>
                     </div>
                     {order.fabric && (
                       <div>
-                        <span className="font-medium">
-                          {t('fabric_type')}
+                        <span className="font-medium text-sm sm:text-base text-gray-700">
+                          {t('fabric_type')}:
                         </span>
-                        <p className="mt-1">{order.fabric}</p>
+                        <p className="mt-1 text-sm sm:text-base text-gray-800">{order.fabric}</p>
                       </div>
                     )}
 
-                    {/* السعر - للمدراء فقط */}
+                    {/* السعر والدفعات - للمدراء فقط */}
                     {user?.role === 'admin' && (
-                      <div className="flex items-center space-x-3 space-x-reverse">
-                        <span className="font-medium">
-                          {t('price')}:
-                        </span>
-                        <span className="text-gray-800">{order.price} {t('currency')}</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2 space-x-reverse">
+                          <span className="font-medium text-sm sm:text-base text-gray-700">
+                            {t('price')}:
+                          </span>
+                          <span className="text-sm sm:text-base text-gray-800 font-semibold">{order.price} {t('sar')}</span>
+                        </div>
+
+                        <div className="flex items-center space-x-2 space-x-reverse">
+                          <span className="font-medium text-sm sm:text-base text-gray-700">
+                            {t('paid_amount')}:
+                          </span>
+                          <span className="text-sm sm:text-base text-green-600 font-semibold">{order.paid_amount || 0} {t('sar')}</span>
+                        </div>
+
+                        <div className="flex items-center space-x-2 space-x-reverse">
+                          <span className="font-medium text-sm sm:text-base text-gray-700">
+                            {t('remaining_amount')}:
+                          </span>
+                          <span className="text-sm sm:text-base text-orange-600 font-semibold">{order.remaining_amount || 0} {t('sar')}</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -209,34 +231,34 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
               </div>
 
               {/* الحالة والتواريخ */}
-              <div className="grid md:grid-cols-3 gap-6">
-                <div className="space-y-3">
-                  <h4 className="font-bold text-gray-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
+                <div className="space-y-2 sm:space-y-3">
+                  <h4 className="font-bold text-sm sm:text-base text-gray-800">
                     {t('status')}
                   </h4>
-                  <span className={`px-3 py-2 rounded-full text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
+                  <span className={`inline-block px-3 py-2 rounded-full text-xs sm:text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
                     {getStatusInfo(order.status).label}
                   </span>
                 </div>
 
-                <div className="space-y-3">
-                  <h4 className="font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Calendar className="w-4 h-4" />
+                <div className="space-y-2 sm:space-y-3">
+                  <h4 className="font-bold text-sm sm:text-base text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Calendar className="w-4 h-4 flex-shrink-0" />
                     <span>
                       {t('order_date')}
                     </span>
                   </h4>
-                  <p>{formatDate(order.created_at)}</p>
+                  <p className="text-sm sm:text-base text-gray-700">{formatDate(order.created_at)}</p>
                 </div>
 
-                <div className="space-y-3">
-                  <h4 className="font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Clock className="w-4 h-4" />
+                <div className="space-y-2 sm:space-y-3">
+                  <h4 className="font-bold text-sm sm:text-base text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Clock className="w-4 h-4 flex-shrink-0" />
                     <span>
                       {t('delivery_date')}
                     </span>
                   </h4>
-                  <p>{formatDate(getDisplayDeliveryDate(order.due_date))}</p>
+                  <p className="text-sm sm:text-base text-gray-700">{formatDate(getDisplayDeliveryDate(order.due_date))}</p>
                 </div>
               </div>
 
@@ -255,9 +277,9 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
 
               {/* المقاسات */}
               {Object.values(order.measurements).some(val => val !== undefined) && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Ruler className="w-5 h-5 text-pink-600" />
+                <div className="space-y-4 sm:space-y-6">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Ruler className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
                     <span>
                       {t('measurements_cm')}
                     </span>
@@ -266,48 +288,48 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                   {/* المقاسات الأساسية */}
                   {(order.measurements.shoulder || order.measurements.shoulderCircumference || order.measurements.chest || order.measurements.waist || order.measurements.hips) && (
                     <div className="space-y-3">
-                      <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
+                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
                         {t('basic_measurements')}
                       </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                         {order.measurements.shoulder && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('shoulder')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.shoulder}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.shoulder}</p>
                           </div>
                         )}
                         {order.measurements.shoulderCircumference && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('shoulder_circumference')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.shoulderCircumference}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.shoulderCircumference}</p>
                           </div>
                         )}
                         {order.measurements.chest && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('chest_bust')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.chest}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.chest}</p>
                           </div>
                         )}
                         {order.measurements.waist && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('waist')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.waist}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.waist}</p>
                           </div>
                         )}
                         {order.measurements.hips && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('hips')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.hips}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.hips}</p>
                           </div>
                         )}
                       </div>
@@ -317,40 +339,40 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                   {/* مقاسات التفصيل المتقدمة */}
                   {(order.measurements.dartLength || order.measurements.bodiceLength || order.measurements.neckline || order.measurements.armpit) && (
                     <div className="space-y-3">
-                      <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
+                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
                         {t('advanced_tailoring_measurements')}
                       </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                         {order.measurements.dartLength && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('dart_length')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.dartLength}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.dartLength}</p>
                           </div>
                         )}
                         {order.measurements.bodiceLength && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('bodice_length')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.bodiceLength}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.bodiceLength}</p>
                           </div>
                         )}
                         {order.measurements.neckline && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('neckline')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.neckline}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.neckline}</p>
                           </div>
                         )}
                         {order.measurements.armpit && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('armpit')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.armpit}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.armpit}</p>
                           </div>
                         )}
                       </div>
@@ -360,32 +382,32 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                   {/* مقاسات الأكمام */}
                   {(order.measurements.sleeveLength || order.measurements.forearm || order.measurements.cuff) && (
                     <div className="space-y-3">
-                      <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
+                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
                         {t('sleeve_measurements')}
                       </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                         {order.measurements.sleeveLength && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded-lg text-center border border-green-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('sleeve_length')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.sleeveLength}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.sleeveLength}</p>
                           </div>
                         )}
                         {order.measurements.forearm && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded-lg text-center border border-green-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('forearm')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.forearm}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.forearm}</p>
                           </div>
                         )}
                         {order.measurements.cuff && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded-lg text-center border border-green-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('cuff')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.cuff}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.cuff}</p>
                           </div>
                         )}
                       </div>
@@ -395,24 +417,24 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                   {/* مقاسات الطول */}
                   {(order.measurements.frontLength || order.measurements.backLength) && (
                     <div className="space-y-3">
-                      <h4 className="text-md font-semibold text-gray-700 border-b border-pink-200 pb-1">
+                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
                         {t('length_measurements')}
                       </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                         {order.measurements.frontLength && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-3 rounded-lg text-center border border-amber-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('front_length')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.frontLength}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.frontLength}</p>
                           </div>
                         )}
                         {order.measurements.backLength && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
+                          <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-3 rounded-lg text-center border border-amber-100">
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
                               {t('back_length')}
                             </p>
-                            <p className="text-lg font-bold">{order.measurements.backLength}</p>
+                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.backLength}</p>
                           </div>
                         )}
                       </div>

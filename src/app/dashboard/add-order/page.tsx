@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
@@ -68,6 +69,7 @@ function AddOrderContent() {
       backLength: ''
     },
     price: '',
+    paidAmount: '',
     assignedWorker: '',
     dueDate: '',
     notes: '',
@@ -82,7 +84,13 @@ function AddOrderContent() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
-  const [showSuccessModal, setShowSuccessModal] = useState(false)
+
+  // حساب المبلغ المتبقي
+  const remainingAmount = useMemo(() => {
+    const price = Number(formData.price) || 0
+    const paidAmount = Number(formData.paidAmount) || 0
+    return Math.max(0, price - paidAmount)
+  }, [formData.price, formData.paidAmount])
 
   // معالجة تغيير الحقول
   const handleInputChange = (field: string, value: string | string[] | null) => {
@@ -145,6 +153,12 @@ function AddOrderContent() {
       // تحويل الملاحظات الصوتية إلى مصفوفة من strings
       const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
 
+      // تحويل السعر والدفعة المستلمة إلى أرقام
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
+
       // إنشاء الطلب باستخدام Supabase
       const result = await createOrder({
         client_name: formData.clientName,
@@ -152,36 +166,42 @@ function AddOrderContent() {
         description: formData.description,
         fabric: formData.fabric || undefined,
         measurements,
-        price: Number(formData.price),
-        worker_id: formData.assignedWorker || undefined,
+        price: price,
+        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         images: formData.images.length > 0 ? formData.images : undefined,
         status: 'pending',
-        paid_amount: 0,
-        payment_status: 'unpaid'
+        paid_amount: paidAmount
+        // payment_status سيتم حسابه تلقائياً بواسطة trigger
       })
 
       if (!result.success) {
-        setMessage({ type: 'error', text: result.error || t('order_add_error') })
+        toast.error(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
+          icon: '✗',
+        })
         return
       }
 
       console.log('✅ Order created successfully:', result.data?.id)
 
-      // إظهار رسالة النجاح المنبثقة
-      setShowSuccessModal(true)
+      // إظهار رسالة النجاح
+      toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
+        icon: '✓',
+        duration: 2000,
+      })
 
-      // إخفاء الرسالة والتوجيه بعد 3.5 ثانية
+      // التوجيه بعد 2 ثانية
       setTimeout(() => {
-        setShowSuccessModal(false)
         router.push('/dashboard/orders')
-      }, 3500)
+      }, 2000)
 
     } catch (error) {
       console.error('❌ Error adding order:', error)
-      setMessage({ type: 'error', text: t('order_add_error') })
+      toast.error(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
+        icon: '✗',
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -331,6 +351,39 @@ function AddOrderContent() {
                     />
                   </div>
 
+                  {/* الدفعة المستلمة */}
+                  <div>
+                    <NumericInput
+                      value={formData.paidAmount}
+                      onChange={(value) => {
+                        const price = Number(formData.price) || 0
+                        const paid = Number(value) || 0
+                        // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
+                        if (paid > price) {
+                          toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
+                            icon: '⚠️',
+                          })
+                          return
+                        }
+                        handleInputChange('paidAmount', value)
+                      }}
+                      type="price"
+                      label={t('paid_amount')}
+                      placeholder="0"
+                      disabled={isSubmitting || !formData.price}
+                    />
+                  </div>
+
+                  {/* الدفعة المتبقية (للعرض فقط) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('remaining_amount')}
+                    </label>
+                    <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
+                      {remainingAmount.toFixed(2)} {t('sar')}
+                    </div>
+                  </div>
+
                   {/* العامل المسؤول */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -342,7 +395,7 @@ function AddOrderContent() {
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
                     >
                       <option value="">{t('choose_worker')}</option>
-                      {workers.map(worker => (
+                      {workers.filter(w => w.is_available && w.user?.is_active).map(worker => (
                         <option key={worker.id} value={worker.id}>
                           {worker.user?.full_name || worker.specialty} - {worker.specialty}
                         </option>
@@ -635,65 +688,6 @@ function AddOrderContent() {
           </form>
         </motion.div>
       </div>
-
-      {/* رسالة النجاح المنبثقة */}
-      <AnimatePresence>
-        {showSuccessModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* الخلفية المعتمة */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            />
-
-            {/* النافذة المنبثقة */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 20 }}
-              transition={{ type: "spring", duration: 0.5 }}
-              className="relative bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full border-2 border-green-500"
-            >
-              {/* أيقونة النجاح */}
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                className="flex justify-center mb-6"
-              >
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
-                  <CheckCircle className="w-12 h-12 text-green-600" />
-                </div>
-              </motion.div>
-
-              {/* النص */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="text-center"
-              >
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                  {t('order_added_success')}
-                </h3>
-                <p className="text-gray-600">
-                  {t('redirecting_to_orders')}
-                </p>
-              </motion.div>
-
-              {/* شريط التقدم */}
-              <motion.div
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: 1 }}
-                transition={{ duration: 3.5, ease: "linear" }}
-                className="h-1 bg-green-500 rounded-full mt-6 origin-left"
-              />
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

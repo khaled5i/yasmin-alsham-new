@@ -134,9 +134,14 @@ function DashboardContent() {
 
   const stats = getStatsForRole()
 
-  // أحدث الطلبات (آخر 3 طلبات) - مفلترة حسب الدور
+  // أحدث الطلبات (آخر 3 طلبات) - مفلترة حسب الدور واستبعاد الطلبات المكتملة والمسلمة
   const recentOrders = orders
     .filter(order => {
+      // استبعاد الطلبات المكتملة والمسلمة من قسم الطلبات الحديثة
+      if (order.status === 'completed' || order.status === 'delivered') {
+        return false
+      }
+
       // إذا كان المستخدم عامل، اعرض طلباته فقط
       if (user?.role === 'worker') {
         // البحث عن العامل الذي user_id يطابق user.id

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import toast from 'react-hot-toast'
 import {
   X,
   Save,
@@ -20,6 +21,7 @@ import {
 import ImageUpload from './ImageUpload'
 import VoiceNotes from './VoiceNotes'
 import NumericInput from './NumericInput'
+import RemainingPaymentWarningModal from './RemainingPaymentWarningModal'
 import { Order } from '@/lib/services/order-service'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -37,6 +39,8 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
   const [formData, setFormData] = useState<Partial<Order>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [showPaymentWarning, setShowPaymentWarning] = useState(false)
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null)
 
   // تسجيل البيانات للتحقق من قائمة العمال
   useEffect(() => {
@@ -56,6 +60,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
         description: order.description,
         fabric: order.fabric || '',
         price: order.price,
+        paidAmount: order.paid_amount || 0,
         status: order.status,
         assignedWorker: order.worker_id || '',
         dueDate: order.due_date,
@@ -71,7 +76,25 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
     }
   }, [order])
 
+  // حساب المبلغ المتبقي
+  const remainingAmount = useMemo(() => {
+    const price = Number(formData.price) || 0
+    const paidAmount = Number(formData.paidAmount) || 0
+    return Math.max(0, price - paidAmount)
+  }, [formData.price, formData.paidAmount])
+
   const handleInputChange = (field: string, value: any) => {
+    // التحقق من تغيير الحالة إلى "delivered"
+    if (field === 'status' && value === 'delivered') {
+      const remaining = remainingAmount || 0
+      if (remaining > 0) {
+        // عرض نافذة التحذير
+        setPendingStatus('delivered')
+        setShowPaymentWarning(true)
+        return
+      }
+    }
+
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -104,7 +127,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
 
     try {
       await new Promise(resolve => setTimeout(resolve, 1000))
-      
+
       // تحويل المقاسات إلى أرقام
       const updatedMeasurements = Object.keys(formData.measurements || {}).reduce((acc, key) => {
         const value = (formData.measurements as any)?.[key]
@@ -112,9 +135,23 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
         return acc
       }, {} as any)
 
+      // تحويل السعر والدفعة المستلمة إلى أرقام
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      // تنظيف البيانات قبل الإرسال
+      const cleanedData = { ...formData }
+
+      // تحويل string فارغ إلى undefined لحقول UUID
+      if (cleanedData.assignedWorker === '') {
+        cleanedData.assignedWorker = undefined
+      }
+
+      // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
       onSave(order.id, {
-        ...formData,
-        price: Number(formData.price),
+        ...cleanedData,
+        price: price,
+        paid_amount: paidAmount,
         measurements: updatedMeasurements,
         updatedAt: new Date().toISOString()
       })
@@ -136,27 +173,28 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
   if (!order) return null
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* خلفية مظلمة */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={onClose}
-          />
-          
-          {/* النافذة المنبثقة */}
-          <motion.div
+    <>
+      <AnimatePresence>
+        {isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* خلفية مظلمة */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={onClose}
+            />
+
+            {/* النافذة المنبثقة */}
+            <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
           >
             {/* رأس النافذة */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl z-10">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-gray-800">{t('edit_order')}</h2>
                 <button
@@ -263,7 +301,39 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                       disabled={isSubmitting}
                     />
                   </div>
-                  
+
+                  {/* الدفعة المستلمة */}
+                  <div>
+                    <NumericInput
+                      value={formData.paidAmount?.toString() || ''}
+                      onChange={(value) => {
+                        const price = Number(formData.price) || 0
+                        const paid = Number(value) || 0
+                        // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
+                        if (paid > price) {
+                          toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
+                            icon: '⚠️',
+                          })
+                          return
+                        }
+                        handleInputChange('paidAmount', Number(value) || 0)
+                      }}
+                      type="price"
+                      label={t('paid_amount')}
+                      disabled={isSubmitting || !formData.price}
+                    />
+                  </div>
+
+                  {/* الدفعة المتبقية (للعرض فقط) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('remaining_amount')}
+                    </label>
+                    <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
+                      {remainingAmount.toFixed(2)} {t('sar')}
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {t('delivery_date_required')}
@@ -314,7 +384,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                     >
                       <option value="">{t('choose_worker')}</option>
-                      {workers.filter(w => w.is_active).map(worker => (
+                      {workers.filter(w => w.is_available && w.user?.is_active).map(worker => (
                         <option key={worker.id} value={worker.id}>
                           {worker.user?.full_name || worker.specialty} - {worker.specialty}
                         </option>
@@ -593,6 +663,38 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+      </AnimatePresence>
+
+      {/* نافذة التحذير عند وجود دفعة متبقية */}
+      <RemainingPaymentWarningModal
+        isOpen={showPaymentWarning}
+        remainingAmount={remainingAmount}
+        onMarkAsPaid={() => {
+          // تحديث المبلغ المدفوع ليساوي السعر
+          const price = Number(formData.price) || 0
+          setFormData(prev => ({
+            ...prev,
+            paidAmount: price,
+            status: pendingStatus || prev.status
+          }))
+          setShowPaymentWarning(false)
+          setPendingStatus(null)
+        }}
+        onIgnore={() => {
+          // تجاهل وتغيير الحالة فقط
+          setFormData(prev => ({
+            ...prev,
+            status: pendingStatus || prev.status
+          }))
+          setShowPaymentWarning(false)
+          setPendingStatus(null)
+        }}
+        onCancel={() => {
+          // إلغاء العملية
+          setShowPaymentWarning(false)
+          setPendingStatus(null)
+        }}
+      />
+    </>
   )
 }

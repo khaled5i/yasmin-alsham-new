@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cairo, Noto_Kufi_Arabic } from "next/font/google";
+import { Toaster } from 'react-hot-toast';
 import "./globals.css";
 
 const cairo = Cairo({
@@ -39,6 +40,35 @@ export default function RootLayout({
       <body
         className={`${cairo.variable} ${notoKufi.variable} font-sans antialiased bg-gradient-to-br from-rose-50 to-pink-50 min-h-screen`}
       >
+        <Toaster
+          position="top-center"
+          reverseOrder={false}
+          toastOptions={{
+            duration: 3000,
+            style: {
+              background: '#fff',
+              color: '#363636',
+              padding: '16px',
+              borderRadius: '12px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              fontFamily: 'var(--font-cairo)',
+            },
+            success: {
+              duration: 3000,
+              iconTheme: {
+                primary: '#10b981',
+                secondary: '#fff',
+              },
+            },
+            error: {
+              duration: 4000,
+              iconTheme: {
+                primary: '#ef4444',
+                secondary: '#fff',
+              },
+            },
+          }}
+        />
         {children}
       </body>
     </html>

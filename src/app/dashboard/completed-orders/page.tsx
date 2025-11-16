@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
+import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
 import {
   ArrowRight,
   Package,
@@ -38,6 +39,8 @@ export default function CompletedOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchType, setSearchType] = useState<'name' | 'phone'>('name')
   const [dateFilter, setDateFilter] = useState('')
+  const [showPaymentWarning, setShowPaymentWarning] = useState(false)
+  const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
 
   // التحقق من الصلاحيات - المدراء فقط
   useEffect(() => {
@@ -90,15 +93,46 @@ export default function CompletedOrdersPage() {
   }
 
   const handleMarkAsDelivered = async (orderId: string) => {
+    // البحث عن الطلب
+    const order = orders.find(o => o.id === orderId)
+    if (!order) return
+
+    // التحقق من وجود دفعة متبقية
+    const remainingAmount = order.remaining_amount || 0
+    if (remainingAmount > 0) {
+      // عرض نافذة التحذير
+      setOrderToDeliver(order)
+      setShowPaymentWarning(true)
+      return
+    }
+
+    // إذا لم يكن هناك دفعة متبقية، تسليم الطلب مباشرة
+    await deliverOrder(orderId, false)
+  }
+
+  const deliverOrder = async (orderId: string, markAsPaid: boolean) => {
     setIsProcessing(true)
     try {
-      const result = await updateOrder(orderId, {
+      const updates: any = {
         status: 'delivered',
         delivery_date: new Date().toISOString()
-      })
+      }
+
+      // إذا تم اختيار "تم الدفع"، تحديث المبلغ المدفوع
+      if (markAsPaid) {
+        const order = orders.find(o => o.id === orderId)
+        if (order) {
+          updates.paid_amount = order.price
+          updates.payment_status = 'paid'
+        }
+      }
+
+      const result = await updateOrder(orderId, updates)
       if (result.success) {
         setDeliverySuccess(true)
         setTimeout(() => setDeliverySuccess(false), 3000)
+        setShowPaymentWarning(false)
+        setOrderToDeliver(null)
       }
     } finally {
       setIsProcessing(false)
@@ -557,6 +591,26 @@ export default function CompletedOrdersPage() {
           </motion.div>
         </div>
       )}
+
+      {/* نافذة التحذير عند وجود دفعة متبقية */}
+      <RemainingPaymentWarningModal
+        isOpen={showPaymentWarning}
+        remainingAmount={orderToDeliver?.remaining_amount || 0}
+        onMarkAsPaid={() => {
+          if (orderToDeliver) {
+            deliverOrder(orderToDeliver.id, true)
+          }
+        }}
+        onIgnore={() => {
+          if (orderToDeliver) {
+            deliverOrder(orderToDeliver.id, false)
+          }
+        }}
+        onCancel={() => {
+          setShowPaymentWarning(false)
+          setOrderToDeliver(null)
+        }}
+      />
     </div>
   )
 }

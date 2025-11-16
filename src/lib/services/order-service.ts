@@ -22,6 +22,7 @@ export interface Order {
   measurements: Record<string, any>
   price: number
   paid_amount: number
+  remaining_amount: number
   payment_status: 'unpaid' | 'partial' | 'paid'
   status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date: string
@@ -345,26 +346,31 @@ export const orderService = {
         .single()
 
       if (error) {
-        console.error('❌ Supabase error updating order:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        })
+        console.error('❌ Supabase error updating order:')
+        console.error('Error object:', error)
+        console.error('Error message:', error.message)
+        console.error('Error details:', error.details)
+        console.error('Error hint:', error.hint)
+        console.error('Error code:', error.code)
+        console.error('Full error JSON:', JSON.stringify(error, null, 2))
         throw error
       }
 
       console.log('✅ Order updated successfully:', data)
       return { data, error: null }
     } catch (error: any) {
-      console.error('❌ Error in update order:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-        error: error
-      })
-      return { data: null, error: error.message || error.hint || 'خطأ في تحديث الطلب' }
+      console.error('❌ Error in update order:')
+      console.error('Error object:', error)
+      console.error('Error message:', error?.message)
+      console.error('Error details:', error?.details)
+      console.error('Error hint:', error?.hint)
+      console.error('Error code:', error?.code)
+      console.error('Error name:', error?.name)
+      console.error('Error stack:', error?.stack)
+      console.error('Full error JSON:', JSON.stringify(error, null, 2))
+
+      const errorMessage = error?.message || error?.hint || error?.details || 'خطأ في تحديث الطلب'
+      return { data: null, error: errorMessage }
     }
   },
 
