@@ -34,7 +34,7 @@ export default function DeliveredOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [searchType, setSearchType] = useState<'name' | 'phone'>('name')
+  const [searchType, setSearchType] = useState<'name' | 'phone' | 'order_number'>('name')
   const [dateFilter, setDateFilter] = useState('')
 
   // التحقق من الصلاحيات - المدراء فقط
@@ -60,6 +60,8 @@ export default function DeliveredOrdersPage() {
 
     const matchesSearch = searchType === 'phone'
       ? (order.client_phone || '').toLowerCase().includes(searchTerm.toLowerCase())
+      : searchType === 'order_number'
+      ? (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase())
       : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
@@ -78,6 +80,7 @@ export default function DeliveredOrdersPage() {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleDateString('ar-SA', {
+      calendar: 'gregory', // استخدام التقويم الميلادي
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -144,66 +147,86 @@ export default function DeliveredOrdersPage() {
         </div>
 
         {/* البحث والفلاتر */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-purple-100 mb-6">
-          {/* أزرار تبديل نوع البحث */}
-          <div className="flex space-x-2 space-x-reverse mb-4">
-            <button
-              onClick={() => {
-                setSearchType('name')
-                setSearchTerm('')
-              }}
-              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                searchType === 'name'
-                  ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              البحث بالاسم
-            </button>
-            <button
-              onClick={() => {
-                setSearchType('phone')
-                setSearchTerm('')
-              }}
-              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                searchType === 'phone'
-                  ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              البحث بالهاتف
-            </button>
-          </div>
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-3 sm:p-4 border border-purple-100 mb-6">
+          {/* صف واحد: أزرار البحث + حقل البحث + فلتر التاريخ */}
+          <div className="flex flex-col lg:flex-row gap-2 sm:gap-3">
+            {/* أزرار تبديل نوع البحث */}
+            <div className="flex space-x-2 space-x-reverse">
+              <button
+                onClick={() => {
+                  setSearchType('name')
+                  setSearchTerm('')
+                }}
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
+                  searchType === 'name'
+                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                البحث بالاسم
+              </button>
+              <button
+                onClick={() => {
+                  setSearchType('phone')
+                  setSearchTerm('')
+                }}
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
+                  searchType === 'phone'
+                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                البحث بالهاتف
+              </button>
+              <button
+                onClick={() => {
+                  setSearchType('order_number')
+                  setSearchTerm('')
+                }}
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
+                  searchType === 'order_number'
+                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                رقم الطلب
+              </button>
+            </div>
 
-          {/* حقول البحث والفلترة */}
-          <div className="grid md:grid-cols-2 gap-4">
             {/* حقل البحث */}
-            <div className="relative">
-              <Package className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <div className="relative flex-1">
+              <Package className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
-                placeholder={searchType === 'phone' ? 'أدخل رقم الهاتف...' : 'البحث في الطلبات المسلمة...'}
+                className="w-full pr-8 sm:pr-9 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                placeholder={
+                  searchType === 'phone'
+                    ? 'أدخل رقم الهاتف...'
+                    : searchType === 'order_number'
+                    ? 'أدخل رقم الطلب...'
+                    : 'البحث في الطلبات المسلمة...'
+                }
               />
             </div>
 
             {/* فلتر التاريخ */}
-            <div className="relative">
+            <div className="relative w-full lg:w-40">
+              <Calendar className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
               <input
                 type="date"
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                className="w-full pr-8 sm:pr-9 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
               />
             </div>
           </div>
 
           {/* زر إعادة تعيين الفلاتر */}
           {(searchTerm || dateFilter) && (
-            <div className="mt-4 flex justify-between items-center">
-              <div className="text-sm text-gray-600">
+            <div className="mt-3 flex justify-between items-center">
+              <div className="text-xs sm:text-sm text-gray-600">
                 عرض {deliveredOrders.length} طلب
               </div>
               <button
@@ -211,9 +234,9 @@ export default function DeliveredOrdersPage() {
                   setSearchTerm('')
                   setDateFilter('')
                 }}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3 h-3 sm:w-4 sm:h-4" />
                 <span>إعادة تعيين</span>
               </button>
             </div>

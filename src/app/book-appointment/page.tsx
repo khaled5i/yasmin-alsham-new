@@ -72,12 +72,13 @@ export default function BookAppointmentPage() {
 
       // التاريخ الميلادي فقط
       const gregorianOptions: Intl.DateTimeFormatOptions = {
+        calendar: 'gregory', // استخدام التقويم الميلادي
         weekday: 'long',
         year: 'numeric',
         month: 'long',
         day: 'numeric'
       }
-      const gregorianDate = date.toLocaleDateString('ar-US', gregorianOptions)
+      const gregorianDate = date.toLocaleDateString('ar-SA', gregorianOptions)
 
       formatted[dateString] = gregorianDate
     })

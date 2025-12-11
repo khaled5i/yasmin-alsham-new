@@ -41,6 +41,7 @@ function AddOrderContent() {
 
   // حالة النموذج
   const [formData, setFormData] = useState({
+    orderNumber: '',
     clientName: '',
     clientPhone: '',
     description: '',
@@ -161,6 +162,7 @@ function AddOrderContent() {
 
       // إنشاء الطلب باستخدام Supabase
       const result = await createOrder({
+        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
         description: formData.description,
@@ -281,6 +283,21 @@ function AddOrderContent() {
                 </h3>
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {/* رقم الطلب (اختياري) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('order_number')} ({t('optional')})
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.orderNumber}
+                      onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                      placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
+                      disabled={isSubmitting}
+                    />
+                  </div>
+
                   {/* اسم الزبونة */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

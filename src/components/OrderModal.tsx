@@ -82,7 +82,8 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('ar-US', {
+    return date.toLocaleDateString('ar-SA', {
+      calendar: 'gregory', // استخدام التقويم الميلادي
       year: 'numeric',
       month: 'long',
       day: 'numeric'

@@ -55,6 +55,7 @@ body {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -70,6 +71,7 @@ body {
     opacity: 0;
     transform: translateX(50px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -171,4 +173,26 @@ textarea:focus-visible {
   outline-offset: 3px;
   box-shadow: 0 0 0 6px rgba(244, 114, 182, 0.2);
   transform: scale(1.02);
+}
+
+/* Smooth Snap Scroll للموبايل - تجربة مثل TikTok/Reels */
+@media (max-width: 1023px) {
+  #main-scroll-container {
+    scroll-behavior: smooth;
+    scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  #main-scroll-container>section,
+  #main-scroll-container>div {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* تحسين الأداء */
+  #main-scroll-container * {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
 }

@@ -179,10 +179,13 @@ const arTranslations: Translations = {
   'back_length': 'الطول الخلفي',
 
   // مفاتيح صفحة الطلبات
+  'order_number': 'رقم الطلب',
+  'optional': 'اختياري',
   'enter_order_number': 'أدخل رقم الطلب',
   'search_placeholder': 'البحث بالاسم أو رقم الطلب أو الوصف...',
   'search_by_name': 'البحث بالاسم',
   'search_by_phone': 'البحث برقم الهاتف',
+  'search_by_order_number': 'البحث برقم الطلب',
   'enter_client_name': 'أدخل اسم الزبونة',
   'enter_phone_number': 'أدخل رقم الهاتف',
   'all_orders': 'جميع الطلبات',
@@ -550,10 +553,13 @@ const enTranslations: Translations = {
   'back_length': 'Back Length',
 
   // مفاتيح صفحة الطلبات
+  'order_number': 'Order Number',
+  'optional': 'Optional',
   'enter_order_number': 'Enter order number',
   'search_placeholder': 'Search by name, order number, or description...',
   'search_by_name': 'Search by Name',
   'search_by_phone': 'Search by Phone',
+  'search_by_order_number': 'Search by Order Number',
   'enter_client_name': 'Enter client name',
   'enter_phone_number': 'Enter phone number',
   'all_orders': 'All Orders',

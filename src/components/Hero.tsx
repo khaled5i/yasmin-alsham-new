@@ -3,16 +3,30 @@
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Calendar, Sparkles, Heart, Star } from 'lucide-react'
+import { Calendar, Sparkles, Heart, Star, Shirt } from 'lucide-react'
 
 export default function Hero() {
   return (
-    <section className="relative min-h-screen overflow-hidden pt-20 sm:pt-24 lg:pt-28">
-      {/* خلفية متدرجة */}
-      <div className="absolute inset-0 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50"></div>
-      
-      {/* عناصر زخرفية متحركة */}
-      <div className="absolute inset-0 overflow-hidden">
+    <section className="relative min-h-screen overflow-hidden lg:pt-28 max-lg:h-screen max-lg:snap-start max-lg:snap-always">
+      {/* خلفية للموبايل - صورة كاملة الشاشة */}
+      <div className="lg:hidden absolute inset-0">
+        <Image
+          src="/Gemini_Generated_Image_h581xsh581xsh581.png"
+          alt="ياسمين الشام - تفصيل فساتين حسب الطلب"
+          fill
+          className="object-cover object-center"
+          sizes="100vw"
+          priority
+        />
+        {/* تدرج داكن للنص */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
+      </div>
+
+      {/* خلفية متدرجة للديسكتوب فقط */}
+      <div className="hidden lg:block absolute inset-0 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50"></div>
+
+      {/* عناصر زخرفية متحركة - للديسكتوب فقط */}
+      <div className="hidden lg:block absolute inset-0 overflow-hidden">
         <motion.div
           animate={{
             rotate: 360,
@@ -65,123 +79,62 @@ export default function Hero() {
         </motion.div>
       </div>
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-8 sm:pt-12 lg:pt-16">
-        {/* تخطيط للشاشات الصغيرة والمتوسطة */}
-        <div className="lg:hidden">
-          <div className="text-center space-y-8">
-            {/* العنوان الرئيسي والفرعي - مخفي على الجوال */}
-            <motion.div
-              initial={{ opacity: 0, y: -30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
-              className="space-y-6 hidden"
+      {/* ===== تصميم الموبايل الجديد - Hero كامل الشاشة ===== */}
+      <div className="lg:hidden relative z-10 min-h-screen flex flex-col justify-end pb-8 px-4">
+        {/* المحتوى في الأسفل */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.3 }}
+          className="text-center space-y-6"
+        >
+          {/* نص ترحيبي */}
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="text-2xl sm:text-3xl font-bold text-white drop-shadow-lg"
+          >
+            ابدئي رحلتك معنا
+          </motion.h2>
+
+          {/* الأزرار الثلاثة */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.7 }}
+            className="flex flex-col gap-3"
+          >
+            <Link
+              href="/book-appointment"
+              className="w-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
             >
-              {/* العنوان الرئيسي */}
-              <motion.h1
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.2 }}
-                className="text-3xl sm:text-4xl font-bold leading-tight"
-              >
-                <span className="bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 bg-clip-text text-transparent">
-                  ياسمين الشام
-                </span>
-              </motion.h1>
+              <Calendar className="w-5 h-5" />
+              <span>حجز موعد</span>
+            </Link>
 
-              {/* العنوان الفرعي */}
-              <motion.p
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.4 }}
-                className="text-lg sm:text-xl text-gray-700 font-medium"
-              >
-                تفصيل فساتين حسب الطلب بأناقة دمشقية
-              </motion.p>
-            </motion.div>
-
-            {/* الصورة */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative"
+            <Link
+              href="/designs"
+              className="w-full bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white border border-white/40 py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
             >
-              <div className="relative w-full h-80 sm:h-96 md:h-[400px] rounded-2xl overflow-hidden shadow-2xl mx-auto max-w-sm sm:max-w-md">
-                <Image
-                  src="/yasmin.jpg?v=2024"
-                  alt="ياسمين الشام - تفصيل فساتين حسب الطلب"
-                  fill
-                  className="object-cover object-center"
-                  sizes="(max-width: 640px) 90vw, (max-width: 768px) 80vw, 60vw"
-                  priority
-                />
-                {/* تأثير الإطار */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent"></div>
-              </div>
+              <Sparkles className="w-5 h-5" />
+              <span>الفساتين الجاهزة</span>
+            </Link>
 
-              {/* عناصر زخرفية حول الصورة */}
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
-                className="absolute -top-4 -right-4 w-6 h-6 text-pink-400"
-              >
-                <Star className="w-full h-full" />
-              </motion.div>
-              <motion.div
-                animate={{ rotate: -360 }}
-                transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-                className="absolute -bottom-4 -left-4 w-6 h-6 text-purple-400"
-              >
-                <Sparkles className="w-full h-full" />
-              </motion.div>
-            </motion.div>
-
-            {/* الوصف والأزرار */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
-              className="space-y-6"
+            <Link
+              href="/fabrics"
+              className="w-full bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white border border-white/40 py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
             >
-              {/* الوصف */}
-              <p className="text-lg text-gray-600 leading-relaxed max-w-2xl mx-auto">
-                نحن متخصصون في تفصيل الفساتين الراقية بلمسة دمشقية أصيلة.
-                من فساتين الزفاف الفاخرة إلى فساتين السهرة الأنيقة،
-                نحول أحلامك إلى واقع بأيدي خبيرة وتصاميم مبتكرة.
-              </p>
+              <Shirt className="w-5 h-5" />
+              <span>متجر الأقمشة</span>
+            </Link>
+          </motion.div>
+        </motion.div>
+      </div>
 
-              {/* الأزرار */}
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link
-                  href="/book-appointment"
-                  className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
-                >
-                  <Calendar className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-                  <span>حجز موعد</span>
-                </Link>
-
-                <Link
-                  href="/designs"
-                  className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
-                >
-                  <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-                  <span>الفساتين الجاهزة</span>
-                </Link>
-
-                <Link
-                  href="/fabrics"
-                  className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
-                >
-                  <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-                  <span>متجر الأقمشة</span>
-                </Link>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* تخطيط للشاشات الكبيرة */}
-        <div className="hidden lg:grid lg:grid-cols-2 gap-12 items-center">
+      {/* تخطيط للشاشات الكبيرة */}
+      <div className="hidden lg:block container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-8 sm:pt-12 lg:pt-16">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* المحتوى النصي */}
           <motion.div
             initial={{ opacity: 0, x: -50 }}
@@ -299,6 +252,6 @@ export default function Hero() {
           </motion.div>
         </div>
       </div>
-    </section>
+    </section >
   )
 }

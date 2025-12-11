@@ -37,6 +37,7 @@ export interface Order {
 }
 
 export interface CreateOrderData {
+  order_number?: string
   user_id?: string
   worker_id?: string
   client_name: string
@@ -58,6 +59,7 @@ export interface CreateOrderData {
 }
 
 export interface UpdateOrderData {
+  order_number?: string
   worker_id?: string | null
   client_name?: string
   client_phone?: string
@@ -94,28 +96,36 @@ export const orderService = {
     try {
       console.log('📦 Creating order:', orderData)
 
+      // تحضير البيانات للإدخال
+      const insertData: any = {
+        user_id: orderData.user_id || null,
+        worker_id: orderData.worker_id || null,
+        client_name: orderData.client_name,
+        client_phone: orderData.client_phone,
+        client_email: orderData.client_email || null,
+        description: orderData.description,
+        fabric: orderData.fabric || null,
+        measurements: orderData.measurements || {},
+        price: orderData.price,
+        paid_amount: orderData.paid_amount || 0,
+        payment_status: orderData.payment_status || 'unpaid',
+        status: orderData.status || 'pending',
+        due_date: orderData.due_date,
+        delivery_date: orderData.delivery_date || null,
+        notes: orderData.notes || null,
+        admin_notes: orderData.admin_notes || null,
+        images: orderData.images || [],
+        voice_notes: orderData.voice_notes || []
+      }
+
+      // إضافة order_number فقط إذا تم توفيره (وإلا سيتم توليده تلقائياً بواسطة trigger)
+      if (orderData.order_number && orderData.order_number.trim() !== '') {
+        insertData.order_number = orderData.order_number.trim()
+      }
+
       const { data, error } = await supabase
         .from('orders')
-        .insert({
-          user_id: orderData.user_id || null,
-          worker_id: orderData.worker_id || null,
-          client_name: orderData.client_name,
-          client_phone: orderData.client_phone,
-          client_email: orderData.client_email || null,
-          description: orderData.description,
-          fabric: orderData.fabric || null,
-          measurements: orderData.measurements || {},
-          price: orderData.price,
-          paid_amount: orderData.paid_amount || 0,
-          payment_status: orderData.payment_status || 'unpaid',
-          status: orderData.status || 'pending',
-          due_date: orderData.due_date,
-          delivery_date: orderData.delivery_date || null,
-          notes: orderData.notes || null,
-          admin_notes: orderData.admin_notes || null,
-          images: orderData.images || [],
-          voice_notes: orderData.voice_notes || []
-        })
+        .insert(insertData)
         .select()
         .single()
 
@@ -126,6 +136,12 @@ export const orderService = {
           hint: error.hint,
           code: error.code
         })
+
+        // معالجة خطأ رقم الطلب المكرر
+        if (error.code === '23505' && error.message.includes('order_number')) {
+          return { data: null, error: 'رقم الطلب مستخدم بالفعل. يرجى استخدام رقم آخر أو ترك الحقل فارغاً للتوليد التلقائي.' }
+        }
+
         throw error
       }
 
@@ -139,6 +155,12 @@ export const orderService = {
         code: error.code,
         error: error
       })
+
+      // معالجة خطأ رقم الطلب المكرر
+      if (error.code === '23505' && error.message?.includes('order_number')) {
+        return { data: null, error: 'رقم الطلب مستخدم بالفعل. يرجى استخدام رقم آخر أو ترك الحقل فارغاً للتوليد التلقائي.' }
+      }
+
       return { data: null, error: error.message || error.hint || 'خطأ في إنشاء الطلب' }
     }
   },

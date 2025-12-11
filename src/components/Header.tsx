@@ -2,15 +2,71 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Menu, X, Calendar, Search, Scissors, Palette, Home } from 'lucide-react'
+import { Menu, X, Calendar, Search, Scissors, Palette, Home, Sparkles, HelpCircle } from 'lucide-react'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [clickCount, setClickCount] = useState(0)
+  const [isScrolled, setIsScrolled] = useState(false)
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const router = useRouter()
+  const pathname = usePathname()
+
+  // التحقق من أننا في الصفحة الرئيسية
+  const isHomePage = pathname === '/'
+
+  // تتبع السكرول للتحكم في شفافية الهيدر
+  useEffect(() => {
+    if (!isHomePage) {
+      setIsScrolled(true)
+      return
+    }
+
+    const handleScroll = () => {
+      // الحصول على عنصر الـ scroll container على الموبايل
+      const mainContainer = document.getElementById('main-scroll-container')
+
+      // التحقق من حجم الشاشة (موبايل أو ديسكتوب)
+      const isMobile = window.innerWidth < 1024
+
+      if (isMobile && mainContainer) {
+        // على الموبايل: استخدم scrollTop من الـ main container
+        const scrollPosition = mainContainer.scrollTop
+        // إذا تجاوز السكرول نصف ارتفاع الشاشة، غير للأبيض
+        setIsScrolled(scrollPosition > window.innerHeight * 0.5)
+      } else {
+        // على الديسكتوب: استخدم window scroll
+        const readyDesignsSection = document.getElementById('ready-designs')
+        if (readyDesignsSection) {
+          const sectionTop = readyDesignsSection.getBoundingClientRect().top
+          setIsScrolled(sectionTop <= 80)
+        } else {
+          setIsScrolled(window.scrollY > window.innerHeight - 100)
+        }
+      }
+    }
+
+    // الاستماع للـ scroll على كل من الـ main container و window
+    const mainContainer = document.getElementById('main-scroll-container')
+
+    if (mainContainer) {
+      mainContainer.addEventListener('scroll', handleScroll, { passive: true })
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    window.addEventListener('resize', handleScroll, { passive: true })
+
+    handleScroll() // فحص أولي
+
+    return () => {
+      if (mainContainer) {
+        mainContainer.removeEventListener('scroll', handleScroll)
+      }
+      window.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('resize', handleScroll)
+    }
+  }, [isHomePage])
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen)
 
@@ -45,10 +101,33 @@ export default function Header() {
     { href: '/book-appointment', label: 'حجز موعد', icon: Calendar },
     { href: '/track-order', label: 'تتبع الطلب', icon: Search },
     { href: '/fabrics', label: 'الأقمشة', icon: Scissors },
+    { href: '/services', label: 'خدماتنا', icon: Sparkles },
+    { href: '/faq', label: 'الأسئلة الشائعة', icon: HelpCircle },
   ]
 
+  // تحديد الكلاسات الديناميكية للهيدر على الموبايل
+  const getMobileHeaderClasses = () => {
+    if (!isHomePage) {
+      // صفحات أخرى: دائماً أبيض
+      return 'bg-white/95 backdrop-blur-md border-b border-pink-100 shadow-sm'
+    }
+    if (isMenuOpen) {
+      // القائمة مفتوحة: خلفية بيضاء كاملة لتوحيد اللون مع القائمة المنسدلة
+      return 'bg-white border-b border-pink-100 shadow-sm'
+    }
+    if (isScrolled) {
+      // بعد السكرول: خلفية بيضاء
+      return 'bg-white/95 backdrop-blur-md border-b border-pink-100 shadow-sm'
+    }
+    // في Hero: شفاف
+    return 'bg-transparent'
+  }
+
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-pink-100 shadow-sm">
+    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300
+      ${getMobileHeaderClasses()}
+      lg:bg-white/95 lg:backdrop-blur-md lg:border-b lg:border-pink-100 lg:shadow-sm`}
+    >
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 lg:h-20 relative">
 
@@ -58,7 +137,10 @@ export default function Header() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
             onClick={toggleMenu}
-            className="lg:hidden p-2 rounded-lg text-pink-600 hover:bg-pink-50 transition-all duration-300"
+            className={`lg:hidden p-2 rounded-lg transition-all duration-300 ${isHomePage && !isScrolled && !isMenuOpen
+              ? 'text-white hover:bg-white/20'
+              : 'text-pink-600 hover:bg-pink-50'
+              }`}
           >
             {isMenuOpen ? <X className="w-7 h-7" /> : <Menu className="w-7 h-7" />}
           </motion.button>
@@ -72,7 +154,10 @@ export default function Header() {
             onClick={handleLogoClick}
           >
             <div className="text-center lg:text-right">
-              <h1 className="text-xl lg:text-2xl font-bold bg-gradient-to-r from-pink-600 to-rose-600 bg-clip-text text-transparent">
+              <h1 className={`text-xl lg:text-2xl font-bold transition-colors duration-300 ${isHomePage && !isScrolled && !isMenuOpen
+                ? 'text-white drop-shadow-lg lg:bg-gradient-to-r lg:from-pink-600 lg:to-rose-600 lg:bg-clip-text lg:text-transparent'
+                : 'bg-gradient-to-r from-pink-600 to-rose-600 bg-clip-text text-transparent'
+                }`}>
                 ياسمين الشام
               </h1>
 

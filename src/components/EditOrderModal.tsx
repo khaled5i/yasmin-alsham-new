@@ -55,6 +55,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
   useEffect(() => {
     if (order) {
       setFormData({
+        orderNumber: order.order_number || '',
         clientName: order.client_name,
         clientPhone: order.client_phone,
         description: order.description,
@@ -230,8 +231,22 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                   <User className="w-5 h-5 text-pink-600" />
                   <span>{t('customer_information')}</span>
                 </h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('order_number')} ({t('optional')})
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.orderNumber || ''}
+                      onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
+                      disabled={isSubmitting}
+                    />
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {t('client_name_required')}
@@ -244,7 +259,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                       required
                     />
                   </div>
-                  
+
                   <div>
                     <NumericInput
                       value={formData.clientPhone || ''}

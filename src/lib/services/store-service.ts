@@ -1,11 +1,85 @@
 /**
  * Store Service - خدمة المتجر (التصاميم الجاهزة)
  * يتعامل مع جميع عمليات المنتجات والفئات باستخدام Supabase
+ * مع تحسينات للأداء والاستقرار
  */
 
 'use client'
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+
+// ============================================================================
+// ثوابت التكوين
+// ============================================================================
+
+const CONFIG = {
+  // عدد المنتجات في كل صفحة
+  PAGE_SIZE: 20,
+  // الحد الأقصى لعدد المحاولات عند الفشل
+  MAX_RETRIES: 3,
+  // التأخير بين المحاولات (بالمللي ثانية)
+  RETRY_DELAY: 1000,
+  // الحقول المطلوبة للقائمة (بدون البيانات الضخمة)
+  LIST_FIELDS: `
+    id,
+    title,
+    title_en,
+    description,
+    category_id,
+    category_name,
+    price,
+    is_available,
+    stock_quantity,
+    thumbnail_image,
+    images,
+    colors,
+    sizes,
+    rating,
+    reviews_count,
+    is_featured,
+    is_new,
+    is_on_sale,
+    sale_price,
+    created_at
+  `.replace(/\s+/g, ''),
+  // الحقول الكاملة للتفاصيل
+  FULL_FIELDS: '*'
+}
+
+// ============================================================================
+// دوال مساعدة
+// ============================================================================
+
+/**
+ * دالة للتأخير
+ */
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+/**
+ * دالة لإعادة المحاولة عند الفشل
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries: number = CONFIG.MAX_RETRIES,
+  delayMs: number = CONFIG.RETRY_DELAY
+): Promise<T> {
+  let lastError: any
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn()
+    } catch (error: any) {
+      lastError = error
+      console.warn(`⚠️ المحاولة ${attempt}/${retries} فشلت:`, error.message)
+      if (attempt < retries) {
+        console.log(`⏳ إعادة المحاولة بعد ${delayMs}ms...`)
+        await delay(delayMs)
+        // زيادة التأخير مع كل محاولة (exponential backoff)
+        delayMs *= 1.5
+      }
+    }
+  }
+  throw lastError
+}
 
 // ============================================================================
 // أنواع البيانات (Types)
@@ -122,6 +196,7 @@ export interface UpdateProductData {
 export const productService = {
   /**
    * جلب جميع المنتجات مع فلاتر اختيارية
+   * محسّن للأداء مع retry logic وselect محدد
    */
   async getAll(filters?: {
     category_id?: string
@@ -131,86 +206,101 @@ export const productService = {
     is_on_sale?: boolean
     min_price?: number
     max_price?: number
+    limit?: number
   }): Promise<{ data: Product[] | null; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      console.warn('⚠️ Supabase غير مُكوّن')
+      return { data: null, error: 'Supabase not configured' }
+    }
+
+    console.log('🔍 جلب المنتجات من Supabase...')
+    console.log('📋 الفلاتر المطبقة:', filters)
+
     try {
-      console.log('🔍 جلب المنتجات من Supabase...')
-      console.log('📋 الفلاتر المطبقة:', filters)
+      const result = await withRetry(async () => {
+        let query = supabase
+          .from('products')
+          .select(CONFIG.LIST_FIELDS)
+          .order('created_at', { ascending: false })
 
-      if (!isSupabaseConfigured()) {
-        console.warn('⚠️ Supabase غير مُكوّن')
-        return { data: null, error: 'Supabase not configured' }
-      }
-
-      let query = supabase
-        .from('products')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      // تطبيق الفلاتر
-      if (filters?.category_id) {
-        query = query.eq('category_id', filters.category_id)
-      }
-      if (filters?.category_name) {
-        query = query.eq('category_name', filters.category_name)
-      }
-      if (filters?.is_available !== undefined) {
-        query = query.eq('is_available', filters.is_available)
-      }
-      if (filters?.is_featured !== undefined) {
-        query = query.eq('is_featured', filters.is_featured)
-      }
-      if (filters?.is_on_sale !== undefined) {
-        query = query.eq('is_on_sale', filters.is_on_sale)
-      }
-      if (filters?.min_price !== undefined) {
-        query = query.gte('price', filters.min_price)
-      }
-      if (filters?.max_price !== undefined) {
-        query = query.lte('price', filters.max_price)
-      }
-
-      console.log('🔄 تنفيذ الاستعلام...')
-      const { data, error } = await query
-
-      if (error) {
-        console.error('❌ خطأ في جلب المنتجات:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        })
-
-        // رسائل خطأ واضحة بناءً على نوع الخطأ
-        if (error.code === 'PGRST116') {
-          console.error('💡 السبب المحتمل: سياسات RLS تمنع الوصول للمنتجات')
-          console.error('💡 الحل: تحقق من سياسات RLS في Supabase Dashboard')
-          return { data: null, error: 'لا يمكن الوصول للمنتجات. يرجى التحقق من إعدادات الأمان.' }
+        // تطبيق الفلاتر
+        if (filters?.category_id) {
+          query = query.eq('category_id', filters.category_id)
+        }
+        if (filters?.category_name) {
+          query = query.eq('category_name', filters.category_name)
+        }
+        if (filters?.is_available !== undefined) {
+          query = query.eq('is_available', filters.is_available)
+        }
+        if (filters?.is_featured !== undefined) {
+          query = query.eq('is_featured', filters.is_featured)
+        }
+        if (filters?.is_on_sale !== undefined) {
+          query = query.eq('is_on_sale', filters.is_on_sale)
+        }
+        if (filters?.min_price !== undefined) {
+          query = query.gte('price', filters.min_price)
+        }
+        if (filters?.max_price !== undefined) {
+          query = query.lte('price', filters.max_price)
         }
 
-        return { data: null, error: error.message }
-      }
+        // تحديد عدد النتائج (افتراضياً 50)
+        const limit = filters?.limit || 50
+        query = query.limit(limit)
 
-      console.log(`✅ تم جلب ${data?.length || 0} منتج بنجاح`)
+        console.log('🔄 تنفيذ الاستعلام...')
+        const { data, error } = await query
 
-      // عرض معلومات عن المنتجات المجلوبة
-      if (data && data.length > 0) {
-        console.log('📊 معلومات المنتجات:')
-        console.log(`   - إجمالي المنتجات: ${data.length}`)
-        console.log(`   - المنتجات المتاحة: ${data.filter((p: any) => p.is_available).length}`)
-        console.log(`   - المنتجات المنشورة: ${data.filter((p: any) => p.published_at).length}`)
-      } else {
-        console.warn('⚠️ لم يتم العثور على أي منتجات')
-        console.warn('💡 تحقق من:')
-        console.warn('   1. وجود منتجات في قاعدة البيانات')
-        console.warn('   2. is_available = true للمنتجات')
-        console.warn('   3. سياسات RLS تسمح بالقراءة للمستخدمين غير المسجلين')
-      }
+        if (error) {
+          throw error
+        }
 
-      return { data: data as Product[], error: null }
+        return data
+      })
+
+      console.log(`✅ تم جلب ${result?.length || 0} منتج بنجاح`)
+
+      // ملء الحقول الناقصة بقيم افتراضية
+      const products = (result || []).map((p: any) => ({
+        ...p,
+        features: p.features || [],
+        occasions: p.occasions || [],
+        care_instructions: p.care_instructions || [],
+        tags: p.tags || [],
+        metadata: p.metadata || {},
+        fabric: p.fabric || null,
+        slug: p.slug || null,
+        published_at: p.published_at || null
+      })) as Product[]
+
+      return { data: products, error: null }
     } catch (error: any) {
-      console.error('❌ خطأ غير متوقع في جلب المنتجات:', error)
-      return { data: null, error: error.message || 'Unknown error' }
+      console.error('❌ خطأ في جلب المنتجات:', error)
+
+      // رسائل خطأ واضحة بناءً على نوع الخطأ
+      if (error.code === 'PGRST116') {
+        return { data: null, error: 'لا يمكن الوصول للمنتجات. يرجى التحقق من إعدادات الأمان.' }
+      }
+
+      if (error.message?.includes('JSON') || error.message?.includes('Unterminated')) {
+        return { data: null, error: 'فشل تحميل البيانات. يرجى التحقق من اتصالك بالإنترنت.' }
+      }
+
+      return { data: null, error: error.message || 'حدث خطأ غير متوقع' }
     }
+  },
+
+  /**
+   * جلب المنتجات المميزة (للصفحة الرئيسية)
+   * يجلب فقط 4 منتجات مع الحقول الأساسية
+   */
+  async getFeatured(limit: number = 4): Promise<{ data: Product[] | null; error: string | null }> {
+    return this.getAll({
+      is_available: true,
+      limit
+    })
   },
 
   /**

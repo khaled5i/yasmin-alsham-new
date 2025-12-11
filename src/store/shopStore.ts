@@ -5,6 +5,25 @@ import { persist } from 'zustand/middleware'
 import { productService, Product as SupabaseProduct } from '@/lib/services/store-service'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
+// ============================================
+// ثوابت التكوين
+// ============================================
+
+const CACHE_CONFIG = {
+  // مدة صلاحية الكاش (5 دقائق)
+  TTL: 5 * 60 * 1000,
+  // الحد الأقصى للمحاولات
+  MAX_RETRIES: 2,
+  // عدد المنتجات للصفحة الرئيسية
+  HOME_PAGE_LIMIT: 8,
+  // عدد المنتجات لصفحة المتجر
+  STORE_PAGE_LIMIT: 50
+}
+
+// ============================================
+// تعريف الأنواع
+// ============================================
+
 // تعريف نوع المنتج (متوافق مع Supabase)
 export interface Product {
   id: string
@@ -48,6 +67,7 @@ export type SortOption = 'newest' | 'price-high' | 'price-low'
 interface ShopState {
   // المنتجات من Supabase
   products: Product[]
+  lastFetchTime: number | null
   loadProducts: (forceReload?: boolean) => Promise<void>
   getProductById: (id: string) => Product | undefined
 
@@ -68,30 +88,37 @@ interface ShopState {
   setLoading: (loading: boolean) => void
   error: string | null
   setError: (error: string | null) => void
+  retryCount: number
 }
 
 // دالة مساعدة لتحويل منتج Supabase إلى Product
-const convertSupabaseProduct = (sp: SupabaseProduct): Product => ({
-  id: sp.id,
-  name: sp.title,
-  price: sp.is_on_sale && sp.sale_price ? sp.sale_price : sp.price,
-  image: sp.thumbnail_image || sp.images[0] || '',
-  description: sp.description,
-  category: sp.category_name || undefined,
-  sizes: sp.sizes,
-  colors: sp.colors,
-  images: sp.images,
-  fabric: sp.fabric || undefined,
-  features: sp.features,
-  occasions: sp.occasions,
-  care_instructions: sp.care_instructions,
-  rating: sp.rating,
-  reviews_count: sp.reviews_count,
-  is_available: sp.is_available,
-  is_featured: sp.is_featured,
-  is_on_sale: sp.is_on_sale,
-  sale_price: sp.sale_price || undefined
-})
+const convertSupabaseProduct = (sp: SupabaseProduct): Product => {
+  // التعامل بأمان مع الصور
+  const images = Array.isArray(sp.images) ? sp.images : []
+  const thumbnailImage = sp.thumbnail_image || images[0] || ''
+
+  return {
+    id: sp.id,
+    name: sp.title || 'منتج بدون اسم',
+    price: sp.is_on_sale && sp.sale_price ? sp.sale_price : sp.price,
+    image: thumbnailImage,
+    description: sp.description || '',
+    category: sp.category_name || undefined,
+    sizes: Array.isArray(sp.sizes) ? sp.sizes : [],
+    colors: Array.isArray(sp.colors) ? sp.colors : [],
+    images: images,
+    fabric: sp.fabric || undefined,
+    features: Array.isArray(sp.features) ? sp.features : [],
+    occasions: Array.isArray(sp.occasions) ? sp.occasions : [],
+    care_instructions: Array.isArray(sp.care_instructions) ? sp.care_instructions : [],
+    rating: sp.rating || 0,
+    reviews_count: sp.reviews_count || 0,
+    is_available: sp.is_available ?? true,
+    is_featured: sp.is_featured ?? false,
+    is_on_sale: sp.is_on_sale ?? false,
+    sale_price: sp.sale_price || undefined
+  }
+}
 
 // إنشاء المتجر
 export const useShopStore = create<ShopState>()(
@@ -99,35 +126,72 @@ export const useShopStore = create<ShopState>()(
     (set, get) => ({
       // المنتجات من Supabase
       products: [],
+      lastFetchTime: null,
+      retryCount: 0,
 
       loadProducts: async (forceReload = false) => {
-        // تحسين: تجنب إعادة التحميل إذا كانت المنتجات محملة بالفعل (إلا إذا كان forceReload = true)
-        const { products } = get()
-        if (products.length > 0 && !forceReload) {
-          console.log('✅ المنتجات محملة بالفعل من cache - تخطي التحميل')
+        const { products, lastFetchTime, isLoading } = get()
+
+        // منع الطلبات المتزامنة
+        if (isLoading) {
+          console.log('⏳ التحميل جاري بالفعل - تخطي')
+          return
+        }
+
+        // التحقق من صلاحية الكاش
+        const now = Date.now()
+        const cacheValid = lastFetchTime && (now - lastFetchTime) < CACHE_CONFIG.TTL
+
+        if (products.length > 0 && cacheValid && !forceReload) {
+          console.log('✅ المنتجات محملة من cache صالح - تخطي التحميل')
           return
         }
 
         set({ isLoading: true, error: null })
+
         try {
+          console.log('🔄 تحميل المنتجات من Supabase...')
+
           const { data, error } = await productService.getAll({
-            is_available: true
+            is_available: true,
+            limit: CACHE_CONFIG.STORE_PAGE_LIMIT
           })
 
           if (error) {
             console.error('❌ خطأ في تحميل المنتجات:', error)
-            set({ error, isLoading: false })
+            set({
+              error,
+              isLoading: false,
+              retryCount: get().retryCount + 1
+            })
             return
           }
 
           if (data) {
             const products = data.map(convertSupabaseProduct)
             console.log(`✅ تم تحميل ${products.length} منتج من Supabase`)
-            set({ products, isLoading: false })
+            set({
+              products,
+              isLoading: false,
+              lastFetchTime: now,
+              retryCount: 0,
+              error: null
+            })
+          } else {
+            set({
+              products: [],
+              isLoading: false,
+              lastFetchTime: now,
+              error: null
+            })
           }
         } catch (error: any) {
           console.error('❌ خطأ غير متوقع في تحميل المنتجات:', error)
-          set({ error: error.message, isLoading: false })
+          set({
+            error: error.message || 'حدث خطأ في تحميل المنتجات',
+            isLoading: false,
+            retryCount: get().retryCount + 1
+          })
         }
       },
 
@@ -253,7 +317,9 @@ export const useShopStore = create<ShopState>()(
       error: null,
       setError: (error: string | null) => {
         set({ error })
-      }
+      },
+
+      retryCount: 0
     }),
     {
       name: 'yasmin-alsham-shop',

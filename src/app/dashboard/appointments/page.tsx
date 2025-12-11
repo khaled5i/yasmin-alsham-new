@@ -128,7 +128,8 @@ export default function AppointmentsPage() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('ar-US', {
+    return date.toLocaleDateString('ar-SA', {
+      calendar: 'gregory', // استخدام التقويم الميلادي
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -188,14 +189,14 @@ export default function AppointmentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-16 sm:pt-20">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
         {/* التنقل */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="mb-8"
+          className="mb-3"
         >
           <Link
             href="/dashboard"
@@ -515,7 +516,7 @@ export default function AppointmentsPage() {
 
                     <div className="flex items-center space-x-2 space-x-reverse">
                       <div className="text-xs text-gray-500">
-                        {t('created_on')} {new Date(appointment.created_at).toLocaleDateString(isArabic ? 'ar-US' : 'en-US')}
+                        {t('created_on')} {new Date(appointment.created_at).toLocaleDateString('ar-SA', { calendar: 'gregory' })}
                       </div>
                     </div>
                   </div>
