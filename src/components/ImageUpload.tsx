@@ -183,15 +183,14 @@ export default function ImageUpload({
       {/* منطقة رفع الصور */}
       <div className="relative">
         <div
-          className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 ${
-            uploading
-              ? 'border-blue-400 bg-blue-50 cursor-wait'
-              : dragOver
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 ${uploading
+            ? 'border-blue-400 bg-blue-50 cursor-wait'
+            : dragOver
               ? 'border-pink-400 bg-pink-50 cursor-pointer'
               : images.length >= maxImages
-              ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
-              : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50 cursor-pointer'
-          }`}
+                ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50 cursor-pointer'
+            }`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -253,7 +252,7 @@ export default function ImageUpload({
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-10"
+            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-20"
           >
             <button
               onClick={(e) => {
@@ -308,13 +307,12 @@ export default function ImageUpload({
               {/* Progress Bar */}
               <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                 <div
-                  className={`h-full transition-all duration-300 ${
-                    progress.status === 'success'
-                      ? 'bg-green-500'
-                      : progress.status === 'error'
+                  className={`h-full transition-all duration-300 ${progress.status === 'success'
+                    ? 'bg-green-500'
+                    : progress.status === 'error'
                       ? 'bg-red-500'
                       : 'bg-blue-500'
-                  }`}
+                    }`}
                   style={{ width: `${progress.progress}%` }}
                 />
               </div>
@@ -371,7 +369,7 @@ export default function ImageUpload({
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  
+
                   {/* زر الحذف */}
                   <button
                     onClick={() => removeImage(index)}
@@ -379,14 +377,14 @@ export default function ImageUpload({
                   >
                     <X className="w-3 h-3" />
                   </button>
-                  
+
                   {/* رقم الصورة */}
                   <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
                     {index + 1}
                   </div>
                 </motion.div>
               ))}
-              
+
               {/* زر إضافة المزيد */}
               {images.length < maxImages && (
                 <motion.div

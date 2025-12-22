@@ -31,7 +31,7 @@ export default function NumericInput({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value
-    
+
     handleNumericInputChange(
       inputValue,
       type,
@@ -40,9 +40,18 @@ export default function NumericInput({
     )
   }
 
-  const baseClassName = `w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors duration-200 ${
-    error ? 'border-red-500 bg-red-50' : 'border-gray-300'
-  } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''} ${className}`
+  const handleBlur = () => {
+    // التحقق من طول رقم الهاتف عند مغادرة الحقل
+    if (type === 'phone' && value) {
+      const { validatePhoneLength, getValidationErrorMessage } = require('@/utils/inputValidation')
+      if (!validatePhoneLength(value)) {
+        setError(getValidationErrorMessage('phoneLength'))
+      }
+    }
+  }
+
+  const baseClassName = `w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors duration-200 ${error ? 'border-red-500 bg-red-50' : 'border-gray-300'
+    } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''} ${className}`
 
   return (
     <div className="space-y-2">
@@ -51,13 +60,14 @@ export default function NumericInput({
           {label}
         </label>
       )}
-      
+
       <div className="relative">
         <input
           id={id}
           type="text"
           value={value}
           onChange={handleChange}
+          onBlur={handleBlur}
           placeholder={placeholder}
           className={baseClassName}
           disabled={disabled}
@@ -65,14 +75,14 @@ export default function NumericInput({
           inputMode={type === 'phone' ? 'tel' : 'numeric'}
           autoComplete={type === 'phone' ? 'tel' : 'off'}
         />
-        
+
         {error && (
           <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
             <AlertCircle className="w-5 h-5 text-red-500" />
           </div>
         )}
       </div>
-      
+
       {error && (
         <p className="text-sm text-red-600 flex items-center space-x-1 space-x-reverse">
           <AlertCircle className="w-4 h-4" />

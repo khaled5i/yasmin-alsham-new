@@ -24,6 +24,118 @@ body {
   direction: rtl;
 }
 
+/* منع overflow الأفقي على الموبايل */
+@media (max-width: 1023px) {
+
+  html,
+  body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+}
+
+/* إخفاء شريط التمرير مع إظهاره عند الحاجة */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(219, 39, 119, 0.3) transparent;
+}
+
+html:hover {
+  scrollbar-color: rgba(219, 39, 119, 0.6) transparent;
+}
+
+/* للمتصفحات المبنية على Webkit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(219, 39, 119, 0.3);
+  border-radius: 4px;
+  transition: background 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(219, 39, 119, 0.6);
+}
+
+/* إخفاء شريط التمرير بشكل افتراضي وإظهاره عند التمرير */
+body {
+  overflow-y: auto;
+}
+
+/* Scrollbar بسيط وأنيق - مرئي دائماً على جميع الأجهزة */
+/* على الموبايل */
+@media (max-width: 1023px) {
+
+  html,
+  body,
+  #main-scroll-container {
+    /* Use 'auto' to ensure WebKit pseudo-elements are applied for customization */
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+    overflow-x: hidden;
+  }
+
+  /* Hide scrollbar buttons (arrows) explicitly */
+  html::-webkit-scrollbar-button,
+  body::-webkit-scrollbar-button,
+  #main-scroll-container::-webkit-scrollbar-button {
+    display: none !important;
+    width: 0;
+    height: 0;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  #main-scroll-container::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  html::-webkit-scrollbar-track,
+  body::-webkit-scrollbar-track,
+  #main-scroll-container::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+
+  html::-webkit-scrollbar-thumb,
+  body::-webkit-scrollbar-thumb,
+  #main-scroll-container::-webkit-scrollbar-thumb {
+    background: #ec4899;
+    border-radius: 10px;
+  }
+}
+
+/* على الديسكتوب */
+@media (min-width: 1024px) {
+
+  html,
+  body {
+    scrollbar-width: thin;
+    scrollbar-color: #ec4899 transparent;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  html::-webkit-scrollbar-track,
+  body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  html::-webkit-scrollbar-thumb,
+  body::-webkit-scrollbar-thumb {
+    background: #ec4899;
+    border-radius: 10px;
+  }
+}
+
 /* تأثيرات مخصصة للموقع */
 .gradient-bg {
   background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #f3e8ff 100%);

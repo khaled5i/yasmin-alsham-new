@@ -19,7 +19,7 @@ export interface Fabric {
   description_en?: string | null
   category: string
   type?: string | null
-  price_per_meter: number
+  price_per_meter?: number | null // ✅ جعل السعر اختياري
   original_price_per_meter?: number | null
   is_on_sale: boolean
   discount_percentage: number
@@ -61,7 +61,7 @@ export interface CreateFabricData {
   description_en?: string
   category: string
   type?: string
-  price_per_meter: number
+  price_per_meter?: number // ✅ جعل السعر اختياري
   original_price_per_meter?: number
   is_on_sale?: boolean
   discount_percentage?: number

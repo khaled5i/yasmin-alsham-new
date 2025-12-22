@@ -33,6 +33,7 @@ interface OrderModalProps {
 export default function OrderModal({ order, workers, isOpen, onClose }: OrderModalProps) {
   const { user } = useAuthStore()
   const { t, isArabic } = useTranslation()
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
   if (!order) return null
 
@@ -93,7 +94,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div key="order-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* خلفية مظلمة */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -102,7 +103,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={onClose}
           />
-          
+
           {/* النافذة المنبثقة */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -496,7 +497,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                             src={image}
                             alt={`${t('design_image_alt')} ${index + 1}`}
                             className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
-                            onClick={() => window.open(image, '_blank')}
+                            onClick={() => setLightboxImage(image)}
                           />
                         </div>
                         <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
@@ -538,7 +539,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       data: vn,
                       timestamp: Date.now()
                     }))}
-                    onVoiceNotesChange={() => {}} // للعرض فقط
+                    onVoiceNotesChange={() => { }} // للعرض فقط
                     disabled={true}
                   />
                 </div>
@@ -566,7 +567,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                               src={image}
                               alt={`${t('completed_work_image_alt')} ${index + 1}`}
                               className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
-                              onClick={() => window.open(image, '_blank')}
+                              onClick={() => setLightboxImage(image)}
                             />
                           </div>
                           <div className="absolute bottom-2 left-2 bg-green-600/80 text-white text-xs px-2 py-1 rounded">
@@ -592,6 +593,28 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
               </div>
             </div>
           </motion.div>
+        </div>
+      )}
+
+      {/* Lightbox لعرض الصور بالحجم الكامل */}
+      {lightboxImage && (
+        <div
+          key="order-lightbox"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          <img
+            src={lightboxImage}
+            alt="صورة مكبرة"
+            className="max-w-full max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </AnimatePresence>

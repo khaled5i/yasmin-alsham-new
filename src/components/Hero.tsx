@@ -7,7 +7,7 @@ import { Calendar, Sparkles, Heart, Star, Shirt } from 'lucide-react'
 
 export default function Hero() {
   return (
-    <section className="relative min-h-screen overflow-hidden lg:pt-28 max-lg:h-screen max-lg:snap-start max-lg:snap-always">
+    <section className="relative min-h-screen overflow-hidden lg:pt-28 max-lg:h-screen max-lg:snap-start max-lg:snap-always max-lg:overflow-x-hidden">
       {/* خلفية للموبايل - صورة كاملة الشاشة */}
       <div className="lg:hidden absolute inset-0">
         <Image
@@ -113,21 +113,31 @@ export default function Hero() {
               <span>حجز موعد</span>
             </Link>
 
-            <Link
-              href="/designs"
+            <button
+              onClick={() => {
+                const section = document.getElementById('ready-designs')
+                if (section) {
+                  section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              }}
               className="w-full bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white border border-white/40 py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
             >
               <Sparkles className="w-5 h-5" />
               <span>الفساتين الجاهزة</span>
-            </Link>
+            </button>
 
-            <Link
-              href="/fabrics"
+            <button
+              onClick={() => {
+                const section = document.getElementById('featured-fabrics')
+                if (section) {
+                  section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              }}
               className="w-full bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white border border-white/40 py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
             >
               <Shirt className="w-5 h-5" />
               <span>متجر الأقمشة</span>
-            </Link>
+            </button>
           </motion.div>
         </motion.div>
       </div>
@@ -195,21 +205,31 @@ export default function Hero() {
                 <span>حجز موعد</span>
               </Link>
 
-              <Link
-                href="/designs"
+              <button
+                onClick={() => {
+                  const section = document.getElementById('ready-designs')
+                  if (section) {
+                    section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }
+                }}
                 className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
               >
                 <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
                 <span>الفساتين الجاهزة</span>
-              </Link>
+              </button>
 
-              <Link
-                href="/fabrics"
+              <button
+                onClick={() => {
+                  const section = document.getElementById('featured-fabrics')
+                  if (section) {
+                    section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }
+                }}
                 className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
               >
                 <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
                 <span>متجر الأقمشة</span>
-              </Link>
+              </button>
             </motion.div>
           </motion.div>
 

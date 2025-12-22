@@ -111,14 +111,14 @@ export default function DesignDetailPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-16 lg:pt-20">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-8">
+    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-12 lg:pt-20">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-1 lg:py-4">
         {/* التنقل */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="mb-4 lg:mb-8"
+          className="mb-2 lg:mb-6"
         >
           <Link
             href="/designs"
@@ -174,36 +174,47 @@ export default function DesignDetailPage() {
 
             {/* صور مصغرة محسّنة */}
             {(product.images?.length || 0) > 1 && (
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-pink-300 scrollbar-track-pink-50">
-                {product.images?.map((image, index) => (
-                  <motion.button
-                    key={index}
-                    onClick={() => setCurrentImageIndex(index)}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className={`relative flex-shrink-0 w-24 h-28 rounded-xl overflow-hidden border-3 transition-all duration-300 ${
-                      currentImageIndex === index
+              <div className="relative">
+                {/* عرض في صف واحد إذا كانت الصور 5 أو أقل، وصفين إذا كانت أكثر من 5 */}
+                <div className={`gap-3 pb-2 ${(product.images?.length || 0) > 5
+                  ? 'grid grid-cols-5'
+                  : 'flex overflow-x-auto scrollbar-thin scrollbar-thumb-pink-300 scrollbar-track-pink-50'
+                  }`}>
+                  {product.images?.map((image, index) => (
+                    <motion.button
+                      key={index}
+                      onClick={() => setCurrentImageIndex(index)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={`relative flex-shrink-0 w-20 h-24 md:w-24 md:h-28 rounded-xl overflow-hidden border-3 transition-all duration-300 ${currentImageIndex === index
                         ? 'border-pink-500 shadow-lg ring-2 ring-pink-300'
                         : 'border-gray-200 hover:border-pink-300'
-                    }`}
-                  >
-                    <Image
-                      src={image}
-                      alt={`${product.name} - صورة ${index + 1}`}
-                      fill
-                      sizes="96px"
-                      className="object-cover"
-                      loading="lazy"
-                      quality={60}
-                    />
-                    {currentImageIndex === index && (
-                      <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
-                    )}
-                    <div className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">
-                      {index + 1}
-                    </div>
-                  </motion.button>
-                ))}
+                        }`}
+                    >
+                      <Image
+                        src={image}
+                        alt={`${product.name} - صورة ${index + 1}`}
+                        fill
+                        sizes="(max-width: 768px) 80px, 96px"
+                        className="object-cover"
+                        loading="lazy"
+                        quality={60}
+                      />
+                      {currentImageIndex === index && (
+                        <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
+                      )}
+                      <div className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-full">
+                        {index + 1}
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+                {/* مؤشر عدد الصور */}
+                {(product.images?.length || 0) > 5 && (
+                  <div className="absolute -top-2 left-0 bg-pink-500 text-white text-xs px-2 py-1 rounded-full shadow-md z-10">
+                    {product.images?.length} صور
+                  </div>
+                )}
               </div>
             )}
           </motion.div>
@@ -230,9 +241,11 @@ export default function DesignDetailPage() {
 
             {/* السعر ومؤشر التوفر */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="text-3xl font-bold text-pink-600">
-                السعر : {formatPrice(product.price)}
-              </div>
+              {product.price && product.price > 0 && (
+                <div className="text-3xl font-bold text-pink-600">
+                  السعر : {formatPrice(product.price)}
+                </div>
+              )}
               <StockIndicator
                 stockQuantity={product.stock_quantity}
                 isAvailable={product.is_available}
@@ -249,11 +262,10 @@ export default function DesignDetailPage() {
                     <button
                       key={size}
                       onClick={() => setSelectedSize(size)}
-                      className={`px-4 py-2 border rounded-lg transition-all duration-300 ${
-                        selectedSize === size
-                          ? 'border-pink-500 bg-pink-50 text-pink-700'
-                          : 'border-gray-300 hover:border-pink-300'
-                      }`}
+                      className={`px-4 py-2 border rounded-lg transition-all duration-300 ${selectedSize === size
+                        ? 'border-pink-500 bg-pink-50 text-pink-700'
+                        : 'border-gray-300 hover:border-pink-300'
+                        }`}
                     >
                       {size}
                     </button>
@@ -271,11 +283,10 @@ export default function DesignDetailPage() {
                     <button
                       key={color}
                       onClick={() => setSelectedColor(color)}
-                      className={`px-4 py-2 border rounded-lg transition-all duration-300 ${
-                        selectedColor === color
-                          ? 'border-pink-500 bg-pink-50 text-pink-700'
-                          : 'border-gray-300 hover:border-pink-300'
-                      }`}
+                      className={`px-4 py-2 border rounded-lg transition-all duration-300 ${selectedColor === color
+                        ? 'border-pink-500 bg-pink-50 text-pink-700'
+                        : 'border-gray-300 hover:border-pink-300'
+                        }`}
                     >
                       {color}
                     </button>
@@ -284,9 +295,84 @@ export default function DesignDetailPage() {
               </div>
             )}
 
+            {/* معلومات إضافية - يظهر فقط إذا كان هناك بيانات */}
+            {(product.fabric ||
+              (product.features && product.features.length > 0) ||
+              (product.occasions && product.occasions.length > 0) ||
+              (product.care_instructions && product.care_instructions.length > 0)) && (
+                <div className="border-t border-gray-200 pt-6 space-y-4">
+                  <h3 className="text-xl font-bold text-gray-800 mb-4">تفاصيل إضافية</h3>
 
+                  {/* نوع القماش */}
+                  {product.fabric && (
+                    <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-800 mb-2">نوع القماش</h4>
+                      <p className="text-gray-700 flex items-start gap-2">
+                        <span className="text-pink-500 mt-1">•</span>
+                        <span>{product.fabric}</span>
+                      </p>
+                    </div>
+                  )}
 
-            {/* زر الاستفسار */}
+                  {/* المميزات */}
+                  {product.features && product.features.length > 0 && (
+                    <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                        المميزات
+                      </h4>
+                      <ul className="space-y-1">
+                        {product.features.map((feature, index) => (
+                          <li key={index} className="text-gray-700 flex items-start gap-2">
+                            <span className="text-pink-500 mt-1">•</span>
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* المناسبات */}
+                  {product.occasions && product.occasions.length > 0 && (
+                    <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                        المناسبات المناسبة
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {product.occasions.map((occasion, index) => (
+                          <span
+                            key={index}
+                            className="bg-white px-3 py-1 rounded-full text-sm text-gray-700 border border-pink-200"
+                          >
+                            {occasion}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* تعليمات العناية */}
+                  {product.care_instructions && product.care_instructions.length > 0 && (
+                    <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                        تعليمات العناية
+                      </h4>
+                      <ul className="space-y-1">
+                        {product.care_instructions.map((instruction, index) => (
+                          <li key={index} className="text-gray-700 flex items-start gap-2">
+                            <span className="text-pink-500 mt-1">•</span>
+                            <span>{instruction}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+            {/* زر الاستفسار - يظهر دائماً أسفل التفاصيل الإضافية */}
             <a
               href={`https://wa.me/+966598862609?text=أريد استفسار عن ${product.name}`}
               target="_blank"
@@ -295,127 +381,55 @@ export default function DesignDetailPage() {
             >
               استفسار عبر واتساب
             </a>
-
-            {/* معلومات إضافية */}
-            <div className="border-t border-gray-200 pt-6 space-y-4">
-              <h3 className="text-xl font-bold text-gray-800 mb-4">تفاصيل إضافية</h3>
-
-              {/* نوع القماش */}
-              {product.fabric && (
-                <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
-                    نوع القماش
-                  </h4>
-                  <p className="text-gray-700">{product.fabric}</p>
-                </div>
-              )}
-
-              {/* المميزات */}
-              {product.features && product.features.length > 0 && (
-                <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
-                    المميزات
-                  </h4>
-                  <ul className="space-y-1">
-                    {product.features.map((feature, index) => (
-                      <li key={index} className="text-gray-700 flex items-start gap-2">
-                        <span className="text-pink-500 mt-1">•</span>
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* المناسبات */}
-              {product.occasions && product.occasions.length > 0 && (
-                <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
-                    المناسبات المناسبة
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {product.occasions.map((occasion, index) => (
-                      <span
-                        key={index}
-                        className="bg-white px-3 py-1 rounded-full text-sm text-gray-700 border border-pink-200"
-                      >
-                        {occasion}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* تعليمات العناية */}
-              {product.care_instructions && product.care_instructions.length > 0 && (
-                <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
-                    تعليمات العناية
-                  </h4>
-                  <ul className="space-y-1">
-                    {product.care_instructions.map((instruction, index) => (
-                      <li key={index} className="text-gray-700 flex items-start gap-2">
-                        <span className="text-pink-500 mt-1">•</span>
-                        <span>{instruction}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
           </motion.div>
         </div>
-
-        {/* معرض الصور المنبثق */}
-        {isGalleryOpen && product && (
-          <div
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={closeGallery}
-          >
-            <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={closeGallery}
-                className="absolute top-4 right-4 z-10 bg-white/20 hover:bg-white/30 text-white rounded-full p-2 transition-colors duration-300"
-              >
-                <X className="w-6 h-6" />
-              </button>
-
-              <div className="relative w-full max-h-[80vh] aspect-[4/5]">
-                <Image
-                  src={product.images?.[currentImageIndex] || '/wedding-dress-1.jpg.jpg'}
-                  alt={`${product.name} - صورة ${currentImageIndex + 1}`}
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 1024px"
-                  className="object-contain rounded-lg"
-                  quality={95}
-                  priority
-                />
-              </div>
-
-              {(product.images?.length || 0) > 1 && (
-                <>
-                  <button
-                    onClick={prevImage}
-                    className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
-                  >
-                    <ChevronRight className="w-6 h-6" />
-                  </button>
-                  <button
-                    onClick={nextImage}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
-                  >
-                    <ChevronLeft className="w-6 h-6" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* معرض الصور المنبثق */}
+      {isGalleryOpen && product && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeGallery}
+        >
+          <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={closeGallery}
+              className="absolute top-4 right-4 z-10 bg-white/20 hover:bg-white/30 text-white rounded-full p-2 transition-colors duration-300"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="relative w-full max-h-[80vh] aspect-[4/5]">
+              <Image
+                src={product.images?.[currentImageIndex] || '/wedding-dress-1.jpg.jpg'}
+                alt={`${product.name} - صورة ${currentImageIndex + 1}`}
+                fill
+                sizes="(max-width: 1024px) 100vw, 1024px"
+                className="object-contain rounded-lg"
+                quality={95}
+                priority
+              />
+            </div>
+
+            {(product.images?.length || 0) > 1 && (
+              <>
+                <button
+                  onClick={prevImage}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={nextImage}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

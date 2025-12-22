@@ -157,9 +157,17 @@ export default function AppointmentsPage() {
   }
 
   const filteredAppointments = appointments.filter(appointment => {
+    // فلترة المواعيد المنتهية (إخفاء المواعيد التي مضى تاريخها)
+    const appointmentDate = new Date(appointment.appointment_date)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0) // تعيين الوقت إلى منتصف الليل للمقارنة الصحيحة
+
+    // إخفاء المواعيد التي تاريخها قبل اليوم الحالي
+    const isNotExpired = appointmentDate >= today
+
     const matchesSearch = appointment.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         appointment.customer_phone.includes(searchTerm) ||
-                         appointment.id.toLowerCase().includes(searchTerm.toLowerCase())
+      appointment.customer_phone.includes(searchTerm) ||
+      appointment.id.toLowerCase().includes(searchTerm.toLowerCase())
 
     let matchesDate = true
     if (dateFilter === 'today') {
@@ -167,14 +175,12 @@ export default function AppointmentsPage() {
     } else if (dateFilter === 'tomorrow') {
       matchesDate = isTomorrow(appointment.appointment_date)
     } else if (dateFilter === 'week') {
-      const appointmentDate = new Date(appointment.appointment_date)
-      const today = new Date()
       const weekFromNow = new Date()
       weekFromNow.setDate(today.getDate() + 7)
       matchesDate = appointmentDate >= today && appointmentDate <= weekFromNow
     }
 
-    return matchesSearch && matchesDate
+    return matchesSearch && matchesDate && isNotExpired
   })
 
   if (!user) {
@@ -311,101 +317,101 @@ export default function AppointmentsPage() {
                     <span>{t('edit_appointment') || 'تعديل الموعد'}</span>
                   </h2>
                   <div className="space-y-5">
-              {/* اسم العميل ورقم الهاتف */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">
-                    {t('customer_name') || 'اسم العميل'} *
-                  </label>
-                  <input
-                    type="text"
-                    value={editData.customer_name || ''}
-                    onChange={(e) => handleEditChange('customer_name', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    placeholder={t('customer_name_placeholder')}
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">
-                    {t('phone') || 'رقم الهاتف'} *
-                  </label>
-                  <input
-                    type="tel"
-                    value={editData.customer_phone || ''}
-                    onChange={(e) => handleEditChange('customer_phone', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    placeholder={t('phone_placeholder')}
-                  />
-                </div>
-              </div>
+                    {/* اسم العميل ورقم الهاتف */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-medium mb-2 text-gray-700">
+                          {t('customer_name') || 'اسم العميل'} *
+                        </label>
+                        <input
+                          type="text"
+                          value={editData.customer_name || ''}
+                          onChange={(e) => handleEditChange('customer_name', e.target.value)}
+                          className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                          placeholder={t('customer_name_placeholder')}
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-2 text-gray-700">
+                          {t('phone') || 'رقم الهاتف'} *
+                        </label>
+                        <input
+                          type="tel"
+                          value={editData.customer_phone || ''}
+                          onChange={(e) => handleEditChange('customer_phone', e.target.value)}
+                          className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                          placeholder={t('phone_placeholder')}
+                        />
+                      </div>
+                    </div>
 
-              {/* البريد الإلكتروني */}
-              <div>
-                <label className="block font-medium mb-2 text-gray-700">
-                  {t('email') || 'البريد الإلكتروني'}
-                </label>
-                <input
-                  type="email"
-                  value={editData.customer_email || ''}
-                  onChange={(e) => handleEditChange('customer_email', e.target.value)}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder={t('email_placeholder')}
-                />
-              </div>
+                    {/* البريد الإلكتروني */}
+                    <div>
+                      <label className="block font-medium mb-2 text-gray-700">
+                        {t('email') || 'البريد الإلكتروني'}
+                      </label>
+                      <input
+                        type="email"
+                        value={editData.customer_email || ''}
+                        onChange={(e) => handleEditChange('customer_email', e.target.value)}
+                        className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                        placeholder={t('email_placeholder')}
+                      />
+                    </div>
 
-              {/* التاريخ والوقت */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">
-                    {t('date') || 'التاريخ'} *
-                  </label>
-                  <input
-                    type="date"
-                    value={editData.appointment_date || ''}
-                    onChange={(e) => handleEditChange('appointment_date', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">
-                    {t('time') || 'الوقت'} *
-                  </label>
-                  <input
-                    type="time"
-                    value={editData.appointment_time || ''}
-                    onChange={(e) => handleEditChange('appointment_time', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  />
-                </div>
-              </div>
+                    {/* التاريخ والوقت */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-medium mb-2 text-gray-700">
+                          {t('date') || 'التاريخ'} *
+                        </label>
+                        <input
+                          type="date"
+                          value={editData.appointment_date || ''}
+                          onChange={(e) => handleEditChange('appointment_date', e.target.value)}
+                          className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-2 text-gray-700">
+                          {t('time') || 'الوقت'} *
+                        </label>
+                        <input
+                          type="time"
+                          value={editData.appointment_time || ''}
+                          onChange={(e) => handleEditChange('appointment_time', e.target.value)}
+                          className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
 
-              {/* نوع الخدمة */}
-              <div>
-                <label className="block font-medium mb-2 text-gray-700">
-                  {t('service_type') || 'نوع الخدمة'} *
-                </label>
-                <input
-                  type="text"
-                  value={editData.service_type || ''}
-                  onChange={(e) => handleEditChange('service_type', e.target.value)}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder={t('service_type_placeholder')}
-                />
-              </div>
+                    {/* نوع الخدمة */}
+                    <div>
+                      <label className="block font-medium mb-2 text-gray-700">
+                        {t('service_type') || 'نوع الخدمة'} *
+                      </label>
+                      <input
+                        type="text"
+                        value={editData.service_type || ''}
+                        onChange={(e) => handleEditChange('service_type', e.target.value)}
+                        className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                        placeholder={t('service_type_placeholder')}
+                      />
+                    </div>
 
-              {/* الملاحظات */}
-              <div>
-                <label className="block font-medium mb-2 text-gray-700">
-                  {t('notes') || 'ملاحظات'}
-                </label>
-                <textarea
-                  value={editData.notes || ''}
-                  onChange={(e) => handleEditChange('notes', e.target.value)}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder={t('notes_placeholder')}
-                  rows={3}
-                />
-              </div>
+                    {/* الملاحظات */}
+                    <div>
+                      <label className="block font-medium mb-2 text-gray-700">
+                        {t('notes') || 'ملاحظات'}
+                      </label>
+                      <textarea
+                        value={editData.notes || ''}
+                        onChange={(e) => handleEditChange('notes', e.target.value)}
+                        className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                        placeholder={t('notes_placeholder')}
+                        rows={3}
+                      />
+                    </div>
 
                     {/* أزرار الحفظ والإلغاء */}
                     <div className="flex gap-3 pt-6 border-t border-gray-200">
@@ -462,11 +468,10 @@ export default function AppointmentsPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                className={`bg-white/80 backdrop-blur-sm rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg ${
-                  isToday(appointment.appointment_date)
+                className={`bg-white/80 backdrop-blur-sm rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg ${isToday(appointment.appointment_date)
                     ? 'border-pink-300 bg-pink-50/50'
                     : 'border-pink-100'
-                }`}
+                  }`}
               >
                 <div className="grid lg:grid-cols-4 gap-6">
                   {/* معلومات العميل */}

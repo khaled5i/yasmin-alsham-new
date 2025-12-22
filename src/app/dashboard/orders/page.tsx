@@ -86,7 +86,7 @@ export default function OrdersPage() {
   const getWorkerName = (workerId?: string) => {
     if (!workerId) return null
     const worker = workers.find(w => w.id === workerId)
-    return worker ? worker.full_name : null
+    return worker?.user?.full_name || null
   }
 
   // فتح نافذة العرض
@@ -291,8 +291,8 @@ export default function OrdersPage() {
     const matchesSearch = searchType === 'phone'
       ? (order.client_phone || '').toLowerCase().includes(searchTerm.toLowerCase())
       : searchType === 'order_number'
-      ? (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase())
-      : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+        ? (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase())
+        : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
@@ -378,11 +378,10 @@ export default function OrdersPage() {
                   setSearchType('name')
                   setSearchTerm('')
                 }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
-                  searchType === 'name'
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'name'
                     ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 {t('search_by_name')}
               </button>
@@ -391,11 +390,10 @@ export default function OrdersPage() {
                   setSearchType('phone')
                   setSearchTerm('')
                 }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
-                  searchType === 'phone'
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'phone'
                     ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 {t('search_by_phone')}
               </button>
@@ -404,11 +402,10 @@ export default function OrdersPage() {
                   setSearchType('order_number')
                   setSearchTerm('')
                 }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
-                  searchType === 'order_number'
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'order_number'
                     ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 {t('search_by_order_number') || 'رقم الطلب'}
               </button>
@@ -426,8 +423,8 @@ export default function OrdersPage() {
                   searchType === 'phone'
                     ? t('enter_phone_number')
                     : searchType === 'order_number'
-                    ? t('enter_order_number') || 'أدخل رقم الطلب'
-                    : t('enter_client_name')
+                      ? t('enter_order_number') || 'أدخل رقم الطلب'
+                      : t('enter_client_name')
                 }
               />
             </div>
@@ -500,7 +497,7 @@ export default function OrdersPage() {
                         <p className="text-pink-600 font-medium">{order.description}</p>
                         <p className="text-sm text-gray-500">#{order.order_number || order.id}</p>
                       </div>
-                      
+
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
                         {getStatusInfo(order.status).label}
                       </span>
@@ -681,32 +678,28 @@ export default function OrdersPage() {
                 />
 
                 {/* رسالة التحذير - رفع الصور إلزامي */}
-                <div className={`p-4 rounded-lg border ${
-                  completedImages.length === 0
+                <div className={`p-4 rounded-lg border ${completedImages.length === 0
                     ? 'bg-red-50 border-red-200'
                     : 'bg-yellow-50 border-yellow-200'
-                }`}>
+                  }`}>
                   <div className="flex items-start space-x-3 space-x-reverse">
-                    <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
-                      completedImages.length === 0
+                    <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${completedImages.length === 0
                         ? 'text-red-600'
                         : 'text-yellow-600'
-                    }`} />
+                      }`} />
                     <div>
-                      <p className={`font-medium mb-1 ${
-                        completedImages.length === 0
+                      <p className={`font-medium mb-1 ${completedImages.length === 0
                           ? 'text-red-800'
                           : 'text-yellow-800'
-                      }`}>
+                        }`}>
                         {completedImages.length === 0
                           ? 'تنبيه مهم - رفع الصور إلزامي'
                           : t('important_warning')}
                       </p>
-                      <p className={`text-sm ${
-                        completedImages.length === 0
+                      <p className={`text-sm ${completedImages.length === 0
                           ? 'text-red-700'
                           : 'text-yellow-700'
-                      }`}>
+                        }`}>
                         {completedImages.length === 0
                           ? 'يجب رفع صورة واحدة على الأقل للعمل المكتمل قبل إنهاء الطلب. الصور ضرورية لتوثيق جودة العمل.'
                           : t('complete_order_warning')}

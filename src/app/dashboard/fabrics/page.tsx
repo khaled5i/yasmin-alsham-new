@@ -9,7 +9,7 @@ import { fabricService, Fabric, UpdateFabricData, CreateFabricData } from '@/lib
 
 export default function FabricsAdmin() {
   const [fabrics, setFabrics] = useState<Fabric[]>([])
-  const [editingId, setEditingId] = useState<string|null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<Fabric>>({})
   const [colorsInput, setColorsInput] = useState("")
   const [success, setSuccess] = useState(false)
@@ -75,13 +75,13 @@ export default function FabricsAdmin() {
   const handleAddColor = () => {
     const color = colorsInput.trim()
     if (color && !editData.available_colors?.includes(color)) {
-      setEditData(prev => ({ ...prev, available_colors: [...(prev.available_colors||[]), color] }))
+      setEditData(prev => ({ ...prev, available_colors: [...(prev.available_colors || []), color] }))
       setColorsInput("")
     }
   }
 
   const handleRemoveColor = (color: string) => {
-    setEditData(prev => ({ ...prev, available_colors: (prev.available_colors||[]).filter(c => c !== color) }))
+    setEditData(prev => ({ ...prev, available_colors: (prev.available_colors || []).filter(c => c !== color) }))
   }
 
   const handleSave = async () => {
@@ -90,10 +90,17 @@ export default function FabricsAdmin() {
     setError(null)
 
     try {
+      // تحديد السعر: إذا كان null أو undefined أو 0 أو فارغ، نرسل null لحذفه من قاعدة البيانات
+      const priceValue = (editData.price_per_meter !== null &&
+        editData.price_per_meter !== undefined &&
+        editData.price_per_meter > 0)
+        ? editData.price_per_meter
+        : null
+
       const updates: UpdateFabricData = {
         name: editData.name,
         description: editData.description,
-        price_per_meter: editData.price_per_meter,
+        price_per_meter: priceValue as any, // استخدام null بدلاً من undefined لحذف القيمة
         images: editData.images,
         image_url: editData.images?.[0],
         available_colors: editData.available_colors,
@@ -109,7 +116,7 @@ export default function FabricsAdmin() {
         discount_percentage: editData.discount_percentage
       }
 
-      console.log('🔄 تحديث القماش في Supabase...', editingId)
+      console.log('🔄 تحديث القماش في Supabase...', editingId, 'السعر الجديد:', priceValue)
       const { data, error } = await fabricService.update(editingId, updates)
 
       if (error) {
@@ -178,13 +185,13 @@ export default function FabricsAdmin() {
   const handleAddNewColor = () => {
     const color = newColorsInput.trim()
     if (color && !newFabricData.available_colors?.includes(color)) {
-      setNewFabricData(prev => ({ ...prev, available_colors: [...(prev.available_colors||[]), color] }))
+      setNewFabricData(prev => ({ ...prev, available_colors: [...(prev.available_colors || []), color] }))
       setNewColorsInput("")
     }
   }
 
   const handleRemoveNewColor = (color: string) => {
-    setNewFabricData(prev => ({ ...prev, available_colors: (prev.available_colors||[]).filter(c => c !== color) }))
+    setNewFabricData(prev => ({ ...prev, available_colors: (prev.available_colors || []).filter(c => c !== color) }))
   }
 
   const handleCreateFabric = async () => {
@@ -196,8 +203,9 @@ export default function FabricsAdmin() {
       setError('يرجى إدخال وصف القماش')
       return
     }
-    if (!newFabricData.price_per_meter || newFabricData.price_per_meter <= 0) {
-      setError('يرجى إدخال سعر صحيح')
+    // السعر اختياري - إذا تم إدخاله يجب أن يكون صحيح
+    if (newFabricData.price_per_meter && newFabricData.price_per_meter <= 0) {
+      setError('يرجى إدخال سعر صحيح أو اتركه فارغاً')
       return
     }
     if (!newFabricData.images || newFabricData.images.length === 0) {
@@ -212,7 +220,7 @@ export default function FabricsAdmin() {
       const createData: CreateFabricData = {
         name: newFabricData.name!,
         description: newFabricData.description!,
-        price_per_meter: newFabricData.price_per_meter!,
+        price_per_meter: newFabricData.price_per_meter && newFabricData.price_per_meter > 0 ? newFabricData.price_per_meter : undefined,
         images: newFabricData.images!,
         image_url: newFabricData.images![0],
         available_colors: newFabricData.available_colors || [],
@@ -394,15 +402,15 @@ export default function FabricsAdmin() {
               {/* السعر والعرض */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium mb-2 text-gray-700">السعر بالمتر (ريال) *</label>
+                  <label className="block font-medium mb-2 text-gray-700">السعر بالمتر (ريال)</label>
                   <input
                     type="number"
-                    value={newFabricData.price_per_meter || 0}
-                    onChange={(e) => handleNewFabricChange('price_per_meter', parseFloat(e.target.value))}
+                    value={newFabricData.price_per_meter || ''}
+                    onChange={(e) => handleNewFabricChange('price_per_meter', e.target.value ? parseFloat(e.target.value) : undefined)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                     min="0"
                     step="0.01"
-                    placeholder="0"
+                    placeholder="اختياري"
                   />
                 </div>
                 <div>
@@ -498,18 +506,6 @@ export default function FabricsAdmin() {
                     </span>
                   ))}
                 </div>
-              </div>
-
-              {/* تعليمات العناية */}
-              <div>
-                <label className="block font-medium mb-2 text-gray-700">تعليمات العناية</label>
-                <textarea
-                  value={newFabricData.care_instructions || ''}
-                  onChange={(e) => handleNewFabricChange('care_instructions', e.target.value)}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: يُغسل يدوياً بماء بارد، لا يُعصر، يُكوى على حرارة منخفضة"
-                  rows={3}
-                />
               </div>
 
               {/* الصور */}
@@ -655,15 +651,15 @@ export default function FabricsAdmin() {
               {/* السعر والعرض */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium mb-2 text-gray-700">السعر بالمتر (ريال) *</label>
+                  <label className="block font-medium mb-2 text-gray-700">السعر بالمتر (ريال)</label>
                   <input
                     type="number"
-                    value={editData.price_per_meter || 0}
-                    onChange={(e) => handleEditChange('price_per_meter', parseFloat(e.target.value))}
+                    value={editData.price_per_meter ?? ''}
+                    onChange={(e) => handleEditChange('price_per_meter', e.target.value ? parseFloat(e.target.value) : null)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                     min="0"
                     step="0.01"
-                    placeholder="0"
+                    placeholder="اختياري"
                   />
                 </div>
                 <div>
@@ -759,18 +755,6 @@ export default function FabricsAdmin() {
                     </span>
                   ))}
                 </div>
-              </div>
-
-              {/* تعليمات العناية */}
-              <div>
-                <label className="block font-medium mb-2 text-gray-700">تعليمات العناية</label>
-                <textarea
-                  value={editData.care_instructions || ''}
-                  onChange={(e) => handleEditChange('care_instructions', e.target.value)}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: يُغسل يدوياً بماء بارد، لا يُعصر، يُكوى على حرارة منخفضة"
-                  rows={3}
-                />
               </div>
 
               {/* الصور */}
@@ -912,9 +896,8 @@ export default function FabricsAdmin() {
                     <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-medium">
                       {fabric.price_per_meter} ريال/متر
                     </span>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                    }`}>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                      }`}>
                       {fabric.is_available ? '✓ متوفر' : '✗ غير متوفر'}
                     </span>
                   </div>

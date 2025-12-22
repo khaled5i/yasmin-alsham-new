@@ -65,7 +65,7 @@ export default function Footer() {
           <h3 className="text-3xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent text-center">
             ياسمين الشام
           </h3>
-          <p className="text-gray-400 text-lg text-center mt-1">تفصيل فساتين حسب الطلب</p>
+          <p className="text-gray-400 text-lg text-center mt-1">حيث تتحقق أحلامك بأجمل الفساتين</p>
         </motion.div>
 
         {/* وسائل التواصل الاجتماعي */}
@@ -98,6 +98,31 @@ export default function Footer() {
         {/* خط الفصل */}
         <div className="border-t border-gray-700 pt-6">
           <div className="text-center">
+            {/* روابط سياسة الخصوصية وشروط الخدمة */}
+            <div className="flex flex-wrap justify-center gap-4 mb-4">
+              <motion.a
+                href="/privacy-policy"
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                viewport={{ once: true }}
+                className="text-sm text-gray-400 hover:text-pink-400 transition-colors duration-300"
+              >
+                سياسة الخصوصية
+              </motion.a>
+              <span className="text-gray-600">|</span>
+              <motion.a
+                href="/terms-of-service"
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
+                viewport={{ once: true }}
+                className="text-sm text-gray-400 hover:text-pink-400 transition-colors duration-300"
+              >
+                شروط الخدمة
+              </motion.a>
+            </div>
+
             <p className="text-sm text-gray-400">
               © 2026 ياسمين الشام. جميع الحقوق محفوظة.
             </p>

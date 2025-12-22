@@ -1,0 +1,219 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Yasmin Al-Sham API",
+    "description": "API for Yasmin Al-Sham tailoring and fashion management system",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Yasmin Al-Sham",
+      "email": "info@yasminalsham.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Development server"
+    }
+  ],
+  "paths": {
+    "/api/workers/create": {
+      "post": {
+        "summary": "Create a new worker",
+        "description": "Creates a new worker account with authentication. Admin only.",
+        "operationId": "createWorker",
+        "tags": ["Workers"],
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Worker created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerResponse"
+                }
+              }
+            }
+          },
+          "400": {"description": "Bad request"},
+          "401": {"description": "Unauthorized"},
+          "403": {"description": "Forbidden - Admin only"},
+          "500": {"description": "Internal server error"}
+        }
+      }
+    },
+    "/api/workers/delete": {
+      "delete": {
+        "summary": "Delete a worker",
+        "description": "Deletes a worker and their associated user account. Admin only.",
+        "operationId": "deleteWorker",
+        "tags": ["Workers"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "description": "Worker ID to delete",
+            "schema": {"type": "string", "format": "uuid"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean"},
+                    "error": {"type": "string", "nullable": true}
+                  }
+                }
+              }
+            }
+          },
+          "400": {"description": "Bad request"},
+          "401": {"description": "Unauthorized"},
+          "403": {"description": "Forbidden - Admin only"},
+          "404": {"description": "Worker not found"},
+          "500": {"description": "Internal server error"}
+        }
+      }
+    },
+    "/api/workers/update-password": {
+      "post": {
+        "summary": "Update worker password",
+        "description": "Updates the password for a worker account",
+        "operationId": "updateWorkerPassword",
+        "tags": ["Workers"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "password"],
+                "properties": {
+                  "userId": {"type": "string", "format": "uuid"},
+                  "password": {"type": "string", "minLength": 6}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {"type": "object"}
+                  }
+                }
+              }
+            }
+          },
+          "400": {"description": "Bad request"},
+          "500": {"description": "Internal server error"}
+        }
+      }
+    },
+    "/api/db-health": {
+      "get": {
+        "summary": "Check database health",
+        "description": "Returns the health status of the database connection",
+        "operationId": "checkDbHealth",
+        "tags": ["Health"],
+        "responses": {
+          "200": {"description": "Database is healthy"},
+          "500": {"description": "Database connection error"}
+        }
+      }
+    },
+    "/api/whoami": {
+      "get": {
+        "summary": "Get current user info",
+        "description": "Returns information about the currently authenticated user",
+        "operationId": "whoami",
+        "tags": ["Auth"],
+        "security": [{"BearerAuth": []}],
+        "responses": {
+          "200": {"description": "User information returned"},
+          "401": {"description": "Not authenticated"}
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "CreateWorkerRequest": {
+        "type": "object",
+        "required": ["email", "password", "full_name", "specialty"],
+        "properties": {
+          "email": {"type": "string", "format": "email"},
+          "password": {"type": "string", "minLength": 6},
+          "full_name": {"type": "string"},
+          "phone": {"type": "string"},
+          "specialty": {"type": "string"},
+          "experience_years": {"type": "integer", "default": 0},
+          "hourly_rate": {"type": "number", "default": 0},
+          "skills": {"type": "array", "items": {"type": "string"}},
+          "bio": {"type": "string"},
+          "is_available": {"type": "boolean", "default": true}
+        }
+      },
+      "WorkerResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string", "format": "uuid"},
+              "user_id": {"type": "string", "format": "uuid"},
+              "specialty": {"type": "string"},
+              "experience_years": {"type": "integer"},
+              "hourly_rate": {"type": "number"},
+              "skills": {"type": "array", "items": {"type": "string"}},
+              "bio": {"type": "string"},
+              "is_available": {"type": "boolean"},
+              "user": {"$ref": "#/components/schemas/User"}
+            }
+          },
+          "error": {"type": "string", "nullable": true}
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "format": "uuid"},
+          "email": {"type": "string", "format": "email"},
+          "full_name": {"type": "string"},
+          "phone": {"type": "string"},
+          "role": {"type": "string", "enum": ["admin", "worker", "user"]},
+          "is_active": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}
+

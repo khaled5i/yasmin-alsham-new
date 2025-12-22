@@ -26,6 +26,8 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react'
+import NumericInput from '@/components/NumericInput'
+import { validatePhoneLength, getValidationErrorMessage } from '@/utils/inputValidation'
 
 export default function WorkersPage() {
   const { user } = useAuthStore()
@@ -67,6 +69,12 @@ export default function WorkersPage() {
 
     if (!newWorker.email || !newWorker.password || !newWorker.full_name || !newWorker.phone || !newWorker.specialty) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
+      return
+    }
+
+    // التحقق من طول رقم الهاتف
+    if (!validatePhoneLength(newWorker.phone)) {
+      setMessage({ type: 'error', text: getValidationErrorMessage('phoneLength') })
       return
     }
 
@@ -129,6 +137,12 @@ export default function WorkersPage() {
 
     if (!editingWorker || !editingWorker.full_name || !editingWorker.specialty) {
       setMessage({ type: 'error', text: t('fill_required_fields') || 'يرجى ملء جميع الحقول المطلوبة' })
+      return
+    }
+
+    // التحقق من طول رقم الهاتف إن وجد
+    if (editingWorker.phone && !validatePhoneLength(editingWorker.phone)) {
+      setMessage({ type: 'error', text: getValidationErrorMessage('phoneLength') })
       return
     }
 
@@ -377,11 +391,10 @@ export default function WorkersPage() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`mb-6 p-4 rounded-lg flex items-center space-x-3 space-x-reverse ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-800 border border-green-200'
-                : 'bg-red-50 text-red-800 border border-red-200'
-            }`}
+            className={`mb-6 p-4 rounded-lg flex items-center space-x-3 space-x-reverse ${message.type === 'success'
+              ? 'bg-green-50 text-green-800 border border-green-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+              }`}
           >
             {message.type === 'success' ? (
               <CheckCircle className="w-5 h-5 text-green-600" />
@@ -466,16 +479,14 @@ export default function WorkersPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {t('phone_required_worker')}
-                </label>
-                <input
-                  type="tel"
+                <NumericInput
                   value={newWorker.phone}
-                  onChange={(e) => setNewWorker(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  onChange={(value) => setNewWorker(prev => ({ ...prev, phone: value }))}
+                  type="phone"
+                  label={t('phone_required_worker')}
                   placeholder={t('enter_phone')}
                   required
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -594,15 +605,14 @@ export default function WorkersPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('phone_required_worker')}
-                    </label>
-                    <input
-                      type="tel"
+                    <NumericInput
                       value={editingWorker.phone || ''}
-                      onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, phone: e.target.value }))}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      onChange={(value) => setEditingWorker((prev: any) => ({ ...prev, phone: value }))}
+                      type="phone"
+                      label={t('phone_required_worker')}
+                      placeholder={t('enter_phone')}
                       required
+                      disabled={isSubmitting}
                     />
                   </div>
 
@@ -675,9 +685,8 @@ export default function WorkersPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                className={`bg-white/80 backdrop-blur-sm rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg ${
-                  worker.is_active ? 'border-pink-100' : 'border-gray-200 opacity-75'
-                }`}
+                className={`bg-white/80 backdrop-blur-sm rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg ${worker.is_active ? 'border-pink-100' : 'border-gray-200 opacity-75'
+                  }`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-4 space-x-reverse">
@@ -741,11 +750,10 @@ export default function WorkersPage() {
                   </button>
                   <button
                     onClick={() => toggleWorkerStatus(worker.id, worker.is_available)}
-                    className={`px-3 py-2 text-sm rounded-lg transition-all duration-300 ${
-                      worker.is_available
-                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                        : 'bg-green-100 text-green-700 hover:bg-green-200'
-                    }`}
+                    className={`px-3 py-2 text-sm rounded-lg transition-all duration-300 ${worker.is_available
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                      : 'bg-green-100 text-green-700 hover:bg-green-200'
+                      }`}
                   >
                     {worker.is_available ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                   </button>

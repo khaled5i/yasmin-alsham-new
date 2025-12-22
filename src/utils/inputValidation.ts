@@ -17,6 +17,13 @@ export const isValidPhoneNumber = (value: string): boolean => {
   return /^(\+)?\d*$/.test(value)
 }
 
+// التحقق من طول رقم الهاتف (يجب أن يكون 10 أرقام على الأقل)
+export const validatePhoneLength = (value: string): boolean => {
+  // إزالة + من البداية إن وجدت ثم التحقق من الطول
+  const digitsOnly = value.replace(/\+/g, '')
+  return digitsOnly.length >= 10
+}
+
 // تنظيف الإدخال من الأحرف غير الرقمية
 export const cleanNumericInput = (value: string): string => {
   return value.replace(/[^\d.]/g, '')
@@ -55,6 +62,7 @@ export const getValidationErrorMessage = (fieldType: string, language: 'ar' | 'e
       measurement: 'يرجى إدخال رقم صحيح للمقاس',
       price: 'يرجى إدخال سعر صحيح',
       phone: 'يرجى إدخال رقم هاتف صحيح',
+      phoneLength: 'رقم الهاتف يجب أن يكون 10 أرقام على الأقل',
       orderNumber: 'يرجى إدخال رقم طلب صحيح',
       numeric: 'يرجى إدخال أرقام فقط',
       positive: 'يرجى إدخال رقم أكبر من الصفر'
@@ -63,12 +71,13 @@ export const getValidationErrorMessage = (fieldType: string, language: 'ar' | 'e
       measurement: 'Please enter a valid measurement',
       price: 'Please enter a valid price',
       phone: 'Please enter a valid phone number',
+      phoneLength: 'Phone number must be at least 10 digits',
       orderNumber: 'Please enter a valid order number',
       numeric: 'Please enter numbers only',
       positive: 'Please enter a number greater than zero'
     }
   }
-  
+
   return (messages[language] as any)[fieldType] || messages[language].numeric
 }
 
@@ -106,6 +115,7 @@ export const handleNumericInputChange = (
       if (!isValid) {
         errorMessage = getValidationErrorMessage('phone')
       }
+      // لا نتحقق من الطول هنا لأنه سيتم التحقق منه عند onBlur في المكون
       break
 
     case 'orderNumber':

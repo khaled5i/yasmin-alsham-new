@@ -9,9 +9,12 @@ import { productService, Product, UpdateProductData, CreateProductData } from '@
 
 export default function ReadyDesignsAdmin() {
   const [products, setProducts] = useState<Product[]>([])
-  const [editingId, setEditingId] = useState<string|null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<Product>>({})
   const [colorsInput, setColorsInput] = useState("")
+  const [featuresInput, setFeaturesInput] = useState("")
+  const [occasionsInput, setOccasionsInput] = useState("")
+  const [careInstructionsInput, setCareInstructionsInput] = useState("")
   const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -26,11 +29,17 @@ export default function ReadyDesignsAdmin() {
     images: [],
     colors: [],
     sizes: [],
+    features: [],
+    occasions: [],
+    care_instructions: [],
     is_available: true,
     is_featured: false,
     category_name: 'فساتين زفاف'
   })
   const [newColorsInput, setNewColorsInput] = useState("")
+  const [newFeaturesInput, setNewFeaturesInput] = useState("")
+  const [newOccasionsInput, setNewOccasionsInput] = useState("")
+  const [newCareInstructionsInput, setNewCareInstructionsInput] = useState("")
 
   // تحميل المنتجات عند تحميل الصفحة
   useEffect(() => {
@@ -47,6 +56,13 @@ export default function ReadyDesignsAdmin() {
         setError(error)
       } else if (data) {
         console.log(`✅ تم تحميل ${data.length} منتج`)
+        console.log('📦 عينة من البيانات المحملة:', data[0] ? {
+          id: data[0].id,
+          title: data[0].title,
+          features: data[0].features,
+          occasions: data[0].occasions,
+          care_instructions: data[0].care_instructions
+        } : 'لا توجد منتجات')
         setProducts(data)
       }
     } catch (err: any) {
@@ -58,9 +74,18 @@ export default function ReadyDesignsAdmin() {
   }
 
   const startEdit = (product: Product) => {
+    console.log('📝 بدء تعديل المنتج:', {
+      id: product.id,
+      features: product.features,
+      occasions: product.occasions,
+      care_instructions: product.care_instructions
+    })
     setEditingId(product.id)
     setEditData({ ...product })
     setColorsInput("")
+    setFeaturesInput("")
+    setOccasionsInput("")
+    setCareInstructionsInput("")
     setSuccess(false)
   }
 
@@ -68,6 +93,9 @@ export default function ReadyDesignsAdmin() {
     setEditingId(null)
     setEditData({})
     setColorsInput("")
+    setFeaturesInput("")
+    setOccasionsInput("")
+    setCareInstructionsInput("")
     setSuccess(false)
   }
 
@@ -78,13 +106,49 @@ export default function ReadyDesignsAdmin() {
   const handleAddColor = () => {
     const color = colorsInput.trim()
     if (color && !editData.colors?.includes(color)) {
-      setEditData(prev => ({ ...prev, colors: [...(prev.colors||[]), color] }))
+      setEditData(prev => ({ ...prev, colors: [...(prev.colors || []), color] }))
       setColorsInput("")
     }
   }
 
   const handleRemoveColor = (color: string) => {
-    setEditData(prev => ({ ...prev, colors: (prev.colors||[]).filter(c => c !== color) }))
+    setEditData(prev => ({ ...prev, colors: (prev.colors || []).filter(c => c !== color) }))
+  }
+
+  // دوال التعامل مع المميزات (تعديل)
+  const handleAddFeature = () => {
+    const val = featuresInput.trim()
+    if (val && !editData.features?.includes(val)) {
+      setEditData(prev => ({ ...prev, features: [...(prev.features || []), val] }))
+      setFeaturesInput("")
+    }
+  }
+  const handleRemoveFeature = (val: string) => {
+    setEditData(prev => ({ ...prev, features: (prev.features || []).filter(f => f !== val) }))
+  }
+
+  // دوال التعامل مع المناسبات (تعديل)
+  const handleAddOccasion = () => {
+    const val = occasionsInput.trim()
+    if (val && !editData.occasions?.includes(val)) {
+      setEditData(prev => ({ ...prev, occasions: [...(prev.occasions || []), val] }))
+      setOccasionsInput("")
+    }
+  }
+  const handleRemoveOccasion = (val: string) => {
+    setEditData(prev => ({ ...prev, occasions: (prev.occasions || []).filter(o => o !== val) }))
+  }
+
+  // دوال التعامل مع تعليمات العناية (تعديل)
+  const handleAddCareInstruction = () => {
+    const val = careInstructionsInput.trim()
+    if (val && !editData.care_instructions?.includes(val)) {
+      setEditData(prev => ({ ...prev, care_instructions: [...(prev.care_instructions || []), val] }))
+      setCareInstructionsInput("")
+    }
+  }
+  const handleRemoveCareInstruction = (val: string) => {
+    setEditData(prev => ({ ...prev, care_instructions: (prev.care_instructions || []).filter(c => c !== val) }))
   }
 
   const handleSave = async () => {
@@ -104,15 +168,20 @@ export default function ReadyDesignsAdmin() {
         colors: editData.colors,
         sizes: editData.sizes,
         fabric: editData.fabric ?? undefined,
-        features: editData.features,
-        occasions: editData.occasions,
-        care_instructions: editData.care_instructions,
+        features: editData.features || [],
+        occasions: editData.occasions || [],
+        care_instructions: editData.care_instructions || [],
         is_available: editData.is_available,
         is_featured: editData.is_featured,
         category_name: editData.category_name ?? undefined
       }
 
       console.log('🔄 تحديث المنتج في Supabase...', editingId)
+      console.log('📝 البيانات المرسلة:', {
+        features: updates.features,
+        occasions: updates.occasions,
+        care_instructions: updates.care_instructions
+      })
       const { data, error } = await productService.update(editingId, updates)
 
       if (error) {
@@ -124,6 +193,11 @@ export default function ReadyDesignsAdmin() {
 
       if (data) {
         console.log('✅ تم تحديث المنتج بنجاح')
+        console.log('📦 البيانات المستلمة من Supabase:', {
+          features: data.features,
+          occasions: data.occasions,
+          care_instructions: data.care_instructions
+        })
         // تحديث القائمة المحلية
         setProducts(prev => prev.map(p => p.id === editingId ? data : p))
         setSuccess(true)
@@ -152,11 +226,17 @@ export default function ReadyDesignsAdmin() {
       images: [],
       colors: [],
       sizes: [],
+      features: [],
+      occasions: [],
+      care_instructions: [],
       is_available: true,
       is_featured: false,
       category_name: 'فساتين زفاف'
     })
     setNewColorsInput("")
+    setNewFeaturesInput("")
+    setNewOccasionsInput("")
+    setNewCareInstructionsInput("")
     setSuccess(false)
     setError(null)
   }
@@ -170,11 +250,17 @@ export default function ReadyDesignsAdmin() {
       images: [],
       colors: [],
       sizes: [],
+      features: [],
+      occasions: [],
+      care_instructions: [],
       is_available: true,
       is_featured: false,
       category_name: 'فساتين زفاف'
     })
     setNewColorsInput("")
+    setNewFeaturesInput("")
+    setNewOccasionsInput("")
+    setNewCareInstructionsInput("")
     setSuccess(false)
     setError(null)
   }
@@ -186,13 +272,49 @@ export default function ReadyDesignsAdmin() {
   const handleAddNewColor = () => {
     const color = newColorsInput.trim()
     if (color && !newProductData.colors?.includes(color)) {
-      setNewProductData(prev => ({ ...prev, colors: [...(prev.colors||[]), color] }))
+      setNewProductData(prev => ({ ...prev, colors: [...(prev.colors || []), color] }))
       setNewColorsInput("")
     }
   }
 
   const handleRemoveNewColor = (color: string) => {
-    setNewProductData(prev => ({ ...prev, colors: (prev.colors||[]).filter(c => c !== color) }))
+    setNewProductData(prev => ({ ...prev, colors: (prev.colors || []).filter(c => c !== color) }))
+  }
+
+  // دوال التعامل مع المميزات (جديد)
+  const handleAddNewFeature = () => {
+    const val = newFeaturesInput.trim()
+    if (val && !newProductData.features?.includes(val)) {
+      setNewProductData(prev => ({ ...prev, features: [...(prev.features || []), val] }))
+      setNewFeaturesInput("")
+    }
+  }
+  const handleRemoveNewFeature = (val: string) => {
+    setNewProductData(prev => ({ ...prev, features: (prev.features || []).filter(f => f !== val) }))
+  }
+
+  // دوال التعامل مع المناسبات (جديد)
+  const handleAddNewOccasion = () => {
+    const val = newOccasionsInput.trim()
+    if (val && !newProductData.occasions?.includes(val)) {
+      setNewProductData(prev => ({ ...prev, occasions: [...(prev.occasions || []), val] }))
+      setNewOccasionsInput("")
+    }
+  }
+  const handleRemoveNewOccasion = (val: string) => {
+    setNewProductData(prev => ({ ...prev, occasions: (prev.occasions || []).filter(o => o !== val) }))
+  }
+
+  // دوال التعامل مع تعليمات العناية (جديد)
+  const handleAddNewCareInstruction = () => {
+    const val = newCareInstructionsInput.trim()
+    if (val && !newProductData.care_instructions?.includes(val)) {
+      setNewProductData(prev => ({ ...prev, care_instructions: [...(prev.care_instructions || []), val] }))
+      setNewCareInstructionsInput("")
+    }
+  }
+  const handleRemoveNewCareInstruction = (val: string) => {
+    setNewProductData(prev => ({ ...prev, care_instructions: (prev.care_instructions || []).filter(c => c !== val) }))
   }
 
   const handleCreateProduct = async () => {
@@ -205,8 +327,9 @@ export default function ReadyDesignsAdmin() {
       setError('يرجى إدخال وصف الفستان')
       return
     }
-    if (!newProductData.price || newProductData.price <= 0) {
-      setError('يرجى إدخال سعر صحيح')
+    // السعر اختياري - إذا تم إدخاله يجب أن يكون صحيح
+    if (newProductData.price && newProductData.price <= 0) {
+      setError('يرجى إدخال سعر صحيح أو اتركه فارغاً')
       return
     }
     if (!newProductData.images || newProductData.images.length === 0) {
@@ -222,7 +345,7 @@ export default function ReadyDesignsAdmin() {
       const createData: CreateProductData = {
         title: newProductData.title!,
         description: newProductData.description!,
-        price: newProductData.price!,
+        price: newProductData.price && newProductData.price > 0 ? newProductData.price : undefined,
         images: newProductData.images!,
         thumbnail_image: newProductData.images![0],
         colors: newProductData.colors || [],
@@ -232,12 +355,17 @@ export default function ReadyDesignsAdmin() {
         category_name: newProductData.category_name || 'فساتين زفاف',
         published_at: new Date().toISOString(), // ✅ إضافة تاريخ النشر تلقائياً
         fabric: newProductData.fabric ?? undefined,
-        features: newProductData.features,
-        occasions: newProductData.occasions,
-        care_instructions: newProductData.care_instructions
+        features: newProductData.features || [],
+        occasions: newProductData.occasions || [],
+        care_instructions: newProductData.care_instructions || []
       }
 
       console.log('🔄 إضافة منتج جديد إلى Supabase...')
+      console.log('📝 البيانات المرسلة:', {
+        features: createData.features,
+        occasions: createData.occasions,
+        care_instructions: createData.care_instructions
+      })
       const { data, error } = await productService.create(createData)
 
       if (error) {
@@ -390,7 +518,7 @@ export default function ReadyDesignsAdmin() {
               <div>
                 <label className="block font-medium mb-2 text-gray-700">صور الفستان *</label>
                 <ImageUpload
-                  images={newProductData.images||[]}
+                  images={newProductData.images || []}
                   onImagesChange={imgs => handleNewProductChange('images', imgs)}
                   maxImages={8}
                   useSupabaseStorage={true}
@@ -402,7 +530,7 @@ export default function ReadyDesignsAdmin() {
                 <label className="block font-medium mb-2 text-gray-700">عنوان الفستان *</label>
                 <input
                   type="text"
-                  value={newProductData.title||''}
+                  value={newProductData.title || ''}
                   onChange={e => handleNewProductChange('title', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                   placeholder="مثال: فستان زفاف كلاسيكي أبيض"
@@ -413,7 +541,7 @@ export default function ReadyDesignsAdmin() {
               <div>
                 <label className="block font-medium mb-2 text-gray-700">وصف الفستان *</label>
                 <textarea
-                  value={newProductData.description||''}
+                  value={newProductData.description || ''}
                   onChange={e => handleNewProductChange('description', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                   placeholder="وصف تفصيلي للفستان..."
@@ -427,7 +555,7 @@ export default function ReadyDesignsAdmin() {
                   <label className="block font-medium mb-2 text-gray-700">السعر (ريال) *</label>
                   <input
                     type="number"
-                    value={newProductData.price||''}
+                    value={newProductData.price || ''}
                     onChange={e => handleNewProductChange('price', Number(e.target.value))}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                     placeholder="0"
@@ -438,7 +566,7 @@ export default function ReadyDesignsAdmin() {
                   <label className="block font-medium mb-2 text-gray-700">الفئة</label>
                   <input
                     type="text"
-                    value={newProductData.category_name||''}
+                    value={newProductData.category_name || ''}
                     onChange={e => handleNewProductChange('category_name', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                     placeholder="مثال: فساتين زفاف"
@@ -450,14 +578,14 @@ export default function ReadyDesignsAdmin() {
               <div>
                 <label className="block font-medium mb-2 text-gray-700">المقاسات المتوفرة</label>
                 <div className="flex flex-wrap gap-3">
-                  {["XS","S","M","L","XL","XXL"].map(size => (
+                  {["XS", "S", "M", "L", "XL", "XXL"].map(size => (
                     <label key={size} className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded-lg hover:bg-pink-50 transition-colors">
                       <input
                         type="checkbox"
                         checked={newProductData.sizes?.includes(size) || false}
                         onChange={() => handleNewProductChange('sizes', newProductData.sizes?.includes(size)
-                          ? (newProductData.sizes||[]).filter(s => s !== size)
-                          : [...(newProductData.sizes||[]), size])}
+                          ? (newProductData.sizes || []).filter(s => s !== size)
+                          : [...(newProductData.sizes || []), size])}
                         className="accent-pink-600 w-4 h-4"
                       />
                       <span className="font-medium">{size}</span>
@@ -488,7 +616,7 @@ export default function ReadyDesignsAdmin() {
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {(newProductData.colors||[]).map((color, idx) => (
+                  {(newProductData.colors || []).map((color, idx) => (
                     <span key={idx} className="bg-pink-100 text-pink-700 px-4 py-2 rounded-full flex items-center gap-2">
                       {color}
                       <button
@@ -508,7 +636,7 @@ export default function ReadyDesignsAdmin() {
                 <label className="block font-medium mb-2 text-gray-700">نوع القماش</label>
                 <input
                   type="text"
-                  value={newProductData.fabric||''}
+                  value={newProductData.fabric || ''}
                   onChange={e => handleNewProductChange('fabric', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                   placeholder="مثال: حرير، ساتان، شيفون، دانتيل..."
@@ -518,40 +646,112 @@ export default function ReadyDesignsAdmin() {
               {/* المميزات */}
               <div>
                 <label className="block font-medium mb-2 text-gray-700">المميزات</label>
-                <textarea
-                  value={Array.isArray(newProductData.features) ? newProductData.features.join(', ') : newProductData.features||''}
-                  onChange={e => handleNewProductChange('features', e.target.value.split(',').map(f => f.trim()).filter(f => f))}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: تطريز يدوي، أحجار كريستال، ذيل طويل... (افصل بفاصلة)"
-                  rows={2}
-                />
-                <p className="text-xs text-gray-500 mt-1">افصل المميزات بفاصلة (,)</p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={newFeaturesInput}
+                    onChange={e => setNewFeaturesInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewFeature() } }}
+                    className="border border-gray-300 rounded-lg p-3 flex-1 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="أدخل ميزة واضغط إضافة"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddNewFeature}
+                    className="btn-secondary px-6 py-3 rounded-lg font-bold"
+                    disabled={!newFeaturesInput.trim()}
+                  >
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(newProductData.features || []).map((feature, idx) => (
+                    <span key={idx} className="bg-blue-50 text-blue-700 px-4 py-2 rounded-full flex items-center gap-2">
+                      {feature}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveNewFeature(feature)}
+                        className="text-blue-600 hover:text-red-600 font-bold text-lg"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* المناسبات */}
               <div>
                 <label className="block font-medium mb-2 text-gray-700">المناسبات المناسبة</label>
-                <textarea
-                  value={Array.isArray(newProductData.occasions) ? newProductData.occasions.join(', ') : newProductData.occasions||''}
-                  onChange={e => handleNewProductChange('occasions', e.target.value.split(',').map(o => o.trim()).filter(o => o))}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: زفاف، خطوبة، حفلات، سهرات... (افصل بفاصلة)"
-                  rows={2}
-                />
-                <p className="text-xs text-gray-500 mt-1">افصل المناسبات بفاصلة (,)</p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={newOccasionsInput}
+                    onChange={e => setNewOccasionsInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewOccasion() } }}
+                    className="border border-gray-300 rounded-lg p-3 flex-1 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="أدخل مناسبة واضغط إضافة"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddNewOccasion}
+                    className="btn-secondary px-6 py-3 rounded-lg font-bold"
+                    disabled={!newOccasionsInput.trim()}
+                  >
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(newProductData.occasions || []).map((occasion, idx) => (
+                    <span key={idx} className="bg-purple-50 text-purple-700 px-4 py-2 rounded-full flex items-center gap-2">
+                      {occasion}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveNewOccasion(occasion)}
+                        className="text-purple-600 hover:text-red-600 font-bold text-lg"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* تعليمات العناية */}
               <div>
                 <label className="block font-medium mb-2 text-gray-700">تعليمات العناية</label>
-                <textarea
-                  value={Array.isArray(newProductData.care_instructions) ? newProductData.care_instructions.join(', ') : newProductData.care_instructions||''}
-                  onChange={e => handleNewProductChange('care_instructions', e.target.value.split(',').map(c => c.trim()).filter(c => c))}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: تنظيف جاف فقط، لا تستخدم المبيض، كي بحرارة منخفضة... (افصل بفاصلة)"
-                  rows={2}
-                />
-                <p className="text-xs text-gray-500 mt-1">افصل التعليمات بفاصلة (,)</p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={newCareInstructionsInput}
+                    onChange={e => setNewCareInstructionsInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewCareInstruction() } }}
+                    className="border border-gray-300 rounded-lg p-3 flex-1 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="أدخل تعليمات واضغط إضافة"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddNewCareInstruction}
+                    className="btn-secondary px-6 py-3 rounded-lg font-bold"
+                    disabled={!newCareInstructionsInput.trim()}
+                  >
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(newProductData.care_instructions || []).map((care, idx) => (
+                    <span key={idx} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-full flex items-center gap-2">
+                      {care}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveNewCareInstruction(care)}
+                        className="text-gray-600 hover:text-red-600 font-bold text-lg"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* خيارات إضافية */}
@@ -634,7 +834,7 @@ export default function ReadyDesignsAdmin() {
               <div>
                 <label className="block font-medium mb-2 text-gray-700">صور الفستان *</label>
                 <ImageUpload
-                  images={editData.images||[]}
+                  images={editData.images || []}
                   onImagesChange={imgs => handleEditChange('images', imgs)}
                   maxImages={8}
                   useSupabaseStorage={true}
@@ -646,7 +846,7 @@ export default function ReadyDesignsAdmin() {
                 <label className="block font-medium mb-2 text-gray-700">عنوان الفستان *</label>
                 <input
                   type="text"
-                  value={editData.title||''}
+                  value={editData.title || ''}
                   onChange={e => handleEditChange('title', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                   placeholder="مثال: فستان زفاف كلاسيكي أبيض"
@@ -657,7 +857,7 @@ export default function ReadyDesignsAdmin() {
               <div>
                 <label className="block font-medium mb-2 text-gray-700">وصف الفستان *</label>
                 <textarea
-                  value={editData.description||''}
+                  value={editData.description || ''}
                   onChange={e => handleEditChange('description', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                   placeholder="وصف تفصيلي للفستان..."
@@ -671,7 +871,7 @@ export default function ReadyDesignsAdmin() {
                   <label className="block font-medium mb-2 text-gray-700">السعر (ريال) *</label>
                   <input
                     type="number"
-                    value={editData.price||''}
+                    value={editData.price || ''}
                     onChange={e => handleEditChange('price', Number(e.target.value))}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                     placeholder="0"
@@ -682,7 +882,7 @@ export default function ReadyDesignsAdmin() {
                   <label className="block font-medium mb-2 text-gray-700">الفئة</label>
                   <input
                     type="text"
-                    value={editData.category_name||''}
+                    value={editData.category_name || ''}
                     onChange={e => handleEditChange('category_name', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                     placeholder="مثال: فساتين زفاف"
@@ -694,14 +894,14 @@ export default function ReadyDesignsAdmin() {
               <div>
                 <label className="block font-medium mb-2 text-gray-700">المقاسات المتوفرة</label>
                 <div className="flex flex-wrap gap-3">
-                  {["XS","S","M","L","XL","XXL"].map(size => (
+                  {["XS", "S", "M", "L", "XL", "XXL"].map(size => (
                     <label key={size} className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded-lg hover:bg-pink-50 transition-colors">
                       <input
                         type="checkbox"
                         checked={editData.sizes?.includes(size) || false}
                         onChange={() => handleEditChange('sizes', editData.sizes?.includes(size)
-                          ? (editData.sizes||[]).filter(s => s !== size)
-                          : [...(editData.sizes||[]), size])}
+                          ? (editData.sizes || []).filter(s => s !== size)
+                          : [...(editData.sizes || []), size])}
                         className="accent-pink-600 w-4 h-4"
                       />
                       <span className="font-medium">{size}</span>
@@ -732,7 +932,7 @@ export default function ReadyDesignsAdmin() {
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {(editData.colors||[]).map((color, idx) => (
+                  {(editData.colors || []).map((color, idx) => (
                     <span key={idx} className="bg-pink-100 text-pink-700 px-4 py-2 rounded-full flex items-center gap-2">
                       {color}
                       <button
@@ -752,7 +952,7 @@ export default function ReadyDesignsAdmin() {
                 <label className="block font-medium mb-2 text-gray-700">نوع القماش</label>
                 <input
                   type="text"
-                  value={editData.fabric||''}
+                  value={editData.fabric || ''}
                   onChange={e => handleEditChange('fabric', e.target.value)}
                   className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
                   placeholder="مثال: حرير، ساتان، شيفون، دانتيل..."
@@ -762,40 +962,112 @@ export default function ReadyDesignsAdmin() {
               {/* المميزات */}
               <div>
                 <label className="block font-medium mb-2 text-gray-700">المميزات</label>
-                <textarea
-                  value={Array.isArray(editData.features) ? editData.features.join(', ') : editData.features||''}
-                  onChange={e => handleEditChange('features', e.target.value.split(',').map(f => f.trim()).filter(f => f))}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: تطريز يدوي، أحجار كريستال، ذيل طويل... (افصل بفاصلة)"
-                  rows={2}
-                />
-                <p className="text-xs text-gray-500 mt-1">افصل المميزات بفاصلة (,)</p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={featuresInput}
+                    onChange={e => setFeaturesInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddFeature() } }}
+                    className="border border-gray-300 rounded-lg p-3 flex-1 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="أدخل ميزة واضغط إضافة"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddFeature}
+                    className="btn-secondary px-6 py-3 rounded-lg font-bold"
+                    disabled={!featuresInput.trim()}
+                  >
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(editData.features || []).map((feature, idx) => (
+                    <span key={idx} className="bg-blue-50 text-blue-700 px-4 py-2 rounded-full flex items-center gap-2">
+                      {feature}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFeature(feature)}
+                        className="text-blue-600 hover:text-red-600 font-bold text-lg"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* المناسبات */}
               <div>
                 <label className="block font-medium mb-2 text-gray-700">المناسبات المناسبة</label>
-                <textarea
-                  value={Array.isArray(editData.occasions) ? editData.occasions.join(', ') : editData.occasions||''}
-                  onChange={e => handleEditChange('occasions', e.target.value.split(',').map(o => o.trim()).filter(o => o))}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: زفاف، خطوبة، حفلات، سهرات... (افصل بفاصلة)"
-                  rows={2}
-                />
-                <p className="text-xs text-gray-500 mt-1">افصل المناسبات بفاصلة (,)</p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={occasionsInput}
+                    onChange={e => setOccasionsInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddOccasion() } }}
+                    className="border border-gray-300 rounded-lg p-3 flex-1 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="أدخل مناسبة واضغط إضافة"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddOccasion}
+                    className="btn-secondary px-6 py-3 rounded-lg font-bold"
+                    disabled={!occasionsInput.trim()}
+                  >
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(editData.occasions || []).map((occasion, idx) => (
+                    <span key={idx} className="bg-purple-50 text-purple-700 px-4 py-2 rounded-full flex items-center gap-2">
+                      {occasion}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOccasion(occasion)}
+                        className="text-purple-600 hover:text-red-600 font-bold text-lg"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* تعليمات العناية */}
               <div>
                 <label className="block font-medium mb-2 text-gray-700">تعليمات العناية</label>
-                <textarea
-                  value={Array.isArray(editData.care_instructions) ? editData.care_instructions.join(', ') : editData.care_instructions||''}
-                  onChange={e => handleEditChange('care_instructions', e.target.value.split(',').map(c => c.trim()).filter(c => c))}
-                  className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  placeholder="مثال: تنظيف جاف فقط، لا تستخدم المبيض، كي بحرارة منخفضة... (افصل بفاصلة)"
-                  rows={2}
-                />
-                <p className="text-xs text-gray-500 mt-1">افصل التعليمات بفاصلة (,)</p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={careInstructionsInput}
+                    onChange={e => setCareInstructionsInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCareInstruction() } }}
+                    className="border border-gray-300 rounded-lg p-3 flex-1 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    placeholder="أدخل تعليمات واضغط إضافة"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCareInstruction}
+                    className="btn-secondary px-6 py-3 rounded-lg font-bold"
+                    disabled={!careInstructionsInput.trim()}
+                  >
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(editData.care_instructions || []).map((care, idx) => (
+                    <span key={idx} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-full flex items-center gap-2">
+                      {care}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCareInstruction(care)}
+                        className="text-gray-600 hover:text-red-600 font-bold text-lg"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* خيارات إضافية */}
@@ -862,56 +1134,56 @@ export default function ReadyDesignsAdmin() {
 
         {!editingId && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {products.map(product => (
-            <motion.div
-              key={product.id}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="bg-white/80 rounded-xl border border-pink-100 shadow-lg p-4 flex flex-col"
-            >
-              <div className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden rounded-xl mb-3">
-                <img
-                  src={product.images && product.images.length > 0 ? product.images[0] : '/wedding-dress-1.jpg.jpg'}
-                  alt={product.title}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <h3 className="font-bold text-gray-800 mb-1">{product.title}</h3>
-              <p className="text-sm text-gray-600 mb-2 line-clamp-2">{product.description}</p>
-              <div className="text-lg font-bold text-pink-600 mb-2">السعر: {Number(product.price).toLocaleString('en')} ريال</div>
-              <div className="flex flex-wrap gap-1 mb-2">
-                {(product.sizes||[]).map(size => (
-                  <span key={size} className="bg-pink-50 text-pink-700 px-2 py-0.5 rounded text-xs">{size}</span>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1 mb-3">
-                {(product.colors||[]).map(color => (
-                  <span key={color} className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs">{color}</span>
-                ))}
-              </div>
+            {products.map(product => (
+              <motion.div
+                key={product.id}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+                className="bg-white/80 rounded-xl border border-pink-100 shadow-lg p-4 flex flex-col"
+              >
+                <div className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden rounded-xl mb-3">
+                  <img
+                    src={product.images && product.images.length > 0 ? product.images[0] : '/wedding-dress-1.jpg.jpg'}
+                    alt={product.title}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <h3 className="font-bold text-gray-800 mb-1">{product.title}</h3>
+                <p className="text-sm text-gray-600 mb-2 line-clamp-2">{product.description}</p>
+                <div className="text-lg font-bold text-pink-600 mb-2">السعر: {Number(product.price).toLocaleString('en')} ريال</div>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {(product.sizes || []).map(size => (
+                    <span key={size} className="bg-pink-50 text-pink-700 px-2 py-0.5 rounded text-xs">{size}</span>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {(product.colors || []).map(color => (
+                    <span key={color} className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs">{color}</span>
+                  ))}
+                </div>
 
-              {/* أزرار التحكم */}
-              <div className="flex gap-2 mt-auto">
-                <button
-                  onClick={() => startEdit(product)}
-                  disabled={editingId !== null || isAddingNew}
-                  className="btn-secondary flex-1 flex items-center justify-center gap-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  <span>تعديل</span>
-                </button>
-                <button
-                  onClick={() => setDeleteConfirmId(product.id)}
-                  disabled={editingId !== null || isAddingNew}
-                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>حذف</span>
-                </button>
-              </div>
-            </motion.div>
-          ))}
+                {/* أزرار التحكم */}
+                <div className="flex gap-2 mt-auto">
+                  <button
+                    onClick={() => startEdit(product)}
+                    disabled={editingId !== null || isAddingNew}
+                    className="btn-secondary flex-1 flex items-center justify-center gap-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    <span>تعديل</span>
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmId(product.id)}
+                    disabled={editingId !== null || isAddingNew}
+                    className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>حذف</span>
+                  </button>
+                </div>
+              </motion.div>
+            ))}
           </div>
         )}
 

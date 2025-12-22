@@ -56,6 +56,12 @@ export interface CreateOrderData {
   admin_notes?: string
   images?: string[]
   voice_notes?: string[]
+  // حقول محاسبية
+  branch?: Branch
+  cost_center?: CostCenter
+  discount_amount?: number
+  tax_amount?: number
+  createAccountingEntry?: boolean // إنشاء قيد محاسبي تلقائياً
 }
 
 export interface UpdateOrderData {
@@ -115,7 +121,12 @@ export const orderService = {
         notes: orderData.notes || null,
         admin_notes: orderData.admin_notes || null,
         images: orderData.images || [],
-        voice_notes: orderData.voice_notes || []
+        voice_notes: orderData.voice_notes || [],
+        // حقول محاسبية
+        branch: orderData.branch || 'tailoring',
+        cost_center: orderData.cost_center || 'CC-001',
+        discount_amount: orderData.discount_amount || 0,
+        tax_amount: orderData.tax_amount || 0
       }
 
       // إضافة order_number فقط إذا تم توفيره (وإلا سيتم توليده تلقائياً بواسطة trigger)
@@ -138,14 +149,16 @@ export const orderService = {
         })
 
         // معالجة خطأ رقم الطلب المكرر
-        if (error.code === '23505' && error.message.includes('order_number')) {
-          return { data: null, error: 'رقم الطلب مستخدم بالفعل. يرجى استخدام رقم آخر أو ترك الحقل فارغاً للتوليد التلقائي.' }
+        if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('order_number') || error.message?.includes('unique')) {
+          return { data: null, error: 'رقم الطلب موجود بالفعل. يرجى استخدام رقم آخر' }
         }
 
-        throw error
+        // إرجاع رسالة خطأ عامة بدلاً من الرسالة التقنية
+        return { data: null, error: 'حدث خطأ أثناء إنشاء الطلب. يرجى المحاولة مرة أخرى' }
       }
 
       console.log('✅ Order created successfully:', data.id)
+
       return { data, error: null }
     } catch (error: any) {
       console.error('❌ Error in create order:', {
@@ -157,11 +170,12 @@ export const orderService = {
       })
 
       // معالجة خطأ رقم الطلب المكرر
-      if (error.code === '23505' && error.message?.includes('order_number')) {
-        return { data: null, error: 'رقم الطلب مستخدم بالفعل. يرجى استخدام رقم آخر أو ترك الحقل فارغاً للتوليد التلقائي.' }
+      if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('order_number') || error.message?.includes('unique')) {
+        return { data: null, error: 'رقم الطلب موجود بالفعل. يرجى استخدام رقم آخر' }
       }
 
-      return { data: null, error: error.message || error.hint || 'خطأ في إنشاء الطلب' }
+      // إرجاع رسالة خطأ عامة بدلاً من الرسالة التقنية
+      return { data: null, error: 'حدث خطأ أثناء إنشاء الطلب. يرجى المحاولة مرة أخرى' }
     }
   },
 
@@ -360,6 +374,13 @@ export const orderService = {
     try {
       console.log('🔄 Updating order:', id, 'with updates:', updates)
 
+      // جلب الطلب الحالي لمعرفة الحالة القديمة
+      const { data: oldOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', id)
+        .single()
+
       const { data, error } = await supabase
         .from('orders')
         .update(updates)
@@ -379,6 +400,7 @@ export const orderService = {
       }
 
       console.log('✅ Order updated successfully:', data)
+
       return { data, error: null }
     } catch (error: any) {
       console.error('❌ Error in update order:')
@@ -434,6 +456,7 @@ export const orderService = {
       })
       return { error: error.message || error.hint || 'خطأ في حذف الطلب' }
     }
-  }
+  },
+
 }
 

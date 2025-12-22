@@ -110,7 +110,7 @@ export default function FeaturedFabrics() {
   }
 
   return (
-    <section id="fabrics-section" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-screen max-lg:h-screen max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:pt-[10vh] max-lg:pb-[2vh]">
+    <section id="featured-fabrics" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-screen max-lg:h-screen max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:overflow-x-hidden max-lg:pt-[10vh] max-lg:pb-[2vh]">
       <div className="container mx-auto px-3 sm:px-6 lg:px-8 max-lg:flex max-lg:flex-col max-lg:h-full max-lg:justify-between">
         {/* العنوان */}
         <motion.div
@@ -154,10 +154,10 @@ export default function FeaturedFabrics() {
 
         {/* ========== عرض الموبايل: Carousel ========== */}
         {!isLoading && featuredFabrics.length > 0 && (
-          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center">
+          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center max-w-full overflow-x-hidden">
             {/* Embla Carousel */}
             <div className="overflow-hidden" ref={emblaRef}>
-              <div className="flex" style={{ gap: '12px' }}>
+              <div className="flex" style={{ gap: '4px' }}>
                 {featuredFabrics.map((fabric, index) => {
                   const fabricImages = fabric.images || []
                   const currentIndex = currentImageIndexes[fabric.id] || 0
@@ -168,7 +168,7 @@ export default function FeaturedFabrics() {
                       key={fabric.id}
                       className="flex-shrink-0 transition-all duration-500 ease-out"
                       style={{
-                        width: '80%',
+                        width: '85%',
                         transform: isActive ? 'scale(1)' : 'scale(0.85)',
                         zIndex: isActive ? 10 : 1
                       }}

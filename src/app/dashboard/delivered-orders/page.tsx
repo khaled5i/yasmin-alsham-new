@@ -18,8 +18,11 @@ import {
   Package,
   CheckCircle,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Ruler,
+  Mic
 } from 'lucide-react'
+import VoiceNotes from '@/components/VoiceNotes'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useAuthStore } from '@/store/authStore'
@@ -36,6 +39,7 @@ export default function DeliveredOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchType, setSearchType] = useState<'name' | 'phone' | 'order_number'>('name')
   const [dateFilter, setDateFilter] = useState('')
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
   // التحقق من الصلاحيات - المدراء فقط
   useEffect(() => {
@@ -61,8 +65,8 @@ export default function DeliveredOrdersPage() {
     const matchesSearch = searchType === 'phone'
       ? (order.client_phone || '').toLowerCase().includes(searchTerm.toLowerCase())
       : searchType === 'order_number'
-      ? (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase())
-      : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+        ? (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase())
+        : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
 
@@ -73,7 +77,7 @@ export default function DeliveredOrdersPage() {
   const getWorkerName = (workerId: string | null | undefined) => {
     if (!workerId) return 'غير محدد'
     const worker = workers.find(w => w.id === workerId)
-    return worker?.name || 'غير محدد'
+    return worker?.user?.full_name || 'غير محدد'
   }
 
   // تنسيق التاريخ
@@ -85,6 +89,27 @@ export default function DeliveredOrdersPage() {
       month: 'long',
       day: 'numeric'
     })
+  }
+
+  // دالة ترجمة أسماء المقاسات
+  const getMeasurementName = (key: string) => {
+    const measurementNames: { [key: string]: string } = {
+      'shoulder': 'الكتف',
+      'shoulderCircumference': 'دوران الكتف',
+      'chest': 'الصدر',
+      'waist': 'الخصر',
+      'hips': 'الأرداف',
+      'dartLength': 'طول البنس',
+      'bodiceLength': 'طول الصدرية',
+      'neckline': 'فتحة الصدر',
+      'armpit': 'الإبط',
+      'sleeveLength': 'طول الكم',
+      'forearm': 'الزند',
+      'cuff': 'الأسوارة',
+      'frontLength': 'طول الأمام',
+      'backLength': 'طول الخلف'
+    }
+    return measurementNames[key] || key
   }
 
   // عرض تفاصيل الطلب
@@ -157,11 +182,10 @@ export default function DeliveredOrdersPage() {
                   setSearchType('name')
                   setSearchTerm('')
                 }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
-                  searchType === 'name'
-                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'name'
+                  ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
               >
                 البحث بالاسم
               </button>
@@ -170,11 +194,10 @@ export default function DeliveredOrdersPage() {
                   setSearchType('phone')
                   setSearchTerm('')
                 }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
-                  searchType === 'phone'
-                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'phone'
+                  ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
               >
                 البحث بالهاتف
               </button>
@@ -183,11 +206,10 @@ export default function DeliveredOrdersPage() {
                   setSearchType('order_number')
                   setSearchTerm('')
                 }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${
-                  searchType === 'order_number'
-                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'order_number'
+                  ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
               >
                 رقم الطلب
               </button>
@@ -205,8 +227,8 @@ export default function DeliveredOrdersPage() {
                   searchType === 'phone'
                     ? 'أدخل رقم الهاتف...'
                     : searchType === 'order_number'
-                    ? 'أدخل رقم الطلب...'
-                    : 'البحث في الطلبات المسلمة...'
+                      ? 'أدخل رقم الطلب...'
+                      : 'البحث في الطلبات المسلمة...'
                 }
               />
             </div>
@@ -469,6 +491,59 @@ export default function DeliveredOrdersPage() {
                 </div>
               </div>
 
+              {/* المقاسات */}
+              {selectedOrder.measurements && Object.keys(selectedOrder.measurements).length > 0 && (
+                <div className="bg-gradient-to-r from-purple-50 to-violet-50 p-4 rounded-lg border border-purple-200">
+                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <Ruler className="w-5 h-5 text-purple-600" />
+                    المقاسات
+                  </h4>
+                  <div className="grid grid-cols-3 md:grid-cols-4 gap-2 text-sm">
+                    {Object.entries(selectedOrder.measurements).map(([key, value]) => (
+                      value && (
+                        <div key={key} className="bg-white p-2 rounded text-center border border-purple-100">
+                          <p className="text-gray-500 text-xs">{getMeasurementName(key)}</p>
+                          <p className="font-medium text-purple-700">{String(value)}</p>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* صور التصميم */}
+              {selectedOrder.images && selectedOrder.images.length > 0 && (
+                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-lg border border-indigo-200">
+                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <ImageIcon className="w-5 h-5 text-indigo-600" />
+                    صور التصميم ({selectedOrder.images.length})
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {selectedOrder.images.map((image: string, index: number) => (
+                      <div
+                        key={index}
+                        className="relative group cursor-pointer"
+                        onClick={() => setLightboxImage(image)}
+                      >
+                        <div className="aspect-square rounded-lg overflow-hidden border-2 border-indigo-300 shadow-md">
+                          <img
+                            src={image}
+                            alt={`صورة التصميم ${index + 1}`}
+                            className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+                          />
+                        </div>
+                        <div className="absolute bottom-2 left-2 bg-indigo-600/90 text-white text-xs px-2 py-1 rounded-full font-medium pointer-events-none">
+                          {index + 1}
+                        </div>
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 rounded-lg flex items-center justify-center pointer-events-none">
+                          <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* صور العمل المكتمل */}
               {selectedOrder.completed_images && selectedOrder.completed_images.length > 0 && (
                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
@@ -478,19 +553,22 @@ export default function DeliveredOrdersPage() {
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     {selectedOrder.completed_images.map((image: string, index: number) => (
-                      <div key={index} className="relative group">
+                      <div
+                        key={index}
+                        className="relative group cursor-pointer"
+                        onClick={() => setLightboxImage(image)}
+                      >
                         <div className="aspect-square rounded-lg overflow-hidden border-2 border-green-300 shadow-md">
                           <img
                             src={image}
                             alt={`صورة العمل المكتمل ${index + 1}`}
-                            className="w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform duration-300"
-                            onClick={() => window.open(image, '_blank')}
+                            className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
                           />
                         </div>
-                        <div className="absolute bottom-2 left-2 bg-green-600/90 text-white text-xs px-2 py-1 rounded-full font-medium">
+                        <div className="absolute bottom-2 left-2 bg-green-600/90 text-white text-xs px-2 py-1 rounded-full font-medium pointer-events-none">
                           {index + 1}
                         </div>
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 rounded-lg flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 rounded-lg flex items-center justify-center pointer-events-none">
                           <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                         </div>
                       </div>
@@ -521,6 +599,25 @@ export default function DeliveredOrdersPage() {
                     ملاحظات المدير
                   </h4>
                   <p className="text-gray-700">{selectedOrder.admin_notes}</p>
+                </div>
+              )}
+
+              {/* الملاحظات الصوتية */}
+              {selectedOrder.voice_notes && selectedOrder.voice_notes.length > 0 && (
+                <div className="bg-gradient-to-r from-pink-50 to-rose-50 p-4 rounded-lg border border-pink-200">
+                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <Mic className="w-5 h-5 text-pink-600" />
+                    الملاحظات الصوتية ({selectedOrder.voice_notes.length})
+                  </h4>
+                  <VoiceNotes
+                    voiceNotes={selectedOrder.voice_notes.map((vn: string, idx: number) => ({
+                      id: `vn-${idx}`,
+                      data: vn,
+                      timestamp: Date.now()
+                    }))}
+                    onVoiceNotesChange={() => { }}
+                    disabled={true}
+                  />
                 </div>
               )}
             </div>
@@ -598,6 +695,27 @@ export default function DeliveredOrdersPage() {
               </button>
             </div>
           </motion.div>
+        </div>
+      )}
+
+      {/* Lightbox لعرض الصور بالحجم الكامل */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          <img
+            src={lightboxImage}
+            alt="صورة مكبرة"
+            className="max-w-full max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

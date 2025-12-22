@@ -132,7 +132,7 @@ function AddOrderContent() {
     e.preventDefault()
 
     // التحقق من الحقول المطلوبة
-    if (!formData.clientName || !formData.clientPhone || !formData.description || !formData.dueDate || !formData.price) {
+    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
       return
     }
@@ -252,11 +252,10 @@ function AddOrderContent() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`mb-8 p-4 rounded-lg flex items-center space-x-3 space-x-reverse max-w-4xl mx-auto ${
-              message.type === 'success' 
-                ? 'bg-green-50 text-green-800 border border-green-200' 
-                : 'bg-red-50 text-red-800 border border-red-200'
-            }`}
+            className={`mb-8 p-4 rounded-lg flex items-center space-x-3 space-x-reverse max-w-4xl mx-auto ${message.type === 'success'
+              ? 'bg-green-50 text-green-800 border border-green-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+              }`}
           >
             {message.type === 'success' ? (
               <CheckCircle className="w-5 h-5 text-green-600" />
@@ -277,168 +276,168 @@ function AddOrderContent() {
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* المعلومات الأساسية */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
-                <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-                  <User className="w-5 h-5 text-pink-600" />
-                  <span>{t('basic_information')}</span>
-                </h3>
+              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
+                <User className="w-5 h-5 text-pink-600" />
+                <span>{t('basic_information')}</span>
+              </h3>
 
-                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {/* رقم الطلب (اختياري) */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('order_number')} ({t('optional')})
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.orderNumber}
-                      onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                      placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
-                      disabled={isSubmitting}
-                    />
-                  </div>
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* رقم الطلب */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('order_number')} *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.orderNumber}
+                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
+                    disabled={isSubmitting}
+                    required
+                  />
+                </div>
 
-                  {/* اسم الزبونة */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('client_name_required')}
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.clientName}
-                      onChange={(e) => handleInputChange('clientName', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                      placeholder={t('enter_client_name')}
-                      required
-                    />
-                  </div>
+                {/* اسم الزبونة */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('client_name_required')}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.clientName}
+                    onChange={(e) => handleInputChange('clientName', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder={t('enter_client_name')}
+                    required
+                  />
+                </div>
 
-                  {/* رقم الهاتف */}
-                  <div>
-                    <NumericInput
-                      value={formData.clientPhone}
-                      onChange={(value) => handleInputChange('clientPhone', value)}
-                      type="phone"
-                      label={t('phone_required')}
-                      placeholder={t('enter_phone')}
-                      required
-                      disabled={isSubmitting}
-                    />
-                  </div>
+                {/* رقم الهاتف */}
+                <div>
+                  <NumericInput
+                    value={formData.clientPhone}
+                    onChange={(value) => handleInputChange('clientPhone', value)}
+                    type="phone"
+                    label={t('phone_required')}
+                    placeholder={t('enter_phone')}
+                    required
+                    disabled={isSubmitting}
+                  />
+                </div>
 
-                  {/* وصف الطلب */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('order_description_required')}
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.description}
-                      onChange={(e) => handleInputChange('description', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                      placeholder={t('order_description_placeholder')}
-                      required
-                    />
-                  </div>
+                {/* وصف الطلب */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('description')} ({t('optional')})
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder={t('order_description_placeholder')}
+                  />
+                </div>
 
-                  {/* نوع القماش */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('fabric_type')}
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.fabric}
-                      onChange={(e) => handleInputChange('fabric', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                      placeholder={t('fabric_type_placeholder')}
-                    />
-                  </div>
+                {/* نوع القماش */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('fabric_type')}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.fabric}
+                    onChange={(e) => handleInputChange('fabric', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder={t('fabric_type_placeholder')}
+                  />
+                </div>
 
-                  {/* السعر */}
-                  <div>
-                    <NumericInput
-                      value={formData.price}
-                      onChange={(value) => handleInputChange('price', value)}
-                      type="price"
-                      label={t('price_sar')}
-                      placeholder="0"
-                      required
-                      disabled={isSubmitting}
-                    />
-                  </div>
+                {/* السعر */}
+                <div>
+                  <NumericInput
+                    value={formData.price}
+                    onChange={(value) => handleInputChange('price', value)}
+                    type="price"
+                    label={t('price_sar')}
+                    placeholder="0"
+                    required
+                    disabled={isSubmitting}
+                  />
+                </div>
 
-                  {/* الدفعة المستلمة */}
-                  <div>
-                    <NumericInput
-                      value={formData.paidAmount}
-                      onChange={(value) => {
-                        const price = Number(formData.price) || 0
-                        const paid = Number(value) || 0
-                        // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
-                        if (paid > price) {
-                          toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
-                            icon: '⚠️',
-                          })
-                          return
-                        }
-                        handleInputChange('paidAmount', value)
-                      }}
-                      type="price"
-                      label={t('paid_amount')}
-                      placeholder="0"
-                      disabled={isSubmitting || !formData.price}
-                    />
-                  </div>
+                {/* الدفعة المستلمة */}
+                <div>
+                  <NumericInput
+                    value={formData.paidAmount}
+                    onChange={(value) => {
+                      const price = Number(formData.price) || 0
+                      const paid = Number(value) || 0
+                      // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
+                      if (paid > price) {
+                        toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
+                          icon: '⚠️',
+                        })
+                        return
+                      }
+                      handleInputChange('paidAmount', value)
+                    }}
+                    type="price"
+                    label={t('paid_amount')}
+                    placeholder="0"
+                    disabled={isSubmitting || !formData.price}
+                  />
+                </div>
 
-                  {/* الدفعة المتبقية (للعرض فقط) */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('remaining_amount')}
-                    </label>
-                    <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
-                      {remainingAmount.toFixed(2)} {t('sar')}
-                    </div>
-                  </div>
-
-                  {/* العامل المسؤول */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('responsible_worker')}
-                    </label>
-                    <select
-                      value={formData.assignedWorker}
-                      onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    >
-                      <option value="">{t('choose_worker')}</option>
-                      {workers.filter(w => w.is_available && w.user?.is_active).map(worker => (
-                        <option key={worker.id} value={worker.id}>
-                          {worker.user?.full_name || worker.specialty} - {worker.specialty}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* موعد التسليم */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('delivery_date_required')}
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.dueDate}
-                      onChange={(e) => handleInputChange('dueDate', e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                      required
-                    />
+                {/* الدفعة المتبقية (للعرض فقط) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('remaining_amount')}
+                  </label>
+                  <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
+                    {remainingAmount.toFixed(2)} {t('sar')}
                   </div>
                 </div>
+
+                {/* العامل المسؤول */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('responsible_worker')}
+                  </label>
+                  <select
+                    value={formData.assignedWorker}
+                    onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                  >
+                    <option value="">{t('choose_worker')}</option>
+                    {workers.filter(w => w.is_available && w.user?.is_active).map(worker => (
+                      <option key={worker.id} value={worker.id}>
+                        {worker.user?.full_name || worker.specialty} - {worker.specialty}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* موعد التسليم */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('delivery_date_required')}
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dueDate}
+                    onChange={(e) => handleInputChange('dueDate', e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    required
+                  />
+                </div>
+              </div>
             </div>
 
             {/* صور التصميم */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100 relative z-20">
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <ImageIcon className="w-5 h-5 text-pink-600" />
                 <span>{t('design_images')}</span>
@@ -452,7 +451,7 @@ function AddOrderContent() {
             </div>
 
             {/* المقاسات */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100 relative z-10">
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <Ruler className="w-5 h-5 text-pink-600" />
                 <span>{t('measurements_cm')}</span>

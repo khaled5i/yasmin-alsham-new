@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2 } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
 import FabricSortOptions from '@/components/FabricSortOptions'
+import Header from '@/components/Header'
 import dynamic from 'next/dynamic'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
@@ -38,7 +39,7 @@ function FabricSkeleton() {
 
 export default function FabricsPage() {
   const { fabrics, loadFabrics, isLoading, error, getFilteredFabrics, filters, sortBy, setFilters, setSortBy, resetFilters } = useFabricStore()
-  const [currentImageIndexes, setCurrentImageIndexes] = useState<{[key: string]: number}>({})
+  const [currentImageIndexes, setCurrentImageIndexes] = useState<{ [key: string]: number }>({})
   const [isSingleColumn, setIsSingleColumn] = useState(false)
   const [displayedFabrics, setDisplayedFabrics] = useState<Fabric[]>([])
   const [page, setPage] = useState(1)
@@ -80,7 +81,7 @@ export default function FabricsPage() {
 
   useEffect(() => {
     if (fabrics.length > 0) {
-      const initialIndexes: {[key: string]: number} = {}
+      const initialIndexes: { [key: string]: number } = {}
       fabrics.forEach(fabric => { initialIndexes[fabric.id] = 0 })
       setCurrentImageIndexes(initialIndexes)
     }
@@ -124,121 +125,101 @@ export default function FabricsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-4 lg:pt-6">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
-        {/* التنقل */}
-        <nav className="flex justify-start items-start mt-0 mb-2" dir="rtl" aria-label="التنقل الرئيسي">
-          <Link
-            href="/"
-            className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300"
-            style={{marginTop: 0}}
-            aria-label="العودة إلى الصفحة الرئيسية"
+    <>
+      <Header />
+      <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20 lg:pt-24">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
+
+          {/* العنوان */}
+          <motion.header
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            className="text-center mb-12"
           >
-            <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5" aria-hidden="true" />
-            <span className="text-sm lg:text-base">العودة إلى الرئيسية</span>
-          </Link>
-        </nav>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
+              <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                متجر الأقمشة
+              </span>
+            </h1>
+          </motion.header>
 
-        {/* العنوان */}
-        <motion.header
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
-            <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              متجر الأقمشة
-            </span>
-          </h1>
-          <p className="text-lg text-gray-700 max-w-3xl mx-auto leading-relaxed mb-6">
-            اكتشفي مجموعتنا الفاخرة من الأقمشة عالية الجودة لتصميم فستان أحلامك
-          </p>
+          {/* شريط البحث والفلاتر */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="mb-8"
+          >
+            {/* شريط البحث */}
+            <div className="mb-4">
+              <div className="relative w-full" dir="rtl">
+                <input
+                  type="text"
+                  placeholder="ابحث عن نوع القماش..."
+                  value={filters.searchQuery}
+                  onChange={(e) => setFilters({ searchQuery: e.target.value })}
+                  className="w-full px-6 py-3 pr-12 pl-12 border-2 border-pink-200 rounded-xl bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all duration-300 shadow-sm hover:shadow-md"
+                  aria-label="البحث عن الأقمشة"
+                />
 
-          {/* ملاحظة مهمة */}
-          <aside className="bg-gradient-to-r from-blue-50 to-cyan-50 border-2 border-blue-300 rounded-xl p-4 max-w-2xl mx-auto" role="note" aria-label="معلومة مهمة">
-            <p className="text-blue-900 font-semibold text-center">
-              ✨ اختاري القماش المناسب واحجزي موعداً لتصميم فستانك الخاص
-            </p>
-          </aside>
-        </motion.header>
+                {/* Search Icon */}
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-pink-600 pointer-events-none">
+                  <Search className="w-5 h-5" />
+                </div>
 
-        {/* شريط البحث والفلاتر */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="mb-8"
-        >
-          {/* شريط البحث */}
-          <div className="mb-4">
-            <div className="relative w-full" dir="rtl">
-              <input
-                type="text"
-                placeholder="ابحث عن نوع القماش..."
-                value={filters.searchQuery}
-                onChange={(e) => setFilters({ searchQuery: e.target.value })}
-                className="w-full px-6 py-3 pr-12 pl-12 border-2 border-pink-200 rounded-xl bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all duration-300 shadow-sm hover:shadow-md"
-                aria-label="البحث عن الأقمشة"
-              />
+                {/* Clear Button */}
+                {filters.searchQuery && (
+                  <button
+                    onClick={() => setFilters({ searchQuery: '' })}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-pink-600 transition-colors duration-200"
+                    aria-label="مسح البحث"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+            </div>
 
-              {/* Search Icon */}
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-pink-600 pointer-events-none">
-                <Search className="w-5 h-5" />
+            {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
+            <div className="flex flex-wrap items-center justify-between gap-4" dir="rtl">
+              {/* زر فتح الفلاتر (لجميع الأحجام) */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsFilterOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                  aria-label="فتح الفلاتر"
+                >
+                  <SlidersHorizontal className="w-5 h-5 text-pink-600" />
+                  <span className="text-sm font-medium text-gray-800">الفلاتر</span>
+                </button>
               </div>
 
-              {/* Clear Button */}
-              {filters.searchQuery && (
+              {/* الترتيب + تبديل العرض */}
+              <div className="flex items-center gap-3">
+                <FabricSortOptions />
+
+                {/* زر تبديل العرض */}
                 <button
-                  onClick={() => setFilters({ searchQuery: '' })}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-pink-600 transition-colors duration-200"
-                  aria-label="مسح البحث"
+                  onClick={toggleViewMode}
+                  className="sm:hidden bg-white border-2 border-pink-200 rounded-xl p-2.5 hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                  aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
                 >
-                  <X className="w-5 h-5" />
+                  {isSingleColumn ? (
+                    <Grid2X2 className="w-5 h-5 text-pink-600" />
+                  ) : (
+                    <Grid3X3 className="w-5 h-5 text-pink-600" />
+                  )}
                 </button>
-              )}
+              </div>
             </div>
-          </div>
+          </motion.div>
 
-          {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
-          <div className="flex flex-wrap items-center justify-between gap-4" dir="rtl">
-            {/* زر فتح الفلاتر (لجميع الأحجام) */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsFilterOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
-                aria-label="فتح الفلاتر"
-              >
-                <SlidersHorizontal className="w-5 h-5 text-pink-600" />
-                <span className="text-sm font-medium text-gray-800">الفلاتر</span>
-              </button>
-            </div>
+          {/* Filter Sidebar - Modal لجميع الأحجام */}
+          <FabricFilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
 
-            {/* الترتيب + تبديل العرض */}
-            <div className="flex items-center gap-3">
-              <FabricSortOptions />
-
-              {/* زر تبديل العرض */}
-              <button
-                onClick={toggleViewMode}
-                className="sm:hidden bg-white border-2 border-pink-200 rounded-xl p-2.5 hover:border-pink-400 hover:shadow-md transition-all duration-300"
-                aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
-              >
-                {isSingleColumn ? (
-                  <Grid2X2 className="w-5 h-5 text-pink-600" />
-                ) : (
-                  <Grid3X3 className="w-5 h-5 text-pink-600" />
-                )}
-              </button>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Filter Sidebar - Modal لجميع الأحجام */}
-        <FabricFilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
-
-        {/* Content Area */}
-        <div className="w-full">
+          {/* Content Area */}
+          <div className="w-full">
             {/* رسالة خطأ */}
             {error && (
               <div className="bg-red-50 border-2 border-red-200 text-red-700 px-6 py-4 rounded-xl mb-6 shadow-sm">
@@ -248,11 +229,10 @@ export default function FabricsPage() {
 
             {/* حالة التحميل */}
             {isLoading && fabrics.length === 0 && (
-              <div className={`grid gap-8 ${
-                isSingleColumn
-                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-              }`}>
+              <div className={`grid gap-8 ${isSingleColumn
+                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                }`}>
                 {Array.from({ length: 12 }).map((_, index) => (
                   <FabricSkeleton key={index} />
                 ))}
@@ -281,11 +261,10 @@ export default function FabricsPage() {
             )}
 
             {displayedFabrics.length > 0 && (
-              <section className={`grid gap-8 mb-12 ${
-                isSingleColumn
-                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-              }`} aria-label="قائمة الأقمشة">
+              <section className={`grid gap-8 mb-12 ${isSingleColumn
+                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                }`} aria-label="قائمة الأقمشة">
                 {displayedFabrics.map((fabric, index) => {
                   const fabricImages = fabric.images || []
                   const currentIndex = currentImageIndexes[fabric.id] || 0
@@ -381,11 +360,10 @@ export default function FabricsPage() {
             {hasMore && displayedFabrics.length > 0 && (
               <>
                 <div ref={observerTarget} className="h-4" aria-hidden="true" />
-                <div className={`grid gap-8 mb-8 ${
-                  isSingleColumn
-                    ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                    : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                }`}>
+                <div className={`grid gap-8 mb-8 ${isSingleColumn
+                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  }`}>
                   {Array.from({ length: 4 }).map((_, index) => (
                     <FabricSkeleton key={`loading-${index}`} />
                   ))}
@@ -399,16 +377,17 @@ export default function FabricsPage() {
                 <p className="text-gray-700 font-medium">تم عرض جميع الأقمشة</p>
               </div>
             )}
+          </div>
         </div>
-      </div>
 
-      {/* QuickView Modal */}
-      <FabricQuickViewModal
-        fabric={quickViewFabric}
-        isOpen={isQuickViewOpen}
-        onClose={closeQuickView}
-      />
-    </main>
+        {/* QuickView Modal */}
+        <FabricQuickViewModal
+          fabric={quickViewFabric}
+          isOpen={isQuickViewOpen}
+          onClose={closeQuickView}
+        />
+      </main>
+    </>
   )
 }
 

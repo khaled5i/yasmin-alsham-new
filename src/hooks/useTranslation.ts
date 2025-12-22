@@ -19,7 +19,7 @@ const arTranslations: Translations = {
   'logout': 'تسجيل الخروج',
   'welcome': 'مرحباً',
   'welcome_back': 'مرحباً بعودتك',
-  
+
   // الأزرار والإجراءات
   'add_new_order': 'إضافة طلب جديد',
   'book_appointment': 'حجز موعد',
@@ -40,14 +40,14 @@ const arTranslations: Translations = {
   'confirm': 'تأكيد',
   'loading': 'جاري التحميل...',
   'saving': 'جاري الحفظ...',
-  
+
   // حالات الطلبات
   'pending': 'في الانتظار',
   'in_progress': 'قيد التنفيذ',
   'completed': 'مكتمل',
   'delivered': 'تم التسليم',
   'cancelled': 'ملغي',
-  
+
   // نصوص عامة
   'name': 'الاسم',
   'email': 'البريد الإلكتروني',
@@ -69,9 +69,10 @@ const arTranslations: Translations = {
   'total': 'المجموع',
   'description': 'الوصف',
   'notes': 'ملاحظات',
+  'notes_section': 'قسم الملاحظات',
   'client_name': 'اسم الزبونة',
   'client_phone': 'رقم هاتف الزبونة',
-  
+
   // رسائل النجاح والخطأ
   'success': 'نجح',
   'error': 'خطأ',
@@ -180,6 +181,7 @@ const arTranslations: Translations = {
 
   // مفاتيح صفحة الطلبات
   'order_number': 'رقم الطلب',
+  'order_description': 'وصف الطلب',
   'optional': 'اختياري',
   'enter_order_number': 'أدخل رقم الطلب',
   'search_placeholder': 'البحث بالاسم أو رقم الطلب أو الوصف...',
@@ -378,7 +380,24 @@ const arTranslations: Translations = {
   'orders_in_progress': 'طلبات قيد التنفيذ',
   'appointments_today': 'مواعيد اليوم',
   'finished_orders': 'طلبات منتهية',
-  'all_orders': 'جميع الطلبات'
+  'all_orders': 'جميع الطلبات',
+
+  // مفاتيح صفحة طلباتي المكتملة للعامل
+  'worker_completed_orders_desc': 'الطلبات التي أنهيت العمل عليها',
+  'search_by_name_or_order': 'ابحث باسم العميل أو رقم الطلب...',
+  'no_completed_orders': 'لا توجد طلبات مكتملة',
+  'no_completed_orders_desc': 'لم تكمل أي طلبات بعد. ستظهر الطلبات هنا بعد إنهائها.',
+  'photos': 'صور',
+  'order_details': 'تفاصيل الطلب',
+  'customer_information': 'معلومات العميل',
+  'order_info': 'معلومات الطلب',
+  'order_date': 'تاريخ الطلب',
+  'delivery_date': 'موعد التسليم',
+  'measurements': 'المقاسات',
+  'completed_work_images': 'صور العمل المكتمل',
+  'design': 'تصميم',
+  'enlarged_image': 'صورة مكبرة',
+  'language': 'ar'
 }
 
 // الترجمات الإنجليزية
@@ -393,7 +412,7 @@ const enTranslations: Translations = {
   'logout': 'Logout',
   'welcome': 'Welcome',
   'welcome_back': 'Welcome Back',
-  
+
   // الأزرار والإجراءات
   'add_new_order': 'Add New Order',
   'book_appointment': 'Book Appointment',
@@ -414,14 +433,14 @@ const enTranslations: Translations = {
   'confirm': 'Confirm',
   'loading': 'Loading...',
   'saving': 'Saving...',
-  
+
   // حالات الطلبات
   'pending': 'Pending',
   'in_progress': 'In Progress',
   'completed': 'Completed',
   'delivered': 'Delivered',
   'cancelled': 'Cancelled',
-  
+
   // نصوص عامة
   'name': 'Name',
   'email': 'Email',
@@ -443,9 +462,10 @@ const enTranslations: Translations = {
   'total': 'Total',
   'description': 'Description',
   'notes': 'Notes',
+  'notes_section': 'Notes Section',
   'client_name': 'Client Name',
   'client_phone': 'Client Phone',
-  
+
   // رسائل النجاح والخطأ
   'success': 'Success',
   'error': 'Error',
@@ -554,6 +574,7 @@ const enTranslations: Translations = {
 
   // مفاتيح صفحة الطلبات
   'order_number': 'Order Number',
+  'order_description': 'Order Description',
   'optional': 'Optional',
   'enter_order_number': 'Enter order number',
   'search_placeholder': 'Search by name, order number, or description...',
@@ -752,7 +773,24 @@ const enTranslations: Translations = {
   'orders_in_progress': 'Orders in Progress',
   'appointments_today': 'Today\'s Appointments',
   'finished_orders': 'Finished Orders',
-  'all_orders': 'All Orders'
+  'all_orders': 'All Orders',
+
+  // مفاتيح صفحة طلباتي المكتملة للعامل
+  'worker_completed_orders_desc': 'Orders you have completed',
+  'search_by_name_or_order': 'Search by client name or order number...',
+  'no_completed_orders': 'No completed orders',
+  'no_completed_orders_desc': 'You have not completed any orders yet. Orders will appear here after completion.',
+  'photos': 'photos',
+  'order_details': 'Order Details',
+  'customer_information': 'Customer Information',
+  'order_info': 'Order Information',
+  'order_date': 'Order Date',
+  'delivery_date': 'Delivery Date',
+  'measurements': 'Measurements',
+  'completed_work_images': 'Completed Work Images',
+  'design': 'Design',
+  'enlarged_image': 'Enlarged Image',
+  'language': 'en'
 }
 
 // Hook للترجمة
@@ -777,11 +815,11 @@ export function useTranslation() {
   const t = (key: TranslationKey): string => {
     const translations = language === 'ar' ? arTranslations : enTranslations
     const translation = translations[key]
-    
+
     if (typeof translation === 'string') {
       return translation
     }
-    
+
     // إذا لم توجد الترجمة، أرجع المفتاح نفسه
     return key
   }

@@ -132,23 +132,43 @@ export default function FabricDetailPage() {
               )}
             </div>
 
+            {/* صور مصغرة محسّنة */}
             {(fabric.images?.length || 0) > 1 && (
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {fabric.images?.map((image, index) => (
-                  <motion.button
-                    key={index}
-                    onClick={() => setCurrentImageIndex(index)}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className={`relative flex-shrink-0 w-24 h-28 rounded-xl overflow-hidden border-3 transition-all duration-300 ${
-                      currentImageIndex === index ? 'border-pink-500 shadow-lg ring-2 ring-pink-300' : 'border-gray-200 hover:border-pink-300'
-                    }`}
-                  >
-                    <Image src={image} alt={`${fabric.name} - صورة ${index + 1}`} fill sizes="96px" className="object-cover" loading="lazy" quality={60} />
-                    {currentImageIndex === index && <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />}
-                    <div className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">{index + 1}</div>
-                  </motion.button>
-                ))}
+              <div className="relative">
+                {/* عرض في صف واحد إذا كانت الصور 5 أو أقل، وصفين إذا كانت أكثر من 5 */}
+                <div className={`gap-3 pb-2 ${(fabric.images?.length || 0) > 5
+                    ? 'grid grid-cols-5'
+                    : 'flex overflow-x-auto scrollbar-thin scrollbar-thumb-pink-300 scrollbar-track-pink-50'
+                  }`}>
+                  {fabric.images?.map((image, index) => (
+                    <motion.button
+                      key={index}
+                      onClick={() => setCurrentImageIndex(index)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={`relative flex-shrink-0 w-20 h-24 md:w-24 md:h-28 rounded-xl overflow-hidden border-3 transition-all duration-300 ${currentImageIndex === index
+                          ? 'border-pink-500 shadow-lg ring-2 ring-pink-300'
+                          : 'border-gray-200 hover:border-pink-300'
+                        }`}
+                    >
+                      <Image
+                        src={image}
+                        alt={`${fabric.name} - صورة ${index + 1}`}
+                        fill
+                        sizes="(max-width: 768px) 80px, 96px"
+                        className="object-cover"
+                        loading="lazy"
+                        quality={60}
+                      />
+                      {currentImageIndex === index && (
+                        <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
+                      )}
+                      <div className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-full">
+                        {index + 1}
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
               </div>
             )}
           </motion.div>
@@ -161,20 +181,19 @@ export default function FabricDetailPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="text-3xl font-bold text-pink-600">
-                {fabric.is_on_sale ? (
-                  <div className="flex items-center gap-3">
-                    <span>{formatFabricPrice(finalPrice)}</span>
-                    <span className="text-xl text-gray-400 line-through">{formatFabricPrice(fabric.price_per_meter)}</span>
-                    <span className="bg-red-500 text-white text-sm px-2 py-1 rounded-full">خصم {fabric.discount_percentage}%</span>
-                  </div>
-                ) : (
-                  <span>{formatFabricPrice(fabric.price_per_meter)}</span>
-                )}
-              </div>
-              <div className={`px-4 py-2 rounded-full text-sm font-bold ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                {fabric.is_available ? 'متوفر' : 'غير متوفر'}
-              </div>
+              {fabric.price_per_meter && fabric.price_per_meter > 0 && (
+                <div className="text-3xl font-bold text-pink-600">
+                  {fabric.is_on_sale ? (
+                    <div className="flex items-center gap-3">
+                      <span>{formatFabricPrice(finalPrice)}</span>
+                      <span className="text-xl text-gray-400 line-through">{formatFabricPrice(fabric.price_per_meter)}</span>
+                      <span className="bg-red-500 text-white text-sm px-2 py-1 rounded-full">خصم {fabric.discount_percentage}%</span>
+                    </div>
+                  ) : (
+                    <span>{formatFabricPrice(fabric.price_per_meter)}</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {fabric.available_colors && fabric.available_colors.length > 0 && (
@@ -188,9 +207,8 @@ export default function FabricDetailPage() {
                     <button
                       key={color}
                       onClick={() => setSelectedColor(color)}
-                      className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${
-                        selectedColor === color ? 'border-pink-500 bg-pink-50 text-pink-700 font-bold' : 'border-gray-200 hover:border-pink-300 text-gray-700'
-                      }`}
+                      className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedColor === color ? 'border-pink-500 bg-pink-50 text-pink-700 font-bold' : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                        }`}
                     >
                       {color}
                     </button>
@@ -199,39 +217,42 @@ export default function FabricDetailPage() {
               </div>
             )}
 
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 shadow-lg space-y-4">
-              <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <Info className="w-5 h-5 text-pink-600" />
-                المواصفات الفنية
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                {fabric.width_cm && (
-                  <div className="flex items-center gap-2">
-                    <Ruler className="w-4 h-4 text-pink-600" />
-                    <span className="text-sm text-gray-600">العرض:</span>
-                    <span className="font-bold text-gray-800">{fabric.width_cm} سم</span>
-                  </div>
-                )}
-                {fabric.fabric_weight && (
-                  <div>
-                    <span className="text-sm text-gray-600">الوزن:</span>
-                    <span className="font-bold text-gray-800 mr-2">{fabric.fabric_weight}</span>
-                  </div>
-                )}
-                {fabric.transparency_level && (
-                  <div>
-                    <span className="text-sm text-gray-600">الشفافية:</span>
-                    <span className="font-bold text-gray-800 mr-2">{fabric.transparency_level}</span>
-                  </div>
-                )}
-                {fabric.elasticity && (
-                  <div>
-                    <span className="text-sm text-gray-600">المرونة:</span>
-                    <span className="font-bold text-gray-800 mr-2">{fabric.elasticity}</span>
-                  </div>
-                )}
+            {/* المواصفات الفنية - يظهر فقط إذا كان هناك بيانات */}
+            {(fabric.width_cm || fabric.fabric_weight || fabric.transparency_level || fabric.elasticity) && (
+              <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 shadow-lg space-y-4">
+                <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                  <Info className="w-5 h-5 text-pink-600" />
+                  المواصفات الفنية
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {fabric.width_cm && (
+                    <div className="flex items-center gap-2">
+                      <Ruler className="w-4 h-4 text-pink-600" />
+                      <span className="text-sm text-gray-600">العرض:</span>
+                      <span className="font-bold text-gray-800">{fabric.width_cm} سم</span>
+                    </div>
+                  )}
+                  {fabric.fabric_weight && (
+                    <div>
+                      <span className="text-sm text-gray-600">الوزن:</span>
+                      <span className="font-bold text-gray-800 mr-2">{fabric.fabric_weight}</span>
+                    </div>
+                  )}
+                  {fabric.transparency_level && (
+                    <div>
+                      <span className="text-sm text-gray-600">الشفافية:</span>
+                      <span className="font-bold text-gray-800 mr-2">{fabric.transparency_level}</span>
+                    </div>
+                  )}
+                  {fabric.elasticity && (
+                    <div>
+                      <span className="text-sm text-gray-600">المرونة:</span>
+                      <span className="font-bold text-gray-800 mr-2">{fabric.elasticity}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {fabric.care_instructions && (
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">

@@ -234,7 +234,7 @@ export default function FilterSidebar({ isOpen, onClose }: FilterSidebarProps) {
 
             {/* Filters Content */}
             <div className="p-4 space-y-6">
-              
+
               {/* فلتر الفئة */}
               <div className="border-b border-gray-200 pb-4">
                 <button
@@ -249,7 +249,7 @@ export default function FilterSidebar({ isOpen, onClose }: FilterSidebarProps) {
                     <ChevronDown className="w-4 h-4 text-gray-600" />
                   )}
                 </button>
-                
+
                 <AnimatePresence>
                   {expandedSections.category && (
                     <motion.div
@@ -302,7 +302,7 @@ export default function FilterSidebar({ isOpen, onClose }: FilterSidebarProps) {
                     <ChevronDown className="w-4 h-4 text-gray-600" />
                   )}
                 </button>
-                
+
                 <AnimatePresence>
                   {expandedSections.price && (
                     <motion.div
@@ -362,7 +362,7 @@ export default function FilterSidebar({ isOpen, onClose }: FilterSidebarProps) {
                     <ChevronDown className="w-4 h-4 text-gray-600" />
                   )}
                 </button>
-                
+
                 <AnimatePresence>
                   {expandedSections.colors && (
                     <motion.div
@@ -412,7 +412,7 @@ export default function FilterSidebar({ isOpen, onClose }: FilterSidebarProps) {
                     <ChevronDown className="w-4 h-4 text-gray-600" />
                   )}
                 </button>
-                
+
                 <AnimatePresence>
                   {expandedSections.sizes && (
                     <motion.div

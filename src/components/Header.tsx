@@ -4,13 +4,14 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Menu, X, Calendar, Search, Scissors, Palette, Home, Sparkles, HelpCircle } from 'lucide-react'
+import { Menu, X, Calendar, Search, Scissors, Palette, Home, Sparkles, HelpCircle, Wand2 } from 'lucide-react'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [clickCount, setClickCount] = useState(0)
   const [isScrolled, setIsScrolled] = useState(false)
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const router = useRouter()
   const pathname = usePathname()
 
@@ -68,12 +69,42 @@ export default function Header() {
     }
   }, [isHomePage])
 
+  // إغلاق القائمة عند النقر خارجها
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false)
+      }
+    }
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isMenuOpen])
+
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen)
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault()
 
     setClickCount(prev => prev + 1)
+
+    // النقرة الأولى: الذهاب للصفحة الرئيسية
+    if (clickCount === 0) {
+      router.push('/')
+      // إعادة تعيين العداد بعد ثانيتين
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+      }
+      clickTimeoutRef.current = setTimeout(() => {
+        setClickCount(0)
+      }, 2000)
+      return
+    }
 
     // إذا كان هذا النقر الثالث، انتقل لصفحة تسجيل الدخول
     if (clickCount === 2) {
@@ -95,14 +126,55 @@ export default function Header() {
     }, 2000)
   }
 
+  // دالة للتمرير إلى قسم معين في الصفحة الرئيسية
+  const scrollToSection = (sectionId: string) => {
+    // إغلاق القائمة
+    setIsMenuOpen(false)
+
+    // إذا لم نكن في الصفحة الرئيسية، انتقل إليها أولاً
+    if (!isHomePage) {
+      router.push('/')
+      // انتظر قليلاً حتى يتم تحميل الصفحة ثم scroll
+      setTimeout(() => {
+        const section = document.getElementById(sectionId)
+        const container = document.getElementById('main-scroll-container')
+        if (section && container) {
+          const isMobile = window.innerWidth < 1024
+          if (isMobile) {
+            // على الموبايل: استخدم scrollIntoView على الـ container
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          } else {
+            // على الديسكتوب: استخدم window scroll
+            const offsetTop = section.offsetTop - 80
+            window.scrollTo({ top: offsetTop, behavior: 'smooth' })
+          }
+        }
+      }, 500)
+    } else {
+      // نحن بالفعل في الصفحة الرئيسية، scroll مباشرة
+      const section = document.getElementById(sectionId)
+      const container = document.getElementById('main-scroll-container')
+      if (section && container) {
+        const isMobile = window.innerWidth < 1024
+        if (isMobile) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        } else {
+          const offsetTop = section.offsetTop - 80
+          window.scrollTo({ top: offsetTop, behavior: 'smooth' })
+        }
+      }
+    }
+  }
+
   const menuItems = [
-    { href: '/', label: 'الرئيسية', icon: Home },
-    { href: '/designs', label: 'الفساتين الجاهزة', icon: Palette },
-    { href: '/book-appointment', label: 'حجز موعد', icon: Calendar },
-    { href: '/track-order', label: 'تتبع الطلب', icon: Search },
-    { href: '/fabrics', label: 'الأقمشة', icon: Scissors },
-    { href: '/services', label: 'خدماتنا', icon: Sparkles },
-    { href: '/faq', label: 'الأسئلة الشائعة', icon: HelpCircle },
+    { href: '/', label: 'الرئيسية', icon: Home, onClick: null, external: false },
+    { href: '#', label: 'الفساتين الجاهزة', icon: Palette, onClick: () => scrollToSection('ready-designs'), external: false },
+    { href: '/book-appointment', label: 'حجز موعد', icon: Calendar, onClick: null, external: false },
+    { href: '/track-order', label: 'تتبع الطلب', icon: Search, onClick: null, external: false },
+    { href: '#', label: 'الأقمشة', icon: Scissors, onClick: () => scrollToSection('featured-fabrics'), external: false },
+    { href: 'https://yasmin-alsham-ai.com', label: 'مصمم ياسمين الشام الذكي', icon: Wand2, onClick: null, external: true },
+    { href: '/services', label: 'خدماتنا', icon: Sparkles, onClick: null, external: false },
+    { href: '/faq', label: 'الأسئلة الشائعة', icon: HelpCircle, onClick: null, external: false },
   ]
 
   // تحديد الكلاسات الديناميكية للهيدر على الموبايل
@@ -124,7 +196,9 @@ export default function Header() {
   }
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300
+    <header
+      ref={menuRef}
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300
       ${getMobileHeaderClasses()}
       lg:bg-white/95 lg:backdrop-blur-md lg:border-b lg:border-pink-100 lg:shadow-sm`}
     >
@@ -174,23 +248,40 @@ export default function Header() {
           <nav className="hidden lg:flex flex-1 items-center justify-end gap-x-8 gap-x-reverse lg:order-1">
             {menuItems.filter(item => item.label !== 'الرئيسية').map((item, index) => (
               <motion.div
-                key={item.href}
+                key={item.label}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
               >
-                <Link
-                  href={item.href}
-                  className="icon-text-spacing text-gray-700 hover:text-pink-600 transition-colors duration-300 font-medium group"
-                >
-                  {item.icon && (
-                    <item.icon className="w-4 h-4 menu-item-icon group-hover:scale-110 transition-transform duration-300" />
-                  )}
-                  <span className="relative">
-                    {item.label}
-                    <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-pink-400 to-rose-400 group-hover:w-full transition-all duration-300"></span>
-                  </span>
-                </Link>
+                {item.onClick ? (
+                  <button
+                    onClick={item.onClick}
+                    className="icon-text-spacing text-gray-700 hover:text-pink-600 transition-colors duration-300 font-medium group"
+                  >
+                    {item.icon && (
+                      <item.icon className="w-4 h-4 menu-item-icon group-hover:scale-110 transition-transform duration-300" />
+                    )}
+                    <span className="relative">
+                      {item.label}
+                      <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-pink-400 to-rose-400 group-hover:w-full transition-all duration-300"></span>
+                    </span>
+                  </button>
+                ) : (
+                  <Link
+                    href={item.href}
+                    target={item.external ? '_blank' : undefined}
+                    rel={item.external ? 'noopener noreferrer' : undefined}
+                    className="icon-text-spacing text-gray-700 hover:text-pink-600 transition-colors duration-300 font-medium group"
+                  >
+                    {item.icon && (
+                      <item.icon className="w-4 h-4 menu-item-icon group-hover:scale-110 transition-transform duration-300" />
+                    )}
+                    <span className="relative">
+                      {item.label}
+                      <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-pink-400 to-rose-400 group-hover:w-full transition-all duration-300"></span>
+                    </span>
+                  </Link>
+                )}
               </motion.div>
             ))}
           </nav>
@@ -209,7 +300,7 @@ export default function Header() {
           <nav className="py-4 space-y-2">
             {menuItems.filter(item => item.label !== 'الرئيسية').map((item, index) => (
               <motion.div
-                key={item.href}
+                key={item.label}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{
                   opacity: isMenuOpen ? 1 : 0,
@@ -217,14 +308,26 @@ export default function Header() {
                 }}
                 transition={{ duration: 0.3, delay: index * 0.1 }}
               >
-                <Link
-                  href={item.href}
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center space-x-3 space-x-reverse px-4 py-3 text-gray-700 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-all duration-300 font-medium"
-                >
-                  {item.icon && <item.icon className="w-5 h-5 ml-3" />}
-                  <span>{item.label}</span>
-                </Link>
+                {item.onClick ? (
+                  <button
+                    onClick={item.onClick}
+                    className="flex items-center space-x-3 space-x-reverse px-4 py-3 text-gray-700 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-all duration-300 font-medium w-full text-right"
+                  >
+                    {item.icon && <item.icon className="w-5 h-5 ml-3" />}
+                    <span>{item.label}</span>
+                  </button>
+                ) : (
+                  <Link
+                    href={item.href}
+                    target={item.external ? '_blank' : undefined}
+                    rel={item.external ? 'noopener noreferrer' : undefined}
+                    onClick={() => setIsMenuOpen(false)}
+                    className="flex items-center space-x-3 space-x-reverse px-4 py-3 text-gray-700 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-all duration-300 font-medium"
+                  >
+                    {item.icon && <item.icon className="w-5 h-5 ml-3" />}
+                    <span>{item.label}</span>
+                  </Link>
+                )}
               </motion.div>
             ))}
           </nav>

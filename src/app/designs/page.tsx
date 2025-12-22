@@ -7,6 +7,7 @@ import { ArrowRight, ChevronLeft, ChevronRight, Grid3X3, Grid2X2, Loader2, Slide
 import { useShopStore, formatPrice, Product } from '@/store/shopStore'
 import SearchBar from '@/components/SearchBar'
 import SortOptions from '@/components/SortOptions'
+import Header from '@/components/Header'
 import dynamic from 'next/dynamic'
 
 // تحميل المكونات الثقيلة بشكل ديناميكي (Code Splitting)
@@ -47,7 +48,7 @@ function ProductSkeleton() {
 export default function DesignsPage() {
   const { products, loadProducts, isLoading, error, getFilteredProducts, filters, sortBy } = useShopStore()
 
-  const [currentImageIndexes, setCurrentImageIndexes] = useState<{[key: string]: number}>({})
+  const [currentImageIndexes, setCurrentImageIndexes] = useState<{ [key: string]: number }>({})
   const [isSingleColumn, setIsSingleColumn] = useState(false)
   const [displayedProducts, setDisplayedProducts] = useState<Product[]>([])
   const [page, setPage] = useState(1)
@@ -108,7 +109,7 @@ export default function DesignsPage() {
   // تحديث مؤشرات الصور عند تحميل المنتجات
   useEffect(() => {
     if (displayedProducts.length > 0) {
-      const initialIndexes: {[key: string]: number} = {}
+      const initialIndexes: { [key: string]: number } = {}
       displayedProducts.forEach(product => {
         initialIndexes[product.id] = 0
       })
@@ -182,322 +183,306 @@ export default function DesignsPage() {
 
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-4 lg:pt-6">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
-        {/* التنقل */}
-        <nav className="flex justify-start items-start mt-0 mb-2" dir="rtl" aria-label="التنقل الرئيسي">
-          <Link
-            href="/"
-            className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300"
-            style={{marginTop: 0}}
-            aria-label="العودة إلى الصفحة الرئيسية"
+    <>
+      <Header />
+      <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20 lg:pt-24">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
+
+          {/* العنوان */}
+          <motion.header
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            className="text-center mb-12"
           >
-            <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5" aria-hidden="true" />
-            <span className="text-sm lg:text-base">العودة إلى الرئيسية</span>
-          </Link>
-        </nav>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
+              <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                تصاميمنا الجاهزة
+              </span>
+            </h1>
 
-        {/* العنوان */}
-        <motion.header
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
-            <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              تصاميمنا الجاهزة
-            </span>
-          </h1>
-          <p className="text-lg text-gray-700 max-w-3xl mx-auto leading-relaxed mb-6">
-            استكشفي مجموعتنا الكاملة من التصاميم الجاهزة واختاري ما يناسب ذوقك ومناسبتك
-          </p>
+            {/* ملاحظة مهمة */}
+            <aside className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-4 max-w-2xl mx-auto" role="note" aria-label="معلومة مهمة">
+              <p className="text-green-900 font-semibold text-center">
+                ✨ الفساتين الجاهزة متوفرة للشراء المباشر - لا يتطلب حجز موعد
+              </p>
+            </aside>
+          </motion.header>
 
-          {/* ملاحظة مهمة */}
-          <aside className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-4 max-w-2xl mx-auto" role="note" aria-label="معلومة مهمة">
-            <p className="text-green-900 font-semibold text-center">
-              ✨ الفساتين الجاهزة متوفرة للشراء المباشر - لا يتطلب حجز موعد
-            </p>
-          </aside>
-        </motion.header>
-
-        {/* شريط البحث والفلاتر */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="mb-8"
-        >
-          {/* شريط البحث */}
-          <div className="mb-4">
-            <SearchBar />
-          </div>
-
-          {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
-          <div className="flex flex-wrap items-center justify-between gap-4" dir="rtl">
-            {/* زر فتح الفلاتر (لجميع الأحجام) */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsFilterOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
-                aria-label="فتح الفلاتر"
-              >
-                <SlidersHorizontal className="w-5 h-5 text-pink-600" />
-                <span className="text-sm font-medium text-gray-800">الفلاتر</span>
-              </button>
+          {/* شريط البحث والفلاتر */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="mb-8"
+          >
+            {/* شريط البحث */}
+            <div className="mb-4">
+              <SearchBar />
             </div>
 
-            {/* الترتيب + تبديل العرض */}
-            <div className="flex items-center gap-3">
-              <SortOptions />
-
-              {/* زر تبديل العرض */}
-              <button
-                onClick={toggleViewMode}
-                className="sm:hidden bg-white border-2 border-pink-200 rounded-xl p-2.5 hover:border-pink-400 hover:shadow-md transition-all duration-300"
-                aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
-              >
-                {isSingleColumn ? (
-                  <Grid2X2 className="w-5 h-5 text-pink-600" />
-                ) : (
-                  <Grid3X3 className="w-5 h-5 text-pink-600" />
-                )}
-              </button>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Filter Sidebar - Modal لجميع الأحجام */}
-        <FilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
-
-        {/* Main Content */}
-        <div className="w-full">
-
-        {/* حالة التحميل الأولي مع Skeleton */}
-        {isLoading && products.length === 0 && (
-          <div className={`grid gap-8 mb-12 ${
-            isSingleColumn
-              ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-              : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-          }`}>
-            {Array.from({ length: 8 }).map((_, index) => (
-              <ProductSkeleton key={index} />
-            ))}
-          </div>
-        )}
-
-        {/* رسالة عدم وجود منتجات أو خطأ */}
-        {!isLoading && products.length === 0 && (
-          <div className="text-center py-20">
-            {error ? (
-              <div className="max-w-md mx-auto bg-red-50 border border-red-200 rounded-xl p-6">
-                <div className="flex items-center justify-center mb-4">
-                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                    <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
-                <h3 className="text-lg font-semibold text-red-900 mb-2">حدث خطأ في تحميل المنتجات</h3>
-                <p className="text-red-700 text-sm mb-4">{error}</p>
+            {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
+            <div className="flex flex-wrap items-center justify-between gap-4" dir="rtl">
+              {/* زر فتح الفلاتر (لجميع الأحجام) */}
+              <div className="flex items-center gap-3">
                 <button
-                  onClick={() => {
-                    console.log('🔄 إعادة محاولة تحميل المنتجات...')
-                    loadProducts()
-                  }}
-                  className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors duration-300"
+                  onClick={() => setIsFilterOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                  aria-label="فتح الفلاتر"
                 >
-                  إعادة المحاولة
+                  <SlidersHorizontal className="w-5 h-5 text-pink-600" />
+                  <span className="text-sm font-medium text-gray-800">الفلاتر</span>
                 </button>
-                <div className="mt-4 text-xs text-red-600">
-                  <p>💡 نصيحة: افتح Console (F12) لمزيد من التفاصيل</p>
-                </div>
               </div>
-            ) : (
-              <div className="max-w-md mx-auto bg-gray-50 border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center justify-center mb-4">
-                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
-                    <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                    </svg>
-                  </div>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">لا توجد تصاميم متاحة حالياً</h3>
-                <p className="text-gray-600 text-sm">يرجى المحاولة لاحقاً أو التواصل مع الإدارة</p>
+
+              {/* الترتيب + تبديل العرض */}
+              <div className="flex items-center gap-3">
+                <SortOptions />
+
+                {/* زر تبديل العرض */}
+                <button
+                  onClick={toggleViewMode}
+                  className="sm:hidden bg-white border-2 border-pink-200 rounded-xl p-2.5 hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                  aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
+                >
+                  {isSingleColumn ? (
+                    <Grid2X2 className="w-5 h-5 text-pink-600" />
+                  ) : (
+                    <Grid3X3 className="w-5 h-5 text-pink-600" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Filter Sidebar - Modal لجميع الأحجام */}
+          <FilterSidebar isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
+
+          {/* Main Content */}
+          <div className="w-full">
+
+            {/* حالة التحميل الأولي مع Skeleton */}
+            {isLoading && products.length === 0 && (
+              <div className={`grid gap-8 mb-12 ${isSingleColumn
+                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                }`}>
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <ProductSkeleton key={index} />
+                ))}
               </div>
             )}
-          </div>
-        )}
 
-        {/* رسالة عدم وجود نتائج بعد الفلترة */}
-        {!isLoading && products.length > 0 && displayedProducts.length === 0 && (
-          <div className="text-center py-20" role="status" aria-live="polite">
-            <div className="max-w-md mx-auto bg-orange-50 border-2 border-orange-300 rounded-xl p-6">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                  <SlidersHorizontal className="w-6 h-6 text-orange-600" aria-hidden="true" />
-                </div>
-              </div>
-              <h3 className="text-lg font-semibold text-orange-900 mb-2">لا توجد نتائج مطابقة</h3>
-              <p className="text-orange-800 text-sm mb-4">لم نجد أي منتجات تطابق الفلاتر المحددة</p>
-              <button
-                onClick={() => {
-                  const { resetFilters } = useShopStore.getState()
-                  resetFilters()
-                }}
-                className="bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700 transition-colors duration-300 font-semibold"
-                aria-label="إعادة تعيين جميع الفلاتر"
-              >
-                إعادة تعيين الفلاتر
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* شبكة التصاميم */}
-        {displayedProducts.length > 0 && (
-          <section
-            className={`grid gap-8 mb-12 ${
-              isSingleColumn
-                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-            }`}
-            aria-label="قائمة المنتجات"
-          >
-            {displayedProducts.map((product, index) => {
-              const productImages = product.images || []
-              const currentIndex = currentImageIndexes[product.id] || 0
-              // استخدام الصورة الحالية أو الصورة الافتراضية
-              const currentImage = productImages[currentIndex] || '/wedding-dress-1.jpg.jpg'
-
-              // التحقق من نوع الصورة (URL أو base64)
-              const isExternalImage = currentImage.startsWith('http')
-              const isBase64 = currentImage.startsWith('data:')
-
-              return (
-                <motion.div
-                  key={product.id}
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: Math.min(index * 0.05, 0.5) }}
-                  className="group"
-                >
-                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
-                    {/* الصورة */}
-                    <Link href={`/designs/${product.id}`}>
-                      <div
-                        className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
-                      >
-                        {/* الصورة الحالية - تم استبدال Next.js Image بـ img العادي لتحسين السرعة */}
-                        <img
-                          src={currentImage}
-                          alt={`${product.name} - صورة ${currentIndex + 1}`}
-                          className="w-full h-full object-cover transition-opacity duration-300"
-                          loading="lazy"
-                        />
-
-                        {/* أزرار التنقل - تظهر فقط إذا كان هناك أكثر من صورة */}
-                        {productImages.length > 1 && (
-                          <>
-                            <button
-                              onClick={(e) => prevCardImage(product.id, productImages.length, e)}
-                              className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
-                              aria-label="الصورة السابقة"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
-
-                            <button
-                              onClick={(e) => nextCardImage(product.id, productImages.length, e)}
-                              className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
-                              aria-label="الصورة التالية"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                            </button>
-
-                            {/* مؤشرات الصور */}
-                            <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1 space-x-reverse opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                              {productImages.map((_, imgIndex) => (
-                                <button
-                                  key={imgIndex}
-                                  onClick={(e) => setCardImage(product.id, imgIndex, e)}
-                                  className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                                    currentIndex === imgIndex ? 'bg-white' : 'bg-white/50'
-                                  }`}
-                                  aria-label={`عرض الصورة ${imgIndex + 1}`}
-                                />
-                              ))}
-                            </div>
-                          </>
-                        )}
-
-                        {/* زر نظرة سريعة - مخفي على الجوال */}
-                        <button
-                          onClick={(e) => openQuickView(product, e)}
-                          className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-pink-600 px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 items-center gap-1 sm:gap-2 z-20"
-                          aria-label="نظرة سريعة"
-                        >
-                          <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
-                          <span>نظرة سريعة</span>
-                        </button>
+            {/* رسالة عدم وجود منتجات أو خطأ */}
+            {!isLoading && products.length === 0 && (
+              <div className="text-center py-20">
+                {error ? (
+                  <div className="max-w-md mx-auto bg-red-50 border border-red-200 rounded-xl p-6">
+                    <div className="flex items-center justify-center mb-4">
+                      <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                        <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
                       </div>
-                    </Link>
-
-                    {/* المعلومات */}
-                    <div className="p-3">
-                      <Link href={`/designs/${product.id}`}>
-                        <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
-                          <h3 className="font-bold text-gray-800 mb-1 group-hover:text-pink-600 transition-colors duration-300 text-center">
-                            {product.name}
-                          </h3>
-
-                          <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 text-center">
-                            {product.description}
-                          </p>
-                        </div>
-                      </Link>
+                    </div>
+                    <h3 className="text-lg font-semibold text-red-900 mb-2">حدث خطأ في تحميل المنتجات</h3>
+                    <p className="text-red-700 text-sm mb-4">{error}</p>
+                    <button
+                      onClick={() => {
+                        console.log('🔄 إعادة محاولة تحميل المنتجات...')
+                        loadProducts()
+                      }}
+                      className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors duration-300"
+                    >
+                      إعادة المحاولة
+                    </button>
+                    <div className="mt-4 text-xs text-red-600">
+                      <p>💡 نصيحة: افتح Console (F12) لمزيد من التفاصيل</p>
                     </div>
                   </div>
-                </motion.div>
-              )
-            })}
-          </section>
-        )}
+                ) : (
+                  <div className="max-w-md mx-auto bg-gray-50 border border-gray-200 rounded-xl p-6">
+                    <div className="flex items-center justify-center mb-4">
+                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+                        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                        </svg>
+                      </div>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">لا توجد تصاميم متاحة حالياً</h3>
+                    <p className="text-gray-600 text-sm">يرجى المحاولة لاحقاً أو التواصل مع الإدارة</p>
+                  </div>
+                )}
+              </div>
+            )}
 
-        {/* Infinite Scroll Observer - مع Skeleton عند التحميل */}
-        {hasMore && displayedProducts.length > 0 && (
-          <>
-            <div ref={observerTarget} className="h-4" aria-hidden="true" />
-            {/* عرض Skeleton أثناء تحميل المزيد */}
-            <div className={`grid gap-8 mb-8 ${
-              isSingleColumn
-                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-            }`}>
-              {Array.from({ length: 4 }).map((_, index) => (
-                <ProductSkeleton key={`loading-${index}`} />
-              ))}
-            </div>
-          </>
-        )}
+            {/* رسالة عدم وجود نتائج بعد الفلترة */}
+            {!isLoading && products.length > 0 && displayedProducts.length === 0 && (
+              <div className="text-center py-20" role="status" aria-live="polite">
+                <div className="max-w-md mx-auto bg-orange-50 border-2 border-orange-300 rounded-xl p-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                      <SlidersHorizontal className="w-6 h-6 text-orange-600" aria-hidden="true" />
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-semibold text-orange-900 mb-2">لا توجد نتائج مطابقة</h3>
+                  <p className="text-orange-800 text-sm mb-4">لم نجد أي منتجات تطابق الفلاتر المحددة</p>
+                  <button
+                    onClick={() => {
+                      const { resetFilters } = useShopStore.getState()
+                      resetFilters()
+                    }}
+                    className="bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700 transition-colors duration-300 font-semibold"
+                    aria-label="إعادة تعيين جميع الفلاتر"
+                  >
+                    إعادة تعيين الفلاتر
+                  </button>
+                </div>
+              </div>
+            )}
 
-        {/* رسالة نهاية القائمة */}
-        {!hasMore && displayedProducts.length > 0 && (
-          <div className="text-center py-8" role="status" aria-live="polite">
-            <p className="text-gray-700 font-medium">تم عرض جميع التصاميم</p>
+            {/* شبكة التصاميم */}
+            {displayedProducts.length > 0 && (
+              <section
+                className={`grid gap-8 mb-12 ${isSingleColumn
+                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  }`}
+                aria-label="قائمة المنتجات"
+              >
+                {displayedProducts.map((product, index) => {
+                  const productImages = product.images || []
+                  const currentIndex = currentImageIndexes[product.id] || 0
+                  // استخدام الصورة الحالية أو الصورة الافتراضية
+                  const currentImage = productImages[currentIndex] || '/wedding-dress-1.jpg.jpg'
+
+                  // التحقق من نوع الصورة (URL أو base64)
+                  const isExternalImage = currentImage.startsWith('http')
+                  const isBase64 = currentImage.startsWith('data:')
+
+                  return (
+                    <motion.div
+                      key={product.id}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.6, delay: Math.min(index * 0.05, 0.5) }}
+                      className="group"
+                    >
+                      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
+                        {/* الصورة */}
+                        <Link href={`/designs/${product.id}`}>
+                          <div
+                            className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
+                          >
+                            {/* الصورة الحالية - تم استبدال Next.js Image بـ img العادي لتحسين السرعة */}
+                            <img
+                              src={currentImage}
+                              alt={`${product.name} - صورة ${currentIndex + 1}`}
+                              className="w-full h-full object-cover transition-opacity duration-300"
+                              loading="lazy"
+                            />
+
+                            {/* أزرار التنقل - تظهر فقط إذا كان هناك أكثر من صورة */}
+                            {productImages.length > 1 && (
+                              <>
+                                <button
+                                  onClick={(e) => prevCardImage(product.id, productImages.length, e)}
+                                  className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
+                                  aria-label="الصورة السابقة"
+                                >
+                                  <ChevronRight className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                  onClick={(e) => nextCardImage(product.id, productImages.length, e)}
+                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
+                                  aria-label="الصورة التالية"
+                                >
+                                  <ChevronLeft className="w-4 h-4" />
+                                </button>
+
+                                {/* مؤشرات الصور */}
+                                <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1 space-x-reverse opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                  {productImages.map((_, imgIndex) => (
+                                    <button
+                                      key={imgIndex}
+                                      onClick={(e) => setCardImage(product.id, imgIndex, e)}
+                                      className={`w-2 h-2 rounded-full transition-colors duration-300 ${currentIndex === imgIndex ? 'bg-white' : 'bg-white/50'
+                                        }`}
+                                      aria-label={`عرض الصورة ${imgIndex + 1}`}
+                                    />
+                                  ))}
+                                </div>
+                              </>
+                            )}
+
+                            {/* زر نظرة سريعة - مخفي على الجوال */}
+                            <button
+                              onClick={(e) => openQuickView(product, e)}
+                              className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-pink-600 px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 items-center gap-1 sm:gap-2 z-20"
+                              aria-label="نظرة سريعة"
+                            >
+                              <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
+                              <span>نظرة سريعة</span>
+                            </button>
+                          </div>
+                        </Link>
+
+                        {/* المعلومات */}
+                        <div className="p-3">
+                          <Link href={`/designs/${product.id}`}>
+                            <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
+                              <h3 className="font-bold text-gray-800 mb-1 group-hover:text-pink-600 transition-colors duration-300 text-center">
+                                {product.name}
+                              </h3>
+
+                              <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 text-center">
+                                {product.description}
+                              </p>
+                            </div>
+                          </Link>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </section>
+            )}
+
+            {/* Infinite Scroll Observer - مع Skeleton عند التحميل */}
+            {hasMore && displayedProducts.length > 0 && (
+              <>
+                <div ref={observerTarget} className="h-4" aria-hidden="true" />
+                {/* عرض Skeleton أثناء تحميل المزيد */}
+                <div className={`grid gap-8 mb-8 ${isSingleColumn
+                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  }`}>
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <ProductSkeleton key={`loading-${index}`} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* رسالة نهاية القائمة */}
+            {!hasMore && displayedProducts.length > 0 && (
+              <div className="text-center py-8" role="status" aria-live="polite">
+                <p className="text-gray-700 font-medium">تم عرض جميع التصاميم</p>
+              </div>
+            )}
+
           </div>
-        )}
-
         </div>
-      </div>
 
-      {/* QuickView Modal */}
-      <QuickViewModal
-        product={quickViewProduct}
-        isOpen={isQuickViewOpen}
-        onClose={closeQuickView}
-      />
-    </main>
+        {/* QuickView Modal */}
+        <QuickViewModal
+          product={quickViewProduct}
+          isOpen={isQuickViewOpen}
+          onClose={closeQuickView}
+        />
+      </main>
+    </>
   )
 }
 

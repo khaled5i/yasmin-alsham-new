@@ -34,6 +34,10 @@ const CONFIG = {
     images,
     colors,
     sizes,
+    fabric,
+    features,
+    occasions,
+    care_instructions,
     rating,
     reviews_count,
     is_featured,
@@ -104,7 +108,7 @@ export interface Product {
   description_en?: string | null
   category_id?: string | null
   category_name?: string | null
-  price: number
+  price?: number | null // ✅ جعل السعر اختياري
   is_available: boolean
   stock_quantity: number
   images: string[]
@@ -136,7 +140,7 @@ export interface CreateProductData {
   description_en?: string
   category_id?: string
   category_name?: string
-  price: number
+  price?: number // ✅ جعل السعر اختياري
   is_available?: boolean
   stock_quantity?: number
   images?: string[]
@@ -262,6 +266,17 @@ export const productService = {
 
       console.log(`✅ تم جلب ${result?.length || 0} منتج بنجاح`)
 
+      // عرض عينة من البيانات الخام من Supabase
+      if (result && result.length > 0) {
+        console.log('📦 عينة من البيانات الخام من Supabase:', {
+          id: result[0].id,
+          title: result[0].title,
+          features: result[0].features,
+          occasions: result[0].occasions,
+          care_instructions: result[0].care_instructions
+        })
+      }
+
       // ملء الحقول الناقصة بقيم افتراضية
       const products = (result || []).map((p: any) => ({
         ...p,
@@ -381,6 +396,11 @@ export const productService = {
   async create(productData: CreateProductData): Promise<{ data: Product | null; error: string | null }> {
     try {
       console.log('➕ إنشاء منتج جديد في Supabase...')
+      console.log('📦 البيانات المرسلة للإنشاء:', JSON.stringify({
+        features: productData.features,
+        occasions: productData.occasions,
+        care_instructions: productData.care_instructions
+      }, null, 2))
 
       if (!isSupabaseConfigured()) {
         console.warn('⚠️ Supabase غير مُكوّن')
@@ -404,6 +424,11 @@ export const productService = {
       }
 
       console.log('✅ تم إنشاء المنتج بنجاح:', data.id)
+      console.log('📦 البيانات المستلمة من Supabase:', JSON.stringify({
+        features: data.features,
+        occasions: data.occasions,
+        care_instructions: data.care_instructions
+      }, null, 2))
       return { data: data as Product, error: null }
     } catch (error: any) {
       console.error('❌ خطأ غير متوقع في إنشاء المنتج:', error)
@@ -417,6 +442,7 @@ export const productService = {
   async update(id: string, updates: UpdateProductData): Promise<{ data: Product | null; error: string | null }> {
     try {
       console.log(`🔄 تحديث المنتج ${id} في Supabase...`)
+      console.log('📦 البيانات المرسلة للتحديث:', JSON.stringify(updates, null, 2))
 
       if (!isSupabaseConfigured()) {
         console.warn('⚠️ Supabase غير مُكوّن')
@@ -441,6 +467,11 @@ export const productService = {
       }
 
       console.log('✅ تم تحديث المنتج بنجاح')
+      console.log('📦 البيانات المستلمة من Supabase:', JSON.stringify({
+        features: data.features,
+        occasions: data.occasions,
+        care_instructions: data.care_instructions
+      }, null, 2))
       return { data: data as Product, error: null }
     } catch (error: any) {
       console.error('❌ خطأ غير متوقع في تحديث المنتج:', error)
