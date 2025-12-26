@@ -24,10 +24,13 @@ import {
   Phone,
   Mail,
   Eye,
-  EyeOff
+  EyeOff,
+  Briefcase
 } from 'lucide-react'
 import NumericInput from '@/components/NumericInput'
 import { validatePhoneLength, getValidationErrorMessage } from '@/utils/inputValidation'
+import { WORKER_TYPES_OPTIONS, getWorkerTypeName, WORKER_TYPE_DESCRIPTIONS } from '@/lib/worker-types'
+import type { WorkerType } from '@/lib/services/worker-service'
 
 export default function WorkersPage() {
   const { user } = useAuthStore()
@@ -54,7 +57,8 @@ export default function WorkersPage() {
     password: '',
     full_name: '',
     phone: '',
-    specialty: ''
+    specialty: '',
+    worker_type: 'tailor' as WorkerType
   })
   const [editingWorker, setEditingWorker] = useState<any>(null)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -67,7 +71,7 @@ export default function WorkersPage() {
   const handleAddWorker = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!newWorker.email || !newWorker.password || !newWorker.full_name || !newWorker.phone || !newWorker.specialty) {
+    if (!newWorker.email || !newWorker.password || !newWorker.full_name || !newWorker.phone || !newWorker.specialty || !newWorker.worker_type) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
       return
     }
@@ -88,7 +92,8 @@ export default function WorkersPage() {
         password: newWorker.password,
         full_name: newWorker.full_name,
         phone: newWorker.phone,
-        specialty: newWorker.specialty
+        specialty: newWorker.specialty,
+        worker_type: newWorker.worker_type
       })
 
       if (result.success) {
@@ -98,7 +103,8 @@ export default function WorkersPage() {
           password: '',
           full_name: '',
           phone: '',
-          specialty: ''
+          specialty: '',
+          worker_type: 'tailor'
         })
         setShowAddForm(false)
       } else {
@@ -121,6 +127,7 @@ export default function WorkersPage() {
       email: worker.user?.email || '',
       phone: worker.user?.phone || '',
       specialty: worker.specialty || '',
+      worker_type: worker.worker_type || 'tailor',
       password: '', // Don't show current password
       is_available: worker.is_available ?? true,
       is_active: worker.user?.is_active ?? true,
@@ -154,6 +161,7 @@ export default function WorkersPage() {
       const updates: any = {
         // حقول جدول workers
         specialty: editingWorker.specialty,
+        worker_type: editingWorker.worker_type,
         is_available: editingWorker.is_available ?? true,
 
         // حقول جدول users
@@ -504,6 +512,28 @@ export default function WorkersPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                  <Briefcase className="w-4 h-4" />
+                  نوع العامل *
+                </label>
+                <select
+                  value={newWorker.worker_type}
+                  onChange={(e) => setNewWorker(prev => ({ ...prev, worker_type: e.target.value as WorkerType }))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  required
+                >
+                  {WORKER_TYPES_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {WORKER_TYPE_DESCRIPTIONS[newWorker.worker_type]}
+                </p>
+              </div>
+
               <div className="md:col-span-2 flex gap-4 pt-4">
                 <button
                   type="submit"
@@ -630,6 +660,28 @@ export default function WorkersPage() {
                   </div>
 
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                      <Briefcase className="w-4 h-4" />
+                      نوع العامل *
+                    </label>
+                    <select
+                      value={editingWorker.worker_type || 'tailor'}
+                      onChange={(e) => setEditingWorker((prev: any) => ({ ...prev, worker_type: e.target.value as WorkerType }))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      required
+                    >
+                      {WORKER_TYPES_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {WORKER_TYPE_DESCRIPTIONS[editingWorker.worker_type || 'tailor']}
+                    </p>
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {t('status')}
                     </label>
@@ -696,6 +748,12 @@ export default function WorkersPage() {
                     <div>
                       <h3 className="text-lg font-bold text-gray-800">{worker.user?.full_name || 'غير محدد'}</h3>
                       <p className="text-sm text-pink-600 font-medium">{worker.specialty}</p>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Briefcase className="w-3 h-3 text-purple-500" />
+                        <span className="text-xs text-purple-600 font-medium">
+                          {getWorkerTypeName(worker.worker_type || 'tailor')}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

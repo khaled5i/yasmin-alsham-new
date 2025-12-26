@@ -11,6 +11,9 @@ import { supabase, isSupabaseConfigured } from '../supabase'
 // Types - الأنواع
 // ============================================================================
 
+// أنواع العمال المتاحة
+export type WorkerType = 'tailor' | 'fabric_store_manager' | 'accountant' | 'general_manager'
+
 export interface User {
   id: string
   email: string
@@ -27,6 +30,7 @@ export interface Worker {
   id: string
   user_id: string
   specialty: string
+  worker_type: WorkerType // نوع العامل
   experience_years: number
   hourly_rate: number
   performance_rating: number
@@ -50,6 +54,7 @@ export interface CreateWorkerData {
   full_name: string
   phone?: string
   specialty: string
+  worker_type: WorkerType // نوع العامل (إجباري عند الإنشاء)
   experience_years?: number
   hourly_rate?: number
   skills?: string[]
@@ -62,6 +67,7 @@ export interface UpdateWorkerData {
   email?: string
   phone?: string
   specialty?: string
+  worker_type?: WorkerType // نوع العامل (اختياري عند التحديث)
   experience_years?: number
   hourly_rate?: number
   skills?: string[]
@@ -80,6 +86,7 @@ const mockWorkers: WorkerWithUser[] = [
     id: 'worker-1',
     user_id: 'user-worker-1',
     specialty: 'فساتين زفاف',
+    worker_type: 'tailor',
     experience_years: 8,
     hourly_rate: 50.00,
     performance_rating: 4.8,
@@ -113,6 +120,7 @@ const mockWorkers: WorkerWithUser[] = [
     id: 'worker-2',
     user_id: 'user-worker-2',
     specialty: 'فساتين سهرة',
+    worker_type: 'tailor',
     experience_years: 5,
     hourly_rate: 40.00,
     performance_rating: 4.6,

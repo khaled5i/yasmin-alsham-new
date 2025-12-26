@@ -12,28 +12,24 @@ import {
   Plus,
   X,
   Trash2,
-  Receipt
+  Receipt,
+  Pencil
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import { getExpenses, createExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
+import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
-
-const PURCHASE_CATEGORIES = [
-  { id: 'evening_dress', label: 'فساتين سهرة' },
-  { id: 'wedding_dress', label: 'فساتين زفاف' },
-  { id: 'casual_dress', label: 'فساتين كاجوال' },
-  { id: 'abaya', label: 'عبايات' },
-  { id: 'accessories', label: 'إكسسوارات' },
-  { id: 'other', label: 'أخرى' }
-]
+import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 
 function ReadyDesignsPurchasesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
     branch: 'ready_designs',
     type: 'material',
@@ -45,6 +41,7 @@ function ReadyDesignsPurchasesContent() {
 
   useEffect(() => {
     loadExpenses()
+    loadCategories()
   }, [])
 
   const loadExpenses = async () => {
@@ -59,52 +56,96 @@ function ReadyDesignsPurchasesContent() {
     }
   }
 
+  const loadCategories = async () => {
+    try {
+      const data = await getCategories('ready_designs', 'purchase')
+      setCategories(data)
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.category || !formData.amount) return
 
     setSaving(true)
     try {
-      const result = await createExpense(formData as CreateExpenseInput)
-      if (result) {
-        setExpenses([result, ...expenses])
-        setShowModal(false)
-        setFormData({
-          branch: 'ready_designs',
-          type: 'material',
-          category: '',
-          description: '',
-          amount: 0,
-          date: new Date().toISOString().split('T')[0]
-        })
+      if (isEditing && editingId) {
+        const result = await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
+        if (result) {
+          setExpenses(expenses.map(item => item.id === editingId ? result : item))
+          alert('✅ تم تحديث المشترى بنجاح')
+        }
+      } else {
+        const result = await createExpense(formData as CreateExpenseInput)
+        if (result) {
+          setExpenses([result, ...expenses])
+          alert('✅ تم إضافة المشترى بنجاح')
+        }
       }
+
+      setShowModal(false)
+      setIsEditing(false)
+      setEditingId(null)
+      setFormData({
+        branch: 'ready_designs',
+        type: 'material',
+        category: '',
+        description: '',
+        amount: 0,
+        date: new Date().toISOString().split('T')[0]
+      })
     } catch (error) {
-      console.error('Error creating expense:', error)
+      console.error('Error saving expense:', error)
+      alert('❌ حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
   }
 
+  const handleEdit = (item: Expense) => {
+    setIsEditing(true)
+    setEditingId(item.id)
+    setFormData({
+      branch: item.branch,
+      type: item.type,
+      category: item.category || '',
+      description: item.description || '',
+      amount: item.amount,
+      date: item.date,
+      notes: item.notes || ''
+    })
+    setShowModal(true)
+  }
+
   const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذه العملية؟')) return
-    const success = await deleteExpense(id)
-    if (success) {
-      setExpenses(expenses.filter(e => e.id !== id))
+
+    try {
+      const success = await deleteExpense(id)
+      if (success) {
+        setExpenses(expenses.filter(e => e.id !== id))
+        alert('✅ تم حذف المشترى بنجاح')
+      } else {
+        alert('❌ فشل حذف المشترى')
+      }
+    } catch (error) {
+      console.error('Error deleting expense:', error)
+      alert('❌ حدث خطأ أثناء الحذف')
     }
   }
 
-  const getCategoryLabel = (categoryId: string) => {
-    return PURCHASE_CATEGORIES.find(c => c.id === categoryId)?.label || categoryId
-  }
-
   const filteredExpenses = expenses.filter(item => {
+    const categoryLabel = getCategoryLabel(categories, item.category)
     const matchesSearch = item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getCategoryLabel(item.category).includes(searchQuery)
+      categoryLabel.includes(searchQuery)
     const matchesDate = !dateFilter || item.date?.startsWith(dateFilter)
     return matchesSearch && matchesDate
   })
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
+  const categoryOptions = categoriesToOptions(categories)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
@@ -193,7 +234,19 @@ function ReadyDesignsPurchasesContent() {
                 />
               </div>
               <button
-                onClick={() => setShowModal(true)}
+                onClick={() => {
+                  setIsEditing(false)
+                  setEditingId(null)
+                  setFormData({
+                    branch: 'ready_designs',
+                    type: 'material',
+                    category: '',
+                    description: '',
+                    amount: 0,
+                    date: new Date().toISOString().split('T')[0]
+                  })
+                  setShowModal(true)
+                }}
                 className="px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors flex items-center gap-2"
               >
                 <Plus className="w-5 h-5" />
@@ -232,19 +285,29 @@ function ReadyDesignsPurchasesContent() {
                       <Shirt className="w-6 h-6 text-orange-600" />
                     </div>
                     <div>
-                      <p className="font-bold text-gray-900">{getCategoryLabel(item.category)}</p>
+                      <p className="font-bold text-gray-900">{getCategoryLabel(categories, item.category)}</p>
                       <p className="text-sm text-gray-500">{item.description || 'بدون وصف'}</p>
                       <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <p className="text-lg font-bold text-orange-600">{formatCurrency(item.amount)}</p>
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEdit(item)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="تعديل"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -270,22 +333,31 @@ function ReadyDesignsPurchasesContent() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">إضافة مشتريات</h2>
-                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {isEditing ? 'تعديل المشترى' : 'إضافة مشتريات'}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setShowModal(false)
+                      setIsEditing(false)
+                      setEditingId(null)
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-xl"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">نوع الفستان</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">فئة المشتريات</label>
                     <select
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
                       required
                     >
-                      <option value="">اختر النوع</option>
-                      {PURCHASE_CATEGORIES.map(cat => (
+                      <option value="">اختر الفئة</option>
+                      {categoryOptions.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.label}</option>
                       ))}
                     </select>
@@ -327,7 +399,7 @@ function ReadyDesignsPurchasesContent() {
                     disabled={saving}
                     className="w-full py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors disabled:opacity-50"
                   >
-                    {saving ? 'جاري الحفظ...' : 'حفظ'}
+                    {saving ? 'جاري الحفظ...' : (isEditing ? 'تحديث' : 'حفظ')}
                   </button>
                 </form>
               </motion.div>

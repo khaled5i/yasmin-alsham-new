@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.replace('Bearer ', '')
-    
+
     // التحقق من صلاحيات المستخدم الحالي
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     )
 
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized - Invalid token' },
@@ -57,9 +57,9 @@ export async function POST(request: NextRequest) {
 
     // 2. قراءة بيانات العامل من الطلب
     const workerData = await request.json()
-    const { email, password, full_name, phone, specialty, experience_years, hourly_rate, skills, bio, is_available } = workerData
+    const { email, password, full_name, phone, specialty, worker_type, experience_years, hourly_rate, skills, bio, is_available } = workerData
 
-    console.log('🔧 Creating worker via API:', email)
+    console.log('🔧 Creating worker via API:', email, 'Type:', worker_type)
 
     // 3. إنشاء مستخدم في Supabase Auth باستخدام Admin API
     const { data: authData, error: authError2 } = await supabaseAdmin.auth.admin.createUser({
@@ -122,6 +122,7 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: authData.user.id,
         specialty,
+        worker_type: worker_type || 'tailor', // نوع العامل (افتراضي: خياط)
         experience_years: experience_years || 0,
         hourly_rate: hourly_rate || 0,
         skills: skills || [],

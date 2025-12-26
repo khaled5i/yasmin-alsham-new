@@ -6,6 +6,9 @@ import { LogIn, User, Lock, Eye, EyeOff, AlertCircle, CheckCircle, Calendar, Inf
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+import { getWorkerDashboardRoute } from '@/lib/worker-types'
+import type { WorkerType } from '@/lib/services/worker-service'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -18,10 +21,42 @@ export default function LoginPage() {
 
   // التحقق من المصادقة عند تحميل الصفحة
   useEffect(() => {
-    if (user && user.is_active) {
-      console.log('👤 المستخدم مسجل دخول بالفعل، توجيه إلى لوحة التحكم...')
-      router.push('/dashboard')
+    async function checkAndRedirect() {
+      if (user && user.is_active) {
+        console.log('👤 المستخدم مسجل دخول بالفعل، توجيه إلى لوحة التحكم...')
+
+        // إذا كان المستخدم admin، توجيه إلى /dashboard
+        if (user.role === 'admin') {
+          router.push('/dashboard')
+          return
+        }
+
+        // إذا كان المستخدم worker، جلب نوعه وتوجيهه للصفحة المناسبة
+        if (user.role === 'worker') {
+          try {
+            const { data, error } = await supabase
+              .from('workers')
+              .select('worker_type')
+              .eq('user_id', user.id)
+              .single()
+
+            if (!error && data?.worker_type) {
+              const dashboardRoute = getWorkerDashboardRoute(data.worker_type as WorkerType)
+              console.log('🔀 توجيه العامل إلى:', dashboardRoute)
+              router.push(dashboardRoute)
+              return
+            }
+          } catch (err) {
+            console.error('خطأ في جلب نوع العامل:', err)
+          }
+        }
+
+        // fallback
+        router.push('/dashboard')
+      }
     }
+
+    checkAndRedirect()
   }, [user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,10 +81,48 @@ export default function LoginPage() {
         // إضافة تأخير قصير للتأكد من تحديث الحالة
         await new Promise(resolve => setTimeout(resolve, 100))
 
-        // توجيه المستخدم إلى لوحة التحكم
-        router.push('/dashboard')
+        // الحصول على المستخدم المحدث
+        const authState = useAuthStore.getState()
+        const currentUser = authState.user
 
-        console.log('✅ تم إرسال طلب التوجيه إلى /dashboard')
+        if (!currentUser) {
+          console.error('❌ لم يتم العثور على بيانات المستخدم بعد تسجيل الدخول')
+          router.push('/dashboard')
+          return
+        }
+
+        // توجيه المستخدم حسب نوعه
+        if (currentUser.role === 'admin') {
+          console.log('✅ توجيه المدير إلى /dashboard')
+          router.push('/dashboard')
+        } else if (currentUser.role === 'worker') {
+          // جلب نوع العامل من قاعدة البيانات
+          try {
+            const { data, error } = await supabase
+              .from('workers')
+              .select('worker_type')
+              .eq('user_id', currentUser.id)
+              .single()
+
+            if (!error && data?.worker_type) {
+              const dashboardRoute = getWorkerDashboardRoute(data.worker_type as WorkerType)
+              console.log('✅ توجيه العامل من نوع', data.worker_type, 'إلى:', dashboardRoute)
+              router.push(dashboardRoute)
+            } else {
+              console.error('❌ خطأ في جلب نوع العامل:', error)
+              router.push('/dashboard')
+            }
+          } catch (err) {
+            console.error('❌ خطأ في جلب نوع العامل:', err)
+            router.push('/dashboard')
+          }
+        } else {
+          // client أو أي نوع آخر
+          console.log('✅ توجيه المستخدم إلى /dashboard')
+          router.push('/dashboard')
+        }
+
+        console.log('✅ تم إرسال طلب التوجيه')
       } else {
         console.log('❌ فشل تسجيل الدخول')
         // الخطأ سيكون موجود في authStore.error
@@ -80,7 +153,7 @@ export default function LoginPage() {
             <div className="w-20 h-20 bg-gradient-to-br from-pink-400 to-rose-400 rounded-full flex items-center justify-center mx-auto mb-6">
               <LogIn className="w-10 h-10 text-white" />
             </div>
-            
+
             <h1 className="text-3xl font-bold mb-4">
               <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
                 تسجيل الدخول

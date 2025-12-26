@@ -96,6 +96,32 @@ export async function createExpense(input: CreateExpenseInput): Promise<Expense 
   }
 }
 
+export async function updateExpense(id: string, input: Partial<CreateExpenseInput>): Promise<Expense | null> {
+  if (!isSupabaseConfigured()) {
+    console.warn('⚠️ Supabase not configured')
+    return null
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('expenses')
+      .update(input)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating expense:', error.message || error)
+      return null
+    }
+
+    return data
+  } catch (err) {
+    console.error('Error updating expense:', err)
+    return null
+  }
+}
+
 export async function deleteExpense(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) {
     console.warn('⚠️ Supabase not configured')
@@ -199,6 +225,32 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
   }
 }
 
+export async function updateIncome(id: string, input: Partial<CreateIncomeInput>): Promise<Income | null> {
+  if (!isSupabaseConfigured()) {
+    console.warn('⚠️ Supabase not configured')
+    return null
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('income')
+      .update(input)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating income:', error.message || error)
+      return null
+    }
+
+    return data
+  } catch (err) {
+    console.error('Error updating income:', err)
+    return null
+  }
+}
+
 export async function deleteIncome(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) {
     console.warn('⚠️ Supabase not configured')
@@ -238,8 +290,9 @@ export async function getDeliveredOrdersIncome(
     // استخدام الأعمدة الصحيحة: client_name بدلاً من customer_name، price بدلاً من total_price
     let query = supabase
       .from('orders')
-      .select('id, order_number, client_name, price, paid_amount, delivery_date, created_at')
+      .select('id, order_number, client_name, price, paid_amount, delivery_date, created_at, branch')
       .eq('status', 'delivered')
+      .eq('branch', branch)  // فلترة حسب الفرع
 
     if (startDate) {
       query = query.gte('delivery_date', startDate)
@@ -287,9 +340,15 @@ export async function getFinancialSummary(
   startDate: string,
   endDate: string
 ): Promise<FinancialSummary> {
-  // جلب الواردات
-  const income = await getDeliveredOrdersIncome(branch, startDate, endDate)
-  const totalIncome = income.reduce((sum, i) => sum + i.amount, 0)
+  // جلب الواردات من الطلبات المسلمة
+  const ordersIncome = await getDeliveredOrdersIncome(branch, startDate, endDate)
+
+  // جلب الواردات اليدوية من جدول income
+  const manualIncome = await getIncome(branch, startDate, endDate)
+
+  // دمج الواردات من المصدرين
+  const allIncome = [...ordersIncome, ...manualIncome]
+  const totalIncome = allIncome.reduce((sum, i) => sum + i.amount, 0)
 
   // جلب المصروفات حسب النوع
   const allExpenses = await getExpenses(branch, undefined, startDate, endDate)

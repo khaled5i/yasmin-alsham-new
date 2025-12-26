@@ -12,11 +12,14 @@ import {
   ShoppingCart,
   Home,
   Users,
-  ChevronLeft
+  ChevronLeft,
+  Settings
 } from 'lucide-react'
-import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
 import type { FinancialSummary } from '@/types/simple-accounting'
+import { useAuthStore } from '@/store/authStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
 // ============================================================================
 // أقسام المحاسبة
@@ -54,6 +57,14 @@ const sections = [
     icon: Users,
     href: '/dashboard/accounting/fabrics/salaries',
     color: 'from-purple-500 to-purple-600'
+  },
+  {
+    id: 'categories',
+    name: 'إدارة الفئات',
+    description: 'إضافة وتعديل فئات المحاسبة',
+    icon: Settings,
+    href: '/dashboard/accounting/fabrics/categories',
+    color: 'from-pink-500 to-rose-600'
   }
 ]
 
@@ -64,6 +75,8 @@ const sections = [
 function FabricsAccountingContent() {
   const [stats, setStats] = useState<FinancialSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const { user } = useAuthStore()
+  const { workerType, getDashboardRoute } = useWorkerPermissions()
 
   useEffect(() => {
     const loadStats = async () => {
@@ -83,6 +96,17 @@ function FabricsAccountingContent() {
     return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
   }
 
+  // تحديد مسار العودة حسب نوع المستخدم
+  const getBackRoute = () => {
+    if (user?.role === 'admin') {
+      return '/dashboard/accounting'
+    }
+    if (user?.role === 'worker' && workerType === 'fabric_store_manager') {
+      return '/dashboard/fabric-manager'
+    }
+    return '/dashboard/accounting'
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100" dir="rtl">
       <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -94,7 +118,7 @@ function FabricsAccountingContent() {
         >
           <div className="flex items-center gap-4 mb-6">
             <Link
-              href="/dashboard/accounting"
+              href={getBackRoute()}
               className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
             >
               <ArrowLeft className="w-6 h-6 rotate-180" />
@@ -189,8 +213,8 @@ function FabricsAccountingContent() {
 
 export default function FabricsAccountingPage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
       <FabricsAccountingContent />
-    </ProtectedRoute>
+    </ProtectedWorkerRoute>
   )
 }

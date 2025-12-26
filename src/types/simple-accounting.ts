@@ -42,10 +42,12 @@ export interface CreateExpenseInput {
 export interface Income {
   id: string
   branch: BranchType
+  category?: string       // فئة المبيعة (اختياري)
   order_id?: string       // رقم الطلب المرتبط
   customer_name: string
   description: string
   amount: number
+  quantity_meters?: number | null // الكمية بالمتر (اختياري)
   date: string
   is_automatic: boolean   // هل تم إضافته تلقائياً من الطلبات
   created_at: string
@@ -53,10 +55,12 @@ export interface Income {
 
 export interface CreateIncomeInput {
   branch: BranchType
+  category?: string       // فئة المبيعة (اختياري)
   order_id?: string
   customer_name: string
   description?: string
   amount: number
+  quantity_meters?: number | null // الكمية بالمتر (اختياري)
   date: string
   is_automatic?: boolean
 }

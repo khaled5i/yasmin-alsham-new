@@ -283,30 +283,73 @@ export const fabricService = {
   async update(id: string, updates: UpdateFabricData): Promise<{ data: Fabric | null; error: string | null }> {
     try {
       console.log(`🔄 تحديث القماش ${id} في Supabase...`)
+      console.log('📝 البيانات المرسلة:', updates)
 
       if (!isSupabaseConfigured()) {
         console.warn('⚠️ Supabase غير مُكوّن')
         return { data: null, error: 'Supabase not configured' }
       }
 
-      const { data, error } = await supabase
-        .from('fabrics')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single()
+      // تنظيف البيانات: إزالة القيم undefined
+      const cleanUpdates = Object.fromEntries(
+        Object.entries(updates).filter(([_, value]) => value !== undefined)
+      )
 
-      if (error) {
-        console.error('❌ خطأ في تحديث القماش:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        })
-        return { data: null, error: error.message }
+      console.log('🧹 البيانات بعد التنظيف:', cleanUpdates)
+
+      // التحقق من وجود بيانات للتحديث
+      if (Object.keys(cleanUpdates).length === 0) {
+        console.warn('⚠️ لا توجد بيانات للتحديث')
+        // جلب البيانات الحالية وإرجاعها
+        const { data: currentData, error: fetchError } = await supabase
+          .from('fabrics')
+          .select('*')
+          .eq('id', id)
+          .single()
+
+        if (fetchError || !currentData) {
+          return { data: null, error: 'القماش غير موجود' }
+        }
+
+        return { data: currentData, error: null }
       }
 
-      console.log('✅ تم تحديث القماش بنجاح')
+      // تحديث القماش
+      const { error: updateError } = await supabase
+        .from('fabrics')
+        .update(cleanUpdates)
+        .eq('id', id)
+
+      if (updateError) {
+        console.error('❌ خطأ في تحديث القماش:', {
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+          code: updateError.code
+        })
+        return { data: null, error: updateError.message }
+      }
+
+      console.log('✅ تم تحديث القماش، جاري جلب البيانات المحدثة...')
+
+      // جلب البيانات المحدثة
+      const { data, error: fetchError } = await supabase
+        .from('fabrics')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) {
+        console.error('❌ خطأ في جلب البيانات المحدثة:', fetchError)
+        return { data: null, error: fetchError.message }
+      }
+
+      if (!data) {
+        console.error('❌ لم يتم العثور على القماش بعد التحديث')
+        return { data: null, error: 'القماش غير موجود' }
+      }
+
+      console.log('✅ تم تحديث القماش بنجاح:', data)
       return { data, error: null }
     } catch (error: any) {
       console.error('❌ خطأ غير متوقع في تحديث القماش:', error)

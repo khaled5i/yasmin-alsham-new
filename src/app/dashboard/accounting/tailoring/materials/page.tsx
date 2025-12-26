@@ -10,10 +10,11 @@ import {
   Search,
   Calendar,
   Trash2,
-  X
+  X,
+  Pencil
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import { getExpenses, createExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
+import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import { MATERIAL_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 
@@ -23,6 +24,8 @@ function MaterialExpensesContent() {
   const [showModal, setShowModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
     branch: 'tailoring',
     type: 'material',
@@ -53,8 +56,17 @@ function MaterialExpensesContent() {
     if (!formData.category || !formData.amount) return
 
     try {
-      await createExpense(formData as CreateExpenseInput)
+      if (isEditing && editingId) {
+        await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
+        alert('✅ تم تحديث المصروف بنجاح')
+      } else {
+        await createExpense(formData as CreateExpenseInput)
+        alert('✅ تم إضافة المصروف بنجاح')
+      }
+
       setShowModal(false)
+      setIsEditing(false)
+      setEditingId(null)
       setFormData({
         branch: 'tailoring',
         type: 'material',
@@ -66,17 +78,36 @@ function MaterialExpensesContent() {
       })
       loadExpenses()
     } catch (error) {
-      console.error('Error creating expense:', error)
+      console.error('Error saving expense:', error)
+      alert('❌ حدث خطأ أثناء الحفظ')
     }
+  }
+
+  const handleEdit = (item: Expense) => {
+    setIsEditing(true)
+    setEditingId(item.id)
+    setFormData({
+      branch: item.branch,
+      type: item.type,
+      category: item.category || '',
+      description: item.description || '',
+      amount: item.amount,
+      date: item.date,
+      notes: item.notes || ''
+    })
+    setShowModal(true)
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا المصروف؟')) return
+
     try {
       await deleteExpense(id)
+      alert('✅ تم حذف المصروف بنجاح')
       loadExpenses()
     } catch (error) {
       console.error('Error deleting expense:', error)
+      alert('❌ حدث خطأ أثناء الحذف')
     }
   }
 
@@ -133,7 +164,20 @@ function MaterialExpensesContent() {
               </div>
             </div>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={() => {
+                setIsEditing(false)
+                setEditingId(null)
+                setFormData({
+                  branch: 'tailoring',
+                  type: 'material',
+                  category: '',
+                  description: '',
+                  amount: 0,
+                  date: new Date().toISOString().split('T')[0],
+                  notes: ''
+                })
+                setShowModal(true)
+              }}
               className="flex items-center gap-2 px-4 py-3 bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-xl hover:shadow-lg transition-all"
             >
               <Plus className="w-5 h-5" />
@@ -231,14 +275,24 @@ function MaterialExpensesContent() {
                         <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
                       <p className="text-lg font-bold text-orange-600">{formatCurrency(item.amount)}</p>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="تعديل"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -265,8 +319,17 @@ function MaterialExpensesContent() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold text-gray-900">إضافة مصروف مواد</h3>
-                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {isEditing ? 'تعديل مصروف المواد' : 'إضافة مصروف مواد'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowModal(false)
+                      setIsEditing(false)
+                      setEditingId(null)
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -320,7 +383,7 @@ function MaterialExpensesContent() {
                     type="submit"
                     className="w-full py-3 bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-xl font-medium hover:shadow-lg transition-all"
                   >
-                    حفظ المصروف
+                    {isEditing ? 'تحديث المصروف' : 'حفظ المصروف'}
                   </button>
                 </form>
               </motion.div>

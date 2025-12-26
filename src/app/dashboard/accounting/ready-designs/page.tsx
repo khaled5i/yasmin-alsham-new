@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import {
@@ -12,11 +13,13 @@ import {
   ShoppingCart,
   Home,
   Users,
-  ChevronLeft
+  ChevronLeft,
+  Settings
 } from 'lucide-react'
-import ProtectedRoute from '@/components/ProtectedRoute'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
 import type { FinancialSummary } from '@/types/simple-accounting'
+import { useAuthStore } from '@/store/authStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
 const sections = [
   {
@@ -50,12 +53,22 @@ const sections = [
     icon: Users,
     href: '/dashboard/accounting/ready-designs/salaries',
     color: 'from-purple-500 to-purple-600'
+  },
+  {
+    id: 'categories',
+    name: 'إدارة الفئات',
+    description: 'إضافة وتعديل فئات المحاسبة',
+    icon: Settings,
+    href: '/dashboard/accounting/ready-designs/categories',
+    color: 'from-pink-500 to-rose-600'
   }
 ]
 
 function ReadyDesignsAccountingContent() {
   const [stats, setStats] = useState<FinancialSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const { user } = useAuthStore()
+  const { workerType, getDashboardRoute } = useWorkerPermissions()
 
   useEffect(() => {
     const loadStats = async () => {
@@ -75,6 +88,17 @@ function ReadyDesignsAccountingContent() {
     return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
   }
 
+  // تحديد مسار العودة حسب نوع المستخدم
+  const getBackRoute = () => {
+    if (user?.role === 'admin') {
+      return '/dashboard/accounting'
+    }
+    if (user?.role === 'worker' && workerType) {
+      return getDashboardRoute()
+    }
+    return '/dashboard/accounting'
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100" dir="rtl">
       <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -86,7 +110,7 @@ function ReadyDesignsAccountingContent() {
         >
           <div className="flex items-center gap-4 mb-6">
             <Link
-              href="/dashboard/accounting"
+              href={getBackRoute()}
               className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
             >
               <ArrowLeft className="w-6 h-6 rotate-180" />
@@ -180,10 +204,40 @@ function ReadyDesignsAccountingContent() {
 }
 
 export default function ReadyDesignsAccountingPage() {
-  return (
-    <ProtectedRoute requiredRole="admin">
-      <ReadyDesignsAccountingContent />
-    </ProtectedRoute>
-  )
+  const router = useRouter()
+  const { user, isLoading } = useAuthStore()
+  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+
+  useEffect(() => {
+    // التحقق من تسجيل الدخول
+    if (!isLoading && !user) {
+      router.push('/login')
+      return
+    }
+
+    // التحقق من الصلاحيات - السماح للمدير والمحاسب فقط
+    if (!isLoading && !permissionsLoading && user) {
+      const isAdmin = user.role === 'admin'
+      const isAccountant = user.role === 'worker' && workerType === 'accountant'
+
+      if (!isAdmin && !isAccountant) {
+        router.push('/dashboard')
+        return
+      }
+    }
+  }, [user, workerType, isLoading, permissionsLoading, router])
+
+  if (isLoading || permissionsLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-emerald-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 text-lg">جاري التحميل...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return <ReadyDesignsAccountingContent />
 }
 

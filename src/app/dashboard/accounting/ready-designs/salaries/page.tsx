@@ -12,27 +12,24 @@ import {
   Plus,
   X,
   Trash2,
-  Receipt
+  Receipt,
+  Pencil
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import { getExpenses, createExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
+import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
-
-const SALARY_CATEGORIES = [
-  { id: 'monthly_salary', label: 'راتب شهري' },
-  { id: 'daily_wage', label: 'أجر يومي' },
-  { id: 'overtime', label: 'عمل إضافي' },
-  { id: 'bonus', label: 'مكافأة' },
-  { id: 'deduction', label: 'خصم' }
-]
+import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 
 function ReadyDesignsSalariesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
     branch: 'ready_designs',
     type: 'salary',
@@ -44,6 +41,7 @@ function ReadyDesignsSalariesContent() {
 
   useEffect(() => {
     loadExpenses()
+    loadCategories()
   }, [])
 
   const loadExpenses = async () => {
@@ -58,52 +56,97 @@ function ReadyDesignsSalariesContent() {
     }
   }
 
+  const loadCategories = async () => {
+    try {
+      const data = await getCategories('ready_designs', 'salary')
+      setCategories(data)
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.category || !formData.amount || !formData.description) return
 
     setSaving(true)
     try {
-      const result = await createExpense(formData as CreateExpenseInput)
-      if (result) {
-        setExpenses([result, ...expenses])
-        setShowModal(false)
-        setFormData({
-          branch: 'ready_designs',
-          type: 'salary',
-          category: '',
-          description: '',
-          amount: 0,
-          date: new Date().toISOString().split('T')[0]
-        })
+      if (isEditing && editingId) {
+        const result = await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
+        if (result) {
+          setExpenses(expenses.map(item => item.id === editingId ? result : item))
+          alert('✅ تم تحديث الراتب بنجاح')
+        }
+      } else {
+        const result = await createExpense(formData as CreateExpenseInput)
+        if (result) {
+          setExpenses([result, ...expenses])
+          alert('✅ تم إضافة الراتب بنجاح')
+        }
       }
+
+      setShowModal(false)
+      setIsEditing(false)
+      setEditingId(null)
+      setFormData({
+        branch: 'ready_designs',
+        type: 'salary',
+        category: '',
+        description: '',
+        amount: 0,
+        date: new Date().toISOString().split('T')[0]
+      })
     } catch (error) {
-      console.error('Error creating expense:', error)
+      console.error('Error saving expense:', error)
+      alert('❌ حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
   }
 
+  const handleEdit = (item: Expense) => {
+    setIsEditing(true)
+    setEditingId(item.id)
+    setFormData({
+      branch: item.branch,
+      type: item.type,
+      category: item.category || '',
+      description: item.description || '',
+      amount: item.amount,
+      date: item.date,
+      notes: item.notes || '',
+      employee_name: item.employee_name || ''
+    })
+    setShowModal(true)
+  }
+
   const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذه العملية؟')) return
-    const success = await deleteExpense(id)
-    if (success) {
-      setExpenses(expenses.filter(e => e.id !== id))
+
+    try {
+      const success = await deleteExpense(id)
+      if (success) {
+        setExpenses(expenses.filter(e => e.id !== id))
+        alert('✅ تم حذف الراتب بنجاح')
+      } else {
+        alert('❌ فشل حذف الراتب')
+      }
+    } catch (error) {
+      console.error('Error deleting expense:', error)
+      alert('❌ حدث خطأ أثناء الحذف')
     }
   }
 
-  const getCategoryLabel = (categoryId: string) => {
-    return SALARY_CATEGORIES.find(c => c.id === categoryId)?.label || categoryId
-  }
-
   const filteredExpenses = expenses.filter(item => {
+    const categoryLabel = getCategoryLabel(categories, item.category)
     const matchesSearch = item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getCategoryLabel(item.category).includes(searchQuery)
+      categoryLabel.includes(searchQuery)
     const matchesDate = !dateFilter || item.date?.startsWith(dateFilter)
     return matchesSearch && matchesDate
   })
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
+  const categoryOptions = categoriesToOptions(categories)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
@@ -192,7 +235,19 @@ function ReadyDesignsSalariesContent() {
                 />
               </div>
               <button
-                onClick={() => setShowModal(true)}
+                onClick={() => {
+                  setIsEditing(false)
+                  setEditingId(null)
+                  setFormData({
+                    branch: 'ready_designs',
+                    type: 'salary',
+                    category: '',
+                    description: '',
+                    amount: 0,
+                    date: new Date().toISOString().split('T')[0]
+                  })
+                  setShowModal(true)
+                }}
                 className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors flex items-center gap-2"
               >
                 <Plus className="w-5 h-5" />
@@ -232,18 +287,28 @@ function ReadyDesignsSalariesContent() {
                     </div>
                     <div>
                       <p className="font-bold text-gray-900">{item.description}</p>
-                      <p className="text-sm text-gray-500">{getCategoryLabel(item.category)}</p>
+                      <p className="text-sm text-gray-500">{getCategoryLabel(categories, item.category)}</p>
                       <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <p className="text-lg font-bold text-purple-600">{formatCurrency(item.amount)}</p>
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEdit(item)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="تعديل"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -269,8 +334,17 @@ function ReadyDesignsSalariesContent() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">إضافة راتب / مكافأة</h2>
-                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {isEditing ? 'تعديل الراتب' : 'إضافة راتب / مكافأة'}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setShowModal(false)
+                      setIsEditing(false)
+                      setEditingId(null)
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-xl"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -287,15 +361,15 @@ function ReadyDesignsSalariesContent() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">نوع الدفعة</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">فئة الراتب</label>
                     <select
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500"
                       required
                     >
-                      <option value="">اختر النوع</option>
-                      {SALARY_CATEGORIES.map(cat => (
+                      <option value="">اختر الفئة</option>
+                      {categoryOptions.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.label}</option>
                       ))}
                     </select>
@@ -327,7 +401,7 @@ function ReadyDesignsSalariesContent() {
                     disabled={saving}
                     className="w-full py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
                   >
-                    {saving ? 'جاري الحفظ...' : 'حفظ'}
+                    {saving ? 'جاري الحفظ...' : (isEditing ? 'تحديث' : 'حفظ')}
                   </button>
                 </form>
               </motion.div>

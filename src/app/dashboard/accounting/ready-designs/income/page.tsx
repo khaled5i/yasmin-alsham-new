@@ -12,21 +12,27 @@ import {
   Plus,
   X,
   Trash2,
-  Receipt
+  Receipt,
+  Pencil
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import { getIncome, createIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
+import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
+import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 
 function ReadyDesignsIncomeContent() {
   const [incomeList, setIncomeList] = useState<Income[]>([])
+  const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateIncomeInput>>({
     branch: 'ready_designs',
+    category: '',
     customer_name: '',
     description: '',
     amount: 0,
@@ -36,6 +42,7 @@ function ReadyDesignsIncomeContent() {
 
   useEffect(() => {
     loadIncome()
+    loadCategories()
   }, [])
 
   const loadIncome = async () => {
@@ -50,48 +57,98 @@ function ReadyDesignsIncomeContent() {
     }
   }
 
+  const loadCategories = async () => {
+    try {
+      const data = await getCategories('ready_designs', 'income')
+      setCategories(data)
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.customer_name || !formData.amount) return
+    if (!formData.category || !formData.customer_name || !formData.amount) return
 
     setSaving(true)
     try {
-      const result = await createIncome(formData as CreateIncomeInput)
-      if (result) {
-        setIncomeList([result, ...incomeList])
-        setShowModal(false)
-        setFormData({
-          branch: 'ready_designs',
-          customer_name: '',
-          description: '',
-          amount: 0,
-          date: new Date().toISOString().split('T')[0],
-          is_automatic: false
-        })
+      if (isEditing && editingId) {
+        const result = await updateIncome(editingId, formData as Partial<CreateIncomeInput>)
+        if (result) {
+          setIncomeList(incomeList.map(item => item.id === editingId ? result : item))
+          alert('✅ تم تحديث المبيعة بنجاح')
+        }
+      } else {
+        const result = await createIncome(formData as CreateIncomeInput)
+        if (result) {
+          setIncomeList([result, ...incomeList])
+          alert('✅ تم إضافة المبيعة بنجاح')
+        }
       }
+
+      setShowModal(false)
+      setIsEditing(false)
+      setEditingId(null)
+      setFormData({
+        branch: 'ready_designs',
+        category: '',
+        customer_name: '',
+        description: '',
+        amount: 0,
+        date: new Date().toISOString().split('T')[0],
+        is_automatic: false
+      })
     } catch (error) {
-      console.error('Error creating income:', error)
+      console.error('Error saving income:', error)
+      alert('❌ حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
   }
 
+  const handleEdit = (item: Income) => {
+    setIsEditing(true)
+    setEditingId(item.id)
+    setFormData({
+      branch: item.branch,
+      category: item.category || '',
+      customer_name: item.customer_name || '',
+      description: item.description || '',
+      amount: item.amount,
+      date: item.date,
+      is_automatic: false
+    })
+    setShowModal(true)
+  }
+
   const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذه العملية؟')) return
-    const success = await deleteIncome(id)
-    if (success) {
-      setIncomeList(incomeList.filter(i => i.id !== id))
+
+    try {
+      const success = await deleteIncome(id)
+      if (success) {
+        setIncomeList(incomeList.filter(i => i.id !== id))
+        alert('✅ تم حذف المبيعة بنجاح')
+      } else {
+        alert('❌ فشل حذف المبيعة')
+      }
+    } catch (error) {
+      console.error('Error deleting income:', error)
+      alert('❌ حدث خطأ أثناء الحذف')
     }
   }
 
   const filteredIncome = incomeList.filter(item => {
+    const categoryLabel = getCategoryLabel(categories, item.category || '')
     const matchesSearch = item.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      categoryLabel.includes(searchQuery)
     const matchesDate = !dateFilter || item.date?.startsWith(dateFilter)
     return matchesSearch && matchesDate
   })
 
   const totalIncome = filteredIncome.reduce((sum, item) => sum + item.amount, 0)
+  const categoryOptions = categoriesToOptions(categories)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
@@ -180,7 +237,20 @@ function ReadyDesignsIncomeContent() {
                 />
               </div>
               <button
-                onClick={() => setShowModal(true)}
+                onClick={() => {
+                  setIsEditing(false)
+                  setEditingId(null)
+                  setFormData({
+                    branch: 'ready_designs',
+                    category: '',
+                    customer_name: '',
+                    description: '',
+                    amount: 0,
+                    date: new Date().toISOString().split('T')[0],
+                    is_automatic: false
+                  })
+                  setShowModal(true)
+                }}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors flex items-center gap-2"
               >
                 <Plus className="w-5 h-5" />
@@ -220,18 +290,33 @@ function ReadyDesignsIncomeContent() {
                     </div>
                     <div>
                       <p className="font-bold text-gray-900">{item.customer_name}</p>
-                      <p className="text-sm text-gray-500">{item.description || 'بيع فستان جاهز'}</p>
+                      <p className="text-sm text-gray-500">
+                        {item.category ? getCategoryLabel(categories, item.category) : 'بيع فستان جاهز'}
+                        {item.description && ` - ${item.description}`}
+                      </p>
                       <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <p className="text-lg font-bold text-emerald-600">{formatCurrency(item.amount)}</p>
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    {!item.is_automatic && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="تعديل"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -257,8 +342,17 @@ function ReadyDesignsIncomeContent() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">إضافة بيع جديد</h2>
-                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {isEditing ? 'تعديل المبيعة' : 'إضافة بيع جديد'}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setShowModal(false)
+                      setIsEditing(false)
+                      setEditingId(null)
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-xl"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -274,14 +368,30 @@ function ReadyDesignsIncomeContent() {
                       required
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الوصف</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">فئة المبيعة</label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">اختر الفئة</option>
+                      {categoryOptions.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">الوصف (اختياري)</label>
                     <input
                       type="text"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                      placeholder="نوع الفستان أو تفاصيل البيع..."
+                      placeholder="تفاصيل إضافية عن المبيعة..."
                     />
                   </div>
                   <div>
@@ -311,7 +421,7 @@ function ReadyDesignsIncomeContent() {
                     disabled={saving}
                     className="w-full py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50"
                   >
-                    {saving ? 'جاري الحفظ...' : 'حفظ'}
+                    {saving ? 'جاري الحفظ...' : (isEditing ? 'تحديث' : 'حفظ')}
                   </button>
                 </form>
               </motion.div>

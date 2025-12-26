@@ -12,20 +12,24 @@ import {
   Plus,
   X,
   Trash2,
-  Receipt
+  Receipt,
+  Pencil
 } from 'lucide-react'
-import ProtectedRoute from '@/components/ProtectedRoute'
-import { getExpenses, createExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
-import { FIXED_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
+import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
+import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 
 function FabricsFixedExpensesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
     branch: 'fabrics',
     type: 'fixed',
@@ -37,6 +41,7 @@ function FabricsFixedExpensesContent() {
 
   useEffect(() => {
     loadExpenses()
+    loadCategories()
   }, [])
 
   const loadExpenses = async () => {
@@ -51,50 +56,94 @@ function FabricsFixedExpensesContent() {
     }
   }
 
+  const loadCategories = async () => {
+    try {
+      const data = await getCategories('fabrics', 'fixed_expense')
+      setCategories(data)
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.category || !formData.amount) return
 
     setSaving(true)
     try {
-      const result = await createExpense(formData as CreateExpenseInput)
-      if (result) {
-        setExpenses([result, ...expenses])
-        setShowModal(false)
-        setFormData({
-          branch: 'fabrics',
-          type: 'fixed',
-          category: '',
-          description: '',
-          amount: 0,
-          date: new Date().toISOString().split('T')[0]
-        })
+      if (isEditing && editingId) {
+        const result = await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
+        if (result) {
+          setExpenses(expenses.map(item => item.id === editingId ? result : item))
+          alert('✅ تم تحديث المصروف بنجاح')
+        }
+      } else {
+        const result = await createExpense(formData as CreateExpenseInput)
+        if (result) {
+          setExpenses([result, ...expenses])
+          alert('✅ تم إضافة المصروف بنجاح')
+        }
       }
+
+      setShowModal(false)
+      setIsEditing(false)
+      setEditingId(null)
+      setFormData({
+        branch: 'fabrics',
+        type: 'fixed',
+        category: '',
+        description: '',
+        amount: 0,
+        date: new Date().toISOString().split('T')[0]
+      })
     } catch (error) {
-      console.error('Error creating expense:', error)
+      console.error('Error saving expense:', error)
+      alert('❌ حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('هل أنت متأكد من حذف هذه العملية؟')) return
-    const success = await deleteExpense(id)
-    if (success) {
-      setExpenses(expenses.filter(e => e.id !== id))
-    }
+  const handleEdit = (item: Expense) => {
+    setIsEditing(true)
+    setEditingId(item.id)
+    setFormData({
+      branch: item.branch,
+      type: item.type,
+      category: item.category || '',
+      description: item.description || '',
+      amount: item.amount,
+      date: item.date,
+      notes: item.notes || ''
+    })
+    setShowModal(true)
   }
 
-  const getCategoryLabel = (categoryId: string) => {
-    return FIXED_EXPENSE_CATEGORIES.find(c => c.id === categoryId)?.label || categoryId
+  const handleDelete = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذه العملية؟')) return
+
+    try {
+      const success = await deleteExpense(id)
+      if (success) {
+        setExpenses(expenses.filter(e => e.id !== id))
+        alert('✅ تم حذف المصروف بنجاح')
+      } else {
+        alert('❌ فشل حذف المصروف')
+      }
+    } catch (error) {
+      console.error('Error deleting expense:', error)
+      alert('❌ حدث خطأ أثناء الحذف')
+    }
   }
 
   const filteredExpenses = expenses.filter(item => {
     const matchesSearch = item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getCategoryLabel(item.category).includes(searchQuery)
+      getCategoryLabel(categories, item.category).includes(searchQuery)
     const matchesDate = !dateFilter || item.date?.startsWith(dateFilter)
     return matchesSearch && matchesDate
   })
+
+  const categoryOptions = categoriesToOptions(categories)
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
 
@@ -185,7 +234,19 @@ function FabricsFixedExpensesContent() {
                 />
               </div>
               <button
-                onClick={() => setShowModal(true)}
+                onClick={() => {
+                  setIsEditing(false)
+                  setEditingId(null)
+                  setFormData({
+                    branch: 'fabrics',
+                    type: 'fixed',
+                    category: '',
+                    description: '',
+                    amount: 0,
+                    date: new Date().toISOString().split('T')[0]
+                  })
+                  setShowModal(true)
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2"
               >
                 <Plus className="w-5 h-5" />
@@ -224,19 +285,29 @@ function FabricsFixedExpensesContent() {
                       <Package className="w-6 h-6 text-blue-600" />
                     </div>
                     <div>
-                      <p className="font-bold text-gray-900">{getCategoryLabel(item.category)}</p>
+                      <p className="font-bold text-gray-900">{getCategoryLabel(categories, item.category)}</p>
                       <p className="text-sm text-gray-500">{item.description || 'بدون وصف'}</p>
                       <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <p className="text-lg font-bold text-blue-600">{formatCurrency(item.amount)}</p>
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEdit(item)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="تعديل"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -262,8 +333,17 @@ function FabricsFixedExpensesContent() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">إضافة مصروف ثابت</h2>
-                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {isEditing ? 'تعديل المصروف الثابت' : 'إضافة مصروف ثابت'}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setShowModal(false)
+                      setIsEditing(false)
+                      setEditingId(null)
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-xl"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -277,7 +357,7 @@ function FabricsFixedExpensesContent() {
                       required
                     >
                       <option value="">اختر النوع</option>
-                      {FIXED_EXPENSE_CATEGORIES.map(cat => (
+                      {categoryOptions.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.label}</option>
                       ))}
                     </select>
@@ -319,7 +399,7 @@ function FabricsFixedExpensesContent() {
                     disabled={saving}
                     className="w-full py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
-                    {saving ? 'جاري الحفظ...' : 'حفظ'}
+                    {saving ? 'جاري الحفظ...' : (isEditing ? 'تحديث' : 'حفظ')}
                   </button>
                 </form>
               </motion.div>
@@ -333,9 +413,9 @@ function FabricsFixedExpensesContent() {
 
 export default function FabricsFixedExpensesPage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
       <FabricsFixedExpensesContent />
-    </ProtectedRoute>
+    </ProtectedWorkerRoute>
   )
 }
 

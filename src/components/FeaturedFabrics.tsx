@@ -120,21 +120,11 @@ export default function FeaturedFabrics() {
           viewport={{ once: true }}
           className="text-center max-lg:mb-[1.5vh] lg:mb-16"
         >
-          <h2 className="max-lg:text-[clamp(1.75rem,5.5vw,2.25rem)] lg:text-5xl font-bold max-lg:mb-[1vh] lg:mb-6">
+          <h2 className="max-lg:text-[clamp(1.75rem,5.5vw,2.25rem)] lg:text-5xl font-bold">
             <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
               متجر الأقمشة
             </span>
           </h2>
-          <p className="max-lg:text-[clamp(1rem,3.5vw,1.125rem)] lg:text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
-            أقمشة فاخرة ومتنوعة لتصميم فستان أحلامك
-          </p>
-
-          {/* ملاحظة مهمة - للديسكتوب فقط */}
-          <div className="hidden lg:block bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4 max-w-2xl mx-auto mt-6">
-            <p className="text-blue-800 font-medium text-center">
-              ✨ اختاري القماش المناسب واحجزي موعداً لتصميم فستانك الخاص
-            </p>
-          </div>
         </motion.div>
 
         {/* حالة التحميل */}

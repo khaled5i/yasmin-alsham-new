@@ -11,11 +11,15 @@ import {
   Calendar,
   Plus,
   X,
-  Receipt
+  Receipt,
+  Ruler,
+  Pencil,
+  Trash2
 } from 'lucide-react'
-import ProtectedRoute from '@/components/ProtectedRoute'
-import { getIncome, createIncome } from '@/lib/services/simple-accounting-service'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
+import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
+import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 
 // ============================================================================
 // المكون الرئيسي
@@ -23,21 +27,27 @@ import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
 
 function FabricsIncomeContent() {
   const [income, setIncome] = useState<Income[]>([])
+  const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateIncomeInput>>({
     branch: 'fabrics',
+    category: '',
     customer_name: '',
     description: '',
     amount: 0,
+    quantity_meters: undefined,
     date: new Date().toISOString().split('T')[0]
   })
 
   useEffect(() => {
     loadIncome()
+    loadCategories()
   }, [])
 
   const loadIncome = async () => {
@@ -52,39 +62,99 @@ function FabricsIncomeContent() {
     }
   }
 
+  const loadCategories = async () => {
+    try {
+      const data = await getCategories('fabrics', 'income')
+      setCategories(data)
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.customer_name || !formData.amount) return
+    if (!formData.category || !formData.customer_name || !formData.amount) return
 
     setSaving(true)
     try {
-      const result = await createIncome(formData as CreateIncomeInput)
-      if (result) {
-        setIncome([result, ...income])
-        setShowModal(false)
-        setFormData({
-          branch: 'fabrics',
-          customer_name: '',
-          description: '',
-          amount: 0,
-          date: new Date().toISOString().split('T')[0]
-        })
+      if (isEditing && editingId) {
+        // تحديث مبيعة موجودة
+        const result = await updateIncome(editingId, formData as Partial<CreateIncomeInput>)
+        if (result) {
+          setIncome(income.map(item => item.id === editingId ? result : item))
+          alert('✅ تم تحديث المبيعة بنجاح')
+        }
+      } else {
+        // إضافة مبيعة جديدة
+        const result = await createIncome(formData as CreateIncomeInput)
+        if (result) {
+          setIncome([result, ...income])
+          alert('✅ تم إضافة المبيعة بنجاح')
+        }
       }
+
+      setShowModal(false)
+      setIsEditing(false)
+      setEditingId(null)
+      setFormData({
+        branch: 'fabrics',
+        category: '',
+        customer_name: '',
+        description: '',
+        amount: 0,
+        quantity_meters: undefined,
+        date: new Date().toISOString().split('T')[0]
+      })
     } catch (error) {
-      console.error('Error creating income:', error)
+      console.error('Error saving income:', error)
+      alert('❌ حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
   }
 
+  const handleEdit = (item: Income) => {
+    setIsEditing(true)
+    setEditingId(item.id)
+    setFormData({
+      branch: item.branch,
+      category: item.category || '',
+      customer_name: item.customer_name || '',
+      description: item.description || '',
+      amount: item.amount,
+      quantity_meters: item.quantity_meters,
+      date: item.date
+    })
+    setShowModal(true)
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذه المبيعة؟')) return
+
+    try {
+      const success = await deleteIncome(id)
+      if (success) {
+        setIncome(income.filter(item => item.id !== id))
+        alert('✅ تم حذف المبيعة بنجاح')
+      } else {
+        alert('❌ فشل حذف المبيعة')
+      }
+    } catch (error) {
+      console.error('Error deleting income:', error)
+      alert('❌ حدث خطأ أثناء الحذف')
+    }
+  }
+
   const filteredIncome = income.filter(item => {
     const matchesSearch = item.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.category && getCategoryLabel(categories, item.category).includes(searchQuery))
     const matchesDate = !dateFilter || item.date?.startsWith(dateFilter)
     return matchesSearch && matchesDate
   })
 
   const totalIncome = filteredIncome.reduce((sum, item) => sum + item.amount, 0)
+  const categoryOptions = categoriesToOptions(categories)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
@@ -173,7 +243,20 @@ function FabricsIncomeContent() {
                 />
               </div>
               <button
-                onClick={() => setShowModal(true)}
+                onClick={() => {
+                  setIsEditing(false)
+                  setEditingId(null)
+                  setFormData({
+                    branch: 'fabrics',
+                    category: '',
+                    customer_name: '',
+                    description: '',
+                    amount: 0,
+                    quantity_meters: undefined,
+                    date: new Date().toISOString().split('T')[0]
+                  })
+                  setShowModal(true)
+                }}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors flex items-center gap-2"
               >
                 <Plus className="w-5 h-5" />
@@ -206,19 +289,58 @@ function FabricsIncomeContent() {
                 transition={{ delay: 0.05 * index }}
                 className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 flex-1">
                     <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
                       <Package className="w-6 h-6 text-emerald-600" />
                     </div>
                     <div>
                       <p className="font-bold text-gray-900">{item.customer_name}</p>
+                      {item.category && (
+                        <p className="text-sm font-medium text-emerald-600">{getCategoryLabel(categories, item.category)}</p>
+                      )}
                       <p className="text-sm text-gray-500">{item.description}</p>
-                      <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs text-gray-400">{formatDate(item.date)}</p>
+                        {item.quantity_meters && (
+                          <>
+                            <span className="text-xs text-gray-300">•</span>
+                            <div className="flex items-center gap-1 text-xs text-blue-600">
+                              <Ruler className="w-3 h-3" />
+                              <span>{item.quantity_meters} متر</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-left">
-                    <p className="text-lg font-bold text-emerald-600">{formatCurrency(item.amount)}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="text-left">
+                      <p className="text-lg font-bold text-emerald-600">{formatCurrency(item.amount)}</p>
+                      {item.quantity_meters && item.quantity_meters > 0 && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {formatCurrency(item.amount / item.quantity_meters)}/م
+                        </p>
+                      )}
+                    </div>
+                    {!item.is_automatic && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="تعديل"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -244,8 +366,17 @@ function FabricsIncomeContent() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">إضافة مبيعة جديدة</h2>
-                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {isEditing ? 'تعديل المبيعة' : 'إضافة مبيعة جديدة'}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setShowModal(false)
+                      setIsEditing(false)
+                      setEditingId(null)
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-xl"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -256,48 +387,95 @@ function FabricsIncomeContent() {
                       type="text"
                       value={formData.customer_name}
                       onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                       required
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">الوصف</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">فئة المبيعة</label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">اختر الفئة</option>
+                      {categoryOptions.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">الوصف (اختياري)</label>
                     <input
                       type="text"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                      placeholder="نوع القماش، الكمية..."
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      placeholder="تفاصيل إضافية عن المبيعة..."
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ (ر.س)</label>
-                    <input
-                      type="number"
-                      value={formData.amount || ''}
-                      onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                      min="0"
-                      step="0.01"
-                      required
-                    />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ (ر.س)</label>
+                      <input
+                        type="number"
+                        value={formData.amount || ''}
+                        onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                        <Ruler className="w-4 h-4" />
+                        الكمية (متر)
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.quantity_meters || ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          quantity_meters: e.target.value ? parseFloat(e.target.value) : undefined
+                        })}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                        min="0"
+                        step="0.1"
+                        placeholder="اختياري"
+                      />
+                    </div>
                   </div>
+
+                  {formData.amount && formData.quantity_meters && formData.quantity_meters > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                      <p className="text-sm text-blue-800 flex items-center justify-between">
+                        <span>السعر لكل متر:</span>
+                        <span className="font-bold">{formatCurrency(formData.amount / formData.quantity_meters)}/م</span>
+                      </p>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">التاريخ</label>
                     <input
                       type="date"
                       value={formData.date}
                       onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                       required
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={saving}
-                    className="w-full py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                    className="w-full py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50 font-medium"
                   >
-                    {saving ? 'جاري الحفظ...' : 'حفظ'}
+                    {saving ? 'جاري الحفظ...' : (isEditing ? 'تحديث' : 'حفظ')}
                   </button>
                 </form>
               </motion.div>
@@ -311,9 +489,9 @@ function FabricsIncomeContent() {
 
 export default function FabricsIncomePage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
       <FabricsIncomeContent />
-    </ProtectedRoute>
+    </ProtectedWorkerRoute>
   )
 }
 

@@ -6,8 +6,14 @@ import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2 } from 'luci
 import ImageUpload from '@/components/ImageUpload'
 import Link from 'next/link'
 import { fabricService, Fabric, UpdateFabricData, CreateFabricData } from '@/lib/services/fabric-service'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
+import { useAuthStore } from '@/store/authStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
-export default function FabricsAdmin() {
+function FabricsAdminContent() {
+  const { user } = useAuthStore()
+  const { workerType, getDashboardRoute } = useWorkerPermissions()
+
   const [fabrics, setFabrics] = useState<Fabric[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<Fabric>>({})
@@ -307,17 +313,38 @@ export default function FabricsAdmin() {
 
   const fabricCategories = ['حرير', 'شيفون', 'ساتان', 'دانتيل', 'تول', 'قطن', 'كريب', 'أورجانزا', 'مخمل', 'جاكار', 'تفتا', 'جورجيت']
 
+  // تحديد مسار العودة حسب نوع المستخدم
+  const getBackRoute = () => {
+    if (user?.role === 'admin') {
+      return '/dashboard'
+    }
+    if (user?.role === 'worker' && workerType) {
+      return getDashboardRoute()
+    }
+    return '/dashboard'
+  }
+
+  const getBackLabel = () => {
+    if (user?.role === 'admin') {
+      return 'العودة إلى لوحة المدير'
+    }
+    if (user?.role === 'worker' && workerType === 'fabric_store_manager') {
+      return 'العودة إلى لوحة التحكم'
+    }
+    return 'العودة إلى لوحة التحكم'
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-16 sm:pt-20">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
         {/* زر الرجوع */}
         <div className="mb-3">
           <Link
-            href="/dashboard"
-            className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300"
+            href={getBackRoute()}
+            className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300 group"
           >
-            <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5" />
-            <span className="text-sm lg:text-base">العودة إلى لوحة المدير</span>
+            <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5 group-hover:translate-x-1 transition-transform" />
+            <span className="text-sm lg:text-base font-medium">{getBackLabel()}</span>
           </Link>
         </div>
 
@@ -1017,5 +1044,10 @@ export default function FabricsAdmin() {
   )
 }
 
-
-
+export default function FabricsAdmin() {
+  return (
+    <ProtectedWorkerRoute requiredPermission="canAccessFabrics" allowAdmin={true}>
+      <FabricsAdminContent />
+    </ProtectedWorkerRoute>
+  )
+}

@@ -10,10 +10,11 @@ import {
   Search,
   Calendar,
   Trash2,
-  X
+  X,
+  Pencil
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import { getExpenses, createExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
+import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 
 const SALARY_CATEGORIES = [
@@ -30,6 +31,8 @@ function SalariesContent() {
   const [showModal, setShowModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateExpenseInput> & { employee_name?: string }>({
     branch: 'tailoring',
     type: 'salary',
@@ -70,8 +73,18 @@ function SalariesContent() {
         date: formData.date || new Date().toISOString().split('T')[0],
         notes: formData.notes
       }
-      await createExpense(expenseData)
+
+      if (isEditing && editingId) {
+        await updateExpense(editingId, expenseData)
+        alert('✅ تم تحديث الراتب بنجاح')
+      } else {
+        await createExpense(expenseData)
+        alert('✅ تم إضافة الراتب بنجاح')
+      }
+
       setShowModal(false)
+      setIsEditing(false)
+      setEditingId(null)
       setFormData({
         branch: 'tailoring',
         type: 'salary',
@@ -84,17 +97,37 @@ function SalariesContent() {
       })
       loadExpenses()
     } catch (error) {
-      console.error('Error creating expense:', error)
+      console.error('Error saving expense:', error)
+      alert('❌ حدث خطأ أثناء الحفظ')
     }
+  }
+
+  const handleEdit = (item: Expense) => {
+    setIsEditing(true)
+    setEditingId(item.id)
+    setFormData({
+      branch: item.branch,
+      type: item.type,
+      category: item.category || '',
+      description: item.description || '',
+      amount: item.amount,
+      date: item.date,
+      notes: item.notes || '',
+      employee_name: ''
+    })
+    setShowModal(true)
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا السجل؟')) return
+
     try {
       await deleteExpense(id)
+      alert('✅ تم حذف الراتب بنجاح')
       loadExpenses()
     } catch (error) {
       console.error('Error deleting expense:', error)
+      alert('❌ حدث خطأ أثناء الحذف')
     }
   }
 
@@ -151,7 +184,21 @@ function SalariesContent() {
               </div>
             </div>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={() => {
+                setIsEditing(false)
+                setEditingId(null)
+                setFormData({
+                  branch: 'tailoring',
+                  type: 'salary',
+                  category: '',
+                  description: '',
+                  amount: 0,
+                  date: new Date().toISOString().split('T')[0],
+                  notes: '',
+                  employee_name: ''
+                })
+                setShowModal(true)
+              }}
               className="flex items-center gap-2 px-4 py-3 bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all"
             >
               <Plus className="w-5 h-5" />
@@ -249,14 +296,24 @@ function SalariesContent() {
                         <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
                       <p className="text-lg font-bold text-purple-600">{formatCurrency(item.amount)}</p>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="تعديل"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -283,8 +340,17 @@ function SalariesContent() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold text-gray-900">إضافة راتب</h3>
-                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {isEditing ? 'تعديل الراتب' : 'إضافة راتب'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowModal(false)
+                      setIsEditing(false)
+                      setEditingId(null)
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -339,7 +405,7 @@ function SalariesContent() {
                     type="submit"
                     className="w-full py-3 bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition-all"
                   >
-                    حفظ الراتب
+                    {isEditing ? 'تحديث الراتب' : 'حفظ الراتب'}
                   </button>
                 </form>
               </motion.div>
