@@ -11,6 +11,7 @@ interface ImageUploadProps {
   onImagesChange: (images: string[]) => void
   maxImages?: number
   useSupabaseStorage?: boolean // استخدام Supabase Storage أو base64
+  acceptVideo?: boolean // قبول ملفات الفيديو
 }
 
 interface FileProgress {
@@ -21,8 +22,9 @@ interface FileProgress {
 export default function ImageUpload({
   images,
   onImagesChange,
-  maxImages = 10,
-  useSupabaseStorage = true
+  maxImages = 999,
+  useSupabaseStorage = true,
+  acceptVideo = true
 }: ImageUploadProps) {
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -31,6 +33,7 @@ export default function ImageUpload({
   const [showOptions, setShowOptions] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const { t } = useTranslation()
 
   const handleFileSelect = async (files: FileList | null) => {
@@ -60,10 +63,18 @@ export default function ImageUpload({
     })
     setUploadProgress(progressMap)
 
-    // رفع الصور
+    // رفع الصور والفيديوهات
     for (const file of filesToUpload) {
-      if (!file.type.startsWith('image/')) {
+      const isImage = file.type.startsWith('image/')
+      const isVideo = file.type.startsWith('video/')
+
+      if (!isImage && !isVideo) {
         setErrors(prev => [...prev, `${file.name}: نوع الملف غير مدعوم`])
+        continue
+      }
+
+      if (isVideo && !acceptVideo) {
+        setErrors(prev => [...prev, `${file.name}: الفيديوهات غير مسموحة`])
         continue
       }
 
@@ -146,8 +157,70 @@ export default function ImageUpload({
     onImagesChange(newImages)
   }
 
+  // دالة للصق الصور من الحافظة
+  const handlePaste = async (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    const files: File[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          files.push(file)
+        }
+      }
+    }
+
+    if (files.length > 0) {
+      const dataTransfer = new DataTransfer()
+      files.forEach(file => dataTransfer.items.add(file))
+      await handleFileSelect(dataTransfer.files)
+    }
+  }
+
+  // إضافة مستمع للصق عند تحميل المكون
+  useEffect(() => {
+    const handlePasteEvent = (e: ClipboardEvent) => handlePaste(e)
+    document.addEventListener('paste', handlePasteEvent)
+    return () => {
+      document.removeEventListener('paste', handlePasteEvent)
+    }
+  }, [images, uploading])
+
   const openFileDialog = () => {
     fileInputRef.current?.click()
+    setShowOptions(false)
+  }
+
+  // دالة للصق من الحافظة عند الضغط على الزر
+  const handlePasteFromClipboard = async () => {
+    try {
+      const clipboardItems = await navigator.clipboard.read()
+      const files: File[] = []
+
+      for (const clipboardItem of clipboardItems) {
+        for (const type of clipboardItem.types) {
+          if (type.startsWith('image/')) {
+            const blob = await clipboardItem.getType(type)
+            const file = new File([blob], `pasted-image-${Date.now()}.png`, { type })
+            files.push(file)
+          }
+        }
+      }
+
+      if (files.length > 0) {
+        const dataTransfer = new DataTransfer()
+        files.forEach(file => dataTransfer.items.add(file))
+        await handleFileSelect(dataTransfer.files)
+      } else {
+        setErrors(prev => [...prev, 'لا توجد صور في الحافظة'])
+      }
+    } catch (error) {
+      console.error('Error reading clipboard:', error)
+      setErrors(prev => [...prev, 'فشل قراءة الحافظة. تأكد من منح الإذن للمتصفح'])
+    }
     setShowOptions(false)
   }
 
@@ -200,7 +273,7 @@ export default function ImageUpload({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/jpg,image/png,image/webp"
+            accept={acceptVideo ? "image/*,video/*" : "image/*"}
             multiple
             onChange={(e) => handleFileSelect(e.target.files)}
             className="hidden"
@@ -233,13 +306,19 @@ export default function ImageUpload({
               <Upload className="w-12 h-12 text-gray-400 mx-auto" />
               <div>
                 <p className="text-lg font-medium text-gray-700">
-                  {dragOver ? t('drop_images_here') : 'اضغط لرفع الصور'}
+                  {dragOver ? t('drop_images_here') : 'اضغط لرفع الصور والفيديوهات'}
                 </p>
                 <p className="text-sm text-gray-500">
-                  التقط صورة أو اختر من المعرض • JPG, PNG, WEBP
+                  {acceptVideo
+                    ? 'التقط صورة أو اختر من المعرض • صور وفيديوهات'
+                    : 'التقط صورة أو اختر من المعرض • JPG, PNG, WEBP'
+                  }
+                </p>
+                <p className="text-xs text-pink-600 mt-2 font-medium">
+                  💡 يمكنك لصق الصور مباشرة (Ctrl+V أو Cmd+V)
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  {images.length} {t('of')} {maxImages} {t('images_text')}
+                  {images.length} ملف محمّل
                 </p>
               </div>
             </div>
@@ -273,7 +352,7 @@ export default function ImageUpload({
                 e.stopPropagation()
                 openFileDialog()
               }}
-              className="w-full px-4 py-3 text-right hover:bg-pink-50 transition-colors duration-200 flex items-center space-x-3 space-x-reverse"
+              className="w-full px-4 py-3 text-right hover:bg-pink-50 transition-colors duration-200 flex items-center space-x-3 space-x-reverse border-b border-gray-100"
             >
               <ImageIcon className="w-5 h-5 text-pink-600" />
               <div className="flex-1">
@@ -281,6 +360,23 @@ export default function ImageUpload({
                 <p className="text-xs text-gray-500">اختر صور موجودة من جهازك</p>
               </div>
             </button>
+
+            {/* زر لصق من الحافظة - يظهر فقط على الكمبيوتر */}
+            {typeof window !== 'undefined' && !('ontouchstart' in window) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handlePasteFromClipboard()
+                }}
+                className="w-full px-4 py-3 text-right hover:bg-pink-50 transition-colors duration-200 flex items-center space-x-3 space-x-reverse"
+              >
+                <Upload className="w-5 h-5 text-pink-600" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-800">لصق من الحافظة</p>
+                  <p className="text-xs text-gray-500">الصق الصور المنسوخة (Ctrl+V)</p>
+                </div>
+              </button>
+            )}
           </motion.div>
         )}
       </div>
@@ -348,42 +444,58 @@ export default function ImageUpload({
         </div>
       )}
 
-      {/* معرض الصور */}
+      {/* معرض الصور والفيديوهات */}
       {images.length > 0 && (
         <div className="space-y-4">
-          <h4 className="font-medium text-gray-700">الصور المرفوعة:</h4>
+          <h4 className="font-medium text-gray-700">الملفات المرفوعة:</h4>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             <AnimatePresence>
-              {images.map((image, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  className="relative group"
-                >
-                  <div className="aspect-square rounded-lg overflow-hidden border border-gray-200">
-                    <img
-                      src={image}
-                      alt={`صورة ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
+              {images.map((image, index) => {
+                // تحديد نوع الملف من الرابط
+                const isVideo = image.includes('.mp4') || image.includes('.mov') ||
+                  image.includes('.avi') || image.includes('.webm') ||
+                  image.includes('video')
 
-                  {/* زر الحذف */}
-                  <button
-                    onClick={() => removeImage(index)}
-                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:bg-red-600"
+                return (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="relative group"
                   >
-                    <X className="w-3 h-3" />
-                  </button>
+                    <div className="aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
+                      {isVideo ? (
+                        <video
+                          src={image}
+                          controls
+                          className="w-full h-full object-cover"
+                          preload="metadata"
+                        />
+                      ) : (
+                        <img
+                          src={image}
+                          alt={`صورة ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
 
-                  {/* رقم الصورة */}
-                  <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                    {index + 1}
-                  </div>
-                </motion.div>
-              ))}
+                    {/* زر الحذف */}
+                    <button
+                      onClick={() => removeImage(index)}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:bg-red-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+
+                    {/* رقم الملف ونوعه */}
+                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                      {index + 1} {isVideo && '🎥'}
+                    </div>
+                  </motion.div>
+                )
+              })}
 
               {/* زر إضافة المزيد */}
               {images.length < maxImages && (

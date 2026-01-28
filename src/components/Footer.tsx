@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import Link from 'next/link'
 import {
   Scissors,
   MapPin,
@@ -38,13 +39,14 @@ export default function Footer() {
     },
     {
       name: 'أرقام الهاتف',
-      href: '/contact-phone',
+      href: 'tel:+966598862609',
       icon: <Phone className="w-5 h-5" />
     },
     {
       name: 'الموقع',
       href: '/location',
-      icon: <MapPin className="w-5 h-5" />
+      icon: <MapPin className="w-5 h-5" />,
+      isInternal: true
     }
   ]
 
@@ -78,20 +80,26 @@ export default function Footer() {
         >
           <h4 className="text-lg font-bold mb-4 text-pink-400">التواصل</h4>
           <div className="flex justify-center gap-x-4">
-            {socialLinks.map((social, index) => (
-              <motion.a
-                key={social.name}
-                href={social.href}
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.4, delay: 0.5 + index * 0.1 }}
-                viewport={{ once: true }}
-                className="w-10 h-10 bg-gradient-to-br from-pink-400 to-rose-400 rounded-full flex items-center justify-center text-white hover:from-pink-500 hover:to-rose-500 transition-all duration-300 hover:scale-110 shadow-lg"
-                aria-label={social.name}
-              >
-                {social.icon}
-              </motion.a>
-            ))}
+            {socialLinks.map((social, index) => {
+              const LinkComponent = (social as any).isInternal ? Link : 'a'
+              return (
+                <motion.div
+                  key={social.name}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.4, delay: 0.5 + index * 0.1 }}
+                  viewport={{ once: true }}
+                >
+                  <LinkComponent
+                    href={social.href}
+                    className="w-10 h-10 bg-gradient-to-br from-pink-400 to-rose-400 rounded-full flex items-center justify-center text-white hover:from-pink-500 hover:to-rose-500 transition-all duration-300 hover:scale-110 shadow-lg"
+                    aria-label={social.name}
+                  >
+                    {social.icon}
+                  </LinkComponent>
+                </motion.div>
+              )
+            })}
           </div>
         </motion.div>
 
@@ -100,27 +108,33 @@ export default function Footer() {
           <div className="text-center">
             {/* روابط سياسة الخصوصية وشروط الخدمة */}
             <div className="flex flex-wrap justify-center gap-4 mb-4">
-              <motion.a
-                href="/privacy-policy"
+              <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
                 viewport={{ once: true }}
-                className="text-sm text-gray-400 hover:text-pink-400 transition-colors duration-300"
               >
-                سياسة الخصوصية
-              </motion.a>
+                <Link
+                  href="/privacy-policy"
+                  className="text-sm text-gray-400 hover:text-pink-400 transition-colors duration-300"
+                >
+                  سياسة الخصوصية
+                </Link>
+              </motion.div>
               <span className="text-gray-600">|</span>
-              <motion.a
-                href="/terms-of-service"
+              <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.1 }}
                 viewport={{ once: true }}
-                className="text-sm text-gray-400 hover:text-pink-400 transition-colors duration-300"
               >
-                شروط الخدمة
-              </motion.a>
+                <Link
+                  href="/terms-of-service"
+                  className="text-sm text-gray-400 hover:text-pink-400 transition-colors duration-300"
+                >
+                  شروط الخدمة
+                </Link>
+              </motion.div>
             </div>
 
             <p className="text-sm text-gray-400">

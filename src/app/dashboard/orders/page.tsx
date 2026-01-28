@@ -9,10 +9,12 @@ import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
 import CompletedWorkUpload from '@/components/CompletedWorkUpload'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
+import MeasurementsModal from '@/components/MeasurementsModal'
 import NumericInput from '@/components/NumericInput'
 import {
   ArrowRight,
@@ -34,14 +36,18 @@ import {
   Loader,
   PackageCheck,
   Truck,
-  Camera
+  Camera,
+  Ruler,
+  Printer
 } from 'lucide-react'
+import PrintOrderModal from '@/components/PrintOrderModal'
 
 export default function OrdersPage() {
   const { user } = useAuthStore()
   const { orders, loadOrders, updateOrder, deleteOrder, startOrderWork, completeOrder } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, language, changeLanguage, isArabic } = useTranslation()
+  const { getDashboardRoute, workerType } = useWorkerPermissions()
   const router = useRouter()
 
   // التحقق من الصلاحيات وتحميل البيانات
@@ -57,7 +63,6 @@ export default function OrdersPage() {
   }, [user, router, loadOrders, loadWorkers])
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [searchType, setSearchType] = useState<'name' | 'phone' | 'order_number'>('name')
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
@@ -70,6 +75,14 @@ export default function OrdersPage() {
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<any>(null)
+
+  // حالات modal المقاسات
+  const [showMeasurementsModal, setShowMeasurementsModal] = useState(false)
+  const [measurementsOrder, setMeasurementsOrder] = useState<any>(null)
+
+  // حالات modal الطباعة
+  const [showPrintModal, setShowPrintModal] = useState(false)
+  const [printOrder, setPrintOrder] = useState<any>(null)
 
   const getStatusInfo = (status: string) => {
     const statusMap = {
@@ -125,6 +138,9 @@ export default function OrdersPage() {
     if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes
     if (updates.voiceNotes !== undefined) {
       supabaseUpdates.voice_notes = updates.voiceNotes.map((vn: any) => vn.data)
+    }
+    if (updates.voice_transcriptions !== undefined) {
+      supabaseUpdates.voice_transcriptions = updates.voice_transcriptions
     }
     if (updates.images !== undefined) supabaseUpdates.images = updates.images
     if (updates.measurements) supabaseUpdates.measurements = updates.measurements
@@ -189,6 +205,54 @@ export default function OrdersPage() {
   const closeDeleteModal = () => {
     setDeleteModalOpen(false)
     setOrderToDelete(null)
+  }
+
+  // فتح modal المقاسات
+  const handleOpenMeasurements = (order: any) => {
+    setMeasurementsOrder(order)
+    setShowMeasurementsModal(true)
+  }
+
+  // فتح modal الطباعة
+  const handlePrintOrder = (order: any) => {
+    setPrintOrder(order)
+    setShowPrintModal(true)
+  }
+
+  // حفظ المقاسات
+  const handleSaveMeasurements = async (measurements: any) => {
+    if (!measurementsOrder) return
+
+    try {
+      // الحفاظ على بيانات التعليقات والرسومات عند حفظ المقاسات
+      const existingMeasurements = measurementsOrder.measurements || {}
+      const updatedMeasurements = {
+        ...measurements,
+        // الاحتفاظ بالتعليقات والرسومات والصورة المخصصة
+        image_annotations: existingMeasurements.image_annotations || [],
+        image_drawings: existingMeasurements.image_drawings || [],
+        custom_design_image: existingMeasurements.custom_design_image || null
+      }
+
+      const result = await updateOrder(measurementsOrder.id, { measurements: updatedMeasurements })
+
+      if (result.success) {
+        toast.success(t('measurements_saved_successfully'), {
+          icon: '✓',
+        })
+        setShowMeasurementsModal(false)
+        setMeasurementsOrder(null)
+      } else {
+        toast.error(result.error || t('measurements_save_error'), {
+          icon: '✗',
+        })
+      }
+    } catch (error) {
+      console.error('Error saving measurements:', error)
+      toast.error(t('measurements_save_error'), {
+        icon: '✗',
+      })
+    }
   }
 
   // بدء العمل في الطلب (للعمال)
@@ -276,9 +340,11 @@ export default function OrdersPage() {
       return false
     }
 
-    // فلترة حسب الدور - العمال يرون طلباتهم فقط
-    // يجب مقارنة order.worker_id مع worker.id (وليس user.id)
-    let matchesRole = user?.role === 'admin'
+    // فلترة حسب الدور
+    // - Admin: يرى جميع الطلبات
+    // - Workshop Manager: يرى جميع الطلبات
+    // - العمال الآخرون: يرون طلباتهم المعينة لهم فقط
+    let matchesRole = user?.role === 'admin' || workerType === 'workshop_manager'
 
     if (!matchesRole && user?.role === 'worker') {
       // البحث عن العامل الذي user_id يطابق user.id
@@ -288,11 +354,12 @@ export default function OrdersPage() {
       }
     }
 
-    const matchesSearch = searchType === 'phone'
-      ? (order.client_phone || '').toLowerCase().includes(searchTerm.toLowerCase())
-      : searchType === 'order_number'
-        ? (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase())
-        : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+    // البحث الشامل في جميع الحقول: الاسم، الهاتف، رقم الطلب
+    const searchLower = searchTerm.toLowerCase()
+    const matchesSearch = !searchTerm ||
+      (order.client_name || '').toLowerCase().includes(searchLower) ||
+      (order.client_phone || '').toLowerCase().includes(searchLower) ||
+      (order.order_number || '').toLowerCase().includes(searchLower)
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
@@ -322,13 +389,13 @@ export default function OrdersPage() {
           transition={{ duration: 0.6 }}
           className="mb-8"
         >
-          <Link
-            href="/dashboard"
+          <button
+            onClick={() => router.push(getDashboardRoute())}
             className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300"
           >
             <ArrowRight className="w-4 h-4" />
             <span>{t('back_to_dashboard')}</span>
-          </Link>
+          </button>
         </motion.div>
 
         {/* العنوان والأزرار */}
@@ -362,97 +429,50 @@ export default function OrdersPage() {
           </div>
         </motion.div>
 
-        {/* البحث والفلاتر */}
+        {/* البحث والفلاتر - تصميم محسّن */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="bg-white/80 backdrop-blur-sm rounded-2xl p-3 sm:p-4 border border-pink-100 mb-8"
+          className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6"
         >
-          {/* صف واحد: أزرار البحث + حقل البحث + الفلاتر */}
-          <div className="flex flex-col lg:flex-row gap-2 sm:gap-3">
-            {/* أزرار تبديل نوع البحث */}
-            <div className="flex space-x-2 space-x-reverse">
-              <button
-                onClick={() => {
-                  setSearchType('name')
-                  setSearchTerm('')
-                }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'name'
-                    ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {t('search_by_name')}
-              </button>
-              <button
-                onClick={() => {
-                  setSearchType('phone')
-                  setSearchTerm('')
-                }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'phone'
-                    ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {t('search_by_phone')}
-              </button>
-              <button
-                onClick={() => {
-                  setSearchType('order_number')
-                  setSearchTerm('')
-                }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'order_number'
-                    ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {t('search_by_order_number') || 'رقم الطلب'}
-              </button>
-            </div>
-
-            {/* حقل البحث */}
-            <div className="relative flex-1">
-              <Search className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          {/* صف واحد: حقل البحث والفلاتر */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* حقل البحث الشامل */}
+            <div className="relative md:col-span-1">
+              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pr-8 sm:pr-9 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                placeholder={
-                  searchType === 'phone'
-                    ? t('enter_phone_number')
-                    : searchType === 'order_number'
-                      ? t('enter_order_number') || 'أدخل رقم الطلب'
-                      : t('enter_client_name')
-                }
+                className="w-full pr-10 pl-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all"
+                placeholder={isArabic ? 'ابحث بالاسم أو رقم الهاتف أو رقم الطلب...' : 'Search by name, phone, or order number...'}
               />
             </div>
 
             {/* فلتر الحالة */}
-            <div className="relative w-full lg:w-40">
-              <Filter className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <div className="relative">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full pr-8 sm:pr-9 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all appearance-none bg-white"
               >
                 <option value="all">{t('all_orders')}</option>
                 <option value="pending">{t('pending')}</option>
                 <option value="in_progress">{t('in_progress')}</option>
               </select>
+              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             </div>
 
             {/* فلتر التاريخ */}
-            <div className="relative w-full lg:w-40">
-              <Calendar className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <div className="relative">
               <input
                 type="date"
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full pr-8 sm:pr-9 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                placeholder={t('filter_by_date') || 'تصفية حسب التاريخ'}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all"
               />
+              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             </div>
           </div>
         </motion.div>
@@ -484,90 +504,96 @@ export default function OrdersPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 hover:shadow-lg transition-all duration-300"
+                onClick={() => handleViewOrder(order)}
+                className="bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
               >
-                <div className="grid lg:grid-cols-4 gap-6">
-                  {/* معلومات الطلب */}
-                  <div className="lg:col-span-2">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h3 className="text-xl font-bold text-gray-800 mb-1">
-                          {order.client_name}
-                        </h3>
-                        <p className="text-pink-600 font-medium">{order.description}</p>
-                        <p className="text-sm text-gray-500">#{order.order_number || order.id}</p>
+                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                  {/* معلومات الطلب الأساسية */}
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-lg font-semibold text-gray-800">
+                            {order.client_name}
+                          </h3>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
+                            {getStatusInfo(order.status).label}
+                          </span>
+                        </div>
+                        <p className="text-sm text-pink-600 font-medium">{order.description}</p>
+                        <p className="text-xs text-gray-500 mt-1">#{order.order_number || order.id}</p>
                       </div>
-
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
-                        {getStatusInfo(order.status).label}
-                      </span>
                     </div>
 
-                    <div className="space-y-2 text-sm text-gray-600">
-                      <div className="flex items-center space-x-2 space-x-reverse">
-                        <Calendar className="w-4 h-4" />
-                        <span>{t('order_date_label')}: {formatDate(order.created_at)}</span>
+                    {/* تفاصيل الطلب */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-600">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                        <span>{formatDate(order.created_at)}</span>
                       </div>
-                      <div className="flex items-center space-x-2 space-x-reverse">
-                        <Clock className="w-4 h-4" />
-                        <span>{t('delivery_date_label')}: {formatDate(order.due_date)}</span>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-gray-400" />
+                        <span>{formatDate(order.due_date)}</span>
                       </div>
                       {order.worker_id && (
-                        <div className="flex items-center space-x-2 space-x-reverse">
-                          <User className="w-4 h-4" />
-                          <span>{t('worker_label')}: {getWorkerName(order.worker_id)}</span>
+                        <div className="flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="truncate">{getWorkerName(order.worker_id)}</span>
                         </div>
                       )}
                       {order.fabric && (
-                        <div className="flex items-center space-x-2 space-x-reverse">
-                          <Package className="w-4 h-4" />
-                          <span>{t('fabric_label')} {order.fabric}</span>
+                        <div className="flex items-center gap-1.5">
+                          <Package className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="truncate">{order.fabric}</span>
                         </div>
                       )}
                     </div>
-                  </div>
 
-                  {/* السعر والحالة */}
-                  <div className="space-y-4">
-                    <div className="text-center">
-                      <p className="text-sm text-gray-600">{t('price_label')}</p>
-                      <p className="text-lg font-bold text-green-600">{order.price} {t('sar')}</p>
-                    </div>
-
-                    {order.notes && (
-                      <div>
-                        <p className="text-sm font-medium text-gray-700 mb-1">{t('notes_label')}</p>
-                        <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded">{order.notes}</p>
+                    {/* السعر */}
+                    {workerType !== 'workshop_manager' && (
+                      <div className="mt-3 inline-flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md">
+                        <span className="text-xs text-gray-600">{t('price_label')}:</span>
+                        <span className="text-sm font-bold text-green-600">{order.price} {t('sar')}</span>
                       </div>
                     )}
                   </div>
 
                   {/* الإجراءات */}
-                  <div className="flex flex-col gap-2">
+                  <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                    {/* زر المقاسات */}
                     <button
-                      onClick={() => handleViewOrder(order)}
-                      className="btn-secondary py-2 px-4 text-sm inline-flex items-center justify-center space-x-1 space-x-reverse"
+                      onClick={() => handleOpenMeasurements(order)}
+                      className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200 rounded-lg transition-all duration-200"
+                      title={order.measurements && Object.keys(order.measurements).length > 0 ? t('edit_measurements') : t('add_measurements')}
                     >
-                      <Eye className="w-4 h-4" />
-                      <span>{t('view')}</span>
+                      <Ruler className="w-4 h-4" />
                     </button>
 
                     {user.role === 'admin' && (
                       <>
                         <button
                           onClick={() => handleEditOrder(order)}
-                          className="btn-primary py-2 px-4 text-sm inline-flex items-center justify-center space-x-1 space-x-reverse"
+                          className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg transition-all duration-200"
+                          title={t('edit')}
                         >
                           <Edit className="w-4 h-4" />
-                          <span>{t('edit')}</span>
+                        </button>
+
+                        {/* زر الطباعة */}
+                        <button
+                          onClick={() => handlePrintOrder(order)}
+                          className="p-2 bg-pink-50 hover:bg-pink-100 text-pink-600 border border-pink-200 rounded-lg transition-all duration-200"
+                          title={t('print_order')}
+                        >
+                          <Printer className="w-4 h-4" />
                         </button>
 
                         <button
                           onClick={() => handleDeleteOrder(order)}
-                          className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 px-4 text-sm rounded-lg transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse"
+                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg transition-all duration-200"
+                          title={t('delete')}
                         >
                           <Trash2 className="w-4 h-4" />
-                          <span>{t('delete')}</span>
                         </button>
                       </>
                     )}
@@ -679,26 +705,26 @@ export default function OrdersPage() {
 
                 {/* رسالة التحذير - رفع الصور إلزامي */}
                 <div className={`p-4 rounded-lg border ${completedImages.length === 0
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-yellow-50 border-yellow-200'
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-yellow-50 border-yellow-200'
                   }`}>
                   <div className="flex items-start space-x-3 space-x-reverse">
                     <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${completedImages.length === 0
-                        ? 'text-red-600'
-                        : 'text-yellow-600'
+                      ? 'text-red-600'
+                      : 'text-yellow-600'
                       }`} />
                     <div>
                       <p className={`font-medium mb-1 ${completedImages.length === 0
-                          ? 'text-red-800'
-                          : 'text-yellow-800'
+                        ? 'text-red-800'
+                        : 'text-yellow-800'
                         }`}>
                         {completedImages.length === 0
                           ? 'تنبيه مهم - رفع الصور إلزامي'
                           : t('important_warning')}
                       </p>
                       <p className={`text-sm ${completedImages.length === 0
-                          ? 'text-red-700'
-                          : 'text-yellow-700'
+                        ? 'text-red-700'
+                        : 'text-yellow-700'
                         }`}>
                         {completedImages.length === 0
                           ? 'يجب رفع صورة واحدة على الأقل للعمل المكتمل قبل إنهاء الطلب. الصور ضرورية لتوثيق جودة العمل.'
@@ -758,6 +784,32 @@ export default function OrdersPage() {
           onConfirm={confirmDeleteOrder}
           orderInfo={orderToDelete}
         />
+
+        {/* نافذة المقاسات */}
+        {measurementsOrder && (
+          <MeasurementsModal
+            isOpen={showMeasurementsModal}
+            onClose={() => {
+              setShowMeasurementsModal(false)
+              setMeasurementsOrder(null)
+            }}
+            onSave={handleSaveMeasurements}
+            initialMeasurements={measurementsOrder.measurements || {}}
+            orderId={measurementsOrder.id}
+          />
+        )}
+
+        {/* مودال الطباعة */}
+        {printOrder && (
+          <PrintOrderModal
+            isOpen={showPrintModal}
+            onClose={() => {
+              setShowPrintModal(false)
+              setPrintOrder(null)
+            }}
+            order={printOrder}
+          />
+        )}
       </div>
     </div>
   )

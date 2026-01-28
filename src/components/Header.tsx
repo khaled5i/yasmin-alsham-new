@@ -177,8 +177,13 @@ export default function Header() {
     { href: '/faq', label: 'الأسئلة الشائعة', icon: HelpCircle, onClick: null, external: false },
   ]
 
-  // تحديد الكلاسات الديناميكية للهيدر على الموبايل
-  const getMobileHeaderClasses = () => {
+  // تحديد الكلاسات الديناميكية للهيدر
+  const getHeaderClasses = () => {
+    // على Capacitor (تطبيق موبايل): دائماً خلفية بيضاء
+    if (typeof window !== 'undefined' && (window as any).Capacitor) {
+      return 'bg-white/95 backdrop-blur-md border-b border-pink-100 shadow-sm'
+    }
+
     if (!isHomePage) {
       // صفحات أخرى: دائماً أبيض
       return 'bg-white/95 backdrop-blur-md border-b border-pink-100 shadow-sm'
@@ -191,16 +196,17 @@ export default function Header() {
       // بعد السكرول: خلفية بيضاء
       return 'bg-white/95 backdrop-blur-md border-b border-pink-100 shadow-sm'
     }
-    // في Hero: شفاف
-    return 'bg-transparent'
+    // في Hero على الويب فقط: شفاف
+    return 'bg-transparent lg:bg-white/95 lg:backdrop-blur-md lg:border-b lg:border-pink-100 lg:shadow-sm'
   }
 
   return (
     <header
       ref={menuRef}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300
-      ${getMobileHeaderClasses()}
-      lg:bg-white/95 lg:backdrop-blur-md lg:border-b lg:border-pink-100 lg:shadow-sm`}
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${getHeaderClasses()}`}
+      style={{
+        paddingTop: 'env(safe-area-inset-top)',
+      }}
     >
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 lg:h-20 relative">
@@ -211,7 +217,7 @@ export default function Header() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
             onClick={toggleMenu}
-            className={`lg:hidden p-2 rounded-lg transition-all duration-300 ${isHomePage && !isScrolled && !isMenuOpen
+            className={`lg:hidden p-2 rounded-lg transition-all duration-300 ${isHomePage && !isScrolled && !isMenuOpen && !(typeof window !== 'undefined' && (window as any).Capacitor)
               ? 'text-white hover:bg-white/20'
               : 'text-pink-600 hover:bg-pink-50'
               }`}
@@ -228,7 +234,7 @@ export default function Header() {
             onClick={handleLogoClick}
           >
             <div className="text-center lg:text-right">
-              <h1 className={`text-xl lg:text-2xl font-bold transition-colors duration-300 ${isHomePage && !isScrolled && !isMenuOpen
+              <h1 className={`text-xl lg:text-2xl font-bold transition-colors duration-300 ${isHomePage && !isScrolled && !isMenuOpen && !(typeof window !== 'undefined' && (window as any).Capacitor)
                 ? 'text-white drop-shadow-lg lg:bg-gradient-to-r lg:from-pink-600 lg:to-rose-600 lg:bg-clip-text lg:text-transparent'
                 : 'bg-gradient-to-r from-pink-600 to-rose-600 bg-clip-text text-transparent'
                 }`}>

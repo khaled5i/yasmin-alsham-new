@@ -12,7 +12,7 @@ import { supabase, isSupabaseConfigured } from '../supabase'
 // ============================================================================
 
 // أنواع العمال المتاحة
-export type WorkerType = 'tailor' | 'fabric_store_manager' | 'accountant' | 'general_manager'
+export type WorkerType = 'tailor' | 'fabric_store_manager' | 'accountant' | 'general_manager' | 'workshop_manager'
 
 export interface User {
   id: string

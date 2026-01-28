@@ -224,10 +224,17 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => {
+                      // إصلاح مشكلة Backspace على Capacitor
+                      if (e.key === 'Backspace' && typeof window !== 'undefined' && (window as any).Capacitor) {
+                        e.stopPropagation()
+                      }
+                    }}
                     className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
                     placeholder="أدخل البريد الإلكتروني"
                     required
                     disabled={authLoading}
+                    autoComplete="email"
                   />
                   <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 </div>
@@ -243,10 +250,17 @@ export default function LoginPage() {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      // إصلاح مشكلة Backspace على Capacitor
+                      if (e.key === 'Backspace' && typeof window !== 'undefined' && (window as any).Capacitor) {
+                        e.stopPropagation()
+                      }
+                    }}
                     className="w-full px-4 py-3 pl-12 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
                     placeholder="أدخل كلمة المرور"
                     required
                     disabled={authLoading}
+                    autoComplete="current-password"
                   />
                   <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <button

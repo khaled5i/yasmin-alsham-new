@@ -20,18 +20,22 @@ import {
   Trash2,
   AlertTriangle,
   Ruler,
-  Mic
+  Mic,
+  Wrench
 } from 'lucide-react'
+import Link from 'next/link'
 import VoiceNotes from '@/components/VoiceNotes'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useAuthStore } from '@/store/authStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
 export default function DeliveredOrdersPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const { orders, loadOrders, deleteOrder } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
+  const { workerType, isLoading: permissionsLoading, getDashboardRoute } = useWorkerPermissions()
   const [showViewModal, setShowViewModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
@@ -41,22 +45,28 @@ export default function DeliveredOrdersPage() {
   const [dateFilter, setDateFilter] = useState('')
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
-  // التحقق من الصلاحيات - المدراء فقط
+  // التحقق من الصلاحيات - المدراء ومدراء الورشة
   useEffect(() => {
     if (!user) {
       router.push('/login')
       return
     }
 
-    if (user.role !== 'admin') {
-      router.push('/dashboard')
-      return
+    // السماح للمدير ومدير الورشة فقط
+    if (!permissionsLoading) {
+      const isAdmin = user.role === 'admin'
+      const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
+
+      if (!isAdmin && !isWorkshopManager) {
+        router.push('/dashboard')
+        return
+      }
     }
 
     // تحميل البيانات
     loadOrders()
     loadWorkers()
-  }, [user, router, loadOrders, loadWorkers])
+  }, [user, workerType, permissionsLoading, router, loadOrders, loadWorkers])
 
   // فلترة الطلبات المسلمة فقط
   const deliveredOrders = orders.filter(order => {
@@ -149,12 +159,35 @@ export default function DeliveredOrdersPage() {
     setSelectedOrder(null)
   }
 
+  // التحقق من الصلاحيات قبل العرض
+  if (!user) {
+    return null
+  }
+
+  if (permissionsLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const isAdmin = user.role === 'admin'
+  const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
+
+  if (!isAdmin && !isWorkshopManager) {
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50 p-4 md:p-8">
       {/* رأس الصفحة */}
       <div className="max-w-7xl mx-auto mb-8">
         <button
-          onClick={() => router.push('/dashboard')}
+          onClick={() => router.push(getDashboardRoute())}
           className="mb-6 flex items-center space-x-2 space-x-reverse text-purple-600 hover:text-purple-800 transition-colors"
         >
           <ArrowRight className="w-5 h-5" />
@@ -326,7 +359,7 @@ export default function DeliveredOrdersPage() {
                       )}
                       <div className="flex items-center space-x-2 space-x-reverse">
                         <Phone className="w-4 h-4 text-purple-500" />
-                        <span>الهاتف: {order.client_phone}</span>
+                        <span>الهاتف: {workerType === 'workshop_manager' ? '***' : order.client_phone}</span>
                       </div>
                     </div>
                   </div>
@@ -335,7 +368,9 @@ export default function DeliveredOrdersPage() {
                   <div className="space-y-4">
                     <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-4 rounded-lg border border-purple-200 text-center">
                       <p className="text-sm text-gray-600 mb-1">السعر الإجمالي</p>
-                      <p className="text-2xl font-bold text-purple-600">{order.price} ريال</p>
+                      <p className="text-2xl font-bold text-purple-600">
+                        {workerType === 'workshop_manager' ? '---' : `${order.price} ريال`}
+                      </p>
                     </div>
 
                     {order.completed_images && order.completed_images.length > 0 && (
@@ -365,6 +400,14 @@ export default function DeliveredOrdersPage() {
                       <Eye className="w-5 h-5" />
                       <span className="font-medium">عرض التفاصيل</span>
                     </button>
+
+                    <Link
+                      href={`/dashboard/alterations/add?orderId=${order.id}`}
+                      className="w-full bg-gradient-to-r from-orange-500 to-amber-600 text-white px-6 py-3 rounded-lg hover:from-orange-600 hover:to-amber-700 transition-all duration-300 shadow-md hover:shadow-lg inline-flex items-center justify-center gap-2"
+                    >
+                      <Wrench className="w-5 h-5" />
+                      <span className="font-medium">طلب تعديل</span>
+                    </Link>
 
                     <button
                       onClick={() => handleDeleteClick(order)}
@@ -441,7 +484,9 @@ export default function DeliveredOrdersPage() {
                   {selectedOrder.client_phone && (
                     <div>
                       <p className="text-sm text-gray-600">رقم الهاتف</p>
-                      <p className="font-medium text-gray-800">{selectedOrder.client_phone}</p>
+                      <p className="font-medium text-gray-800">
+                        {workerType === 'workshop_manager' ? '***' : selectedOrder.client_phone}
+                      </p>
                     </div>
                   )}
                   {selectedOrder.client_email && (
@@ -466,7 +511,9 @@ export default function DeliveredOrdersPage() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">السعر</p>
-                    <p className="font-medium text-purple-600 text-lg">{selectedOrder.price} ريال</p>
+                    <p className="font-medium text-purple-600 text-lg">
+                      {workerType === 'workshop_manager' ? '---' : `${selectedOrder.price} ريال`}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">تاريخ الطلب</p>

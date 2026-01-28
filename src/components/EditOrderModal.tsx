@@ -16,15 +16,18 @@ import {
   Calendar,
   CheckCircle,
   AlertCircle,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Pencil
 } from 'lucide-react'
 import ImageUpload from './ImageUpload'
 import VoiceNotes from './VoiceNotes'
 import NumericInput from './NumericInput'
 import RemainingPaymentWarningModal from './RemainingPaymentWarningModal'
+import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { Order } from '@/lib/services/order-service'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
+import { Measurements, MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 
 interface EditOrderModalProps {
   order: Order | null
@@ -42,6 +45,13 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [pendingStatus, setPendingStatus] = useState<string | null>(null)
 
+  // حالات تعليقات التصميم
+  const [imageAnnotations, setImageAnnotations] = useState<ImageAnnotation[]>([])
+  const [imageDrawings, setImageDrawings] = useState<DrawingPath[]>([])
+  const [customDesignImage, setCustomDesignImage] = useState<File | null>(null)
+  const [customDesignImageBase64, setCustomDesignImageBase64] = useState<string | null>(null)
+  const [savedDesignComments, setSavedDesignComments] = useState<SavedDesignComment[]>([])
+
   // تسجيل البيانات للتحقق من قائمة العمال
   useEffect(() => {
     if (isOpen) {
@@ -54,6 +64,21 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
 
   useEffect(() => {
     if (order) {
+      // استرجاع البيانات الكاملة من voice_transcriptions إذا كانت موجودة
+      let voiceNotesData: any[] = []
+
+      if ((order as any).voice_transcriptions && Array.isArray((order as any).voice_transcriptions)) {
+        // استخدام voice_transcriptions (البيانات الكاملة مع النصوص المحولة)
+        voiceNotesData = (order as any).voice_transcriptions
+      } else if (order.voice_notes && Array.isArray(order.voice_notes)) {
+        // التوافق مع voice_notes القديم (فقط البيانات الصوتية)
+        voiceNotesData = order.voice_notes.map((vn, idx) => ({
+          id: `vn-${idx}`,
+          data: vn,
+          timestamp: Date.now()
+        }))
+      }
+
       setFormData({
         orderNumber: order.order_number || '',
         clientName: order.client_name,
@@ -66,14 +91,27 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
         assignedWorker: order.worker_id || '',
         dueDate: order.due_date,
         notes: order.notes || '',
-        voiceNotes: order.voice_notes?.map((vn, idx) => ({
-          id: `vn-${idx}`,
-          data: vn,
-          timestamp: Date.now()
-        })) || [],
+        voiceNotes: voiceNotesData,
         images: order.images || [],
         measurements: { ...order.measurements }
       })
+
+      // استرجاع تعليقات التصميم من measurements
+      const measurements = order.measurements as any
+      if (measurements) {
+        // استرجاع التعليقات المتعددة (البنية الجديدة)
+        setSavedDesignComments(measurements.saved_design_comments || [])
+        // للتوافق مع الكود القديم - التعليق الحالي
+        setImageAnnotations(measurements.image_annotations || [])
+        setImageDrawings(measurements.image_drawings || [])
+        setCustomDesignImageBase64(measurements.custom_design_image || null)
+      } else {
+        setSavedDesignComments([])
+        setImageAnnotations([])
+        setImageDrawings([])
+        setCustomDesignImageBase64(null)
+      }
+      setCustomDesignImage(null)
     }
   }, [order])
 
@@ -129,12 +167,61 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
     try {
       await new Promise(resolve => setTimeout(resolve, 1000))
 
-      // تحويل المقاسات إلى أرقام
+      // تحويل المقاسات إلى أرقام (ما عدا additional_notes والحقول الخاصة)
+      const originalMeasurements = order?.measurements || {}
       const updatedMeasurements = Object.keys(formData.measurements || {}).reduce((acc, key) => {
         const value = (formData.measurements as any)?.[key]
-        acc[key] = value && value !== '' ? Number(value) : undefined
+        // تخطي الحقول الخاصة (سيتم إضافتها لاحقاً)
+        if (key === 'image_annotations' || key === 'image_drawings' || key === 'custom_design_image') {
+          return acc
+        }
+        if (key === 'additional_notes') {
+          // حقل نصي - لا نحوله إلى رقم
+          if (value && value !== '') {
+            acc[key] = value
+          }
+        } else {
+          // حقول رقمية
+          if (value && value !== '') {
+            acc[key] = Number(value)
+          }
+        }
         return acc
       }, {} as any)
+
+      // تجميع جميع التعليقات المحفوظة
+      let allSavedComments = [...savedDesignComments]
+
+      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
+      let currentImageBase64: string | null = customDesignImageBase64
+      if (customDesignImage) {
+        const reader = new FileReader()
+        currentImageBase64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(customDesignImage)
+        })
+      }
+
+      if (imageAnnotations.length > 0 || imageDrawings.length > 0) {
+        const currentComment: SavedDesignComment = {
+          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+          annotations: imageAnnotations,
+          drawings: imageDrawings,
+          image: currentImageBase64,
+          title: `التعليق ${allSavedComments.length + 1}`
+        }
+        allSavedComments.push(currentComment)
+      }
+
+      // حفظ التعليقات المتعددة
+      updatedMeasurements.saved_design_comments = allSavedComments
+
+      // للتوافق مع الكود القديم
+      updatedMeasurements.image_annotations = imageAnnotations
+      updatedMeasurements.image_drawings = imageDrawings
+      updatedMeasurements.custom_design_image = currentImageBase64
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
       const price = Number(formData.price)
@@ -148,12 +235,24 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
         cleanedData.assignedWorker = undefined
       }
 
+      // تحضير البيانات الكاملة للملاحظات الصوتية
+      const voiceTranscriptions = (formData.voiceNotes || []).map((vn: any) => ({
+        id: vn.id,
+        data: vn.data,
+        timestamp: vn.timestamp,
+        duration: vn.duration,
+        transcription: vn.transcription,
+        translatedText: vn.translatedText,
+        translationLanguage: vn.translationLanguage
+      }))
+
       // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
       onSave(order.id, {
         ...cleanedData,
         price: price,
         paid_amount: paidAmount,
         measurements: updatedMeasurements,
+        voice_transcriptions: voiceTranscriptions,
         updatedAt: new Date().toISOString()
       })
 
@@ -409,6 +508,31 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                   </div>
                 </div>
 
+                {/* تعليقات على التصميم */}
+                <div className="space-y-4 relative z-0">
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Pencil className="w-5 h-5 text-pink-600" />
+                    <span>تعليقات على التصميم</span>
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    انقر على أي منطقة في الصورة لإضافة ملاحظة صوتية، أو فعّل وضع الرسم للرسم على الصورة
+                  </p>
+
+                  <InteractiveImageAnnotation
+                    imageSrc={customDesignImageBase64 || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
+                    annotations={imageAnnotations}
+                    onAnnotationsChange={setImageAnnotations}
+                    drawings={imageDrawings}
+                    onDrawingsChange={setImageDrawings}
+                    customImage={customDesignImage}
+                    onImageChange={setCustomDesignImage}
+                    disabled={isSubmitting}
+                    savedComments={savedDesignComments}
+                    onSavedCommentsChange={setSavedDesignComments}
+                    showSaveButton={true}
+                  />
+                </div>
+
                 {/* صور التصميم */}
                 <div className="space-y-4 relative z-0">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
@@ -430,192 +554,34 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                     <span>{t('measurements_cm')}</span>
                   </h3>
 
-                  <div className="space-y-8">
-                    {/* المقاسات الأساسية */}
-                    <div>
-                      <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                        {t('basic_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.shoulder?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('shoulder', value)}
-                            type="measurement"
-                            label={t('shoulder')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.shoulderCircumference?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('shoulderCircumference', value)}
-                            type="measurement"
-                            label={t('shoulder_circumference')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.chest?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('chest', value)}
-                            type="measurement"
-                            label={t('chest')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.waist?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('waist', value)}
-                            type="measurement"
-                            label={t('waist')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.hips?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('hips', value)}
-                            type="measurement"
-                            label={t('hips')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => (
+                      <div key={key}>
+                        <NumericInput
+                          value={(formData.measurements as any)?.[key]?.toString() || ''}
+                          onChange={(value) => handleMeasurementChange(key, value)}
+                          type="measurement"
+                          label={t(`measurement_${key}` as any)}
+                          placeholder={t('cm_placeholder')}
+                          disabled={isSubmitting}
+                        />
                       </div>
-                    </div>
+                    ))}
+                  </div>
 
-                    {/* مقاسات التفصيل المتقدمة */}
-                    <div>
-                      <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                        {t('advanced_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.dartLength?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('dartLength', value)}
-                            type="measurement"
-                            label={t('dart_length')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.bodiceLength?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('bodiceLength', value)}
-                            type="measurement"
-                            label={t('bodice_length')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.neckline?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('neckline', value)}
-                            type="measurement"
-                            label={t('neckline')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.armpit?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('armpit', value)}
-                            type="measurement"
-                            label={t('armpit')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* مقاسات الأكمام */}
-                    <div>
-                      <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                        {t('sleeve_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.sleeveLength?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('sleeveLength', value)}
-                            type="measurement"
-                            label={t('sleeve_length')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.forearm?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('forearm', value)}
-                            type="measurement"
-                            label={t('forearm')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.cuff?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('cuff', value)}
-                            type="measurement"
-                            label={t('cuff')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* مقاسات الطول */}
-                    <div>
-                      <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                        {t('length_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.frontLength?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('frontLength', value)}
-                            type="measurement"
-                            label={t('front_length')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-
-                        <div>
-                          <NumericInput
-                            value={formData.measurements?.backLength?.toString() || ''}
-                            onChange={(value) => handleMeasurementChange('backLength', value)}
-                            type="measurement"
-                            label={t('back_length')}
-                            placeholder={t('cm_placeholder')}
-                            disabled={isSubmitting}
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  {/* مقاسات إضافية */}
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('measurement_additional_notes')}
+                    </label>
+                    <textarea
+                      value={(formData.measurements as any)?.additional_notes || ''}
+                      onChange={(e) => handleMeasurementChange('additional_notes', e.target.value)}
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
+                      placeholder={t('additional_measurements_placeholder')}
+                      disabled={isSubmitting}
+                    />
                   </div>
                 </div>
 

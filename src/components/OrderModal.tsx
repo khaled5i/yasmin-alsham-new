@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X,
@@ -15,13 +15,20 @@ import {
   Clock,
   CheckCircle,
   Image as ImageIcon,
-  Mail
+  Mail,
+  Printer,
+  Pencil,
+  Play,
+  Pause
 } from 'lucide-react'
 import { Order } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
 import { useAuthStore } from '@/store/authStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import VoiceNotes from './VoiceNotes'
+import PrintOrderModal from './PrintOrderModal'
+import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
+import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 
 interface OrderModalProps {
   order: Order | null
@@ -34,6 +41,129 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
   const { user } = useAuthStore()
   const { t, isArabic } = useTranslation()
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  const [voiceNotes, setVoiceNotes] = useState<any[]>([])
+  const [showPrintModal, setShowPrintModal] = useState(false)
+
+  // حالات تعليقات التصميم
+  const [imageAnnotations, setImageAnnotations] = useState<ImageAnnotation[]>([])
+  const [imageDrawings, setImageDrawings] = useState<DrawingPath[]>([])
+  const [customDesignImage, setCustomDesignImage] = useState<string | null>(null)
+  const [savedDesignComments, setSavedDesignComments] = useState<SavedDesignComment[]>([])
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null)
+  const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map())
+
+  // تحديث الملاحظات الصوتية وتعليقات التصميم عند تغيير الطلب
+  useEffect(() => {
+    if (order) {
+      const initialVoiceNotes = (order as any).voice_transcriptions && Array.isArray((order as any).voice_transcriptions)
+        ? (order as any).voice_transcriptions
+        : order.voice_notes?.map((vn, idx) => ({
+          id: `vn-${idx}`,
+          data: vn,
+          timestamp: Date.now()
+        })) || []
+      setVoiceNotes(initialVoiceNotes)
+
+      // استرجاع تعليقات التصميم من measurements
+      const measurements = order.measurements as any
+      if (measurements) {
+        // استرجاع التعليقات المتعددة (البنية الجديدة)
+        setSavedDesignComments(measurements.saved_design_comments || [])
+        // للتوافق مع الكود القديم
+        setImageAnnotations(measurements.image_annotations || [])
+        setImageDrawings(measurements.image_drawings || [])
+        setCustomDesignImage(measurements.custom_design_image || null)
+      } else {
+        setSavedDesignComments([])
+        setImageAnnotations([])
+        setImageDrawings([])
+        setCustomDesignImage(null)
+      }
+    }
+  }, [order])
+
+  // تشغيل/إيقاف الصوت للتعليق
+  const toggleAnnotationAudio = (annotation: ImageAnnotation) => {
+    if (!annotation.audioData) return
+
+    if (playingAudioId === annotation.id) {
+      // إيقاف الصوت
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      setPlayingAudioId(null)
+    } else {
+      // إيقاف أي صوت يعمل حالياً
+      if (audioRef.current) {
+        audioRef.current.pause()
+      }
+
+      // تشغيل الصوت الجديد
+      const audio = new Audio(annotation.audioData)
+      audio.onended = () => setPlayingAudioId(null)
+      audio.play()
+      audioRef.current = audio
+      setPlayingAudioId(annotation.id)
+    }
+  }
+
+  // دالة لرسم الخطوط على canvas
+  const drawPathsOnCanvas = (canvas: HTMLCanvasElement, drawings: DrawingPath[]) => {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // مسح canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // رسم كل مسار
+    drawings.forEach(path => {
+      if (path.points.length < 2) return
+
+      ctx.beginPath()
+      ctx.strokeStyle = path.isEraser ? 'white' : path.color
+      ctx.lineWidth = path.strokeWidth
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+
+      const firstPoint = path.points[0]
+      ctx.moveTo((firstPoint.x / 100) * canvas.width, (firstPoint.y / 100) * canvas.height)
+
+      for (let i = 1; i < path.points.length; i++) {
+        const point = path.points[i]
+        ctx.lineTo((point.x / 100) * canvas.width, (point.y / 100) * canvas.height)
+      }
+
+      ctx.stroke()
+    })
+  }
+
+  // رسم الخطوط على canvas للتعليقات القديمة
+  useEffect(() => {
+    if (!canvasRef.current || imageDrawings.length === 0) return
+    drawPathsOnCanvas(canvasRef.current, imageDrawings)
+  }, [imageDrawings])
+
+  // رسم الخطوط على canvas للتعليقات المتعددة عند التوسيع
+  useEffect(() => {
+    if (!expandedCommentId) return
+
+    const comment = savedDesignComments.find(c => c.id === expandedCommentId)
+    if (!comment || !comment.drawings || comment.drawings.length === 0) return
+
+    // انتظار قليلاً حتى يتم رسم Canvas في DOM
+    const timer = setTimeout(() => {
+      const canvas = canvasRefs.current.get(expandedCommentId)
+      if (canvas) {
+        drawPathsOnCanvas(canvas, comment.drawings || [])
+      }
+    }, 100)
+
+    return () => clearTimeout(timer)
+  }, [expandedCommentId, savedDesignComments])
 
   if (!order) return null
 
@@ -118,6 +248,16 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                   {t('order_details')}
                 </h2>
                 <div className="flex items-center space-x-3 space-x-reverse">
+                  {/* زر الطباعة - للمدراء فقط */}
+                  {user?.role === 'admin' && (
+                    <button
+                      onClick={() => setShowPrintModal(true)}
+                      className="p-2 text-pink-500 hover:text-pink-700 hover:bg-pink-50 rounded-full transition-colors duration-300"
+                      title={t('print_order')}
+                    >
+                      <Printer className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </button>
+                  )}
                   <button
                     onClick={onClose}
                     className="p-2 text-gray-400 hover:text-gray-600 transition-colors duration-300"
@@ -278,7 +418,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
               </div>
 
               {/* المقاسات */}
-              {Object.values(order.measurements).some(val => val !== undefined) && (
+              {Object.values(order.measurements).some(val => val !== undefined && val !== '') && (
                 <div className="space-y-4 sm:space-y-6">
                   <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <Ruler className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
@@ -287,195 +427,262 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     </span>
                   </h3>
 
-                  {/* المقاسات الأساسية */}
-                  {(order.measurements.shoulder || order.measurements.shoulderCircumference || order.measurements.chest || order.measurements.waist || order.measurements.hips) && (
-                    <div className="space-y-3">
+                  {/* المقاسات الرقمية */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                    {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => {
+                      const value = (order.measurements as any)?.[key]
+                      if (!value) return null
+
+                      return (
+                        <div key={key} className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                          <p className="text-xs sm:text-sm text-gray-600 mb-1">
+                            {getMeasurementLabelWithSymbol(key as any)}
+                          </p>
+                          <p className="text-base sm:text-lg font-bold text-gray-800">{value}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* مقاسات إضافية */}
+                  {(order.measurements as any)?.additional_notes && (
+                    <div className="space-y-2">
                       <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
-                        {t('basic_measurements')}
+                        {t('measurement_additional_notes')}
                       </h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                        {order.measurements.shoulder && (
-                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('shoulder')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.shoulder}</p>
-                          </div>
-                        )}
-                        {order.measurements.shoulderCircumference && (
-                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('shoulder_circumference')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.shoulderCircumference}</p>
-                          </div>
-                        )}
-                        {order.measurements.chest && (
-                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('chest_bust')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.chest}</p>
-                          </div>
-                        )}
-                        {order.measurements.waist && (
-                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('waist')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.waist}</p>
-                          </div>
-                        )}
-                        {order.measurements.hips && (
-                          <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('hips')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.hips}</p>
-                          </div>
-                        )}
+                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
+                        <p className="text-sm sm:text-base text-gray-700 whitespace-pre-wrap">
+                          {(order.measurements as any).additional_notes}
+                        </p>
                       </div>
                     </div>
                   )}
+                </div>
+              )}
 
-                  {/* مقاسات التفصيل المتقدمة */}
-                  {(order.measurements.dartLength || order.measurements.bodiceLength || order.measurements.neckline || order.measurements.armpit) && (
-                    <div className="space-y-3">
-                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
-                        {t('advanced_tailoring_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                        {order.measurements.dartLength && (
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('dart_length')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.dartLength}</p>
-                          </div>
-                        )}
-                        {order.measurements.bodiceLength && (
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('bodice_length')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.bodiceLength}</p>
-                          </div>
-                        )}
-                        {order.measurements.neckline && (
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('neckline')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.neckline}</p>
-                          </div>
-                        )}
-                        {order.measurements.armpit && (
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg text-center border border-blue-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('armpit')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.armpit}</p>
-                          </div>
-                        )}
-                      </div>
+              {/* تعليقات على التصميم */}
+              {(savedDesignComments.length > 0 || imageAnnotations.length > 0 || imageDrawings.length > 0 || customDesignImage) && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Pencil className="w-5 h-5 text-pink-600" />
+                    <span>تعليقات على التصميم</span>
+                    {savedDesignComments.length > 0 && (
+                      <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded-full">
+                        {savedDesignComments.length} تعليق
+                      </span>
+                    )}
+                  </h3>
+
+                  {/* عرض التعليقات المتعددة المحفوظة */}
+                  {savedDesignComments.length > 0 && (
+                    <div className="space-y-4">
+                      {savedDesignComments.map((comment, commentIndex) => (
+                        <div
+                          key={comment.id}
+                          className="bg-white rounded-xl border-2 border-pink-100 overflow-hidden"
+                        >
+                          {/* رأس التعليق */}
+                          <button
+                            onClick={() => setExpandedCommentId(expandedCommentId === comment.id ? null : comment.id)}
+                            className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 transition-colors"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white font-bold">
+                                {commentIndex + 1}
+                              </div>
+                              <span className="font-medium text-gray-800">
+                                {comment.title || `التعليق ${commentIndex + 1}`}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                ({comment.annotations?.length || 0} علامة، {comment.drawings?.length || 0} رسم)
+                              </span>
+                            </div>
+                            <motion.div
+                              animate={{ rotate: expandedCommentId === comment.id ? 180 : 0 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </motion.div>
+                          </button>
+
+                          {/* محتوى التعليق */}
+                          <AnimatePresence>
+                            {expandedCommentId === comment.id && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="p-4 space-y-4">
+                                  {/* الصورة مع العلامات والرسومات */}
+                                  <div className="relative rounded-xl overflow-hidden border border-pink-200">
+                                    <img
+                                      src={comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
+                                      alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
+                                      className="w-full h-auto cursor-pointer"
+                                      onClick={() => setLightboxImage(comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg")}
+                                    />
+                                    {/* طبقة الرسومات */}
+                                    {comment.drawings && comment.drawings.length > 0 && (
+                                      <canvas
+                                        ref={(el) => {
+                                          if (el) {
+                                            canvasRefs.current.set(comment.id, el)
+                                            // رسم الخطوط مباشرة عند تعيين الـ ref
+                                            drawPathsOnCanvas(el, comment.drawings || [])
+                                          }
+                                        }}
+                                        className="absolute inset-0 w-full h-full pointer-events-none"
+                                        width={800}
+                                        height={800}
+                                      />
+                                    )}
+                                    {/* علامات التعليقات */}
+                                    {comment.annotations?.map((annotation, idx) => (
+                                      <div
+                                        key={annotation.id}
+                                        className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                                        style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                                      >
+                                        <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
+                                          {idx + 1}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* قائمة التعليقات الصوتية */}
+                                  {comment.annotations && comment.annotations.length > 0 && (
+                                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                      <h4 className="text-sm font-medium text-gray-700 mb-2">
+                                        التعليقات ({comment.annotations.length})
+                                      </h4>
+                                      <div className="space-y-2">
+                                        {comment.annotations.map((annotation, idx) => (
+                                          <div
+                                            key={annotation.id}
+                                            className="flex items-start gap-2 bg-white rounded-lg p-2 border border-gray-100"
+                                          >
+                                            <div className="w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                              {idx + 1}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              {annotation.transcription && (
+                                                <p className="text-sm text-gray-700 mb-1">{annotation.transcription}</p>
+                                              )}
+                                              {annotation.audioData && (
+                                                <button
+                                                  onClick={() => toggleAnnotationAudio(annotation)}
+                                                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${playingAudioId === annotation.id
+                                                    ? 'bg-pink-500 text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                  {playingAudioId === annotation.id ? (
+                                                    <><Pause className="w-3 h-3" /><span>إيقاف</span></>
+                                                  ) : (
+                                                    <><Play className="w-3 h-3" /><span>تشغيل</span></>
+                                                  )}
+                                                </button>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      ))}
                     </div>
                   )}
 
-                  {/* مقاسات الأكمام */}
-                  {(order.measurements.sleeveLength || order.measurements.forearm || order.measurements.cuff) && (
-                    <div className="space-y-3">
-                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
-                        {t('sleeve_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                        {order.measurements.sleeveLength && (
-                          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded-lg text-center border border-green-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('sleeve_length')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.sleeveLength}</p>
-                          </div>
-                        )}
-                        {order.measurements.forearm && (
-                          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded-lg text-center border border-green-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('forearm')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.forearm}</p>
-                          </div>
-                        )}
-                        {order.measurements.cuff && (
-                          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded-lg text-center border border-green-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('cuff')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.cuff}</p>
-                          </div>
-                        )}
+                  {/* عرض التعليق الحالي (للتوافق مع البيانات القديمة) */}
+                  {savedDesignComments.length === 0 && (imageAnnotations.length > 0 || imageDrawings.length > 0 || customDesignImage) && (
+                    <>
+                      <div className="relative rounded-xl overflow-hidden border-2 border-pink-200 bg-white">
+                        <div className="relative">
+                          <img
+                            src={customDesignImage || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
+                            alt="صورة التصميم"
+                            className="w-full h-auto"
+                            onClick={() => setLightboxImage(customDesignImage || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg")}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          {imageDrawings.length > 0 && (
+                            <canvas
+                              ref={canvasRef}
+                              className="absolute inset-0 w-full h-full pointer-events-none"
+                              width={800}
+                              height={800}
+                            />
+                          )}
+                          {imageAnnotations.map((annotation, index) => (
+                            <div
+                              key={annotation.id}
+                              className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                              style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                            >
+                              <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
+                                {index + 1}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
 
-                  {/* مقاسات الطول */}
-                  {(order.measurements.frontLength || order.measurements.backLength) && (
-                    <div className="space-y-3">
-                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
-                        {t('length_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                        {order.measurements.frontLength && (
-                          <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-3 rounded-lg text-center border border-amber-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('front_length')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.frontLength}</p>
+                      {imageAnnotations.length > 0 && (
+                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">
+                            التعليقات ({imageAnnotations.length})
+                          </h4>
+                          <div className="space-y-3">
+                            {imageAnnotations.map((annotation, index) => (
+                              <div
+                                key={annotation.id}
+                                className="flex items-start gap-3 bg-white rounded-lg p-3 border border-gray-100"
+                              >
+                                <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                  {index + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  {annotation.transcription && (
+                                    <p className="text-sm text-gray-700 mb-2">{annotation.transcription}</p>
+                                  )}
+                                  {annotation.audioData && (
+                                    <button
+                                      onClick={() => toggleAnnotationAudio(annotation)}
+                                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${playingAudioId === annotation.id
+                                        ? 'bg-pink-500 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                      {playingAudioId === annotation.id ? (
+                                        <><Pause className="w-4 h-4" /><span>إيقاف</span></>
+                                      ) : (
+                                        <><Play className="w-4 h-4" /><span>تشغيل الصوت</span>
+                                          {annotation.duration && <span className="text-xs opacity-75">({Math.round(annotation.duration)}ث)</span>}
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                  {!annotation.transcription && !annotation.audioData && (
+                                    <p className="text-sm text-gray-400 italic">علامة بدون تعليق</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        )}
-                        {order.measurements.backLength && (
-                          <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-3 rounded-lg text-center border border-amber-100">
-                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                              {t('back_length')}
-                            </p>
-                            <p className="text-base sm:text-lg font-bold text-gray-800">{order.measurements.backLength}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* المقاسات القديمة (للتوافق مع البيانات الموجودة) */}
-                  {(order.measurements.length || order.measurements.shoulders || order.measurements.sleeves) && (
-                    <div className="space-y-3">
-                      <h4 className="text-md font-semibold text-gray-700 border-b border-gray-300 pb-1 text-gray-500">
-                        {t('additional_measurements')}
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {order.measurements.length && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
-                              {t('dress_length')}
-                            </p>
-                            <p className="text-lg font-bold">{order.measurements.length}</p>
-                          </div>
-                        )}
-                        {order.measurements.shoulders && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
-                              {t('shoulder_width')}
-                            </p>
-                            <p className="text-lg font-bold">{order.measurements.shoulders}</p>
-                          </div>
-                        )}
-                        {order.measurements.sleeves && (
-                          <div className="bg-gray-50 p-3 rounded-lg text-center">
-                            <p className="text-sm text-gray-600">
-                              {t('sleeve_length_old')}
-                            </p>
-                            <p className="text-lg font-bold">{order.measurements.sleeves}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -525,7 +732,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
               )}
 
               {/* الملاحظات الصوتية */}
-              {order.voice_notes && order.voice_notes.length > 0 && (
+              {voiceNotes.length > 0 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <MessageSquare className="w-5 h-5 text-pink-600" />
@@ -534,13 +741,9 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     </span>
                   </h3>
                   <VoiceNotes
-                    voiceNotes={order.voice_notes.map((vn, idx) => ({
-                      id: `vn-${idx}`,
-                      data: vn,
-                      timestamp: Date.now()
-                    }))}
-                    onVoiceNotesChange={() => { }} // للعرض فقط
-                    disabled={true}
+                    voiceNotes={voiceNotes}
+                    onVoiceNotesChange={setVoiceNotes}
+                    readOnly={true}
                   />
                 </div>
               )}
@@ -616,6 +819,15 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+      )}
+
+      {/* مودال الطباعة */}
+      {order && (
+        <PrintOrderModal
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          order={order}
+        />
       )}
     </AnimatePresence>
   )

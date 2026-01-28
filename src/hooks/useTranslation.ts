@@ -33,6 +33,7 @@ const arTranslations: Translations = {
   'filter': 'تصفية',
   'export': 'تصدير',
   'print': 'طباعة',
+  'print_order': 'طباعة الطلب',
   'back': 'رجوع',
   'next': 'التالي',
   'previous': 'السابق',
@@ -107,6 +108,18 @@ const arTranslations: Translations = {
   'add_order': 'إضافة طلب',
   'manage_workers': 'إدارة العمال',
   'view_reports': 'عرض التقارير',
+
+  // مدير الورشة
+  'workshop_manager': 'مدير الورشة',
+  'workshop_manager_dashboard': 'لوحة تحكم مدير الورشة',
+  'workshop_manager_description': 'إدارة ومتابعة الطلبات في الورشة',
+  'workshop_manager_info': 'يمكنك متابعة جميع الطلبات في الورشة: الطلبات الحديثة، المكتملة، والمسلمة',
+  'orders_management': 'إدارة الطلبات',
+  'view_track_orders': 'عرض ومتابعة الطلبات الجارية',
+  'manage_deliver_orders': 'إدارة الطلبات المنتهية وتسليمها',
+  'view_delivered_history': 'عرض سجل الطلبات المسلمة',
+  'delivered_orders': 'الطلبات المسلمة',
+  'home_page': 'الصفحة الرئيسية',
   'client_name_required': 'اسم الزبونة *',
   'phone_required': 'رقم الهاتف *',
   'order_description_required': 'وصف الطلب *',
@@ -126,6 +139,20 @@ const arTranslations: Translations = {
   'order_description_placeholder': 'مثال: فستان سهرة طويل، فستان زفاف، عباية مطرزة...',
   'fabric_type_placeholder': 'مثال: حرير، شيفون، قطن، ساتان...',
   'save_order': 'حفظ الطلب',
+
+  // حقول جديدة لصفحة إضافة الطلبات
+  'order_received_date': 'تاريخ استلام الطلب',
+  'payment_method': 'طريقة الدفع',
+  'cash': 'كاش',
+  'card': 'شبكة',
+  'dress_description': 'وصف الفستان',
+  'dress_description_placeholder': 'أدخل وصف تفصيلي للفستان...',
+  'other_information': 'معلومات أخرى',
+  'enter_client_name': 'أدخل اسم الزبونة',
+  'enter_phone': 'أدخل رقم الهاتف',
+  'enter_order_number': 'أدخل رقم الطلب',
+  'optional': 'اختياري',
+  'sar': 'ريال',
   'all_orders': 'جميع الطلبات',
   'reset_filters': 'إعادة تعيين الفلاتر',
   'filter_by_date': 'تصفية بالتاريخ',
@@ -204,6 +231,8 @@ const arTranslations: Translations = {
   'important_warning': 'تحذير مهم',
   'complete_order_warning': 'بمجرد إنهاء الطلب، لن تتمكن من تعديل حالته مرة أخرى. تأكد من تحميل جميع صور العمل المكتمل قبل المتابعة.',
   'order_deleted_successfully': 'تم حذف الطلب بنجاح',
+  'select_delivery_date': 'اختر موعد التسليم',
+  'busy_date_warning': 'تحذير: هذا التاريخ مزدحم بـ {count} طلبات. يمكنك الاستمرار لكن قد يتأخر التسليم.',
 
   // مفاتيح مكون حذف الطلب
   'confirm_delete_order': 'تأكيد حذف الطلب',
@@ -225,6 +254,21 @@ const arTranslations: Translations = {
   'voice_notes': 'الملاحظات الصوتية',
   'voice_note': 'ملاحظة صوتية',
   'microphone_access_error': 'خطأ في الوصول للميكروفون',
+  'transcribe_to_text': 'تحويل إلى نص',
+  'transcribe_all': 'تحويل الكل',
+  'no_notes_to_transcribe': 'لا توجد تسجيلات تحتاج للتحويل',
+  'translate': 'ترجمة',
+  'transcription': 'النص المحول',
+  'translation': 'الترجمة',
+  'select_language': 'اختر اللغة',
+  'transcribing': 'جاري التحويل...',
+  'translating': 'جاري الترجمة...',
+  'transcription_error': 'خطأ في تحويل الصوت إلى نص',
+  'translation_error': 'خطأ في الترجمة',
+  'english': 'الإنجليزية',
+  'urdu': 'الأوردو',
+  'bengali': 'البنغالية',
+  'edit_transcription': 'تعديل النص',
 
   // مفاتيح صفحة العمال
   'worker_added_success': 'تم إضافة العامل بنجاح',
@@ -397,6 +441,31 @@ const arTranslations: Translations = {
   'completed_work_images': 'صور العمل المكتمل',
   'design': 'تصميم',
   'enlarged_image': 'صورة مكبرة',
+
+  // مفاتيح المقاسات الجديدة
+  'add_measurements': 'إضافة المقاسات',
+  'edit_measurements': 'تعديل المقاسات',
+  'measurements_modal_title': 'المقاسات',
+  'save_measurements': 'حفظ المقاسات',
+  'measurement_sh': 'الكتف (sh)',
+  'measurement_shr': 'دوران الكتف (shr)',
+  'measurement_ch': 'الصدر (ch)',
+  'measurement_w': 'الخصر (w)',
+  'measurement_hi': 'الأرداف (hi)',
+  'measurement_p': 'طول البنس (p)',
+  'measurement_L': 'طول الصدرية (L)',
+  'measurement_v': 'فتحة الصدر (v)',
+  'measurement_HF': 'الإبط (HF)',
+  'measurement_K': 'طول الكم (K)',
+  'measurement_S': 'الزند (S)',
+  'measurement_S1': 'الإسوارة (S1)',
+  'measurement_L_front': 'طول الأمام (L)',
+  'measurement_LB': 'طول الخلف (LB)',
+  'measurement_additional_notes': 'مقاسات إضافية',
+  'additional_measurements_placeholder': 'أدخل أي مقاسات إضافية هنا...',
+  'measurements_saved_successfully': 'تم حفظ المقاسات بنجاح',
+  'measurements_save_error': 'حدث خطأ أثناء حفظ المقاسات',
+
   'language': 'ar'
 }
 
@@ -426,6 +495,7 @@ const enTranslations: Translations = {
   'filter': 'Filter',
   'export': 'Export',
   'print': 'Print',
+  'print_order': 'Print Order',
   'back': 'Back',
   'next': 'Next',
   'previous': 'Previous',
@@ -500,6 +570,18 @@ const enTranslations: Translations = {
   'add_order': 'Add Order',
   'manage_workers': 'Manage Workers',
   'view_reports': 'View Reports',
+
+  // Workshop Manager
+  'workshop_manager': 'Workshop Manager',
+  'workshop_manager_dashboard': 'Workshop Manager Dashboard',
+  'workshop_manager_description': 'Manage and track workshop orders',
+  'workshop_manager_info': 'You can track all workshop orders: recent, completed, and delivered orders',
+  'orders_management': 'Orders Management',
+  'view_track_orders': 'View and track ongoing orders',
+  'manage_deliver_orders': 'Manage and deliver completed orders',
+  'view_delivered_history': 'View delivered orders history',
+  'delivered_orders': 'Delivered Orders',
+  'home_page': 'Home Page',
   'client_name_required': 'Client Name *',
   'phone_required': 'Phone Number *',
   'order_description_required': 'Order Description *',
@@ -519,6 +601,20 @@ const enTranslations: Translations = {
   'order_description_placeholder': 'Example: Long evening dress, wedding dress, embroidered abaya...',
   'fabric_type_placeholder': 'Example: Silk, chiffon, cotton, satin...',
   'save_order': 'Save Order',
+
+  // New fields for add order page
+  'order_received_date': 'Order Received Date',
+  'payment_method': 'Payment Method',
+  'cash': 'Cash',
+  'card': 'Card/Network',
+  'dress_description': 'Dress Description',
+  'dress_description_placeholder': 'Enter detailed dress description...',
+  'other_information': 'Other Information',
+  'enter_client_name': 'Enter client name',
+  'enter_phone': 'Enter phone number',
+  'enter_order_number': 'Enter order number',
+  'optional': 'Optional',
+  'sar': 'SAR',
   'all_orders': 'All Orders',
   'reset_filters': 'Reset Filters',
   'filter_by_date': 'Filter by Date',
@@ -610,6 +706,8 @@ const enTranslations: Translations = {
   'email_does_not_match': 'Email does not match the registered admin email',
   'incorrect_password': 'Incorrect password',
   'confirm_delete': 'Confirm Delete',
+  'select_delivery_date': 'Select delivery date',
+  'busy_date_warning': 'Warning: This date is busy with {count} orders. You can continue but delivery may be delayed.',
 
   // مفاتيح مكون الملاحظات الصوتية
   'start_recording': 'Start Recording',
@@ -618,6 +716,21 @@ const enTranslations: Translations = {
   'voice_notes': 'Voice Notes',
   'voice_note': 'Voice Note',
   'microphone_access_error': 'Microphone access error',
+  'transcribe_to_text': 'Transcribe to Text',
+  'transcribe_all': 'Transcribe All',
+  'no_notes_to_transcribe': 'No notes to transcribe',
+  'translate': 'Translate',
+  'transcription': 'Transcription',
+  'translation': 'Translation',
+  'select_language': 'Select Language',
+  'transcribing': 'Transcribing...',
+  'translating': 'Translating...',
+  'transcription_error': 'Error transcribing audio',
+  'translation_error': 'Error translating text',
+  'english': 'English',
+  'urdu': 'Urdu',
+  'bengali': 'Bengali',
+  'edit_transcription': 'Edit Transcription',
 
   // مفاتيح صفحة العمال
   'worker_added_success': 'Worker added successfully',
@@ -790,6 +903,31 @@ const enTranslations: Translations = {
   'completed_work_images': 'Completed Work Images',
   'design': 'Design',
   'enlarged_image': 'Enlarged Image',
+
+  // New measurements keys
+  'add_measurements': 'Add Measurements',
+  'edit_measurements': 'Edit Measurements',
+  'measurements_modal_title': 'Measurements',
+  'save_measurements': 'Save Measurements',
+  'measurement_sh': 'Shoulder (sh)',
+  'measurement_shr': 'Shoulder Circumference (shr)',
+  'measurement_ch': 'Chest (ch)',
+  'measurement_w': 'Waist (w)',
+  'measurement_hi': 'Hips (hi)',
+  'measurement_p': 'Dart Length (p)',
+  'measurement_L': 'Bodice Length (L)',
+  'measurement_v': 'Neckline (v)',
+  'measurement_HF': 'Armpit (HF)',
+  'measurement_K': 'Sleeve Length (K)',
+  'measurement_S': 'Forearm (S)',
+  'measurement_S1': 'Cuff (S1)',
+  'measurement_L_front': 'Front Length (L)',
+  'measurement_LB': 'Back Length (LB)',
+  'measurement_additional_notes': 'Additional Measurements',
+  'additional_measurements_placeholder': 'Enter any additional measurements here...',
+  'measurements_saved_successfully': 'Measurements saved successfully',
+  'measurements_save_error': 'Error saving measurements',
+
   'language': 'en'
 }
 
@@ -811,12 +949,20 @@ export function useTranslation() {
     localStorage.setItem('dashboard-language', newLanguage)
   }
 
-  // دالة الترجمة
-  const t = (key: TranslationKey): string => {
+  // دالة الترجمة مع دعم المتغيرات
+  const t = (key: TranslationKey, variables?: Record<string, any>): string => {
     const translations = language === 'ar' ? arTranslations : enTranslations
     const translation = translations[key]
 
     if (typeof translation === 'string') {
+      // استبدال المتغيرات في النص
+      if (variables) {
+        let result = translation
+        Object.keys(variables).forEach(varKey => {
+          result = result.replace(`{${varKey}}`, String(variables[varKey]))
+        })
+        return result
+      }
       return translation
     }
 

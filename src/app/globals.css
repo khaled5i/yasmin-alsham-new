@@ -24,6 +24,16 @@ body {
   direction: rtl;
 }
 
+/* دعم Safe Area Insets للتطبيقات المحمولة */
+@supports (padding-top: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
 /* منع overflow الأفقي على الموبايل */
 @media (max-width: 1023px) {
 
@@ -307,4 +317,676 @@ textarea:focus-visible {
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
   }
+}
+
+/* ========================================
+   أنماط الطباعة - Order Print Styles
+   ======================================== */
+
+/* عرض محتوى الطباعة على الشاشة أيضاً */
+.print-layout {
+  display: block;
+  font-family: 'Cairo', 'Arial', sans-serif;
+  color: #000;
+  background: #fff;
+  direction: rtl;
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.print-page {
+  background: white;
+  padding: 20px;
+  margin-bottom: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.page-front {
+  display: flex;
+  flex-direction: column;
+}
+
+.print-header {
+  margin-bottom: 20px;
+}
+
+.print-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 2px solid #e91e63;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.header-item {
+  flex: 1;
+}
+
+.header-right {
+  text-align: right;
+}
+
+.header-center {
+  text-align: center;
+}
+
+.header-left {
+  text-align: left;
+}
+
+.print-logo {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.print-brand {
+  font-size: 36px;
+  font-weight: bold;
+  color: #e91e63;
+  margin-bottom: 5px;
+}
+
+.print-subtitle {
+  font-size: 16px;
+  color: #666;
+}
+
+.print-order-info {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.info-grid-single-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.info-item-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.info-label {
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+}
+
+.info-value {
+  color: #666;
+  font-size: 14px;
+}
+
+.print-content {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+}
+
+.print-measurements-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* تخطيط صفحة طباعة التعديل - بعرض كامل */
+.print-alteration-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.print-measurements {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #e91e63;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e91e63;
+}
+
+.section-title-compact {
+  font-size: 16px;
+}
+
+/* أنماط الطباعة */
+@media print {
+
+  /* إخفاء عناصر التحكم */
+  .no-print {
+    display: none !important;
+  }
+
+  /* إخفاء جميع العناصر الأخرى */
+  body>*:not(.print-container) {
+    display: none !important;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-container {
+    display: block !important;
+  }
+
+  .print-layout {
+    display: block !important;
+    font-family: 'Cairo', 'Arial', sans-serif;
+    color: #000;
+    background: #fff;
+    direction: rtl;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* إعدادات الصفحة - إخفاء رأس وتذييل الصفحة */
+  @page {
+    size: A4;
+    margin: 1cm;
+    /* بعض المتصفحات تدعم إخفاء الرأس والتذييل */
+  }
+
+  /* إخفاء about:blank والعناوين الأخرى */
+  html::after,
+  html::before {
+    content: none !important;
+  }
+
+  /* الصفحة الأولى والثانية */
+  .print-page {
+    width: 100%;
+    min-height: 100vh;
+    page-break-after: always;
+    box-sizing: border-box;
+    padding: 20px;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+  }
+
+  .print-page:last-child {
+    page-break-after: auto;
+  }
+
+  /* ---- الصفحة الأولى (الوجه الأمامي) ---- */
+  .page-front {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* رأس الصفحة */
+  .print-header {
+    text-align: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #ec4899;
+  }
+
+  /* السطر الأول: رقم الهاتف - الموقع - تاريخ الاستلام */
+  .print-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #333;
+  }
+
+  .header-item {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .header-right {
+    text-align: right;
+  }
+
+  .header-center {
+    text-align: center;
+  }
+
+  .header-left {
+    text-align: left;
+  }
+
+  .print-logo {
+    text-align: center;
+    margin-bottom: 15px;
+  }
+
+  .print-brand {
+    font-size: 28px;
+    font-weight: bold;
+    color: #ec4899;
+    margin: 0;
+  }
+
+  .print-subtitle {
+    font-size: 14px;
+    color: #666;
+    margin: 5px 0 0 0;
+  }
+
+  .print-order-info {
+    margin-top: 15px;
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    text-align: right;
+  }
+
+  /* صف أفقي واحد لمعلومات العميل */
+  .info-grid-single-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px;
+    background: #f9fafb;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .info-item-inline {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    font-size: 11px;
+  }
+
+  .info-item {
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #f9fafb;
+    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    font-size: 11px;
+  }
+
+  .info-label {
+    font-weight: bold;
+    color: #374151;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  .info-value {
+    color: #111827;
+    font-size: 11px;
+  }
+
+  /* المحتوى الرئيسي - مقسم لجزئين */
+  .print-content {
+    display: flex;
+    flex: 1;
+    gap: 20px;
+  }
+
+  /* قسم المقاسات والملاحظات الإضافية (30% - الجهة اليمنى) */
+  .print-measurements-section {
+    width: 30%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .print-measurements {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 15px;
+    min-height: 360px;
+    /* زيادة الارتفاع بنسبة 20% من 300px */
+  }
+
+  /* أنماط مختصرة للمقاسات - تقليل بنسبة 40% */
+  .print-measurements-compact {
+    padding: 8px 12px;
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #ec4899;
+    margin: 0 0 15px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #fce7f3;
+  }
+
+  .section-title-compact {
+    font-size: 13px;
+    margin: 0 0 8px 0;
+    padding-bottom: 4px;
+  }
+
+  .measurements-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .measurements-list-compact {
+    gap: 4px;
+    /* زيادة بنسبة 20% من 3px */
+  }
+
+  .measurement-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: #fdf2f8;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .measurement-item-compact {
+    padding: 3px 7px;
+    /* زيادة بنسبة 20% */
+    font-size: 10px;
+  }
+
+  .measurement-label {
+    color: #374151;
+    font-weight: 500;
+  }
+
+  .measurement-value {
+    color: #111827;
+    font-weight: bold;
+    min-width: 50px;
+    text-align: center;
+  }
+
+  /* قسم ملاحظات إضافية - النص المحوّل من الملاحظات الصوتية */
+  .print-additional-notes {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 8px 12px;
+    background: #f0fdf4;
+  }
+
+  .additional-notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .additional-note-item {
+    display: flex;
+    gap: 6px;
+    font-size: 10px;
+    line-height: 1.4;
+    padding: 3px 0;
+    border-bottom: 1px dashed #d1fae5;
+  }
+
+  .additional-note-item:last-child {
+    border-bottom: none;
+  }
+
+  .additional-note-empty {
+    color: #9ca3af;
+    font-style: italic;
+    justify-content: center;
+  }
+
+  .note-number {
+    color: #059669;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+
+  .note-text {
+    color: #374151;
+  }
+
+  /* أنماط معلومات الدفع - لصفحة طباعة التعديل */
+  .payment-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .payment-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px;
+    font-size: 10px;
+    line-height: 1.4;
+    border-bottom: 1px dashed #d1fae5;
+  }
+
+  .payment-item:last-child {
+    border-bottom: none;
+  }
+
+  .payment-label {
+    color: #374151;
+    font-weight: 600;
+  }
+
+  .payment-value {
+    color: #111827;
+    font-weight: bold;
+  }
+
+  .payment-value.paid {
+    color: #059669;
+  }
+
+  .payment-value.remaining {
+    color: #dc2626;
+  }
+
+  /* قسم التعليقات (70% - الجهة اليسرى) */
+  .print-comments {
+    width: 70%;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .comments-box {
+    flex: 1;
+    min-height: 300px;
+    padding: 10px;
+    background: #f9fafb;
+    border: 1px dashed #d1d5db;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  /* عرض صورة واحدة فقط في الصفحة الرئيسية */
+  .first-images-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    flex: 1;
+  }
+
+  .first-images-single {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+  }
+
+  .first-image-container {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+    aspect-ratio: 1;
+  }
+
+  .first-image-single {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    aspect-ratio: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .first-image-single .first-design-image {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .first-design-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .empty-comments {
+    height: 100%;
+    min-height: 280px;
+  }
+
+  .design-comments-image-container {
+    width: 100%;
+    height: 100%;
+    min-height: 350px;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+  }
+
+  .design-comments-image {
+    width: 100%;
+    height: 100%;
+    min-height: 350px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: #fff;
+  }
+
+  .text-comments {
+    padding: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #333;
+  }
+
+  /* ---- الصفحة الثانية (الوجه الخلفي - الصور) ---- */
+  .page-back {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .images-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #ec4899;
+    margin: 0 0 20px 0;
+    text-align: center;
+  }
+
+  .images-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    width: 100%;
+  }
+
+  .image-container {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 1;
+  }
+
+  .design-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* إذا كانت هناك صورة واحدة فقط */
+  .images-grid:has(.image-container:only-child) {
+    grid-template-columns: 1fr;
+    max-width: 70%;
+    margin: 0 auto;
+  }
+
+  /* إذا كانت هناك 3 صور */
+  .images-grid:has(.image-container:nth-child(3):last-child) {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* زر إضافة للطباعة على الصور */
+.print-toggle-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.print-toggle-btn.selected {
+  background: #ec4899;
+  color: white;
+  border: 1px solid #ec4899;
+}
+
+.print-toggle-btn.not-selected {
+  background: rgba(255, 255, 255, 0.9);
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
+
+.print-toggle-btn:hover {
+  transform: scale(1.05);
 }

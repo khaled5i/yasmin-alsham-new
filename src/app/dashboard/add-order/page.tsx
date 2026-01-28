@@ -11,8 +11,11 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ImageUpload from '@/components/ImageUpload'
-import VoiceNotes from '@/components/VoiceNotes'
+import UnifiedNotesInput from '@/components/UnifiedNotesInput'
+import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
+import DatePickerWithStats from '@/components/DatePickerWithStats'
+import DatePickerForProof from '@/components/DatePickerForProof'
 import {
   ArrowRight,
   Upload,
@@ -46,41 +49,28 @@ function AddOrderContent() {
     clientPhone: '',
     description: '',
     fabric: '',
-    measurements: {
-      // المقاسات الأساسية
-      shoulder: '',
-      shoulderCircumference: '',
-      chest: '',
-      waist: '',
-      hips: '',
-
-      // مقاسات التفصيل المتقدمة
-      dartLength: '',
-      bodiceLength: '',
-      neckline: '',
-      armpit: '',
-
-      // مقاسات الأكمام
-      sleeveLength: '',
-      forearm: '',
-      cuff: '',
-
-      // مقاسات الطول
-      frontLength: '',
-      backLength: ''
-    },
     price: '',
     paidAmount: '',
+    paymentMethod: 'cash', // طريقة الدفع: cash أو card
+    orderReceivedDate: new Date().toISOString().split('T')[0], // تاريخ استلام الطلب (تلقائي)
     assignedWorker: '',
     dueDate: '',
+    proofDeliveryDate: '', // موعد تسليم البروفا (اختياري)
     notes: '',
     voiceNotes: [] as Array<{
       id: string
       data: string
       timestamp: number
       duration?: number
+      transcription?: string
+      translatedText?: string
+      translationLanguage?: string
     }>,
-    images: [] as string[]
+    images: [] as string[],
+    imageAnnotations: [] as ImageAnnotation[],
+    imageDrawings: [] as DrawingPath[],
+    customDesignImage: null as File | null,
+    savedDesignComments: [] as SavedDesignComment[]
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -107,6 +97,9 @@ function AddOrderContent() {
     data: string
     timestamp: number
     duration?: number
+    transcription?: string
+    translatedText?: string
+    translationLanguage?: string
   }>) => {
     setFormData(prev => ({
       ...prev,
@@ -114,18 +107,37 @@ function AddOrderContent() {
     }))
   }
 
-  // معالجة تغيير المقاسات
-  const handleMeasurementChange = (measurement: string, value: string) => {
+  // معالجة تغيير التعليقات على الصورة
+  const handleImageAnnotationsChange = (annotations: ImageAnnotation[]) => {
     setFormData(prev => ({
       ...prev,
-      measurements: {
-        ...prev.measurements,
-        [measurement]: value
-      }
+      imageAnnotations: annotations
     }))
   }
 
+  // معالجة تغيير الرسومات على الصورة
+  const handleImageDrawingsChange = (drawings: DrawingPath[]) => {
+    setFormData(prev => ({
+      ...prev,
+      imageDrawings: drawings
+    }))
+  }
 
+  // معالجة تغيير صورة التصميم المخصصة
+  const handleDesignImageChange = (image: File | null) => {
+    setFormData(prev => ({
+      ...prev,
+      customDesignImage: image
+    }))
+  }
+
+  // معالجة تغيير التعليقات المحفوظة
+  const handleSavedCommentsChange = (comments: SavedDesignComment[]) => {
+    setFormData(prev => ({
+      ...prev,
+      savedDesignComments: comments
+    }))
+  }
 
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
@@ -143,37 +155,92 @@ function AddOrderContent() {
     try {
       console.log('📦 Submitting order...')
 
-      // تحويل المقاسات إلى أرقام
-      const measurements: Record<string, number> = {}
-      Object.entries(formData.measurements).forEach(([key, value]) => {
-        if (value && value !== '') {
-          measurements[key] = Number(value)
-        }
-      })
-
-      // تحويل الملاحظات الصوتية إلى مصفوفة من strings
+      // تحويل الملاحظات الصوتية إلى مصفوفة من strings (للتوافق مع voice_notes القديم)
       const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+
+      // حفظ البيانات الكاملة للملاحظات الصوتية (مع النصوص المحولة) في voice_transcriptions
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
+        id: vn.id,
+        data: vn.data,
+        timestamp: vn.timestamp,
+        duration: vn.duration,
+        transcription: vn.transcription,
+        translatedText: vn.translatedText,
+        translationLanguage: vn.translationLanguage
+      }))
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
       const price = Number(formData.price)
       const paidAmount = Number(formData.paidAmount) || 0
 
+      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        try {
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(formData.customDesignImage!)
+          })
+          const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
+          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
+
+          // التحقق من الحجم (الحد الأقصى 5MB)
+          if (imageSizeKB > 5 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+            return
+          }
+        } catch (imageError) {
+          console.error('❌ Error converting image to base64:', imageError)
+          toast.error('خطأ في تحويل الصورة')
+          return
+        }
+      }
+
       // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
 
+      // تجميع جميع التعليقات المحفوظة
+      let allSavedComments = [...formData.savedDesignComments]
+
+      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentComment: SavedDesignComment = {
+          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+          annotations: formData.imageAnnotations,
+          drawings: formData.imageDrawings,
+          image: customDesignImageBase64 || null,
+          title: `التعليق ${allSavedComments.length + 1}`
+        }
+        allSavedComments.push(currentComment)
+      }
+
       // إنشاء الطلب باستخدام Supabase
+      // رقم الطلب: إذا تم إدخاله يدوياً سيتم استخدامه، وإلا سيتم توليده تلقائياً من قاعدة البيانات
       const result = await createOrder({
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
-        measurements,
+        measurements: {}, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
         price: price,
+        payment_method: formData.paymentMethod as 'cash' | 'card',
+        order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
+        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
         images: formData.images.length > 0 ? formData.images : undefined,
+        // استخدام البنية الجديدة للتعليقات المتعددة
+        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        // للتوافق مع الكود القديم - سنحتفظ بهذه الحقول أيضاً
+        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+        custom_design_image: customDesignImageBase64,
         status: 'pending',
         paid_amount: paidAmount
         // payment_status سيتم حسابه تلقائياً بواسطة trigger
@@ -281,24 +348,8 @@ function AddOrderContent() {
                 <span>{t('basic_information')}</span>
               </h3>
 
-              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* رقم الطلب */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('order_number')} *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.orderNumber}
-                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
-                    disabled={isSubmitting}
-                    required
-                  />
-                </div>
-
-                {/* اسم الزبونة */}
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* 1. الاسم */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {t('client_name_required')}
@@ -313,7 +364,7 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* رقم الهاتف */}
+                {/* 2. رقم الهاتف */}
                 <div>
                   <NumericInput
                     value={formData.clientPhone}
@@ -326,48 +377,111 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* وصف الطلب */}
+                {/* 3. موعد التسليم - تقويم ذكي */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('description')} ({t('optional')})
+                    {t('delivery_date_required')}
                   </label>
-                  <input
-                    type="text"
-                    value={formData.description}
-                    onChange={(e) => handleInputChange('description', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder={t('order_description_placeholder')}
+                  <DatePickerWithStats
+                    selectedDate={formData.dueDate}
+                    onChange={(date) => handleInputChange('dueDate', date)}
+                    minDate={new Date()}
+                    required={true}
                   />
                 </div>
 
-                {/* نوع القماش */}
+                {/* 3.5. موعد تسليم البروفا - تقويم أخضر (اختياري) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('fabric_type')}
+                    {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'} ({t('optional')})
                   </label>
-                  <input
-                    type="text"
-                    value={formData.fabric}
-                    onChange={(e) => handleInputChange('fabric', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder={t('fabric_type_placeholder')}
+                  <DatePickerForProof
+                    selectedDate={formData.proofDeliveryDate}
+                    onChange={(date) => handleInputChange('proofDeliveryDate', date)}
+                    minDate={new Date()}
+                    required={false}
                   />
                 </div>
 
-                {/* السعر */}
+                {/* 4. تاريخ استلام الطلب (تلقائي) */}
                 <div>
-                  <NumericInput
-                    value={formData.price}
-                    onChange={(value) => handleInputChange('price', value)}
-                    type="price"
-                    label={t('price_sar')}
-                    placeholder="0"
-                    required
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('order_received_date')}
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.orderReceivedDate}
+                    onChange={(e) => handleInputChange('orderReceivedDate', e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700"
+                    disabled
+                  />
+                </div>
+
+                {/* 5. رقم الطلب */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('order_number')} ({t('optional')})
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.orderNumber}
+                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
                     disabled={isSubmitting}
                   />
                 </div>
 
-                {/* الدفعة المستلمة */}
+                {/* 6. السعر + طريقة الدفع */}
+                <div className="md:col-span-2 lg:col-span-3">
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* السعر */}
+                    <div>
+                      <NumericInput
+                        value={formData.price}
+                        onChange={(value) => handleInputChange('price', value)}
+                        type="price"
+                        label={t('price_sar')}
+                        placeholder="0"
+                        required
+                        disabled={isSubmitting}
+                      />
+                    </div>
+
+                    {/* طريقة الدفع */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {t('payment_method')} *
+                      </label>
+                      <div className="flex gap-4 items-center h-[52px]">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value="cash"
+                            checked={formData.paymentMethod === 'cash'}
+                            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+                            className="w-4 h-4 text-pink-600 focus:ring-pink-500"
+                          />
+                          <span className="text-gray-700">{t('cash')}</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value="card"
+                            checked={formData.paymentMethod === 'card'}
+                            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+                            className="w-4 h-4 text-pink-600 focus:ring-pink-500"
+                          />
+                          <span className="text-gray-700">{t('card')}</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 7. الدفعة المستلمة */}
                 <div>
                   <NumericInput
                     value={formData.paidAmount}
@@ -390,7 +504,7 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* الدفعة المتبقية (للعرض فقط) */}
+                {/* 8. الدفعة المتبقية (للعرض فقط) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {t('remaining_amount')}
@@ -399,41 +513,32 @@ function AddOrderContent() {
                     {remainingAmount.toFixed(2)} {t('sar')}
                   </div>
                 </div>
-
-                {/* العامل المسؤول */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('responsible_worker')}
-                  </label>
-                  <select
-                    value={formData.assignedWorker}
-                    onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                  >
-                    <option value="">{t('choose_worker')}</option>
-                    {workers.filter(w => w.is_available && w.user?.is_active).map(worker => (
-                      <option key={worker.id} value={worker.id}>
-                        {worker.user?.full_name || worker.specialty} - {worker.specialty}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* موعد التسليم */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('delivery_date_required')}
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.dueDate}
-                    onChange={(e) => handleInputChange('dueDate', e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    required
-                  />
-                </div>
               </div>
+            </div>
+
+            {/* التعليقات الصوتية على صورة الفستان */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100">
+              <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+                <Ruler className="w-5 h-5 text-pink-600" />
+                <span>تعليقات على التصميم</span>
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                انقر على أي منطقة في الصورة لإضافة ملاحظة صوتية، أو فعّل وضع الرسم للرسم على الصورة
+              </p>
+
+              <InteractiveImageAnnotation
+                imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
+                annotations={formData.imageAnnotations}
+                onAnnotationsChange={handleImageAnnotationsChange}
+                drawings={formData.imageDrawings}
+                onDrawingsChange={handleImageDrawingsChange}
+                customImage={formData.customDesignImage}
+                onImageChange={handleDesignImageChange}
+                disabled={isSubmitting}
+                savedComments={formData.savedDesignComments}
+                onSavedCommentsChange={handleSavedCommentsChange}
+                showSaveButton={true}
+              />
             </div>
 
             {/* صور التصميم */}
@@ -446,236 +551,87 @@ function AddOrderContent() {
               <ImageUpload
                 images={formData.images}
                 onImagesChange={(images) => handleInputChange('images', images)}
-                maxImages={10}
+                maxImages={999}
+                acceptVideo={true}
               />
             </div>
 
-            {/* المقاسات */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100 relative z-10">
-              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-                <Ruler className="w-5 h-5 text-pink-600" />
-                <span>{t('measurements_cm')}</span>
-              </h3>
-
-              <div className="space-y-8">
-                {/* المقاسات الأساسية */}
-                <div>
-                  <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                    {t('basic_measurements')}
-                  </h4>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.shoulder}
-                        onChange={(value) => handleMeasurementChange('shoulder', value)}
-                        type="measurement"
-                        label={t('shoulder')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.shoulderCircumference}
-                        onChange={(value) => handleMeasurementChange('shoulderCircumference', value)}
-                        type="measurement"
-                        label={t('shoulder_circumference')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.chest}
-                        onChange={(value) => handleMeasurementChange('chest', value)}
-                        type="measurement"
-                        label={t('chest')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.waist}
-                        onChange={(value) => handleMeasurementChange('waist', value)}
-                        type="measurement"
-                        label={t('waist')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.hips}
-                        onChange={(value) => handleMeasurementChange('hips', value)}
-                        type="measurement"
-                        label={t('hips')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* مقاسات التفصيل المتقدمة */}
-                <div>
-                  <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                    {t('advanced_measurements')}
-                  </h4>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.dartLength}
-                        onChange={(value) => handleMeasurementChange('dartLength', value)}
-                        type="measurement"
-                        label={t('dart_length')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.bodiceLength}
-                        onChange={(value) => handleMeasurementChange('bodiceLength', value)}
-                        type="measurement"
-                        label={t('bodice_length')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.neckline}
-                        onChange={(value) => handleMeasurementChange('neckline', value)}
-                        type="measurement"
-                        label={t('neckline')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.armpit}
-                        onChange={(value) => handleMeasurementChange('armpit', value)}
-                        type="measurement"
-                        label={t('armpit')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* مقاسات الأكمام */}
-                <div>
-                  <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                    {t('sleeve_measurements')}
-                  </h4>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.sleeveLength}
-                        onChange={(value) => handleMeasurementChange('sleeveLength', value)}
-                        type="measurement"
-                        label={t('sleeve_length')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.forearm}
-                        onChange={(value) => handleMeasurementChange('forearm', value)}
-                        type="measurement"
-                        label={t('forearm')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.cuff}
-                        onChange={(value) => handleMeasurementChange('cuff', value)}
-                        type="measurement"
-                        label={t('cuff')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* مقاسات الطول */}
-                <div>
-                  <h4 className="text-md font-semibold text-gray-800 mb-4 border-b border-pink-200 pb-2">
-                    {t('length_measurements')}
-                  </h4>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.frontLength}
-                        onChange={(value) => handleMeasurementChange('frontLength', value)}
-                        type="measurement"
-                        label={t('front_length')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    <div>
-                      <NumericInput
-                        value={formData.measurements.backLength}
-                        onChange={(value) => handleMeasurementChange('backLength', value)}
-                        type="measurement"
-                        label={t('back_length')}
-                        placeholder={t('cm_placeholder')}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* الملاحظات */}
+            {/* الملاحظات الموحدة */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <MessageSquare className="w-5 h-5 text-pink-600" />
                 <span>{t('additional_notes')}</span>
               </h3>
 
-              <textarea
-                value={formData.notes}
-                onChange={(e) => handleInputChange('notes', e.target.value)}
-                rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+              <UnifiedNotesInput
+                notes={formData.notes}
+                voiceNotes={formData.voiceNotes || []}
+                onNotesChange={(notes) => handleInputChange('notes', notes)}
+                onVoiceNotesChange={handleVoiceNotesChange}
+                disabled={isSubmitting}
                 placeholder={t('additional_notes_placeholder')}
               />
+            </div>
 
-              {/* الملاحظات الصوتية */}
-              <div className="mt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  {t('voice_notes_optional')}
-                </label>
-                <VoiceNotes
-                  voiceNotes={formData.voiceNotes || []}
-                  onVoiceNotesChange={handleVoiceNotesChange}
-                  disabled={isSubmitting}
-                />
+            {/* معلومات أخرى */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-5 border border-pink-100">
+              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center space-x-2 space-x-reverse">
+                <FileText className="w-5 h-5 text-pink-600" />
+                <span>{t('other_information')}</span>
+              </h3>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* 1. وصف الفستان - يأخذ العرض الكامل */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('dress_description')} ({t('optional')})
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-sm"
+                    placeholder={t('dress_description_placeholder')}
+                  />
+                </div>
+
+                {/* 2. نوع القماش - نصف العرض */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('fabric_type')} ({t('optional')})
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.fabric}
+                    onChange={(e) => handleInputChange('fabric', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-sm"
+                    placeholder={t('fabric_type_placeholder')}
+                  />
+                </div>
+
+                {/* 3. العامل المسؤول - نصف العرض */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('responsible_worker')} ({t('optional')})
+                  </label>
+                  <select
+                    value={formData.assignedWorker}
+                    onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-sm"
+                  >
+                    <option value="">{t('choose_worker')}</option>
+                    {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
+                      <option key={worker.id} value={worker.id}>
+                        {worker.user?.full_name || worker.specialty} - {worker.specialty}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
             {/* Action buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            < div className="flex flex-col sm:flex-row gap-4 justify-center" >
               <button
                 type="submit"
                 disabled={isSubmitting}
@@ -700,11 +656,11 @@ function AddOrderContent() {
               >
                 {t('cancel')}
               </Link>
-            </div>
-          </form>
-        </motion.div>
-      </div>
-    </div>
+            </div >
+          </form >
+        </motion.div >
+      </div >
+    </div >
   )
 }
 
