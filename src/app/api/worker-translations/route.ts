@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { supabase } from '@/lib/supabase'
 
 // GET: تحميل الترجمات المحفوظة لعامل معين في طلب معين
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
+
     // التحقق من المصادقة
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
@@ -45,8 +44,7 @@ export async function GET(request: NextRequest) {
 // POST: حفظ ترجمة جديدة أو تحديث ترجمة موجودة
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
+
     // التحقق من المصادقة
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
@@ -118,8 +116,7 @@ export async function POST(request: NextRequest) {
 // DELETE: حذف ترجمة معينة
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
+
     // التحقق من المصادقة
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
