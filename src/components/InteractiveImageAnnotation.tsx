@@ -1904,8 +1904,8 @@ export default function InteractiveImageAnnotation({
                     <div
                       key={comment.id}
                       className={`bg-white rounded-lg border p-4 transition-all ${editingCommentId === comment.id
-                          ? 'border-pink-500 ring-2 ring-pink-200'
-                          : 'border-gray-200 hover:border-pink-300'
+                        ? 'border-pink-500 ring-2 ring-pink-200'
+                        : 'border-gray-200 hover:border-pink-300'
                         }`}
                     >
                       <div className="flex items-start justify-between mb-3">

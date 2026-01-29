@@ -26,9 +26,12 @@ import {
   MessageSquare,
   Ruler,
   Mic,
-  Wrench
+  Wrench,
+  MessageCircle
 } from 'lucide-react'
 import VoiceNotes from '@/components/VoiceNotes'
+import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
+import toast from 'react-hot-toast'
 
 export default function CompletedOrdersPage() {
   const { user } = useAuthStore()
@@ -151,6 +154,9 @@ export default function CompletedOrdersPage() {
   const deliverOrder = async (orderId: string, markAsPaid: boolean) => {
     setIsProcessing(true)
     try {
+      // الحصول على بيانات الطلب قبل التحديث
+      const order = orders.find(o => o.id === orderId)
+
       const updates: any = {
         status: 'delivered',
         delivery_date: new Date().toISOString()
@@ -158,7 +164,6 @@ export default function CompletedOrdersPage() {
 
       // إذا تم اختيار "تم الدفع"، تحديث المبلغ المدفوع
       if (markAsPaid) {
-        const order = orders.find(o => o.id === orderId)
         if (order) {
           updates.paid_amount = order.price
           updates.payment_status = 'paid'
@@ -171,9 +176,46 @@ export default function CompletedOrdersPage() {
         setTimeout(() => setDeliverySuccess(false), 3000)
         setShowPaymentWarning(false)
         setOrderToDeliver(null)
+
+        // إرسال رسالة واتساب تلقائياً بعد التسليم
+        if (order && order.client_phone && order.client_phone.trim() !== '') {
+          try {
+            sendDeliveredWhatsApp(order.client_name, order.client_phone)
+            toast.success('تم فتح واتساب لإرسال رسالة التقييم للعميل', {
+              icon: '📱',
+              duration: 3000,
+            })
+          } catch (whatsappError) {
+            console.error('❌ Error opening WhatsApp:', whatsappError)
+            // لا نعرض رسالة خطأ هنا لأن التسليم تم بنجاح
+          }
+        }
       }
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  // إرسال رسالة "جاهز للاستلام" عبر واتساب
+  const handleSendReadyForPickup = (order: any) => {
+    if (!order.client_phone || order.client_phone.trim() === '') {
+      toast.error('لا يوجد رقم هاتف للعميل', {
+        icon: '⚠️',
+      })
+      return
+    }
+
+    try {
+      sendReadyForPickupWhatsApp(order.client_name, order.client_phone)
+      toast.success('تم فتح واتساب لإرسال رسالة الاستلام', {
+        icon: '📱',
+        duration: 3000,
+      })
+    } catch (error) {
+      console.error('❌ Error opening WhatsApp:', error)
+      toast.error('حدث خطأ أثناء فتح واتساب', {
+        icon: '⚠️',
+      })
     }
   }
 
@@ -474,6 +516,17 @@ export default function CompletedOrdersPage() {
                       <Wrench className="w-4 h-4" />
                       <span>طلب تعديل</span>
                     </Link>
+
+                    {/* زر إرسال رسالة استلام - يظهر فقط للطلبات المكتملة وليست المسلمة */}
+                    <button
+                      onClick={() => handleSendReadyForPickup(order)}
+                      disabled={!order.client_phone || order.client_phone.trim() === ''}
+                      className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 text-sm rounded-lg transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                      title={!order.client_phone ? 'لا يوجد رقم هاتف للعميل' : 'إرسال رسالة جاهز للاستلام'}
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>إرسال رسالة استلام</span>
+                    </button>
 
                     <button
                       onClick={() => handleMarkAsDelivered(order.id)}

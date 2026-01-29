@@ -7,27 +7,24 @@ import {
   X,
   Save,
   User,
-  Phone,
-  Package,
-  Ruler,
-  DollarSign,
+  FileText,
   MessageSquare,
-  UserCheck,
-  Calendar,
   CheckCircle,
   AlertCircle,
   Image as ImageIcon,
-  Pencil
+  Ruler,
+  MessageCircle
 } from 'lucide-react'
+import { openWhatsApp } from '@/utils/whatsapp'
 import ImageUpload from './ImageUpload'
-import VoiceNotes from './VoiceNotes'
+import UnifiedNotesInput from './UnifiedNotesInput'
 import NumericInput from './NumericInput'
-import RemainingPaymentWarningModal from './RemainingPaymentWarningModal'
+import DatePickerWithStats from './DatePickerWithStats'
+import DatePickerForProof from './DatePickerForProof'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { Order } from '@/lib/services/order-service'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
-import { Measurements, MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 
 interface EditOrderModalProps {
   order: Order | null
@@ -38,40 +35,49 @@ interface EditOrderModalProps {
 }
 
 export default function EditOrderModal({ order, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
-  const { t } = useTranslation()
-  const [formData, setFormData] = useState<Partial<Order>>({})
+  const { t, isArabic } = useTranslation()
+  const [formData, setFormData] = useState({
+    orderNumber: '',
+    clientName: '',
+    clientPhone: '',
+    description: '',
+    fabric: '',
+    price: '',
+    paidAmount: '',
+    paymentMethod: 'cash' as 'cash' | 'card',
+    orderReceivedDate: '',
+    assignedWorker: '',
+    dueDate: '',
+    proofDeliveryDate: '',
+    notes: '',
+    voiceNotes: [] as Array<{
+      id: string
+      data: string
+      timestamp: number
+      duration?: number
+      transcription?: string
+      translatedText?: string
+      translationLanguage?: string
+    }>,
+    images: [] as string[],
+    imageAnnotations: [] as ImageAnnotation[],
+    imageDrawings: [] as DrawingPath[],
+    customDesignImage: null as File | null,
+    savedDesignComments: [] as SavedDesignComment[]
+  })
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
-  const [showPaymentWarning, setShowPaymentWarning] = useState(false)
-  const [pendingStatus, setPendingStatus] = useState<string | null>(null)
 
-  // حالات تعليقات التصميم
-  const [imageAnnotations, setImageAnnotations] = useState<ImageAnnotation[]>([])
-  const [imageDrawings, setImageDrawings] = useState<DrawingPath[]>([])
-  const [customDesignImage, setCustomDesignImage] = useState<File | null>(null)
-  const [customDesignImageBase64, setCustomDesignImageBase64] = useState<string | null>(null)
-  const [savedDesignComments, setSavedDesignComments] = useState<SavedDesignComment[]>([])
-
-  // تسجيل البيانات للتحقق من قائمة العمال
-  useEffect(() => {
-    if (isOpen) {
-      console.log('🔍 EditOrderModal opened')
-      console.log('📋 Workers list:', workers)
-      console.log('📊 Workers count:', workers?.length || 0)
-      console.log('✅ Active workers:', workers?.filter(w => w.is_active).length || 0)
-    }
-  }, [isOpen, workers])
-
+  // تحميل بيانات الطلب عند فتح النافذة
   useEffect(() => {
     if (order) {
       // استرجاع البيانات الكاملة من voice_transcriptions إذا كانت موجودة
       let voiceNotesData: any[] = []
 
       if ((order as any).voice_transcriptions && Array.isArray((order as any).voice_transcriptions)) {
-        // استخدام voice_transcriptions (البيانات الكاملة مع النصوص المحولة)
         voiceNotesData = (order as any).voice_transcriptions
       } else if (order.voice_notes && Array.isArray(order.voice_notes)) {
-        // التوافق مع voice_notes القديم (فقط البيانات الصوتية)
         voiceNotesData = order.voice_notes.map((vn, idx) => ({
           id: `vn-${idx}`,
           data: vn,
@@ -79,39 +85,34 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
         }))
       }
 
+      // استرجاع تعليقات التصميم من measurements
+      const measurements = order.measurements as any
+      const savedComments = measurements?.saved_design_comments || []
+      const annotations = measurements?.image_annotations || []
+      const drawings = measurements?.image_drawings || []
+      const customImage = measurements?.custom_design_image || null
+
       setFormData({
         orderNumber: order.order_number || '',
         clientName: order.client_name,
         clientPhone: order.client_phone,
-        description: order.description,
+        description: order.description || '',
         fabric: order.fabric || '',
-        price: order.price,
-        paidAmount: order.paid_amount || 0,
-        status: order.status,
+        price: order.price.toString(),
+        paidAmount: (order.paid_amount || 0).toString(),
+        paymentMethod: (order.payment_method || 'cash') as 'cash' | 'card',
+        orderReceivedDate: order.order_received_date || new Date().toISOString().split('T')[0],
         assignedWorker: order.worker_id || '',
         dueDate: order.due_date,
+        proofDeliveryDate: order.proof_delivery_date || '',
         notes: order.notes || '',
         voiceNotes: voiceNotesData,
         images: order.images || [],
-        measurements: { ...order.measurements }
+        imageAnnotations: annotations,
+        imageDrawings: drawings,
+        customDesignImage: customImage ? null : null, // سيتم تحميلها من base64
+        savedDesignComments: savedComments
       })
-
-      // استرجاع تعليقات التصميم من measurements
-      const measurements = order.measurements as any
-      if (measurements) {
-        // استرجاع التعليقات المتعددة (البنية الجديدة)
-        setSavedDesignComments(measurements.saved_design_comments || [])
-        // للتوافق مع الكود القديم - التعليق الحالي
-        setImageAnnotations(measurements.image_annotations || [])
-        setImageDrawings(measurements.image_drawings || [])
-        setCustomDesignImageBase64(measurements.custom_design_image || null)
-      } else {
-        setSavedDesignComments([])
-        setImageAnnotations([])
-        setImageDrawings([])
-        setCustomDesignImageBase64(null)
-      }
-      setCustomDesignImage(null)
     }
   }, [order])
 
@@ -122,41 +123,70 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
     return Math.max(0, price - paidAmount)
   }, [formData.price, formData.paidAmount])
 
-  const handleInputChange = (field: string, value: any) => {
-    // التحقق من تغيير الحالة إلى "delivered"
-    if (field === 'status' && value === 'delivered') {
-      const remaining = remainingAmount || 0
-      if (remaining > 0) {
-        // عرض نافذة التحذير
-        setPendingStatus('delivered')
-        setShowPaymentWarning(true)
-        return
-      }
-    }
-
+  // معالجة تغيير الحقول
+  const handleInputChange = (field: string, value: string | string[] | null) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }))
   }
 
-  const handleMeasurementChange = (field: string, value: string) => {
+  // معالجة تغيير الملاحظات الصوتية
+  const handleVoiceNotesChange = (voiceNotes: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
+    translatedText?: string
+    translationLanguage?: string
+  }>) => {
     setFormData(prev => ({
       ...prev,
-      measurements: {
-        ...prev.measurements,
-        [field]: value
-      }
+      voiceNotes
     }))
   }
 
+  // معالجة تغيير التعليقات على الصورة
+  const handleImageAnnotationsChange = (annotations: ImageAnnotation[]) => {
+    setFormData(prev => ({
+      ...prev,
+      imageAnnotations: annotations
+    }))
+  }
+
+  // معالجة تغيير الرسومات على الصورة
+  const handleImageDrawingsChange = (drawings: DrawingPath[]) => {
+    setFormData(prev => ({
+      ...prev,
+      imageDrawings: drawings
+    }))
+  }
+
+  // معالجة تغيير صورة التصميم المخصصة
+  const handleDesignImageChange = (image: File | null) => {
+    setFormData(prev => ({
+      ...prev,
+      customDesignImage: image
+    }))
+  }
+
+  // معالجة تغيير التعليقات المحفوظة
+  const handleSavedCommentsChange = (comments: SavedDesignComment[]) => {
+    setFormData(prev => ({
+      ...prev,
+      savedDesignComments: comments
+    }))
+  }
+
+  // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!order) return
 
-    // التحقق من الحقول المطلوبة (رقم الطلب إلزامي، الوصف اختياري)
-    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.price || !formData.dueDate) {
+    // التحقق من الحقول المطلوبة
+    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
       return
     }
@@ -165,78 +195,13 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
     setMessage(null)
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      console.log('📦 Updating order...')
 
-      // تحويل المقاسات إلى أرقام (ما عدا additional_notes والحقول الخاصة)
-      const originalMeasurements = order?.measurements || {}
-      const updatedMeasurements = Object.keys(formData.measurements || {}).reduce((acc, key) => {
-        const value = (formData.measurements as any)?.[key]
-        // تخطي الحقول الخاصة (سيتم إضافتها لاحقاً)
-        if (key === 'image_annotations' || key === 'image_drawings' || key === 'custom_design_image') {
-          return acc
-        }
-        if (key === 'additional_notes') {
-          // حقل نصي - لا نحوله إلى رقم
-          if (value && value !== '') {
-            acc[key] = value
-          }
-        } else {
-          // حقول رقمية
-          if (value && value !== '') {
-            acc[key] = Number(value)
-          }
-        }
-        return acc
-      }, {} as any)
+      // تحويل الملاحظات الصوتية إلى مصفوفة من strings (للتوافق مع voice_notes القديم)
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
 
-      // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = [...savedDesignComments]
-
-      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
-      let currentImageBase64: string | null = customDesignImageBase64
-      if (customDesignImage) {
-        const reader = new FileReader()
-        currentImageBase64 = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(customDesignImage)
-        })
-      }
-
-      if (imageAnnotations.length > 0 || imageDrawings.length > 0) {
-        const currentComment: SavedDesignComment = {
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(),
-          annotations: imageAnnotations,
-          drawings: imageDrawings,
-          image: currentImageBase64,
-          title: `التعليق ${allSavedComments.length + 1}`
-        }
-        allSavedComments.push(currentComment)
-      }
-
-      // حفظ التعليقات المتعددة
-      updatedMeasurements.saved_design_comments = allSavedComments
-
-      // للتوافق مع الكود القديم
-      updatedMeasurements.image_annotations = imageAnnotations
-      updatedMeasurements.image_drawings = imageDrawings
-      updatedMeasurements.custom_design_image = currentImageBase64
-
-      // تحويل السعر والدفعة المستلمة إلى أرقام
-      const price = Number(formData.price)
-      const paidAmount = Number(formData.paidAmount) || 0
-
-      // تنظيف البيانات قبل الإرسال
-      const cleanedData = { ...formData }
-
-      // تحويل string فارغ إلى undefined لحقول UUID
-      if (cleanedData.assignedWorker === '') {
-        cleanedData.assignedWorker = undefined
-      }
-
-      // تحضير البيانات الكاملة للملاحظات الصوتية
-      const voiceTranscriptions = (formData.voiceNotes || []).map((vn: any) => ({
+      // حفظ البيانات الكاملة للملاحظات الصوتية (مع النصوص المحولة) في voice_transcriptions
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
         id: vn.id,
         data: vn.data,
         timestamp: vn.timestamp,
@@ -246,13 +211,75 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
         translationLanguage: vn.translationLanguage
       }))
 
-      // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
+      // تحويل السعر والدفعة المستلمة إلى أرقام
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        try {
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(formData.customDesignImage!)
+          })
+          const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
+          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
+
+          // التحقق من الحجم (الحد الأقصى 5MB)
+          if (imageSizeKB > 5 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+            setIsSubmitting(false)
+            return
+          }
+        } catch (imageError) {
+          console.error('❌ Error converting image to base64:', imageError)
+          toast.error('خطأ في تحويل الصورة')
+          setIsSubmitting(false)
+          return
+        }
+      }
+
+      // تجميع جميع التعليقات المحفوظة
+      let allSavedComments = [...formData.savedDesignComments]
+
+      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentComment: SavedDesignComment = {
+          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+          annotations: formData.imageAnnotations,
+          drawings: formData.imageDrawings,
+          image: customDesignImageBase64 || null,
+          title: `التعليق ${allSavedComments.length + 1}`
+        }
+        allSavedComments.push(currentComment)
+      }
+
+      // تحديث الطلب
       onSave(order.id, {
-        ...cleanedData,
+        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
+        client_name: formData.clientName,
+        client_phone: formData.clientPhone,
+        description: formData.description,
+        fabric: formData.fabric || undefined,
         price: price,
+        payment_method: formData.paymentMethod,
+        order_received_date: formData.orderReceivedDate,
+        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        due_date: formData.dueDate,
+        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        notes: formData.notes || undefined,
+        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+        images: formData.images.length > 0 ? formData.images : undefined,
+        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+        custom_design_image: customDesignImageBase64,
         paid_amount: paidAmount,
-        measurements: updatedMeasurements,
-        voice_transcriptions: voiceTranscriptions,
         updatedAt: new Date().toISOString()
       })
 
@@ -264,6 +291,153 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
       }, 1500)
 
     } catch (error) {
+      console.error('❌ Error updating order:', error)
+      setMessage({ type: 'error', text: t('order_update_error') })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // حفظ التعديلات وإرسال رسالة واتساب
+  const handleSubmitAndSendWhatsApp = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!order) return
+
+    // التحقق من وجود رقم الهاتف
+    if (!formData.clientPhone || formData.clientPhone.trim() === '') {
+      toast.error('يجب إدخال رقم هاتف العميل لإرسال رسالة واتساب', {
+        icon: '⚠️',
+      })
+      return
+    }
+
+    // التحقق من الحقول المطلوبة
+    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+      setMessage({ type: 'error', text: t('fill_required_fields') })
+      return
+    }
+
+    setIsSubmitting(true)
+    setMessage(null)
+
+    try {
+      console.log('📦 Updating order and sending WhatsApp...')
+
+      // تحويل الملاحظات الصوتية إلى مصفوفة من strings
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+
+      // حفظ البيانات الكاملة للملاحظات الصوتية
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
+        id: vn.id,
+        data: vn.data,
+        timestamp: vn.timestamp,
+        duration: vn.duration,
+        transcription: vn.transcription,
+        translatedText: vn.translatedText,
+        translationLanguage: vn.translationLanguage
+      }))
+
+      // تحويل السعر والدفعة المستلمة إلى أرقام
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        try {
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(formData.customDesignImage!)
+          })
+          const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
+          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
+
+          if (imageSizeKB > 5 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+            setIsSubmitting(false)
+            return
+          }
+        } catch (imageError) {
+          console.error('❌ Error converting image to base64:', imageError)
+          toast.error('خطأ في تحويل الصورة')
+          setIsSubmitting(false)
+          return
+        }
+      }
+
+      // تجميع جميع التعليقات المحفوظة
+      let allSavedComments = [...formData.savedDesignComments]
+
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentComment: SavedDesignComment = {
+          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+          annotations: formData.imageAnnotations,
+          drawings: formData.imageDrawings,
+          image: customDesignImageBase64 || null,
+          title: `التعليق ${allSavedComments.length + 1}`
+        }
+        allSavedComments.push(currentComment)
+      }
+
+      // تحديث الطلب
+      onSave(order.id, {
+        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
+        client_name: formData.clientName,
+        client_phone: formData.clientPhone,
+        description: formData.description,
+        fabric: formData.fabric || undefined,
+        price: price,
+        payment_method: formData.paymentMethod,
+        order_received_date: formData.orderReceivedDate,
+        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        due_date: formData.dueDate,
+        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        notes: formData.notes || undefined,
+        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+        images: formData.images.length > 0 ? formData.images : undefined,
+        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+        custom_design_image: customDesignImageBase64,
+        paid_amount: paidAmount,
+        updatedAt: new Date().toISOString()
+      })
+
+      setMessage({ type: 'success', text: t('order_updated_success') })
+
+      // فتح واتساب مع الرسالة المجهزة
+      try {
+        openWhatsApp({
+          clientName: formData.clientName,
+          clientPhone: formData.clientPhone,
+          orderNumber: formData.orderNumber || undefined,
+          proofDeliveryDate: formData.proofDeliveryDate || undefined,
+          dueDate: formData.dueDate
+        })
+
+        toast.success('تم فتح واتساب لإرسال رسالة التأكيد للعميل', {
+          icon: '📱',
+          duration: 3000,
+        })
+      } catch (whatsappError) {
+        console.error('❌ Error opening WhatsApp:', whatsappError)
+        toast.error('حدث خطأ أثناء فتح واتساب', {
+          icon: '⚠️',
+        })
+      }
+
+      setTimeout(() => {
+        onClose()
+        setMessage(null)
+      }, 2000)
+
+    } catch (error) {
+      console.error('❌ Error updating order:', error)
       setMessage({ type: 'error', text: t('order_update_error') })
     } finally {
       setIsSubmitting(false)
@@ -291,135 +465,138 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              className="relative bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
             >
               {/* رأس النافذة */}
-              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl z-30 shadow-sm">
+              <div className="sticky top-0 bg-gradient-to-r from-pink-500 to-purple-600 border-b border-pink-200 p-6 rounded-t-2xl z-30 shadow-lg">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold text-gray-800">{t('edit_order')}</h2>
+                  <h2 className="text-2xl font-bold text-white">{t('edit_order')}</h2>
                   <button
                     onClick={onClose}
-                    className="p-2 text-gray-400 hover:text-gray-600 transition-colors duration-300"
+                    className="p-2 text-white/80 hover:text-white transition-colors duration-300 hover:bg-white/10 rounded-lg"
                   >
                     <X className="w-6 h-6" />
                   </button>
                 </div>
               </div>
 
-              {/* رسالة النجاح/الخطأ */}
-              {message && (
-                <div className={`mx-6 mt-4 p-4 rounded-lg flex items-center space-x-3 space-x-reverse ${message.type === 'success'
-                  ? 'bg-green-50 text-green-800 border border-green-200'
-                  : 'bg-red-50 text-red-800 border border-red-200'
-                  }`}>
-                  {message.type === 'success' ? (
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-red-600" />
-                  )}
-                  <span>{message.text}</span>
-                </div>
-              )}
-
               {/* محتوى النموذج */}
-              <form onSubmit={handleSubmit} className="p-6 space-y-8">
-                {/* معلومات الزبون */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                {/* المعلومات الأساسية */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
+                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                     <User className="w-5 h-5 text-pink-600" />
-                    <span>{t('customer_information')}</span>
+                    <span>{t('basic_information')}</span>
                   </h3>
 
-                  <div className="grid md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_number')} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.orderNumber || ''}
-                        onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                        placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
-                        disabled={isSubmitting}
-                        required
-                      />
-                    </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                    {/* الصف الأول: اسم العميل | رقم الهاتف | رقم الطلب */}
 
+                    {/* 1. اسم العميل */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {t('client_name_required')}
                       </label>
                       <input
                         type="text"
-                        value={formData.clientName || ''}
+                        value={formData.clientName}
                         onChange={(e) => handleInputChange('clientName', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        placeholder={t('enter_client_name')}
                         required
+                        disabled={isSubmitting}
                       />
                     </div>
 
+                    {/* 2. رقم الهاتف */}
                     <div>
                       <NumericInput
-                        value={formData.clientPhone || ''}
+                        value={formData.clientPhone}
                         onChange={(value) => handleInputChange('clientPhone', value)}
                         type="phone"
                         label={t('phone_required')}
+                        placeholder={t('enter_phone')}
                         required
                         disabled={isSubmitting}
                       />
                     </div>
-                  </div>
-                </div>
 
-                {/* تفاصيل الطلب */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Package className="w-5 h-5 text-pink-600" />
-                    <span>{t('order_details')}</span>
-                  </h3>
-
-                  <div className="grid md:grid-cols-2 gap-4">
+                    {/* 3. رقم الطلب */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_description')} ({t('optional')})
+                        {t('order_number')} ({t('optional')})
                       </label>
                       <input
                         type="text"
-                        value={formData.description || ''}
-                        onChange={(e) => handleInputChange('description', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                        placeholder={t('enter_order_description') || 'أدخل وصف الطلب'}
+                        value={formData.orderNumber}
+                        onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
+                        disabled={isSubmitting}
                       />
                     </div>
 
+                    {/* الصف الثاني: موعد التسليم | موعد تسليم البروفا | تاريخ استلام الطلب */}
+
+                    {/* 4. موعد التسليم - تقويم ذكي */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('fabric_type_optional')}
+                        {t('delivery_date_required')}
                       </label>
-                      <input
-                        type="text"
-                        value={formData.fabric || ''}
-                        onChange={(e) => handleInputChange('fabric', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      <DatePickerWithStats
+                        selectedDate={formData.dueDate}
+                        onChange={(date) => handleInputChange('dueDate', date)}
+                        minDate={new Date()}
+                        required={true}
                       />
                     </div>
 
+                    {/* 5. موعد تسليم البروفا - تقويم أخضر (اختياري) */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'} ({t('optional')})
+                      </label>
+                      <DatePickerForProof
+                        selectedDate={formData.proofDeliveryDate}
+                        onChange={(date) => handleInputChange('proofDeliveryDate', date)}
+                        minDate={new Date()}
+                        required={false}
+                      />
+                    </div>
+
+                    {/* 6. تاريخ استلام الطلب (تلقائي) */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {t('order_received_date')}
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.orderReceivedDate}
+                        onChange={(e) => handleInputChange('orderReceivedDate', e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700"
+                        disabled
+                      />
+                    </div>
+
+                    {/* الصف الثالث: السعر | الدفعة المستلمة | الدفعة المتبقية */}
+
+                    {/* 7. السعر */}
                     <div>
                       <NumericInput
-                        value={formData.price?.toString() || ''}
-                        onChange={(value) => handleInputChange('price', value ? Number(value) : '')}
+                        value={formData.price}
+                        onChange={(value) => handleInputChange('price', value)}
                         type="price"
-                        label={t('price_sar_required')}
+                        label={t('price_sar')}
+                        placeholder="0"
                         required
                         disabled={isSubmitting}
                       />
                     </div>
 
-                    {/* الدفعة المستلمة */}
+                    {/* 8. الدفعة المستلمة */}
                     <div>
                       <NumericInput
-                        value={formData.paidAmount?.toString() || ''}
+                        value={formData.paidAmount}
                         onChange={(value) => {
                           const price = Number(formData.price) || 0
                           const paid = Number(value) || 0
@@ -430,15 +607,16 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                             })
                             return
                           }
-                          handleInputChange('paidAmount', Number(value) || 0)
+                          handleInputChange('paidAmount', value)
                         }}
                         type="price"
                         label={t('paid_amount')}
+                        placeholder="0"
                         disabled={isSubmitting || !formData.price}
                       />
                     </div>
 
-                    {/* الدفعة المتبقية (للعرض فقط) */}
+                    {/* 9. الدفعة المتبقية (للعرض فقط) */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {t('remaining_amount')}
@@ -447,55 +625,112 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                         {remainingAmount.toFixed(2)} {t('sar')}
                       </div>
                     </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('delivery_date_required')}
-                      </label>
-                      <input
-                        type="date"
-                        value={formData.dueDate || ''}
-                        onChange={(e) => handleInputChange('dueDate', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
                   </div>
                 </div>
 
-                {/* الحالة والعامل */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <UserCheck className="w-5 h-5 text-pink-600" />
-                    <span>{t('status_and_worker')}</span>
+                {/* التعليقات الصوتية على صورة الفستان */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+                    <Ruler className="w-5 h-5 text-pink-600" />
+                    <span>تعليقات على التصميم</span>
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    انقر على أي منطقة في الصورة لإضافة ملاحظة صوتية، أو فعّل وضع الرسم للرسم على الصورة
+                  </p>
+
+                  <InteractiveImageAnnotation
+                    imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
+                    annotations={formData.imageAnnotations}
+                    onAnnotationsChange={handleImageAnnotationsChange}
+                    drawings={formData.imageDrawings}
+                    onDrawingsChange={handleImageDrawingsChange}
+                    customImage={formData.customDesignImage}
+                    onImageChange={handleDesignImageChange}
+                    disabled={isSubmitting}
+                    savedComments={formData.savedDesignComments}
+                    onSavedCommentsChange={handleSavedCommentsChange}
+                    showSaveButton={true}
+                  />
+                </div>
+
+                {/* صور التصميم */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+                    <ImageIcon className="w-5 h-5 text-pink-600" />
+                    <span>صور التصميم</span>
                   </h3>
 
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <ImageUpload
+                    images={formData.images}
+                    onChange={(images) => handleInputChange('images', images)}
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {/* ملاحظات إضافية */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+                    <MessageSquare className="w-5 h-5 text-pink-600" />
+                    <span>ملاحظات إضافية</span>
+                  </h3>
+
+                  <UnifiedNotesInput
+                    textNotes={formData.notes}
+                    voiceNotes={formData.voiceNotes}
+                    onTextNotesChange={(notes) => handleInputChange('notes', notes)}
+                    onVoiceNotesChange={handleVoiceNotesChange}
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {/* معلومات أخرى */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+                    <FileText className="w-5 h-5 text-pink-600" />
+                    <span>معلومات أخرى</span>
+                  </h3>
+
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* وصف الفستان */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_status')}
+                        {t('order_description')} ({t('optional')})
                       </label>
-                      <select
-                        value={formData.status || ''}
-                        onChange={(e) => handleInputChange('status', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                      >
-                        <option value="pending">{t('status_pending')}</option>
-                        <option value="in_progress">{t('status_in_progress')}</option>
-                        <option value="completed">{t('status_completed')}</option>
-                        <option value="delivered">{t('status_delivered')}</option>
-                        <option value="cancelled">{t('status_cancelled')}</option>
-                      </select>
+                      <textarea
+                        value={formData.description}
+                        onChange={(e) => handleInputChange('description', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        rows={4}
+                        placeholder={t('enter_order_description') || 'أدخل وصف الطلب'}
+                        disabled={isSubmitting}
+                      />
                     </div>
 
+                    {/* نوع القماش */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('responsible_worker')}
+                        {t('fabric_type_optional')}
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.fabric}
+                        onChange={(e) => handleInputChange('fabric', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        placeholder={t('enter_fabric_type') || 'أدخل نوع القماش'}
+                        disabled={isSubmitting}
+                      />
+                    </div>
+
+                    {/* العامل المسؤول */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {t('responsible_worker')} ({t('optional')})
                       </label>
                       <select
-                        value={formData.assignedWorker || ''}
+                        value={formData.assignedWorker}
                         onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        disabled={isSubmitting}
                       >
                         <option value="">{t('choose_worker')}</option>
                         {workers.filter(w => w.is_available && w.user?.is_active).map(worker => (
@@ -507,135 +742,76 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                     </div>
                   </div>
                 </div>
-
-                {/* تعليقات على التصميم */}
-                <div className="space-y-4 relative z-0">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Pencil className="w-5 h-5 text-pink-600" />
-                    <span>تعليقات على التصميم</span>
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    انقر على أي منطقة في الصورة لإضافة ملاحظة صوتية، أو فعّل وضع الرسم للرسم على الصورة
-                  </p>
-
-                  <InteractiveImageAnnotation
-                    imageSrc={customDesignImageBase64 || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
-                    annotations={imageAnnotations}
-                    onAnnotationsChange={setImageAnnotations}
-                    drawings={imageDrawings}
-                    onDrawingsChange={setImageDrawings}
-                    customImage={customDesignImage}
-                    onImageChange={setCustomDesignImage}
-                    disabled={isSubmitting}
-                    savedComments={savedDesignComments}
-                    onSavedCommentsChange={setSavedDesignComments}
-                    showSaveButton={true}
-                  />
-                </div>
-
-                {/* صور التصميم */}
-                <div className="space-y-4 relative z-0">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <ImageIcon className="w-5 h-5 text-pink-600" />
-                    <span>{t('design_images')}</span>
-                  </h3>
-
-                  <ImageUpload
-                    images={formData.images || []}
-                    onImagesChange={(images) => handleInputChange('images', images)}
-                    maxImages={10}
-                  />
-                </div>
-
-                {/* المقاسات */}
-                <div className="space-y-4 relative z-0">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Ruler className="w-5 h-5 text-pink-600" />
-                    <span>{t('measurements_cm')}</span>
-                  </h3>
-
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => (
-                      <div key={key}>
-                        <NumericInput
-                          value={(formData.measurements as any)?.[key]?.toString() || ''}
-                          onChange={(value) => handleMeasurementChange(key, value)}
-                          type="measurement"
-                          label={t(`measurement_${key}` as any)}
-                          placeholder={t('cm_placeholder')}
-                          disabled={isSubmitting}
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* مقاسات إضافية */}
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('measurement_additional_notes')}
-                    </label>
-                    <textarea
-                      value={(formData.measurements as any)?.additional_notes || ''}
-                      onChange={(e) => handleMeasurementChange('additional_notes', e.target.value)}
-                      rows={3}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
-                      placeholder={t('additional_measurements_placeholder')}
-                      disabled={isSubmitting}
-                    />
-                  </div>
-                </div>
-
-                {/* الملاحظات */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <MessageSquare className="w-5 h-5 text-pink-600" />
-                    <span>{t('notes_section')}</span>
-                  </h3>
-
-                  <textarea
-                    value={formData.notes || ''}
-                    onChange={(e) => handleInputChange('notes', e.target.value)}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                    placeholder={t('additional_notes_placeholder')}
-                  />
-
-                  {/* الملاحظات الصوتية */}
-                  <div className="mt-6">
-                    <VoiceNotes
-                      voiceNotes={formData.voiceNotes || []}
-                      onVoiceNotesChange={(voiceNotes) => handleInputChange('voiceNotes', voiceNotes)}
-                      disabled={isSubmitting}
-                    />
-                  </div>
-                </div>
               </form>
 
               {/* تذييل النافذة */}
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 rounded-b-2xl z-30 shadow-lg">
-                <div className="flex gap-4 justify-end">
+              <div className="sticky bottom-0 bg-white/90 backdrop-blur-sm border-t border-pink-100 p-6 rounded-b-2xl z-30 shadow-lg">
+                {/* رسالة النجاح/الخطأ */}
+                {message && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`mb-4 p-4 rounded-lg flex items-center space-x-2 space-x-reverse ${message.type === 'success'
+                      ? 'bg-green-50 text-green-800 border border-green-200'
+                      : 'bg-red-50 text-red-800 border border-red-200'
+                      }`}
+                  >
+                    {message.type === 'success' ? (
+                      <CheckCircle className="w-5 h-5 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                    )}
+                    <span>{message.text}</span>
+                  </motion.div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-4 justify-end">
                   <button
                     type="button"
                     onClick={onClose}
-                    className="btn-secondary px-6 py-2"
+                    className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-300 font-medium"
                     disabled={isSubmitting}
                   >
                     {t('cancel')}
                   </button>
+
+                  {/* زر تحديث الطلب العادي */}
                   <button
+                    type="submit"
                     onClick={handleSubmit}
                     disabled={isSubmitting}
-                    className="btn-primary px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 space-x-reverse"
+                    className="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg hover:from-pink-600 hover:to-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse font-medium shadow-lg"
                   >
                     {isSubmitting ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                         <span>{t('saving')}</span>
                       </>
                     ) : (
                       <>
-                        <Save className="w-4 h-4" />
-                        <span>{t('save_changes')}</span>
+                        <Save className="w-5 h-5" />
+                        <span>{isArabic ? 'تحديث الطلب' : 'Update Order'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* زر تحديث الطلب وإرسال واتساب */}
+                  <button
+                    type="button"
+                    onClick={handleSubmitAndSendWhatsApp}
+                    disabled={isSubmitting || !formData.clientPhone}
+                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse font-medium shadow-lg"
+                    title={!formData.clientPhone ? 'يجب إدخال رقم هاتف العميل أولاً' : ''}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>{t('saving')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle className="w-5 h-5" />
+                        <span>{isArabic ? 'حفظ وإرسال رسالة' : 'Save & Send Message'}</span>
                       </>
                     )}
                   </button>
@@ -646,36 +822,6 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
         )}
       </AnimatePresence>
 
-      {/* نافذة التحذير عند وجود دفعة متبقية */}
-      <RemainingPaymentWarningModal
-        isOpen={showPaymentWarning}
-        remainingAmount={remainingAmount}
-        onMarkAsPaid={() => {
-          // تحديث المبلغ المدفوع ليساوي السعر
-          const price = Number(formData.price) || 0
-          setFormData(prev => ({
-            ...prev,
-            paidAmount: price,
-            status: pendingStatus || prev.status
-          }))
-          setShowPaymentWarning(false)
-          setPendingStatus(null)
-        }}
-        onIgnore={() => {
-          // تجاهل وتغيير الحالة فقط
-          setFormData(prev => ({
-            ...prev,
-            status: pendingStatus || prev.status
-          }))
-          setShowPaymentWarning(false)
-          setPendingStatus(null)
-        }}
-        onCancel={() => {
-          // إلغاء العملية
-          setShowPaymentWarning(false)
-          setPendingStatus(null)
-        }}
-      />
     </>
   )
 }

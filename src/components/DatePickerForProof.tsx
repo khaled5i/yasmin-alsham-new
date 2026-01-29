@@ -21,7 +21,7 @@ export default function DatePickerForProof({
   required = false,
   className = ''
 }: DatePickerForProofProps) {
-  const { t } = useTranslation()
+  const { t, isArabic } = useTranslation()
   const [proofStats, setProofStats] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
@@ -108,7 +108,7 @@ export default function DatePickerForProof({
         calendarClassName="custom-calendar-proof"
         renderDayContents={renderDayContents}
         dayClassName={getDayClassName}
-        placeholderText={t('select_proof_delivery_date') || 'اختر موعد تسليم البروفا'}
+        placeholderText={isArabic ? 'اختر موعد تسليم البروفا' : 'Select Proof Delivery Date'}
         required={required}
         showPopperArrow={false}
         popperPlacement="bottom-start"
@@ -120,8 +120,10 @@ export default function DatePickerForProof({
           <p className="text-sm text-red-700 flex items-center gap-2">
             <span className="text-lg">⚠️</span>
             <span>
-              {t('busy_proof_date_warning', { count: proofStats[selectedDate] }) ||
-                `تحذير: يوجد ${proofStats[selectedDate]} مواعيد بروفا أو أكثر في هذا اليوم`}
+              {isArabic
+                ? `تحذير: يوجد ${proofStats[selectedDate]} مواعيد بروفا أو أكثر في هذا اليوم`
+                : `Warning: There are ${proofStats[selectedDate]} or more proof appointments on this day`
+              }
             </span>
           </p>
         </div>

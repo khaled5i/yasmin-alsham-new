@@ -23,8 +23,10 @@ import {
   MessageSquare,
   CheckCircle,
   AlertCircle,
-  Loader2
+  Loader2,
+  MessageCircle
 } from 'lucide-react'
+import { openAlterationWhatsApp } from '@/utils/whatsapp'
 
 function AddAlterationContent() {
   const { user } = useAuthStore()
@@ -364,6 +366,187 @@ function AddAlterationContent() {
     }
   }
 
+  // حفظ طلب التعديل وإرسال رسالة واتساب
+  const handleSubmitAndSendWhatsApp = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // التحقق من وجود رقم الهاتف
+    if (!formData.clientPhone || formData.clientPhone.trim() === '') {
+      toast.error('يجب إدخال رقم هاتف العميل لإرسال رسالة واتساب', {
+        icon: '⚠️',
+      })
+      return
+    }
+
+    // التحقق من الحقول المطلوبة
+    if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!orderId && !formData.price)) {
+      toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      console.log('🔧 Submitting alteration and sending WhatsApp...')
+
+      // تحويل الملاحظات الصوتية إلى مصفوفة من strings
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+
+      // حفظ البيانات الكاملة للملاحظات الصوتية
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
+        id: vn.id,
+        data: vn.data,
+        timestamp: vn.timestamp,
+        duration: vn.duration,
+        transcription: vn.transcription,
+        translatedText: vn.translatedText,
+        translationLanguage: vn.translationLanguage
+      }))
+
+      // تحويل السعر والدفعة المستلمة إلى أرقام
+      const price = orderId ? 0 : Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        try {
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(formData.customDesignImage!)
+          })
+          const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
+          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
+
+          if (imageSizeKB > 5 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+            setIsSubmitting(false)
+            return
+          }
+        } catch (imageError) {
+          console.error('❌ Error converting image to base64:', imageError)
+          toast.error('خطأ في تحويل الصورة')
+          setIsSubmitting(false)
+          return
+        }
+      }
+
+      // تجميع جميع التعليقات المحفوظة
+      let allSavedComments = [...formData.savedDesignComments]
+
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentComment: SavedDesignComment = {
+          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+          annotations: formData.imageAnnotations,
+          drawings: formData.imageDrawings,
+          image: customDesignImageBase64 || null,
+          title: `التعليق ${allSavedComments.length + 1}`
+        }
+        allSavedComments.push(currentComment)
+      }
+
+      let result
+      let alterationNumber = formData.alterationNumber
+
+      // إنشاء أو تحديث طلب التعديل
+      if (isEditMode && editId) {
+        // وضع التعديل
+        result = await alterationService.update(editId, {
+          client_name: formData.clientName,
+          client_phone: formData.clientPhone,
+          price: price,
+          payment_method: formData.paymentMethod,
+          order_received_date: formData.orderReceivedDate,
+          alteration_due_date: formData.alterationDueDate,
+          notes: formData.notes || undefined,
+          voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+          voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+          images: formData.images.length > 0 ? formData.images : undefined,
+          saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+          image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+          custom_design_image: customDesignImageBase64,
+          paid_amount: paidAmount
+        })
+
+        if (result.error) {
+          toast.error(result.error)
+          setIsSubmitting(false)
+          return
+        }
+
+        toast.success(isArabic ? 'تم تحديث طلب التعديل بنجاح!' : 'Alteration updated successfully!')
+      } else {
+        // وضع الإضافة
+        result = await alterationService.create({
+          alteration_number: formData.alterationNumber && formData.alterationNumber.trim() !== '' ? formData.alterationNumber.trim() : undefined,
+          original_order_id: orderId || undefined,
+          client_name: formData.clientName,
+          client_phone: formData.clientPhone,
+          price: price,
+          payment_method: formData.paymentMethod,
+          order_received_date: formData.orderReceivedDate,
+          alteration_due_date: formData.alterationDueDate,
+          notes: formData.notes || undefined,
+          voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+          voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+          images: formData.images.length > 0 ? formData.images : undefined,
+          saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+          image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+          custom_design_image: customDesignImageBase64,
+          paid_amount: paidAmount
+        })
+
+        if (result.error) {
+          toast.error(result.error)
+          setIsSubmitting(false)
+          return
+        }
+
+        // الحصول على رقم التعديل من النتيجة إذا تم توليده تلقائياً
+        if (result.data?.alteration_number) {
+          alterationNumber = result.data.alteration_number
+        }
+
+        toast.success(isArabic ? 'تم إضافة طلب التعديل بنجاح!' : 'Alteration added successfully!')
+      }
+
+      // فتح واتساب مع الرسالة المجهزة
+      try {
+        openAlterationWhatsApp({
+          clientName: formData.clientName,
+          clientPhone: formData.clientPhone,
+          alterationNumber: alterationNumber || undefined,
+          dueDate: formData.alterationDueDate
+        })
+
+        toast.success('تم فتح واتساب لإرسال رسالة التأكيد للعميل', {
+          icon: '📱',
+          duration: 3000,
+        })
+      } catch (whatsappError) {
+        console.error('❌ Error opening WhatsApp:', whatsappError)
+        toast.error('حدث خطأ أثناء فتح واتساب', {
+          icon: '⚠️',
+        })
+      }
+
+      // التوجيه بعد 3 ثوانٍ
+      setTimeout(() => {
+        router.push('/dashboard/alterations')
+      }, 3000)
+
+    } catch (error: any) {
+      console.error('❌ Error creating alteration:', error)
+      toast.error(error.message)
+      setIsSubmitting(false)
+    }
+  }
+
   if (!user) {
     return null
   }
@@ -633,6 +816,7 @@ function AddAlterationContent() {
             transition={{ delay: 0.6 }}
             className="flex flex-col sm:flex-row gap-4"
           >
+            {/* زر حفظ طلب التعديل العادي */}
             <button
               type="submit"
               disabled={isSubmitting}
@@ -650,6 +834,27 @@ function AddAlterationContent() {
                     ? (isArabic ? 'تحديث طلب التعديل' : 'Update Alteration')
                     : (isArabic ? 'حفظ طلب التعديل' : 'Save Alteration')
                   }
+                </>
+              )}
+            </button>
+
+            {/* زر حفظ طلب التعديل وإرسال واتساب */}
+            <button
+              type="button"
+              onClick={handleSubmitAndSendWhatsApp}
+              disabled={isSubmitting || !formData.clientPhone}
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!formData.clientPhone ? 'يجب إدخال رقم هاتف العميل أولاً' : ''}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  {isArabic ? 'جاري الحفظ...' : 'Saving...'}
+                </>
+              ) : (
+                <>
+                  <MessageCircle className="w-5 h-5" />
+                  {isArabic ? 'حفظ وإرسال رسالة' : 'Save & Send Message'}
                 </>
               )}
             </button>

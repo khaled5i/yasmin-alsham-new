@@ -27,8 +27,10 @@ import {
   MessageSquare,
   CheckCircle,
   AlertCircle,
-  Image as ImageIcon
+  Image as ImageIcon,
+  MessageCircle
 } from 'lucide-react'
+import { openWhatsApp } from '@/utils/whatsapp'
 
 function AddOrderContent() {
   const { user } = useAuthStore()
@@ -276,6 +278,166 @@ function AddOrderContent() {
     }
   }
 
+  // حفظ الطلب وإرسال رسالة واتساب
+  const handleSubmitAndSendWhatsApp = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // التحقق من وجود رقم الهاتف
+    if (!formData.clientPhone || formData.clientPhone.trim() === '') {
+      toast.error('يجب إدخال رقم هاتف العميل لإرسال رسالة واتساب', {
+        icon: '⚠️',
+      })
+      return
+    }
+
+    // التحقق من الحقول المطلوبة
+    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+      setMessage({ type: 'error', text: t('fill_required_fields') })
+      return
+    }
+
+    setIsSubmitting(true)
+    setMessage(null)
+
+    try {
+      console.log('📦 Submitting order and sending WhatsApp...')
+
+      // تحويل الملاحظات الصوتية إلى مصفوفة من strings (للتوافق مع voice_notes القديم)
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+
+      // حفظ البيانات الكاملة للملاحظات الصوتية (مع النصوص المحولة) في voice_transcriptions
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
+        id: vn.id,
+        data: vn.data,
+        timestamp: vn.timestamp,
+        duration: vn.duration,
+        transcription: vn.transcription,
+        translatedText: vn.translatedText,
+        translationLanguage: vn.translationLanguage
+      }))
+
+      // تحويل السعر والدفعة المستلمة إلى أرقام
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        try {
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(formData.customDesignImage!)
+          })
+          const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
+          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
+
+          // التحقق من الحجم (الحد الأقصى 5MB)
+          if (imageSizeKB > 5 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+            return
+          }
+        } catch (imageError) {
+          console.error('❌ Error converting image to base64:', imageError)
+          toast.error('خطأ في تحويل الصورة')
+          return
+        }
+      }
+
+      // تجميع جميع التعليقات المحفوظة
+      let allSavedComments = [...formData.savedDesignComments]
+
+      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentComment: SavedDesignComment = {
+          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+          annotations: formData.imageAnnotations,
+          drawings: formData.imageDrawings,
+          image: customDesignImageBase64 || null,
+          title: `التعليق ${allSavedComments.length + 1}`
+        }
+        allSavedComments.push(currentComment)
+      }
+
+      // إنشاء الطلب باستخدام Supabase
+      const result = await createOrder({
+        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
+        client_name: formData.clientName,
+        client_phone: formData.clientPhone,
+        description: formData.description,
+        fabric: formData.fabric || undefined,
+        measurements: {},
+        price: price,
+        payment_method: formData.paymentMethod as 'cash' | 'card',
+        order_received_date: formData.orderReceivedDate,
+        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        due_date: formData.dueDate,
+        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        notes: formData.notes || undefined,
+        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+        images: formData.images.length > 0 ? formData.images : undefined,
+        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+        custom_design_image: customDesignImageBase64,
+        status: 'pending',
+        paid_amount: paidAmount
+      })
+
+      if (!result.success) {
+        toast.error(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
+          icon: '✗',
+        })
+        return
+      }
+
+      console.log('✅ Order created successfully:', result.data?.id)
+
+      // إظهار رسالة النجاح
+      toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
+        icon: '✓',
+        duration: 2000,
+      })
+
+      // فتح واتساب مع الرسالة المجهزة
+      try {
+        openWhatsApp({
+          clientName: formData.clientName,
+          clientPhone: formData.clientPhone,
+          orderNumber: formData.orderNumber || result.data?.order_number || undefined,
+          proofDeliveryDate: formData.proofDeliveryDate || undefined,
+          dueDate: formData.dueDate
+        })
+
+        toast.success('تم فتح واتساب لإرسال رسالة التأكيد للعميل', {
+          icon: '📱',
+          duration: 3000,
+        })
+      } catch (whatsappError) {
+        console.error('❌ Error opening WhatsApp:', whatsappError)
+        toast.error('حدث خطأ أثناء فتح واتساب', {
+          icon: '⚠️',
+        })
+      }
+
+      // التوجيه بعد 3 ثوانٍ
+      setTimeout(() => {
+        router.push('/dashboard/orders')
+      }, 3000)
+
+    } catch (error) {
+      console.error('❌ Error adding order:', error)
+      toast.error(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
+        icon: '✗',
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
 
 
   return (
@@ -348,8 +510,10 @@ function AddOrderContent() {
                 <span>{t('basic_information')}</span>
               </h3>
 
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* 1. الاسم */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                {/* الصف الأول: اسم العميل | رقم الهاتف | رقم الطلب */}
+
+                {/* 1. اسم العميل */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {t('client_name_required')}
@@ -377,47 +541,7 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 3. موعد التسليم - تقويم ذكي */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('delivery_date_required')}
-                  </label>
-                  <DatePickerWithStats
-                    selectedDate={formData.dueDate}
-                    onChange={(date) => handleInputChange('dueDate', date)}
-                    minDate={new Date()}
-                    required={true}
-                  />
-                </div>
-
-                {/* 3.5. موعد تسليم البروفا - تقويم أخضر (اختياري) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'} ({t('optional')})
-                  </label>
-                  <DatePickerForProof
-                    selectedDate={formData.proofDeliveryDate}
-                    onChange={(date) => handleInputChange('proofDeliveryDate', date)}
-                    minDate={new Date()}
-                    required={false}
-                  />
-                </div>
-
-                {/* 4. تاريخ استلام الطلب (تلقائي) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('order_received_date')}
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.orderReceivedDate}
-                    onChange={(e) => handleInputChange('orderReceivedDate', e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700"
-                    disabled
-                  />
-                </div>
-
-                {/* 5. رقم الطلب */}
+                {/* 3. رقم الطلب */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {t('order_number')} ({t('optional')})
@@ -432,56 +556,64 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 6. السعر + طريقة الدفع */}
-                <div className="md:col-span-2 lg:col-span-3">
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* السعر */}
-                    <div>
-                      <NumericInput
-                        value={formData.price}
-                        onChange={(value) => handleInputChange('price', value)}
-                        type="price"
-                        label={t('price_sar')}
-                        placeholder="0"
-                        required
-                        disabled={isSubmitting}
-                      />
-                    </div>
+                {/* الصف الثاني: موعد التسليم | موعد تسليم البروفا | تاريخ استلام الطلب */}
 
-                    {/* طريقة الدفع */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('payment_method')} *
-                      </label>
-                      <div className="flex gap-4 items-center h-[52px]">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="paymentMethod"
-                            value="cash"
-                            checked={formData.paymentMethod === 'cash'}
-                            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                            className="w-4 h-4 text-pink-600 focus:ring-pink-500"
-                          />
-                          <span className="text-gray-700">{t('cash')}</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="paymentMethod"
-                            value="card"
-                            checked={formData.paymentMethod === 'card'}
-                            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                            className="w-4 h-4 text-pink-600 focus:ring-pink-500"
-                          />
-                          <span className="text-gray-700">{t('card')}</span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
+                {/* 4. موعد التسليم - تقويم ذكي */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('delivery_date_required')}
+                  </label>
+                  <DatePickerWithStats
+                    selectedDate={formData.dueDate}
+                    onChange={(date) => handleInputChange('dueDate', date)}
+                    minDate={new Date()}
+                    required={true}
+                  />
                 </div>
 
-                {/* 7. الدفعة المستلمة */}
+                {/* 5. موعد تسليم البروفا - تقويم أخضر (اختياري) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'} ({t('optional')})
+                  </label>
+                  <DatePickerForProof
+                    selectedDate={formData.proofDeliveryDate}
+                    onChange={(date) => handleInputChange('proofDeliveryDate', date)}
+                    minDate={new Date()}
+                    required={false}
+                  />
+                </div>
+
+                {/* 6. تاريخ استلام الطلب (تلقائي) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('order_received_date')}
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.orderReceivedDate}
+                    onChange={(e) => handleInputChange('orderReceivedDate', e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700"
+                    disabled
+                  />
+                </div>
+
+                {/* الصف الثالث: السعر | الدفعة المستلمة | الدفعة المتبقية */}
+
+                {/* 7. السعر */}
+                <div>
+                  <NumericInput
+                    value={formData.price}
+                    onChange={(value) => handleInputChange('price', value)}
+                    type="price"
+                    label={t('price_sar')}
+                    placeholder="0"
+                    required
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {/* 8. الدفعة المستلمة */}
                 <div>
                   <NumericInput
                     value={formData.paidAmount}
@@ -504,7 +636,7 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 8. الدفعة المتبقية (للعرض فقط) */}
+                {/* 9. الدفعة المتبقية (للعرض فقط) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {t('remaining_amount')}
@@ -631,7 +763,8 @@ function AddOrderContent() {
             </div>
 
             {/* Action buttons */}
-            < div className="flex flex-col sm:flex-row gap-4 justify-center" >
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              {/* زر حفظ الطلب العادي */}
               <button
                 type="submit"
                 disabled={isSubmitting}
@@ -650,13 +783,34 @@ function AddOrderContent() {
                 )}
               </button>
 
+              {/* زر حفظ الطلب وإرسال واتساب */}
+              <button
+                type="button"
+                onClick={handleSubmitAndSendWhatsApp}
+                disabled={isSubmitting || !formData.clientPhone}
+                className="bg-green-600 hover:bg-green-700 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
+                title={!formData.clientPhone ? 'يجب إدخال رقم هاتف العميل أولاً' : ''}
+              >
+                {isSubmitting ? (
+                  <div className="flex items-center justify-center space-x-2 space-x-reverse">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>{t('saving')}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center space-x-2 space-x-reverse">
+                    <MessageCircle className="w-5 h-5" />
+                    <span>{isArabic ? 'حفظ وإرسال رسالة تأكيد' : 'Save & Send Confirmation'}</span>
+                  </div>
+                )}
+              </button>
+
               <Link
                 href="/dashboard"
                 className="btn-secondary py-4 px-8 text-lg inline-flex items-center justify-center"
               >
                 {t('cancel')}
               </Link>
-            </div >
+            </div>
           </form >
         </motion.div >
       </div >
