@@ -95,8 +95,10 @@ const arTranslations: Translations = {
   // نصوص إضافية مطلوبة
   'admin_dashboard': 'لوحة تحكم المدير',
   'worker_dashboard': 'لوحة تحكم العامل',
+  'tailor_dashboard': 'لوحة تحكم الخياط',
   'admin': 'مدير',
   'worker': 'عامل',
+  'tailor': 'خياط',
   'change_language': 'تغيير اللغة',
   'my_active_orders': 'طلباتي النشطة',
   'completed_orders': 'الطلبات المكتملة',
@@ -425,6 +427,11 @@ const arTranslations: Translations = {
   'appointments_today': 'مواعيد اليوم',
   'finished_orders': 'طلبات منتهية',
   'all_orders': 'جميع الطلبات',
+  'new_orders': 'طلبات جديدة',
+  'delivered_orders_count': 'طلبات مسلمة',
+  'view_all_orders_button': 'جميع الطلبات',
+  'view_completed_orders_button': 'الطلبات المكتملة',
+  'productive_day_message': 'نتمنى لك يوم عمل مثمر في تنفيذ الطلبات',
 
   // مفاتيح صفحة طلباتي المكتملة للعامل
   'worker_completed_orders_desc': 'الطلبات التي أنهيت العمل عليها',
@@ -557,8 +564,10 @@ const enTranslations: Translations = {
   // نصوص إضافية مطلوبة
   'admin_dashboard': 'Admin Dashboard',
   'worker_dashboard': 'Worker Dashboard',
+  'tailor_dashboard': 'Tailor Dashboard',
   'admin': 'Admin',
   'worker': 'Worker',
+  'tailor': 'Tailor',
   'change_language': 'Change Language',
   'my_active_orders': 'My Active Orders',
   'completed_orders': 'Completed Orders',
@@ -887,6 +896,11 @@ const enTranslations: Translations = {
   'appointments_today': 'Today\'s Appointments',
   'finished_orders': 'Finished Orders',
   'all_orders': 'All Orders',
+  'new_orders': 'New Orders',
+  'delivered_orders_count': 'Delivered Orders',
+  'view_all_orders_button': 'All Orders',
+  'view_completed_orders_button': 'Completed Orders',
+  'productive_day_message': 'We wish you a productive day in completing orders',
 
   // مفاتيح صفحة طلباتي المكتملة للعامل
   'worker_completed_orders_desc': 'Orders you have completed',

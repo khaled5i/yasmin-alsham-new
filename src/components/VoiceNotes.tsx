@@ -20,9 +20,18 @@ interface VoiceNotesProps {
   onVoiceNotesChange: (voiceNotes: VoiceNote[]) => void
   disabled?: boolean
   readOnly?: boolean // للسماح بالترجمة فقط دون التسجيل أو الحذف
+  orderId?: string // معرف الطلب لحفظ الترجمات
+  workerId?: string // معرف العامل لحفظ الترجمات الخاصة به
 }
 
-export default function VoiceNotes({ voiceNotes = [], onVoiceNotesChange, disabled = false, readOnly = false }: VoiceNotesProps) {
+export default function VoiceNotes({
+  voiceNotes = [],
+  onVoiceNotesChange,
+  disabled = false,
+  readOnly = false,
+  orderId,
+  workerId
+}: VoiceNotesProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [playingId, setPlayingId] = useState<string | null>(null)
   const { t } = useTranslation()
@@ -37,6 +46,46 @@ export default function VoiceNotes({ voiceNotes = [], onVoiceNotesChange, disabl
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const chunksRef = useRef<Blob[]>([])
+
+  // تحميل الترجمات المحفوظة عند فتح الصفحة
+  useEffect(() => {
+    const loadSavedTranslations = async () => {
+      if (!orderId || !workerId || voiceNotes.length === 0) return
+
+      try {
+        const response = await fetch(`/api/worker-translations?orderId=${orderId}&workerId=${workerId}`)
+        if (!response.ok) return
+
+        const savedTranslations = await response.json()
+
+        // دمج الترجمات المحفوظة مع الملاحظات الصوتية
+        const updatedNotes = voiceNotes.map(note => {
+          const savedTranslation = savedTranslations.find((t: any) => t.voice_note_id === note.id)
+          if (savedTranslation) {
+            return {
+              ...note,
+              translatedText: savedTranslation.translated_text,
+              translationLanguage: savedTranslation.target_language
+            }
+          }
+          return note
+        })
+
+        // تحديث الملاحظات فقط إذا كانت هناك تغييرات
+        const hasChanges = updatedNotes.some((note, index) =>
+          note.translatedText !== voiceNotes[index].translatedText
+        )
+
+        if (hasChanges) {
+          onVoiceNotesChange(updatedNotes)
+        }
+      } catch (error) {
+        console.error('Error loading saved translations:', error)
+      }
+    }
+
+    loadSavedTranslations()
+  }, [orderId, workerId]) // نستمع فقط لتغييرات orderId و workerId
 
   // تحويل base64 إلى Blob للتشغيل
   const base64ToBlob = (base64: string): Blob => {
@@ -362,10 +411,16 @@ export default function VoiceNotes({ voiceNotes = [], onVoiceNotesChange, disabl
       })
 
       if (!response.ok) {
-        throw new Error('Translation failed')
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Translation API error:', errorData)
+        throw new Error(errorData.error || 'Translation failed')
       }
 
       const data = await response.json()
+
+      if (!data.translatedText) {
+        throw new Error('No translation returned from API')
+      }
 
       // تحديث الملاحظة بالنص المترجم
       const updatedNotes = voiceNotes.map(n =>
@@ -378,11 +433,34 @@ export default function VoiceNotes({ voiceNotes = [], onVoiceNotesChange, disabl
           : n
       )
       onVoiceNotesChange(updatedNotes)
+
+      // حفظ الترجمة في قاعدة البيانات إذا كان orderId و workerId متوفرين
+      if (orderId && workerId) {
+        try {
+          await fetch('/api/worker-translations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId,
+              workerId,
+              voiceNoteId: noteId,
+              originalText: note.transcription,
+              translatedText: data.translatedText,
+              targetLanguage: targetLanguage
+            })
+          })
+        } catch (dbError) {
+          console.error('Error saving translation to database:', dbError)
+          // لا نعرض خطأ للمستخدم لأن الترجمة نجحت في الواجهة
+        }
+      }
+
       setTranslatingId(null)
 
     } catch (error) {
       console.error('Translation error:', error)
-      setError(t('translation_error'))
+      const errorMessage = error instanceof Error ? error.message : t('translation_error')
+      setError(`خطأ في الترجمة: ${errorMessage}`)
       setTranslatingId(null)
     }
   }
@@ -463,173 +541,141 @@ export default function VoiceNotes({ voiceNotes = [], onVoiceNotesChange, disabl
 
       {/* قائمة التسجيلات الصوتية */}
       {voiceNotes.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-            <h4 className="text-sm font-medium text-gray-700">
-              {t('voice_notes')} ({voiceNotes.length})
-            </h4>
-
-            {/* زر تحويل الكل - إخفاء في وضع القراءة فقط */}
-            {!readOnly && voiceNotes.some(note => !note.transcription) && (
+        <div className="space-y-2">
+          {/* زر تحويل الكل - مدمج وصغير */}
+          {!readOnly && voiceNotes.some(note => !note.transcription) && (
+            <div className="flex justify-end">
               <button
                 type="button"
                 onClick={transcribeAllNotes}
                 disabled={disabled || transcribingId !== null}
-                className="inline-flex items-center space-x-1 space-x-reverse px-3 py-1.5 text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
               >
                 {transcribingId ? (
-                  <>
-                    <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                    <span>{t('transcribing')}</span>
-                  </>
+                  <Loader2 className="w-3 h-3 animate-spin" />
                 ) : (
-                  <>
-                    <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-                    <span>{t('transcribe_all')}</span>
-                  </>
+                  <FileText className="w-3 h-3" />
                 )}
+                <span>{t('transcribe_all')}</span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           {voiceNotes.map((note, index) => (
             <motion.div
               key={note.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
-              className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm space-y-3"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.2, delay: index * 0.05 }}
+              className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden"
             >
-              {/* رأس التسجيل الصوتي */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3 space-x-reverse">
-                  <button
-                    type="button"
-                    onClick={() => togglePlayback(note)}
-                    className="p-2 bg-pink-600 text-white rounded-full hover:bg-pink-700 transition-colors duration-300"
-                  >
-                    {playingId === note.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </button>
+              {/* الصف الرئيسي - مدمج */}
+              <div className="flex items-center gap-2 p-2 sm:p-3">
+                {/* زر التشغيل */}
+                <button
+                  type="button"
+                  onClick={() => togglePlayback(note)}
+                  className={`flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-200 ${playingId === note.id
+                    ? 'bg-pink-600 text-white shadow-md scale-105'
+                    : 'bg-pink-100 text-pink-600 hover:bg-pink-200'
+                    }`}
+                >
+                  {playingId === note.id ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 mr-[-2px]" />}
+                </button>
 
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">
-                      {t('voice_note')} #{index + 1}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {formatDate(note.timestamp)}
-                      {note.duration && ` • ${formatTime(note.duration)}`}
-                    </p>
-                  </div>
-                </div>
-
-                {!readOnly && (
-                  <button
-                    type="button"
-                    onClick={() => deleteVoiceNote(note.id)}
-                    disabled={disabled}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t('delete')}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* أزرار التحويل والترجمة */}
-              <div className="flex flex-wrap items-center gap-2">
-                {/* مؤشر التحويل التلقائي أو زر تحويل يدوي */}
-                {!note.transcription && transcribingId === note.id && (
-                  <div className="inline-flex items-center space-x-1 space-x-reverse px-3 py-1.5 text-xs sm:text-sm bg-blue-100 text-blue-700 rounded-lg border border-blue-300">
-                    <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                    <span>{t('transcribing')}</span>
-                  </div>
-                )}
-
-                {!readOnly && !note.transcription && transcribingId !== note.id && (
-                  <button
-                    type="button"
-                    onClick={() => transcribeAudio(note.id)}
-                    disabled={disabled || transcribingId !== null}
-                    className="inline-flex items-center space-x-1 space-x-reverse px-3 py-1.5 text-xs sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-                    <span>{t('transcribe_to_text')}</span>
-                  </button>
-                )}
-
-                {/* قائمة اللغات للترجمة */}
-                {note.transcription && (
-                  <div className="flex items-center space-x-2 space-x-reverse">
-                    <select
-                      value={selectedLanguage[note.id] || note.translationLanguage || ''}
-                      onChange={(e) => {
-                        setSelectedLanguage({ ...selectedLanguage, [note.id]: e.target.value })
-                        if (e.target.value) {
-                          translateText(note.id, e.target.value)
-                        }
-                      }}
-                      disabled={(disabled && !readOnly) || translatingId === note.id}
-                      className="px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent disabled:opacity-50"
-                    >
-                      <option value="">{t('select_language')}</option>
-                      <option value="en">{t('english')}</option>
-                      <option value="ur">{t('urdu')}</option>
-                      <option value="bn">{t('bengali')}</option>
-                    </select>
-
+                {/* معلومات الملاحظة */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium text-gray-700">#{index + 1}</span>
+                    {note.duration && (
+                      <span className="text-xs text-gray-400">{formatTime(note.duration)}</span>
+                    )}
+                    {/* قائمة الترجمة المدمجة */}
+                    {note.transcription && (
+                      <select
+                        value={selectedLanguage[note.id] || note.translationLanguage || ''}
+                        onChange={(e) => {
+                          setSelectedLanguage({ ...selectedLanguage, [note.id]: e.target.value })
+                          if (e.target.value) {
+                            translateText(note.id, e.target.value)
+                          }
+                        }}
+                        disabled={(disabled && !readOnly) || translatingId === note.id}
+                        className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50 focus:ring-1 focus:ring-pink-400 focus:border-pink-400 disabled:opacity-50"
+                      >
+                        <option value="">🌐</option>
+                        <option value="en">EN</option>
+                        <option value="ur">UR</option>
+                        <option value="bn">BN</option>
+                      </select>
+                    )}
                     {translatingId === note.id && (
-                      <div className="inline-flex items-center space-x-1 space-x-reverse text-xs text-gray-600">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>{t('translating')}</span>
-                      </div>
+                      <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
                     )}
                   </div>
-                )}
+                </div>
+
+                {/* أزرار الإجراءات */}
+                <div className="flex items-center gap-1">
+                  {!note.transcription && transcribingId === note.id && (
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                  )}
+                  {!readOnly && !note.transcription && transcribingId !== note.id && (
+                    <button
+                      type="button"
+                      onClick={() => transcribeAudio(note.id)}
+                      disabled={disabled || transcribingId !== null}
+                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
+                      title={t('transcribe_to_text')}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => deleteVoiceNote(note.id)}
+                      disabled={disabled}
+                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                      title={t('delete')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* عرض النص المحول */}
-              {note.transcription && (
-                <div className="space-y-2 bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 space-x-reverse">
-                      <FileText className="w-4 h-4 text-blue-600" />
-                      <label className="text-xs sm:text-sm font-semibold text-blue-800">
-                        {t('transcription')}
-                      </label>
+              {/* النص المحول والترجمة - مدمجين */}
+              {(note.transcription || note.translatedText) && (
+                <div className="border-t border-gray-100 bg-gray-50/50 px-3 py-2.5 space-y-2">
+                  {/* النص المحول */}
+                  {note.transcription && (
+                    <div className="flex gap-2">
+                      <FileText className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                      {readOnly ? (
+                        <p className="text-sm text-gray-700 leading-relaxed" dir="auto">{note.transcription}</p>
+                      ) : (
+                        <textarea
+                          value={note.transcription}
+                          onChange={(e) => updateTranscription(note.id, e.target.value)}
+                          disabled={disabled}
+                          rows={2}
+                          className="flex-1 text-sm text-gray-700 bg-white border border-gray-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-blue-400 focus:border-blue-400 resize-none"
+                          dir="auto"
+                        />
+                      )}
                     </div>
-                    {!readOnly && (
-                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                        {t('edit_transcription')}
-                      </span>
-                    )}
-                  </div>
-                  <textarea
-                    value={note.transcription}
-                    onChange={(e) => updateTranscription(note.id, e.target.value)}
-                    disabled={disabled || readOnly}
-                    rows={4}
-                    className="w-full px-3 py-2 text-sm border-2 border-blue-300 bg-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 resize-none"
-                    placeholder={t('transcription')}
-                    dir="auto"
-                  />
-                </div>
-              )}
-
-              {/* عرض النص المترجم */}
-              {note.translatedText && (
-                <div className="space-y-2 bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded-lg border border-green-200">
-                  <div className="flex items-center space-x-2 space-x-reverse">
-                    <Languages className="w-4 h-4 text-green-600" />
-                    <label className="text-xs sm:text-sm font-semibold text-green-800">
-                      {t('translation')}
-                    </label>
-                    <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-                      {note.translationLanguage?.toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="w-full px-3 py-2 text-sm border-2 border-green-300 bg-white rounded-lg whitespace-pre-wrap" dir="auto">
-                    {note.translatedText}
-                  </div>
+                  )}
+                  {/* الترجمة */}
+                  {note.translatedText && (
+                    <div className="flex gap-2">
+                      <Languages className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-gray-600 leading-relaxed" dir="auto">
+                        <span className="text-xs text-green-600 font-medium ml-1">[{note.translationLanguage?.toUpperCase()}]</span>
+                        {note.translatedText}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>

@@ -135,6 +135,9 @@ export default function OrdersPage() {
       supabaseUpdates.worker_id = updates.assignedWorker === '' ? null : updates.assignedWorker
     }
     if (updates.dueDate) supabaseUpdates.due_date = updates.dueDate
+    if (updates.proof_delivery_date !== undefined) {
+      supabaseUpdates.proof_delivery_date = updates.proof_delivery_date || null
+    }
     if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes
     if (updates.voiceNotes !== undefined) {
       supabaseUpdates.voice_notes = updates.voiceNotes.map((vn: any) => vn.data)
@@ -560,17 +563,17 @@ export default function OrdersPage() {
 
                   {/* الإجراءات */}
                   <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                    {/* زر المقاسات */}
-                    <button
-                      onClick={() => handleOpenMeasurements(order)}
-                      className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200 rounded-lg transition-all duration-200"
-                      title={order.measurements && Object.keys(order.measurements).length > 0 ? t('edit_measurements') : t('add_measurements')}
-                    >
-                      <Ruler className="w-4 h-4" />
-                    </button>
-
+                    {/* زر المقاسات - للمدراء فقط */}
                     {user.role === 'admin' && (
                       <>
+                        <button
+                          onClick={() => handleOpenMeasurements(order)}
+                          className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200 rounded-lg transition-all duration-200"
+                          title={order.measurements && Object.keys(order.measurements).length > 0 ? t('edit_measurements') : t('add_measurements')}
+                        >
+                          <Ruler className="w-4 h-4" />
+                        </button>
+
                         <button
                           onClick={() => handleEditOrder(order)}
                           className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg transition-all duration-200"

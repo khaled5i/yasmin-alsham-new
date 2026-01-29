@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import OpenAI from 'openai'
 
-const OPENROUTER_API_KEY = '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'
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+})
 
 // تعريف أسماء اللغات
 const languageNames: Record<string, string> = {
@@ -12,6 +15,13 @@ const languageNames: Record<string, string> = {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: 'OpenAI API key not configured' },
+        { status: 500 }
+      )
+    }
+
     const { text, targetLanguage } = await request.json()
 
     if (!text || !targetLanguage) {
@@ -23,43 +33,24 @@ export async function POST(request: NextRequest) {
 
     const languageName = languageNames[targetLanguage] || targetLanguage
 
-    // استخدام GPT-4 عبر OpenRouter للترجمة
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://yasmin-alsham.com',
-        'X-Title': 'Yasmin Al-Sham'
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a professional translator. Translate the following text to ${languageName}. Return ONLY the translated text, nothing else. No explanations, no additional formatting, just the pure translation.`
-          },
-          {
-            role: 'user',
-            content: text
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 1000
-      })
+    // استخدام OpenAI مباشرة للترجمة
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a professional translator. Translate the following text to ${languageName}. Return ONLY the translated text, nothing else. No explanations, no additional formatting, just the pure translation.`
+        },
+        {
+          role: 'user',
+          content: text
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 1000
     })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      console.error('OpenRouter API error:', errorData)
-      return NextResponse.json(
-        { error: 'Failed to translate text', details: errorData },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-    const translatedText = data.choices?.[0]?.message?.content?.trim() || ''
+    const translatedText = response.choices?.[0]?.message?.content?.trim() || ''
 
     if (!translatedText) {
       return NextResponse.json(

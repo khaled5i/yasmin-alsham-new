@@ -42,7 +42,7 @@ export const WORKER_PERMISSIONS: Record<WorkerType, {
     canAccessWorkers: false,
     canAccessAppointments: false,
     canAccessSettings: false,
-    dashboardRoute: '/dashboard/orders'
+    dashboardRoute: '/dashboard/worker' // ✅ تم التغيير من '/dashboard/orders' إلى '/dashboard/worker'
   },
   fabric_store_manager: {
     canAccessOrders: false,
