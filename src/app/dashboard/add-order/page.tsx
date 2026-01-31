@@ -11,11 +11,11 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ImageUpload from '@/components/ImageUpload'
-import UnifiedNotesInput from '@/components/UnifiedNotesInput'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
 import DatePickerForProof from '@/components/DatePickerForProof'
+import UnifiedNotesInput from '@/components/UnifiedNotesInput'
 import {
   ArrowRight,
   Upload,
@@ -28,7 +28,8 @@ import {
   CheckCircle,
   AlertCircle,
   Image as ImageIcon,
-  MessageCircle
+  MessageCircle,
+  Users
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
 
@@ -57,7 +58,7 @@ function AddOrderContent() {
     orderReceivedDate: new Date().toISOString().split('T')[0], // تاريخ استلام الطلب (تلقائي)
     assignedWorker: '',
     dueDate: '',
-    proofDeliveryDate: '', // موعد تسليم البروفا (اختياري)
+    proofDeliveryDate: '', // موعد تسليم البروفا
     notes: '',
     voiceNotes: [] as Array<{
       id: string
@@ -145,8 +146,8 @@ function AddOrderContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // التحقق من الحقول المطلوبة
-    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+    // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
       return
     }
@@ -188,9 +189,9 @@ function AddOrderContent() {
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
 
-          // التحقق من الحجم (الحد الأقصى 5MB)
-          if (imageSizeKB > 5 * 1024) {
-            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+          // التحقق من الحجم (الحد الأقصى 10MB)
+          if (imageSizeKB > 10 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 10MB`)
             return
           }
         } catch (imageError) {
@@ -290,8 +291,8 @@ function AddOrderContent() {
       return
     }
 
-    // التحقق من الحقول المطلوبة
-    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+    // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
       return
     }
@@ -333,9 +334,9 @@ function AddOrderContent() {
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
 
-          // التحقق من الحجم (الحد الأقصى 5MB)
-          if (imageSizeKB > 5 * 1024) {
-            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+          // التحقق من الحجم (الحد الأقصى 10MB)
+          if (imageSizeKB > 10 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 10MB`)
             return
           }
         } catch (imageError) {
@@ -510,8 +511,8 @@ function AddOrderContent() {
                 <span>{t('basic_information')}</span>
               </h3>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                {/* الصف الأول: اسم العميل | رقم الهاتف | رقم الطلب */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+                {/* الصف الأول: اسم العميل | رقم الهاتف | موعد تسليم البروفا */}
 
                 {/* 1. اسم العميل */}
                 <div>
@@ -541,22 +542,20 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 3. رقم الطلب */}
+                {/* 3. موعد تسليم البروفا - تقويم أخضر */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('order_number')} ({t('optional')})
+                    {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'}
                   </label>
-                  <input
-                    type="text"
-                    value={formData.orderNumber}
-                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
-                    disabled={isSubmitting}
+                  <DatePickerForProof
+                    selectedDate={formData.proofDeliveryDate}
+                    onChange={(date) => handleInputChange('proofDeliveryDate', date)}
+                    minDate={new Date()}
+                    required={false}
                   />
                 </div>
 
-                {/* الصف الثاني: موعد التسليم | موعد تسليم البروفا | تاريخ استلام الطلب */}
+                {/* الصف الثاني: موعد التسليم | رقم الطلب | تاريخ استلام الطلب */}
 
                 {/* 4. موعد التسليم - تقويم ذكي */}
                 <div>
@@ -571,16 +570,18 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 5. موعد تسليم البروفا - تقويم أخضر (اختياري) */}
+                {/* 5. رقم الطلب */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'} ({t('optional')})
+                    {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
                   </label>
-                  <DatePickerForProof
-                    selectedDate={formData.proofDeliveryDate}
-                    onChange={(date) => handleInputChange('proofDeliveryDate', date)}
-                    minDate={new Date()}
-                    required={false}
+                  <input
+                    type="text"
+                    value={formData.orderNumber}
+                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
+                    disabled={isSubmitting}
                   />
                 </div>
 
@@ -654,9 +655,6 @@ function AddOrderContent() {
                 <Ruler className="w-5 h-5 text-pink-600" />
                 <span>تعليقات على التصميم</span>
               </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                انقر على أي منطقة في الصورة لإضافة ملاحظة صوتية، أو فعّل وضع الرسم للرسم على الصورة
-              </p>
 
               <InteractiveImageAnnotation
                 imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
@@ -688,77 +686,46 @@ function AddOrderContent() {
               />
             </div>
 
-            {/* الملاحظات الموحدة */}
+            {/* ملاحظات إضافية */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
                 <MessageSquare className="w-5 h-5 text-pink-600" />
-                <span>{t('additional_notes')}</span>
+                <span>ملاحظات إضافية</span>
               </h3>
 
               <UnifiedNotesInput
                 notes={formData.notes}
-                voiceNotes={formData.voiceNotes || []}
+                voiceNotes={formData.voiceNotes}
                 onNotesChange={(notes) => handleInputChange('notes', notes)}
                 onVoiceNotesChange={handleVoiceNotesChange}
                 disabled={isSubmitting}
-                placeholder={t('additional_notes_placeholder')}
               />
             </div>
 
-            {/* معلومات أخرى */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-5 border border-pink-100">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center space-x-2 space-x-reverse">
-                <FileText className="w-5 h-5 text-pink-600" />
-                <span>{t('other_information')}</span>
+            {/* اختيار العامل المسؤول */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
+              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
+                <Users className="w-5 h-5 text-pink-600" />
+                <span>{t('responsible_worker')}</span>
               </h3>
 
-              <div className="grid md:grid-cols-2 gap-4">
-                {/* 1. وصف الفستان - يأخذ العرض الكامل */}
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {t('dress_description')} ({t('optional')})
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => handleInputChange('description', e.target.value)}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-sm"
-                    placeholder={t('dress_description_placeholder')}
-                  />
-                </div>
-
-                {/* 2. نوع القماش - نصف العرض */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {t('fabric_type')} ({t('optional')})
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fabric}
-                    onChange={(e) => handleInputChange('fabric', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-sm"
-                    placeholder={t('fabric_type_placeholder')}
-                  />
-                </div>
-
-                {/* 3. العامل المسؤول - نصف العرض */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {t('responsible_worker')} ({t('optional')})
-                  </label>
-                  <select
-                    value={formData.assignedWorker}
-                    onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-sm"
-                  >
-                    <option value="">{t('choose_worker')}</option>
-                    {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
-                      <option key={worker.id} value={worker.id}>
-                        {worker.user?.full_name || worker.specialty} - {worker.specialty}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {t('choose_worker')} ({t('optional')})
+                </label>
+                <select
+                  value={formData.assignedWorker}
+                  onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                  disabled={isSubmitting}
+                >
+                  <option value="">{t('choose_worker')}</option>
+                  {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
+                    <option key={worker.id} value={worker.id}>
+                      {worker.user?.full_name || worker.specialty} - {worker.specialty}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 

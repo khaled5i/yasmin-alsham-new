@@ -12,7 +12,9 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 // ============================================================================
 
 const STORAGE_BUCKET = 'product-images'
-const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB - الحد الأقصى للرفع
+const TARGET_SIZE = 5 * 1024 * 1024 // 5MB - الحجم المستهدف للضغط
+const COMPRESSION_THRESHOLD = 5 * 1024 * 1024 // 5MB - عتبة الضغط (الصور أكبر من هذا الحجم تُضغط)
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
 const THUMBNAIL_WIDTH = 300
 const THUMBNAIL_HEIGHT = 400
@@ -72,32 +74,32 @@ function validateFileSize(file: File): { valid: boolean; error?: string } {
 async function compressImage(file: File, maxWidth: number = 1920, quality: number = COMPRESSION_QUALITY): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    
+
     reader.onload = (e) => {
       const img = new Image()
-      
+
       img.onload = () => {
         const canvas = document.createElement('canvas')
         let width = img.width
         let height = img.height
-        
+
         // حساب الأبعاد الجديدة مع الحفاظ على النسبة
         if (width > maxWidth) {
           height = (height * maxWidth) / width
           width = maxWidth
         }
-        
+
         canvas.width = width
         canvas.height = height
-        
+
         const ctx = canvas.getContext('2d')
         if (!ctx) {
           reject(new Error('فشل إنشاء canvas context'))
           return
         }
-        
+
         ctx.drawImage(img, 0, 0, width, height)
-        
+
         canvas.toBlob(
           (blob) => {
             if (blob) {
@@ -110,11 +112,101 @@ async function compressImage(file: File, maxWidth: number = 1920, quality: numbe
           quality
         )
       }
-      
+
       img.onerror = () => reject(new Error('فشل تحميل الصورة'))
       img.src = e.target?.result as string
     }
-    
+
+    reader.onerror = () => reject(new Error('فشل قراءة الملف'))
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * ضغط الصورة بشكل ذكي - فقط للصور الكبيرة (أكبر من 5MB)
+ * يحافظ على جودة الصور الصغيرة ويضغط الكبيرة إلى ~5MB
+ */
+async function smartCompressImage(file: File): Promise<Blob> {
+  // إذا كان حجم الصورة أقل من عتبة الضغط، لا نضغطها
+  if (file.size <= COMPRESSION_THRESHOLD) {
+    console.log(`📷 الصورة ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB) لا تحتاج ضغط`)
+    return file
+  }
+
+  console.log(`🔄 ضغط الصورة ${file.name} من ${(file.size / 1024 / 1024).toFixed(2)}MB إلى ~5MB`)
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = (e) => {
+      const img = new Image()
+
+      img.onload = async () => {
+        const canvas = document.createElement('canvas')
+        let width = img.width
+        let height = img.height
+
+        // حساب نسبة الضغط المطلوبة
+        const compressionRatio = TARGET_SIZE / file.size
+
+        // تقليل الأبعاد بناءً على نسبة الضغط (الجذر التربيعي للحفاظ على النسبة)
+        const scaleFactor = Math.sqrt(compressionRatio)
+        const newWidth = Math.floor(width * Math.min(scaleFactor * 1.2, 1)) // نضيف 20% هامش
+        const newHeight = Math.floor(height * Math.min(scaleFactor * 1.2, 1))
+
+        // لا نقلل الأبعاد أكثر من اللازم
+        canvas.width = Math.max(newWidth, 1920)
+        canvas.height = Math.max(newHeight, Math.floor(1920 * (height / width)))
+
+        // إذا كانت الأبعاد الجديدة أكبر من الأصلية، نستخدم الأصلية
+        if (canvas.width > width) canvas.width = width
+        if (canvas.height > height) canvas.height = height
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          reject(new Error('فشل إنشاء canvas context'))
+          return
+        }
+
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+        // نبدأ بجودة عالية ونقللها تدريجياً حتى نصل للحجم المطلوب
+        let quality = 0.92
+        let blob: Blob | null = null
+        const minQuality = 0.5 // الحد الأدنى للجودة
+
+        // محاولة الضغط بجودات مختلفة
+        while (quality >= minQuality) {
+          blob = await new Promise<Blob | null>((res) => {
+            canvas.toBlob(
+              (b) => res(b),
+              'image/jpeg', // نستخدم JPEG للضغط الأفضل
+              quality
+            )
+          })
+
+          if (blob && blob.size <= TARGET_SIZE) {
+            console.log(`✅ تم ضغط الصورة إلى ${(blob.size / 1024 / 1024).toFixed(2)}MB بجودة ${(quality * 100).toFixed(0)}%`)
+            resolve(blob)
+            return
+          }
+
+          quality -= 0.05 // تقليل الجودة بـ 5%
+        }
+
+        // إذا لم نصل للحجم المطلوب، نستخدم آخر نتيجة
+        if (blob) {
+          console.log(`⚠️ تم ضغط الصورة إلى ${(blob.size / 1024 / 1024).toFixed(2)}MB (أفضل ما يمكن)`)
+          resolve(blob)
+        } else {
+          reject(new Error('فشل ضغط الصورة'))
+        }
+      }
+
+      img.onerror = () => reject(new Error('فشل تحميل الصورة'))
+      img.src = e.target?.result as string
+    }
+
     reader.onerror = () => reject(new Error('فشل قراءة الملف'))
     reader.readAsDataURL(file)
   })
@@ -126,27 +218,27 @@ async function compressImage(file: File, maxWidth: number = 1920, quality: numbe
 async function createThumbnail(file: File): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    
+
     reader.onload = (e) => {
       const img = new Image()
-      
+
       img.onload = () => {
         const canvas = document.createElement('canvas')
         canvas.width = THUMBNAIL_WIDTH
         canvas.height = THUMBNAIL_HEIGHT
-        
+
         const ctx = canvas.getContext('2d')
         if (!ctx) {
           reject(new Error('فشل إنشاء canvas context'))
           return
         }
-        
+
         // حساب الأبعاد للقص المركزي (center crop)
         const imgAspect = img.width / img.height
         const thumbAspect = THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT
-        
+
         let sx = 0, sy = 0, sWidth = img.width, sHeight = img.height
-        
+
         if (imgAspect > thumbAspect) {
           // الصورة أعرض من المطلوب
           sWidth = img.height * thumbAspect
@@ -156,9 +248,9 @@ async function createThumbnail(file: File): Promise<Blob> {
           sHeight = img.width / thumbAspect
           sy = (img.height - sHeight) / 2
         }
-        
+
         ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
-        
+
         canvas.toBlob(
           (blob) => {
             if (blob) {
@@ -171,11 +263,11 @@ async function createThumbnail(file: File): Promise<Blob> {
           COMPRESSION_QUALITY
         )
       }
-      
+
       img.onerror = () => reject(new Error('فشل تحميل الصورة'))
       img.src = e.target?.result as string
     }
-    
+
     reader.onerror = () => reject(new Error('فشل قراءة الملف'))
     reader.readAsDataURL(file)
   })
@@ -236,15 +328,15 @@ export const imageService = {
         return { data: null, error: sizeValidation.error! }
       }
 
-      // 3. ضغط الصورة الأساسية
+      // 3. ضغط الصورة الأساسية (فقط للصور الكبيرة > 5MB)
       onProgress?.({
         fileName,
         progress: 20,
         status: 'compressing'
       })
 
-      const compressedBlob = await compressImage(file)
-      const compressedFile = new File([compressedBlob], file.name, { type: file.type })
+      const compressedBlob = await smartCompressImage(file)
+      const compressedFile = new File([compressedBlob], file.name, { type: compressedBlob.type || file.type })
 
       // 4. إنشاء thumbnail
       onProgress?.({
@@ -399,7 +491,7 @@ export const imageService = {
   async uploadAsBase64(file: File): Promise<{ data: ImageUploadResult | null; error: string | null }> {
     return new Promise((resolve) => {
       const reader = new FileReader()
-      
+
       reader.onload = (e) => {
         const base64 = e.target?.result as string
         resolve({
@@ -411,11 +503,11 @@ export const imageService = {
           error: null
         })
       }
-      
+
       reader.onerror = () => {
         resolve({ data: null, error: 'فشل قراءة الملف' })
       }
-      
+
       reader.readAsDataURL(file)
     })
   }

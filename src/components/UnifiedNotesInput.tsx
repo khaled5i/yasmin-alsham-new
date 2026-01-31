@@ -427,7 +427,8 @@ export default function UnifiedNotesInput({
           rows={6}
           disabled={disabled}
           placeholder={placeholder}
-          className="w-full px-4 py-3 pr-28 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 resize-none"
+          className="w-full pr-4 pl-28 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 resize-none"
+          dir="rtl"
         />
 
         {/* أيقونات المايكروفون والترجمة داخل الحقل النصي */}

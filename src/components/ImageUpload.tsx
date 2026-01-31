@@ -31,6 +31,7 @@ export default function ImageUpload({
   const [uploadProgress, setUploadProgress] = useState<Map<string, FileProgress>>(new Map())
   const [errors, setErrors] = useState<string[]>([])
   const [showOptions, setShowOptions] = useState(false)
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null) // الصورة المعروضة في Lightbox
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -464,7 +465,10 @@ export default function ImageUpload({
                     exit={{ opacity: 0, scale: 0.8 }}
                     className="relative group"
                   >
-                    <div className="aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
+                    <div
+                      className="aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 cursor-pointer"
+                      onClick={() => !isVideo && setLightboxImage(image)}
+                    >
                       {isVideo ? (
                         <video
                           src={image}
@@ -476,13 +480,14 @@ export default function ImageUpload({
                         <img
                           src={image}
                           alt={`صورة ${index + 1}`}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover hover:opacity-90 transition-opacity"
                         />
                       )}
                     </div>
 
                     {/* زر الحذف */}
                     <button
+                      type="button"
                       onClick={() => removeImage(index)}
                       className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:bg-red-600"
                     >
@@ -515,6 +520,39 @@ export default function ImageUpload({
           </div>
         </div>
       )}
+
+      {/* Lightbox لعرض الصورة بحجم كامل */}
+      <AnimatePresence>
+        {lightboxImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            onClick={() => setLightboxImage(null)}
+          >
+            {/* زر الإغلاق */}
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-10"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            {/* الصورة */}
+            <motion.img
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              src={lightboxImage}
+              alt="عرض الصورة بحجم كامل"
+              className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

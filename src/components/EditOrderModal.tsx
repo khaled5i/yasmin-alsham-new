@@ -185,8 +185,8 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
 
     if (!order) return
 
-    // التحقق من الحقول المطلوبة
-    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+    // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
       return
     }
@@ -228,9 +228,9 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
 
-          // التحقق من الحجم (الحد الأقصى 5MB)
-          if (imageSizeKB > 5 * 1024) {
-            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+          // التحقق من الحجم (الحد الأقصى 10MB)
+          if (imageSizeKB > 10 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 10MB`)
             setIsSubmitting(false)
             return
           }
@@ -312,8 +312,8 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
       return
     }
 
-    // التحقق من الحقول المطلوبة
-    if (!formData.orderNumber || !formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+    // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setMessage({ type: 'error', text: t('fill_required_fields') })
       return
     }
@@ -355,8 +355,8 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
 
-          if (imageSizeKB > 5 * 1024) {
-            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
+          if (imageSizeKB > 10 * 1024) {
+            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 10MB`)
             setIsSubmitting(false)
             return
           }
@@ -524,14 +524,14 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                     {/* 3. رقم الطلب */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_number')} ({t('optional')})
+                        {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
                       </label>
                       <input
                         type="text"
                         value={formData.orderNumber}
                         onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        placeholder={t('enter_order_number') || 'أدخل رقم الطلب'}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
                         disabled={isSubmitting}
                       />
                     </div>
@@ -634,9 +634,6 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                     <Ruler className="w-5 h-5 text-pink-600" />
                     <span>تعليقات على التصميم</span>
                   </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    انقر على أي منطقة في الصورة لإضافة ملاحظة صوتية، أو فعّل وضع الرسم للرسم على الصورة
-                  </p>
 
                   <InteractiveImageAnnotation
                     imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
@@ -662,8 +659,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
 
                   <ImageUpload
                     images={formData.images}
-                    onChange={(images) => handleInputChange('images', images)}
-                    disabled={isSubmitting}
+                    onImagesChange={(images) => handleInputChange('images', images)}
                   />
                 </div>
 
@@ -675,9 +671,9 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                   </h3>
 
                   <UnifiedNotesInput
-                    textNotes={formData.notes}
+                    notes={formData.notes}
                     voiceNotes={formData.voiceNotes}
-                    onTextNotesChange={(notes) => handleInputChange('notes', notes)}
+                    onNotesChange={(notes) => handleInputChange('notes', notes)}
                     onVoiceNotesChange={handleVoiceNotesChange}
                     disabled={isSubmitting}
                   />

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp } from 'lucide-react'
+import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import Image from 'next/image'
 
@@ -35,6 +35,8 @@ export interface ImageAnnotation {
   boxY?: number // موقع مربع النص المخصص (نسبة مئوية)
   audioData?: string // base64 audio
   transcription?: string
+  translatedText?: string // النص المترجم
+  translationLanguage?: string // لغة الترجمة
   duration?: number
   timestamp: number
   isRecording?: boolean
@@ -163,6 +165,17 @@ export default function InteractiveImageAnnotation({
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showInstructions, setShowInstructions] = useState(true)
+  const [translatingId, setTranslatingId] = useState<string | null>(null)
+  const [targetLanguage, setTargetLanguage] = useState<string>('en')
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState<string | null>(null)
+
+  // قائمة اللغات المتاحة للترجمة
+  const availableLanguages = [
+    { code: 'en', name: 'English', nameAr: 'الإنجليزية', nativeName: 'English' },
+    { code: 'ur', name: 'Urdu', nameAr: 'الأردية', nativeName: 'اردو' },
+    { code: 'bn', name: 'Bengali', nameAr: 'البنغالية', nativeName: 'বাংলা' },
+    { code: 'hi', name: 'Hindi', nameAr: 'الهندية', nativeName: 'हिन्दी' }
+  ]
 
   // حالات الرسم الحر
   const [isDrawingMode, setIsDrawingMode] = useState(false)
@@ -176,6 +189,8 @@ export default function InteractiveImageAnnotation({
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showStrokePicker, setShowStrokePicker] = useState(false)
   const [showBrushPicker, setShowBrushPicker] = useState(false)
+  const [showEraserSizePicker, setShowEraserSizePicker] = useState(false)
+  const [showEraserMenu, setShowEraserMenu] = useState(false)
 
   // حالات تبديل الصورة
   const [showImageOptions, setShowImageOptions] = useState(false)
@@ -184,6 +199,21 @@ export default function InteractiveImageAnnotation({
   // حالات التعليقات المحفوظة
   const [showSavedComments, setShowSavedComments] = useState(true)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editingCommentTitle, setEditingCommentTitle] = useState<string | null>(null)
+  const [editedCommentTitle, setEditedCommentTitle] = useState<string>('')
+  const [viewingCommentId, setViewingCommentId] = useState<string | null>(null) // التعليق المحفوظ الذي يتم عرضه حالياً
+  // تتبع الحالة الأصلية للتعليق المعروض للكشف عن التغييرات
+  const [originalViewingAnnotations, setOriginalViewingAnnotations] = useState<ImageAnnotation[]>([])
+  const [originalViewingDrawings, setOriginalViewingDrawings] = useState<DrawingPath[]>([])
+
+  // دالة للكشف عن وجود تغييرات في التعليق المعروض
+  const hasViewingCommentChanges = useMemo(() => {
+    if (!viewingCommentId) return false
+    // مقارنة التعليقات والرسومات الحالية مع الأصلية
+    const annotationsChanged = JSON.stringify(annotations) !== JSON.stringify(originalViewingAnnotations)
+    const drawingsChanged = JSON.stringify(drawings) !== JSON.stringify(originalViewingDrawings)
+    return annotationsChanged || drawingsChanged
+  }, [viewingCommentId, annotations, drawings, originalViewingAnnotations, originalViewingDrawings])
 
   // دالة حفظ التعليق الحالي
   const saveCurrentComment = useCallback(async () => {
@@ -228,13 +258,96 @@ export default function InteractiveImageAnnotation({
     onSavedCommentsChange?.(updatedComments)
   }, [savedComments, onSavedCommentsChange])
 
-  // دالة تحميل تعليق محفوظ للتعديل
-  const loadCommentForEditing = useCallback((comment: SavedDesignComment) => {
-    setEditingCommentId(comment.id)
+  // دالة بدء تعديل اسم التعليق
+  const startEditingCommentTitle = useCallback((commentId: string, currentTitle: string) => {
+    setEditingCommentTitle(commentId)
+    setEditedCommentTitle(currentTitle)
+  }, [])
+
+  // دالة حفظ اسم التعليق المعدل
+  const saveCommentTitle = useCallback(() => {
+    if (!editingCommentTitle) return
+
+    const updatedComments = savedComments.map(c =>
+      c.id === editingCommentTitle ? { ...c, title: editedCommentTitle } : c
+    )
+    onSavedCommentsChange?.(updatedComments)
+    setEditingCommentTitle(null)
+    setEditedCommentTitle('')
+  }, [editingCommentTitle, editedCommentTitle, savedComments, onSavedCommentsChange])
+
+  // دالة إلغاء تعديل اسم التعليق
+  const cancelEditingCommentTitle = useCallback(() => {
+    setEditingCommentTitle(null)
+    setEditedCommentTitle('')
+  }, [])
+
+  // دالة تحميل تعليق محفوظ للعرض (view mode)
+  const loadCommentForViewing = useCallback(async (comment: SavedDesignComment) => {
+    // التحقق من وجود محتوى حالي غير محفوظ
+    const hasUnsavedContent = (annotations.length > 0 || drawings.length > 0) && !viewingCommentId && !editingCommentId
+
+    if (hasUnsavedContent) {
+      // عرض تنبيه للمستخدم
+      const shouldSave = window.confirm(
+        'لديك تعليقات أو رسومات غير محفوظة. هل تريد حفظها قبل عرض التعليق المحفوظ؟'
+      )
+
+      if (shouldSave) {
+        // حفظ التعليق الحالي تلقائياً
+        await saveCurrentComment()
+      }
+    }
+
+    // تحميل التعليقات والرسومات بدون تفعيل وضع التعديل
     onAnnotationsChange(comment.annotations)
     onDrawingsChange(comment.drawings)
+    // حفظ الحالة الأصلية للكشف عن التغييرات
+    setOriginalViewingAnnotations(JSON.parse(JSON.stringify(comment.annotations)))
+    setOriginalViewingDrawings(JSON.parse(JSON.stringify(comment.drawings)))
+    // تحديد التعليق الذي يتم عرضه
+    setViewingCommentId(comment.id)
+    // إلغاء أي وضع تعديل نشط
+    setEditingCommentId(null)
+    setIsDrawingMode(false)
+    setIsRecordingActive(false)
     // لا نحمل الصورة لأنها base64 وليست File
-  }, [onAnnotationsChange, onDrawingsChange])
+  }, [annotations, drawings, viewingCommentId, editingCommentId, saveCurrentComment, onAnnotationsChange, onDrawingsChange])
+
+  // دالة تحديث التعليق المحفوظ الذي يتم عرضه
+  const updateViewingComment = useCallback(async () => {
+    if (!viewingCommentId) return
+
+    let imageBase64 = currentImageBase64
+    if (customImage && !imageBase64) {
+      imageBase64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.readAsDataURL(customImage)
+      })
+    }
+
+    const updatedComments = savedComments.map(c => {
+      if (c.id === viewingCommentId) {
+        return {
+          ...c,
+          annotations: [...annotations],
+          drawings: [...drawings],
+          image: imageBase64 || c.image,
+          timestamp: Date.now()
+        }
+      }
+      return c
+    })
+
+    onSavedCommentsChange?.(updatedComments)
+    // تحديث الحالة الأصلية بعد الحفظ
+    setOriginalViewingAnnotations(JSON.parse(JSON.stringify(annotations)))
+    setOriginalViewingDrawings(JSON.parse(JSON.stringify(drawings)))
+    setViewingCommentId(null) // إلغاء وضع العرض بعد الحفظ
+    setOriginalViewingAnnotations([])
+    setOriginalViewingDrawings([])
+  }, [viewingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange])
 
   // دالة تحديث تعليق محفوظ
   const updateSavedComment = useCallback(async () => {
@@ -494,6 +607,36 @@ export default function InteractiveImageAnnotation({
     setDraggingId(null)
   }, [annotations, onAnnotationsChange])
 
+  // معالج نهاية سحب النص
+  const handleTextDragEnd = useCallback((annotationId: string, info: any) => {
+    if (!containerRef.current) return
+
+    const rect = containerRef.current.getBoundingClientRect()
+    const currentAnnotation = annotations.find(a => a.id === annotationId)
+    if (!currentAnnotation) return
+
+    // حساب الموقع الحالي
+    const currentX = currentAnnotation.boxX ?? currentAnnotation.x
+    const currentY = currentAnnotation.boxY ?? currentAnnotation.y
+
+    // حساب التغيير في الموقع
+    const deltaX = (info.offset.x / rect.width) * 100
+    const deltaY = (info.offset.y / rect.height) * 100
+
+    // الموقع الجديد
+    const newX = currentX + deltaX
+    const newY = currentY + deltaY
+
+    // التأكد من أن النص داخل الحدود
+    const clampedX = Math.max(0, Math.min(95, newX))
+    const clampedY = Math.max(0, Math.min(95, newY))
+
+    const updatedAnnotations = annotations.map(a =>
+      a.id === annotationId ? { ...a, boxX: clampedX, boxY: clampedY } : a
+    )
+    onAnnotationsChange(updatedAnnotations)
+  }, [annotations, onAnnotationsChange])
+
   // دوال تعديل النص
   const handleSaveEdit = useCallback((e: React.MouseEvent, annotationId: string) => {
     e.stopPropagation()
@@ -540,7 +683,12 @@ export default function InteractiveImageAnnotation({
     return { x, y }
   }, [])
 
-  // بدء الرسم
+  // مرجع للمسار الحالي لتحسين الأداء
+  const currentPathRef = useRef<{ x: number; y: number }[]>([])
+  const isDrawingRef = useRef(false)
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null)
+
+  // بدء الرسم - محسّن للاستجابة الفورية
   const handleDrawingStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawingMode || disabled) return
 
@@ -549,45 +697,113 @@ export default function InteractiveImageAnnotation({
 
     const point = getDrawingCoordinates(e)
     if (point) {
+      isDrawingRef.current = true
+      currentPathRef.current = [point]
+      lastPointRef.current = point
       setIsDrawing(true)
       setCurrentPath([point])
-    }
-  }, [isDrawingMode, disabled, getDrawingCoordinates])
 
-  // الاستمرار في الرسم
+      // رسم نقطة فورية على Canvas
+      const canvas = canvasRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          const rect = canvas.getBoundingClientRect()
+          const scaleX = canvas.width / rect.width
+          const scaleY = canvas.height / rect.height
+          const x = point.x * canvas.width / 100
+          const y = point.y * canvas.height / 100
+
+          ctx.beginPath()
+          ctx.arc(x, y, (isEraserMode ? eraserWidth : strokeWidth) / 2, 0, Math.PI * 2)
+          ctx.fillStyle = isEraserMode ? '#ffffff' : drawingColor
+          ctx.fill()
+        }
+      }
+    }
+  }, [isDrawingMode, disabled, getDrawingCoordinates, isEraserMode, eraserWidth, strokeWidth, drawingColor])
+
+  // الاستمرار في الرسم - محسّن للأداء
   const handleDrawingMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing || !isDrawingMode) return
+    if (!isDrawingRef.current || !isDrawingMode) return
 
     e.preventDefault()
 
     const point = getDrawingCoordinates(e)
     if (point) {
-      setCurrentPath(prev => [...prev, point])
-    }
-  }, [isDrawing, isDrawingMode, getDrawingCoordinates])
+      // تحقق من المسافة لتجنب النقاط المتكررة جداً
+      const lastPoint = lastPointRef.current
+      if (lastPoint) {
+        const distance = Math.sqrt(
+          Math.pow(point.x - lastPoint.x, 2) + Math.pow(point.y - lastPoint.y, 2)
+        )
+        // تجاهل النقاط القريبة جداً لتحسين الأداء
+        if (distance < 0.3) return
+      }
 
-  // إنهاء الرسم
+      lastPointRef.current = point
+      currentPathRef.current = [...currentPathRef.current, point]
+
+      // رسم مباشر على Canvas للاستجابة الفورية
+      const canvas = canvasRef.current
+      if (canvas && lastPoint) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          const x1 = lastPoint.x * canvas.width / 100
+          const y1 = lastPoint.y * canvas.height / 100
+          const x2 = point.x * canvas.width / 100
+          const y2 = point.y * canvas.height / 100
+
+          ctx.beginPath()
+          ctx.moveTo(x1, y1)
+          ctx.lineTo(x2, y2)
+          ctx.strokeStyle = isEraserMode ? '#ffffff' : drawingColor
+          ctx.lineWidth = isEraserMode ? eraserWidth : strokeWidth
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          ctx.stroke()
+        }
+      }
+
+      // تحديث الحالة بشكل أقل تكراراً
+      setCurrentPath([...currentPathRef.current])
+    }
+  }, [isDrawingMode, getDrawingCoordinates, isEraserMode, eraserWidth, strokeWidth, drawingColor])
+
+  // إنهاء الرسم - يدعم النقطة الواحدة
   const handleDrawingEnd = useCallback(() => {
-    if (!isDrawing || currentPath.length < 2) {
-      setIsDrawing(false)
-      setCurrentPath([])
+    if (!isDrawingRef.current) {
       return
     }
 
-    const newPath: DrawingPath = {
-      id: Date.now().toString(),
-      points: currentPath,
-      color: isEraserMode ? '#ffffff' : drawingColor,
-      strokeWidth: isEraserMode ? eraserWidth : strokeWidth,
-      brushType: isEraserMode ? 'normal' : brushType,
-      isEraser: isEraserMode,
-      timestamp: Date.now()
+    const pathPoints = currentPathRef.current
+
+    // السماح بحفظ حتى نقطة واحدة
+    if (pathPoints.length >= 1) {
+      // إذا كانت نقطة واحدة، نضيف نقطة ثانية قريبة جداً لإنشاء نقطة مرئية
+      const finalPoints = pathPoints.length === 1
+        ? [pathPoints[0], { x: pathPoints[0].x + 0.1, y: pathPoints[0].y + 0.1 }]
+        : pathPoints
+
+      const newPath: DrawingPath = {
+        id: Date.now().toString(),
+        points: finalPoints,
+        color: isEraserMode ? '#ffffff' : drawingColor,
+        strokeWidth: isEraserMode ? eraserWidth : strokeWidth,
+        brushType: isEraserMode ? 'normal' : brushType,
+        isEraser: isEraserMode,
+        timestamp: Date.now()
+      }
+
+      onDrawingsChange([...drawings, newPath])
     }
 
-    onDrawingsChange([...drawings, newPath])
+    isDrawingRef.current = false
+    currentPathRef.current = []
+    lastPointRef.current = null
     setIsDrawing(false)
     setCurrentPath([])
-  }, [isDrawing, currentPath, drawingColor, strokeWidth, brushType, isEraserMode, eraserWidth, drawings, onDrawingsChange])
+  }, [drawingColor, strokeWidth, brushType, isEraserMode, eraserWidth, drawings, onDrawingsChange])
 
   // التراجع عن آخر رسمة
   const handleUndoDrawing = useCallback(() => {
@@ -607,6 +823,7 @@ export default function InteractiveImageAnnotation({
     setShowColorPicker(false)
     setShowStrokePicker(false)
     setShowBrushPicker(false)
+    setShowEraserSizePicker(false)
     setIsEraserMode(false)
     // إعادة تعيين الحالة عند الخروج من وضع الرسم
     if (isDrawingMode) {
@@ -615,13 +832,19 @@ export default function InteractiveImageAnnotation({
     }
   }, [isDrawingMode])
 
-  // تفعيل/إلغاء وضع الممحاة
-  const toggleEraserMode = useCallback(() => {
-    setIsEraserMode(prev => !prev)
+  // إغلاق جميع القوائم المنبثقة
+  const closeAllPickers = useCallback(() => {
     setShowColorPicker(false)
     setShowStrokePicker(false)
     setShowBrushPicker(false)
+    setShowEraserSizePicker(false)
   }, [])
+
+  // تفعيل/إلغاء وضع الممحاة
+  const toggleEraserMode = useCallback(() => {
+    setIsEraserMode(prev => !prev)
+    closeAllPickers()
+  }, [closeAllPickers])
 
   // ===== دوال تبديل الصورة =====
 
@@ -1053,6 +1276,67 @@ export default function InteractiveImageAnnotation({
     }
   }
 
+  // ترجمة النص المستخرج من التسجيل الصوتي
+  const translateAnnotationText = async (annotationId: string, targetLang: string) => {
+    try {
+      setTranslatingId(annotationId)
+      setError(null)
+
+      // التحقق من أننا لسنا في Capacitor
+      if (typeof window !== 'undefined' && (window as any).Capacitor) {
+        setError('ميزة الترجمة غير متاحة في التطبيق المحمول حالياً')
+        setTranslatingId(null)
+        return
+      }
+
+      const annotation = annotations.find(a => a.id === annotationId)
+      if (!annotation || !annotation.transcription) {
+        setError('لا يوجد نص لترجمته')
+        setTranslatingId(null)
+        return
+      }
+
+      const response = await fetch('/api/translate-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: annotation.transcription,
+          targetLanguage: targetLang
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Translation failed')
+      }
+
+      const data = await response.json()
+
+      // تحديث التعليق بالنص المترجم
+      const updatedAnnotations = annotations.map(a =>
+        a.id === annotationId
+          ? {
+            ...a,
+            translatedText: data.translatedText,
+            translationLanguage: targetLang
+          }
+          : a
+      )
+      onAnnotationsChange(updatedAnnotations)
+      setTranslatingId(null)
+
+    } catch (error) {
+      console.error('Translation error:', error)
+      setError('فشلت عملية الترجمة')
+      setTranslatingId(null)
+    }
+  }
+
+  // الحصول على اسم اللغة
+  const getLanguageName = (code: string): string => {
+    const lang = availableLanguages.find(l => l.code === code)
+    return lang ? lang.nameAr : code
+  }
+
   // تشغيل/إيقاف الصوت
   const togglePlayback = (annotation: ImageAnnotation) => {
     if (!annotation.audioData) return
@@ -1127,257 +1411,13 @@ export default function InteractiveImageAnnotation({
         </div>
       )}
 
-      {/* شريط أدوات الرسم */}
+      {/* شريط الخيارات العلوي */}
       <div className="flex flex-wrap items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        {/* زر تفعيل وضع الرسم */}
-        <button
-          type="button"
-          onClick={toggleDrawingMode}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${isDrawingMode
-            ? 'bg-pink-500 text-white shadow-md'
-            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-            }`}
-          disabled={disabled || isRecordingActive}
-        >
-          <Pencil className="w-4 h-4" />
-          {isDrawingMode ? 'وضع الرسم' : 'رسم'}
-        </button>
-
-        {/* أدوات الرسم - تظهر فقط في وضع الرسم */}
+        {/* حالة وضع الرسم */}
         {isDrawingMode && (
-          <>
-            {/* زر القلم */}
-            <button
-              type="button"
-              onClick={() => setIsEraserMode(false)}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm transition-all ${!isEraserMode
-                ? 'bg-pink-100 border-2 border-pink-400 text-pink-700'
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                }`}
-              title="قلم"
-            >
-              <PenTool className="w-4 h-4" />
-            </button>
-
-            {/* زر الممحاة */}
-            <button
-              type="button"
-              onClick={toggleEraserMode}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm transition-all ${isEraserMode
-                ? 'bg-orange-100 border-2 border-orange-400 text-orange-700'
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                }`}
-              title="ممحاة"
-            >
-              <Eraser className="w-4 h-4" />
-            </button>
-
-            {/* فاصل */}
-            <div className="w-px h-6 bg-gray-300" />
-
-            {/* أدوات القلم - تظهر فقط عندما لا تكون الممحاة مفعلة */}
-            {!isEraserMode && (
-              <>
-                {/* اختيار اللون */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowColorPicker(!showColorPicker)
-                      setShowStrokePicker(false)
-                      setShowBrushPicker(false)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-white border border-gray-300 hover:bg-gray-100"
-                  >
-                    <div
-                      className="w-5 h-5 rounded-full border-2 border-gray-400"
-                      style={{ backgroundColor: drawingColor }}
-                    />
-                  </button>
-
-                  {showColorPicker && (
-                    <div className="absolute top-full mt-1 right-0 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50">
-                      <div className="grid grid-cols-5 gap-1.5 w-40">
-                        {DRAWING_COLORS.map(color => (
-                          <button
-                            type="button"
-                            key={color.value}
-                            onClick={() => {
-                              setDrawingColor(color.value)
-                              setShowColorPicker(false)
-                            }}
-                            className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${drawingColor === color.value
-                              ? 'border-gray-800 scale-110 ring-2 ring-pink-300'
-                              : 'border-gray-300'
-                              }`}
-                            style={{ backgroundColor: color.value }}
-                            title={color.name}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* اختيار نوع الفرشاة */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowBrushPicker(!showBrushPicker)
-                      setShowColorPicker(false)
-                      setShowStrokePicker(false)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-white border border-gray-300 hover:bg-gray-100"
-                  >
-                    <span className="text-base">{BRUSH_TYPES.find(b => b.value === brushType)?.icon || '✏️'}</span>
-                    <span className="text-gray-600 text-xs hidden sm:inline">فرشاة</span>
-                  </button>
-
-                  {showBrushPicker && (
-                    <div className="absolute top-full mt-1 right-0 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50 min-w-32">
-                      {BRUSH_TYPES.map(brush => (
-                        <button
-                          type="button"
-                          key={brush.value}
-                          onClick={() => {
-                            setBrushType(brush.value)
-                            setShowBrushPicker(false)
-                          }}
-                          className={`flex items-center gap-2 w-full px-3 py-2 rounded hover:bg-gray-100 ${brushType === brush.value ? 'bg-pink-50 text-pink-700' : ''
-                            }`}
-                        >
-                          <span className="text-base">{brush.icon}</span>
-                          <span className="text-sm text-gray-700">{brush.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* اختيار سمك الخط */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowStrokePicker(!showStrokePicker)
-                      setShowColorPicker(false)
-                      setShowBrushPicker(false)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-white border border-gray-300 hover:bg-gray-100"
-                  >
-                    <div className="flex items-center gap-0.5">
-                      <div
-                        className="rounded-full bg-gray-700"
-                        style={{ width: Math.min(strokeWidth * 1.5, 16), height: Math.min(strokeWidth * 1.5, 16) }}
-                      />
-                    </div>
-                    <span className="text-gray-600 text-xs hidden sm:inline">سمك</span>
-                  </button>
-
-                  {showStrokePicker && (
-                    <div className="absolute top-full mt-1 right-0 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50 min-w-28">
-                      {STROKE_WIDTHS.map(sw => (
-                        <button
-                          type="button"
-                          key={sw.value}
-                          onClick={() => {
-                            setStrokeWidth(sw.value)
-                            setShowStrokePicker(false)
-                          }}
-                          className={`flex items-center gap-2 w-full px-3 py-1.5 rounded hover:bg-gray-100 ${strokeWidth === sw.value ? 'bg-pink-50' : ''
-                            }`}
-                        >
-                          <div
-                            className="rounded-full bg-gray-700"
-                            style={{ width: Math.min(sw.value * 1.5, 16), height: Math.min(sw.value * 1.5, 16) }}
-                          />
-                          <span className="text-sm text-gray-700">{sw.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* سمك الممحاة - يظهر فقط عند تفعيل الممحاة */}
-            {isEraserMode && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowStrokePicker(!showStrokePicker)
-                    setShowColorPicker(false)
-                    setShowBrushPicker(false)
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-white border border-gray-300 hover:bg-gray-100"
-                >
-                  <div className="flex items-center gap-0.5">
-                    <div
-                      className="rounded-full bg-orange-400"
-                      style={{ width: Math.min(eraserWidth * 1.5, 16), height: Math.min(eraserWidth * 1.5, 16) }}
-                    />
-                  </div>
-                  <span className="text-gray-600 text-xs">حجم الممحاة</span>
-                </button>
-
-                {showStrokePicker && (
-                  <div className="absolute top-full mt-1 right-0 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50 min-w-28">
-                    {STROKE_WIDTHS.map(sw => (
-                      <button
-                        type="button"
-                        key={sw.value}
-                        onClick={() => {
-                          setEraserWidth(sw.value)
-                          setShowStrokePicker(false)
-                        }}
-                        className={`flex items-center gap-2 w-full px-3 py-1.5 rounded hover:bg-gray-100 ${eraserWidth === sw.value ? 'bg-orange-50' : ''
-                          }`}
-                      >
-                        <div
-                          className="rounded-full bg-orange-400"
-                          style={{ width: Math.min(sw.value * 1.5, 16), height: Math.min(sw.value * 1.5, 16) }}
-                        />
-                        <span className="text-sm text-gray-700">{sw.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* فاصل */}
-            <div className="w-px h-6 bg-gray-300" />
-
-            {/* زر التراجع */}
-            <button
-              type="button"
-              onClick={handleUndoDrawing}
-              disabled={drawings.length === 0}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm bg-white border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="تراجع"
-            >
-              <RotateCcw className="w-4 h-4 text-gray-600" />
-            </button>
-
-            {/* زر مسح الكل */}
-            <button
-              type="button"
-              onClick={handleClearAllDrawings}
-              disabled={drawings.length === 0}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm bg-white border border-gray-300 hover:bg-red-50 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="مسح الكل"
-            >
-              <Trash2 className="w-4 h-4 text-gray-600" />
-            </button>
-          </>
-        )}
-
-        {/* عداد الرسومات */}
-        {drawings.length > 0 && (
-          <span className="text-xs text-gray-500">
-            {drawings.length} رسمة
+          <span className="text-xs text-pink-600 bg-pink-100 px-2 py-1 rounded-full flex items-center gap-1">
+            <Pencil className="w-3 h-3" />
+            وضع الرسم مفعل
           </span>
         )}
 
@@ -1467,24 +1507,6 @@ export default function InteractiveImageAnnotation({
         )}
       </div>
 
-      {/* تعليمات الاستخدام */}
-      {showInstructions && annotations.length === 0 && !isDrawingMode && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-          <p className="text-blue-800 text-sm">
-            👆 انقر مرتين على أي منطقة في الصورة لإضافة ملاحظة صوتية، أو فعّل وضع الرسم للرسم على الصورة
-          </p>
-        </div>
-      )}
-
-      {/* تعليمات وضع الرسم */}
-      {isDrawingMode && (
-        <div className="bg-pink-50 border border-pink-200 rounded-lg p-3 text-center">
-          <p className="text-pink-800 text-sm">
-            ✏️ ارسم على الصورة بالسحب بالماوس أو بالإصبع
-          </p>
-        </div>
-      )}
-
       {/* حاوية الصورة */}
       <div
         ref={containerRef}
@@ -1556,11 +1578,315 @@ export default function InteractiveImageAnnotation({
           style={{ zIndex: 5 }}
         />
 
+        {/* شريط أدوات الرسم العمودي - أسفل يسار الصورة */}
+        <div
+          className="absolute bottom-4 left-4 flex flex-col-reverse gap-2"
+          style={{
+            zIndex: 100,
+            pointerEvents: 'auto',
+            touchAction: 'manipulation'
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation()
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation()
+          }}
+          onTouchEnd={(e) => {
+            e.stopPropagation()
+          }}
+        >
+          {/* زر تفعيل وضع الرسم - يظهر دائماً */}
+          <motion.button
+            type="button"
+            onClick={toggleDrawingMode}
+            className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isDrawingMode
+              ? 'bg-pink-500 text-white ring-2 ring-pink-300'
+              : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            disabled={disabled || isRecordingActive}
+            title={isDrawingMode ? 'إنهاء الرسم' : 'بدء الرسم'}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Pencil className="w-5 h-5" />
+          </motion.button>
+
+          {/* أدوات الرسم - تظهر فقط في وضع الرسم */}
+          <AnimatePresence>
+            {isDrawingMode && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.8 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.8 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col gap-2"
+              >
+                {/* زر القلم مع قائمة أنواع الفرش */}
+                <div className="relative">
+                  <motion.button
+                    type="button"
+                    onClick={() => {
+                      if (!isEraserMode) {
+                        // إذا كان القلم مفعل بالفعل، نعرض قائمة الفرش
+                        setShowBrushPicker(!showBrushPicker)
+                        setShowColorPicker(false)
+                        setShowStrokePicker(false)
+                        setShowEraserSizePicker(false)
+                      } else {
+                        // تفعيل القلم وإلغاء الممحاة
+                        setIsEraserMode(false)
+                        closeAllPickers()
+                      }
+                    }}
+                    className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${!isEraserMode
+                      ? 'bg-pink-100 border-2 border-pink-400 text-pink-700'
+                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                      }`}
+                    title="القلم / نوع الفرشاة"
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <PenTool className="w-5 h-5" />
+                  </motion.button>
+
+                  {/* قائمة أنواع الفرش وسماكة القلم - في نافذة واحدة */}
+                  <AnimatePresence>
+                    {showBrushPicker && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10, scale: 0.9 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: -10, scale: 0.9 }}
+                        className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3"
+                        style={{ zIndex: 200, pointerEvents: 'auto', minWidth: '280px' }}
+                      >
+                        {/* الصف الأول: أنواع القلم */}
+                        <div className="flex flex-row gap-1 mb-3 pb-3 border-b border-gray-200">
+                          {BRUSH_TYPES.map(brush => (
+                            <button
+                              type="button"
+                              key={brush.value}
+                              onClick={() => {
+                                setBrushType(brush.value)
+                              }}
+                              className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg hover:bg-gray-100 transition-all flex-1 ${brushType === brush.value ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-300' : ''
+                                }`}
+                              title={brush.name}
+                            >
+                              <span className="text-lg">{brush.icon}</span>
+                              <span className="text-xs text-gray-600">{brush.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {/* الصف الثاني: سماكة القلم */}
+                        <div>
+                          <p className="text-xs text-gray-500 mb-2 text-center">سماكة القلم</p>
+                          <div className="flex flex-row gap-1 justify-center">
+                            {STROKE_WIDTHS.map(sw => (
+                              <button
+                                type="button"
+                                key={sw.value}
+                                onClick={() => {
+                                  setStrokeWidth(sw.value)
+                                }}
+                                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-gray-100 transition-all ${strokeWidth === sw.value ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-300' : ''
+                                  }`}
+                                title={sw.name}
+                              >
+                                <div
+                                  className="rounded-full bg-gray-700"
+                                  style={{ width: Math.min(sw.value * 2, 20), height: Math.min(sw.value * 2, 20) }}
+                                />
+                                <span className="text-xs text-gray-600">{sw.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* زر الممحاة مع قائمة منبثقة */}
+                <div className="relative">
+                  <motion.button
+                    type="button"
+                    onClick={() => {
+                      setShowEraserMenu(!showEraserMenu)
+                      setShowColorPicker(false)
+                      setShowStrokePicker(false)
+                      setShowBrushPicker(false)
+                      setShowEraserSizePicker(false)
+                    }}
+                    className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isEraserMode
+                      ? 'bg-orange-100 border-2 border-orange-400 text-orange-700'
+                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                      }`}
+                    title="ممحاة وخيارات"
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <Eraser className="w-5 h-5" />
+                  </motion.button>
+
+                  {/* قائمة الممحاة المنبثقة */}
+                  <AnimatePresence>
+                    {showEraserMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10, scale: 0.9 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: -10, scale: 0.9 }}
+                        className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 py-1 min-w-[160px]"
+                        style={{ zIndex: 200, pointerEvents: 'auto' }}
+                      >
+                        {/* تفعيل/إلغاء الممحاة */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEraserMode(!isEraserMode)
+                            setShowEraserMenu(false)
+                          }}
+                          className="w-full px-3 py-2 text-right hover:bg-gray-100 transition-colors flex items-center gap-2"
+                        >
+                          <Eraser className="w-4 h-4 text-orange-600" />
+                          <span className="text-sm text-gray-700">
+                            {isEraserMode ? 'إلغاء الممحاة' : 'تفعيل الممحاة'}
+                          </span>
+                        </button>
+
+                        {/* حجم الممحاة */}
+                        {isEraserMode && (
+                          <div className="px-3 py-2 border-t border-gray-100">
+                            <p className="text-xs text-gray-500 mb-2">حجم الممحاة:</p>
+                            <div className="flex gap-1">
+                              {STROKE_WIDTHS.slice(0, 4).map(sw => (
+                                <button
+                                  type="button"
+                                  key={sw.value}
+                                  onClick={() => {
+                                    setEraserWidth(sw.value)
+                                  }}
+                                  className={`flex-1 flex flex-col items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 transition-all ${eraserWidth === sw.value ? 'bg-orange-100 ring-1 ring-orange-300' : ''
+                                    }`}
+                                  title={sw.name}
+                                >
+                                  <div
+                                    className="rounded-full bg-orange-400"
+                                    style={{ width: Math.min(sw.value * 1.5, 16), height: Math.min(sw.value * 1.5, 16) }}
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* فاصل */}
+                        <div className="h-px bg-gray-200 my-1" />
+
+                        {/* زر التراجع */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleUndoDrawing()
+                            setShowEraserMenu(false)
+                          }}
+                          disabled={drawings.length === 0}
+                          className="w-full px-3 py-2 text-right hover:bg-gray-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <RotateCcw className="w-4 h-4 text-blue-600" />
+                          <span className="text-sm text-gray-700">تراجع</span>
+                        </button>
+
+                        {/* زر مسح الكل */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleClearAllDrawings()
+                            setShowEraserMenu(false)
+                          }}
+                          disabled={drawings.length === 0}
+                          className="w-full px-3 py-2 text-right hover:bg-red-50 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                          <span className="text-sm text-gray-700">مسح الكل</span>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* زر اللون - يظهر فقط عند عدم تفعيل الممحاة */}
+                {!isEraserMode && (
+                  <div className="relative">
+                    <motion.button
+                      type="button"
+                      onClick={() => {
+                        setShowColorPicker(!showColorPicker)
+                        setShowStrokePicker(false)
+                        setShowBrushPicker(false)
+                        setShowEraserSizePicker(false)
+                      }}
+                      className="w-11 h-11 rounded-full flex items-center justify-center shadow-lg bg-white border border-gray-300 hover:bg-gray-100 transition-all"
+                      title="اختيار اللون"
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <div
+                        className="w-6 h-6 rounded-full border-2 border-gray-400"
+                        style={{ backgroundColor: drawingColor }}
+                      />
+                    </motion.button>
+
+                    {/* قائمة الألوان - أفقية */}
+                    <AnimatePresence>
+                      {showColorPicker && (
+                        <motion.div
+                          initial={{ opacity: 0, x: -10, scale: 0.9 }}
+                          animate={{ opacity: 1, x: 0, scale: 1 }}
+                          exit={{ opacity: 0, x: -10, scale: 0.9 }}
+                          className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3"
+                          style={{ zIndex: 200, pointerEvents: 'auto' }}
+                        >
+                          <div
+                            className="grid grid-cols-8 gap-2"
+                          >
+                            {DRAWING_COLORS.map(color => (
+                              <button
+                                type="button"
+                                key={color.value}
+                                onClick={() => {
+                                  setDrawingColor(color.value)
+                                  setShowColorPicker(false)
+                                }}
+                                className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 flex-shrink-0 ${drawingColor === color.value
+                                  ? 'border-gray-800 scale-110 ring-2 ring-pink-300'
+                                  : 'border-gray-300'
+                                  }`}
+                                style={{
+                                  backgroundColor: color.value
+                                }}
+                                title={color.name}
+                              />
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         {/* العلامات على الصورة */}
         <AnimatePresence>
-          {annotations.map((annotation) => {
+          {annotations.map((annotation, index) => {
             const isActiveMarker = activeTranscriptionId === annotation.id
             const hasTranscription = annotation.transcription && !annotation.isRecording
+            const annotationIndex = index + 1
             return (
               <motion.div
                 key={annotation.id}
@@ -1578,7 +1904,7 @@ export default function InteractiveImageAnnotation({
               >
                 {/* علامة الموقع */}
                 <div className="relative">
-                  {/* إذا كان هناك نص محول، نعرض علامة X فقط */}
+                  {/* إذا كان هناك نص محول، نعرض رقم تسلسلي */}
                   {hasTranscription ? (
                     <motion.div
                       onClick={(e) => handleMarkerClick(e, annotation.id)}
@@ -1588,13 +1914,16 @@ export default function InteractiveImageAnnotation({
                       transition={{ duration: 0.2 }}
                       className="cursor-pointer flex items-center justify-center"
                     >
-                      <X
-                        className={`w-4 h-4 drop-shadow-md ${isActiveMarker
-                          ? 'text-pink-600'
-                          : 'text-pink-500'
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center shadow-md ${isActiveMarker
+                          ? 'bg-pink-600 ring-2 ring-pink-300'
+                          : 'bg-pink-500'
                           }`}
-                        strokeWidth={3}
-                      />
+                      >
+                        <span className="text-white text-[10px] font-bold">
+                          {annotationIndex}
+                        </span>
+                      </div>
                     </motion.div>
                   ) : (
                     /* إذا لم يكن هناك نص، نعرض الدائرة مع أزرار التسجيل */
@@ -1666,124 +1995,36 @@ export default function InteractiveImageAnnotation({
           })}
         </AnimatePresence>
 
-        {/* مربعات الملاحظات (النصوص المحولة) - منفصلة لتجنب التداخل */}
+        {/* النصوص على الصورة - قابلة للسحب والإفلات */}
         <AnimatePresence>
           {annotations
             .filter(a => a.transcription && !a.isRecording && transcribingId !== a.id)
             .map((annotation) => {
               const styles = getBoxStyles(annotation.id)
-              const positionData = annotationPositions.get(annotation.id)
-              const isOverlapping = positionData && positionData.zIndex >= 50
-              const isActive = activeTranscriptionId === annotation.id
-              const isEditing = editingTranscriptionId === annotation.id
-              const isDragging = draggingId === annotation.id
               const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
 
               return (
                 <motion.div
                   key={`transcription-${annotation.id}`}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{
-                    opacity: 1,
-                    scale: isDragging ? 1.1 : (isActive || isEditing ? 1.02 : 1),
-                  }}
-                  exit={{ opacity: 0, scale: 0.9 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
                   style={styles}
-                  drag={!isEditing}
+                  drag
                   dragMomentum={false}
                   dragElastic={0}
-                  onDragStart={() => setDraggingId(annotation.id)}
-                  onDragEnd={(_, info) => handleDragEnd(annotation.id, info)}
-                  onClick={(e) => handleTranscriptionBoxClick(e, annotation.id)}
-                  onDoubleClick={(e) => handleTranscriptionBoxDoubleClick(e, annotation.id, annotation.transcription || '')}
-                  className={`pointer-events-auto w-auto ${isEditing ? 'cursor-text' : 'cursor-move'}`}
+                  onDragEnd={(e, info) => handleTextDragEnd(annotation.id, info)}
+                  className="cursor-move"
                 >
-                  <div
-                    className={`rounded-lg shadow-md p-1.5 text-xs text-gray-800 transition-all duration-200 min-w-[100px] max-w-[160px] ${isDragging
-                      ? 'bg-pink-100 border-2 border-pink-500 shadow-xl ring-2 ring-pink-400'
-                      : isEditing
-                        ? 'bg-blue-50 border-2 border-blue-500 shadow-lg ring-1 ring-blue-300'
-                        : isActive
-                          ? 'bg-pink-50 border-2 border-pink-500 shadow-lg ring-1 ring-pink-300'
-                          : isOverlapping
-                            ? 'bg-orange-50/95 border border-orange-400 backdrop-blur-sm'
-                            : 'bg-white/95 border border-pink-300'
-                      }`}
-                  >
-                    {/* محتوى النص - عرض أو تعديل */}
-                    {isEditing ? (
-                      <div className="space-y-1">
-                        <textarea
-                          value={editedText}
-                          onChange={(e) => setEditedText(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full min-h-[50px] p-1 text-xs text-gray-700 border border-blue-300 rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-                          autoFocus
-                          dir="rtl"
-                        />
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => handleSaveEdit(e, annotation.id)}
-                            className="p-1 rounded bg-green-500 hover:bg-green-600 text-white transition-colors"
-                            title="حفظ"
-                          >
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelEdit}
-                            className="p-1 rounded bg-red-500 hover:bg-red-600 text-white transition-colors"
-                            title="إلغاء"
-                          >
-                            <XCircle className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-1">
-                        {/* أيقونة تشغيل الصوت */}
-                        {annotation.audioData && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              togglePlayback(annotation)
-                            }}
-                            className={`p-0.5 rounded flex-shrink-0 transition-colors ${playingId === annotation.id
-                              ? 'bg-green-500 text-white'
-                              : 'hover:bg-green-100 text-green-600'
-                              }`}
-                            title={playingId === annotation.id ? 'إيقاف' : 'تشغيل الصوت'}
-                          >
-                            {playingId === annotation.id ? (
-                              <Pause className="w-3 h-3" />
-                            ) : (
-                              <Play className="w-3 h-3" />
-                            )}
-                          </button>
-                        )}
-                        <span className={`text-[10px] font-bold flex-shrink-0 ${isActive ? 'text-pink-600' : 'text-pink-500'}`}>
-                          {annotationIndex}.
-                        </span>
-                        <p className="text-gray-700 leading-snug break-words line-clamp-3 flex-1">
-                          {annotation.transcription}
-                        </p>
-                        {/* زر الحذف */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            deleteAnnotation(annotation.id)
-                          }}
-                          className="p-0.5 rounded hover:bg-red-100 text-red-500 transition-colors flex-shrink-0"
-                          title="حذف"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
+                  {/* نص بسيط بدون خلفية - رقم ونص فقط */}
+                  <div className="flex items-start gap-1 text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]">
+                    <span className="text-sm font-bold flex-shrink-0">
+                      {annotationIndex}.
+                    </span>
+                    <p className="text-sm leading-snug break-words max-w-[200px]">
+                      {annotation.transcription}
+                    </p>
                   </div>
                 </motion.div>
               )
@@ -1791,42 +2032,188 @@ export default function InteractiveImageAnnotation({
         </AnimatePresence>
       </div>
 
-      {/* ملخص التعليقات الحالية */}
+      {/* قسم التعليقات الحالية - تفاعلي مع جميع الأزرار */}
       {annotations.length > 0 && (
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
             <FileText className="w-4 h-4 text-pink-600" />
             التعليقات الحالية ({annotations.length})
           </h4>
-          <div className="space-y-2 max-h-40 overflow-y-auto">
-            {annotations.map((annotation, index) => (
-              <div
-                key={annotation.id}
-                className="flex items-start justify-between bg-white rounded-lg p-2 border border-gray-100"
-              >
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs text-pink-600 font-medium">
-                    تعليق #{index + 1}
-                  </span>
+          <div className="space-y-3 max-h-[500px] overflow-y-auto overflow-x-visible">
+            {annotations.map((annotation, index) => {
+              const isEditing = editingTranscriptionId === annotation.id
+
+              return (
+                <div
+                  key={annotation.id}
+                  className={`bg-white rounded-lg p-3 border transition-all overflow-visible ${isEditing ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                    }`}
+                >
+                  {/* رأس التعليق - الرقم والنص على نفس السطر */}
+                  <div className="flex items-start justify-between gap-2 mb-2 relative">
+                    {/* الرقم والنص على نفس السطر */}
+                    <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                      <span className="text-base text-pink-600 font-bold flex-shrink-0 mt-0.5">
+                        {index + 1}.
+                      </span>
+                      {annotation.transcription && editingTranscriptionId !== annotation.id && (
+                        <p className="text-sm text-gray-700 leading-relaxed break-words">
+                          {annotation.transcription}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* أزرار التحكم */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {/* زر تشغيل الصوت */}
+                      {annotation.audioData && (
+                        <button
+                          type="button"
+                          onClick={() => togglePlayback(annotation)}
+                          className={`p-1.5 rounded transition-colors ${playingId === annotation.id
+                            ? 'bg-green-500 text-white'
+                            : 'text-green-600 hover:bg-green-50'
+                            }`}
+                          title={playingId === annotation.id ? 'إيقاف' : 'تشغيل الصوت'}
+                        >
+                          {playingId === annotation.id ? (
+                            <Pause className="w-4 h-4" />
+                          ) : (
+                            <Play className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* زر الترجمة مع قائمة منسدلة */}
+                      {annotation.transcription && !isEditing && (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setShowLanguageDropdown(
+                              showLanguageDropdown === annotation.id ? null : annotation.id
+                            )}
+                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                            title="ترجمة"
+                          >
+                            <Languages className="w-4 h-4" />
+                          </button>
+
+                          {/* قائمة اللغات المنسدلة */}
+                          {showLanguageDropdown === annotation.id && (
+                            <>
+                              {/* Backdrop لإغلاق القائمة عند النقر خارجها */}
+                              <div
+                                className="fixed inset-0 z-[9998]"
+                                onClick={() => setShowLanguageDropdown(null)}
+                              />
+                              {/* القائمة المنبثقة */}
+                              <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-2xl border border-gray-200 py-1 min-w-[200px] z-[9999]">
+                                {availableLanguages.map((lang) => (
+                                  <button
+                                    key={lang.code}
+                                    type="button"
+                                    onClick={() => {
+                                      translateAnnotationText(annotation.id, lang.code)
+                                      setShowLanguageDropdown(null)
+                                    }}
+                                    disabled={translatingId === annotation.id}
+                                    className="w-full px-4 py-2.5 text-right hover:bg-gray-100 transition-colors disabled:opacity-50 flex items-center justify-between gap-2"
+                                  >
+                                    <span className="text-sm text-gray-700">
+                                      {lang.nameAr} ({lang.nativeName})
+                                    </span>
+                                    {translatingId === annotation.id && (
+                                      <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* زر التعديل */}
+                      {annotation.transcription && !isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingTranscriptionId(annotation.id)
+                            setEditedText(annotation.transcription || '')
+                          }}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="تعديل النص"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* زر الحذف */}
+                      <button
+                        type="button"
+                        onClick={() => deleteAnnotation(annotation.id)}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* محتوى التعليق */}
                   {annotation.transcription ? (
-                    <p className="text-sm text-gray-700 truncate">
-                      {annotation.transcription}
-                    </p>
+                    <div className="space-y-2">
+                      {/* النص - قابل للتعديل */}
+                      {isEditing && (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editedText}
+                            onChange={(e) => setEditedText(e.target.value)}
+                            className="w-full min-h-[80px] p-2 text-sm text-gray-700 border border-blue-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            dir="rtl"
+                            autoFocus
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => handleSaveEdit(e, annotation.id)}
+                              className="px-3 py-1.5 rounded bg-green-500 hover:bg-green-600 text-white text-sm transition-colors flex items-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>حفظ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              className="px-3 py-1.5 rounded bg-gray-500 hover:bg-gray-600 text-white text-sm transition-colors flex items-center gap-1"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>إلغاء</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* النص المترجم */}
+                      {annotation.translatedText && !isEditing && (
+                        <div className="bg-blue-50 border border-blue-200 rounded p-2 mt-2">
+                          <p className="text-xs text-blue-600 font-medium mb-1">
+                            الترجمة ({getLanguageName(annotation.translationLanguage || 'en')}):
+                          </p>
+                          <p className="text-sm text-gray-700 leading-relaxed">
+                            {annotation.translatedText}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   ) : annotation.audioData ? (
-                    <p className="text-xs text-gray-500">تسجيل صوتي</p>
+                    <p className="text-sm text-gray-500 mr-6">تسجيل صوتي - في انتظار التحويل إلى نص...</p>
                   ) : (
-                    <p className="text-xs text-gray-400">في انتظار التسجيل...</p>
+                    <p className="text-sm text-gray-400 mr-6">في انتظار التسجيل...</p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => deleteAnnotation(annotation.id)}
-                  className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -1834,7 +2221,37 @@ export default function InteractiveImageAnnotation({
       {/* زر حفظ التعليق الحالي */}
       {showSaveButton && onSavedCommentsChange && (annotations.length > 0 || drawings.length > 0) && (
         <div className="flex flex-col sm:flex-row gap-2">
-          {editingCommentId ? (
+          {viewingCommentId ? (
+            <>
+              {/* زر حفظ التعديلات - يظهر فقط عند وجود تغييرات */}
+              {hasViewingCommentChanges && (
+                <button
+                  type="button"
+                  onClick={updateViewingComment}
+                  disabled={disabled}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  <Save className="w-5 h-5" />
+                  <span>حفظ التعديلات على التعليق المحفوظ</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setViewingCommentId(null)
+                  setOriginalViewingAnnotations([])
+                  setOriginalViewingDrawings([])
+                  onAnnotationsChange([])
+                  onDrawingsChange([])
+                }}
+                disabled={disabled}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
+              >
+                <XCircle className="w-5 h-5" />
+                <span>{hasViewingCommentChanges ? 'إلغاء وحذف التعديلات' : 'إغلاق العرض'}</span>
+              </button>
+            </>
+          ) : editingCommentId ? (
             <>
               <button
                 type="button"
@@ -1909,31 +2326,65 @@ export default function InteractiveImageAnnotation({
                         }`}
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h5 className="font-medium text-gray-800">
-                            {comment.title || `التعليق ${index + 1}`}
-                          </h5>
-                          <p className="text-xs text-gray-500">
-                            {new Date(comment.timestamp).toLocaleDateString('ar-SA', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </p>
+                        <div className="flex-1 min-w-0">
+                          {editingCommentTitle === comment.id ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editedCommentTitle}
+                                onChange={(e) => setEditedCommentTitle(e.target.value)}
+                                className="flex-1 px-2 py-1 text-sm border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') saveCommentTitle()
+                                  if (e.key === 'Escape') cancelEditingCommentTitle()
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={saveCommentTitle}
+                                className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                title="حفظ"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingCommentTitle}
+                                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                                title="إلغاء"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <h5 className="font-medium text-gray-800">
+                                {comment.title || `التعليق ${index + 1}`}
+                              </h5>
+                              {!disabled && onSavedCommentsChange && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingCommentTitle(comment.id, comment.title || `التعليق ${index + 1}`)}
+                                  className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  title="تعديل الاسم"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-1">
-                          {!disabled && onSavedCommentsChange && (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {!disabled && onSavedCommentsChange && editingCommentTitle !== comment.id && (
                             <>
                               <button
                                 type="button"
-                                onClick={() => loadCommentForEditing(comment)}
-                                disabled={editingCommentId !== null}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                                title="تعديل"
+                                onClick={() => loadCommentForViewing(comment)}
+                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="عرض التعليق"
                               >
-                                <Pencil className="w-4 h-4" />
+                                <Eye className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
@@ -1947,28 +2398,6 @@ export default function InteractiveImageAnnotation({
                             </>
                           )}
                         </div>
-                      </div>
-
-                      {/* معاينة محتوى التعليق */}
-                      <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                        {comment.annotations.length > 0 && (
-                          <span className="flex items-center gap-1 bg-pink-100 text-pink-700 px-2 py-1 rounded-full">
-                            <Mic className="w-3 h-3" />
-                            {comment.annotations.length} تعليق صوتي
-                          </span>
-                        )}
-                        {comment.drawings.length > 0 && (
-                          <span className="flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                            <Pencil className="w-3 h-3" />
-                            {comment.drawings.length} رسمة
-                          </span>
-                        )}
-                        {comment.image && (
-                          <span className="flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
-                            <ImageIcon className="w-3 h-3" />
-                            صورة مخصصة
-                          </span>
-                        )}
                       </div>
 
                       {/* عرض النصوص المكتوبة */}
