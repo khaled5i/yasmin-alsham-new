@@ -206,6 +206,10 @@ export default function DatePickerForProof({
         showPopperArrow={false}
         popperPlacement="bottom-start"
         portalId="datepicker-portal-root"
+        onKeyDown={(e) => {
+          // منع الكتابة اليدوية مع السماح بفتح التقويم
+          e.preventDefault()
+        }}
       />
 
       {/* رسالة تحذيرية إذا كان التاريخ المختار مزدحم */}

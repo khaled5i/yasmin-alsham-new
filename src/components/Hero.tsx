@@ -105,6 +105,7 @@ export default function Hero() {
             transition={{ duration: 0.8, delay: 0.7 }}
             className="flex flex-col gap-3"
           >
+            {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
             <Link
               href="/book-appointment"
               className="w-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
@@ -112,6 +113,7 @@ export default function Hero() {
               <Calendar className="w-5 h-5" />
               <span>حجز موعد</span>
             </Link>
+            */}
 
             <button
               onClick={() => {
@@ -197,6 +199,7 @@ export default function Hero() {
               transition={{ duration: 0.8, delay: 0.8 }}
               className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start"
             >
+              {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
               <Link
                 href="/book-appointment"
                 className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse text-lg group"
@@ -204,6 +207,7 @@ export default function Hero() {
                 <Calendar className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
                 <span>حجز موعد</span>
               </Link>
+              */}
 
               <button
                 onClick={() => {

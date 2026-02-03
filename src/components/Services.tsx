@@ -2,21 +2,22 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Calendar, Search, Scissors, Palette, Heart, Sparkles, ChevronDown } from 'lucide-react'
+import { Calendar, Search, Scissors, Palette, Heart, Sparkles, ChevronDown, Home } from 'lucide-react'
 import Link from 'next/link'
 
 export default function Services() {
   const [showAllServices, setShowAllServices] = useState(false)
 
   const services = [
-    {
-      icon: Calendar,
-      title: 'حجز موعد',
-      description: 'احجزي موعدك بسهولة عبر نظامنا الذكي. نظام تلقائي يوزع المواعيد على مدار أيام العمل.',
-      link: '/book-appointment',
-      color: 'from-pink-400 to-rose-400',
-      bgColor: 'from-pink-50 to-rose-50'
-    },
+    // [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
+    // {
+    //   icon: Calendar,
+    //   title: 'حجز موعد',
+    //   description: 'احجزي موعدك بسهولة عبر نظامنا الذكي. نظام تلقائي يوزع المواعيد على مدار أيام العمل.',
+    //   link: '/book-appointment',
+    //   color: 'from-pink-400 to-rose-400',
+    //   bgColor: 'from-pink-50 to-rose-50'
+    // },
     {
       icon: Search,
       title: 'استعلام عن الطلب',
@@ -29,7 +30,7 @@ export default function Services() {
       icon: Scissors,
       title: 'تفصيل احترافي',
       description: 'فريق من أمهر الخياطين المتخصصين في تفصيل الفساتين النسائية بأعلى معايير الجودة.',
-      link: '/about',
+      link: '/',
       color: 'from-rose-400 to-purple-400',
       bgColor: 'from-rose-50 to-purple-50'
     },
@@ -183,14 +184,23 @@ export default function Services() {
               جاهزة لتبدئي رحلتك معنا؟
             </h3>
             <p className="max-lg:text-[clamp(0.65rem,2vw,0.75rem)] lg:text-lg text-gray-600 max-lg:mb-[1vh] lg:mb-8 max-w-2xl mx-auto max-lg:line-clamp-1">
-              احجزي موعدك الآن واتركي لنا مهمة تحويل حلمك إلى فستان
+              تواصلي معنا واتركي لنا مهمة تحويل حلمك إلى فستان
             </p>
+            {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
             <Link
               href="/book-appointment"
               className="btn-primary inline-flex items-center space-x-2 space-x-reverse max-lg:text-sm max-lg:py-2 max-lg:px-4 lg:text-lg group"
             >
               <Calendar className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300" />
               <span>احجزي موعدك الآن</span>
+            </Link>
+            */}
+            <Link
+              href="/"
+              className="btn-primary inline-flex items-center space-x-2 space-x-reverse max-lg:text-sm max-lg:py-2 max-lg:px-4 lg:text-lg group"
+            >
+              <Home className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300" />
+              <span>العودة للصفحة الرئيسية</span>
             </Link>
           </div>
         </motion.div>

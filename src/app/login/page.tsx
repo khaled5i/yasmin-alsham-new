@@ -181,8 +181,9 @@ export default function LoginPage() {
                     ملاحظة للزبائن
                   </h3>
                   <p className="text-blue-700 mb-4 leading-relaxed">
-                    هذه الصفحة مخصصة للمدير والعمال فقط. الزبائن يمكنهم حجز موعد دون تسجيل دخول
+                    هذه الصفحة مخصصة للمدير والعمال فقط
                   </p>
+                  {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
                   <Link
                     href="/book-appointment"
                     className="inline-flex items-center space-x-2 space-x-reverse bg-gradient-to-r from-pink-500 to-purple-500 text-white px-4 py-2 rounded-lg font-medium hover:shadow-lg transition-all duration-300"
@@ -190,6 +191,7 @@ export default function LoginPage() {
                     <Calendar className="w-4 h-4" />
                     <span>احجزي موعدك الآن</span>
                   </Link>
+                  */}
                 </div>
               </div>
             </div>

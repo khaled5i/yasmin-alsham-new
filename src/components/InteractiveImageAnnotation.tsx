@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { motion, AnimatePresence, useMotionValue } from 'framer-motion'
+import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import Image from 'next/image'
 
@@ -40,6 +41,8 @@ export interface ImageAnnotation {
   duration?: number
   timestamp: number
   isRecording?: boolean
+  isHidden?: boolean // إخفاء النص من على الصورة
+  textScale?: number // حجم النص (1 = الحجم الافتراضي)
 }
 
 // ثوابت الألوان المتاحة للرسم
@@ -74,6 +77,14 @@ const STROKE_WIDTHS = [
   { name: 'متوسط', value: 4 },
   { name: 'سميك', value: 8 },
   { name: 'سميك جداً', value: 12 },
+]
+
+// ثوابت أحجام الممحاة (أكبر من أحجام القلم)
+const ERASER_SIZES = [
+  { name: 'صغير', value: 10 },
+  { name: 'متوسط', value: 20 },
+  { name: 'كبير', value: 35 },
+  { name: 'كبير جداً', value: 50 },
 ]
 
 // أنواع الفرش
@@ -111,6 +122,7 @@ export interface SavedDesignComment {
   drawings: DrawingPath[]
   image: string | null
   title?: string
+  compositeImage?: string | null // الصورة المركّبة (الصورة + الرسومات + التعليقات)
 }
 
 interface InteractiveImageAnnotationProps {
@@ -127,6 +139,120 @@ interface InteractiveImageAnnotationProps {
   onSavedCommentsChange?: (comments: SavedDesignComment[]) => void
   showSaveButton?: boolean
   currentImageBase64?: string | null
+}
+
+// مكون النص القابل للسحب - يستخدم useMotionValue لإعادة تعيين الموقع بعد السحب
+function DraggableText({
+  annotation,
+  annotationIndex,
+  styles,
+  containerRef,
+  onDragEnd,
+  onScaleChange
+}: {
+  annotation: ImageAnnotation
+  annotationIndex: number
+  styles: React.CSSProperties
+  containerRef: React.RefObject<HTMLDivElement | null>
+  onDragEnd: (annotationId: string, info: any, element: HTMLElement | null) => void
+  onScaleChange: (annotationId: string, delta: number) => void
+}) {
+  const elementRef = useRef<HTMLDivElement>(null)
+  const x = useMotionValue(0)
+  const y = useMotionValue(0)
+
+  // متغيرات لتتبع pinch gesture
+  const initialPinchDistance = useRef<number | null>(null)
+  const initialScale = useRef<number>(1)
+
+  const handleDragEnd = useCallback((e: any, info: any) => {
+    if (elementRef.current && containerRef.current) {
+      onDragEnd(annotation.id, info, elementRef.current)
+      // إعادة تعيين الـ transform بعد تحديث الموقع
+      x.set(0)
+      y.set(0)
+    }
+  }, [annotation.id, containerRef, onDragEnd, x, y])
+
+  // معالجة بداية اللمس للكشف عن pinch gesture
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.preventDefault()
+      e.stopPropagation()
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      )
+      initialPinchDistance.current = distance
+      initialScale.current = annotation.textScale ?? 1
+    }
+  }, [annotation.textScale])
+
+  // معالجة حركة اللمس للتكبير/التصغير
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && initialPinchDistance.current !== null) {
+      e.preventDefault()
+      e.stopPropagation()
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const currentDistance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      )
+
+      const scaleFactor = currentDistance / initialPinchDistance.current
+      const newScale = Math.max(0.5, Math.min(2, initialScale.current * scaleFactor))
+      const delta = newScale - (annotation.textScale ?? 1)
+
+      if (Math.abs(delta) > 0.05) {
+        onScaleChange(annotation.id, delta)
+      }
+    }
+  }, [annotation.id, annotation.textScale, onScaleChange])
+
+  // معالجة نهاية اللمس
+  const handleTouchEnd = useCallback(() => {
+    initialPinchDistance.current = null
+  }, [])
+
+  // حساب حجم الخط بناءً على scale
+  const scale = annotation.textScale ?? 1
+  const fontSize = `${0.875 * scale}rem` // text-sm = 0.875rem
+
+  return (
+    <motion.div
+      ref={elementRef}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      style={{ ...styles, x, y }}
+      drag
+      dragMomentum={false}
+      dragElastic={0}
+      dragConstraints={containerRef}
+      onDragEnd={handleDragEnd}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="cursor-move touch-none"
+    >
+      {/* نص بسيط بدون خلفية - رقم ونص فقط */}
+      <div
+        className="flex items-start gap-1 text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]"
+        style={{ fontSize }}
+      >
+        <span className="font-bold flex-shrink-0">
+          {annotationIndex}.
+        </span>
+        <p className="leading-snug break-words max-w-[200px]">
+          {annotation.transcription}
+        </p>
+      </div>
+    </motion.div>
+  )
 }
 
 export default function InteractiveImageAnnotation({
@@ -168,6 +294,21 @@ export default function InteractiveImageAnnotation({
   const [translatingId, setTranslatingId] = useState<string | null>(null)
   const [targetLanguage, setTargetLanguage] = useState<string>('en')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState<string | null>(null)
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
+  // حالة Modal الترجمة
+  const [translationModal, setTranslationModal] = useState<{
+    isOpen: boolean
+    originalText: string
+    translatedText: string
+    language: string
+  }>({ isOpen: false, originalText: '', translatedText: '', language: '' })
+
+  // حالات كتابة النص اليدوي
+  const [manualTextInput, setManualTextInput] = useState<{
+    isOpen: boolean
+    annotationId: string | null
+    text: string
+  }>({ isOpen: false, annotationId: null, text: '' })
 
   // قائمة اللغات المتاحة للترجمة
   const availableLanguages = [
@@ -184,7 +325,7 @@ export default function InteractiveImageAnnotation({
   const [strokeWidth, setStrokeWidth] = useState(STROKE_WIDTHS[2].value)
   const [brushType, setBrushType] = useState<BrushType>('normal')
   const [isEraserMode, setIsEraserMode] = useState(false)
-  const [eraserWidth, setEraserWidth] = useState(STROKE_WIDTHS[3].value)
+  const [eraserWidth, setEraserWidth] = useState(ERASER_SIZES[1].value)
   const [currentPath, setCurrentPath] = useState<DrawingPoint[]>([])
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showStrokePicker, setShowStrokePicker] = useState(false)
@@ -215,6 +356,278 @@ export default function InteractiveImageAnnotation({
     return annotationsChanged || drawingsChanged
   }, [viewingCommentId, annotations, drawings, originalViewingAnnotations, originalViewingDrawings])
 
+  // دالة إنشاء صورة مركّبة يدوياً - تطابق العرض تماماً
+  // تستخدم نفس المنطق المستخدم في العرض لضمان التطابق 100%
+  const generateCompositeImage = useCallback(async (): Promise<string | null> => {
+    try {
+      const container = containerRef.current
+      if (!container) {
+        console.error('Container ref is not available')
+        return null
+      }
+
+      // الحصول على أبعاد الـ container الفعلية
+      const containerRect = container.getBoundingClientRect()
+      const containerWidth = containerRect.width
+      const containerHeight = containerRect.height
+
+      // إنشاء canvas بنفس أبعاد الـ container (مع scale للجودة العالية)
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = containerWidth * scale
+      canvas.height = containerHeight * scale
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return null
+
+      // تطبيق الـ scale
+      ctx.scale(scale, scale)
+
+      // رسم خلفية بيضاء
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, containerWidth, containerHeight)
+
+      // تحميل الصورة الأساسية
+      const baseImageSrc = imagePreview || imageSrc
+      const baseImage = new window.Image()
+      baseImage.crossOrigin = 'anonymous'
+
+      await new Promise<void>((resolve, reject) => {
+        baseImage.onload = () => resolve()
+        baseImage.onerror = () => reject(new Error('Failed to load image'))
+        baseImage.src = baseImageSrc
+      })
+
+      // حساب أبعاد الصورة مع الحفاظ على النسبة (object-contain)
+      // الـ container له aspect-[3/4] والصورة تستخدم object-contain
+      const imgAspect = baseImage.width / baseImage.height
+      const containerAspect = containerWidth / containerHeight
+
+      let drawWidth: number, drawHeight: number, offsetX: number, offsetY: number
+
+      if (imgAspect > containerAspect) {
+        // الصورة أعرض - تملأ العرض
+        drawWidth = containerWidth
+        drawHeight = containerWidth / imgAspect
+        offsetX = 0
+        offsetY = (containerHeight - drawHeight) / 2
+      } else {
+        // الصورة أطول - تملأ الارتفاع
+        drawHeight = containerHeight
+        drawWidth = containerHeight * imgAspect
+        offsetX = (containerWidth - drawWidth) / 2
+        offsetY = 0
+      }
+
+      // رسم الصورة الأساسية
+      ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
+
+      // رسم المسارات (الرسومات) - نفس المنطق المستخدم في drawPaths
+      // أولاً: رسم جميع المسارات غير الممحاة
+      for (const path of drawings) {
+        if (path.points.length < 2 || path.isEraser) continue
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.strokeStyle = path.color
+        ctx.lineWidth = path.strokeWidth
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+
+        // تطبيق نمط الفرشاة
+        ctx.setLineDash([])
+        ctx.shadowBlur = 0
+        ctx.globalAlpha = 1
+
+        switch (path.brushType) {
+          case 'dashed': ctx.setLineDash([12, 6]); break
+          case 'dotted': ctx.setLineDash([3, 6]); break
+          case 'soft': ctx.shadowBlur = 8; ctx.shadowColor = path.color; break
+          case 'pencil': ctx.globalAlpha = 0.85; ctx.lineWidth = Math.max(1, path.strokeWidth * 0.5); break
+          case 'highlighter': ctx.globalAlpha = 0.4; ctx.lineWidth = path.strokeWidth * 2.5; ctx.lineCap = 'square'; break
+        }
+
+        const firstPoint = path.points[0]
+        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
+        for (let i = 1; i < path.points.length; i++) {
+          const point = path.points[i]
+          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // ثانياً: تطبيق الممحاة - نرسم الصورة الأساسية فوق مسارات الممحاة
+      for (const path of drawings) {
+        if (path.points.length < 2 || !path.isEraser) continue
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.lineWidth = path.strokeWidth
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+
+        const firstPoint = path.points[0]
+        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
+        for (let i = 1; i < path.points.length; i++) {
+          const point = path.points[i]
+          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
+        }
+
+        // استخدام المسار كـ clip ورسم الصورة الأساسية داخله
+        ctx.clip()
+        ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
+        ctx.restore()
+      }
+
+      // رسم علامات التعليقات (الدوائر المرقمة)
+      const markerRadius = 10
+      annotations.forEach((annotation, index) => {
+        const markerX = (annotation.x / 100) * containerWidth
+        const markerY = (annotation.y / 100) * containerHeight
+        const hasTranscription = annotation.transcription && !annotation.isRecording
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(markerX, markerY, markerRadius, 0, Math.PI * 2)
+        ctx.fillStyle = annotation.isHidden ? '#9ca3af' : '#ec4899'
+        ctx.fill()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 2
+        ctx.stroke()
+
+        if (hasTranscription) {
+          ctx.fillStyle = '#ffffff'
+          ctx.font = 'bold 10px Cairo, Arial, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText((index + 1).toString(), markerX, markerY)
+        }
+        ctx.restore()
+      })
+
+      // حساب مواقع النصوص - نفس المنطق المستخدم في annotationPositions
+      const TEXT_OFFSET = 2
+      const localGetBoxPosition = (markerX: number, markerY: number, position: string) => {
+        switch (position) {
+          case 'bottom': return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'top': return { x: markerX, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'right': return { x: markerX + TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'bottom-right': return { x: markerX + TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'bottom-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'top-right': return { x: markerX + TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'top-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          default: return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        }
+      }
+
+      const localBoxesOverlap = (box1: { x: number; y: number; width: number; height: number }, box2: { x: number; y: number; width: number; height: number }) => {
+        return !(box1.x + box1.width + SAFE_MARGIN < box2.x ||
+          box2.x + box2.width + SAFE_MARGIN < box1.x ||
+          box1.y + box1.height + SAFE_MARGIN < box2.y ||
+          box2.y + box2.height + SAFE_MARGIN < box1.y)
+      }
+
+      const localIsBoxInBounds = (box: { x: number; y: number; width: number; height: number }) => {
+        return box.x >= 0 && box.y >= 0 && box.x + box.width <= 100 && box.y + box.height <= 100
+      }
+
+      // حساب مواقع النصوص
+      const textPositions: Map<string, { x: number; y: number }> = new Map()
+      const placedBoxes: { x: number; y: number; width: number; height: number }[] = []
+      const positionOrder = ['bottom', 'top', 'right', 'left', 'bottom-right', 'bottom-left', 'top-right', 'top-left']
+
+      const sortedAnnotations = [...annotations]
+        .filter(a => a.transcription && !a.isRecording)
+        .sort((a, b) => a.timestamp - b.timestamp)
+
+      sortedAnnotations.forEach((annotation) => {
+        // إذا كان هناك موقع مخصص، استخدمه
+        if (annotation.boxX !== undefined && annotation.boxY !== undefined) {
+          textPositions.set(annotation.id, { x: annotation.boxX, y: annotation.boxY })
+          placedBoxes.push({ x: annotation.boxX, y: annotation.boxY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT })
+          return
+        }
+
+        let bestBox = localGetBoxPosition(annotation.x, annotation.y, 'bottom')
+        for (const position of positionOrder) {
+          const candidateBox = localGetBoxPosition(annotation.x, annotation.y, position)
+          if (!localIsBoxInBounds(candidateBox)) continue
+          const hasOverlap = placedBoxes.some(pb => localBoxesOverlap(candidateBox, pb))
+          if (!hasOverlap) {
+            bestBox = candidateBox
+            break
+          }
+        }
+        placedBoxes.push(bestBox)
+        textPositions.set(annotation.id, { x: bestBox.x, y: bestBox.y })
+      })
+
+      // رسم النصوص
+      annotations
+        .filter(a => a.transcription && !a.isRecording && !a.isHidden)
+        .forEach((annotation) => {
+          const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
+          const textPos = textPositions.get(annotation.id)
+          if (!textPos) return
+
+          const textScale = annotation.textScale ?? 1
+          const fontSize = Math.round(14 * textScale)
+          const textX = (textPos.x / 100) * containerWidth
+          const textY = (textPos.y / 100) * containerHeight
+
+          ctx.save()
+          ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'top'
+
+          const maxTextWidth = containerWidth * 0.5
+          const lineHeight = fontSize * 1.3
+          const fullText = `${annotationIndex}. ${annotation.transcription}`
+
+          // تقسيم النص إلى أسطر
+          const words = fullText.split(' ')
+          const lines: string[] = []
+          let currentLine = ''
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word
+            const metrics = ctx.measureText(testLine)
+            if (metrics.width > maxTextWidth && currentLine) {
+              lines.push(currentLine)
+              currentLine = word
+            } else {
+              currentLine = testLine
+            }
+          }
+          if (currentLine) lines.push(currentLine)
+
+          // رسم النص مع ظل أبيض (drop-shadow)
+          lines.forEach((line, lineIndex) => {
+            const lineY = textY + (lineIndex * lineHeight)
+            // ظل أبيض
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+            for (let dx = -1; dx <= 1; dx++) {
+              for (let dy = -1; dy <= 1; dy++) {
+                if (dx !== 0 || dy !== 0) {
+                  ctx.fillText(line, textX + dx, lineY + dy)
+                }
+              }
+            }
+            // النص الأسود
+            ctx.fillStyle = '#000000'
+            ctx.fillText(line, textX, lineY)
+          })
+
+          ctx.restore()
+        })
+
+      return canvas.toDataURL('image/png')
+    } catch (error) {
+      console.error('Error generating composite image:', error)
+      return null
+    }
+  }, [imageSrc, imagePreview, drawings, annotations])
+
   // دالة حفظ التعليق الحالي
   const saveCurrentComment = useCallback(async () => {
     // التحقق من وجود محتوى للحفظ
@@ -232,13 +645,17 @@ export default function InteractiveImageAnnotation({
       })
     }
 
+    // إنشاء الصورة المركّبة (تطابق ما يظهر على الشاشة)
+    const compositeImage = await generateCompositeImage()
+
     const newComment: SavedDesignComment = {
       id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       timestamp: Date.now(),
       annotations: [...annotations],
       drawings: [...drawings],
       image: imageBase64,
-      title: `التعليق ${savedComments.length + 1}`
+      title: `التعليق ${savedComments.length + 1}`,
+      compositeImage: compositeImage
     }
 
     const updatedComments = [...savedComments, newComment]
@@ -250,7 +667,7 @@ export default function InteractiveImageAnnotation({
     onImageChange?.(null)
 
     return newComment
-  }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange])
+  }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange, generateCompositeImage])
 
   // دالة حذف تعليق محفوظ
   const deleteSavedComment = useCallback((commentId: string) => {
@@ -341,13 +758,14 @@ export default function InteractiveImageAnnotation({
     })
 
     onSavedCommentsChange?.(updatedComments)
-    // تحديث الحالة الأصلية بعد الحفظ
-    setOriginalViewingAnnotations(JSON.parse(JSON.stringify(annotations)))
-    setOriginalViewingDrawings(JSON.parse(JSON.stringify(drawings)))
-    setViewingCommentId(null) // إلغاء وضع العرض بعد الحفظ
+    // إلغاء وضع العرض بعد الحفظ ومسح البيانات
+    setViewingCommentId(null)
     setOriginalViewingAnnotations([])
     setOriginalViewingDrawings([])
-  }, [viewingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange])
+    // مسح التعليقات والرسومات الحالية لتجنب ظهور زر "حفظ التعليق"
+    onAnnotationsChange([])
+    onDrawingsChange([])
+  }, [viewingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange])
 
   // دالة تحديث تعليق محفوظ
   const updateSavedComment = useCallback(async () => {
@@ -445,30 +863,59 @@ export default function InteractiveImageAnnotation({
     }
   }, [isDrawingMode])
 
+  // ===== إغلاق النوافذ المنبثقة عند الضغط خارجها =====
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+
+      // التحقق من أن الضغط ليس على أي من أزرار فتح النوافذ أو النوافذ نفسها
+      const isClickOnPicker = target.closest('.color-picker-container') ||
+        target.closest('.brush-picker-container') ||
+        target.closest('.eraser-menu-container')
+
+      if (!isClickOnPicker) {
+        setShowColorPicker(false)
+        setShowBrushPicker(false)
+        setShowEraserMenu(false)
+        setShowEraserSizePicker(false)
+      }
+    }
+
+    // إضافة المستمع فقط إذا كانت أي نافذة مفتوحة
+    if (showColorPicker || showBrushPicker || showEraserMenu || showEraserSizePicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showColorPicker, showBrushPicker, showEraserMenu, showEraserSizePicker])
+
   // دالة حساب موقع المربع بناءً على الاتجاه
+  // تم تعديلها لجعل النص يظهر مباشرة تحت/بجانب العلامة مع مسافة بسيطة
   const getBoxPosition = useCallback((markerX: number, markerY: number, position: BoxPosition): BoundingBox => {
-    const halfBoxWidth = BOX_WIDTH_PERCENT / 2
-    const halfBoxHeight = BOX_HEIGHT_PERCENT / 2
+    // مسافة صغيرة بين العلامة والنص (2% فقط)
+    const TEXT_OFFSET = 2
 
     switch (position) {
       case 'bottom':
-        return { x: markerX - halfBoxWidth, y: markerY + MARKER_SIZE + SAFE_MARGIN, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        // النص يبدأ من نفس موقع X للعلامة، وتحتها مباشرة
+        return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       case 'top':
-        return { x: markerX - halfBoxWidth, y: markerY - MARKER_SIZE - BOX_HEIGHT_PERCENT - SAFE_MARGIN, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       case 'right':
-        return { x: markerX + MARKER_SIZE + SAFE_MARGIN, y: markerY - halfBoxHeight, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX + TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       case 'left':
-        return { x: markerX - MARKER_SIZE - BOX_WIDTH_PERCENT - SAFE_MARGIN, y: markerY - halfBoxHeight, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       case 'bottom-right':
-        return { x: markerX + MARKER_SIZE, y: markerY + MARKER_SIZE, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX + TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       case 'bottom-left':
-        return { x: markerX - BOX_WIDTH_PERCENT - MARKER_SIZE, y: markerY + MARKER_SIZE, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       case 'top-right':
-        return { x: markerX + MARKER_SIZE, y: markerY - BOX_HEIGHT_PERCENT - MARKER_SIZE, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX + TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       case 'top-left':
-        return { x: markerX - BOX_WIDTH_PERCENT - MARKER_SIZE, y: markerY - BOX_HEIGHT_PERCENT - MARKER_SIZE, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
       default:
-        return { x: markerX - halfBoxWidth, y: markerY + MARKER_SIZE + SAFE_MARGIN, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
     }
   }, [])
 
@@ -608,24 +1055,15 @@ export default function InteractiveImageAnnotation({
   }, [annotations, onAnnotationsChange])
 
   // معالج نهاية سحب النص
-  const handleTextDragEnd = useCallback((annotationId: string, info: any) => {
-    if (!containerRef.current) return
+  const handleTextDragEnd = useCallback((annotationId: string, info: any, element: HTMLElement | null) => {
+    if (!containerRef.current || !element) return
 
-    const rect = containerRef.current.getBoundingClientRect()
-    const currentAnnotation = annotations.find(a => a.id === annotationId)
-    if (!currentAnnotation) return
+    const containerRect = containerRef.current.getBoundingClientRect()
+    const elementRect = element.getBoundingClientRect()
 
-    // حساب الموقع الحالي
-    const currentX = currentAnnotation.boxX ?? currentAnnotation.x
-    const currentY = currentAnnotation.boxY ?? currentAnnotation.y
-
-    // حساب التغيير في الموقع
-    const deltaX = (info.offset.x / rect.width) * 100
-    const deltaY = (info.offset.y / rect.height) * 100
-
-    // الموقع الجديد
-    const newX = currentX + deltaX
-    const newY = currentY + deltaY
+    // حساب الموقع الجديد بناءً على موقع العنصر الفعلي بعد السحب
+    const newX = ((elementRect.left - containerRect.left) / containerRect.width) * 100
+    const newY = ((elementRect.top - containerRect.top) / containerRect.height) * 100
 
     // التأكد من أن النص داخل الحدود
     const clampedX = Math.max(0, Math.min(95, newX))
@@ -655,6 +1093,27 @@ export default function InteractiveImageAnnotation({
     setEditingTranscriptionId(null)
     setEditedText('')
   }, [])
+
+  // دالة تبديل إخفاء/إظهار النص على الصورة
+  const toggleTextVisibility = useCallback((annotationId: string) => {
+    const updatedAnnotations = annotations.map(a =>
+      a.id === annotationId ? { ...a, isHidden: !a.isHidden } : a
+    )
+    onAnnotationsChange(updatedAnnotations)
+  }, [annotations, onAnnotationsChange])
+
+  // دالة تغيير حجم النص
+  const changeTextScale = useCallback((annotationId: string, delta: number) => {
+    const updatedAnnotations = annotations.map(a => {
+      if (a.id === annotationId) {
+        const currentScale = a.textScale ?? 1
+        const newScale = Math.max(0.5, Math.min(2, currentScale + delta))
+        return { ...a, textScale: newScale }
+      }
+      return a
+    })
+    onAnnotationsChange(updatedAnnotations)
+  }, [annotations, onAnnotationsChange])
 
   // ===== دوال الرسم الحر =====
 
@@ -1050,8 +1509,9 @@ export default function InteractiveImageAnnotation({
 
   // معالجة النقر المزدوج على الصورة لإضافة تعليق جديد
   const handleImageDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // منع إضافة تعليق جديد أثناء وضع الرسم أو التسجيل أو التعطيل أو التعديل
-    if (disabled || isRecordingActive || editingTranscriptionId || isDrawingMode) return
+    // منع إضافة تعليق جديد أثناء التسجيل أو التعطيل أو التعديل
+    // ملاحظة: تم إزالة شرط isDrawingMode للسماح بإضافة تعليقات صوتية/نصية أثناء وضع الرسم
+    if (disabled || isRecordingActive || editingTranscriptionId) return
 
     // إعادة تعيين المربع النشط عند النقر على مكان فارغ
     setActiveTranscriptionId(null)
@@ -1070,13 +1530,43 @@ export default function InteractiveImageAnnotation({
     onAnnotationsChange([...annotations, newAnnotation])
     setActiveAnnotationId(newAnnotation.id)
     setShowInstructions(false)
-  }, [disabled, isRecordingActive, editingTranscriptionId, isDrawingMode, annotations, onAnnotationsChange])
+  }, [disabled, isRecordingActive, editingTranscriptionId, annotations, onAnnotationsChange])
 
   // معالجة النقر المفرد على الصورة لإعادة تعيين المربع النشط
   const handleImageClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (editingTranscriptionId) return
     setActiveTranscriptionId(null)
   }, [editingTranscriptionId])
+
+  // فتح مربع كتابة النص اليدوي
+  const openManualTextInput = useCallback((annotationId: string) => {
+    setManualTextInput({
+      isOpen: true,
+      annotationId,
+      text: ''
+    })
+  }, [])
+
+  // حفظ النص اليدوي
+  const saveManualText = useCallback(() => {
+    if (!manualTextInput.annotationId || !manualTextInput.text.trim()) {
+      setManualTextInput({ isOpen: false, annotationId: null, text: '' })
+      return
+    }
+
+    const updatedAnnotations = annotations.map(a =>
+      a.id === manualTextInput.annotationId
+        ? { ...a, transcription: manualTextInput.text.trim() }
+        : a
+    )
+    onAnnotationsChange(updatedAnnotations)
+    setManualTextInput({ isOpen: false, annotationId: null, text: '' })
+  }, [manualTextInput, annotations, onAnnotationsChange])
+
+  // إلغاء كتابة النص اليدوي
+  const cancelManualTextInput = useCallback(() => {
+    setManualTextInput({ isOpen: false, annotationId: null, text: '' })
+  }, [])
 
   // تحويل base64 إلى Blob
   const base64ToBlob = (base64: string): Blob => {
@@ -1323,6 +1813,14 @@ export default function InteractiveImageAnnotation({
       )
       onAnnotationsChange(updatedAnnotations)
       setTranslatingId(null)
+
+      // فتح Modal الترجمة لعرض النتيجة
+      setTranslationModal({
+        isOpen: true,
+        originalText: annotation.transcription,
+        translatedText: data.translatedText,
+        language: targetLang
+      })
 
     } catch (error) {
       console.error('Translation error:', error)
@@ -1626,7 +2124,7 @@ export default function InteractiveImageAnnotation({
                 className="flex flex-col gap-2"
               >
                 {/* زر القلم مع قائمة أنواع الفرش */}
-                <div className="relative">
+                <div className="relative brush-picker-container">
                   <motion.button
                     type="button"
                     onClick={() => {
@@ -1636,6 +2134,7 @@ export default function InteractiveImageAnnotation({
                         setShowColorPicker(false)
                         setShowStrokePicker(false)
                         setShowEraserSizePicker(false)
+                        setShowEraserMenu(false)
                       } else {
                         // تفعيل القلم وإلغاء الممحاة
                         setIsEraserMode(false)
@@ -1659,7 +2158,7 @@ export default function InteractiveImageAnnotation({
                         initial={{ opacity: 0, x: -10, scale: 0.9 }}
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         exit={{ opacity: 0, x: -10, scale: 0.9 }}
-                        className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3"
+                        className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3 brush-picker-container"
                         style={{ zIndex: 200, pointerEvents: 'auto', minWidth: '280px' }}
                       >
                         {/* الصف الأول: أنواع القلم */}
@@ -1670,6 +2169,7 @@ export default function InteractiveImageAnnotation({
                               key={brush.value}
                               onClick={() => {
                                 setBrushType(brush.value)
+                                setShowBrushPicker(false)
                               }}
                               className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg hover:bg-gray-100 transition-all flex-1 ${brushType === brush.value ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-300' : ''
                                 }`}
@@ -1690,6 +2190,7 @@ export default function InteractiveImageAnnotation({
                                 key={sw.value}
                                 onClick={() => {
                                   setStrokeWidth(sw.value)
+                                  setShowBrushPicker(false)
                                 }}
                                 className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-gray-100 transition-all ${strokeWidth === sw.value ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-300' : ''
                                   }`}
@@ -1710,7 +2211,7 @@ export default function InteractiveImageAnnotation({
                 </div>
 
                 {/* زر الممحاة مع قائمة منبثقة */}
-                <div className="relative">
+                <div className="relative eraser-menu-container">
                   <motion.button
                     type="button"
                     onClick={() => {
@@ -1737,7 +2238,7 @@ export default function InteractiveImageAnnotation({
                         initial={{ opacity: 0, x: -10, scale: 0.9 }}
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         exit={{ opacity: 0, x: -10, scale: 0.9 }}
-                        className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 py-1 min-w-[160px]"
+                        className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 py-1 min-w-[160px] eraser-menu-container"
                         style={{ zIndex: 200, pointerEvents: 'auto' }}
                       >
                         {/* تفعيل/إلغاء الممحاة */}
@@ -1760,20 +2261,21 @@ export default function InteractiveImageAnnotation({
                           <div className="px-3 py-2 border-t border-gray-100">
                             <p className="text-xs text-gray-500 mb-2">حجم الممحاة:</p>
                             <div className="flex gap-1">
-                              {STROKE_WIDTHS.slice(0, 4).map(sw => (
+                              {ERASER_SIZES.map(es => (
                                 <button
                                   type="button"
-                                  key={sw.value}
+                                  key={es.value}
                                   onClick={() => {
-                                    setEraserWidth(sw.value)
+                                    setEraserWidth(es.value)
+                                    setShowEraserMenu(false)
                                   }}
-                                  className={`flex-1 flex flex-col items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 transition-all ${eraserWidth === sw.value ? 'bg-orange-100 ring-1 ring-orange-300' : ''
+                                  className={`flex-1 flex flex-col items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 transition-all ${eraserWidth === es.value ? 'bg-orange-100 ring-1 ring-orange-300' : ''
                                     }`}
-                                  title={sw.name}
+                                  title={es.name}
                                 >
                                   <div
                                     className="rounded-full bg-orange-400"
-                                    style={{ width: Math.min(sw.value * 1.5, 16), height: Math.min(sw.value * 1.5, 16) }}
+                                    style={{ width: Math.min(es.value / 3, 20), height: Math.min(es.value / 3, 20) }}
                                   />
                                 </button>
                               ))}
@@ -1784,12 +2286,12 @@ export default function InteractiveImageAnnotation({
                         {/* فاصل */}
                         <div className="h-px bg-gray-200 my-1" />
 
-                        {/* زر التراجع */}
+                        {/* زر التراجع - يبقي الممحاة مفعّلة والقائمة مفتوحة */}
                         <button
                           type="button"
                           onClick={() => {
                             handleUndoDrawing()
-                            setShowEraserMenu(false)
+                            // لا نغلق القائمة ولا نلغي الممحاة للسماح بالتراجع المتتالي
                           }}
                           disabled={drawings.length === 0}
                           className="w-full px-3 py-2 text-right hover:bg-gray-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1818,7 +2320,7 @@ export default function InteractiveImageAnnotation({
 
                 {/* زر اللون - يظهر فقط عند عدم تفعيل الممحاة */}
                 {!isEraserMode && (
-                  <div className="relative">
+                  <div className="relative color-picker-container">
                     <motion.button
                       type="button"
                       onClick={() => {
@@ -1826,6 +2328,7 @@ export default function InteractiveImageAnnotation({
                         setShowStrokePicker(false)
                         setShowBrushPicker(false)
                         setShowEraserSizePicker(false)
+                        setShowEraserMenu(false)
                       }}
                       className="w-11 h-11 rounded-full flex items-center justify-center shadow-lg bg-white border border-gray-300 hover:bg-gray-100 transition-all"
                       title="اختيار اللون"
@@ -1844,12 +2347,11 @@ export default function InteractiveImageAnnotation({
                           initial={{ opacity: 0, x: -10, scale: 0.9 }}
                           animate={{ opacity: 1, x: 0, scale: 1 }}
                           exit={{ opacity: 0, x: -10, scale: 0.9 }}
-                          className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3"
-                          style={{ zIndex: 200, pointerEvents: 'auto' }}
+                          className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-4 color-picker-container"
+                          style={{ zIndex: 200, pointerEvents: 'auto', minWidth: '280px' }}
                         >
-                          <div
-                            className="grid grid-cols-8 gap-2"
-                          >
+                          <p className="text-xs text-gray-500 mb-2 text-center">اختر اللون</p>
+                          <div className="grid grid-cols-4 gap-2.5">
                             {DRAWING_COLORS.map(color => (
                               <button
                                 type="button"
@@ -1858,7 +2360,7 @@ export default function InteractiveImageAnnotation({
                                   setDrawingColor(color.value)
                                   setShowColorPicker(false)
                                 }}
-                                className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 flex-shrink-0 ${drawingColor === color.value
+                                className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 ${drawingColor === color.value
                                   ? 'border-gray-800 scale-110 ring-2 ring-pink-300'
                                   : 'border-gray-300'
                                   }`}
@@ -1928,40 +2430,57 @@ export default function InteractiveImageAnnotation({
                   ) : (
                     /* إذا لم يكن هناك نص، نعرض الدائرة مع أزرار التسجيل */
                     <>
-                      <motion.div
-                        onClick={(e) => handleMarkerClick(e, annotation.id)}
-                        animate={{
-                          scale: isActiveMarker ? 1.15 : 1,
-                          boxShadow: isActiveMarker
-                            ? '0 0 20px rgba(236, 72, 153, 0.6)'
-                            : '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                        }}
-                        transition={{ duration: 0.2 }}
-                        className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shadow-lg cursor-pointer ${annotation.isRecording
-                          ? 'bg-red-500 border-red-300 animate-pulse border-2'
-                          : isActiveMarker
-                            ? 'bg-pink-400 border-pink-200 border-4 ring-2 ring-pink-300'
-                            : 'bg-pink-500 border-pink-300 border-2'
-                          }`}
-                      >
-                        {annotation.isRecording ? (
-                          <button
+                      {/* حاوية الأزرار - ميكروفون ونص */}
+                      <div className="flex items-center gap-1">
+                        {/* زر الميكروفون */}
+                        <motion.div
+                          onClick={(e) => handleMarkerClick(e, annotation.id)}
+                          animate={{
+                            scale: isActiveMarker ? 1.1 : 1,
+                            boxShadow: isActiveMarker
+                              ? '0 0 15px rgba(236, 72, 153, 0.6)'
+                              : '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          }}
+                          transition={{ duration: 0.2 }}
+                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg cursor-pointer ${annotation.isRecording
+                            ? 'bg-red-500 border-red-300 animate-pulse border-2'
+                            : isActiveMarker
+                              ? 'bg-pink-400 border-pink-200 border-2 ring-2 ring-pink-300'
+                              : 'bg-pink-500 border-pink-300 border-2'
+                            }`}
+                        >
+                          {annotation.isRecording ? (
+                            <button
+                              type="button"
+                              onClick={stopRecording}
+                              className="w-full h-full flex items-center justify-center"
+                            >
+                              <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => startRecording(annotation.id)}
+                              className="w-full h-full flex items-center justify-center"
+                            >
+                              <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                            </button>
+                          )}
+                        </motion.div>
+
+                        {/* زر كتابة النص اليدوي */}
+                        {!annotation.isRecording && (
+                          <motion.button
                             type="button"
-                            onClick={stopRecording}
-                            className="w-full h-full flex items-center justify-center"
+                            onClick={() => openManualTextInput(annotation.id)}
+                            whileTap={{ scale: 0.95 }}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg bg-blue-500 border-blue-300 border-2 hover:bg-blue-600 transition-colors"
+                            title="كتابة نص يدوي"
                           >
-                            <MicOff className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => startRecording(annotation.id)}
-                            className="w-full h-full flex items-center justify-center"
-                          >
-                            <Mic className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                          </button>
+                            <Type className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                          </motion.button>
                         )}
-                      </motion.div>
+                      </div>
 
                       {/* زر الحذف للعلامات بدون نص */}
                       <button
@@ -1998,35 +2517,21 @@ export default function InteractiveImageAnnotation({
         {/* النصوص على الصورة - قابلة للسحب والإفلات */}
         <AnimatePresence>
           {annotations
-            .filter(a => a.transcription && !a.isRecording && transcribingId !== a.id)
+            .filter(a => a.transcription && !a.isRecording && transcribingId !== a.id && !a.isHidden)
             .map((annotation) => {
               const styles = getBoxStyles(annotation.id)
               const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
 
               return (
-                <motion.div
+                <DraggableText
                   key={`transcription-${annotation.id}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  style={styles}
-                  drag
-                  dragMomentum={false}
-                  dragElastic={0}
-                  onDragEnd={(e, info) => handleTextDragEnd(annotation.id, info)}
-                  className="cursor-move"
-                >
-                  {/* نص بسيط بدون خلفية - رقم ونص فقط */}
-                  <div className="flex items-start gap-1 text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]">
-                    <span className="text-sm font-bold flex-shrink-0">
-                      {annotationIndex}.
-                    </span>
-                    <p className="text-sm leading-snug break-words max-w-[200px]">
-                      {annotation.transcription}
-                    </p>
-                  </div>
-                </motion.div>
+                  annotation={annotation}
+                  annotationIndex={annotationIndex}
+                  styles={styles}
+                  containerRef={containerRef}
+                  onDragEnd={handleTextDragEnd}
+                  onScaleChange={changeTextScale}
+                />
               )
             })}
         </AnimatePresence>
@@ -2084,30 +2589,94 @@ export default function InteractiveImageAnnotation({
                         </button>
                       )}
 
+                      {/* زر إخفاء/إظهار النص على الصورة */}
+                      {annotation.transcription && !isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => toggleTextVisibility(annotation.id)}
+                          className={`p-1.5 rounded transition-colors ${annotation.isHidden
+                            ? 'text-gray-400 hover:bg-gray-100'
+                            : 'text-blue-600 hover:bg-blue-50'
+                            }`}
+                          title={annotation.isHidden ? 'إظهار النص على الصورة' : 'إخفاء النص من الصورة'}
+                        >
+                          {annotation.isHidden ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* أزرار تكبير/تصغير النص */}
+                      {annotation.transcription && !isEditing && !annotation.isHidden && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => changeTextScale(annotation.id, -0.1)}
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded transition-colors"
+                            title="تصغير النص"
+                            disabled={(annotation.textScale ?? 1) <= 0.5}
+                          >
+                            <ZoomOut className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => changeTextScale(annotation.id, 0.1)}
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded transition-colors"
+                            title="تكبير النص"
+                            disabled={(annotation.textScale ?? 1) >= 2}
+                          >
+                            <ZoomIn className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+
                       {/* زر الترجمة مع قائمة منسدلة */}
                       {annotation.transcription && !isEditing && (
                         <div className="relative">
                           <button
                             type="button"
-                            onClick={() => setShowLanguageDropdown(
-                              showLanguageDropdown === annotation.id ? null : annotation.id
-                            )}
+                            onClick={(e) => {
+                              if (showLanguageDropdown === annotation.id) {
+                                setShowLanguageDropdown(null)
+                                setDropdownPosition(null)
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                setDropdownPosition({
+                                  top: rect.bottom + 4,
+                                  left: rect.left
+                                })
+                                setShowLanguageDropdown(annotation.id)
+                              }
+                            }}
                             className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
                             title="ترجمة"
                           >
                             <Languages className="w-4 h-4" />
                           </button>
 
-                          {/* قائمة اللغات المنسدلة */}
-                          {showLanguageDropdown === annotation.id && (
+                          {/* قائمة اللغات المنسدلة - تُعرض باستخدام Portal */}
+                          {showLanguageDropdown === annotation.id && dropdownPosition && typeof document !== 'undefined' && createPortal(
                             <>
                               {/* Backdrop لإغلاق القائمة عند النقر خارجها */}
                               <div
-                                className="fixed inset-0 z-[9998]"
-                                onClick={() => setShowLanguageDropdown(null)}
+                                className="fixed inset-0"
+                                style={{ zIndex: 99998 }}
+                                onClick={() => {
+                                  setShowLanguageDropdown(null)
+                                  setDropdownPosition(null)
+                                }}
                               />
                               {/* القائمة المنبثقة */}
-                              <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-2xl border border-gray-200 py-1 min-w-[200px] z-[9999]">
+                              <div
+                                className="fixed bg-white rounded-lg shadow-2xl border border-gray-200 py-1 min-w-[200px]"
+                                style={{
+                                  zIndex: 99999,
+                                  top: dropdownPosition.top,
+                                  left: dropdownPosition.left
+                                }}
+                              >
                                 {availableLanguages.map((lang) => (
                                   <button
                                     key={lang.code}
@@ -2115,6 +2684,7 @@ export default function InteractiveImageAnnotation({
                                     onClick={() => {
                                       translateAnnotationText(annotation.id, lang.code)
                                       setShowLanguageDropdown(null)
+                                      setDropdownPosition(null)
                                     }}
                                     disabled={translatingId === annotation.id}
                                     className="w-full px-4 py-2.5 text-right hover:bg-gray-100 transition-colors disabled:opacity-50 flex items-center justify-between gap-2"
@@ -2128,7 +2698,8 @@ export default function InteractiveImageAnnotation({
                                   </button>
                                 ))}
                               </div>
-                            </>
+                            </>,
+                            document.body
                           )}
                         </div>
                       )}
@@ -2194,16 +2765,26 @@ export default function InteractiveImageAnnotation({
                         </div>
                       )}
 
-                      {/* النص المترجم */}
+                      {/* النص المترجم - زر لعرضه في Modal */}
                       {annotation.translatedText && !isEditing && (
-                        <div className="bg-blue-50 border border-blue-200 rounded p-2 mt-2">
-                          <p className="text-xs text-blue-600 font-medium mb-1">
-                            الترجمة ({getLanguageName(annotation.translationLanguage || 'en')}):
+                        <button
+                          type="button"
+                          onClick={() => setTranslationModal({
+                            isOpen: true,
+                            originalText: annotation.transcription || '',
+                            translatedText: annotation.translatedText || '',
+                            language: annotation.translationLanguage || 'en'
+                          })}
+                          className="mt-2 w-full text-right bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg p-2 transition-colors"
+                        >
+                          <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                            <Eye className="w-3 h-3" />
+                            عرض الترجمة ({getLanguageName(annotation.translationLanguage || 'en')})
                           </p>
-                          <p className="text-sm text-gray-700 leading-relaxed">
-                            {annotation.translatedText}
+                          <p className="text-sm text-gray-600 truncate">
+                            {annotation.translatedText.substring(0, 50)}...
                           </p>
-                        </div>
+                        </button>
                       )}
                     </div>
                   ) : annotation.audioData ? (
@@ -2420,6 +3001,145 @@ export default function InteractiveImageAnnotation({
           </AnimatePresence>
         </div>
       )}
+
+      {/* Modal عرض الترجمة */}
+      <AnimatePresence>
+        {translationModal.isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-[10000]"
+              onClick={() => setTranslationModal({ ...translationModal, isOpen: false })}
+            />
+            {/* Modal Content */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl z-[10001] w-[90%] max-w-md p-6"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <Languages className="w-5 h-5 text-purple-600" />
+                  الترجمة ({getLanguageName(translationModal.language)})
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setTranslationModal({ ...translationModal, isOpen: false })}
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Original Text */}
+              <div className="mb-4">
+                <p className="text-xs text-gray-500 font-medium mb-1">النص الأصلي:</p>
+                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-700 leading-relaxed" dir="rtl">
+                    {translationModal.originalText}
+                  </p>
+                </div>
+              </div>
+
+              {/* Translated Text */}
+              <div className="mb-4">
+                <p className="text-xs text-purple-600 font-medium mb-1">الترجمة:</p>
+                <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                  <p className="text-sm text-gray-700 leading-relaxed" dir="auto">
+                    {translationModal.translatedText}
+                  </p>
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setTranslationModal({ ...translationModal, isOpen: false })}
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-pink-700 transition-all"
+              >
+                إغلاق
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Modal كتابة النص اليدوي */}
+      <AnimatePresence>
+        {manualTextInput.isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-[10000]"
+              onClick={cancelManualTextInput}
+            />
+            {/* Modal Content */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl z-[10001] w-[90%] max-w-md p-6"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <Type className="w-5 h-5 text-blue-600" />
+                  كتابة نص يدوي
+                </h3>
+                <button
+                  type="button"
+                  onClick={cancelManualTextInput}
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Text Input */}
+              <div className="mb-4">
+                <p className="text-xs text-gray-500 font-medium mb-2">اكتب النص الذي تريد إضافته:</p>
+                <textarea
+                  value={manualTextInput.text}
+                  onChange={(e) => setManualTextInput({ ...manualTextInput, text: e.target.value })}
+                  placeholder="اكتب هنا..."
+                  className="w-full h-[150px] p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  dir="rtl"
+                  autoFocus
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={saveManualText}
+                  disabled={!manualTextInput.text.trim()}
+                  className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-medium hover:from-blue-700 hover:to-blue-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Check className="w-5 h-5" />
+                  تأكيد
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelManualTextInput}
+                  className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all flex items-center justify-center gap-2"
+                >
+                  <X className="w-5 h-5" />
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

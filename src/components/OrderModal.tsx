@@ -473,39 +473,51 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                                 <div className="p-4 space-y-4">
                                   {/* الصورة مع العلامات والرسومات */}
                                   <div className="relative rounded-xl overflow-hidden border border-pink-200">
-                                    <img
-                                      src={comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
-                                      alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
-                                      className="w-full h-auto cursor-pointer"
-                                      onClick={() => setLightboxImage(comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg")}
-                                    />
-                                    {/* طبقة الرسومات */}
-                                    {comment.drawings && comment.drawings.length > 0 && (
-                                      <canvas
-                                        ref={(el) => {
-                                          if (el) {
-                                            canvasRefs.current.set(comment.id, el)
-                                            // رسم الخطوط مباشرة عند تعيين الـ ref
-                                            drawPathsOnCanvas(el, comment.drawings || [])
-                                          }
-                                        }}
-                                        className="absolute inset-0 w-full h-full pointer-events-none"
-                                        width={800}
-                                        height={800}
+                                    {/* إذا وجدت صورة مركّبة محفوظة، نعرضها مباشرة */}
+                                    {comment.compositeImage ? (
+                                      <img
+                                        src={comment.compositeImage}
+                                        alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
+                                        className="w-full h-auto cursor-pointer"
+                                        onClick={() => setLightboxImage(comment.compositeImage!)}
                                       />
+                                    ) : (
+                                      <>
+                                        <img
+                                          src={comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
+                                          alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
+                                          className="w-full h-auto cursor-pointer"
+                                          onClick={() => setLightboxImage(comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg")}
+                                        />
+                                        {/* طبقة الرسومات - فقط إذا لم توجد صورة مركّبة */}
+                                        {comment.drawings && comment.drawings.length > 0 && (
+                                          <canvas
+                                            ref={(el) => {
+                                              if (el) {
+                                                canvasRefs.current.set(comment.id, el)
+                                                // رسم الخطوط مباشرة عند تعيين الـ ref
+                                                drawPathsOnCanvas(el, comment.drawings || [])
+                                              }
+                                            }}
+                                            className="absolute inset-0 w-full h-full pointer-events-none"
+                                            width={800}
+                                            height={800}
+                                          />
+                                        )}
+                                        {/* علامات التعليقات - فقط إذا لم توجد صورة مركّبة */}
+                                        {comment.annotations?.map((annotation, idx) => (
+                                          <div
+                                            key={annotation.id}
+                                            className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                                            style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                                          >
+                                            <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
+                                              {idx + 1}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </>
                                     )}
-                                    {/* علامات التعليقات */}
-                                    {comment.annotations?.map((annotation, idx) => (
-                                      <div
-                                        key={annotation.id}
-                                        className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                                        style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
-                                      >
-                                        <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
-                                          {idx + 1}
-                                        </div>
-                                      </div>
-                                    ))}
                                   </div>
 
                                   {/* قائمة التعليقات الصوتية */}

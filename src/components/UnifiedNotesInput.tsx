@@ -564,99 +564,103 @@ export default function UnifiedNotesInput({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="space-y-2"
+            className="bg-gray-50 rounded-lg p-4 border border-gray-200"
           >
-            <p className="text-sm font-medium text-gray-700">
+            <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+              <Mic className="w-4 h-4 text-pink-600" />
               التسجيلات الصوتية ({voiceNotes.length})
-            </p>
-
-            {voiceNotes.map((note, index) => (
-              <motion.div
-                key={note.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ delay: index * 0.05 }}
-                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-pink-300 transition-colors"
-              >
-                {/* زر التشغيل */}
-                <button
-                  type="button"
-                  onClick={() => togglePlayback(note)}
-                  className="p-2 bg-pink-600 text-white rounded-full hover:bg-pink-700 transition-colors flex-shrink-0"
+            </h4>
+            <div className="space-y-3 max-h-[500px] overflow-y-auto overflow-x-visible">
+              {voiceNotes.map((note, index) => (
+                <div
+                  key={note.id}
+                  className="bg-white rounded-lg p-3 border border-gray-200 transition-all"
                 >
-                  {playingId === note.id ? (
-                    <Pause className="w-4 h-4" />
-                  ) : (
-                    <Play className="w-4 h-4" />
-                  )}
-                </button>
-
-                {/* معلومات التسجيل */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800">
-                    تسجيل #{index + 1}
-                    {note.duration && (
-                      <span className="text-gray-500 mr-2">
-                        ({formatTime(note.duration)})
+                  {/* رأس التسجيل - الرقم والنص على نفس السطر */}
+                  <div className="flex items-start justify-between gap-2 mb-2 relative">
+                    {/* الرقم والنص على نفس السطر */}
+                    <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                      <span className="text-base text-pink-600 font-bold flex-shrink-0 mt-0.5">
+                        {index + 1}.
                       </span>
-                    )}
-                  </p>
-
-                  {/* النص المحول من الصوت */}
-                  {note.transcription && (
-                    <div className="mt-1 space-y-1">
-                      <p className="text-xs text-gray-600 line-clamp-2">
-                        <span className="font-semibold text-gray-700">النص: </span>
-                        {note.transcription}
-                      </p>
-
-                      {/* النص المترجم */}
-                      {note.translatedText && (
-                        <p className="text-xs text-blue-600 line-clamp-2">
-                          <span className="font-semibold">الترجمة ({note.translationLanguage || 'en'}): </span>
-                          {note.translatedText}
+                      {note.transcription && (
+                        <p className="text-sm text-gray-700 leading-relaxed break-words">
+                          {note.transcription}
                         </p>
                       )}
+                    </div>
 
-                      {/* زر ترجمة فردي إذا لم يكن مترجماً */}
-                      {!note.translatedText && (
+                    {/* أزرار التحكم */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {/* زر تشغيل الصوت */}
+                      <button
+                        type="button"
+                        onClick={() => togglePlayback(note)}
+                        className={`p-1.5 rounded transition-colors ${playingId === note.id
+                          ? 'bg-green-500 text-white'
+                          : 'text-green-600 hover:bg-green-50'
+                          }`}
+                        title={playingId === note.id ? 'إيقاف' : 'تشغيل الصوت'}
+                      >
+                        {playingId === note.id ? (
+                          <Pause className="w-4 h-4" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
+                      </button>
+
+                      {/* زر الترجمة */}
+                      {note.transcription && !note.translatedText && (
                         <button
                           type="button"
                           onClick={() => translateText(note.id, targetLanguage)}
                           disabled={disabled || translatingId === note.id}
-                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50 mt-1"
+                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50"
                           title={`ترجمة إلى ${getLanguageName(targetLanguage)}`}
                         >
                           {translatingId === note.id ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              <span>جاري الترجمة...</span>
-                            </>
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <>
-                              <Languages className="w-3 h-3" />
-                              <span>ترجمة إلى {getLanguageName(targetLanguage)}</span>
-                            </>
+                            <Languages className="w-4 h-4" />
                           )}
                         </button>
                       )}
+
+                      {/* زر الحذف */}
+                      <button
+                        type="button"
+                        onClick={() => deleteVoiceNote(note.id)}
+                        disabled={disabled}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
+                  </div>
+
+                  {/* محتوى التسجيل */}
+                  {note.transcription ? (
+                    <div className="space-y-2">
+                      {/* النص المترجم - زر لعرضه */}
+                      {note.translatedText && (
+                        <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2">
+                          <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                            <Languages className="w-3 h-3" />
+                            الترجمة ({getLanguageName(note.translationLanguage || 'en')})
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {note.translatedText}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 mr-6">تسجيل صوتي - في انتظار التحويل إلى نص...</p>
                   )}
                 </div>
-
-                {/* زر الحذف */}
-                <button
-                  type="button"
-                  onClick={() => deleteVoiceNote(note.id)}
-                  disabled={disabled}
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors flex-shrink-0 disabled:opacity-50"
-                  title="حذف"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </motion.div>
-            ))}
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

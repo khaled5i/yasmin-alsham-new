@@ -9,7 +9,9 @@ interface DesignCommentSnapshot {
   id: string
   title: string
   imageDataUrl: string
-  transcriptions: string[]
+  transcriptions: string[] // النصوص المرئية على الصورة
+  hiddenTranscriptions: Array<{ number: number; text: string; translation?: string }> // النصوص المخفية مع ترجماتها ورقم العلامة
+  translatedTexts: Array<{ number: number; text: string; translation: string }> // النصوص المترجمة (المرئية) مع رقم العلامة
 }
 
 interface OrderPrintLayoutProps {
@@ -58,32 +60,37 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       )
     }
 
-    // استخراج النصوص المحولة من الملاحظات الصوتية
-    const getVoiceTranscriptions = (): string[] => {
+    // استخراج النصوص المحولة من الملاحظات الصوتية مع الترجمات
+    const getVoiceTranscriptions = (): Array<{ text: string; translation?: string }> => {
       const voiceTranscriptions = (order as any).voice_transcriptions || []
       if (!Array.isArray(voiceTranscriptions)) return []
 
       return voiceTranscriptions
         .filter((vt: any) => vt?.transcription)
-        .map((vt: any) => vt.transcription)
+        .map((vt: any) => ({
+          text: vt.transcription,
+          translation: vt.translatedText || undefined
+        }))
     }
 
-    // دمج جميع أنواع الملاحظات في قائمة واحدة
-    const getAllNotes = (): string[] => {
-      const allNotes: string[] = []
+    // دمج جميع أنواع الملاحظات في قائمة واحدة (بدون تكرار)
+    const getAllNotes = (): Array<{ text: string; translation?: string }> => {
+      const allNotes: Array<{ text: string; translation?: string }> = []
+      const seenTexts = new Set<string>() // لمنع التكرار
 
-      // إضافة الملاحظات الصوتية المحولة
+      // إضافة الملاحظات الصوتية المحولة مع الترجمات
       const voiceNotes = getVoiceTranscriptions()
-      allNotes.push(...voiceNotes)
-
-      // إضافة ملاحظات التصميم
-      if (designComments && designComments.trim()) {
-        allNotes.push(designComments.trim())
+      for (const note of voiceNotes) {
+        if (note.text && !seenTexts.has(note.text.trim())) {
+          seenTexts.add(note.text.trim())
+          allNotes.push(note)
+        }
       }
 
-      // إضافة ملاحظات الطلب
-      if (order.notes && order.notes.trim()) {
-        allNotes.push(order.notes.trim())
+      // إضافة ملاحظات الطلب (بدون تكرار)
+      if (order.notes && order.notes.trim() && !seenTexts.has(order.notes.trim())) {
+        seenTexts.add(order.notes.trim())
+        allNotes.push({ text: order.notes.trim() })
       }
 
       return allNotes
@@ -97,7 +104,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
         <div className="print-page page-front">
           {/* القسم العلوي - المعلومات الأساسية */}
           <div className="print-header">
-            {/* السطر الأول: رقم الهاتف - الموقع - تاريخ الاستلام */}
+            {/* السطر الأول: رقم الهاتف - الموقع - التواريخ */}
             <div className="print-header-top">
               <div className="header-item header-right">
                 <span>رقم الهاتف: </span>
@@ -106,9 +113,17 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
               <div className="header-item header-center">
                 <span dir="ltr">www.yasmin-alsham.fashion</span>
               </div>
-              <div className="header-item header-left">
-                <span>تاريخ استلام الطلب: </span>
-                <span>{formatDate(order.due_date)}</span>
+              <div className="header-item header-left header-dates">
+                <div className="date-row">
+                  <span>تاريخ استلام الطلب: </span>
+                  <span>{formatDate(order.order_received_date || order.created_at)}</span>
+                </div>
+                {order.proof_delivery_date && (
+                  <div className="date-row">
+                    <span>تاريخ استلام البروفا: </span>
+                    <span>{formatDate(order.proof_delivery_date)}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -160,18 +175,32 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                       </div>
                     )
                   })}
+                  {/* المقاسات الإضافية */}
+                  {(order.measurements as any)?.additional_notes && (
+                    <div className="measurement-item measurement-item-compact measurement-additional">
+                      <span className="measurement-label">مقاسات إضافية:</span>
+                      <span className="measurement-value measurement-additional-text">
+                        {(order.measurements as any).additional_notes}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* قسم ملاحظات إضافية - جميع أنواع الملاحظات */}
+              {/* قسم ملاحظات إضافية - جميع أنواع الملاحظات مع الترجمات */}
               <div className="print-additional-notes">
                 <h2 className="section-title section-title-compact">ملاحظات إضافية</h2>
                 <div className="additional-notes-list">
                   {allNotes.length > 0 ? (
-                    allNotes.map((text, idx) => (
+                    allNotes.map((note, idx) => (
                       <div key={idx} className="additional-note-item">
                         <span className="note-number">{idx + 1}.</span>
-                        <span className="note-text">{text}</span>
+                        <div className="note-content">
+                          <span className="note-text">{note.text}</span>
+                          {note.translation && (
+                            <span className="note-translation">({note.translation})</span>
+                          )}
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -209,10 +238,10 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
         </div>
 
         {/* ========== صفحات تعليقات التصميم (كل تعليق في صفحة منفصلة) ========== */}
-        {designCommentsSnapshots.map((snapshot, index) => (
+        {designCommentsSnapshots.map((snapshot) => (
           <div key={snapshot.id} className="print-page design-comment-page">
             <div className="design-comment-full">
-              {/* الصورة مع الرسومات والعلامات */}
+              {/* الصورة مع الرسومات والعلامات والنصوص المرئية */}
               <div className="design-comment-image-wrapper">
                 <img
                   src={snapshot.imageDataUrl}
@@ -220,12 +249,33 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                   className="design-comment-full-image"
                 />
               </div>
-              {/* النصوص المحولة من الصوت */}
-              {snapshot.transcriptions.length > 0 && (
-                <div className="design-comment-transcriptions">
-                  {snapshot.transcriptions.map((text, idx) => (
-                    <div key={idx} className="transcription-item">
-                      {text}
+
+              {/* النصوص المخفية (التي تم إخفاؤها بزر العين) */}
+              {snapshot.hiddenTranscriptions && snapshot.hiddenTranscriptions.length > 0 && (
+                <div className="design-comment-hidden-texts">
+                  <h4 className="hidden-texts-title">نصوص مخفية:</h4>
+                  {snapshot.hiddenTranscriptions.map((item, idx) => (
+                    <div key={idx} className="hidden-text-item">
+                      <span className="hidden-text-number">{item.number}.</span>
+                      <span className="hidden-text">{item.text}</span>
+                      {item.translation && (
+                        <span className="hidden-text-translation">({item.translation})</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* النصوص المترجمة (المرئية التي لها ترجمة) */}
+              {snapshot.translatedTexts && snapshot.translatedTexts.length > 0 && (
+                <div className="design-comment-translations">
+                  <h4 className="translations-title">الترجمات:</h4>
+                  {snapshot.translatedTexts.map((item, idx) => (
+                    <div key={idx} className="translation-item">
+                      <span className="translation-number">{item.number}.</span>
+                      <span className="original-text">{item.text}</span>
+                      <span className="arrow-icon">←</span>
+                      <span className="translated-text">{item.translation}</span>
                     </div>
                   ))}
                 </div>

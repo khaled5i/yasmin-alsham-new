@@ -1,0 +1,23 @@
+{
+  "name": "Yasmine Al-Sham Fashion",
+  "short_name": "Yasmine Al-Sham",
+  "icons": [
+    {
+      "src": "/favicon/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#C9A85A",
+  "background_color": "#F7F3EE",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/"
+}

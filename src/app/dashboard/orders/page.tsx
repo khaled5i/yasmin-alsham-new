@@ -119,34 +119,86 @@ export default function OrdersPage() {
     console.log('💾 Saving order updates:', orderId, updates)
 
     // تحويل البيانات إلى صيغة Supabase
+    // ملاحظة: EditOrderModal يُرسل البيانات بصيغة snake_case مباشرة
     const supabaseUpdates: any = {}
 
-    if (updates.orderNumber !== undefined) supabaseUpdates.order_number = updates.orderNumber || null
-    if (updates.clientName) supabaseUpdates.client_name = updates.clientName
-    if (updates.clientPhone) supabaseUpdates.client_phone = updates.clientPhone
-    if (updates.description) supabaseUpdates.description = updates.description
+    // المعلومات الأساسية - دعم كلا الصيغتين (snake_case و camelCase)
+    if (updates.order_number !== undefined) supabaseUpdates.order_number = updates.order_number || null
+    else if (updates.orderNumber !== undefined) supabaseUpdates.order_number = updates.orderNumber || null
+
+    if (updates.client_name) supabaseUpdates.client_name = updates.client_name
+    else if (updates.clientName) supabaseUpdates.client_name = updates.clientName
+
+    if (updates.client_phone) supabaseUpdates.client_phone = updates.client_phone
+    else if (updates.clientPhone) supabaseUpdates.client_phone = updates.clientPhone
+
+    if (updates.description !== undefined) supabaseUpdates.description = updates.description
     if (updates.fabric !== undefined) supabaseUpdates.fabric = updates.fabric
     if (updates.price !== undefined) supabaseUpdates.price = updates.price
     if (updates.paid_amount !== undefined) supabaseUpdates.paid_amount = updates.paid_amount
+
+    if (updates.payment_method !== undefined) supabaseUpdates.payment_method = updates.payment_method
+    else if (updates.paymentMethod !== undefined) supabaseUpdates.payment_method = updates.paymentMethod
+
     // ملاحظة: payment_status سيتم حسابه تلقائياً بواسطة trigger في قاعدة البيانات
     if (updates.status) supabaseUpdates.status = updates.status
+
     // تحويل string فارغ إلى null لحقول UUID
-    if (updates.assignedWorker !== undefined) {
+    if (updates.worker_id !== undefined) {
+      supabaseUpdates.worker_id = updates.worker_id === '' ? null : updates.worker_id
+    } else if (updates.assignedWorker !== undefined) {
       supabaseUpdates.worker_id = updates.assignedWorker === '' ? null : updates.assignedWorker
     }
-    if (updates.dueDate) supabaseUpdates.due_date = updates.dueDate
+
+    if (updates.order_received_date) supabaseUpdates.order_received_date = updates.order_received_date
+    else if (updates.orderReceivedDate) supabaseUpdates.order_received_date = updates.orderReceivedDate
+
+    if (updates.due_date) supabaseUpdates.due_date = updates.due_date
+    else if (updates.dueDate) supabaseUpdates.due_date = updates.dueDate
+
     if (updates.proof_delivery_date !== undefined) {
       supabaseUpdates.proof_delivery_date = updates.proof_delivery_date || null
     }
+
+    // الملاحظات الإضافية
     if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes
-    if (updates.voiceNotes !== undefined) {
-      supabaseUpdates.voice_notes = updates.voiceNotes.map((vn: any) => vn.data)
+
+    // الملاحظات الصوتية
+    if (updates.voice_notes !== undefined) {
+      supabaseUpdates.voice_notes = updates.voice_notes
+    } else if (updates.voiceNotes !== undefined) {
+      supabaseUpdates.voice_notes = updates.voiceNotes.map((vn: any) => typeof vn === 'string' ? vn : vn.data)
     }
+
     if (updates.voice_transcriptions !== undefined) {
       supabaseUpdates.voice_transcriptions = updates.voice_transcriptions
     }
+
+    // الصور
     if (updates.images !== undefined) supabaseUpdates.images = updates.images
-    if (updates.measurements) supabaseUpdates.measurements = updates.measurements
+
+    // تعليقات التصميم - يجب تخزينها في measurements
+    const hasMeasurementsUpdates =
+      updates.saved_design_comments !== undefined ||
+      updates.image_annotations !== undefined ||
+      updates.image_drawings !== undefined ||
+      updates.custom_design_image !== undefined ||
+      updates.measurements !== undefined
+
+    if (hasMeasurementsUpdates) {
+      // جلب measurements الحالية من الطلب المحدد
+      const currentOrder = orders.find(o => o.id === orderId)
+      const currentMeasurements = (currentOrder?.measurements as any) || {}
+
+      supabaseUpdates.measurements = {
+        ...currentMeasurements,
+        ...(updates.measurements || {}),
+        ...(updates.saved_design_comments !== undefined && { saved_design_comments: updates.saved_design_comments }),
+        ...(updates.image_annotations !== undefined && { image_annotations: updates.image_annotations }),
+        ...(updates.image_drawings !== undefined && { image_drawings: updates.image_drawings }),
+        ...(updates.custom_design_image !== undefined && { custom_design_image: updates.custom_design_image })
+      }
+    }
 
     console.log('📤 Sending to Supabase:', JSON.stringify(supabaseUpdates, null, 2))
 

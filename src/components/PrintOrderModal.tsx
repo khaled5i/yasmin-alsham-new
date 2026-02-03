@@ -14,6 +14,10 @@ interface ImageAnnotation {
   boxX?: number
   boxY?: number
   transcription?: string
+  translatedText?: string
+  translationLanguage?: string
+  isHidden?: boolean
+  textScale?: number
   timestamp: number
 }
 
@@ -36,6 +40,7 @@ interface SavedDesignComment {
   drawings: DrawingPath[]
   image: string | null
   title?: string
+  compositeImage?: string | null // الصورة المركّبة المحفوظة
 }
 
 // نوع snapshot التعليق للطباعة
@@ -43,7 +48,9 @@ interface DesignCommentSnapshot {
   id: string
   title: string
   imageDataUrl: string
-  transcriptions: string[]
+  transcriptions: string[] // النصوص المرئية على الصورة
+  hiddenTranscriptions: Array<{ number: number; text: string; translation?: string }> // النصوص المخفية مع ترجماتها ورقم العلامة
+  translatedTexts: Array<{ number: number; text: string; translation: string }> // النصوص المترجمة (المرئية) مع رقم العلامة
 }
 
 interface PrintOrderModalProps {
@@ -71,9 +78,48 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
     drawings: DrawingPath[],
     customImage: string | null,
     title: string,
-    id: string
+    id: string,
+    compositeImage?: string | null // الصورة المركّبة المحفوظة (إذا وجدت)
   ): Promise<DesignCommentSnapshot | null> => {
     try {
+      // إذا وجدت صورة مركّبة محفوظة، استخدمها مباشرة بدلاً من إعادة الإنشاء
+      if (compositeImage) {
+        // فصل التعليقات المرئية والمخفية
+        const visibleAnnotations = annotations.filter(a => !a.isHidden && a.transcription)
+        const hiddenAnnotations = annotations.filter(a => a.isHidden && a.transcription)
+
+        // النصوص المرئية
+        const transcriptions = visibleAnnotations
+          .map((a, idx) => `${idx + 1}. ${a.transcription}`)
+
+        // النصوص المخفية مع ترجماتها ورقم العلامة الأصلي
+        const hiddenTranscriptions = hiddenAnnotations
+          .map(a => {
+            const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
+            return {
+              number: originalIndex,
+              text: a.transcription || '',
+              translation: a.translatedText
+            }
+          })
+
+        // النصوص المترجمة (المرئية فقط)
+        const translatedTexts = visibleAnnotations
+          .filter(a => a.translatedText)
+          .map(a => {
+            const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
+            return {
+              number: originalIndex,
+              text: a.transcription || '',
+              translation: a.translatedText || ''
+            }
+          })
+
+        return { id, title, imageDataUrl: compositeImage, transcriptions, hiddenTranscriptions, translatedTexts }
+      }
+
+      // إذا لم توجد صورة مركّبة، أنشئها من البيانات الخام (للتوافق مع البيانات القديمة)
+      // نستخدم نفس المنطق المستخدم في InteractiveImageAnnotation.generateCompositeImage
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d')
       if (!ctx) return null
@@ -87,73 +133,273 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
         baseImage.src = customImage || '/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg'
       })
 
-      // تعيين أبعاد الـ canvas بناءً على الصورة - حجم كبير للطباعة
-      const targetWidth = 800
-      const scale = targetWidth / baseImage.width
-      const targetHeight = baseImage.height * scale
+      // استخدام نفس منطق aspect-[3/4] و object-contain المستخدم في العرض
+      // نحاكي container بعرض 400px ونسبة 3:4
+      const containerWidth = 400
+      const containerHeight = containerWidth * (4 / 3) // aspect-[3/4]
+      const qualityScale = 2 // للجودة العالية
 
-      canvas.width = targetWidth
-      canvas.height = targetHeight
+      canvas.width = containerWidth * qualityScale
+      canvas.height = containerHeight * qualityScale
+      ctx.scale(qualityScale, qualityScale)
+
+      // رسم خلفية بيضاء
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, containerWidth, containerHeight)
+
+      // حساب أبعاد الصورة مع الحفاظ على النسبة (object-contain)
+      const imgAspect = baseImage.width / baseImage.height
+      const containerAspect = containerWidth / containerHeight
+
+      let drawWidth: number, drawHeight: number, offsetX: number, offsetY: number
+
+      if (imgAspect > containerAspect) {
+        drawWidth = containerWidth
+        drawHeight = containerWidth / imgAspect
+        offsetX = 0
+        offsetY = (containerHeight - drawHeight) / 2
+      } else {
+        drawHeight = containerHeight
+        drawWidth = containerHeight * imgAspect
+        offsetX = (containerWidth - drawWidth) / 2
+        offsetY = 0
+      }
 
       // رسم الصورة الأساسية
-      ctx.drawImage(baseImage, 0, 0, targetWidth, targetHeight)
+      ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
 
-      // رسم المسارات (الرسومات)
+      // رسم المسارات (الرسومات) - غير الممحاة أولاً
       for (const path of drawings) {
-        if (path.points.length < 2) continue
+        if (path.points.length < 2 || path.isEraser) continue
+
         ctx.save()
         ctx.beginPath()
-        ctx.strokeStyle = path.isEraser ? '#ffffff' : path.color
-        ctx.lineWidth = path.strokeWidth * scale
+        ctx.strokeStyle = path.color
+        ctx.lineWidth = path.strokeWidth
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
 
-        if (path.brushType === 'dashed') ctx.setLineDash([12, 6])
-        else if (path.brushType === 'dotted') ctx.setLineDash([3, 6])
-        else if (path.brushType === 'soft') { ctx.shadowBlur = 8; ctx.shadowColor = path.color }
-        else if (path.brushType === 'highlighter') { ctx.globalAlpha = 0.4; ctx.lineWidth = path.strokeWidth * scale * 2.5 }
+        ctx.setLineDash([])
+        ctx.shadowBlur = 0
+        ctx.globalAlpha = 1
+
+        switch (path.brushType) {
+          case 'dashed': ctx.setLineDash([12, 6]); break
+          case 'dotted': ctx.setLineDash([3, 6]); break
+          case 'soft': ctx.shadowBlur = 8; ctx.shadowColor = path.color; break
+          case 'pencil': ctx.globalAlpha = 0.85; ctx.lineWidth = Math.max(1, path.strokeWidth * 0.5); break
+          case 'highlighter': ctx.globalAlpha = 0.4; ctx.lineWidth = path.strokeWidth * 2.5; ctx.lineCap = 'square'; break
+        }
 
         const firstPoint = path.points[0]
-        ctx.moveTo((firstPoint.x / 100) * targetWidth, (firstPoint.y / 100) * targetHeight)
+        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
         for (let i = 1; i < path.points.length; i++) {
           const point = path.points[i]
-          ctx.lineTo((point.x / 100) * targetWidth, (point.y / 100) * targetHeight)
+          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
         }
         ctx.stroke()
         ctx.restore()
       }
 
-      // رسم علامات التعليقات على الصورة
-      for (let i = 0; i < annotations.length; i++) {
-        const annotation = annotations[i]
-        const markerX = (annotation.x / 100) * targetWidth
-        const markerY = (annotation.y / 100) * targetHeight
+      // تطبيق الممحاة - رسم الصورة الأساسية فوق مسارات الممحاة
+      for (const path of drawings) {
+        if (path.points.length < 2 || !path.isEraser) continue
 
-        // رسم دائرة العلامة
         ctx.save()
         ctx.beginPath()
-        ctx.arc(markerX, markerY, 15, 0, Math.PI * 2)
-        ctx.fillStyle = '#ec4899'
+        ctx.lineWidth = path.strokeWidth
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+
+        const firstPoint = path.points[0]
+        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
+        for (let i = 1; i < path.points.length; i++) {
+          const point = path.points[i]
+          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
+        }
+
+        ctx.clip()
+        ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
+        ctx.restore()
+      }
+
+      // فصل التعليقات المرئية والمخفية
+      const visibleAnnotations = annotations.filter(a => !a.isHidden && a.transcription)
+      const hiddenAnnotations = annotations.filter(a => a.isHidden && a.transcription)
+
+      // رسم علامات التعليقات (الدوائر المرقمة)
+      const markerRadius = 10
+      annotations.forEach((annotation, index) => {
+        const markerX = (annotation.x / 100) * containerWidth
+        const markerY = (annotation.y / 100) * containerHeight
+        const hasTranscription = annotation.transcription && !annotation.isRecording
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(markerX, markerY, markerRadius, 0, Math.PI * 2)
+        ctx.fillStyle = annotation.isHidden ? '#9ca3af' : '#ec4899'
         ctx.fill()
         ctx.strokeStyle = '#ffffff'
         ctx.lineWidth = 2
         ctx.stroke()
 
-        // رسم الرقم داخل الدائرة
-        ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 14px Cairo, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText((i + 1).toString(), markerX, markerY)
+        if (hasTranscription) {
+          ctx.fillStyle = '#ffffff'
+          ctx.font = 'bold 10px Cairo, Arial, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText((index + 1).toString(), markerX, markerY)
+        }
         ctx.restore()
+      })
+
+      // حساب مواقع النصوص - نفس المنطق المستخدم في InteractiveImageAnnotation
+      const TEXT_OFFSET = 2
+      const BOX_WIDTH_PERCENT = 25
+      const BOX_HEIGHT_PERCENT = 12
+      const SAFE_MARGIN = 2
+
+      const localGetBoxPosition = (markerX: number, markerY: number, position: string) => {
+        switch (position) {
+          case 'bottom': return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'top': return { x: markerX, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'right': return { x: markerX + TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'bottom-right': return { x: markerX + TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'bottom-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'top-right': return { x: markerX + TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          case 'top-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+          default: return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        }
       }
 
+      const localBoxesOverlap = (box1: { x: number; y: number; width: number; height: number }, box2: { x: number; y: number; width: number; height: number }) => {
+        return !(box1.x + box1.width + SAFE_MARGIN < box2.x ||
+          box2.x + box2.width + SAFE_MARGIN < box1.x ||
+          box1.y + box1.height + SAFE_MARGIN < box2.y ||
+          box2.y + box2.height + SAFE_MARGIN < box1.y)
+      }
+
+      const localIsBoxInBounds = (box: { x: number; y: number; width: number; height: number }) => {
+        return box.x >= 0 && box.y >= 0 && box.x + box.width <= 100 && box.y + box.height <= 100
+      }
+
+      // حساب مواقع النصوص
+      const textPositions: Map<string, { x: number; y: number }> = new Map()
+      const placedBoxes: { x: number; y: number; width: number; height: number }[] = []
+      const positionOrder = ['bottom', 'top', 'right', 'left', 'bottom-right', 'bottom-left', 'top-right', 'top-left']
+
+      const sortedAnnotations = [...annotations]
+        .filter(a => a.transcription && !a.isRecording)
+        .sort((a, b) => a.timestamp - b.timestamp)
+
+      sortedAnnotations.forEach((annotation) => {
+        if (annotation.boxX !== undefined && annotation.boxY !== undefined) {
+          textPositions.set(annotation.id, { x: annotation.boxX, y: annotation.boxY })
+          placedBoxes.push({ x: annotation.boxX, y: annotation.boxY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT })
+          return
+        }
+
+        let bestBox = localGetBoxPosition(annotation.x, annotation.y, 'bottom')
+        for (const position of positionOrder) {
+          const candidateBox = localGetBoxPosition(annotation.x, annotation.y, position)
+          if (!localIsBoxInBounds(candidateBox)) continue
+          const hasOverlap = placedBoxes.some(pb => localBoxesOverlap(candidateBox, pb))
+          if (!hasOverlap) {
+            bestBox = candidateBox
+            break
+          }
+        }
+        placedBoxes.push(bestBox)
+        textPositions.set(annotation.id, { x: bestBox.x, y: bestBox.y })
+      })
+
+      // رسم النصوص
+      annotations
+        .filter(a => a.transcription && !a.isRecording && !a.isHidden)
+        .forEach((annotation) => {
+          const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
+          const textPos = textPositions.get(annotation.id)
+          if (!textPos) return
+
+          const textScale = annotation.textScale ?? 1
+          const fontSize = Math.round(14 * textScale)
+          const textX = (textPos.x / 100) * containerWidth
+          const textY = (textPos.y / 100) * containerHeight
+
+          ctx.save()
+          ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'top'
+
+          const maxTextWidth = containerWidth * 0.5
+          const lineHeight = fontSize * 1.3
+          const fullText = `${annotationIndex}. ${annotation.transcription}`
+
+          const words = fullText.split(' ')
+          const lines: string[] = []
+          let currentLine = ''
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word
+            const metrics = ctx.measureText(testLine)
+            if (metrics.width > maxTextWidth && currentLine) {
+              lines.push(currentLine)
+              currentLine = word
+            } else {
+              currentLine = testLine
+            }
+          }
+          if (currentLine) lines.push(currentLine)
+
+          lines.forEach((line, lineIndex) => {
+            const lineY = textY + (lineIndex * lineHeight)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+            for (let dx = -1; dx <= 1; dx++) {
+              for (let dy = -1; dy <= 1; dy++) {
+                if (dx !== 0 || dy !== 0) {
+                  ctx.fillText(line, textX + dx, lineY + dy)
+                }
+              }
+            }
+            ctx.fillStyle = '#000000'
+            ctx.fillText(line, textX, lineY)
+          })
+
+          ctx.restore()
+        })
+
       const imageDataUrl = canvas.toDataURL('image/png')
-      const transcriptions = annotations
-        .filter(a => a.transcription)
+
+      // النصوص المرئية (للعرض أسفل الصورة كمرجع)
+      const transcriptions = visibleAnnotations
         .map((a, idx) => `${idx + 1}. ${a.transcription}`)
 
-      return { id, title, imageDataUrl, transcriptions }
+      // النصوص المخفية مع ترجماتها ورقم العلامة الأصلي
+      const hiddenTranscriptions = hiddenAnnotations
+        .map(a => {
+          // إيجاد رقم العلامة الأصلي في قائمة جميع التعليقات
+          const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
+          return {
+            number: originalIndex,
+            text: a.transcription || '',
+            translation: a.translatedText
+          }
+        })
+
+      // النصوص المترجمة (المرئية التي لها ترجمة) مع رقم العلامة الأصلي
+      const translatedTexts = visibleAnnotations
+        .filter(a => a.translatedText)
+        .map(a => {
+          // إيجاد رقم العلامة الأصلي في قائمة جميع التعليقات
+          const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
+          return {
+            number: originalIndex,
+            text: a.transcription || '',
+            translation: a.translatedText || ''
+          }
+        })
+
+      return { id, title, imageDataUrl, transcriptions, hiddenTranscriptions, translatedTexts }
     } catch (error) {
       console.error('Error generating snapshot:', error)
       return null
@@ -180,7 +426,8 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
           comment.drawings || [],
           comment.image,
           comment.title || `التعليق ${i + 1}`,
-          comment.id
+          comment.id,
+          comment.compositeImage // تمرير الصورة المركّبة المحفوظة
         )
         if (snapshot) snapshots.push(snapshot)
       }
@@ -192,7 +439,8 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
           legacyDrawings,
           legacyImage,
           'تعليقات التصميم',
-          'legacy'
+          'legacy',
+          null // لا توجد صورة مركّبة للبيانات القديمة
         )
         if (snapshot) snapshots.push(snapshot)
       }
@@ -262,134 +510,222 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
     setSelectedCommentsIds([])
   }
 
+  // التحقق من نوع الجهاز
+  const isMobileDevice = () => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints && navigator.maxTouchPoints > 2)
+  }
+
+  // أنماط CSS للطباعة
+  const getPrintStyles = () => `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { font-family: 'Cairo', sans-serif; direction: rtl; }
+    .print-layout { display: block !important; }
+    .print-page { width: 100%; min-height: 100vh; page-break-after: always; padding: 20px; }
+    .print-page:last-child { page-break-after: auto; }
+    .page-front { display: flex; flex-direction: column; }
+    .print-header { text-align: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #ec4899; }
+    .print-header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 12px; font-weight: 500; color: #333; }
+    .header-item { display: flex; gap: 4px; align-items: center; }
+    .header-right { text-align: right; }
+    .header-center { text-align: center; }
+    .header-left { text-align: left; }
+    .print-logo { text-align: center; margin-bottom: 15px; }
+    .print-brand { font-size: 28px; font-weight: bold; color: #ec4899; margin: 0; }
+    .print-subtitle { font-size: 14px; color: #666; margin: 5px 0 0 0; }
+    .print-order-info { margin-top: 10px; }
+    .info-grid-single-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb; }
+    .info-item-inline { display: flex; gap: 4px; align-items: center; font-size: 11px; }
+    .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; text-align: right; }
+    .info-item { display: flex; gap: 4px; padding: 4px 8px; background: #f9fafb; border-radius: 4px; border: 1px solid #e5e7eb; font-size: 11px; }
+    .info-label { font-weight: bold; color: #374151; white-space: nowrap; font-size: 11px; }
+    .info-value { color: #111827; font-size: 11px; }
+    .print-content { display: flex; flex: 1; gap: 20px; }
+    .print-measurements-section { width: 30%; display: flex; flex-direction: column; gap: 10px; }
+    .print-measurements { border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; min-height: 360px; }
+    .print-measurements-compact { padding: 8px 12px; }
+    .section-title { font-size: 16px; font-weight: bold; color: #ec4899; margin: 0 0 15px 0; padding-bottom: 8px; border-bottom: 1px solid #fce7f3; }
+    .section-title-compact { font-size: 13px; margin: 0 0 8px 0; padding-bottom: 4px; }
+    .measurements-list { display: flex; flex-direction: column; gap: 8px; }
+    .measurements-list-compact { gap: 4px; }
+    .measurement-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fdf2f8; border-radius: 4px; font-size: 12px; }
+    .measurement-item-compact { padding: 3px 7px; font-size: 10px; }
+    .measurement-label { color: #374151; font-weight: 500; }
+    .measurement-value { color: #111827; font-weight: bold; min-width: 50px; text-align: center; }
+    .print-additional-notes { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; background: #f0fdf4; }
+    .additional-notes-list { display: flex; flex-direction: column; gap: 4px; }
+    .additional-note-item { display: flex; gap: 6px; font-size: 10px; line-height: 1.4; padding: 3px 0; border-bottom: 1px dashed #d1fae5; }
+    .additional-note-item:last-child { border-bottom: none; }
+    .additional-note-empty { color: #9ca3af; font-style: italic; justify-content: center; }
+    .note-number { color: #059669; font-weight: bold; flex-shrink: 0; }
+    .note-text { color: #374151; }
+    .print-comments { width: 70%; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; }
+    .comments-box { flex: 1; min-height: 300px; padding: 10px; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 4px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 10px; }
+    .empty-comments { height: 100%; min-height: 280px; }
+    .first-images-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; flex: 1; }
+    .first-images-single { display: flex; justify-content: center; align-items: center; flex: 1; width: 100%; height: 100%; }
+    .first-image-container { border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; aspect-ratio: 1; }
+    .first-image-single { width: 100%; height: 100%; max-height: 100%; aspect-ratio: auto; display: flex; justify-content: center; align-items: center; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
+    .first-image-single .first-design-image { width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; }
+    .first-design-image { width: 100%; height: 100%; object-fit: cover; }
+    .text-comments-section { border-top: 1px dashed #d1d5db; padding-top: 8px; margin-top: auto; }
+    .notes-label { font-weight: bold; color: #ec4899; font-size: 12px; margin-bottom: 4px; }
+    .text-comments { padding: 4px; font-size: 12px; line-height: 1.5; color: #333; }
+    .page-back { display: flex; flex-direction: column; align-items: center; }
+    .images-title { font-size: 20px; font-weight: bold; color: #ec4899; margin: 0 0 20px 0; text-align: center; }
+    .images-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 100%; }
+    .image-container { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; aspect-ratio: 1; }
+    .design-image { width: 100%; height: 100%; object-fit: cover; }
+    .design-comment-page { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 10px; }
+    .design-comment-full { width: 100%; height: 100%; display: flex; flex-direction: column; }
+    .design-comment-image-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; }
+    .design-comment-full-image { max-width: 100%; max-height: 70vh; object-fit: contain; }
+    .design-comment-transcriptions { margin-top: 15px; padding: 10px; background: #fdf2f8; border-radius: 8px; }
+    .transcription-item { font-size: 14px; color: #333; padding: 6px 0; border-bottom: 1px dashed #fce7f3; }
+    .transcription-item:last-child { border-bottom: none; }
+    .design-comment-hidden-texts { margin-top: 10px; padding: 10px; background: #f3f4f6; border-radius: 8px; border: 1px dashed #9ca3af; }
+    .hidden-texts-title { font-size: 12px; font-weight: bold; color: #6b7280; margin-bottom: 6px; }
+    .hidden-text-item { font-size: 13px; color: #374151; padding: 4px 0; display: flex; gap: 6px; align-items: flex-start; }
+    .hidden-text-number { font-weight: bold; color: #ec4899; flex-shrink: 0; }
+    .hidden-text { color: #1f2937; flex: 1; }
+    .hidden-text-translation { color: #059669; font-style: italic; }
+    .design-comment-translations { margin-top: 10px; padding: 10px; background: #ecfdf5; border-radius: 8px; border: 1px solid #a7f3d0; }
+    .translations-title { font-size: 12px; font-weight: bold; color: #059669; margin-bottom: 6px; }
+    .translation-item { font-size: 13px; color: #374151; padding: 4px 0; display: flex; gap: 6px; align-items: flex-start; }
+    .translation-number { font-weight: bold; color: #ec4899; flex-shrink: 0; }
+    .original-text { color: #1f2937; }
+    .arrow-icon { color: #9ca3af; flex-shrink: 0; }
+    .translated-text { color: #059669; font-weight: 500; }
+    .header-dates { display: flex; flex-direction: column; gap: 2px; }
+    .date-row { display: flex; gap: 4px; align-items: center; }
+    .measurement-additional { background: #fef3c7; border: 1px dashed #f59e0b; }
+    .measurement-additional-text { font-size: 9px; text-align: right; white-space: pre-wrap; min-width: auto; }
+    .note-content { display: flex; flex-direction: column; gap: 2px; }
+    .note-translation { color: #059669; font-size: 9px; font-style: italic; }
+    /* زر الطباعة للموبايل */
+    .mobile-print-btn { display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: linear-gradient(135deg, #ec4899, #f43f5e); color: white; border: none; border-radius: 30px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4); z-index: 1000; font-family: 'Cairo', sans-serif; }
+    .mobile-print-btn:active { transform: translateX(-50%) scale(0.95); }
+    @media print {
+      @page { size: A4; margin: 1cm; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      html::after { content: none !important; }
+      .mobile-print-btn { display: none !important; }
+    }
+    @media screen {
+      .mobile-print-btn { display: block; }
+    }
+  `
+
   // طباعة الطلب
   const handlePrint = () => {
-    // إنشاء نافذة طباعة جديدة
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) {
-      alert('يرجى السماح بالنوافذ المنبثقة للطباعة')
-      return
-    }
-
-    // الحصول على محتوى الطباعة
     const printContent = printRef.current?.innerHTML || ''
+    const isMobile = isMobileDevice()
 
-    // إنشاء صفحة HTML للطباعة
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html dir="rtl" lang="ar">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>طباعة الطلب - ${order.client_name}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          html, body { height: 100%; }
-          body { font-family: 'Cairo', sans-serif; direction: rtl; }
-          .print-layout { display: block !important; }
-          .print-page { width: 100%; min-height: 100vh; page-break-after: always; padding: 20px; }
-          .print-page:last-child { page-break-after: auto; }
-          .page-front { display: flex; flex-direction: column; }
-          .print-header { text-align: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #ec4899; }
-          /* السطر الأول: رقم الهاتف - الموقع - تاريخ الاستلام */
-          .print-header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 12px; font-weight: 500; color: #333; }
-          .header-item { display: flex; gap: 4px; align-items: center; }
-          .header-right { text-align: right; }
-          .header-center { text-align: center; }
-          .header-left { text-align: left; }
-          .print-logo { text-align: center; margin-bottom: 15px; }
-          .print-brand { font-size: 28px; font-weight: bold; color: #ec4899; margin: 0; }
-          .print-subtitle { font-size: 14px; color: #666; margin: 5px 0 0 0; }
-          .print-order-info { margin-top: 10px; }
-          /* صف أفقي واحد لمعلومات العميل */
-          .info-grid-single-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb; }
-          .info-item-inline { display: flex; gap: 4px; align-items: center; font-size: 11px; }
-          .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; text-align: right; }
-          .info-item { display: flex; gap: 4px; padding: 4px 8px; background: #f9fafb; border-radius: 4px; border: 1px solid #e5e7eb; font-size: 11px; }
-          .info-label { font-weight: bold; color: #374151; white-space: nowrap; font-size: 11px; }
-          .info-value { color: #111827; font-size: 11px; }
-          .print-content { display: flex; flex: 1; gap: 20px; }
-          /* قسم المقاسات والملاحظات الإضافية */
-          .print-measurements-section { width: 30%; display: flex; flex-direction: column; gap: 10px; }
-          .print-measurements { border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; min-height: 360px; }
-          .print-measurements-compact { padding: 8px 12px; }
-          .section-title { font-size: 16px; font-weight: bold; color: #ec4899; margin: 0 0 15px 0; padding-bottom: 8px; border-bottom: 1px solid #fce7f3; }
-          .section-title-compact { font-size: 13px; margin: 0 0 8px 0; padding-bottom: 4px; }
-          .measurements-list { display: flex; flex-direction: column; gap: 8px; }
-          .measurements-list-compact { gap: 4px; }
-          .measurement-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fdf2f8; border-radius: 4px; font-size: 12px; }
-          .measurement-item-compact { padding: 3px 7px; font-size: 10px; }
-          .measurement-label { color: #374151; font-weight: 500; }
-          .measurement-value { color: #111827; font-weight: bold; min-width: 50px; text-align: center; }
-          /* قسم ملاحظات إضافية */
-          .print-additional-notes { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; background: #f0fdf4; }
-          .additional-notes-list { display: flex; flex-direction: column; gap: 4px; }
-          .additional-note-item { display: flex; gap: 6px; font-size: 10px; line-height: 1.4; padding: 3px 0; border-bottom: 1px dashed #d1fae5; }
-          .additional-note-item:last-child { border-bottom: none; }
-          .additional-note-empty { color: #9ca3af; font-style: italic; justify-content: center; }
-          .note-number { color: #059669; font-weight: bold; flex-shrink: 0; }
-          .note-text { color: #374151; }
-          .print-comments { width: 70%; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; }
-          .comments-box { flex: 1; min-height: 300px; padding: 10px; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 4px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 10px; }
-          .empty-comments { height: 100%; min-height: 280px; }
-          .first-images-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; flex: 1; }
-          .first-images-single { display: flex; justify-content: center; align-items: center; flex: 1; width: 100%; height: 100%; }
-          .first-image-container { border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; aspect-ratio: 1; }
-          .first-image-single { width: 100%; height: 100%; max-height: 100%; aspect-ratio: auto; display: flex; justify-content: center; align-items: center; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
-          .first-image-single .first-design-image { width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; }
-          .first-design-image { width: 100%; height: 100%; object-fit: cover; }
-          .text-comments-section { border-top: 1px dashed #d1d5db; padding-top: 8px; margin-top: auto; }
-          .notes-label { font-weight: bold; color: #ec4899; font-size: 12px; margin-bottom: 4px; }
-          .text-comments { padding: 4px; font-size: 12px; line-height: 1.5; color: #333; }
-          .page-back { display: flex; flex-direction: column; align-items: center; }
-          .images-title { font-size: 20px; font-weight: bold; color: #ec4899; margin: 0 0 20px 0; text-align: center; }
-          .images-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 100%; }
-          .image-container { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; aspect-ratio: 1; }
-          .design-image { width: 100%; height: 100%; object-fit: cover; }
-          /* صفحات تعليقات التصميم */
-          .design-comment-page { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 10px; }
-          .design-comment-full { width: 100%; height: 100%; display: flex; flex-direction: column; }
-          .design-comment-image-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; }
-          .design-comment-full-image { max-width: 100%; max-height: 85vh; object-fit: contain; }
-          .design-comment-transcriptions { margin-top: 15px; padding: 10px; background: #fdf2f8; border-radius: 8px; }
-          .transcription-item { font-size: 14px; color: #333; padding: 6px 0; border-bottom: 1px dashed #fce7f3; }
-          .transcription-item:last-child { border-bottom: none; }
-          @media print {
-            @page {
-              size: A4;
-              margin: 1cm;
-              /* إخفاء رأس وتذييل الصفحة (URL, التاريخ، الخ) */
-            }
-            /* إخفاء عناوين المتصفح */
-            body {
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            /* إزالة about:blank من التذييل */
-            html::after { content: none !important; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-container">
-          ${printContent}
-        </div>
-        <script>
-          // تغيير عنوان الصفحة لإزالة about:blank
-          document.title = 'طباعة الطلب - ${order.client_name}';
+    if (isMobile) {
+      // على الأجهزة المحمولة: استخدام iframe مخفي بدلاً من نافذة منبثقة
+      // هذا يعمل بشكل أفضل على iOS Safari و Android Chrome
 
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-              window.close();
-            }, 500);
+      // إنشاء iframe مخفي
+      let printFrame = document.getElementById('print-frame') as HTMLIFrameElement
+      if (printFrame) {
+        printFrame.remove()
+      }
+
+      printFrame = document.createElement('iframe')
+      printFrame.id = 'print-frame'
+      printFrame.style.cssText = 'position: fixed; top: -10000px; left: -10000px; width: 0; height: 0; border: none;'
+      document.body.appendChild(printFrame)
+
+      const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document
+      if (!frameDoc) {
+        alert('حدث خطأ أثناء تجهيز الطباعة')
+        return
+      }
+
+      frameDoc.open()
+      frameDoc.write(`
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>طباعة الطلب - ${order.client_name}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+          <style>${getPrintStyles()}</style>
+        </head>
+        <body>
+          <div class="print-container">${printContent}</div>
+        </body>
+        </html>
+      `)
+      frameDoc.close()
+
+      // انتظار تحميل الخطوط والصور
+      setTimeout(() => {
+        try {
+          printFrame.contentWindow?.focus()
+          printFrame.contentWindow?.print()
+        } catch (e) {
+          // إذا فشل الـ iframe، نفتح صفحة جديدة
+          const printWindow = window.open('', '_blank')
+          if (printWindow) {
+            printWindow.document.write(`
+              <!DOCTYPE html>
+              <html dir="rtl" lang="ar">
+              <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>طباعة الطلب - ${order.client_name}</title>
+                <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+                <style>${getPrintStyles()}</style>
+              </head>
+              <body>
+                <button class="mobile-print-btn" onclick="window.print()">🖨️ اضغط للطباعة</button>
+                <div class="print-container">${printContent}</div>
+              </body>
+              </html>
+            `)
+            printWindow.document.close()
+          } else {
+            alert('يرجى السماح بالنوافذ المنبثقة للطباعة')
           }
-        </script>
-      </body>
-      </html>
-    `)
-    printWindow.document.close()
+        }
+      }, 1000)
+    } else {
+      // على الكمبيوتر: استخدام النافذة المنبثقة (الطريقة الأصلية)
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        alert('يرجى السماح بالنوافذ المنبثقة للطباعة')
+        return
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>طباعة الطلب - ${order.client_name}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+          <style>${getPrintStyles()}</style>
+        </head>
+        <body>
+          <div class="print-container">${printContent}</div>
+          <script>
+            document.title = 'طباعة الطلب - ${order.client_name}';
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                window.close();
+              }, 500);
+            }
+          </script>
+        </body>
+        </html>
+      `)
+      printWindow.document.close()
+    }
   }
 
   if (!isOpen) return null

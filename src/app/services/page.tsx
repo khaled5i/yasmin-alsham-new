@@ -7,14 +7,15 @@ import Header from '@/components/Header'
 
 export default function ServicesPage() {
   const services = [
-    {
-      icon: Calendar,
-      title: 'حجز موعد',
-      description: 'احجزي موعدك بسهولة عبر نظامنا الذكي. نظام تلقائي يوزع المواعيد على مدار أيام العمل.',
-      link: '/book-appointment',
-      color: 'from-pink-400 to-rose-400',
-      bgColor: 'from-pink-50 to-rose-50'
-    },
+    // [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
+    // {
+    //   icon: Calendar,
+    //   title: 'حجز موعد',
+    //   description: 'احجزي موعدك بسهولة عبر نظامنا الذكي. نظام تلقائي يوزع المواعيد على مدار أيام العمل.',
+    //   link: '/book-appointment',
+    //   color: 'from-pink-400 to-rose-400',
+    //   bgColor: 'from-pink-50 to-rose-50'
+    // },
     {
       icon: Search,
       title: 'استعلام عن الطلب',
@@ -27,7 +28,7 @@ export default function ServicesPage() {
       icon: Scissors,
       title: 'تفصيل احترافي',
       description: 'فريق من أمهر الخياطين المتخصصين في تفصيل الفساتين النسائية بأعلى معايير الجودة.',
-      link: '/about',
+      link: '/',
       color: 'from-rose-400 to-purple-400',
       bgColor: 'from-rose-50 to-purple-50'
     },
@@ -136,6 +137,7 @@ export default function ServicesPage() {
                   احجزي موعدك الآن واتركي لنا مهمة تحويل حلمك إلى فستان يعكس شخصيتك المميزة
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
                   <Link
                     href="/book-appointment"
                     className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse text-base sm:text-lg group"
@@ -143,6 +145,7 @@ export default function ServicesPage() {
                     <Calendar className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
                     <span>احجزي موعدك الآن</span>
                   </Link>
+                  */}
                   <Link
                     href="/"
                     className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse text-base sm:text-lg group"

@@ -231,6 +231,7 @@ export default function AppointmentsPage() {
             </p>
           </div>
 
+          {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
           <Link
             href="/book-appointment"
             className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse px-6 py-3 group"
@@ -238,6 +239,7 @@ export default function AppointmentsPage() {
             <Plus className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
             <span>{t('book_new_appointment')}</span>
           </Link>
+          */}
         </motion.div>
 
         {/* البحث والفلاتر */}
@@ -469,8 +471,8 @@ export default function AppointmentsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
                 className={`bg-white/80 backdrop-blur-sm rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg ${isToday(appointment.appointment_date)
-                    ? 'border-pink-300 bg-pink-50/50'
-                    : 'border-pink-100'
+                  ? 'border-pink-300 bg-pink-50/50'
+                  : 'border-pink-100'
                   }`}
               >
                 <div className="grid lg:grid-cols-4 gap-6">

@@ -349,16 +349,16 @@ textarea:focus-visible {
 }
 
 .print-header {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .print-header-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
+  padding: 8px 0;
   border-bottom: 2px solid #e91e63;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
   font-size: 14px;
 }
 
@@ -380,7 +380,7 @@ textarea:focus-visible {
 
 .print-logo {
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .print-brand {
@@ -399,7 +399,7 @@ textarea:focus-visible {
   background: #f8f9fa;
   padding: 15px;
   border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
 }
 
 .info-grid-single-row {
@@ -521,7 +521,7 @@ textarea:focus-visible {
     min-height: 100vh;
     page-break-after: always;
     box-sizing: border-box;
-    padding: 20px;
+    padding: 12px;
     margin: 0;
     border: none;
     border-radius: 0;
@@ -540,8 +540,8 @@ textarea:focus-visible {
   /* رأس الصفحة */
   .print-header {
     text-align: center;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
     border-bottom: 2px solid #ec4899;
   }
 
@@ -550,7 +550,7 @@ textarea:focus-visible {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
     font-size: 12px;
     font-weight: 500;
     color: #333;
@@ -576,7 +576,7 @@ textarea:focus-visible {
 
   .print-logo {
     text-align: center;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
   }
 
   .print-brand {
@@ -589,11 +589,11 @@ textarea:focus-visible {
   .print-subtitle {
     font-size: 14px;
     color: #666;
-    margin: 5px 0 0 0;
+    margin: 3px 0 0 0;
   }
 
   .print-order-info {
-    margin-top: 15px;
+    margin-top: 10px;
   }
 
   .info-grid {

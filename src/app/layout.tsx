@@ -22,6 +22,17 @@ export const metadata: Metadata = {
   description: "محل ياسمين الشام لتفصيل الفساتين النسائية بأناقة دمشقية. حجز مواعيد، استعلام عن الطلبات، وأفضل الأقمشة.",
   keywords: "تفصيل فساتين، خياطة نسائية، ياسمين الشام، فساتين دمشقية، حجز موعد",
   authors: [{ name: "ياسمين الشام" }],
+  icons: {
+    icon: [
+      { url: '/favicon/favicon.ico', sizes: 'any' },
+      { url: '/favicon/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/favicon/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
+  manifest: '/favicon/site.webmanifest',
   openGraph: {
     title: "ياسمين الشام - تفصيل فساتين حسب الطلب",
     description: "محل ياسمين الشام لتفصيل الفساتين النسائية بأناقة دمشقية",

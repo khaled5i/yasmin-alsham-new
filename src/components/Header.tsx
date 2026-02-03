@@ -91,36 +91,33 @@ export default function Header() {
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault()
 
-    setClickCount(prev => prev + 1)
+    // زيادة العداد والحصول على القيمة الجديدة
+    const newClickCount = clickCount + 1
+    setClickCount(newClickCount)
+
+    // مسح أي timeout سابق
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current)
+    }
 
     // النقرة الأولى: الذهاب للصفحة الرئيسية
-    if (clickCount === 0) {
+    if (newClickCount === 1) {
       router.push('/')
       // إعادة تعيين العداد بعد ثانيتين
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current)
-      }
       clickTimeoutRef.current = setTimeout(() => {
         setClickCount(0)
       }, 2000)
       return
     }
 
-    // إذا كان هذا النقر الثالث، انتقل لصفحة تسجيل الدخول
-    if (clickCount === 2) {
+    // النقرة الثالثة: الانتقال لصفحة تسجيل الدخول
+    if (newClickCount === 3) {
       router.push('/login')
       setClickCount(0)
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current)
-      }
       return
     }
 
-    // إعادة تعيين العداد بعد ثانيتين
-    if (clickTimeoutRef.current) {
-      clearTimeout(clickTimeoutRef.current)
-    }
-
+    // النقرة الثانية أو أي نقرة أخرى: إعادة تعيين العداد بعد ثانيتين
     clickTimeoutRef.current = setTimeout(() => {
       setClickCount(0)
     }, 2000)
@@ -169,7 +166,8 @@ export default function Header() {
   const menuItems = [
     { href: '/', label: 'الرئيسية', icon: Home, onClick: null, external: false },
     { href: '#', label: 'الفساتين الجاهزة', icon: Palette, onClick: () => scrollToSection('ready-designs'), external: false },
-    { href: '/book-appointment', label: 'حجز موعد', icon: Calendar, onClick: null, external: false },
+    // [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
+    // { href: '/book-appointment', label: 'حجز موعد', icon: Calendar, onClick: null, external: false },
     { href: '/track-order', label: 'تتبع الطلب', icon: Search, onClick: null, external: false },
     { href: '#', label: 'الأقمشة', icon: Scissors, onClick: () => scrollToSection('featured-fabrics'), external: false },
     { href: 'https://yasmin-alsham-ai.com', label: 'مصمم ياسمين الشام الذكي', icon: Wand2, onClick: null, external: true },

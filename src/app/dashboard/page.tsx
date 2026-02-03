@@ -450,6 +450,7 @@ function DashboardContent() {
                     <span className="whitespace-nowrap">{t('add_new_order')}</span>
                   </Link>
 
+                  {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
                   <Link
                     href="/book-appointment"
                     className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse px-4 sm:px-6 py-3 sm:py-4 group text-sm sm:text-base w-full sm:w-auto min-w-0 flex-shrink-0"
@@ -457,6 +458,7 @@ function DashboardContent() {
                     <Calendar className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
                     <span className="whitespace-nowrap">{t('book_appointment')}</span>
                   </Link>
+                  */}
 
                   <button
                     onClick={handleAddNewAlteration}

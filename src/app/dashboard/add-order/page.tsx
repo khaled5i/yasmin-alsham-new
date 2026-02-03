@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
+import { useFormPersistence } from '@/hooks/useFormPersistence'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ImageUpload from '@/components/ImageUpload'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from '@/components/InteractiveImageAnnotation'
@@ -29,9 +30,89 @@ import {
   AlertCircle,
   Image as ImageIcon,
   MessageCircle,
-  Users
+  Users,
+  RotateCcw,
+  Info
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
+
+// مفتاح localStorage للحفظ التلقائي
+const FORM_STORAGE_KEY = 'add-order-form-draft'
+
+// نوع بيانات النموذج
+interface FormDataType {
+  orderNumber: string
+  clientName: string
+  clientPhone: string
+  description: string
+  fabric: string
+  price: string
+  paidAmount: string
+  paymentMethod: 'cash' | 'card'
+  orderReceivedDate: string
+  assignedWorker: string
+  dueDate: string
+  proofDeliveryDate: string
+  notes: string
+  voiceNotes: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
+    translatedText?: string
+    translationLanguage?: string
+  }>
+  images: string[]
+  imageAnnotations: ImageAnnotation[]
+  imageDrawings: DrawingPath[]
+  customDesignImage: string | null // تخزين كـ base64 string بدلاً من File
+  savedDesignComments: SavedDesignComment[]
+}
+
+// القيم الأولية للنموذج
+const getInitialFormData = (): FormDataType => ({
+  orderNumber: '',
+  clientName: '',
+  clientPhone: '',
+  description: '',
+  fabric: '',
+  price: '',
+  paidAmount: '',
+  paymentMethod: 'cash',
+  orderReceivedDate: new Date().toISOString().split('T')[0],
+  assignedWorker: '',
+  dueDate: '',
+  proofDeliveryDate: '',
+  notes: '',
+  voiceNotes: [],
+  images: [],
+  imageAnnotations: [],
+  imageDrawings: [],
+  customDesignImage: null,
+  savedDesignComments: []
+})
+
+// دالة للتحقق من أن البيانات فارغة
+const isFormDataEmpty = (data: FormDataType): boolean => {
+  return (
+    !data.clientName &&
+    !data.clientPhone &&
+    !data.description &&
+    !data.fabric &&
+    !data.price &&
+    !data.paidAmount &&
+    !data.dueDate &&
+    !data.proofDeliveryDate &&
+    !data.notes &&
+    data.voiceNotes.length === 0 &&
+    data.images.length === 0 &&
+    data.imageAnnotations.length === 0 &&
+    data.imageDrawings.length === 0 &&
+    !data.customDesignImage &&
+    data.savedDesignComments.length === 0
+  )
+}
 
 function AddOrderContent() {
   const { user } = useAuthStore()
@@ -40,41 +121,42 @@ function AddOrderContent() {
   const { t, isArabic } = useTranslation()
   const router = useRouter()
 
+  // استخدام hook الحفظ التلقائي
+  const {
+    data: formData,
+    setData: setFormData,
+    clearSavedData,
+    hasRestoredData,
+    resetToInitial
+  } = useFormPersistence<FormDataType>({
+    key: FORM_STORAGE_KEY,
+    initialData: getInitialFormData(),
+    debounceMs: 1000,
+    isDataEmpty: isFormDataEmpty
+  })
+
+  // حالة لتتبع ملف الصورة المخصصة (File object لا يمكن حفظه في localStorage)
+  const [customDesignImageFile, setCustomDesignImageFile] = useState<File | null>(null)
+
   // تحميل العمال عند تحميل الصفحة
   useEffect(() => {
     loadWorkers()
   }, [loadWorkers])
 
-  // حالة النموذج
-  const [formData, setFormData] = useState({
-    orderNumber: '',
-    clientName: '',
-    clientPhone: '',
-    description: '',
-    fabric: '',
-    price: '',
-    paidAmount: '',
-    paymentMethod: 'cash', // طريقة الدفع: cash أو card
-    orderReceivedDate: new Date().toISOString().split('T')[0], // تاريخ استلام الطلب (تلقائي)
-    assignedWorker: '',
-    dueDate: '',
-    proofDeliveryDate: '', // موعد تسليم البروفا
-    notes: '',
-    voiceNotes: [] as Array<{
-      id: string
-      data: string
-      timestamp: number
-      duration?: number
-      transcription?: string
-      translatedText?: string
-      translationLanguage?: string
-    }>,
-    images: [] as string[],
-    imageAnnotations: [] as ImageAnnotation[],
-    imageDrawings: [] as DrawingPath[],
-    customDesignImage: null as File | null,
-    savedDesignComments: [] as SavedDesignComment[]
-  })
+  // إظهار رسالة عند استرجاع البيانات المحفوظة
+  useEffect(() => {
+    if (hasRestoredData) {
+      toast.success(
+        isArabic
+          ? 'تم استرجاع البيانات المحفوظة من الجلسة السابقة'
+          : 'Restored saved data from previous session',
+        {
+          icon: '📂',
+          duration: 4000,
+        }
+      )
+    }
+  }, [hasRestoredData, isArabic])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -87,15 +169,15 @@ function AddOrderContent() {
   }, [formData.price, formData.paidAmount])
 
   // معالجة تغيير الحقول
-  const handleInputChange = (field: string, value: string | string[] | null) => {
+  const handleInputChange = useCallback((field: string, value: string | string[] | null) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }))
-  }
+  }, [setFormData])
 
   // معالجة تغيير الملاحظات الصوتية
-  const handleVoiceNotesChange = (voiceNotes: Array<{
+  const handleVoiceNotesChange = useCallback((voiceNotes: Array<{
     id: string
     data: string
     timestamp: number
@@ -108,39 +190,70 @@ function AddOrderContent() {
       ...prev,
       voiceNotes
     }))
-  }
+  }, [setFormData])
 
   // معالجة تغيير التعليقات على الصورة
-  const handleImageAnnotationsChange = (annotations: ImageAnnotation[]) => {
+  const handleImageAnnotationsChange = useCallback((annotations: ImageAnnotation[]) => {
     setFormData(prev => ({
       ...prev,
       imageAnnotations: annotations
     }))
-  }
+  }, [setFormData])
 
   // معالجة تغيير الرسومات على الصورة
-  const handleImageDrawingsChange = (drawings: DrawingPath[]) => {
+  const handleImageDrawingsChange = useCallback((drawings: DrawingPath[]) => {
     setFormData(prev => ({
       ...prev,
       imageDrawings: drawings
     }))
-  }
+  }, [setFormData])
 
   // معالجة تغيير صورة التصميم المخصصة
-  const handleDesignImageChange = (image: File | null) => {
-    setFormData(prev => ({
-      ...prev,
-      customDesignImage: image
-    }))
-  }
+  const handleDesignImageChange = useCallback(async (image: File | null) => {
+    // حفظ ملف الصورة للاستخدام في الإرسال
+    setCustomDesignImageFile(image)
+
+    // تحويل الصورة إلى base64 للحفظ في localStorage
+    if (image) {
+      try {
+        const reader = new FileReader()
+        const base64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+          reader.readAsDataURL(image)
+        })
+        setFormData(prev => ({
+          ...prev,
+          customDesignImage: base64
+        }))
+      } catch (error) {
+        console.error('Error converting image to base64:', error)
+      }
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        customDesignImage: null
+      }))
+    }
+  }, [setFormData])
 
   // معالجة تغيير التعليقات المحفوظة
-  const handleSavedCommentsChange = (comments: SavedDesignComment[]) => {
+  const handleSavedCommentsChange = useCallback((comments: SavedDesignComment[]) => {
     setFormData(prev => ({
       ...prev,
       savedDesignComments: comments
     }))
-  }
+  }, [setFormData])
+
+  // مسح جميع الحقول
+  const handleClearAllFields = useCallback(() => {
+    resetToInitial()
+    setCustomDesignImageFile(null)
+    toast.success(
+      isArabic ? 'تم مسح جميع الحقول' : 'All fields cleared',
+      { icon: '🗑️', duration: 2000 }
+    )
+  }, [resetToInitial, isArabic])
 
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,15 +289,28 @@ function AddOrderContent() {
       const price = Number(formData.price)
       const paidAmount = Number(formData.paidAmount) || 0
 
-      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
+      // استخدام الصورة المحفوظة في localStorage (base64) أو تحويل ملف الصورة
       let customDesignImageBase64: string | undefined = undefined
+
+      // إذا كانت الصورة محفوظة كـ base64 في formData
       if (formData.customDesignImage) {
+        customDesignImageBase64 = formData.customDesignImage
+        const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
+        console.log(`📸 Using saved custom design image: ${imageSizeKB}KB`)
+
+        // التحقق من الحجم (الحد الأقصى 10MB)
+        if (imageSizeKB > 10 * 1024) {
+          toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 10MB`)
+          return
+        }
+      } else if (customDesignImageFile) {
+        // تحويل ملف الصورة إلى base64
         try {
           const reader = new FileReader()
           customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(formData.customDesignImage!)
+            reader.readAsDataURL(customDesignImageFile)
           })
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
@@ -258,6 +384,9 @@ function AddOrderContent() {
 
       console.log('✅ Order created successfully:', result.data?.id)
 
+      // مسح البيانات المحفوظة من localStorage بعد النجاح
+      clearSavedData()
+
       // إظهار رسالة النجاح
       toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
         icon: '✓',
@@ -321,15 +450,28 @@ function AddOrderContent() {
       const price = Number(formData.price)
       const paidAmount = Number(formData.paidAmount) || 0
 
-      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
+      // استخدام الصورة المحفوظة في localStorage (base64) أو تحويل ملف الصورة
       let customDesignImageBase64: string | undefined = undefined
+
+      // إذا كانت الصورة محفوظة كـ base64 في formData
       if (formData.customDesignImage) {
+        customDesignImageBase64 = formData.customDesignImage
+        const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
+        console.log(`📸 Using saved custom design image: ${imageSizeKB}KB`)
+
+        // التحقق من الحجم (الحد الأقصى 10MB)
+        if (imageSizeKB > 10 * 1024) {
+          toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 10MB`)
+          return
+        }
+      } else if (customDesignImageFile) {
+        // تحويل ملف الصورة إلى base64
         try {
           const reader = new FileReader()
           customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(formData.customDesignImage!)
+            reader.readAsDataURL(customDesignImageFile)
           })
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
@@ -396,6 +538,9 @@ function AddOrderContent() {
       }
 
       console.log('✅ Order created successfully:', result.data?.id)
+
+      // مسح البيانات المحفوظة من localStorage بعد النجاح
+      clearSavedData()
 
       // إظهار رسالة النجاح
       toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
@@ -506,10 +651,37 @@ function AddOrderContent() {
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* المعلومات الأساسية */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
-              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-                <User className="w-5 h-5 text-pink-600" />
-                <span>{t('basic_information')}</span>
-              </h3>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                  <User className="w-5 h-5 text-pink-600" />
+                  <span>{t('basic_information')}</span>
+                </h3>
+
+                {/* زر مسح جميع الحقول - يظهر فقط عند استرجاع بيانات محفوظة */}
+                {hasRestoredData && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllFields}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-all duration-200"
+                    title={isArabic ? 'مسح جميع الحقول والبدء من جديد' : 'Clear all fields and start fresh'}
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>{isArabic ? 'مسح جميع الحقول' : 'Clear All Fields'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* رسالة تنبيه عند استرجاع البيانات */}
+              {hasRestoredData && (
+                <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
+                  <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-700">
+                    {isArabic
+                      ? 'تم استرجاع البيانات المحفوظة من الجلسة السابقة. يمكنك متابعة التعديل أو مسح جميع الحقول للبدء من جديد.'
+                      : 'Restored saved data from previous session. You can continue editing or clear all fields to start fresh.'}
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
                 {/* الصف الأول: اسم العميل | رقم الهاتف | موعد تسليم البروفا */}
@@ -662,12 +834,13 @@ function AddOrderContent() {
                 onAnnotationsChange={handleImageAnnotationsChange}
                 drawings={formData.imageDrawings}
                 onDrawingsChange={handleImageDrawingsChange}
-                customImage={formData.customDesignImage}
+                customImage={customDesignImageFile}
                 onImageChange={handleDesignImageChange}
                 disabled={isSubmitting}
                 savedComments={formData.savedDesignComments}
                 onSavedCommentsChange={handleSavedCommentsChange}
                 showSaveButton={true}
+                currentImageBase64={formData.customDesignImage}
               />
             </div>
 

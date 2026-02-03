@@ -7,6 +7,7 @@ import {
   X,
   Save,
   User,
+  Users,
   FileText,
   MessageSquare,
   CheckCircle,
@@ -489,8 +490,8 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                     <span>{t('basic_information')}</span>
                   </h3>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                    {/* الصف الأول: اسم العميل | رقم الهاتف | رقم الطلب */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+                    {/* الصف الأول: اسم العميل | رقم الهاتف | موعد تسليم البروفا */}
 
                     {/* 1. اسم العميل */}
                     <div>
@@ -521,22 +522,20 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                       />
                     </div>
 
-                    {/* 3. رقم الطلب */}
+                    {/* 3. موعد تسليم البروفا - تقويم أخضر */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
+                        {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'}
                       </label>
-                      <input
-                        type="text"
-                        value={formData.orderNumber}
-                        onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
-                        disabled={isSubmitting}
+                      <DatePickerForProof
+                        selectedDate={formData.proofDeliveryDate}
+                        onChange={(date) => handleInputChange('proofDeliveryDate', date)}
+                        minDate={new Date()}
+                        required={false}
                       />
                     </div>
 
-                    {/* الصف الثاني: موعد التسليم | موعد تسليم البروفا | تاريخ استلام الطلب */}
+                    {/* الصف الثاني: موعد التسليم | رقم الطلب | تاريخ استلام الطلب */}
 
                     {/* 4. موعد التسليم - تقويم ذكي */}
                     <div>
@@ -551,16 +550,18 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                       />
                     </div>
 
-                    {/* 5. موعد تسليم البروفا - تقويم أخضر (اختياري) */}
+                    {/* 5. رقم الطلب */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'} ({t('optional')})
+                        {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
                       </label>
-                      <DatePickerForProof
-                        selectedDate={formData.proofDeliveryDate}
-                        onChange={(date) => handleInputChange('proofDeliveryDate', date)}
-                        minDate={new Date()}
-                        required={false}
+                      <input
+                        type="text"
+                        value={formData.orderNumber}
+                        onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
+                        disabled={isSubmitting}
                       />
                     </div>
 
@@ -679,63 +680,30 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                   />
                 </div>
 
-                {/* معلومات أخرى */}
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100">
-                  <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
-                    <FileText className="w-5 h-5 text-pink-600" />
-                    <span>معلومات أخرى</span>
+                {/* اختيار العامل المسؤول */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
+                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
+                    <Users className="w-5 h-5 text-pink-600" />
+                    <span>{t('responsible_worker')}</span>
                   </h3>
 
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* وصف الفستان */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_description')} ({t('optional')})
-                      </label>
-                      <textarea
-                        value={formData.description}
-                        onChange={(e) => handleInputChange('description', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        rows={4}
-                        placeholder={t('enter_order_description') || 'أدخل وصف الطلب'}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    {/* نوع القماش */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('fabric_type_optional')}
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.fabric}
-                        onChange={(e) => handleInputChange('fabric', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        placeholder={t('enter_fabric_type') || 'أدخل نوع القماش'}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    {/* العامل المسؤول */}
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('responsible_worker')} ({t('optional')})
-                      </label>
-                      <select
-                        value={formData.assignedWorker}
-                        onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        disabled={isSubmitting}
-                      >
-                        <option value="">{t('choose_worker')}</option>
-                        {workers.filter(w => w.is_available && w.user?.is_active).map(worker => (
-                          <option key={worker.id} value={worker.id}>
-                            {worker.user?.full_name || worker.specialty} - {worker.specialty}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('choose_worker')} ({t('optional')})
+                    </label>
+                    <select
+                      value={formData.assignedWorker}
+                      onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                      disabled={isSubmitting}
+                    >
+                      <option value="">{t('choose_worker')}</option>
+                      {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
+                        <option key={worker.id} value={worker.id}>
+                          {worker.user?.full_name || worker.specialty} - {worker.specialty}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </form>
