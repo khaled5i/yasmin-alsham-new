@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Mic, MicOff, Play, Pause, Trash2, Download, FileText, Languages, Loader2 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Mic, MicOff, Play, Pause, Trash2, Download, FileText, Languages, Loader2, ChevronDown } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 
 interface VoiceNote {
@@ -24,6 +24,21 @@ interface VoiceNotesProps {
   workerId?: string // معرف العامل لحفظ الترجمات الخاصة به
 }
 
+// قائمة اللغات المتاحة للترجمة
+const availableLanguages = [
+  { code: 'en', name: 'English', nameAr: 'الإنجليزية' },
+  { code: 'hi', name: 'Hindi', nameAr: 'الهندية' },
+  { code: 'bn', name: 'Bengali', nameAr: 'البنغالية' },
+  { code: 'ur', name: 'Urdu', nameAr: 'الأوردو' },
+  { code: 'ar', name: 'Arabic', nameAr: 'العربية' }
+]
+
+// الحصول على اسم اللغة
+const getLanguageName = (code: string) => {
+  const lang = availableLanguages.find(l => l.code === code)
+  return lang ? lang.nameAr : code
+}
+
 export default function VoiceNotes({
   voiceNotes = [],
   onVoiceNotesChange,
@@ -41,6 +56,8 @@ export default function VoiceNotes({
   const [transcribingId, setTranscribingId] = useState<string | null>(null)
   const [translatingId, setTranslatingId] = useState<string | null>(null)
   const [selectedLanguage, setSelectedLanguage] = useState<Record<string, string>>({})
+  const [targetLanguage, setTargetLanguage] = useState<string>('en')
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState<string | null>(null)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
@@ -485,6 +502,23 @@ export default function VoiceNotes({
     }
   }, [])
 
+  // إغلاق قائمة اللغات عند النقر خارجها
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showLanguageDropdown) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.language-dropdown-container')) {
+          setShowLanguageDropdown(null)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showLanguageDropdown])
+
   return (
     <div className="space-y-4">
       {error && (
@@ -540,148 +574,185 @@ export default function VoiceNotes({
       )}
 
       {/* قائمة التسجيلات الصوتية */}
-      {voiceNotes.length > 0 && (
-        <div className="space-y-2">
-          {/* زر تحويل الكل - مدمج وصغير */}
-          {!readOnly && voiceNotes.some(note => !note.transcription) && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={transcribeAllNotes}
-                disabled={disabled || transcribingId !== null}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
-              >
-                {transcribingId ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <FileText className="w-3 h-3" />
-                )}
-                <span>{t('transcribe_all')}</span>
-              </button>
-            </div>
-          )}
-
-          {voiceNotes.map((note, index) => (
-            <motion.div
-              key={note.id}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2, delay: index * 0.05 }}
-              className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden"
-            >
-              {/* الصف الرئيسي - مدمج */}
-              <div className="flex items-center gap-2 p-2 sm:p-3">
-                {/* زر التشغيل */}
+      <AnimatePresence>
+        {voiceNotes.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+          >
+            <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+              <Mic className="w-4 h-4 text-pink-600" />
+              التسجيلات الصوتية ({voiceNotes.length})
+              {/* زر تحويل الكل - مدمج وصغير */}
+              {!readOnly && voiceNotes.some(note => !note.transcription) && (
                 <button
                   type="button"
-                  onClick={() => togglePlayback(note)}
-                  className={`flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-200 ${playingId === note.id
-                    ? 'bg-pink-600 text-white shadow-md scale-105'
-                    : 'bg-pink-100 text-pink-600 hover:bg-pink-200'
-                    }`}
+                  onClick={transcribeAllNotes}
+                  disabled={disabled || transcribingId !== null}
+                  className="mr-auto inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
                 >
-                  {playingId === note.id ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 mr-[-2px]" />}
+                  {transcribingId ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <FileText className="w-3 h-3" />
+                  )}
+                  <span>{t('transcribe_all')}</span>
                 </button>
-
-                {/* معلومات الملاحظة */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium text-gray-700">#{index + 1}</span>
-                    {note.duration && (
-                      <span className="text-xs text-gray-400">{formatTime(note.duration)}</span>
-                    )}
-                    {/* قائمة الترجمة المدمجة */}
-                    {note.transcription && (
-                      <select
-                        value={selectedLanguage[note.id] || note.translationLanguage || ''}
-                        onChange={(e) => {
-                          setSelectedLanguage({ ...selectedLanguage, [note.id]: e.target.value })
-                          if (e.target.value) {
-                            translateText(note.id, e.target.value)
-                          }
-                        }}
-                        disabled={(disabled && !readOnly) || translatingId === note.id}
-                        className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-gray-50 focus:ring-1 focus:ring-pink-400 focus:border-pink-400 disabled:opacity-50"
-                      >
-                        <option value="">🌐</option>
-                        <option value="en">EN</option>
-                        <option value="ur">UR</option>
-                        <option value="bn">BN</option>
-                      </select>
-                    )}
-                    {translatingId === note.id && (
-                      <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
-                    )}
-                  </div>
-                </div>
-
-                {/* أزرار الإجراءات */}
-                <div className="flex items-center gap-1">
-                  {!note.transcription && transcribingId === note.id && (
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                  )}
-                  {!readOnly && !note.transcription && transcribingId !== note.id && (
-                    <button
-                      type="button"
-                      onClick={() => transcribeAudio(note.id)}
-                      disabled={disabled || transcribingId !== null}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
-                      title={t('transcribe_to_text')}
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={() => deleteVoiceNote(note.id)}
-                      disabled={disabled}
-                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
-                      title={t('delete')}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* النص المحول والترجمة - مدمجين */}
-              {(note.transcription || note.translatedText) && (
-                <div className="border-t border-gray-100 bg-gray-50/50 px-3 py-2.5 space-y-2">
-                  {/* النص المحول */}
-                  {note.transcription && (
-                    <div className="flex gap-2">
-                      <FileText className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                      {readOnly ? (
-                        <p className="text-sm text-gray-700 leading-relaxed" dir="auto">{note.transcription}</p>
-                      ) : (
-                        <textarea
-                          value={note.transcription}
-                          onChange={(e) => updateTranscription(note.id, e.target.value)}
-                          disabled={disabled}
-                          rows={2}
-                          className="flex-1 text-sm text-gray-700 bg-white border border-gray-200 rounded px-2 py-1.5 focus:ring-1 focus:ring-blue-400 focus:border-blue-400 resize-none"
-                          dir="auto"
-                        />
+              )}
+            </h4>
+            <div className="space-y-3 max-h-[500px] overflow-y-auto" style={{ overflow: 'visible' }}>
+              {voiceNotes.map((note, index) => (
+                <div
+                  key={note.id}
+                  className="bg-white rounded-lg p-3 border border-gray-200 transition-all relative"
+                  style={{ overflow: 'visible' }}
+                >
+                  {/* رأس التسجيل - الرقم والنص على نفس السطر */}
+                  <div className="flex items-start justify-between gap-2 mb-2 relative">
+                    {/* الرقم والنص على نفس السطر */}
+                    <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                      <span className="text-base text-pink-600 font-bold flex-shrink-0 mt-0.5">
+                        {index + 1}.
+                      </span>
+                      {note.transcription && (
+                        <p className="text-sm text-gray-700 leading-relaxed break-words">
+                          {note.transcription}
+                        </p>
                       )}
                     </div>
-                  )}
-                  {/* الترجمة */}
-                  {note.translatedText && (
-                    <div className="flex gap-2">
-                      <Languages className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-gray-600 leading-relaxed" dir="auto">
-                        <span className="text-xs text-green-600 font-medium ml-1">[{note.translationLanguage?.toUpperCase()}]</span>
-                        {note.translatedText}
-                      </p>
+
+                    {/* أزرار التحكم */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {/* زر تشغيل الصوت */}
+                      <button
+                        type="button"
+                        onClick={() => togglePlayback(note)}
+                        className={`p-1.5 rounded transition-colors ${playingId === note.id
+                          ? 'bg-green-500 text-white'
+                          : 'text-green-600 hover:bg-green-50'
+                          }`}
+                        title={playingId === note.id ? 'إيقاف' : 'تشغيل الصوت'}
+                      >
+                        {playingId === note.id ? (
+                          <Pause className="w-4 h-4" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
+                      </button>
+
+                      {/* زر الترجمة مع dropdown - يظهر دائماً إذا كان هناك نص محول */}
+                      {note.transcription && (
+                        <div className="relative language-dropdown-container">
+                          <button
+                            type="button"
+                            onClick={() => setShowLanguageDropdown(showLanguageDropdown === note.id ? null : note.id)}
+                            disabled={(disabled && !readOnly) || translatingId === note.id}
+                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
+                            title="ترجمة"
+                          >
+                            {translatingId === note.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Languages className="w-4 h-4" />
+                                <ChevronDown className="w-3 h-3" />
+                              </>
+                            )}
+                          </button>
+
+                          {/* قائمة اللغات المنسدلة */}
+                          <AnimatePresence>
+                            {showLanguageDropdown === note.id && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                                transition={{ duration: 0.15 }}
+                                className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[140px] overflow-hidden"
+                              >
+                                {availableLanguages.map((lang) => (
+                                  <button
+                                    key={lang.code}
+                                    type="button"
+                                    onClick={() => {
+                                      translateText(note.id, lang.code)
+                                      setShowLanguageDropdown(null)
+                                    }}
+                                    className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${note.translationLanguage === lang.code
+                                      ? 'bg-purple-100 text-purple-700 font-semibold'
+                                      : 'text-gray-700'
+                                      }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-xs text-gray-500">{lang.name}</span>
+                                      <span>{lang.nameAr}</span>
+                                    </div>
+                                  </button>
+                                ))}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )}
+
+                      {/* زر تحويل الصوت إلى نص */}
+                      {!note.transcription && transcribingId === note.id && (
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                      )}
+                      {!readOnly && !note.transcription && transcribingId !== note.id && (
+                        <button
+                          type="button"
+                          onClick={() => transcribeAudio(note.id)}
+                          disabled={disabled || transcribingId !== null}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
+                          title={t('transcribe_to_text')}
+                        >
+                          <FileText className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* زر الحذف */}
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => deleteVoiceNote(note.id)}
+                          disabled={disabled}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
+                  </div>
+
+                  {/* محتوى التسجيل */}
+                  {note.transcription ? (
+                    <div className="space-y-2">
+                      {/* النص المترجم - عرضه في صندوق بنفسجي */}
+                      {note.translatedText && (
+                        <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2">
+                          <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                            <Languages className="w-3 h-3" />
+                            الترجمة ({getLanguageName(note.translationLanguage || 'en')})
+                          </p>
+                          <p className="text-sm text-gray-600" dir="auto">
+                            {note.translatedText}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 mr-6">تسجيل صوتي - في انتظار التحويل إلى نص...</p>
                   )}
                 </div>
-              )}
-            </motion.div>
-          ))}
-        </div>
-      )}
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

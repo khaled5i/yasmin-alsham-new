@@ -48,6 +48,7 @@ export default function TrackOrderPage() {
             dress_type: currentOrder.description,
             order_date: currentOrder.created_at,
             due_date: currentOrder.due_date,
+            proof_delivery_date: currentOrder.proof_delivery_date,
             status: currentOrder.status,
             estimated_price: currentOrder.price,
             progress_percentage: getProgressPercentage(currentOrder.status),
@@ -75,6 +76,7 @@ export default function TrackOrderPage() {
             dress_type: foundOrder.description,
             order_date: foundOrder.created_at,
             due_date: foundOrder.due_date,
+            proof_delivery_date: foundOrder.proof_delivery_date,
             status: foundOrder.status,
             estimated_price: foundOrder.price,
             progress_percentage: getProgressPercentage(foundOrder.status),
@@ -134,6 +136,23 @@ export default function TrackOrderPage() {
   // دالة ترجمة أسماء المقاسات إلى العربية (ثابتة بالعربية للزبائن)
   const getMeasurementNameInArabic = (key: string) => {
     const measurementNames: { [key: string]: string } = {
+      // المقاسات الجديدة
+      'sh': 'الكتف',
+      'shr': 'دوران الكتف',
+      'ch': 'الصدر',
+      'w': 'الخصر',
+      'hi': 'الأرداف',
+      'p': 'طول البنس',
+      'L': 'طول الصدرية',
+      'v': 'فتحة الصدر',
+      'HF': 'الإبط',
+      'K': 'طول الكم',
+      'S': 'الزند',
+      'S1': 'الإسوارة',
+      'L_front': 'طول الأمام',
+      'LB': 'طول الخلف',
+      'additional_notes': 'مقاسات إضافية',
+      // المقاسات القديمة (للتوافق)
       'shoulder': 'الكتف',
       'shoulderCircumference': 'دوران الكتف',
       'chest': 'الصدر',
@@ -145,7 +164,7 @@ export default function TrackOrderPage() {
       'armpit': 'الإبط',
       'sleeveLength': 'طول الكم',
       'forearm': 'الزند',
-      'cuff': 'الأسوارة',
+      'cuff': 'الإسوارة',
       'frontLength': 'طول الأمام',
       'backLength': 'طول الخلف'
     }
@@ -234,7 +253,7 @@ export default function TrackOrderPage() {
                         value={searchTerm}
                         onChange={setSearchTerm}
                         type="phone"
-                        placeholder="مثال: 0912345678"
+                        placeholder="مثال: 0512345678"
                         className="px-6 py-4 text-lg rounded-xl text-center"
                         disabled={isLoading}
                       />
@@ -244,7 +263,7 @@ export default function TrackOrderPage() {
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full px-6 py-4 text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-center"
-                        placeholder="مثال: order_123"
+                        placeholder="مثال: 2026-0001"
                         disabled={isLoading}
                       />
                     )}
@@ -300,86 +319,65 @@ export default function TrackOrderPage() {
                   </h2>
 
                   <div className="grid md:grid-cols-2 gap-6">
+                    {/* العمود الأول */}
                     <div className="space-y-4">
-                      <div>
-                        <span className="text-sm text-gray-500">رقم الطلب</span>
-                        <p className="text-lg font-bold text-pink-600">{orderData.order_number}</p>
-                      </div>
+                      {/* 1. اسم العميلة */}
                       <div>
                         <span className="text-sm text-gray-500">اسم العميلة</span>
                         <p className="text-lg font-medium text-gray-800">{orderData.client_name}</p>
                       </div>
+
+                      {/* 2. رقم الطلب */}
+                      <div>
+                        <span className="text-sm text-gray-500">رقم الطلب</span>
+                        <p className="text-lg font-bold text-pink-600">{orderData.order_number}</p>
+                      </div>
+
+                      {/* 3. رقم الهاتف */}
                       <div>
                         <span className="text-sm text-gray-500">رقم الهاتف</span>
                         <p className="text-lg font-medium text-gray-800">{orderData.client_phone}</p>
                       </div>
-                      <div>
-                        <span className="text-sm text-gray-500">وصف الطلب</span>
-                        <p className="text-lg font-medium text-gray-800">{orderData.dress_type}</p>
-                      </div>
-                      {orderData.fabric && (
-                        <div>
-                          <span className="text-sm text-gray-500">نوع القماش</span>
-                          <p className="text-lg font-medium text-gray-800">{orderData.fabric}</p>
-                        </div>
-                      )}
                     </div>
 
+                    {/* العمود الثاني */}
                     <div className="space-y-4">
+                      {/* 4. موعد تسليم البروفا */}
+                      {orderData.proof_delivery_date && (
+                        <div>
+                          <span className="text-sm text-gray-500">موعد تسليم البروفا</span>
+                          <p className="text-lg font-medium text-gray-800">{formatDate(orderData.proof_delivery_date)}</p>
+                        </div>
+                      )}
+
+                      {/* 5. تاريخ الطلب */}
                       <div>
                         <span className="text-sm text-gray-500">تاريخ الطلب</span>
                         <p className="text-lg font-medium text-gray-800">{formatDate(orderData.order_date)}</p>
                       </div>
-                      <div>
-                        <span className="text-sm text-gray-500">موعد التسليم المتوقع</span>
-                        <p className="text-lg font-medium text-gray-800">{formatDate(orderData.due_date)}</p>
-                      </div>
-                      <div>
-                        <span className="text-sm text-gray-500">السعر</span>
-                        <p className="text-lg font-bold text-green-600">{orderData.estimated_price.toLocaleString()} ل.س</p>
-                      </div>
-
-                      {orderData.notes && (
-                        <div>
-                          <span className="text-sm text-gray-500">ملاحظات</span>
-                          <p className="text-lg font-medium text-gray-800">{orderData.notes}</p>
-                        </div>
-                      )}
                     </div>
                   </div>
 
                   {/* حالة الطلب */}
-                  <div className="mt-6 p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-200">
-                    <div className="flex items-center justify-between">
+                  <div className="mt-6 p-6 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-200">
+                    <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center space-x-3 space-x-reverse">
-                        <div className={`w-10 h-10 rounded-full ${getStatusInfo(orderData.status).bgColor} flex items-center justify-center`}>
+                        <div className={`w-12 h-12 rounded-full ${getStatusInfo(orderData.status).bgColor} flex items-center justify-center`}>
                           {React.createElement(getStatusInfo(orderData.status).icon, {
-                            className: `w-5 h-5 ${getStatusInfo(orderData.status).color}`
+                            className: `w-6 h-6 ${getStatusInfo(orderData.status).color}`
                           })}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-800">حالة الطلب</p>
-                          <p className={`text-lg font-bold ${getStatusInfo(orderData.status).color}`}>
+                          <p className="text-sm text-gray-500">حالة الطلب</p>
+                          <p className={`text-xl font-bold ${getStatusInfo(orderData.status).color}`}>
                             {getStatusInfo(orderData.status).label}
                           </p>
                         </div>
                       </div>
 
                       <div className="text-right">
-                        <p className="text-sm text-gray-500">نسبة الإنجاز</p>
-                        <p className="text-2xl font-bold text-pink-600">{orderData.progress_percentage}%</p>
-                      </div>
-                    </div>
-
-                    {/* شريط التقدم */}
-                    <div className="mt-4">
-                      <div className="w-full bg-gray-200 rounded-full h-3">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${orderData.progress_percentage}%` }}
-                          transition={{ duration: 1, delay: 0.5 }}
-                          className="bg-gradient-to-r from-pink-500 to-rose-500 h-3 rounded-full"
-                        ></motion.div>
+                        <p className="text-sm text-gray-500">موعد التسليم المتوقع</p>
+                        <p className="text-lg font-bold text-gray-800">{formatDate(orderData.due_date)}</p>
                       </div>
                     </div>
 
@@ -406,23 +404,45 @@ export default function TrackOrderPage() {
                 </div>
 
                 {/* عرض المقاسات إن وُجدت */}
-                {orderData.measurements && Object.keys(orderData.measurements).length > 0 && (
-                  <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center space-x-3 space-x-reverse">
-                      <Package className="w-6 h-6 text-pink-600" />
-                      <span>المقاسات</span>
-                    </h3>
+                {orderData.measurements && Object.keys(orderData.measurements).filter(key =>
+                  !['image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments'].includes(key) &&
+                  orderData.measurements[key] !== null &&
+                  orderData.measurements[key] !== undefined &&
+                  orderData.measurements[key] !== ''
+                ).length > 0 && (
+                    <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
+                      <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center space-x-3 space-x-reverse">
+                        <Package className="w-6 h-6 text-pink-600" />
+                        <span>المقاسات</span>
+                      </h3>
 
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {Object.entries(orderData.measurements).map(([key, value]) => (
-                        <div key={key} className="p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-100">
-                          <span className="text-sm text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
-                          <span className="text-lg font-medium text-gray-800">{String(value)} سم</span>
-                        </div>
-                      ))}
+                      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Object.entries(orderData.measurements)
+                          .filter(([key]) =>
+                            !['image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments'].includes(key)
+                          )
+                          .filter(([_, value]) => value !== null && value !== undefined && value !== '')
+                          .map(([key, value]) => {
+                            // إذا كان الحقل additional_notes، نعرضه بشكل مختلف
+                            if (key === 'additional_notes') {
+                              return (
+                                <div key={key} className="md:col-span-2 lg:col-span-3 p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-100">
+                                  <span className="text-sm text-gray-500 block mb-2">{getMeasurementNameInArabic(key)}</span>
+                                  <p className="text-base font-medium text-gray-800 whitespace-pre-wrap">{String(value)}</p>
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <div key={key} className="p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-100">
+                                <span className="text-sm text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
+                                <span className="text-lg font-medium text-gray-800">{String(value)} سم</span>
+                              </div>
+                            )
+                          })}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {/* معلومات التواصل */}
                 <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-2xl p-8 border border-pink-100">

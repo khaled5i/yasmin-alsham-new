@@ -19,7 +19,10 @@ import {
   Printer,
   Pencil,
   Play,
-  Pause
+  Pause,
+  Languages,
+  Loader2,
+  ChevronDown
 } from 'lucide-react'
 import { Order } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
@@ -51,9 +54,26 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
   const [savedDesignComments, setSavedDesignComments] = useState<SavedDesignComment[]>([])
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null)
   const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null)
+  const [translatingAnnotationId, setTranslatingAnnotationId] = useState<string | null>(null)
+  const [showAnnotationLanguageDropdown, setShowAnnotationLanguageDropdown] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map())
+
+  // قائمة اللغات المتاحة للترجمة
+  const availableLanguages = [
+    { code: 'en', name: 'English', nameAr: 'الإنجليزية' },
+    { code: 'hi', name: 'Hindi', nameAr: 'الهندية' },
+    { code: 'bn', name: 'Bengali', nameAr: 'البنغالية' },
+    { code: 'ur', name: 'Urdu', nameAr: 'الأوردو' },
+    { code: 'ar', name: 'Arabic', nameAr: 'العربية' }
+  ]
+
+  // الحصول على اسم اللغة
+  const getLanguageName = (code: string) => {
+    const lang = availableLanguages.find(l => l.code === code)
+    return lang ? lang.nameAr : code
+  }
 
   // تحديث الملاحظات الصوتية وتعليقات التصميم عند تغيير الطلب
   useEffect(() => {
@@ -110,6 +130,69 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
       setPlayingAudioId(annotation.id)
     }
   }
+
+  // ترجمة تعليق التصميم
+  const translateAnnotation = async (commentId: string, annotationId: string, targetLang: string) => {
+    const comment = savedDesignComments.find(c => c.id === commentId)
+    if (!comment) return
+
+    const annotation = comment.annotations.find(a => a.id === annotationId)
+    if (!annotation || !annotation.transcription) return
+
+    setTranslatingAnnotationId(annotationId)
+
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: annotation.transcription,
+          targetLanguage: targetLang
+        })
+      })
+
+      if (!response.ok) throw new Error('Translation failed')
+
+      const data = await response.json()
+
+      // تحديث التعليق بالنص المترجم
+      const updatedComments = savedDesignComments.map(c => {
+        if (c.id === commentId) {
+          return {
+            ...c,
+            annotations: c.annotations.map(a =>
+              a.id === annotationId
+                ? { ...a, translatedText: data.translatedText, translationLanguage: targetLang }
+                : a
+            )
+          }
+        }
+        return c
+      })
+      setSavedDesignComments(updatedComments)
+    } catch (error) {
+      console.error('Translation error:', error)
+    } finally {
+      setTranslatingAnnotationId(null)
+    }
+  }
+
+  // إغلاق قائمة اللغات عند النقر خارجها
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showAnnotationLanguageDropdown) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.annotation-language-dropdown-container')) {
+          setShowAnnotationLanguageDropdown(null)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAnnotationLanguageDropdown])
 
   // دالة لرسم الخطوط على canvas
   const drawPathsOnCanvas = (canvas: HTMLCanvasElement, drawings: DrawingPath[]) => {
@@ -522,39 +605,113 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
 
                                   {/* قائمة التعليقات الصوتية */}
                                   {comment.annotations && comment.annotations.length > 0 && (
-                                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200" style={{ overflow: 'visible' }}>
                                       <h4 className="text-sm font-medium text-gray-700 mb-2">
                                         التعليقات ({comment.annotations.length})
                                       </h4>
-                                      <div className="space-y-2">
+                                      <div className="space-y-2" style={{ overflow: 'visible' }}>
                                         {comment.annotations.map((annotation, idx) => (
                                           <div
                                             key={annotation.id}
-                                            className="flex items-start gap-2 bg-white rounded-lg p-2 border border-gray-100"
+                                            className="bg-white rounded-lg p-2 border border-gray-100 relative"
+                                            style={{ overflow: 'visible' }}
                                           >
-                                            <div className="w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                              {idx + 1}
+                                            <div className="flex items-start gap-2">
+                                              <div className="w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                                {idx + 1}
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                {annotation.transcription && (
+                                                  <p className="text-sm text-gray-700 mb-1">{annotation.transcription}</p>
+                                                )}
+                                              </div>
+                                              {/* أزرار التحكم */}
+                                              <div className="flex items-center gap-1 flex-shrink-0">
+                                                {/* زر تشغيل الصوت */}
+                                                {annotation.audioData && (
+                                                  <button
+                                                    onClick={() => toggleAnnotationAudio(annotation)}
+                                                    className={`p-1.5 rounded transition-colors ${playingAudioId === annotation.id
+                                                      ? 'bg-green-500 text-white'
+                                                      : 'text-green-600 hover:bg-green-50'
+                                                      }`}
+                                                    title={playingAudioId === annotation.id ? 'إيقاف' : 'تشغيل الصوت'}
+                                                  >
+                                                    {playingAudioId === annotation.id ? (
+                                                      <Pause className="w-4 h-4" />
+                                                    ) : (
+                                                      <Play className="w-4 h-4" />
+                                                    )}
+                                                  </button>
+                                                )}
+                                                {/* زر الترجمة مع dropdown */}
+                                                {annotation.transcription && (
+                                                  <div className="relative annotation-language-dropdown-container">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => setShowAnnotationLanguageDropdown(
+                                                        showAnnotationLanguageDropdown === annotation.id ? null : annotation.id
+                                                      )}
+                                                      disabled={translatingAnnotationId === annotation.id}
+                                                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
+                                                      title="ترجمة"
+                                                    >
+                                                      {translatingAnnotationId === annotation.id ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                      ) : (
+                                                        <>
+                                                          <Languages className="w-4 h-4" />
+                                                          <ChevronDown className="w-3 h-3" />
+                                                        </>
+                                                      )}
+                                                    </button>
+                                                    <AnimatePresence>
+                                                      {showAnnotationLanguageDropdown === annotation.id && (
+                                                        <motion.div
+                                                          initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                                                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                          exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                                                          transition={{ duration: 0.15 }}
+                                                          className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[140px] overflow-hidden"
+                                                        >
+                                                          {availableLanguages.map((lang) => (
+                                                            <button
+                                                              key={lang.code}
+                                                              type="button"
+                                                              onClick={() => {
+                                                                translateAnnotation(comment.id, annotation.id, lang.code)
+                                                                setShowAnnotationLanguageDropdown(null)
+                                                              }}
+                                                              className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${annotation.translationLanguage === lang.code
+                                                                ? 'bg-purple-100 text-purple-700 font-semibold'
+                                                                : 'text-gray-700'
+                                                                }`}
+                                                            >
+                                                              <div className="flex items-center justify-between gap-2">
+                                                                <span className="text-xs text-gray-500">{lang.name}</span>
+                                                                <span>{lang.nameAr}</span>
+                                                              </div>
+                                                            </button>
+                                                          ))}
+                                                        </motion.div>
+                                                      )}
+                                                    </AnimatePresence>
+                                                  </div>
+                                                )}
+                                              </div>
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                              {annotation.transcription && (
-                                                <p className="text-sm text-gray-700 mb-1">{annotation.transcription}</p>
-                                              )}
-                                              {annotation.audioData && (
-                                                <button
-                                                  onClick={() => toggleAnnotationAudio(annotation)}
-                                                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${playingAudioId === annotation.id
-                                                    ? 'bg-pink-500 text-white'
-                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                    }`}
-                                                >
-                                                  {playingAudioId === annotation.id ? (
-                                                    <><Pause className="w-3 h-3" /><span>إيقاف</span></>
-                                                  ) : (
-                                                    <><Play className="w-3 h-3" /><span>تشغيل</span></>
-                                                  )}
-                                                </button>
-                                              )}
-                                            </div>
+                                            {/* عرض الترجمة في صندوق بنفسجي */}
+                                            {annotation.translatedText && (
+                                              <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-7">
+                                                <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                                                  <Languages className="w-3 h-3" />
+                                                  الترجمة ({getLanguageName(annotation.translationLanguage || 'en')})
+                                                </p>
+                                                <p className="text-sm text-gray-600" dir="auto">
+                                                  {annotation.translatedText}
+                                                </p>
+                                              </div>
+                                            )}
                                           </div>
                                         ))}
                                       </div>
@@ -604,44 +761,138 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                       </div>
 
                       {imageAnnotations.length > 0 && (
-                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200" style={{ overflow: 'visible' }}>
                           <h4 className="text-sm font-medium text-gray-700 mb-3">
                             التعليقات ({imageAnnotations.length})
                           </h4>
-                          <div className="space-y-3">
+                          <div className="space-y-3" style={{ overflow: 'visible' }}>
                             {imageAnnotations.map((annotation, index) => (
                               <div
                                 key={annotation.id}
-                                className="flex items-start gap-3 bg-white rounded-lg p-3 border border-gray-100"
+                                className="bg-white rounded-lg p-3 border border-gray-100 relative"
+                                style={{ overflow: 'visible' }}
                               >
-                                <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                  {index + 1}
+                                <div className="flex items-start gap-3">
+                                  <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                    {index + 1}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    {annotation.transcription && (
+                                      <p className="text-sm text-gray-700 mb-2">{annotation.transcription}</p>
+                                    )}
+                                    {!annotation.transcription && !annotation.audioData && (
+                                      <p className="text-sm text-gray-400 italic">علامة بدون تعليق</p>
+                                    )}
+                                  </div>
+                                  {/* أزرار التحكم */}
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    {/* زر تشغيل الصوت */}
+                                    {annotation.audioData && (
+                                      <button
+                                        onClick={() => toggleAnnotationAudio(annotation)}
+                                        className={`p-1.5 rounded transition-colors ${playingAudioId === annotation.id
+                                          ? 'bg-green-500 text-white'
+                                          : 'text-green-600 hover:bg-green-50'
+                                          }`}
+                                        title={playingAudioId === annotation.id ? 'إيقاف' : 'تشغيل الصوت'}
+                                      >
+                                        {playingAudioId === annotation.id ? (
+                                          <Pause className="w-4 h-4" />
+                                        ) : (
+                                          <Play className="w-4 h-4" />
+                                        )}
+                                      </button>
+                                    )}
+                                    {/* زر الترجمة مع dropdown */}
+                                    {annotation.transcription && (
+                                      <div className="relative annotation-language-dropdown-container">
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowAnnotationLanguageDropdown(
+                                            showAnnotationLanguageDropdown === annotation.id ? null : annotation.id
+                                          )}
+                                          disabled={translatingAnnotationId === annotation.id}
+                                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
+                                          title="ترجمة"
+                                        >
+                                          {translatingAnnotationId === annotation.id ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <>
+                                              <Languages className="w-4 h-4" />
+                                              <ChevronDown className="w-3 h-3" />
+                                            </>
+                                          )}
+                                        </button>
+                                        <AnimatePresence>
+                                          {showAnnotationLanguageDropdown === annotation.id && (
+                                            <motion.div
+                                              initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                                              exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                                              transition={{ duration: 0.15 }}
+                                              className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[140px] overflow-hidden"
+                                            >
+                                              {availableLanguages.map((lang) => (
+                                                <button
+                                                  key={lang.code}
+                                                  type="button"
+                                                  onClick={async () => {
+                                                    setShowAnnotationLanguageDropdown(null)
+                                                    setTranslatingAnnotationId(annotation.id)
+                                                    try {
+                                                      const response = await fetch('/api/translate', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                          text: annotation.transcription,
+                                                          targetLanguage: lang.code
+                                                        })
+                                                      })
+                                                      if (response.ok) {
+                                                        const data = await response.json()
+                                                        setImageAnnotations(prev => prev.map(a =>
+                                                          a.id === annotation.id
+                                                            ? { ...a, translatedText: data.translatedText, translationLanguage: lang.code }
+                                                            : a
+                                                        ))
+                                                      }
+                                                    } catch (error) {
+                                                      console.error('Translation error:', error)
+                                                    } finally {
+                                                      setTranslatingAnnotationId(null)
+                                                    }
+                                                  }}
+                                                  className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${annotation.translationLanguage === lang.code
+                                                      ? 'bg-purple-100 text-purple-700 font-semibold'
+                                                      : 'text-gray-700'
+                                                    }`}
+                                                >
+                                                  <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-xs text-gray-500">{lang.name}</span>
+                                                    <span>{lang.nameAr}</span>
+                                                  </div>
+                                                </button>
+                                              ))}
+                                            </motion.div>
+                                          )}
+                                        </AnimatePresence>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                  {annotation.transcription && (
-                                    <p className="text-sm text-gray-700 mb-2">{annotation.transcription}</p>
-                                  )}
-                                  {annotation.audioData && (
-                                    <button
-                                      onClick={() => toggleAnnotationAudio(annotation)}
-                                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${playingAudioId === annotation.id
-                                        ? 'bg-pink-500 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                        }`}
-                                    >
-                                      {playingAudioId === annotation.id ? (
-                                        <><Pause className="w-4 h-4" /><span>إيقاف</span></>
-                                      ) : (
-                                        <><Play className="w-4 h-4" /><span>تشغيل الصوت</span>
-                                          {annotation.duration && <span className="text-xs opacity-75">({Math.round(annotation.duration)}ث)</span>}
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
-                                  {!annotation.transcription && !annotation.audioData && (
-                                    <p className="text-sm text-gray-400 italic">علامة بدون تعليق</p>
-                                  )}
-                                </div>
+                                {/* عرض الترجمة في صندوق بنفسجي */}
+                                {annotation.translatedText && (
+                                  <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-9">
+                                    <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                                      <Languages className="w-3 h-3" />
+                                      الترجمة ({getLanguageName(annotation.translationLanguage || 'en')})
+                                    </p>
+                                    <p className="text-sm text-gray-600" dir="auto">
+                                      {annotation.translatedText}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

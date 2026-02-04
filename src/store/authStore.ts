@@ -264,11 +264,66 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true })
 
         try {
-          // التحقق من وجود مستخدم محفوظ في localStorage
+          // أولاً: التحقق من جلسة Supabase Auth
+          if (isSupabaseConfigured()) {
+            console.log('🔐 التحقق من جلسة Supabase...')
+
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+            if (sessionError) {
+              console.error('❌ خطأ في جلب جلسة Supabase:', sessionError.message)
+            }
+
+            if (session?.user) {
+              console.log('✅ جلسة Supabase موجودة:', session.user.email)
+
+              // جلب بيانات المستخدم من جدول users
+              const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', session.user.id)
+                .single()
+
+              if (!userError && userData) {
+                const user: AuthUser = {
+                  id: userData.id,
+                  email: userData.email,
+                  full_name: userData.full_name,
+                  role: userData.role,
+                  is_active: userData.is_active,
+                  created_at: userData.created_at,
+                  updated_at: userData.updated_at,
+                  token: session.access_token
+                }
+
+                // تحديث localStorage
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('yasmin-auth-user', JSON.stringify(user))
+                }
+
+                set({ user, isLoading: false })
+                console.log('🎉 تم استعادة الجلسة بنجاح!')
+                return
+              }
+            } else {
+              console.log('⚠️ لا توجد جلسة Supabase نشطة')
+            }
+          }
+
+          // Fallback: التحقق من وجود مستخدم محفوظ في localStorage
           if (typeof window !== 'undefined') {
             const savedUser = localStorage.getItem('yasmin-auth-user')
             if (savedUser) {
               const user = JSON.parse(savedUser) as AuthUser
+              console.log('📦 تم استعادة المستخدم من localStorage:', user.email)
+
+              // محاولة إعادة تسجيل الدخول في Supabase إذا كان لدينا token
+              // هذا مهم لأن RLS policies تحتاج جلسة Supabase صالحة
+              if (isSupabaseConfigured() && user.token) {
+                console.log('🔄 محاولة استعادة جلسة Supabase...')
+                // لا نحتاج لفعل شيء هنا - Supabase يستعيد الجلسة تلقائيًا من storage
+              }
+
               set({ user, isLoading: false })
               return
             }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion'
 import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut } from 'lucide-react'
@@ -141,6 +141,12 @@ interface InteractiveImageAnnotationProps {
   currentImageBase64?: string | null
 }
 
+// نوع الـ ref للوصول إلى دوال المكون من الخارج
+export interface InteractiveImageAnnotationRef {
+  generateCompositeImage: () => Promise<string | null>
+  saveCurrentComment: () => Promise<SavedDesignComment | null>
+}
+
 // مكون النص القابل للسحب - يستخدم useMotionValue لإعادة تعيين الموقع بعد السحب
 function DraggableText({
   annotation,
@@ -255,7 +261,7 @@ function DraggableText({
   )
 }
 
-export default function InteractiveImageAnnotation({
+const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, InteractiveImageAnnotationProps>(({
   imageSrc,
   annotations,
   onAnnotationsChange,
@@ -268,7 +274,7 @@ export default function InteractiveImageAnnotation({
   onSavedCommentsChange,
   showSaveButton = true,
   currentImageBase64 = null
-}: InteractiveImageAnnotationProps) {
+}, ref) => {
   const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -322,7 +328,7 @@ export default function InteractiveImageAnnotation({
   const [isDrawingMode, setIsDrawingMode] = useState(false)
   const [isDrawing, setIsDrawing] = useState(false)
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLORS[0].value)
-  const [strokeWidth, setStrokeWidth] = useState(STROKE_WIDTHS[2].value)
+  const [strokeWidth, setStrokeWidth] = useState(STROKE_WIDTHS[1].value) // رفيع (2) بدلاً من متوسط (4)
   const [brushType, setBrushType] = useState<BrushType>('normal')
   const [isEraserMode, setIsEraserMode] = useState(false)
   const [eraserWidth, setEraserWidth] = useState(ERASER_SIZES[1].value)
@@ -669,6 +675,12 @@ export default function InteractiveImageAnnotation({
     return newComment
   }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange, generateCompositeImage])
 
+  // تعريض الدوال للمكون الأب عبر ref
+  useImperativeHandle(ref, () => ({
+    generateCompositeImage,
+    saveCurrentComment
+  }), [generateCompositeImage, saveCurrentComment])
+
   // دالة حذف تعليق محفوظ
   const deleteSavedComment = useCallback((commentId: string) => {
     const updatedComments = savedComments.filter(c => c.id !== commentId)
@@ -744,6 +756,9 @@ export default function InteractiveImageAnnotation({
       })
     }
 
+    // إنشاء الصورة المركّبة الجديدة
+    const compositeImage = await generateCompositeImage()
+
     const updatedComments = savedComments.map(c => {
       if (c.id === viewingCommentId) {
         return {
@@ -751,6 +766,7 @@ export default function InteractiveImageAnnotation({
           annotations: [...annotations],
           drawings: [...drawings],
           image: imageBase64 || c.image,
+          compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
         }
       }
@@ -765,7 +781,7 @@ export default function InteractiveImageAnnotation({
     // مسح التعليقات والرسومات الحالية لتجنب ظهور زر "حفظ التعليق"
     onAnnotationsChange([])
     onDrawingsChange([])
-  }, [viewingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange])
+  }, [viewingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, generateCompositeImage])
 
   // دالة تحديث تعليق محفوظ
   const updateSavedComment = useCallback(async () => {
@@ -780,6 +796,9 @@ export default function InteractiveImageAnnotation({
       })
     }
 
+    // إنشاء الصورة المركّبة الجديدة
+    const compositeImage = await generateCompositeImage()
+
     const updatedComments = savedComments.map(c => {
       if (c.id === editingCommentId) {
         return {
@@ -787,6 +806,7 @@ export default function InteractiveImageAnnotation({
           annotations: [...annotations],
           drawings: [...drawings],
           image: imageBase64 || c.image,
+          compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
         }
       }
@@ -798,7 +818,7 @@ export default function InteractiveImageAnnotation({
     onAnnotationsChange([])
     onDrawingsChange([])
     onImageChange?.(null)
-  }, [editingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange])
+  }, [editingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange, generateCompositeImage])
 
   // دالة إلغاء التعديل
   const cancelEditing = useCallback(() => {
@@ -1509,9 +1529,8 @@ export default function InteractiveImageAnnotation({
 
   // معالجة النقر المزدوج على الصورة لإضافة تعليق جديد
   const handleImageDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // منع إضافة تعليق جديد أثناء التسجيل أو التعطيل أو التعديل
-    // ملاحظة: تم إزالة شرط isDrawingMode للسماح بإضافة تعليقات صوتية/نصية أثناء وضع الرسم
-    if (disabled || isRecordingActive || editingTranscriptionId) return
+    // منع إضافة تعليق جديد أثناء التسجيل أو التعطيل أو التعديل أو وضع الرسم
+    if (disabled || isRecordingActive || editingTranscriptionId || isDrawingMode) return
 
     // إعادة تعيين المربع النشط عند النقر على مكان فارغ
     setActiveTranscriptionId(null)
@@ -1530,7 +1549,7 @@ export default function InteractiveImageAnnotation({
     onAnnotationsChange([...annotations, newAnnotation])
     setActiveAnnotationId(newAnnotation.id)
     setShowInstructions(false)
-  }, [disabled, isRecordingActive, editingTranscriptionId, annotations, onAnnotationsChange])
+  }, [disabled, isRecordingActive, editingTranscriptionId, isDrawingMode, annotations, onAnnotationsChange])
 
   // معالجة النقر المفرد على الصورة لإعادة تعيين المربع النشط
   const handleImageClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -1814,17 +1833,87 @@ export default function InteractiveImageAnnotation({
       onAnnotationsChange(updatedAnnotations)
       setTranslatingId(null)
 
-      // فتح Modal الترجمة لعرض النتيجة
-      setTranslationModal({
-        isOpen: true,
-        originalText: annotation.transcription,
-        translatedText: data.translatedText,
-        language: targetLang
-      })
+      // تمت الترجمة بنجاح - لا نفتح Modal (تم إزالة النافذة المنبثقة التلقائية)
 
     } catch (error) {
       console.error('Translation error:', error)
       setError('فشلت عملية الترجمة')
+      setTranslatingId(null)
+    }
+  }
+
+  // ترجمة جميع النصوص التي لم تُترجم بعد
+  const translateAllAnnotations = async (targetLang: string) => {
+    try {
+      setError(null)
+      setTranslatingId('translating-all')
+
+      // التحقق من أننا لسنا في Capacitor
+      if (typeof window !== 'undefined' && (window as any).Capacitor) {
+        setError('ميزة الترجمة غير متاحة في التطبيق المحمول حالياً')
+        setTranslatingId(null)
+        return
+      }
+
+      // الحصول على جميع التعليقات التي تحتوي على نص ولم تُترجم بعد
+      const untranslatedAnnotations = annotations.filter(
+        a => a.transcription && !a.isRecording && !a.translatedText
+      )
+
+      if (untranslatedAnnotations.length === 0) {
+        setError('جميع النصوص مترجمة بالفعل')
+        setTranslatingId(null)
+        return
+      }
+
+      // إنشاء نسخة من التعليقات للتحديث التدريجي
+      let updatedAnnotations = [...annotations]
+
+      // ترجمة كل نص على حدة وتحديث القائمة
+      for (const annotation of untranslatedAnnotations) {
+        try {
+          const response = await fetch('/api/translate-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: annotation.transcription,
+              targetLanguage: targetLang
+            })
+          })
+
+          if (!response.ok) {
+            console.error(`Failed to translate annotation ${annotation.id}`)
+            continue
+          }
+
+          const data = await response.json()
+
+          // تحديث التعليق في القائمة المحلية
+          updatedAnnotations = updatedAnnotations.map(a =>
+            a.id === annotation.id
+              ? {
+                ...a,
+                translatedText: data.translatedText,
+                translationLanguage: targetLang
+              }
+              : a
+          )
+
+          // انتظار قصير بين الطلبات لتجنب تجاوز الحد الأقصى للطلبات
+          await new Promise(resolve => setTimeout(resolve, 500))
+
+        } catch (error) {
+          console.error(`Error translating annotation ${annotation.id}:`, error)
+        }
+      }
+
+      // تحديث جميع التعليقات دفعة واحدة
+      onAnnotationsChange(updatedAnnotations)
+      setTranslatingId(null)
+
+    } catch (error) {
+      console.error('Translate all error:', error)
+      setError('فشلت عملية ترجمة بعض النصوص')
       setTranslatingId(null)
     }
   }
@@ -2442,11 +2531,13 @@ export default function InteractiveImageAnnotation({
                               : '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                           }}
                           transition={{ duration: 0.2 }}
-                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg cursor-pointer ${annotation.isRecording
-                            ? 'bg-red-500 border-red-300 animate-pulse border-2'
-                            : isActiveMarker
-                              ? 'bg-pink-400 border-pink-200 border-2 ring-2 ring-pink-300'
-                              : 'bg-pink-500 border-pink-300 border-2'
+                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg ${isDrawingMode
+                            ? 'cursor-not-allowed opacity-50 bg-gray-400 border-gray-300 border-2'
+                            : annotation.isRecording
+                              ? 'bg-red-500 border-red-300 animate-pulse border-2 cursor-pointer'
+                              : isActiveMarker
+                                ? 'bg-pink-400 border-pink-200 border-2 ring-2 ring-pink-300 cursor-pointer'
+                                : 'bg-pink-500 border-pink-300 border-2 cursor-pointer'
                             }`}
                         >
                           {annotation.isRecording ? (
@@ -2454,6 +2545,7 @@ export default function InteractiveImageAnnotation({
                               type="button"
                               onClick={stopRecording}
                               className="w-full h-full flex items-center justify-center"
+                              disabled={isDrawingMode}
                             >
                               <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                             </button>
@@ -2462,6 +2554,8 @@ export default function InteractiveImageAnnotation({
                               type="button"
                               onClick={() => startRecording(annotation.id)}
                               className="w-full h-full flex items-center justify-center"
+                              disabled={isDrawingMode}
+                              title={isDrawingMode ? 'التسجيل الصوتي معطل أثناء وضع الرسم' : 'بدء التسجيل الصوتي'}
                             >
                               <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                             </button>
@@ -2474,8 +2568,12 @@ export default function InteractiveImageAnnotation({
                             type="button"
                             onClick={() => openManualTextInput(annotation.id)}
                             whileTap={{ scale: 0.95 }}
-                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg bg-blue-500 border-blue-300 border-2 hover:bg-blue-600 transition-colors"
-                            title="كتابة نص يدوي"
+                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg border-2 transition-colors ${isDrawingMode
+                              ? 'bg-gray-400 border-gray-300 opacity-50 cursor-not-allowed'
+                              : 'bg-blue-500 border-blue-300 hover:bg-blue-600 cursor-pointer'
+                              }`}
+                            title={isDrawingMode ? 'إضافة النص معطلة أثناء وضع الرسم' : 'كتابة نص يدوي'}
+                            disabled={isDrawingMode}
                           >
                             <Type className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                           </motion.button>
@@ -2540,10 +2638,56 @@ export default function InteractiveImageAnnotation({
       {/* قسم التعليقات الحالية - تفاعلي مع جميع الأزرار */}
       {annotations.length > 0 && (
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-pink-600" />
-            التعليقات الحالية ({annotations.length})
-          </h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-pink-600" />
+              التعليقات الحالية ({annotations.length})
+            </h4>
+
+            {/* زر ترجمة الكل - يظهر فقط عند وجود أكثر من نص واحد */}
+            {annotations.filter(a => a.transcription && !a.isRecording).length > 1 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowLanguageDropdown('translate-all')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg transition-all shadow-sm"
+                  disabled={translatingId !== null}
+                >
+                  <Languages className="w-3.5 h-3.5" />
+                  <span>ترجمة الكل</span>
+                </button>
+
+                {/* قائمة اللغات لترجمة الكل */}
+                {showLanguageDropdown === 'translate-all' && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[9998]"
+                      onClick={() => setShowLanguageDropdown(null)}
+                    />
+                    <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[9999] min-w-[180px]">
+                      {availableLanguages.map(lang => (
+                        <button
+                          key={lang.code}
+                          type="button"
+                          onClick={() => {
+                            translateAllAnnotations(lang.code)
+                            setShowLanguageDropdown(null)
+                          }}
+                          className="w-full text-right px-3 py-2 text-sm hover:bg-purple-50 transition-colors flex items-center justify-between gap-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{lang.flag}</span>
+                            <span className="text-gray-700">{lang.nameAr}</span>
+                          </div>
+                          <span className="text-xs text-gray-500 font-medium">{lang.nativeName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           <div className="space-y-3 max-h-[500px] overflow-y-auto overflow-x-visible">
             {annotations.map((annotation, index) => {
               const isEditing = editingTranscriptionId === annotation.id
@@ -3142,4 +3286,8 @@ export default function InteractiveImageAnnotation({
       </AnimatePresence>
     </div>
   )
-}
+})
+
+InteractiveImageAnnotation.displayName = 'InteractiveImageAnnotation'
+
+export default InteractiveImageAnnotation

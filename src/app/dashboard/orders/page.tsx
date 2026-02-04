@@ -43,8 +43,8 @@ import {
 import PrintOrderModal from '@/components/PrintOrderModal'
 
 export default function OrdersPage() {
-  const { user } = useAuthStore()
-  const { orders, loadOrders, updateOrder, deleteOrder, startOrderWork, completeOrder } = useOrderStore()
+  const { user, isLoading: authLoading } = useAuthStore()
+  const { orders, loadOrders, updateOrder, deleteOrder, startOrderWork, completeOrder, isLoading: ordersLoading } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, language, changeLanguage, isArabic } = useTranslation()
   const { getDashboardRoute, workerType } = useWorkerPermissions()
@@ -52,6 +52,11 @@ export default function OrdersPage() {
 
   // التحقق من الصلاحيات وتحميل البيانات
   useEffect(() => {
+    // انتظار انتهاء التحقق من المصادقة
+    if (authLoading) {
+      return
+    }
+
     if (!user) {
       router.push('/login')
       return
@@ -60,7 +65,7 @@ export default function OrdersPage() {
     // تحميل الطلبات والعمال
     loadOrders()
     loadWorkers()
-  }, [user, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -423,12 +428,13 @@ export default function OrdersPage() {
     return matchesRole && matchesSearch && matchesStatus && matchesDate
   })
 
-  if (!user) {
+  // عرض شاشة التحميل أثناء التحقق من المصادقة
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-pink-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">{t('loading')}</p>
+          <p className="text-gray-600">{authLoading ? 'جاري التحقق من الجلسة...' : t('loading')}</p>
         </div>
       </div>
     )

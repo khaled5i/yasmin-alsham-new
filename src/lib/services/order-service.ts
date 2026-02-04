@@ -150,6 +150,67 @@ export interface UpdateOrderData {
   images?: string[]
   voice_notes?: string[]
   completed_images?: string[]
+  // التسجيلات الصوتية مع البيانات الكاملة (النصوص المحولة والترجمات)
+  voice_transcriptions?: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
+    translatedText?: string
+    translationLanguage?: string
+  }>
+  // التعليقات على الصور
+  image_annotations?: Array<{
+    id: string
+    x: number
+    y: number
+    boxX?: number
+    boxY?: number
+    audioData?: string
+    transcription?: string
+    duration?: number
+    timestamp: number
+  }>
+  // الرسومات على الصور
+  image_drawings?: Array<{
+    id: string
+    points: Array<{ x: number; y: number }>
+    color: string
+    strokeWidth: number
+    brushType?: string
+    isEraser?: boolean
+    timestamp: number
+  }>
+  // صورة التصميم المخصصة (base64)
+  custom_design_image?: string
+  // التعليقات المتعددة المحفوظة على التصميم
+  saved_design_comments?: Array<{
+    id: string
+    timestamp: number
+    annotations: Array<{
+      id: string
+      x: number
+      y: number
+      boxX?: number
+      boxY?: number
+      audioData?: string
+      transcription?: string
+      duration?: number
+      timestamp: number
+    }>
+    drawings: Array<{
+      id: string
+      points: Array<{ x: number; y: number }>
+      color: string
+      strokeWidth: number
+      brushType?: string
+      isEraser?: boolean
+      timestamp: number
+    }>
+    image: string | null
+    title?: string
+  }>
 }
 
 // ============================================================================

@@ -27,15 +27,21 @@ import {
   Ruler,
   Mic,
   Wrench,
-  MessageCircle
+  MessageCircle,
+  Search,
+  Filter,
+  AlertCircle,
+  Trash2
 } from 'lucide-react'
+import OrderModal from '@/components/OrderModal'
+import DeleteOrderModal from '@/components/DeleteOrderModal'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import toast from 'react-hot-toast'
 
 export default function CompletedOrdersPage() {
-  const { user } = useAuthStore()
-  const { orders, loadOrders, updateOrder } = useOrderStore()
+  const { user, isLoading: authLoading } = useAuthStore()
+  const { orders, loadOrders, updateOrder, deleteOrder } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
@@ -46,14 +52,22 @@ export default function CompletedOrdersPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [deliverySuccess, setDeliverySuccess] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [searchType, setSearchType] = useState<'name' | 'phone' | 'order_number'>('name')
   const [dateFilter, setDateFilter] = useState('')
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
+  // حالات modal حذف الطلب
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [orderToDelete, setOrderToDelete] = useState<any>(null)
+
   // التحقق من الصلاحيات - المدراء ومدراء الورشة
   useEffect(() => {
+    // انتظار انتهاء التحقق من المصادقة
+    if (authLoading) {
+      return
+    }
+
     if (!user) {
       router.push('/login')
       return
@@ -73,17 +87,17 @@ export default function CompletedOrdersPage() {
     // تحميل البيانات
     loadOrders()
     loadWorkers()
-  }, [user, workerType, permissionsLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, workerType, permissionsLoading, router, loadOrders, loadWorkers])
 
   // فلترة الطلبات المكتملة فقط
   const completedOrders = orders.filter(order => {
     if (order.status !== 'completed') return false
 
-    const matchesSearch = searchType === 'phone'
-      ? (order.client_phone || '').toLowerCase().includes(searchTerm.toLowerCase())
-      : searchType === 'order_number'
-        ? (order.order_number || '').toLowerCase().includes(searchTerm.toLowerCase())
-        : (order.client_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+    const searchLower = searchTerm.toLowerCase()
+    const matchesSearch = !searchTerm ||
+      (order.client_name || '').toLowerCase().includes(searchLower) ||
+      (order.client_phone || '').toLowerCase().includes(searchLower) ||
+      (order.order_number || '').toLowerCase().includes(searchLower)
 
     const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
 
@@ -126,6 +140,17 @@ export default function CompletedOrdersPage() {
     }
     const name = measurementNames[key]
     return name ? (isArabic ? name.ar : name.en) : key
+  }
+
+  const getStatusInfo = (status: string) => {
+    const statusMap = {
+      pending: { label: t('pending'), color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
+      in_progress: { label: t('in_progress'), color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
+      completed: { label: t('completed'), color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
+      delivered: { label: t('delivered'), color: 'text-purple-600', bgColor: 'bg-purple-100', icon: CheckCircle },
+      cancelled: { label: t('cancelled'), color: 'text-red-600', bgColor: 'bg-red-100', icon: AlertCircle }
+    }
+    return statusMap[status as keyof typeof statusMap] || statusMap.pending
   }
 
   const handleViewOrder = (order: any) => {
@@ -224,6 +249,39 @@ export default function CompletedOrdersPage() {
     setSelectedOrder(null)
   }
 
+  // فتح modal حذف الطلب
+  const handleDeleteOrder = (order: any, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setOrderToDelete(order)
+    setDeleteModalOpen(true)
+  }
+
+  // تأكيد حذف الطلب
+  const confirmDeleteOrder = async () => {
+    if (orderToDelete) {
+      const result = await deleteOrder(orderToDelete.id)
+
+      if (result.success) {
+        toast.success(t('order_deleted_success') || 'تم حذف الطلب بنجاح', {
+          icon: '✓',
+        })
+      } else {
+        toast.error(result.error || t('order_delete_error') || 'حدث خطأ أثناء حذف الطلب', {
+          icon: '✗',
+        })
+      }
+
+      setDeleteModalOpen(false)
+      setOrderToDelete(null)
+    }
+  }
+
+  // إغلاق modal حذف الطلب
+  const closeDeleteModal = () => {
+    setDeleteModalOpen(false)
+    setOrderToDelete(null)
+  }
+
   // التحقق من الصلاحيات قبل العرض
   if (!user) {
     return null
@@ -286,83 +344,36 @@ export default function CompletedOrdersPage() {
           </div>
         </motion.div>
 
-        {/* البحث والفلاتر */}
+        {/* البحث والفلاتر - تصميم محسّن */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.1 }}
-          className="bg-white/80 backdrop-blur-sm rounded-2xl p-3 sm:p-4 border border-pink-100 mb-6"
+          className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6"
         >
-          {/* صف واحد: أزرار البحث + حقل البحث + فلتر التاريخ */}
-          <div className="flex flex-col lg:flex-row gap-2 sm:gap-3">
-            {/* أزرار تبديل نوع البحث */}
-            <div className="flex space-x-2 space-x-reverse">
-              <button
-                onClick={() => {
-                  setSearchType('name')
-                  setSearchTerm('')
-                }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'name'
-                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {t('search_by_name')}
-              </button>
-              <button
-                onClick={() => {
-                  setSearchType('phone')
-                  setSearchTerm('')
-                }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'phone'
-                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {t('search_by_phone')}
-              </button>
-              <button
-                onClick={() => {
-                  setSearchType('order_number')
-                  setSearchTerm('')
-                }}
-                className={`flex-1 lg:flex-none px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs font-medium transition-all duration-300 whitespace-nowrap ${searchType === 'order_number'
-                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {t('search_by_order_number') || 'رقم الطلب'}
-              </button>
-            </div>
-
-            {/* حقل البحث */}
-            <div className="relative flex-1">
-              <Package className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          {/* صف واحد: حقل البحث والفلاتر - عرض أفقي حتى في الجوال */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3 overflow-x-auto">
+            {/* حقل البحث الشامل */}
+            <div className="relative min-w-0">
+              <Search className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pr-8 sm:pr-9 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                placeholder={
-                  searchType === 'phone'
-                    ? t('enter_phone_number')
-                    : searchType === 'order_number'
-                      ? t('enter_order_number') || 'أدخل رقم الطلب'
-                      : t('search_completed_orders')
-                }
+                className="w-full pr-7 sm:pr-10 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition-all"
+                placeholder={t('search_placeholder') || 'البحث بالاسم، رقم الهاتف، أو رقم الطلب...'}
               />
             </div>
 
             {/* فلتر التاريخ */}
-            <div className="relative w-full lg:w-40">
-              <Calendar className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <div className="relative min-w-0">
               <input
                 type="date"
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full pr-8 sm:pr-9 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                placeholder={t('filter_by_date') || 'تصفية حسب التاريخ'}
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition-all"
               />
+              <Calendar className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
             </div>
           </div>
 
@@ -432,118 +443,98 @@ export default function CompletedOrdersPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 hover:shadow-lg transition-all duration-300"
+                onClick={() => handleViewOrder(order)}
+                className="bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
               >
-                <div className="grid lg:grid-cols-4 gap-6">
-                  {/* معلومات الطلب */}
-                  <div className="lg:col-span-2">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h3 className="text-xl font-bold text-gray-800 mb-1">
-                          {order.client_name}
-                        </h3>
-                        <p className="text-pink-600 font-medium">{order.description}</p>
-                        <p className="text-sm text-gray-500">#{order.order_number || order.id}</p>
+                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                  {/* معلومات الطلب الأساسية */}
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-lg font-semibold text-gray-800">
+                            {order.client_name}
+                          </h3>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
+                            {getStatusInfo(order.status).label}
+                          </span>
+                        </div>
+                        <p className="text-sm text-pink-600 font-medium">{order.description}</p>
+                        <p className="text-xs text-gray-500 mt-1">#{order.order_number || order.id}</p>
                       </div>
-
-                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-600">
-                        ✓ مكتمل
-                      </span>
                     </div>
 
-                    <div className="space-y-2 text-sm text-gray-600">
-                      <div className="flex items-center space-x-2 space-x-reverse">
-                        <Calendar className="w-4 h-4" />
-                        <span>تاريخ الطلب: {formatDate(order.created_at)}</span>
+                    {/* تفاصيل الطلب */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-600">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                        <span>{formatDate(order.created_at)}</span>
                       </div>
-                      <div className="flex items-center space-x-2 space-x-reverse">
-                        <Clock className="w-4 h-4" />
-                        <span>موعد التسليم: {formatDate(order.due_date)}</span>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-gray-400" />
+                        <span>{formatDate(order.due_date)}</span>
                       </div>
                       {order.worker_id && (
-                        <div className="flex items-center space-x-2 space-x-reverse">
-                          <User className="w-4 h-4" />
-                          <span>العامل: {getWorkerName(order.worker_id)}</span>
+                        <div className="flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="truncate">{getWorkerName(order.worker_id)}</span>
                         </div>
                       )}
                       {order.client_phone && (
-                        <div className="flex items-center space-x-2 space-x-reverse">
-                          <Phone className="w-4 h-4" />
-                          <span>الهاتف: {workerType === 'workshop_manager' ? '***' : order.client_phone}</span>
+                        <div className="flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="truncate">{workerType === 'workshop_manager' ? '***' : order.client_phone}</span>
                         </div>
                       )}
                     </div>
-                  </div>
 
-                  {/* السعر والصور */}
-                  <div className="space-y-4">
-                    <div className="text-center">
-                      <p className="text-sm text-gray-600">السعر</p>
-                      <p className="text-lg font-bold text-green-600">
-                        {workerType === 'workshop_manager' ? '---' : `${order.price} ريال`}
-                      </p>
-                    </div>
-
-                    {order.completed_images && order.completed_images.length > 0 && (
-                      <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                        <div className="flex items-center space-x-2 space-x-reverse mb-2">
-                          <ImageIcon className="w-4 h-4 text-green-600" />
-                          <span className="text-sm font-medium text-green-800">
-                            صور العمل المكتمل
-                          </span>
-                        </div>
-                        <p className="text-xs text-green-600">
-                          {order.completed_images.length} صورة
-                        </p>
+                    {/* السعر */}
+                    {workerType !== 'workshop_manager' && (
+                      <div className="mt-3 inline-flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md">
+                        <span className="text-xs text-gray-600">{t('price_label') || 'السعر'}:</span>
+                        <span className="text-sm font-bold text-green-600">{order.price} {t('sar')}</span>
                       </div>
                     )}
                   </div>
 
                   {/* الإجراءات */}
-                  <div className="flex flex-col gap-2">
-                    <button
-                      onClick={() => handleViewOrder(order)}
-                      className="btn-secondary py-2 px-4 text-sm inline-flex items-center justify-center space-x-1 space-x-reverse"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span>عرض</span>
-                    </button>
-
+                  <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
                     <Link
                       href={`/dashboard/alterations/add?orderId=${order.id}`}
-                      className="bg-gradient-to-r from-orange-500 to-amber-600 text-white py-2 px-4 text-sm rounded-lg hover:from-orange-600 hover:to-amber-700 transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse shadow-md hover:shadow-lg"
+                      className="p-3 bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 rounded-lg transition-all duration-200 text-center"
+                      title={t('request_alteration') || 'طلب تعديل'}
                     >
-                      <Wrench className="w-4 h-4" />
-                      <span>طلب تعديل</span>
+                      <Wrench className="w-5 h-5 mx-auto" />
                     </Link>
 
-                    {/* زر إرسال رسالة استلام - يظهر فقط للطلبات المكتملة وليست المسلمة */}
                     <button
                       onClick={() => handleSendReadyForPickup(order)}
                       disabled={!order.client_phone || order.client_phone.trim() === ''}
-                      className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 text-sm rounded-lg transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-                      title={!order.client_phone ? 'لا يوجد رقم هاتف للعميل' : 'إرسال رسالة جاهز للاستلام'}
+                      className="p-3 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!order.client_phone ? 'لا يوجد رقم هاتف للعميل' : 'إرسال رسالة استلام'}
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>إرسال رسالة استلام</span>
+                      <MessageCircle className="w-5 h-5 mx-auto" />
                     </button>
 
                     <button
                       onClick={() => handleMarkAsDelivered(order.id)}
                       disabled={isProcessing}
-                      className="bg-gradient-to-r from-purple-500 to-purple-600 text-white py-2 px-4 text-sm rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                      className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="تم التسليم"
                     >
                       {isProcessing ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>جاري المعالجة...</span>
-                        </>
+                        <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
                       ) : (
-                        <>
-                          <Truck className="w-4 h-4" />
-                          <span>تم التسليم</span>
-                        </>
+                        <Truck className="w-5 h-5 mx-auto" />
                       )}
+                    </button>
+
+                    <button
+                      onClick={(e) => handleDeleteOrder(order, e)}
+                      className="p-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg transition-all duration-200 text-center"
+                      title={t('delete_order') || 'حذف الطلب'}
+                    >
+                      <Trash2 className="w-5 h-5 mx-auto" />
                     </button>
                   </div>
                 </div>
@@ -553,246 +544,43 @@ export default function CompletedOrdersPage() {
         </div>
       </div>
 
-      {/* نافذة عرض التفاصيل */}
-      {showViewModal && selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseModal} />
+      {/* نوافذ منبثقة */}
+      <OrderModal
+        order={selectedOrder}
+        workers={workers}
+        isOpen={showViewModal}
+        onClose={handleCloseModal}
+      />
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
-          >
-            {/* رأس النافذة */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl z-10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-800">تفاصيل الطلب المكتمل</h3>
-                    <p className="text-sm text-gray-600">#{selectedOrder.order_number || selectedOrder.id}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleCloseModal}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
+      <RemainingPaymentWarningModal
+        isOpen={showPaymentWarning}
+        remainingAmount={orderToDeliver?.remaining_amount || 0}
+        onCancel={() => {
+          setShowPaymentWarning(false)
+          setOrderToDeliver(null)
+        }}
+        onMarkAsPaid={() => {
+          if (orderToDeliver) {
+            deliverOrder(orderToDeliver.id, true)
+          }
+        }}
+        onIgnore={() => {
+          if (orderToDeliver) {
+            deliverOrder(orderToDeliver.id, false)
+          }
+        }}
+      />
 
-            {/* محتوى النافذة */}
-            <div className="p-6 space-y-6">
-              {/* معلومات العميل */}
-              <div className="bg-gradient-to-r from-pink-50 to-rose-50 p-4 rounded-lg border border-pink-200">
-                <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                  <User className="w-5 h-5 text-pink-600" />
-                  معلومات العميل
-                </h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-600">اسم العميل</p>
-                    <p className="font-medium text-gray-800">{selectedOrder.client_name}</p>
-                  </div>
-                  {selectedOrder.client_phone && (
-                    <div>
-                      <p className="text-sm text-gray-600">رقم الهاتف</p>
-                      <p className="font-medium text-gray-800">
-                        {workerType === 'workshop_manager' ? '***' : selectedOrder.client_phone}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* معلومات الطلب */}
-              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg border border-blue-200">
-                <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                  <Package className="w-5 h-5 text-blue-600" />
-                  معلومات الطلب
-                </h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-600">الوصف</p>
-                    <p className="font-medium text-gray-800">{selectedOrder.description}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">السعر</p>
-                    <p className="font-medium text-green-600 text-lg">
-                      {workerType === 'workshop_manager' ? '---' : `${selectedOrder.price} ريال`}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">تاريخ الطلب</p>
-                    <p className="font-medium text-gray-800">{formatDate(selectedOrder.created_at)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">موعد التسليم</p>
-                    <p className="font-medium text-gray-800">{formatDate(selectedOrder.due_date)}</p>
-                  </div>
-                  {selectedOrder.worker_id && (
-                    <div>
-                      <p className="text-sm text-gray-600">العامل المسؤول</p>
-                      <p className="font-medium text-gray-800">{getWorkerName(selectedOrder.worker_id)}</p>
-                    </div>
-                  )}
-                  {selectedOrder.fabric && (
-                    <div>
-                      <p className="text-sm text-gray-600">القماش</p>
-                      <p className="font-medium text-gray-800">{selectedOrder.fabric}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* المقاسات */}
-              {selectedOrder.measurements && Object.keys(selectedOrder.measurements).length > 0 && (
-                <div className="bg-gradient-to-r from-purple-50 to-violet-50 p-4 rounded-lg border border-purple-200">
-                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <Ruler className="w-5 h-5 text-purple-600" />
-                    المقاسات
-                  </h4>
-                  <div className="grid grid-cols-3 md:grid-cols-4 gap-2 text-sm">
-                    {Object.entries(selectedOrder.measurements).map(([key, value]) => (
-                      value && (
-                        <div key={key} className="bg-white p-2 rounded text-center border border-purple-100">
-                          <p className="text-gray-500 text-xs">{getMeasurementName(key)}</p>
-                          <p className="font-medium text-purple-700">{String(value)}</p>
-                        </div>
-                      )
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* صور التصميم */}
-              {selectedOrder.images && selectedOrder.images.length > 0 && (
-                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-lg border border-indigo-200">
-                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <ImageIcon className="w-5 h-5 text-indigo-600" />
-                    صور التصميم ({selectedOrder.images.length})
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {selectedOrder.images.map((image: string, index: number) => (
-                      <div
-                        key={index}
-                        className="relative group cursor-pointer"
-                        onClick={() => setLightboxImage(image)}
-                      >
-                        <div className="aspect-square rounded-lg overflow-hidden border-2 border-indigo-300 shadow-md">
-                          <img
-                            src={image}
-                            alt={`صورة التصميم ${index + 1}`}
-                            className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-                          />
-                        </div>
-                        <div className="absolute bottom-2 left-2 bg-indigo-600/90 text-white text-xs px-2 py-1 rounded-full font-medium pointer-events-none">
-                          {index + 1}
-                        </div>
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 rounded-lg flex items-center justify-center pointer-events-none">
-                          <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* صور العمل المكتمل */}
-              {selectedOrder.completed_images && selectedOrder.completed_images.length > 0 && (
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
-                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <ImageIcon className="w-5 h-5 text-green-600" />
-                    صور العمل المكتمل ({selectedOrder.completed_images.length})
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {selectedOrder.completed_images.map((image: string, index: number) => (
-                      <div
-                        key={index}
-                        className="relative group cursor-pointer"
-                        onClick={() => setLightboxImage(image)}
-                      >
-                        <div className="aspect-square rounded-lg overflow-hidden border-2 border-green-300 shadow-md">
-                          <img
-                            src={image}
-                            alt={`صورة العمل المكتمل ${index + 1}`}
-                            className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-                          />
-                        </div>
-                        <div className="absolute bottom-2 left-2 bg-green-600/90 text-white text-xs px-2 py-1 rounded-full font-medium pointer-events-none">
-                          {index + 1}
-                        </div>
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 rounded-lg flex items-center justify-center pointer-events-none">
-                          <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-green-700 mt-3 text-center">
-                    انقر على أي صورة لعرضها بالحجم الكامل
-                  </p>
-                </div>
-              )}
-
-              {/* الملاحظات */}
-              {selectedOrder.notes && (
-                <div className="bg-gradient-to-r from-yellow-50 to-amber-50 p-4 rounded-lg border border-yellow-200">
-                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-yellow-600" />
-                    الملاحظات
-                  </h4>
-                  <p className="text-gray-700">{selectedOrder.notes}</p>
-                </div>
-              )}
-
-              {/* الملاحظات الصوتية */}
-              {selectedOrder.voice_notes && selectedOrder.voice_notes.length > 0 && (
-                <div className="bg-gradient-to-r from-pink-50 to-rose-50 p-4 rounded-lg border border-pink-200">
-                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <Mic className="w-5 h-5 text-pink-600" />
-                    الملاحظات الصوتية ({selectedOrder.voice_notes.length})
-                  </h4>
-                  <VoiceNotes
-                    voiceNotes={selectedOrder.voice_notes.map((vn: string, idx: number) => ({
-                      id: `vn-${idx}`,
-                      data: vn,
-                      timestamp: Date.now()
-                    }))}
-                    onVoiceNotesChange={() => { }}
-                    disabled={true}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* تذييل النافذة */}
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 rounded-b-2xl">
-              <div className="flex gap-4 justify-end">
-                <button
-                  onClick={handleCloseModal}
-                  className="btn-secondary px-6 py-2"
-                >
-                  إغلاق
-                </button>
-                <button
-                  onClick={() => {
-                    handleMarkAsDelivered(selectedOrder.id)
-                    handleCloseModal()
-                  }}
-                  disabled={isProcessing}
-                  className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-2 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg inline-flex items-center gap-2"
-                >
-                  <Truck className="w-4 h-4" />
-                  <span>تم التسليم</span>
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      <DeleteOrderModal
+        isOpen={deleteModalOpen}
+        onClose={closeDeleteModal}
+        onConfirm={confirmDeleteOrder}
+        orderInfo={{
+          id: orderToDelete?.order_number || orderToDelete?.id || '',
+          clientName: orderToDelete?.client_name || '',
+          description: orderToDelete?.description || ''
+        }}
+      />
 
       {/* رسالة نجاح التسليم */}
       {deliverySuccess && (

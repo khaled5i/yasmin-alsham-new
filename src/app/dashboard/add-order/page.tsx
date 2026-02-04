@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -12,7 +12,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ImageUpload from '@/components/ImageUpload'
-import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from '@/components/InteractiveImageAnnotation'
+import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
 import DatePickerForProof from '@/components/DatePickerForProof'
@@ -137,6 +137,9 @@ function AddOrderContent() {
 
   // حالة لتتبع ملف الصورة المخصصة (File object لا يمكن حفظه في localStorage)
   const [customDesignImageFile, setCustomDesignImageFile] = useState<File | null>(null)
+
+  // ref للوصول إلى دوال InteractiveImageAnnotation
+  const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
 
   // تحميل العمال عند تحميل الصفحة
   useEffect(() => {
@@ -332,15 +335,22 @@ function AddOrderContent() {
       // تجميع جميع التعليقات المحفوظة
       let allSavedComments = [...formData.savedDesignComments]
 
-      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
+      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً مع الصورة المركّبة
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        // إنشاء الصورة المركّبة باستخدام ref
+        let compositeImage: string | null = null
+        if (annotationRef.current) {
+          compositeImage = await annotationRef.current.generateCompositeImage()
+        }
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`
+          title: `التعليق ${allSavedComments.length + 1}`,
+          compositeImage: compositeImage // إضافة الصورة المركّبة
         }
         allSavedComments.push(currentComment)
       }
@@ -491,15 +501,22 @@ function AddOrderContent() {
       // تجميع جميع التعليقات المحفوظة
       let allSavedComments = [...formData.savedDesignComments]
 
-      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
+      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً مع الصورة المركّبة
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        // إنشاء الصورة المركّبة باستخدام ref
+        let compositeImage: string | null = null
+        if (annotationRef.current) {
+          compositeImage = await annotationRef.current.generateCompositeImage()
+        }
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`
+          title: `التعليق ${allSavedComments.length + 1}`,
+          compositeImage: compositeImage // إضافة الصورة المركّبة
         }
         allSavedComments.push(currentComment)
       }
@@ -684,7 +701,7 @@ function AddOrderContent() {
               )}
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                {/* الصف الأول: اسم العميل | رقم الهاتف | موعد تسليم البروفا */}
+                {/* الصف الأول: اسم العميل | رقم الهاتف | رقم الطلب */}
 
                 {/* 1. اسم العميل */}
                 <div>
@@ -714,20 +731,22 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 3. موعد تسليم البروفا - تقويم أخضر */}
+                {/* 3. رقم الطلب */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'}
+                    {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
                   </label>
-                  <DatePickerForProof
-                    selectedDate={formData.proofDeliveryDate}
-                    onChange={(date) => handleInputChange('proofDeliveryDate', date)}
-                    minDate={new Date()}
-                    required={false}
+                  <input
+                    type="text"
+                    value={formData.orderNumber}
+                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
+                    disabled={isSubmitting}
                   />
                 </div>
 
-                {/* الصف الثاني: موعد التسليم | رقم الطلب | تاريخ استلام الطلب */}
+                {/* الصف الثاني: موعد التسليم | موعد تسليم البروفا | تاريخ استلام الطلب */}
 
                 {/* 4. موعد التسليم - تقويم ذكي */}
                 <div>
@@ -742,18 +761,16 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 5. رقم الطلب */}
+                {/* 5. موعد تسليم البروفا - تقويم أخضر */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
+                    {isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'}
                   </label>
-                  <input
-                    type="text"
-                    value={formData.orderNumber}
-                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
-                    disabled={isSubmitting}
+                  <DatePickerForProof
+                    selectedDate={formData.proofDeliveryDate}
+                    onChange={(date) => handleInputChange('proofDeliveryDate', date)}
+                    minDate={new Date()}
+                    required={false}
                   />
                 </div>
 
@@ -829,6 +846,7 @@ function AddOrderContent() {
               </h3>
 
               <InteractiveImageAnnotation
+                ref={annotationRef}
                 imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
                 annotations={formData.imageAnnotations}
                 onAnnotationsChange={handleImageAnnotationsChange}
