@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Play, Pause, Trash2, Download, FileText, Languages, Loader2, ChevronDown } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
+import { useAuthStore } from '@/store/authStore'
 
 interface VoiceNote {
   id: string
@@ -58,51 +59,56 @@ export default function VoiceNotes({
   const [selectedLanguage, setSelectedLanguage] = useState<Record<string, string>>({})
   const [targetLanguage, setTargetLanguage] = useState<string>('en')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState<string | null>(null)
+  const { user } = useAuthStore()
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const timerRef = useRef<any>(null)
   const chunksRef = useRef<Blob[]>([])
 
-  // تحميل الترجمات المحفوظة عند فتح الصفحة
+  // تحميل الترجمات المحفوظة محلياً عند فتح الصفحة
   useEffect(() => {
-    const loadSavedTranslations = async () => {
-      if (!orderId || !workerId || voiceNotes.length === 0) return
+    if (!user?.id || voiceNotes.length === 0) return
 
-      try {
-        const response = await fetch(`/api/worker-translations?orderId=${orderId}&workerId=${workerId}`)
-        if (!response.ok) return
+    let hasChanges = false
 
-        const savedTranslations = await response.json()
+    // دمج الترجمات المحفوظة مع الملاحظات الصوتية
+    const updatedNotes = voiceNotes.map(note => {
+      // إذا كانت الترجمة موجودة بالفعل، لا داعي للتحميل من التخزين (لمنع التحديث المستمر)
+      // إلا إذا كنا نريد فرض التحديث من التخزين، ولكن هنا نفترض أن الحالة الحالية هي الأحدث
+      if (note.translatedText) return note
 
-        // دمج الترجمات المحفوظة مع الملاحظات الصوتية
-        const updatedNotes = voiceNotes.map(note => {
-          const savedTranslation = savedTranslations.find((t: any) => t.voice_note_id === note.id)
-          if (savedTranslation) {
+      // البحث عن ترجمة محفوظة في localStorage
+      const storageKey = `yasmin_translation_${user.id}_${note.id}`
+      const savedData = localStorage.getItem(storageKey)
+
+      if (savedData) {
+        try {
+          const parsedData = JSON.parse(savedData)
+          // نتحقق مما إذا كانت الترجمة مختلفة عما هو موجود (أو الملاحظة لا تحتوي ترجمة)
+          if (parsedData.translatedText && note.translatedText !== parsedData.translatedText) {
+            hasChanges = true
             return {
               ...note,
-              translatedText: savedTranslation.translated_text,
-              translationLanguage: savedTranslation.target_language
+              translatedText: parsedData.translatedText,
+              translationLanguage: parsedData.targetLanguage
             }
           }
-          return note
-        })
-
-        // تحديث الملاحظات فقط إذا كانت هناك تغييرات
-        const hasChanges = updatedNotes.some((note, index) =>
-          note.translatedText !== voiceNotes[index].translatedText
-        )
-
-        if (hasChanges) {
-          onVoiceNotesChange(updatedNotes)
+        } catch (e) {
+          console.error('Error parsing saved translation:', e)
         }
-      } catch (error) {
-        console.error('Error loading saved translations:', error)
       }
-    }
+      return note
+    })
 
-    loadSavedTranslations()
-  }, [orderId, workerId]) // نستمع فقط لتغييرات orderId و workerId
+    // تحديث الملاحظات فقط إذا تم العثور على ترجمات جديدة غير موجودة في الحالة الحالية
+    if (hasChanges) {
+      // استخدام setTimeout لتأخير التحديث قليلاً لتجنب تعارض التصيير المتزامن
+      setTimeout(() => {
+        onVoiceNotesChange(updatedNotes)
+      }, 0)
+    }
+  }, [user?.id, voiceNotes]) // الاعتماد على voiceNotes لضمان التحديث عند وصول بيانات جديدة
 
   // تحويل base64 إلى Blob للتشغيل
   const base64ToBlob = (base64: string): Blob => {
@@ -451,24 +457,18 @@ export default function VoiceNotes({
       )
       onVoiceNotesChange(updatedNotes)
 
-      // حفظ الترجمة في قاعدة البيانات إذا كان orderId و workerId متوفرين
-      if (orderId && workerId) {
+      // حفظ الترجمة في localStorage لكل مستخدم على حدة
+      if (user?.id) {
         try {
-          await fetch('/api/worker-translations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              orderId,
-              workerId,
-              voiceNoteId: noteId,
-              originalText: note.transcription,
-              translatedText: data.translatedText,
-              targetLanguage: targetLanguage
-            })
-          })
-        } catch (dbError) {
-          console.error('Error saving translation to database:', dbError)
-          // لا نعرض خطأ للمستخدم لأن الترجمة نجحت في الواجهة
+          const storageKey = `yasmin_translation_${user.id}_${noteId}`
+          const translationData = {
+            translatedText: data.translatedText,
+            targetLanguage: targetLanguage,
+            timestamp: Date.now()
+          }
+          localStorage.setItem(storageKey, JSON.stringify(translationData))
+        } catch (error) {
+          console.error('Error saving translation to localStorage:', error)
         }
       }
 

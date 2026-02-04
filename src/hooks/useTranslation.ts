@@ -473,6 +473,23 @@ const arTranslations: Translations = {
   'measurements_saved_successfully': 'تم حفظ المقاسات بنجاح',
   'measurements_save_error': 'حدث خطأ أثناء حفظ المقاسات',
 
+  // مفاتيح لوحة تحكم الخياط
+  'tailor_dashboard_desc': 'إدارة ومتابعة طلبات الخياطة الخاصة بك',
+  'tailor_workspace': 'مساحة عمل الخياط',
+  'tailor_workspace_info': 'يمكنك متابعة طلباتك الحالية، وتحديث حالاتها، وعرض أرشيف الطلبات المكتملة',
+  'current_orders': 'الطلبات الجارية',
+  'view_update_orders': 'عرض وتحديث حالة الطلبات المسندة إليك',
+  'view_completed_archive': 'عرض سجل الطلبات التي أنجزتها',
+
+  // مفاتيح صفحة الطلبات المكتملة
+  'completed_orders_subtitle': 'الطلبات التي أنهيتها وجاهزة للتسليم',
+  'total_completed_orders_label': 'إجمالي الطلبات المكتملة:',
+  'no_completed_orders_title': 'لا توجد طلبات مكتملة',
+  'no_completed_orders_message': 'لا توجد طلبات مكتملة في الوقت الحالي.',
+  'delivery_success_message': 'تم تحديث حالة الطلب إلى "تم التسليم" بنجاح',
+  'request_alteration': 'طلب تعديل',
+  'delete_order': 'حذف الطلب',
+
   'language': 'ar'
 }
 
@@ -798,6 +815,23 @@ const enTranslations: Translations = {
   'pm': 'PM',
   'am': 'AM',
   'all_statuses': 'All Statuses',
+
+  // Tailor Dashboard Keys
+  'tailor_dashboard_desc': 'Manage and track your tailoring orders',
+  'tailor_workspace': 'Tailor Workspace',
+  'tailor_workspace_info': 'You can track your current orders, update their status, and view completed orders archive',
+  'current_orders': 'Current Orders',
+  'view_update_orders': 'View and update status of orders assigned to you',
+  'view_completed_archive': 'View archive of orders you completed',
+
+  // Completed Orders Page Keys
+  'completed_orders_subtitle': 'Orders you have finished and are ready for delivery',
+  'total_completed_orders_label': 'Total Completed Orders:',
+  'no_completed_orders_title': 'No Completed Orders',
+  'no_completed_orders_message': 'There are no completed orders at the moment.',
+  'delivery_success_message': 'Order status updated to "Delivered" successfully',
+  'request_alteration': 'Request Alteration',
+  'delete_order': 'Delete Order',
   'all_dates': 'All Dates',
   'today': 'Today',
   'tomorrow': 'Tomorrow',

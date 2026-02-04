@@ -27,7 +27,10 @@ import {
 import { Order } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
 import { useAuthStore } from '@/store/authStore'
+import { useOrderStore } from '@/store/orderStore' // إضافة
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions' // إضافة
 import { useTranslation } from '@/hooks/useTranslation'
+import { toast } from 'react-hot-toast' // إضافة
 import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
@@ -35,7 +38,7 @@ import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveI
 
 interface OrderModalProps {
   order: Order | null
-  workers: Worker[]
+  workers: any[] // Using any to handle WorkerWithUser and legacy Worker types
   isOpen: boolean
   onClose: () => void
 }
@@ -47,6 +50,9 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
   const [voiceNotes, setVoiceNotes] = useState<any[]>([])
   const [showPrintModal, setShowPrintModal] = useState(false)
 
+  const { updateOrder } = useOrderStore()
+  const { workerType } = useWorkerPermissions() // للتحقق من صلاجيات مدير الورشة
+
   // حالات تعليقات التصميم
   const [imageAnnotations, setImageAnnotations] = useState<ImageAnnotation[]>([])
   const [imageDrawings, setImageDrawings] = useState<DrawingPath[]>([])
@@ -56,6 +62,12 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
   const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null)
   const [translatingAnnotationId, setTranslatingAnnotationId] = useState<string | null>(null)
   const [showAnnotationLanguageDropdown, setShowAnnotationLanguageDropdown] = useState<string | null>(null)
+
+  // حالات تعديل العامل
+  const [isEditingWorker, setIsEditingWorker] = useState(false)
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
+  const [isLoading, setIsLoading] = useState(false)
+
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map())
@@ -105,6 +117,35 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
     }
   }, [order])
 
+  // تحديث حالة العامل المحدد عند فتح المودال
+  useEffect(() => {
+    if (order) {
+      setSelectedWorkerId(order.worker_id || '')
+    }
+  }, [order])
+
+  // حفظ تغيير العامل
+  const handleSaveWorker = async () => {
+    if (!order) return
+
+    setIsLoading(true)
+    try {
+      const result = await updateOrder(order.id, { worker_id: selectedWorkerId || null })
+
+      if (result.success) {
+        setIsEditingWorker(false)
+        toast.success(t('worker_updated_successfully') || 'تم تحديث العامل بنجاح')
+      } else {
+        toast.error(result.error || 'فشل تحديث العامل')
+      }
+    } catch (error) {
+      console.error('Error updating worker:', error)
+      toast.error('حدث خطأ غير متوقع')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   // تشغيل/إيقاف الصوت للتعليق
   const toggleAnnotationAudio = (annotation: ImageAnnotation) => {
     if (!annotation.audioData) return
@@ -142,7 +183,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
     setTranslatingAnnotationId(annotationId)
 
     try {
-      const response = await fetch('/api/translate', {
+      const response = await fetch('/api/translate-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -155,7 +196,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
 
       const data = await response.json()
 
-      // تحديث التعليق بالنص المترجم
+      // Update the comment with the translated text
       const updatedComments = savedDesignComments.map(c => {
         if (c.id === commentId) {
           return {
@@ -170,12 +211,53 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
         return c
       })
       setSavedDesignComments(updatedComments)
+
+      // Save to localStorage
+      if (user?.id) {
+        try {
+          const storageKey = `yasmin_annotation_trans_${user.id}_${commentId}_${annotationId}`
+          localStorage.setItem(storageKey, JSON.stringify({
+            translatedText: data.translatedText,
+            translationLanguage: targetLang
+          }))
+        } catch (e) {
+          console.error('Error saving translation:', e)
+        }
+      }
+
     } catch (error) {
       console.error('Translation error:', error)
     } finally {
       setTranslatingAnnotationId(null)
     }
   }
+
+  // Load saved design comment translations
+  useEffect(() => {
+    if (!user?.id || savedDesignComments.length === 0) return
+
+    let hasChanges = false
+    const updatedComments = savedDesignComments.map(c => ({
+      ...c,
+      annotations: c.annotations.map(a => {
+        const storageKey = `yasmin_annotation_trans_${user.id}_${c.id}_${a.id}`
+        const saved = localStorage.getItem(storageKey)
+        if (saved && !a.translatedText) {
+          try {
+            const parsed = JSON.parse(saved)
+            hasChanges = true
+            return { ...a, translatedText: parsed.translatedText, translationLanguage: parsed.translationLanguage }
+          } catch { return a }
+        }
+        return a
+      })
+    }))
+
+    if (hasChanges) {
+      setSavedDesignComments(updatedComments)
+    }
+  }, [user?.id, savedDesignComments.length]) // Use length to avoid loop, assumes comments don't change content deeply without length change often inside modal
+
 
   // إغلاق قائمة اللغات عند النقر خارجها
   useEffect(() => {
@@ -253,7 +335,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
   const getWorkerName = (workerId?: string | null) => {
     if (!workerId) return t('not_specified')
     const worker = workers.find(w => w.id === workerId)
-    return worker ? (worker.user?.full_name || worker.id) : t('not_specified')
+    return worker ? (worker.user?.full_name || worker.full_name || worker.id) : t('not_specified')
   }
 
   const getStatusInfo = (status: string) => {
@@ -399,13 +481,67 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                     </div>
                   )}
 
-                  {/* العامل المسؤول */}
+                  {/* العامل المسؤول - مع إمكانية التعديل للمشرفين */}
                   <div className="bg-white p-2 sm:p-3 rounded-lg">
-                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                      <UserCheck className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="text-xs sm:text-sm font-medium truncate">{t('assigned_worker')}:</span>
+                    <div className="flex items-center justify-between mb-0.5 sm:mb-1">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600">
+                        <UserCheck className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('assigned_worker')}:</span>
+                      </div>
+
+                      {/* زر التعديل للمشرفين */}
+                      {!isEditingWorker && (user?.role === 'admin' || (workerType === 'workshop_manager' && order.status !== 'completed')) && (
+                        <button
+                          onClick={() => setIsEditingWorker(true)}
+                          className="text-pink-600 hover:text-pink-800 p-0.5 rounded transition-colors"
+                          title={t('edit') || 'تعديل'}
+                        >
+                          <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        </button>
+                      )}
                     </div>
-                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{getWorkerName(order.worker_id)}</p>
+
+                    {isEditingWorker ? (
+                      <div className="flex items-center gap-1 mt-1">
+                        <select
+                          className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 focus:ring-1 focus:ring-pink-500 focus:border-pink-500 outline-none"
+                          value={selectedWorkerId || ''}
+                          onChange={(e) => setSelectedWorkerId(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="">{t('select_worker')}</option>
+                          {workers
+                            .filter(worker => worker.worker_type === 'tailor')
+                            .map(worker => (
+                              <option key={worker.id} value={worker.id}>
+                                {worker.user?.full_name || worker.phone || (worker as any).user?.phone}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          onClick={handleSaveWorker}
+                          disabled={isLoading}
+                          className="bg-green-500 text-white p-1 rounded hover:bg-green-600 transition-colors flex-shrink-0"
+                          title={t('save') || 'حفظ'}
+                        >
+                          {isLoading ? <Loader2 className="w-3 h-3 animate-spin api-loading" /> : <CheckCircle className="w-3 h-3" />}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsEditingWorker(false)
+                            setSelectedWorkerId(order.worker_id || '')
+                          }}
+                          className="bg-gray-200 text-gray-600 p-1 rounded hover:bg-gray-300 transition-colors flex-shrink-0"
+                          title={t('cancel') || 'إلغاء'}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">
+                        {getWorkerName(order.worker_id)}
+                      </p>
+                    )}
                   </div>
 
                   {/* الحالة */}
@@ -489,7 +625,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                         onVoiceNotesChange={setVoiceNotes}
                         readOnly={true}
                         orderId={order.id}
-                        workerId={user?.worker_id}
+                      // workerId prop removed as we use user.id from auth store for local storage
                       />
                     )}
                   </div>
@@ -864,8 +1000,8 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
                                                     }
                                                   }}
                                                   className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${annotation.translationLanguage === lang.code
-                                                      ? 'bg-purple-100 text-purple-700 font-semibold'
-                                                      : 'text-gray-700'
+                                                    ? 'bg-purple-100 text-purple-700 font-semibold'
+                                                    : 'text-gray-700'
                                                     }`}
                                                 >
                                                   <div className="flex items-center justify-between gap-2">

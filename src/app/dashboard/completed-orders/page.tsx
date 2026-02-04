@@ -501,45 +501,48 @@ export default function CompletedOrdersPage() {
                   </div>
 
                   {/* الإجراءات */}
-                  <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                    <Link
-                      href={`/dashboard/alterations/add?orderId=${order.id}`}
-                      className="p-3 bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 rounded-lg transition-all duration-200 text-center"
-                      title={t('request_alteration') || 'طلب تعديل'}
-                    >
-                      <Wrench className="w-5 h-5 mx-auto" />
-                    </Link>
+                  {/* الإجراءات - مخفية لمدير الورشة */}
+                  {!isWorkshopManager && (
+                    <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                      <Link
+                        href={`/dashboard/alterations/add?orderId=${order.id}`}
+                        className="p-3 bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 rounded-lg transition-all duration-200 text-center"
+                        title={t('request_alteration') || 'طلب تعديل'}
+                      >
+                        <Wrench className="w-5 h-5 mx-auto" />
+                      </Link>
 
-                    <button
-                      onClick={() => handleSendReadyForPickup(order)}
-                      disabled={!order.client_phone || order.client_phone.trim() === ''}
-                      className="p-3 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={!order.client_phone ? 'لا يوجد رقم هاتف للعميل' : 'إرسال رسالة استلام'}
-                    >
-                      <MessageCircle className="w-5 h-5 mx-auto" />
-                    </button>
+                      <button
+                        onClick={() => handleSendReadyForPickup(order)}
+                        disabled={!order.client_phone || order.client_phone.trim() === ''}
+                        className="p-3 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={!order.client_phone ? 'لا يوجد رقم هاتف للعميل' : 'إرسال رسالة استلام'}
+                      >
+                        <MessageCircle className="w-5 h-5 mx-auto" />
+                      </button>
 
-                    <button
-                      onClick={() => handleMarkAsDelivered(order.id)}
-                      disabled={isProcessing}
-                      className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="تم التسليم"
-                    >
-                      {isProcessing ? (
-                        <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                      ) : (
-                        <Truck className="w-5 h-5 mx-auto" />
-                      )}
-                    </button>
+                      <button
+                        onClick={() => handleMarkAsDelivered(order.id)}
+                        disabled={isProcessing}
+                        className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="تم التسليم"
+                      >
+                        {isProcessing ? (
+                          <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                        ) : (
+                          <Truck className="w-5 h-5 mx-auto" />
+                        )}
+                      </button>
 
-                    <button
-                      onClick={(e) => handleDeleteOrder(order, e)}
-                      className="p-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg transition-all duration-200 text-center"
-                      title={t('delete_order') || 'حذف الطلب'}
-                    >
-                      <Trash2 className="w-5 h-5 mx-auto" />
-                    </button>
-                  </div>
+                      <button
+                        onClick={(e) => handleDeleteOrder(order, e)}
+                        className="p-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg transition-all duration-200 text-center"
+                        title={t('delete_order') || 'حذف الطلب'}
+                      >
+                        <Trash2 className="w-5 h-5 mx-auto" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ))

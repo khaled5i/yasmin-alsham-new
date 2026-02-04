@@ -208,26 +208,6 @@ export default function WorkshopManagerDashboard() {
                 </div>
               </div>
             </Link>
-
-            {/* بطاقة الطلبات المسلمة */}
-            <Link
-              href="/dashboard/delivered-orders"
-              className="group p-4 sm:p-6 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:shadow-lg transition-all duration-300"
-            >
-              <div className="flex flex-col items-center text-center space-y-3 sm:space-y-4">
-                <div className="p-3 sm:p-4 bg-gradient-to-br from-purple-400 to-indigo-400 rounded-full group-hover:scale-110 transition-transform duration-300">
-                  <Truck className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-                </div>
-                <div>
-                  <h4 className="text-base sm:text-lg font-bold text-purple-800 mb-1 sm:mb-2">
-                    {t('delivered_orders') || 'الطلبات المسلمة'}
-                  </h4>
-                  <p className="text-xs sm:text-sm text-purple-600">
-                    {t('view_delivered_history') || 'عرض سجل الطلبات المسلمة'}
-                  </p>
-                </div>
-              </div>
-            </Link>
           </div>
         </motion.div>
       </main>
