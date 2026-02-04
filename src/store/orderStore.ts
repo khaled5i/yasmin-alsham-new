@@ -1,12 +1,20 @@
 /**
  * Order Store - مخزن الطلبات مع Supabase
  * يتعامل مع جميع عمليات الطلبات باستخدام Supabase
+ * 
+ * PERFORMANCE OPTIMIZATION:
+ * - Optimistic loading: Show cached data immediately while fetching
+ * - Smart caching: Skip redundant fetches within 30 seconds
+ * - isRefreshing vs isLoading: Only show loading UI when no cached data
  */
 
 'use client'
 
 import { create } from 'zustand'
 import { orderService, Order, CreateOrderData, UpdateOrderData } from '@/lib/services/order-service'
+
+// Smart fetch TTL: 30 seconds - skip redundant fetches within this window
+const FETCH_TTL_MS = 30 * 1000
 
 // ============================================================================
 // أنواع البيانات
@@ -16,11 +24,13 @@ interface OrderState {
   // البيانات
   orders: Order[]
   currentOrder: Order | null
-  
+
   // حالة التحميل
-  isLoading: boolean
+  isLoading: boolean       // True only if we have NO cached orders AND are fetching
+  isRefreshing: boolean    // True when fetching in background (already have cached orders)
+  lastFetchedAt: number | null  // Timestamp of last successful fetch
   error: string | null
-  
+
   // العمليات الأساسية
   loadOrders: (filters?: {
     status?: string
@@ -28,23 +38,24 @@ interface OrderState {
     user_id?: string
     payment_status?: string
   }) => Promise<void>
-  
+
   loadOrderById: (id: string) => Promise<void>
   loadOrderByNumber: (orderNumber: string) => Promise<void>
   loadOrdersByPhone: (phoneNumber: string) => Promise<void>
-  
+
   createOrder: (orderData: CreateOrderData) => Promise<{ success: boolean; data?: Order; error?: string }>
   updateOrder: (id: string, updates: UpdateOrderData) => Promise<{ success: boolean; data?: Order; error?: string }>
   deleteOrder: (id: string) => Promise<{ success: boolean; error?: string }>
-  
+
   // عمليات خاصة بالعمال
   startOrderWork: (orderId: string) => Promise<{ success: boolean; error?: string }>
   completeOrder: (orderId: string, completedImages?: string[]) => Promise<{ success: boolean; error?: string }>
-  
+
   // وظائف مساعدة
   clearError: () => void
   clearCurrentOrder: () => void
-  
+  forceRefresh: () => Promise<void>  // Force a fresh fetch, bypassing cache
+
   // إحصائيات
   getStats: () => {
     totalOrders: number
@@ -53,6 +64,7 @@ interface OrderState {
     completedOrders: number
     deliveredOrders: number
     cancelledOrders: number
+    activeOrders: number
     totalRevenue: number
     paidAmount: number
     unpaidAmount: number
@@ -68,13 +80,34 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   orders: [],
   currentOrder: null,
   isLoading: false,
+  isRefreshing: false,
+  lastFetchedAt: null,
   error: null,
 
   // ============================================================================
   // تحميل الطلبات
   // ============================================================================
   loadOrders: async (filters) => {
-    set({ isLoading: true, error: null })
+    const state = get()
+    const now = Date.now()
+
+    // OPTIMIZATION: Skip redundant fetches if data is fresh
+    if (state.lastFetchedAt && (now - state.lastFetchedAt) < FETCH_TTL_MS) {
+      console.log('⚡ Orders data is fresh, skipping fetch')
+      return
+    }
+
+    // OPTIMISTIC LOADING: If we have cached orders, don't show loading spinner
+    // Instead, show "refreshing" which doesn't block the UI
+    const hasCachedOrders = state.orders.length > 0
+
+    if (hasCachedOrders) {
+      // We have cached data - refresh in background
+      set({ isRefreshing: true, error: null })
+    } else {
+      // No cached data - show loading spinner
+      set({ isLoading: true, error: null })
+    }
 
     try {
       console.log('📋 Loading orders...', filters)
@@ -82,22 +115,25 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const result = await orderService.getAll(filters)
 
       if (result.error) {
-        set({ error: result.error, isLoading: false })
+        set({ error: result.error, isLoading: false, isRefreshing: false })
         return
       }
 
-      set({ 
-        orders: result.data, 
+      set({
+        orders: result.data,
         isLoading: false,
-        error: null 
+        isRefreshing: false,
+        lastFetchedAt: Date.now(),
+        error: null
       })
 
       console.log(`✅ Loaded ${result.data.length} orders`)
     } catch (error: any) {
       console.error('❌ Error loading orders:', error)
-      set({ 
-        error: error.message || 'خطأ في تحميل الطلبات', 
-        isLoading: false 
+      set({
+        error: error.message || 'خطأ في تحميل الطلبات',
+        isLoading: false,
+        isRefreshing: false
       })
     }
   },
@@ -118,18 +154,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         return
       }
 
-      set({ 
-        currentOrder: result.data, 
+      set({
+        currentOrder: result.data,
         isLoading: false,
-        error: null 
+        error: null
       })
 
       console.log('✅ Order loaded successfully')
     } catch (error: any) {
       console.error('❌ Error loading order:', error)
-      set({ 
-        error: error.message || 'خطأ في تحميل الطلب', 
-        isLoading: false 
+      set({
+        error: error.message || 'خطأ في تحميل الطلب',
+        isLoading: false
       })
     }
   },
@@ -150,18 +186,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         return
       }
 
-      set({ 
-        currentOrder: result.data, 
+      set({
+        currentOrder: result.data,
         isLoading: false,
-        error: null 
+        error: null
       })
 
       console.log('✅ Order loaded successfully')
     } catch (error: any) {
       console.error('❌ Error loading order:', error)
-      set({ 
-        error: error.message || 'خطأ في تحميل الطلب', 
-        isLoading: false 
+      set({
+        error: error.message || 'خطأ في تحميل الطلب',
+        isLoading: false
       })
     }
   },
@@ -182,18 +218,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         return
       }
 
-      set({ 
-        orders: result.data, 
+      set({
+        orders: result.data,
         isLoading: false,
-        error: null 
+        error: null
       })
 
       console.log(`✅ Loaded ${result.data.length} orders`)
     } catch (error: any) {
       console.error('❌ Error loading orders:', error)
-      set({ 
-        error: error.message || 'خطأ في تحميل الطلبات', 
-        isLoading: false 
+      set({
+        error: error.message || 'خطأ في تحميل الطلبات',
+        isLoading: false
       })
     }
   },
@@ -249,7 +285,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
       // تحديث الطلب في القائمة
       set((state) => ({
-        orders: state.orders.map(order => 
+        orders: state.orders.map(order =>
           order.id === id ? result.data! : order
         ),
         currentOrder: state.currentOrder?.id === id ? result.data : state.currentOrder,
@@ -312,7 +348,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   // إنهاء الطلب (للعمال)
   // ============================================================================
   completeOrder: async (orderId, completedImages) => {
-    return get().updateOrder(orderId, { 
+    return get().updateOrder(orderId, {
       status: 'completed',
       completed_images: completedImages || []
     })
@@ -327,6 +363,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
   clearCurrentOrder: () => {
     set({ currentOrder: null })
+  },
+
+  // Force a fresh fetch, bypassing the cache TTL
+  forceRefresh: async () => {
+    console.log('🔄 Force refreshing orders...')
+    set({ lastFetchedAt: null })  // Clear the cache timestamp
+    await get().loadOrders()
   },
 
   // ============================================================================

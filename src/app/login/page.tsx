@@ -6,7 +6,7 @@ import { LogIn, User, Lock, Eye, EyeOff, AlertCircle, CheckCircle, Calendar, Inf
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { getWorkerDashboardRoute } from '@/lib/worker-types'
 import type { WorkerType } from '@/lib/services/worker-service'
 
@@ -15,49 +15,89 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isValidatingSession, setIsValidatingSession] = useState(true)
 
-  const { signIn, isLoading: authLoading, user } = useAuthStore()
+  const { signIn, isLoading: authLoading, user, isSessionFresh } = useAuthStore()
   const router = useRouter()
 
-  // التحقق من المصادقة عند تحميل الصفحة
+  // Validate session on page load - only redirect if session is actually valid
+  // This prevents the auto-login loop caused by stale cached users
   useEffect(() => {
-    async function checkAndRedirect() {
+    async function validateAndRedirect() {
+      // If user exists from cache, validate their session with Supabase first
       if (user && user.is_active) {
-        console.log('👤 المستخدم مسجل دخول بالفعل، توجيه إلى لوحة التحكم...')
+        console.log('👤 Cached user found, validating session...')
 
-        // إذا كان المستخدم admin، توجيه إلى /dashboard
-        if (user.role === 'admin') {
-          router.push('/dashboard')
+        // If session is fresh (verified within last 5 min), redirect immediately
+        if (isSessionFresh()) {
+          console.log('✅ Session is fresh, redirecting...')
+          await redirectUser(user)
+          setIsValidatingSession(false)
           return
         }
 
-        // إذا كان المستخدم worker، جلب نوعه وتوجيهه للصفحة المناسبة
-        if (user.role === 'worker') {
+        // Session is not fresh, need to validate with Supabase
+        if (isSupabaseConfigured()) {
           try {
-            const { data, error } = await supabase
-              .from('workers')
-              .select('worker_type')
-              .eq('user_id', user.id)
-              .single()
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-            if (!error && data?.worker_type) {
-              const dashboardRoute = getWorkerDashboardRoute(data.worker_type as WorkerType)
-              console.log('🔀 توجيه العامل إلى:', dashboardRoute)
-              router.push(dashboardRoute)
+            if (sessionError || !session?.user) {
+              console.log('⚠️ Supabase session is invalid or expired, staying on login page')
+              // Clear stale user data - let them log in again
+              useAuthStore.setState({ user: null, lastVerifiedAt: null })
+              setIsValidatingSession(false)
               return
             }
-          } catch (err) {
-            console.error('خطأ في جلب نوع العامل:', err)
-          }
-        }
 
-        // fallback
-        router.push('/dashboard')
+            // Session is valid, redirect
+            console.log('✅ Supabase session validated, redirecting...')
+            await redirectUser(user)
+          } catch (err) {
+            console.error('Error validating session:', err)
+            // On error, stay on login page
+            setIsValidatingSession(false)
+            return
+          }
+        } else {
+          // Supabase not configured, trust localStorage (demo mode)
+          await redirectUser(user)
+        }
       }
+      setIsValidatingSession(false)
     }
 
-    checkAndRedirect()
-  }, [user, router])
+    async function redirectUser(currentUser: typeof user) {
+      if (!currentUser) return
+
+      if (currentUser.role === 'admin') {
+        router.push('/dashboard')
+        return
+      }
+
+      if (currentUser.role === 'worker') {
+        try {
+          const { data, error } = await supabase
+            .from('workers')
+            .select('worker_type')
+            .eq('user_id', currentUser.id)
+            .single()
+
+          if (!error && data?.worker_type) {
+            const dashboardRoute = getWorkerDashboardRoute(data.worker_type as WorkerType)
+            console.log('🔀 Redirecting worker to:', dashboardRoute)
+            router.push(dashboardRoute)
+            return
+          }
+        } catch (err) {
+          console.error('Error fetching worker type:', err)
+        }
+      }
+
+      router.push('/dashboard')
+    }
+
+    validateAndRedirect()
+  }, [user, router, isSessionFresh])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -137,6 +177,26 @@ export default function LoginPage() {
       console.error('💥 خطأ في تسجيل الدخول:', error)
       setError('حدث خطأ غير متوقع أثناء تسجيل الدخول')
     }
+  }
+
+  // Show loading while validating session
+  if (isValidatingSession) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="text-center"
+        >
+          <div className="w-16 h-16 bg-gradient-to-br from-pink-400 to-rose-400 rounded-full flex items-center justify-center mx-auto mb-4">
+            <LogIn className="w-8 h-8 text-white animate-pulse" />
+          </div>
+          <div className="w-12 h-12 border-4 border-pink-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-medium">جاري التحقق من الجلسة...</p>
+        </motion.div>
+      </div>
+    )
   }
 
   return (

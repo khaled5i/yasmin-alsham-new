@@ -2,6 +2,9 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
+// Session TTL: 5 minutes - sessions are considered valid for this duration without re-verification
+const SESSION_TTL_MS = 5 * 60 * 1000
+
 // تعريف نوع المستخدم
 export interface AuthUser {
   id: string
@@ -19,6 +22,7 @@ interface AuthState {
   isLoading: boolean
   error: string | null
   anonymousUserId: string | null
+  lastVerifiedAt: number | null  // Timestamp of last successful session verification
 
   // Actions
   signIn: (email: string, password: string) => Promise<boolean>
@@ -26,7 +30,9 @@ interface AuthState {
   setUser: (user: AuthUser | null) => void
   clearError: () => void
   checkAuth: () => Promise<void>
+  forceRevalidate: () => Promise<void>  // Force a fresh session check
   isAuthenticated: () => boolean
+  isSessionFresh: () => boolean  // Check if session was recently verified
   ensureAnonymousUser: () => Promise<string>
 }
 
@@ -62,6 +68,15 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       anonymousUserId: null,
+      lastVerifiedAt: null,
+
+      // Check if the session was verified recently (within TTL)
+      isSessionFresh: () => {
+        const state = get()
+        if (!state.user || !state.lastVerifiedAt) return false
+        const now = Date.now()
+        return (now - state.lastVerifiedAt) < SESSION_TTL_MS
+      },
 
       ensureAnonymousUser: async () => {
         const state = get()
@@ -167,7 +182,7 @@ export const useAuthStore = create<AuthState>()(
                 console.log('💾 تم حفظ المستخدم في localStorage')
               }
 
-              set({ user, isLoading: false, error: null })
+              set({ user, isLoading: false, error: null, lastVerifiedAt: Date.now() })
               console.log('🎉 تم تسجيل الدخول بنجاح عبر Supabase!')
               return true
             }
@@ -201,7 +216,7 @@ export const useAuthStore = create<AuthState>()(
               console.log('💾 تم حفظ المستخدم في localStorage')
             }
 
-            set({ user, isLoading: false, error: null })
+            set({ user, isLoading: false, error: null, lastVerifiedAt: Date.now() })
             console.log('🎉 تم تسجيل الدخول بنجاح عبر localStorage!')
 
             return true
@@ -235,7 +250,7 @@ export const useAuthStore = create<AuthState>()(
             localStorage.removeItem('yasmin-auth-user')
           }
 
-          set({ user: null, isLoading: false, error: null })
+          set({ user: null, isLoading: false, error: null, lastVerifiedAt: null })
           console.log('👋 تم تسجيل الخروج بنجاح')
         } catch (error) {
           console.error('خطأ في تسجيل الخروج:', error)
@@ -261,6 +276,14 @@ export const useAuthStore = create<AuthState>()(
       },
 
       checkAuth: async () => {
+        const state = get()
+
+        // OPTIMIZATION: If session was recently verified, skip re-verification
+        if (state.isSessionFresh()) {
+          console.log('⚡ Session is fresh, skipping re-verification')
+          return
+        }
+
         set({ isLoading: true })
 
         try {
@@ -301,39 +324,50 @@ export const useAuthStore = create<AuthState>()(
                   localStorage.setItem('yasmin-auth-user', JSON.stringify(user))
                 }
 
-                set({ user, isLoading: false })
+                // Mark session as freshly verified
+                set({ user, isLoading: false, lastVerifiedAt: Date.now() })
                 console.log('🎉 تم استعادة الجلسة بنجاح!')
                 return
               }
             } else {
               console.log('⚠️ لا توجد جلسة Supabase نشطة')
+              // IMPORTANT: If Supabase session is expired, clear stale localStorage data
+              if (typeof window !== 'undefined') {
+                const savedUser = localStorage.getItem('yasmin-auth-user')
+                if (savedUser) {
+                  console.log('🧹 Clearing stale localStorage user (Supabase session expired)')
+                  localStorage.removeItem('yasmin-auth-user')
+                }
+              }
+              set({ user: null, isLoading: false, lastVerifiedAt: null })
+              return
             }
           }
 
           // Fallback: التحقق من وجود مستخدم محفوظ في localStorage
+          // Only use this if Supabase is not configured
           if (typeof window !== 'undefined') {
             const savedUser = localStorage.getItem('yasmin-auth-user')
             if (savedUser) {
               const user = JSON.parse(savedUser) as AuthUser
               console.log('📦 تم استعادة المستخدم من localStorage:', user.email)
-
-              // محاولة إعادة تسجيل الدخول في Supabase إذا كان لدينا token
-              // هذا مهم لأن RLS policies تحتاج جلسة Supabase صالحة
-              if (isSupabaseConfigured() && user.token) {
-                console.log('🔄 محاولة استعادة جلسة Supabase...')
-                // لا نحتاج لفعل شيء هنا - Supabase يستعيد الجلسة تلقائيًا من storage
-              }
-
-              set({ user, isLoading: false })
+              set({ user, isLoading: false, lastVerifiedAt: Date.now() })
               return
             }
           }
 
-          set({ user: null, isLoading: false })
+          set({ user: null, isLoading: false, lastVerifiedAt: null })
         } catch (error) {
           console.error('خطأ في التحقق من المصادقة:', error)
-          set({ user: null, isLoading: false })
+          set({ user: null, isLoading: false, lastVerifiedAt: null })
         }
+      },
+
+      // Force a fresh session check, bypassing the TTL cache
+      forceRevalidate: async () => {
+        console.log('🔄 Force revalidating session...')
+        set({ lastVerifiedAt: null })  // Clear the cache
+        await get().checkAuth()
       },
 
       isAuthenticated: () => {
@@ -343,7 +377,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'yasmin-auth-storage',
-      partialize: (state) => ({ user: state.user })
+      partialize: (state) => ({ user: state.user, lastVerifiedAt: state.lastVerifiedAt })
     }
   )
 )

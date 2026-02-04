@@ -73,21 +73,24 @@ export default function CompletedOrdersPage() {
       return
     }
 
-    // السماح للمدير ومدير الورشة فقط
-    if (!permissionsLoading) {
-      const isAdmin = user.role === 'admin'
-      const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
-
-      if (!isAdmin && !isWorkshopManager) {
-        router.push('/dashboard')
-        return
-      }
-    }
-
-    // تحميل البيانات
+    // OPTIMIZATION: Load data IMMEDIATELY, don't wait for permissions
+    // This eliminates the blank "No orders" state on first visit
     loadOrders()
     loadWorkers()
-  }, [user, authLoading, workerType, permissionsLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // Separate effect for permission-based redirect (runs in parallel)
+  useEffect(() => {
+    if (authLoading || permissionsLoading || !user) return
+
+    // السماح للمدير ومدير الورشة فقط
+    const isAdmin = user.role === 'admin'
+    const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
+
+    if (!isAdmin && !isWorkshopManager) {
+      router.push('/dashboard')
+    }
+  }, [user, authLoading, workerType, permissionsLoading, router])
 
   // فلترة الطلبات المكتملة فقط
   const completedOrders = orders.filter(order => {
@@ -352,7 +355,7 @@ export default function CompletedOrdersPage() {
           className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6"
         >
           {/* صف واحد: حقل البحث والفلاتر - عرض أفقي حتى في الجوال */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3 overflow-x-auto">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 overflow-x-auto">
             {/* حقل البحث الشامل */}
             <div className="relative min-w-0">
               <Search className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />

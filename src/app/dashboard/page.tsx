@@ -441,10 +441,10 @@ function DashboardContent() {
             <div className="flex flex-col gap-4 sm:gap-6">
               {/* أزرار العمل للمدير */}
               {user?.role === 'admin' && (
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center sm:justify-start w-full">
+                <div className="flex flex-row gap-3 w-full">
                   <Link
                     href="/dashboard/add-order"
-                    className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse px-4 sm:px-6 py-3 sm:py-4 group text-sm sm:text-base w-full sm:w-auto min-w-0 flex-shrink-0"
+                    className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse px-2 py-3 sm:px-6 sm:py-4 group text-xs sm:text-base flex-1 min-w-0"
                   >
                     <Plus className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
                     <span className="whitespace-nowrap">{t('add_new_order')}</span>
@@ -462,10 +462,10 @@ function DashboardContent() {
 
                   <button
                     onClick={handleAddNewAlteration}
-                    className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse px-4 sm:px-6 py-3 sm:py-4 group text-sm sm:text-base w-full sm:w-auto min-w-0 flex-shrink-0"
+                    className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse px-2 py-3 sm:px-6 sm:py-4 group text-xs sm:text-base flex-1 min-w-0"
                   >
                     <Wrench className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
-                    <span className="whitespace-nowrap">{isArabic ? 'إضافة طلب تعديل جديد' : 'Add New Alteration'}</span>
+                    <span className="whitespace-nowrap">{isArabic ? 'إضافة طلب تعديل' : 'Add Alteration'}</span>
                   </button>
                 </div>
               )}

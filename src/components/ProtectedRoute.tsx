@@ -12,23 +12,31 @@ interface ProtectedRouteProps {
   redirectTo?: string
 }
 
-export default function ProtectedRoute({ 
-  children, 
-  requiredRole, 
-  redirectTo = '/login' 
+export default function ProtectedRoute({
+  children,
+  requiredRole,
+  redirectTo = '/login'
 }: ProtectedRouteProps) {
-  const { user, isLoading, checkAuth } = useAuthStore()
+  const { user, isLoading, checkAuth, isSessionFresh } = useAuthStore()
   const router = useRouter()
   const [isChecking, setIsChecking] = useState(true)
 
   useEffect(() => {
     const initAuth = async () => {
+      // OPTIMIZATION: If session is fresh, skip re-verification completely
+      if (isSessionFresh()) {
+        console.log('⚡ ProtectedRoute: Session is fresh, skipping verification')
+        setIsChecking(false)
+        return
+      }
+
+      // Session is not fresh, need to verify
       await checkAuth()
       setIsChecking(false)
     }
-    
+
     initAuth()
-  }, [checkAuth])
+  }, [checkAuth, isSessionFresh])
 
   useEffect(() => {
     if (!isChecking && !isLoading) {
@@ -48,6 +56,17 @@ export default function ProtectedRoute({
       }
     }
   }, [user, isChecking, isLoading, requiredRole, router, redirectTo])
+
+  // OPTIMIZATION: If user exists and session is fresh, render immediately without loading screen
+  // This is the key fix for admin instant access
+  if (user && user.is_active && isSessionFresh()) {
+    // Quick validation that user has correct role if required
+    if (requiredRole && user.role !== requiredRole) {
+      // Will be redirected by the useEffect above
+      return null
+    }
+    return <>{children}</>
+  }
 
   // عرض شاشة التحميل أثناء التحقق من المصادقة
   if (isChecking || isLoading) {

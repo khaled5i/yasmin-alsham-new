@@ -44,25 +44,29 @@ export default function DeliveredOrdersPage() {
   const [dateFilter, setDateFilter] = useState('')
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
-  // التحقق من الصلاحيات - المدراء ومدراء الورشة
+  // OPTIMIZATION: Load data immediately, don't wait for permissions
   useEffect(() => {
     if (authLoading) return
     if (!user) {
       router.push('/login')
       return
     }
-    if (!permissionsLoading) {
-      const isAdmin = user.role === 'admin'
-      const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
-
-      if (!isAdmin && !isWorkshopManager) {
-        router.push('/dashboard')
-        return
-      }
-    }
+    // Load data immediately - don't wait for permission check
     loadOrders()
     loadWorkers()
-  }, [user, authLoading, workerType, permissionsLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // Separate effect for permission-based redirect (runs in parallel)
+  useEffect(() => {
+    if (authLoading || permissionsLoading || !user) return
+
+    const isAdmin = user.role === 'admin'
+    const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
+
+    if (!isAdmin && !isWorkshopManager) {
+      router.push('/dashboard')
+    }
+  }, [user, authLoading, workerType, permissionsLoading, router])
 
   // فلترة الطلبات المسلمة فقط
   const deliveredOrders = orders.filter(order => {
@@ -205,7 +209,7 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
         {/* البحث والفلاتر - تصميم محسّن */}
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6">
           {/* صف واحد: حقل البحث والفلاتر - عرض أفقي حتى في الجوال */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3 overflow-x-auto">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 overflow-x-auto">
             {/* حقل البحث الشامل */}
             <div className="relative min-w-0">
               <Package className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
