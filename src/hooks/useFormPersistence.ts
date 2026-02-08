@@ -8,6 +8,8 @@ interface UseFormPersistenceOptions<T> {
   debounceMs?: number
   // دالة للتحقق من أن البيانات ليست فارغة
   isDataEmpty?: (data: T) => boolean
+  // حقول يتم استبعادها من الحفظ (للحقول الكبيرة مثل الصور)
+  excludeFields?: (keyof T)[]
 }
 
 interface UseFormPersistenceReturn<T> {
@@ -22,7 +24,8 @@ export function useFormPersistence<T>({
   key,
   initialData,
   debounceMs = 1000,
-  isDataEmpty
+  isDataEmpty,
+  excludeFields = []
 }: UseFormPersistenceOptions<T>): UseFormPersistenceReturn<T> {
   const [data, setDataState] = useState<T>(initialData)
   const [hasRestoredData, setHasRestoredData] = useState(false)
@@ -37,11 +40,15 @@ export function useFormPersistence<T>({
     try {
       const savedData = localStorage.getItem(key)
       if (savedData) {
-        const parsed = JSON.parse(savedData) as T
+        const parsed = JSON.parse(savedData) as Partial<T>
+        // دمج البيانات المسترجعة مع initialData لضمان وجود جميع الحقول
+        // هذا مهم للحقول المستبعدة من الحفظ (مثل images)
+        const mergedData = { ...initialData, ...parsed } as T
+
         // التحقق من أن البيانات ليست فارغة
-        const isEmpty = isDataEmpty ? isDataEmpty(parsed) : false
+        const isEmpty = isDataEmpty ? isDataEmpty(mergedData) : false
         if (!isEmpty) {
-          setDataState(parsed)
+          setDataState(mergedData)
           setHasRestoredData(true)
           console.log(`📂 Restored form data from localStorage: ${key}`)
         }
@@ -50,7 +57,7 @@ export function useFormPersistence<T>({
       console.error('Error restoring form data:', error)
       localStorage.removeItem(key)
     }
-  }, [key, isDataEmpty])
+  }, [key, isDataEmpty, initialData])
 
   // حفظ البيانات في localStorage مع debounce
   const saveToLocalStorage = useCallback((newData: T) => {
@@ -66,14 +73,30 @@ export function useFormPersistence<T>({
           localStorage.removeItem(key)
           console.log(`🗑️ Removed empty form data from localStorage: ${key}`)
         } else {
-          localStorage.setItem(key, JSON.stringify(newData))
-          console.log(`💾 Auto-saved form data to localStorage: ${key}`)
+          // تصفية الحقول المستبعدة قبل الحفظ
+          let dataToSave = newData
+          if (excludeFields.length > 0) {
+            dataToSave = { ...newData }
+            excludeFields.forEach(field => {
+              delete (dataToSave as any)[field]
+            })
+          }
+
+          const jsonString = JSON.stringify(dataToSave)
+          const sizeKB = Math.round(jsonString.length / 1024)
+
+          localStorage.setItem(key, jsonString)
+          console.log(`💾 Auto-saved form data to localStorage: ${key} (${sizeKB}KB)`)
         }
       } catch (error) {
-        console.error('Error saving form data:', error)
+        if (error instanceof Error && error.name === 'QuotaExceededError') {
+          console.error('❌ localStorage quota exceeded. Consider excluding more fields.')
+        } else {
+          console.error('Error saving form data:', error)
+        }
       }
-    }, debounceMs)
-  }, [key, debounceMs, isDataEmpty])
+    }, debounceMs) as any
+  }, [key, debounceMs, isDataEmpty, excludeFields])
 
   // تحديث البيانات مع الحفظ التلقائي
   const setData = useCallback((newDataOrUpdater: T | ((prev: T) => T)) => {

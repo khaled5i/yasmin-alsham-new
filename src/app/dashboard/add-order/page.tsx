@@ -132,7 +132,10 @@ function AddOrderContent() {
     key: FORM_STORAGE_KEY,
     initialData: getInitialFormData(),
     debounceMs: 1000,
-    isDataEmpty: isFormDataEmpty
+    isDataEmpty: isFormDataEmpty,
+    // استبعاد الحقول الكبيرة (الصور والملاحظات الصوتية) من الحفظ التلقائي
+    // لتجنب تجاوز حد localStorage
+    excludeFields: ['images', 'customDesignImage', 'voiceNotes', 'savedDesignComments']
   })
 
   // حالة لتتبع ملف الصورة المخصصة (File object لا يمكن حفظه في localStorage)
@@ -160,6 +163,31 @@ function AddOrderContent() {
       )
     }
   }, [hasRestoredData, isArabic])
+
+  // رسالة تحذيرية عند محاولة إغلاق الصفحة مع بيانات غير محفوظة
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // التحقق من وجود بيانات غير محفوظة
+      const hasUnsavedData = !isFormDataEmpty(formData)
+
+      if (hasUnsavedData) {
+        // رسالة التحذير
+        const message = isArabic
+          ? 'لديك بيانات غير محفوظة. هل أنت متأكد من الخروج?'
+          : 'You have unsaved data. Are you sure you want to leave?'
+
+        e.preventDefault()
+        e.returnValue = message // للمتصفحات القديمة
+        return message
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [formData, isArabic])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -694,11 +722,14 @@ function AddOrderContent() {
                   <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-blue-700">
                     {isArabic
-                      ? 'تم استرجاع البيانات المحفوظة من الجلسة السابقة. يمكنك متابعة التعديل أو مسح جميع الحقول للبدء من جديد.'
-                      : 'Restored saved data from previous session. You can continue editing or clear all fields to start fresh.'}
+                      ? 'تم استرجاع بياناتك النصية من الجلسة السابقة (معلومات العميل، التواريخ، الملاحظات). الصور والملاحظات الصوتية لا تُحفظ تلقائياً.'
+                      : 'Restored your text data from previous session (client info, dates, notes). Images and voice notes are not auto-saved.'}
                   </p>
                 </div>
               )}
+
+              {/* رسالة تنبيه عامة عن الحفظ التلقائي */}
+
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
                 {/* الصف الأول: اسم العميل | رقم الهاتف | رقم الطلب */}
@@ -847,7 +878,7 @@ function AddOrderContent() {
 
               <InteractiveImageAnnotation
                 ref={annotationRef}
-                imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
+                imageSrc="/front2.png"
                 annotations={formData.imageAnnotations}
                 onAnnotationsChange={handleImageAnnotationsChange}
                 drawings={formData.imageDrawings}

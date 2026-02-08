@@ -641,7 +641,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                   </h3>
 
                   <InteractiveImageAnnotation
-                    imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
+                    imageSrc="/front2.png"
                     annotations={formData.imageAnnotations}
                     onAnnotationsChange={handleImageAnnotationsChange}
                     drawings={formData.imageDrawings}
