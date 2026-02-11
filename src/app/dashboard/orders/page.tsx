@@ -289,6 +289,7 @@ export default function OrdersPage() {
       const updatedMeasurements = {
         ...measurements,
         // الاحتفاظ بالتعليقات والرسومات والصورة المخصصة
+        saved_design_comments: existingMeasurements.saved_design_comments || [],
         image_annotations: existingMeasurements.image_annotations || [],
         image_drawings: existingMeasurements.image_drawings || [],
         custom_design_image: existingMeasurements.custom_design_image || null

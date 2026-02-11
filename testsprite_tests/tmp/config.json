@@ -2,8 +2,8 @@
   "status": "init",
   "type": "frontend",
   "scope": "codebase",
-  "localEndpoint": "http://localhost:3001/book-appointment",
-  "loginUser": "khaled5i",
-  "loginPassword": "khaledblack1245",
+  "localEndpoint": "http://localhost:3001/dashboard/add-order",
+  "loginUser": "admin@yasminalsh.com",
+  "loginPassword": "Admin@123456",
   "serverPort": 56824
 }

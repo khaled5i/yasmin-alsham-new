@@ -39,6 +39,25 @@ import { openWhatsApp } from '@/utils/whatsapp'
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
 
+const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
+
+const getDesignViewFromTitle = (title?: string | null): 'front' | 'back' | null => {
+  if (!title) return null
+  const trimmed = title.trim()
+  if (trimmed.startsWith('أمام')) return 'front'
+  if (trimmed.startsWith('خلف')) return 'back'
+  return null
+}
+
+const getNextDesignViewTitle = (view: 'front' | 'back', comments: SavedDesignComment[]) => {
+  const existingCount = comments.reduce((count, comment) => {
+    const commentView = comment.view ?? getDesignViewFromTitle(comment.title)
+    return commentView === view ? count + 1 : count
+  }, 0)
+  const label = getDesignViewLabel(view)
+  return existingCount === 0 ? label : `${label} ${existingCount + 1}`
+}
+
 // نوع بيانات النموذج
 interface FormDataType {
   orderNumber: string
@@ -371,13 +390,17 @@ function AddOrderContent() {
           compositeImage = await annotationRef.current.generateCompositeImage()
         }
 
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`,
+          title: viewTitle,
+          view: currentView,
           compositeImage: compositeImage // إضافة الصورة المركّبة
         }
         allSavedComments.push(currentComment)
@@ -537,13 +560,17 @@ function AddOrderContent() {
           compositeImage = await annotationRef.current.generateCompositeImage()
         }
 
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`,
+          title: viewTitle,
+          view: currentView,
           compositeImage: compositeImage // إضافة الصورة المركّبة
         }
         allSavedComments.push(currentComment)

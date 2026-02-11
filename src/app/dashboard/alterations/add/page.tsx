@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
@@ -10,7 +10,7 @@ import { alterationService } from '@/lib/services/alteration-service'
 import { orderService, Order } from '@/lib/services/order-service'
 import ImageUpload from '@/components/ImageUpload'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
-import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from '@/components/InteractiveImageAnnotation'
+import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
 import {
@@ -28,9 +28,29 @@ import {
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
 
+const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
+
+const getDesignViewFromTitle = (title?: string | null): 'front' | 'back' | null => {
+  if (!title) return null
+  const trimmed = title.trim()
+  if (trimmed.startsWith('أمام')) return 'front'
+  if (trimmed.startsWith('خلف')) return 'back'
+  return null
+}
+
+const getNextDesignViewTitle = (view: 'front' | 'back', comments: SavedDesignComment[]) => {
+  const existingCount = comments.reduce((count, comment) => {
+    const commentView = comment.view ?? getDesignViewFromTitle(comment.title)
+    return commentView === view ? count + 1 : count
+  }, 0)
+  const label = getDesignViewLabel(view)
+  return existingCount === 0 ? label : `${label} ${existingCount + 1}`
+}
+
 function AddAlterationContent() {
   const { user } = useAuthStore()
   const { t, isArabic } = useTranslation()
+  const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const orderId = searchParams.get('orderId')
@@ -287,13 +307,17 @@ function AddAlterationContent() {
 
       // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`
+          title: viewTitle,
+          view: currentView
         }
         allSavedComments.push(currentComment)
       }
@@ -437,13 +461,17 @@ function AddAlterationContent() {
       let allSavedComments = [...formData.savedDesignComments]
 
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`
+          title: viewTitle,
+          view: currentView
         }
         allSavedComments.push(currentComment)
       }
@@ -777,6 +805,7 @@ function AddAlterationContent() {
             </h2>
 
             <InteractiveImageAnnotation
+              ref={annotationRef}
               imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
               annotations={formData.imageAnnotations}
               onAnnotationsChange={handleImageAnnotationsChange}
@@ -886,5 +915,3 @@ export default function AddAlterationPage() {
     </Suspense>
   )
 }
-
-

@@ -16,6 +16,7 @@ export interface SavedDesignComment {
   drawings: DrawingPath[]
   image: string | null // base64 image or null for default
   title?: string // عنوان اختياري للتعليق
+  view?: 'front' | 'back' // جهة التعليق (أمام/خلف)
 }
 
 /**
@@ -98,4 +99,3 @@ export function migrateLegacyDesignComments(measurements: any): DesignCommentsDa
     current_image: null
   }
 }
-

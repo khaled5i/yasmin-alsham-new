@@ -17,7 +17,10 @@ interface WordWithMetadata {
     centerY: number
     width: number
     height: number
-    clusterId: number | null
+    left: number
+    right: number
+    top: number
+    bottom: number
 }
 
 export async function POST(request: NextRequest) {
@@ -95,7 +98,7 @@ export async function POST(request: NextRequest) {
         const imageWidth = annotations.fullTextAnnotation?.pages?.[0]?.width || 1000
         const imageHeight = annotations.fullTextAnnotation?.pages?.[0]?.height || 1000
 
-        // خوارزمية ذكية لتجميع الكلمات في جمل (تدعم الجمل المائلة ومتعددة الأسطر)
+        // تجهيز بيانات الكلمات مع حدودها
         const wordsWithMetadata: WordWithMetadata[] = words.map((word: any) => {
             const vertices = word.boundingPoly.vertices
             const minX = Math.min(vertices[0].x, vertices[1].x, vertices[2].x, vertices[3].x)
@@ -109,108 +112,168 @@ export async function POST(request: NextRequest) {
                 centerY: (minY + maxY) / 2,
                 width: maxX - minX,
                 height: maxY - minY,
-                clusterId: null
+                left: minX,
+                right: maxX,
+                top: minY,
+                bottom: maxY
             }
         })
 
-        // دالة لحساب المسافة الإقليدية بين كلمتين
-        const distance = (w1: WordWithMetadata, w2: WordWithMetadata) => {
-            const dx = w1.centerX - w2.centerX
-            const dy = w1.centerY - w2.centerY
-            return Math.sqrt(dx * dx + dy * dy)
-        }
-
-        // دالة للتحقق من أن كلمتين يجب أن تكونا في نفس الجملة
-        const shouldBeInSameCluster = (w1: WordWithMetadata, w2: WordWithMetadata) => {
-            const dist = distance(w1, w2)
-            const avgWidth = (w1.width + w2.width) / 2
-            const avgHeight = (w1.height + w2.height) / 2
-
-            const dx = Math.abs(w1.centerX - w2.centerX)
-            const dy = Math.abs(w1.centerY - w2.centerY)
-
-            // شروط التجميع الذكية:
-            // 1. المسافة الكلية أقل من 3 أضعاف متوسط العرض
-            // 2. المسافة الرأسية أقل من 1.8 ضعف متوسط الارتفاع (للسماح بالميل والأسطر المتعددة)
-            const maxDistance = avgWidth * 3
-            const maxVerticalDistance = avgHeight * 1.8
-
-            return dist < maxDistance && dy < maxVerticalDistance
-        }
-
-        // خوارزمية DBSCAN مبسطة للتجميع
-        let currentClusterId = 0
-
-        wordsWithMetadata.forEach((word) => {
-            if (word.clusterId !== null) return
-
-            word.clusterId = currentClusterId
-            const cluster = [word]
-
-            let i = 0
-            while (i < cluster.length) {
-                const currentWord = cluster[i]
-
-                wordsWithMetadata.forEach(otherWord => {
-                    if (otherWord.clusterId === null && shouldBeInSameCluster(currentWord, otherWord)) {
-                        otherWord.clusterId = currentClusterId
-                        cluster.push(otherWord)
-                    }
-                })
-
-                i++
-            }
-
-            currentClusterId++
-        })
-
-        // تجميع الكلمات حسب cluster ID
-        const clusters: Map<number, WordWithMetadata[]> = new Map()
-        wordsWithMetadata.forEach(word => {
-            if (word.clusterId !== null) {
-                if (!clusters.has(word.clusterId)) {
-                    clusters.set(word.clusterId, [])
-                }
-                clusters.get(word.clusterId)!.push(word)
-            }
-        })
-
-        // تحويل كل cluster إلى نص مع إحداثيات
-        const textGroups: Array<{
-            text: string
-            x: number
-            y: number
+        // تجميع الكلمات في أسطر أولاً (لتجنب دمج جمل قريبة في نفس السطر أو أسطر متجاورة)
+        const sortedByY = [...wordsWithMetadata].sort((a, b) => a.centerY - b.centerY)
+        const lines: Array<{
+            words: WordWithMetadata[]
+            centerY: number
+            avgHeight: number
+            top: number
+            bottom: number
+            sumX: number
+            sumY: number
+            sumXX: number
+            sumXY: number
+            slope: number
+            intercept: number
         }> = []
 
-        clusters.forEach(clusterWords => {
-            const isArabic = /[\u0600-\u06FF]/.test(clusterWords[0].word.description)
+        const updateLineStats = (line: typeof lines[number]) => {
+            const count = line.words.length
+            if (count === 0) return
 
-            // ترتيب الكلمات: حسب Y أولاً (للأسطر المتعددة)، ثم حسب X
-            const sortedWords = clusterWords.sort((a, b) => {
-                const avgHeight = (a.height + b.height) / 2
-                // إذا كانت في نفس السطر تقريباً
-                if (Math.abs(a.centerY - b.centerY) < avgHeight * 0.5) {
-                    return isArabic ? b.centerX - a.centerX : a.centerX - b.centerX
-                } else {
-                    return a.centerY - b.centerY
+            const varianceX = count * line.sumXX - line.sumX * line.sumX
+            if (count > 1 && Math.abs(varianceX) > 0.0001) {
+                line.slope = (count * line.sumXY - line.sumX * line.sumY) / varianceX
+            } else {
+                line.slope = 0
+            }
+            line.intercept = (line.sumY - line.slope * line.sumX) / count
+        }
+
+        const getLineDistance = (line: typeof lines[number], word: WordWithMetadata) => {
+            if (line.words.length < 2) {
+                return Math.abs(word.centerY - line.centerY)
+            }
+            const predictedY = line.slope * word.centerX + line.intercept
+            return Math.abs(word.centerY - predictedY)
+        }
+
+        sortedByY.forEach(word => {
+            let bestLine: typeof lines[number] | null = null
+            let bestDistance = Number.POSITIVE_INFINITY
+
+            for (const line of lines) {
+                const overlap = Math.min(line.bottom, word.bottom) - Math.max(line.top, word.top)
+                const minHeight = Math.min(line.bottom - line.top, word.height)
+                const overlapRatio = minHeight > 0 ? overlap / minHeight : 0
+                const distance = getLineDistance(line, word)
+                const maxDistance = Math.max(line.avgHeight, word.height) * 0.75
+                const relaxedDistance = Math.max(line.avgHeight, word.height) * 1.1
+
+                if (distance <= maxDistance || (overlapRatio > 0.35 && distance <= relaxedDistance)) {
+                    if (distance < bestDistance) {
+                        bestDistance = distance
+                        bestLine = line
+                    }
+                }
+            }
+
+            if (bestLine) {
+                bestLine.words.push(word)
+                const count = bestLine.words.length
+                bestLine.centerY = (bestLine.centerY * (count - 1) + word.centerY) / count
+                bestLine.avgHeight = (bestLine.avgHeight * (count - 1) + word.height) / count
+                bestLine.top = Math.min(bestLine.top, word.top)
+                bestLine.bottom = Math.max(bestLine.bottom, word.bottom)
+                bestLine.sumX += word.centerX
+                bestLine.sumY += word.centerY
+                bestLine.sumXX += word.centerX * word.centerX
+                bestLine.sumXY += word.centerX * word.centerY
+                updateLineStats(bestLine)
+            } else {
+                const newLine = {
+                    words: [word],
+                    centerY: word.centerY,
+                    avgHeight: word.height,
+                    top: word.top,
+                    bottom: word.bottom,
+                    sumX: word.centerX,
+                    sumY: word.centerY,
+                    sumXX: word.centerX * word.centerX,
+                    sumXY: word.centerX * word.centerY,
+                    slope: 0,
+                    intercept: word.centerY
+                }
+                updateLineStats(newLine)
+                lines.push(newLine)
+            }
+        })
+
+        // تحويل كل سطر إلى مجموعات نصية بناءً على المسافات الأفقية
+        const textGroups: Array<{ text: string; x: number; y: number }> = []
+
+        lines.forEach(line => {
+            const lineIsArabic = line.words.some(w => /[\u0600-\u06FF]/.test(w.word.description))
+            const angle = Math.atan(line.slope)
+            const cosA = Math.cos(angle)
+            const sinA = Math.sin(angle)
+
+            const wordsWithProjection = line.words.map(word => {
+                const projCenter = word.centerX * cosA + word.centerY * sinA
+                const halfAlong = (Math.abs(cosA) * word.width + Math.abs(sinA) * word.height) / 2
+                return {
+                    word,
+                    projCenter,
+                    minProj: projCenter - halfAlong,
+                    maxProj: projCenter + halfAlong,
+                    alongLength: halfAlong * 2
                 }
             })
 
-            const text = sortedWords.map(w => w.word.description).join(' ')
+            const sortedWords = wordsWithProjection.sort((a, b) =>
+                lineIsArabic ? b.projCenter - a.projCenter : a.projCenter - b.projCenter
+            )
 
-            // حساب المركز الكلي
-            const allX = sortedWords.map(w => w.centerX)
-            const allY = sortedWords.map(w => w.centerY)
-            const centerX = allX.reduce((a, b) => a + b, 0) / allX.length
-            const centerY = allY.reduce((a, b) => a + b, 0) / allY.length
+            const segments: WordWithMetadata[][] = []
+            let currentSegment: WordWithMetadata[] = []
 
-            const x = (centerX / imageWidth) * 100
-            const y = (centerY / imageHeight) * 100
+            sortedWords.forEach((word, idx) => {
+                if (idx === 0) {
+                    currentSegment = [word.word]
+                    return
+                }
 
-            textGroups.push({
-                text: text.trim(),
-                x: Math.min(Math.max(x, 0), 100),
-                y: Math.min(Math.max(y, 0), 100)
+                const prevProjection = sortedWords[idx - 1]
+                const gap = lineIsArabic
+                    ? (prevProjection.minProj - word.maxProj)
+                    : (word.minProj - prevProjection.maxProj)
+                const avgAlong = (prevProjection.alongLength + word.alongLength) / 2
+                const maxGap = Math.max(avgAlong * 0.9, line.avgHeight * 0.9)
+
+                if (gap > maxGap) {
+                    segments.push(currentSegment)
+                    currentSegment = [word.word]
+                } else {
+                    currentSegment.push(word.word)
+                }
+            })
+
+            if (currentSegment.length > 0) {
+                segments.push(currentSegment)
+            }
+
+            segments.forEach(segmentWords => {
+                const text = segmentWords.map(w => w.word.description).join(' ')
+                const allX = segmentWords.map(w => w.centerX)
+                const allY = segmentWords.map(w => w.centerY)
+                const centerX = allX.reduce((a, b) => a + b, 0) / allX.length
+                const centerY = allY.reduce((a, b) => a + b, 0) / allY.length
+                const x = (centerX / imageWidth) * 100
+                const y = (centerY / imageHeight) * 100
+
+                textGroups.push({
+                    text: text.trim(),
+                    x: Math.min(Math.max(x, 0), 100),
+                    y: Math.min(Math.max(y, 0), 100)
+                })
             })
         })
 
@@ -221,7 +284,7 @@ export async function POST(request: NextRequest) {
             success: true,
             debug: {
                 totalWords: words.length,
-                totalClusters: clusters.size,
+                totalClusters: textGroups.length,
                 imageSize: { width: imageWidth, height: imageHeight }
             }
         })

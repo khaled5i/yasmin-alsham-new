@@ -254,11 +254,7 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
           )}
         </div>
 
-        {/* عداد الطلبات */}
-        <div className="bg-white px-6 py-3 rounded-lg border border-purple-200 shadow-sm mb-6">
-          <p className="text-sm text-gray-600">إجمالي الطلبات المسلمة</p>
-          <p className="text-2xl font-bold text-purple-600">{deliveredOrders.length}</p>
-        </div>
+
       </div>
 
       {/* قائمة الطلبات المسلمة */}

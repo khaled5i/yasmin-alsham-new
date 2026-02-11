@@ -116,6 +116,7 @@ export interface CreateAlterationData {
     }>
     image: string | null
     title?: string
+    view?: 'front' | 'back'
   }>
 }
 
@@ -474,4 +475,3 @@ export const alterationService = {
 }
 
 export default alterationService
-

@@ -401,26 +401,7 @@ export default function CompletedOrdersPage() {
         </motion.div>
 
         {/* عداد الطلبات */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="mb-6"
-        >
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Package className="w-5 h-5 text-green-600" />
-                <span className="text-gray-700 font-medium">
-                  إجمالي الطلبات المكتملة:
-                </span>
-              </div>
-              <span className="text-2xl font-bold text-green-600">
-                {completedOrders.length}
-              </span>
-            </div>
-          </div>
-        </motion.div>
+
 
         {/* قائمة الطلبات */}
         <div className="space-y-6">

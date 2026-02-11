@@ -24,9 +24,10 @@ interface OrderPrintLayoutProps {
 /**
  * مكون تخطيط طباعة الطلب
  * ترتيب الصفحات:
- * - الصفحة 1: معلومات الطلب + المقاسات + أول صورتين من صور التصميم
- * - الصفحة 2+: كل تعليق تصميم في صفحة منفصلة
- * - الصفحة الأخيرة: باقي صور التصميم (إذا كان هناك أكثر من صورتين)
+ * - الصفحة 1: معلومات الطلب + المقاسات + صورة الخلف (أو الأمام أو أول صورة تصميم)
+ * - الصفحة 2: صورة الأمام (إن وجدت)
+ * - الصفحة 3+: كل تعليق تصميم في صفحة منفصلة
+ * - الصفحة الأخيرة: باقي صور التصميم
  */
 const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
   ({ order, printableImages, designComments, designCommentsSnapshots = [] }, ref) => {
@@ -96,6 +97,52 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       return allNotes
     }
 
+    // تحديد الصورة التي ستظهر في الصفحة الأولى
+    // الأولوية: صورة الخلف > صورة الأمام > أول صورة تصميم
+    const getFirstPageImage = () => {
+      // البحث عن صورة الخلف
+      const backSnapshot = designCommentsSnapshots.find(s =>
+        s.title.includes('الخلف') || s.title.includes('خلف') || s.title.toLowerCase().includes('back')
+      )
+      if (backSnapshot) return backSnapshot.imageDataUrl
+
+      // البحث عن صورة الأمام
+      const frontSnapshot = designCommentsSnapshots.find(s =>
+        s.title.includes('الأمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
+      )
+      if (frontSnapshot) return frontSnapshot.imageDataUrl
+
+      // استخدام أول صورة من صور التصميم
+      return printableImages[0] || null
+    }
+
+    // تحديد صورة الأمام للصفحة الثانية
+    const getFrontPageImage = () => {
+      const frontSnapshot = designCommentsSnapshots.find(s =>
+        s.title.includes('الأمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
+      )
+      return frontSnapshot?.imageDataUrl || null
+    }
+
+    // تحديد صور التصميم المتبقية (بعد استبعاد ما تم استخدامه)
+    const getRemainingDesignImages = () => {
+      const firstPageImg = getFirstPageImage()
+      const frontPageImg = getFrontPageImage()
+
+      return printableImages.filter(img =>
+        img !== firstPageImg && img !== frontPageImg
+      )
+    }
+
+    // تصفية تعليقات التصميم لاستبعاد الخلف والأمام (لأنها تعرض في صفحات مخصصة)
+    const getFilteredDesignComments = () => {
+      return designCommentsSnapshots.filter(snapshot => {
+        const isBack = snapshot.title.includes('الخلف') || snapshot.title.includes('خلف') || snapshot.title.toLowerCase().includes('back')
+        const isFront = snapshot.title.includes('الأمام') || snapshot.title.includes('امام') || snapshot.title.toLowerCase().includes('front')
+        return !isBack && !isFront
+      })
+    }
+
     const allNotes = getAllNotes()
 
     return (
@@ -120,7 +167,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                 </div>
                 {order.proof_delivery_date && (
                   <div className="date-row">
-                    <span>تاريخ استلام البروفا: </span>
+                    <span>تاريخ تسليم البروفا: </span>
                     <span>{formatDate(order.proof_delivery_date)}</span>
                   </div>
                 )}
@@ -212,20 +259,18 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
               </div>
             </div>
 
-            {/* الجزء الأيسر - صور التصميم فقط */}
+            {/* الجزء الأيسر - صورة الخلف أو الأمام أو أول صورة تصميم */}
             <div className="print-comments">
               <div className="comments-box">
-                {printableImages.length > 0 ? (
+                {getFirstPageImage() ? (
                   <div className="first-images-grid first-images-single">
-                    {printableImages.slice(0, 1).map((image, index) => (
-                      <div key={index} className="first-image-container first-image-single">
-                        <img
-                          src={image}
-                          alt={`صورة التصميم ${index + 1}`}
-                          className="first-design-image"
-                        />
-                      </div>
-                    ))}
+                    <div className="first-image-container first-image-single">
+                      <img
+                        src={getFirstPageImage()!}
+                        alt="صورة التصميم"
+                        className="first-design-image"
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div className="empty-comments">
@@ -237,8 +282,23 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
           </div>
         </div>
 
-        {/* ========== صفحات تعليقات التصميم (كل تعليق في صفحة منفصلة) ========== */}
-        {designCommentsSnapshots.map((snapshot) => (
+        {/* ========== الصفحة الثانية - صورة الأمام (إن وجدت) ========== */}
+        {getFrontPageImage() && (
+          <div className="print-page page-front-image">
+            <div className="design-comment-full">
+              <div className="design-comment-image-wrapper">
+                <img
+                  src={getFrontPageImage()!}
+                  alt="صورة الأمام"
+                  className="design-comment-full-image"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========== صفحات تعليقات التصميم (كل تعليق في صفحة منفصلة - بدون الترجمات) ========== */}
+        {getFilteredDesignComments().map((snapshot) => (
           <div key={snapshot.id} className="print-page design-comment-page">
             <div className="design-comment-full">
               {/* الصورة مع الرسومات والعلامات والنصوص المرئية */}
@@ -249,51 +309,20 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                   className="design-comment-full-image"
                 />
               </div>
-
-              {/* النصوص المخفية (التي تم إخفاؤها بزر العين) */}
-              {snapshot.hiddenTranscriptions && snapshot.hiddenTranscriptions.length > 0 && (
-                <div className="design-comment-hidden-texts">
-                  <h4 className="hidden-texts-title">نصوص مخفية:</h4>
-                  {snapshot.hiddenTranscriptions.map((item, idx) => (
-                    <div key={idx} className="hidden-text-item">
-                      <span className="hidden-text-number">{item.number}.</span>
-                      <span className="hidden-text">{item.text}</span>
-                      {item.translation && (
-                        <span className="hidden-text-translation">({item.translation})</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* النصوص المترجمة (المرئية التي لها ترجمة) */}
-              {snapshot.translatedTexts && snapshot.translatedTexts.length > 0 && (
-                <div className="design-comment-translations">
-                  <h4 className="translations-title">الترجمات:</h4>
-                  {snapshot.translatedTexts.map((item, idx) => (
-                    <div key={idx} className="translation-item">
-                      <span className="translation-number">{item.number}.</span>
-                      <span className="original-text">{item.text}</span>
-                      <span className="arrow-icon">←</span>
-                      <span className="translated-text">{item.translation}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         ))}
 
-        {/* ========== صفحة الصور المتبقية (إذا كان هناك أكثر من صورة واحدة) ========== */}
-        {printableImages.length > 1 && (
+        {/* ========== صفحة الصور المتبقية ========== */}
+        {getRemainingDesignImages().length > 0 && (
           <div className="print-page page-back">
             <h2 className="images-title">صور التصميم الإضافية</h2>
             <div className="images-grid">
-              {printableImages.slice(1).map((image, index) => (
+              {getRemainingDesignImages().map((image, index) => (
                 <div key={index} className="image-container">
                   <img
                     src={image}
-                    alt={`صورة التصميم ${index + 2}`}
+                    alt={`صورة التصميم ${index + 1}`}
                     className="design-image"
                   />
                 </div>

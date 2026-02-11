@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion'
-import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut, MousePointer2, ScanText } from 'lucide-react'
+import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, RotateCw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut, MousePointer2, ScanText, Plus } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast'
 import Image from 'next/image'
@@ -117,6 +117,16 @@ const BOX_HEIGHT_PERCENT = 12 // ارتفاع تقريبي للمربع
 const SAFE_MARGIN = 2 // المسافة الآمنة بين المربعات
 const MARKER_SIZE = 4 // حجم دائرة العلامة
 
+const getViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
+
+const getViewFromTitle = (title?: string | null): 'front' | 'back' | null => {
+  if (!title) return null
+  const trimmed = title.trim()
+  if (trimmed.startsWith('أمام')) return 'front'
+  if (trimmed.startsWith('خلف')) return 'back'
+  return null
+}
+
 // واجهة التعليق المحفوظ
 export interface SavedDesignComment {
   id: string
@@ -125,6 +135,7 @@ export interface SavedDesignComment {
   drawings: DrawingPath[]
   image: string | null
   title?: string
+  view?: 'front' | 'back'
   compositeImage?: string | null // الصورة المركّبة (الصورة + الرسومات + التعليقات)
 }
 
@@ -148,6 +159,7 @@ interface InteractiveImageAnnotationProps {
 export interface InteractiveImageAnnotationRef {
   generateCompositeImage: () => Promise<string | null>
   saveCurrentComment: () => Promise<SavedDesignComment | null>
+  getCurrentView: () => 'front' | 'back'
 }
 
 // مكون النص القابل للسحب - يستخدم useMotionValue لإعادة تعيين الموقع بعد السحب
@@ -232,6 +244,13 @@ function DraggableText({
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState(annotation.transcription || '')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const commitEdit = useCallback(() => {
+    const trimmed = editText.trim()
+    if (trimmed && trimmed !== annotation.transcription) {
+      onTextChange(annotation.id, trimmed)
+    }
+    setIsEditing(false)
+  }, [annotation.id, annotation.transcription, editText, onTextChange])
 
   // معالجة الضغط المزدوج لبدء التعديل
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
@@ -242,11 +261,8 @@ function DraggableText({
 
   // حفظ التعديل عند الضغط خارج النص
   const handleBlur = useCallback(() => {
-    if (editText.trim() && editText !== annotation.transcription) {
-      onTextChange(annotation.id, editText.trim())
-    }
-    setIsEditing(false)
-  }, [editText, annotation.transcription, annotation.id, onTextChange])
+    commitEdit()
+  }, [commitEdit])
 
   // التركيز على textarea عند بدء التعديل
   useEffect(() => {
@@ -255,6 +271,37 @@ function DraggableText({
       textareaRef.current.select()
     }
   }, [isEditing])
+
+  // إبقاء مربع التعديل داخل شاشة الرسم
+  useEffect(() => {
+    if (!isEditing) return
+    const frame = requestAnimationFrame(() => {
+      if (!containerRef.current || !elementRef.current) return
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const elementRect = elementRef.current.getBoundingClientRect()
+      const padding = 6
+      let shiftX = 0
+      let shiftY = 0
+
+      if (elementRect.right > containerRect.right - padding) {
+        shiftX -= elementRect.right - (containerRect.right - padding)
+      }
+      if (elementRect.left < containerRect.left + padding) {
+        shiftX += (containerRect.left + padding) - elementRect.left
+      }
+      if (elementRect.bottom > containerRect.bottom - padding) {
+        shiftY -= elementRect.bottom - (containerRect.bottom - padding)
+      }
+      if (elementRect.top < containerRect.top + padding) {
+        shiftY += (containerRect.top + padding) - elementRect.top
+      }
+
+      if (shiftX !== 0) x.set(x.get() + shiftX)
+      if (shiftY !== 0) y.set(y.get() + shiftY)
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [containerRef, isEditing, x, y])
 
   // حساب حجم الخط بناءً على scale
   const scale = annotation.textScale ?? 1
@@ -267,7 +314,7 @@ function DraggableText({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      style={{ ...styles, x, y }}
+      style={{ ...styles, x, y, touchAction: isEditing ? 'manipulation' : 'none' }}
       drag
       dragMomentum={false}
       dragElastic={0}
@@ -277,7 +324,8 @@ function DraggableText({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onPointerDown={(e) => e.stopPropagation()}
-      className="cursor-move touch-none"
+      data-annotation-interactive="true"
+      className={`${isEditing ? 'cursor-text' : 'cursor-move touch-none'}`}
       drag={!isEditing} // تعطيل السحب عند التعديل
     >
       {/* نص بسيط بدون خلفية - رقم ونص فقط */}
@@ -297,8 +345,9 @@ function DraggableText({
             onBlur={handleBlur}
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-            className="leading-snug break-words min-w-[200px] w-auto bg-white/90 border border-pink-300 rounded px-2 py-1 overflow-hidden"
-            style={{ fontSize, minHeight: '1.5em', height: 'auto' }}
+            data-annotation-edit="true"
+            className="leading-snug break-words min-w-[200px] w-auto max-w-[320px] bg-white/90 border border-pink-300 rounded px-2 py-1 overflow-hidden"
+            style={{ fontSize, minHeight: '1.5em', height: 'auto', userSelect: 'text', touchAction: 'manipulation' }}
             rows={Math.max(1, Math.ceil((editText.length) / 25))}
             dir="rtl"
           />
@@ -364,6 +413,7 @@ function DraggableMarker({
       onDragEnd={handleDragEnd}
       onPointerDown={(e) => e.stopPropagation()}
       style={{ x, y }}
+      data-annotation-interactive="true"
       className="cursor-move flex items-center justify-center"
     >
       <div
@@ -426,6 +476,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [targetLanguage, setTargetLanguage] = useState<string>('en')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState<string | null>(null)
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
+  const isTranslatingAll = translatingId === 'translating-all'
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const suppressTranslateClickRef = useRef(false)
+  const translateAllClickTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const skipDrawingOnceRef = useRef(false)
 
 
   // حالات كتابة النص اليدوي
@@ -458,11 +513,14 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [showEraserSizePicker, setShowEraserSizePicker] = useState(false)
 
   const [showEraserMenu, setShowEraserMenu] = useState(false)
+  const [showPlusMenu, setShowPlusMenu] = useState(false)
   const [isPenMode, setIsPenMode] = useState(false) // وضع القلم (رفض اللمس)
   const [isRecognizingText, setIsRecognizingText] = useState(false) // حالة التعرف على النص
   const [showAllTextsOnImage, setShowAllTextsOnImage] = useState(true) // حالة إظهار/إخفاء كل النصوص على الصورة
   const [isDraggingMarker, setIsDraggingMarker] = useState(false) // هل يتم سحب علامة حالياً؟
   const [isOverDeleteZone, setIsOverDeleteZone] = useState(false) // هل العلامة فوق منطقة الحذف؟
+  const [redoStack, setRedoStack] = useState<DrawingPath[]>([])
+  const skipRedoResetRef = useRef(false)
 
   // حالات تبديل الصورة
   const [showImageOptions, setShowImageOptions] = useState(false)
@@ -481,12 +539,23 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     return imageSrc
   }, [imageSrc, imagePreview, internalImageOverride])
 
+  const isAnnotationInteractiveTarget = useCallback((target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false
+    return Boolean(target.closest('[data-annotation-interactive="true"]'))
+  }, [])
+
   // تحسين: إعادة تعيين التراكب الداخلي عند تغيير الصورة المخصصة
   useEffect(() => {
     if (imagePreview) {
       setInternalImageOverride(null)
     }
   }, [imagePreview])
+
+  // ضبط الوضع الافتراضي لرفض اللمس بناءً على حجم الشاشة مرة واحدة عند التحميل
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setIsPenMode(window.innerWidth < 1024)
+  }, [])
 
   // حالات التعليقات المحفوظة
   const [showSavedComments, setShowSavedComments] = useState(true)
@@ -781,6 +850,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
   }, [effectiveImageSrc, drawings, annotations])
 
+  const getCurrentView = useCallback((): 'front' | 'back' => {
+    const currentPath = (internalImageOverride || imageSrc).toLowerCase()
+    return currentPath.includes('back') ? 'back' : 'front'
+  }, [internalImageOverride, imageSrc])
+
   // دالة حفظ التعليق الحالي
   const saveCurrentComment = useCallback(async () => {
     // التحقق من وجود محتوى للحفظ
@@ -801,13 +875,22 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     // إنشاء الصورة المركّبة (تطابق ما يظهر على الشاشة)
     const compositeImage = await generateCompositeImage()
 
+    const currentView = getCurrentView()
+    const existingViewCount = savedComments.reduce((count, comment) => {
+      const commentView = comment.view ?? getViewFromTitle(comment.title)
+      return commentView === currentView ? count + 1 : count
+    }, 0)
+    const viewLabel = getViewLabel(currentView)
+    const viewTitle = existingViewCount === 0 ? viewLabel : `${viewLabel} ${existingViewCount + 1}`
+
     const newComment: SavedDesignComment = {
       id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       timestamp: Date.now(),
       annotations: [...annotations],
       drawings: [...drawings],
       image: imageBase64,
-      title: `التعليق ${savedComments.length + 1}`,
+      title: viewTitle,
+      view: currentView,
       compositeImage: compositeImage
     }
 
@@ -820,7 +903,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     onImageChange?.(null)
 
     return newComment
-  }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange, generateCompositeImage])
+  }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange, generateCompositeImage, getCurrentView])
 
   // تحديث المرجع لاستخدامه في handleViewSwitch
   saveCurrentRef.current = saveCurrentComment
@@ -828,8 +911,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // تعريض الدوال للمكون الأب عبر ref
   useImperativeHandle(ref, () => ({
     generateCompositeImage,
-    saveCurrentComment
-  }), [generateCompositeImage, saveCurrentComment])
+    saveCurrentComment,
+    getCurrentView
+  }), [generateCompositeImage, saveCurrentComment, getCurrentView])
 
   // دالة التبديل بين الأمام والخلف
   const handleViewSwitch = useCallback(async (targetView: 'front' | 'back') => {
@@ -1074,24 +1158,26 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       // التحقق من أن الضغط ليس على أي من أزرار فتح النوافذ أو النوافذ نفسها
       const isClickOnPicker = target.closest('.color-picker-container') ||
         target.closest('.brush-picker-container') ||
-        target.closest('.eraser-menu-container')
+        target.closest('.eraser-menu-container') ||
+        target.closest('.plus-menu-container')
 
       if (!isClickOnPicker) {
         setShowColorPicker(false)
         setShowBrushPicker(false)
         setShowEraserMenu(false)
         setShowEraserSizePicker(false)
+        setShowPlusMenu(false)
       }
     }
 
     // إضافة المستمع فقط إذا كانت أي نافذة مفتوحة
-    if (showColorPicker || showBrushPicker || showEraserMenu || showEraserSizePicker) {
+    if (showColorPicker || showBrushPicker || showEraserMenu || showEraserSizePicker || showPlusMenu) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
       }
     }
-  }, [showColorPicker, showBrushPicker, showEraserMenu, showEraserSizePicker])
+  }, [showColorPicker, showBrushPicker, showEraserMenu, showEraserSizePicker, showPlusMenu])
 
   // دالة حساب موقع المربع بناءً على الاتجاه
   // تم تعديلها لجعل النص يظهر مباشرة تحت/بجانب العلامة مع مسافة بسيطة
@@ -1361,8 +1447,17 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
   // معالج تغيير النص (للتعديل المباشر)
   const handleTextChange = useCallback((annotationId: string, newText: string) => {
+    const positionData = annotationPositions.get(annotationId)
     const updatedAnnotations = annotations.map(a =>
-      a.id === annotationId ? { ...a, transcription: newText } : a
+      a.id === annotationId
+        ? {
+          ...a,
+          transcription: newText,
+          ...(a.boxX === undefined || a.boxY === undefined
+            ? (positionData ? { boxX: positionData.box.x, boxY: positionData.box.y } : {})
+            : {})
+        }
+        : a
     )
     onAnnotationsChange(updatedAnnotations)
 
@@ -1374,29 +1469,47 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         translateAnnotationText(annotationId, annotation.translationLanguage!)
       }, 500)
     }
-  }, [annotations, onAnnotationsChange])
+  }, [annotations, onAnnotationsChange, annotationPositions])
 
 
   // دوال تعديل النص
   const handleSaveEdit = useCallback((e: React.MouseEvent, annotationId: string) => {
     e.stopPropagation()
-    if (editedText.trim()) {
-      const updatedAnnotations = annotations.map(a =>
-        a.id === annotationId ? { ...a, transcription: editedText.trim() } : a
-      )
-      onAnnotationsChange(updatedAnnotations)
+    const trimmed = editedText.trim()
+    const currentAnnotation = annotations.find(a => a.id === annotationId)
+    if (!trimmed || !currentAnnotation) {
+      setEditingTranscriptionId(null)
+      setEditedText('')
+      return
+    }
+    if (trimmed === (currentAnnotation.transcription || '')) {
+      setEditingTranscriptionId(null)
+      setEditedText('')
+      return
+    }
+    const positionData = annotationPositions.get(annotationId)
+    const updatedAnnotations = annotations.map(a =>
+      a.id === annotationId
+        ? {
+          ...a,
+          transcription: trimmed,
+          ...(a.boxX === undefined || a.boxY === undefined
+            ? (positionData ? { boxX: positionData.box.x, boxY: positionData.box.y } : {})
+            : {})
+        }
+        : a
+    )
+    onAnnotationsChange(updatedAnnotations)
 
-      // إذا كان النص مترجماً سابقاً، قم بتحديث الترجمة تلقائياً
-      const annotation = annotations.find(a => a.id === annotationId)
-      if (annotation && annotation.translationLanguage) {
-        setTimeout(() => {
-          translateAnnotationText(annotationId, annotation.translationLanguage!)
-        }, 500)
-      }
+    // إذا كان النص مترجماً سابقاً، قم بتحديث الترجمة تلقائياً
+    if (currentAnnotation.translationLanguage) {
+      setTimeout(() => {
+        translateAnnotationText(annotationId, currentAnnotation.translationLanguage!)
+      }, 500)
     }
     setEditingTranscriptionId(null)
     setEditedText('')
-  }, [editedText, annotations, onAnnotationsChange])
+  }, [editedText, annotations, onAnnotationsChange, annotationPositions])
 
   const handleCancelEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1480,14 +1593,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setShowBrushPicker(false)
     setShowEraserSizePicker(false)
     setShowEraserMenu(false)
+    setShowPlusMenu(false)
   }, [])
 
   // بدء الرسم - محسّن للاستجابة الفورية
   const handleDrawingStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDrawingMode || disabled) return
+    if (isAnnotationInteractiveTarget(e.target)) return
 
     // إغلاق جميع القوائم المنبثقة عند بدء الرسم
-    if (showColorPicker || showStrokePicker || showBrushPicker || showEraserSizePicker || showEraserMenu) {
+    if (showColorPicker || showStrokePicker || showBrushPicker || showEraserSizePicker || showEraserMenu || showPlusMenu) {
       closeAllPickers()
       // لا نمنع الرسم - نسمح بالاستمرار بعد إغلاق القوائم
     }
@@ -1535,7 +1650,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         }
       }
     }
-  }, [isDrawingMode, disabled, showColorPicker, showStrokePicker, showBrushPicker, showEraserSizePicker, showEraserMenu, closeAllPickers, getDrawingCoordinates, isEraserMode, eraserWidth, strokeWidth, drawingColor, isPenMode])
+  }, [isDrawingMode, disabled, showColorPicker, showStrokePicker, showBrushPicker, showEraserSizePicker, showEraserMenu, showPlusMenu, closeAllPickers, getDrawingCoordinates, isEraserMode, eraserWidth, strokeWidth, drawingColor, isPenMode, isAnnotationInteractiveTarget])
 
   // الاستمرار في الرسم - محسّن للأداء
   const handleDrawingMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -1647,6 +1762,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       }
 
       onDrawingsChange([...drawings, newPath])
+      setRedoStack([])
     }
 
     isDrawingRef.current = false
@@ -1659,28 +1775,38 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // التراجع عن آخر رسمة
   const handleUndoDrawing = useCallback(() => {
     if (drawings.length > 0) {
+      const lastDrawing = drawings[drawings.length - 1]
+      skipRedoResetRef.current = true
+      setRedoStack(prev => [...prev, lastDrawing])
       onDrawingsChange(drawings.slice(0, -1))
     }
   }, [drawings, onDrawingsChange])
 
+  const handleRedoDrawing = useCallback(() => {
+    if (redoStack.length === 0) return
+    const lastRedo = redoStack[redoStack.length - 1]
+    skipRedoResetRef.current = true
+    setRedoStack(prev => prev.slice(0, -1))
+    onDrawingsChange([...drawings, lastRedo])
+  }, [drawings, redoStack, onDrawingsChange])
+
   // مسح جميع الرسومات
   const handleClearAllDrawings = useCallback(() => {
     onDrawingsChange([])
+    setRedoStack([])
   }, [onDrawingsChange])
 
   // تفعيل/إلغاء وضع الرسم
   const toggleDrawingMode = useCallback(() => {
     setIsDrawingMode(prev => {
-      const next = !prev
-      if (next) {
-        setIsPenMode(true) // تفعيل وضع القلم تلقائياً عند بدء الرسم
-      }
-      return next
+      return !prev
     })
     setShowColorPicker(false)
     setShowStrokePicker(false)
     setShowBrushPicker(false)
     setShowEraserSizePicker(false)
+    setShowEraserMenu(false)
+    setShowPlusMenu(false)
     setIsEraserMode(false)
     // إعادة تعيين الحالة عند الخروج من وضع الرسم
     if (isDrawingMode) {
@@ -1689,13 +1815,30 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
   }, [isDrawingMode])
 
+  useEffect(() => {
+    if (skipRedoResetRef.current) {
+      skipRedoResetRef.current = false
+      return
+    }
+    setRedoStack([])
+  }, [drawings])
+
   // تفعيل/إلغاء وضع الممحاة
   const toggleEraserMode = useCallback(() => {
-    setIsEraserMode(prev => !prev)
-    // عند تفعيل الممحاة، قد نريد إغلاق القوائم الأخرى أو إبقاءها حسب التفضيل
-    // هنا سنغلق القوائم لترتيب الشاشة
-    // closeAllPickers() 
-  }, [])
+    setShowBrushPicker(false)
+    setShowColorPicker(false)
+    setShowStrokePicker(false)
+    setShowEraserSizePicker(false)
+    setShowPlusMenu(false)
+
+    if (!isEraserMode) {
+      setIsEraserMode(true)
+      setShowEraserMenu(false)
+      return
+    }
+
+    setShowEraserMenu(prev => !prev)
+  }, [isEraserMode])
 
   // إغلاق وضع الرسم (للزر X)
   const exitFullScreen = useCallback(() => {
@@ -2275,13 +2418,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         return
       }
 
-      // الحصول على جميع التعليقات التي تحتوي على نص ولم تُترجم بعد
-      const untranslatedAnnotations = annotations.filter(
-        a => a.transcription && !a.isRecording && !a.translatedText
+      // ترجمة كل التعليقات التي تحتوي على نص (حتى لو كانت مترجمة سابقاً)
+      const annotationsToTranslate = annotations.filter(
+        a => a.transcription && !a.isRecording
       )
 
-      if (untranslatedAnnotations.length === 0) {
-        setError('جميع النصوص مترجمة بالفعل')
+      if (annotationsToTranslate.length === 0) {
+        setError('لا يوجد نص للترجمة')
         setTranslatingId(null)
         return
       }
@@ -2290,7 +2433,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       let updatedAnnotations = [...annotations]
 
       // ترجمة كل نص على حدة وتحديث القائمة
-      for (const annotation of untranslatedAnnotations) {
+      for (const annotation of annotationsToTranslate) {
         try {
           const response = await fetch('/api/translate-text', {
             method: 'POST',
@@ -2335,6 +2478,49 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       console.error('Translate all error:', error)
       setError('فشلت عملية ترجمة بعض النصوص')
       setTranslatingId(null)
+    }
+  }
+
+  const openLanguageDropdown = (anchor: HTMLElement, dropdownId: string) => {
+    const rect = anchor.getBoundingClientRect()
+    setDropdownPosition({
+      top: rect.bottom + 4,
+      left: rect.left
+    })
+    setShowLanguageDropdown(dropdownId)
+  }
+
+  const cancelTranslateAllClick = () => {
+    if (translateAllClickTimerRef.current) {
+      clearTimeout(translateAllClickTimerRef.current)
+      translateAllClickTimerRef.current = null
+    }
+  }
+
+  const scheduleTranslateAll = () => {
+    cancelTranslateAllClick()
+    translateAllClickTimerRef.current = setTimeout(() => {
+      translateAllAnnotations('hi')
+      translateAllClickTimerRef.current = null
+    }, 220)
+  }
+
+  const handleTranslateButtonPointerDown = (e: React.PointerEvent, dropdownId: string) => {
+    if (translatingId !== null) return
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+    suppressTranslateClickRef.current = false
+    const anchor = e.currentTarget as HTMLElement
+    longPressTimerRef.current = setTimeout(() => {
+      suppressTranslateClickRef.current = true
+      cancelTranslateAllClick()
+      openLanguageDropdown(anchor, dropdownId)
+    }, 500)
+  }
+
+  const handleTranslateButtonPointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
     }
   }
 
@@ -2388,8 +2574,28 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+      if (translateAllClickTimerRef.current) clearTimeout(translateAllClickTimerRef.current)
       audioRefsRef.current.forEach(audio => audio.pause())
       audioRefsRef.current.clear()
+    }
+  }, [])
+
+  // إغلاق وضع التعديل عند الضغط خارج مربع النص
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const active = document.activeElement
+      if (!(active instanceof HTMLTextAreaElement)) return
+      if (active.dataset.annotationEdit !== 'true') return
+      if (active.contains(event.target as Node)) return
+      const targetNode = event.target as Node
+      skipDrawingOnceRef.current = !!containerRef.current && containerRef.current.contains(targetNode)
+      active.blur()
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
     }
   }, [])
 
@@ -2484,10 +2690,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           </span>
         )}
 
-        {/* فاصل مرن */}
-        <div className="flex-1" />
-
-        {/* أزرار الأمام والخلف - على اليمين */}
+        {/* أزرار الأمام والخلف - على اليسار */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -2510,6 +2713,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             الخلف
           </button>
         </div>
+
+        {/* فاصل مرن */}
+        <div className="flex-1" />
 
         {/* زر تبديل الصورة */}
         {onImageChange && (
@@ -2636,6 +2842,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             onClick={handleImageClick}
             onDoubleClick={handleImageDoubleClick}
             onPointerDown={(e) => {
+              if (skipDrawingOnceRef.current) {
+                skipDrawingOnceRef.current = false
+                if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
+                return
+              }
+              const active = document.activeElement
+              if (active instanceof HTMLTextAreaElement && active.dataset.annotationEdit === 'true') {
+                return
+              }
+              if (isAnnotationInteractiveTarget(e.target)) return
               // السماح بالتفاعل مع عناصر واجهة المستخدم (الأزرار)
               if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
               if (isDrawingMode) handleDrawingStart(e)
@@ -2645,6 +2861,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             onPointerLeave={handleDrawingEnd}
 
             onMouseDown={(e) => {
+              if (skipDrawingOnceRef.current) {
+                skipDrawingOnceRef.current = false
+                if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
+                return
+              }
+              const active = document.activeElement
+              if (active instanceof HTMLTextAreaElement && active.dataset.annotationEdit === 'true') {
+                return
+              }
+              if (isAnnotationInteractiveTarget(e.target)) return
               if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
               preventFormValidation(e)
             }}
@@ -2652,6 +2878,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             onTouchStart={(e) => {
               // السماح بلمس الأزرار في وضع الرسم
               if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
+              if (isAnnotationInteractiveTarget(e.target)) return
+
+              if (skipDrawingOnceRef.current) {
+                skipDrawingOnceRef.current = false
+                return
+              }
+              const active = document.activeElement
+              if (active instanceof HTMLTextAreaElement && active.dataset.annotationEdit === 'true') {
+                return
+              }
 
               preventFormValidation(e)
               if (isDrawingMode) {
@@ -2660,6 +2896,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               }
             }}
             onTouchMove={(e) => {
+              if (isAnnotationInteractiveTarget(e.target)) return
               if (isDrawingMode) {
                 e.preventDefault()
                 e.stopPropagation()
@@ -2667,6 +2904,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             }}
             onTouchEnd={(e) => {
               if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
+              if (isAnnotationInteractiveTarget(e.target)) return
               if (isDrawingMode) {
                 e.preventDefault()
               }
@@ -2748,6 +2986,114 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 <Pencil className="w-5 h-5" />
               </motion.button>
 
+              {/* زر القائمة الإضافية (Plus) - يظهر دائماً */}
+              <div className="relative plus-menu-container">
+                <motion.button
+                  type="button"
+                  onClick={() => {
+                    setShowPlusMenu(prev => !prev)
+                    setShowColorPicker(false)
+                    setShowStrokePicker(false)
+                    setShowBrushPicker(false)
+                    setShowEraserSizePicker(false)
+                    setShowEraserMenu(false)
+                  }}
+                  className="w-11 h-11 rounded-full flex items-center justify-center shadow-lg bg-white text-gray-700 hover:bg-gray-100 border border-gray-300 transition-all"
+                  title="المزيد من الأدوات"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Plus className="w-5 h-5" />
+                </motion.button>
+
+                {/* قائمة الأدوات الإضافية - أفقية */}
+                <AnimatePresence>
+                  {showPlusMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -10, scale: 0.9 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -10, scale: 0.9 }}
+                      className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-2 flex flex-row gap-2 plus-menu-container"
+                      style={{ zIndex: 200, pointerEvents: 'auto' }}
+                    >
+                      {/* زر التعرف على الكتابة (OCR) */}
+                      <motion.button
+                        type="button"
+                        onClick={() => {
+                          handleOCR()
+                        }}
+                        className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isRecognizingText
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                          }`}
+                        title="تحويل الرسم إلى نص"
+                        disabled={isRecognizingText}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {isRecognizingText ? <Loader2 className="w-5 h-5 animate-spin" /> : <ScanText className="w-5 h-5" />}
+                      </motion.button>
+
+                      {/* زر إظهار/إخفاء النصوص */}
+                      <motion.button
+                        type="button"
+                        onClick={() => setShowAllTextsOnImage(!showAllTextsOnImage)}
+                        className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${!showAllTextsOnImage
+                          ? 'bg-gray-100 text-gray-400'
+                          : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                          }`}
+                        title={showAllTextsOnImage ? "إخفاء النصوص" : "إظهار النصوص"}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {showAllTextsOnImage ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                      </motion.button>
+
+                      {/* زر ترجمة كل النصوص */}
+                      <motion.button
+                        type="button"
+                        onClick={() => {
+                          if (suppressTranslateClickRef.current) {
+                            suppressTranslateClickRef.current = false
+                            return
+                          }
+                          scheduleTranslateAll()
+                        }}
+                        onDoubleClick={(e) => {
+                          cancelTranslateAllClick()
+                          suppressTranslateClickRef.current = true
+                          openLanguageDropdown(e.currentTarget as HTMLElement, 'translate-all')
+                        }}
+                        onPointerDown={(e) => handleTranslateButtonPointerDown(e, 'translate-all')}
+                        onPointerUp={handleTranslateButtonPointerUp}
+                        onPointerLeave={handleTranslateButtonPointerUp}
+                        className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isTranslatingAll
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                          }`}
+                        title="ترجمة كل النصوص (افتراضيًا إلى الهندية)"
+                        disabled={translatingId !== null}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {isTranslatingAll ? <Loader2 className="w-5 h-5 animate-spin" /> : <Languages className="w-5 h-5" />}
+                      </motion.button>
+
+                      {/* زر وضع القلم (رفض اليد) */}
+                      <motion.button
+                        type="button"
+                        onClick={() => setIsPenMode(!isPenMode)}
+                        className={`relative w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isPenMode
+                          ? 'bg-purple-100 border-2 border-purple-400 text-purple-700'
+                          : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                          }`}
+                        title={isPenMode ? "وضع القلم فقط مفعل (تجاهل اليد)" : "تفعيل وضع القلم فقط"}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <MousePointer2 className="w-5 h-5" />
+                        {isPenMode && <span className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full animate-pulse" />}
+                      </motion.button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
               {/* أدوات الرسم - تظهر فقط في وضع الرسم */}
               <AnimatePresence>
                 {isDrawingMode && (
@@ -2761,30 +3107,21 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                     {/* زر القلم مع قائمة أنواع الفرش */}
                     <div className="relative brush-picker-container">
                       <motion.div className="flex flex-col gap-2 relative">
-                        {/* اختصار القلم المتقطع - يظهر فوق زر القلم */}
                         <motion.button
                           type="button"
                           onClick={() => {
                             setIsEraserMode(false)
-                            setBrushType('dashed')
-                            closeAllPickers()
-                          }}
-                          className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${!isEraserMode && brushType === 'dashed'
-                            ? 'bg-pink-100 border-2 border-pink-400 text-pink-700'
-                            : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'
-                            }`}
-                          title="قلم متقطع"
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <span className="text-xs font-bold">--</span>
-                        </motion.button>
-
-                        <motion.button
-                          type="button"
-                          onClick={() => {
-                            setIsEraserMode(false)
-                            // setBrushType('normal') - removed to keep previous selection
-                            closeAllPickers()
+                            setShowEraserMenu(false)
+                            setShowEraserSizePicker(false)
+                            setShowColorPicker(false)
+                            setShowStrokePicker(false)
+                            setShowPlusMenu(false)
+                            if (!isPenMode) {
+                              setIsPenMode(true)
+                              setShowBrushPicker(false)
+                              return
+                            }
+                            setShowBrushPicker(prev => !prev)
                           }}
                           onDoubleClick={() => setShowBrushPicker(true)}
                           onContextMenu={(e) => {
@@ -2959,6 +3296,20 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                               <span className="text-sm text-gray-700">تراجع</span>
                             </button>
 
+                            {/* زر التقدم - يعيد آخر عملية تراجع */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleRedoDrawing()
+                                // لا نغلق القائمة للسماح بإعادة التقدم المتتالي
+                              }}
+                              disabled={redoStack.length === 0}
+                              className="w-full px-3 py-2 text-right hover:bg-gray-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <RotateCw className="w-4 h-4 text-emerald-600" />
+                              <span className="text-sm text-gray-700">تقدم</span>
+                            </button>
+
                             {/* زر مسح الكل */}
                             <button
                               type="button"
@@ -3032,55 +3383,6 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                         )}
                       </AnimatePresence>
                     </div>
-
-                    {/* زر وضع القلم (رفض اليد) */}
-                    <motion.button
-                      type="button"
-                      onClick={() => setIsPenMode(!isPenMode)}
-                      className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isPenMode
-                        ? 'bg-purple-100 border-2 border-purple-400 text-purple-700'
-                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      title={isPenMode ? "وضع القلم فقط مفعل (تجاهل اليد)" : "تفعيل وضع القلم فقط"}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <MousePointer2 className="w-5 h-5" />
-                      {isPenMode && <span className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full animate-pulse" />}
-                    </motion.button>
-
-                    {/* زر التعرف على الكتابة (OCR) */}
-                    <motion.button
-                      type="button"
-                      onClick={() => {
-                        handleOCR()
-                      }}
-                      className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isRecognizingText
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      title="تحويل الرسم إلى نص"
-                      disabled={isRecognizingText}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      {isRecognizingText ? <Loader2 className="w-5 h-5 animate-spin" /> : <ScanText className="w-5 h-5" />}
-                    </motion.button>
-
-                    {/* زر إظهار/إخفاء النصوص */}
-                    <motion.button
-                      type="button"
-                      onClick={() => setShowAllTextsOnImage(!showAllTextsOnImage)}
-                      className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${!showAllTextsOnImage
-                        ? 'bg-gray-100 text-gray-400'
-                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      title={showAllTextsOnImage ? "إخفاء النصوص" : "إظهار النصوص"}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      {showAllTextsOnImage ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
-                    </motion.button>
-
-
-
 
                   </motion.div>
                 )}
@@ -3299,22 +3601,45 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setShowLanguageDropdown('translate-all')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg transition-all shadow-sm"
+                    onClick={(e) => {
+                      if (showLanguageDropdown === 'translate-all') {
+                        setShowLanguageDropdown(null)
+                        setDropdownPosition(null)
+                      } else {
+                        openLanguageDropdown(e.currentTarget as HTMLElement, 'translate-all')
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     disabled={translatingId !== null}
+                    aria-busy={isTranslatingAll}
                   >
-                    <Languages className="w-3.5 h-3.5" />
-                    <span>ترجمة الكل</span>
+                    {isTranslatingAll ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Languages className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isTranslatingAll ? 'جاري الترجمة...' : 'ترجمة الكل'}</span>
                   </button>
 
                   {/* قائمة اللغات لترجمة الكل */}
-                  {showLanguageDropdown === 'translate-all' && (
+                  {showLanguageDropdown === 'translate-all' && dropdownPosition && typeof document !== 'undefined' && createPortal(
                     <>
                       <div
-                        className="fixed inset-0 z-[9998]"
-                        onClick={() => setShowLanguageDropdown(null)}
+                        className="fixed inset-0"
+                        style={{ zIndex: 99998 }}
+                        onClick={() => {
+                          setShowLanguageDropdown(null)
+                          setDropdownPosition(null)
+                        }}
                       />
-                      <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[9999] min-w-[180px]">
+                      <div
+                        className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px]"
+                        style={{
+                          zIndex: 99999,
+                          top: dropdownPosition.top,
+                          left: dropdownPosition.left
+                        }}
+                      >
                         {availableLanguages.map(lang => (
                           <button
                             key={lang.code}
@@ -3322,8 +3647,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             onClick={() => {
                               translateAllAnnotations(lang.code)
                               setShowLanguageDropdown(null)
+                              setDropdownPosition(null)
                             }}
-                            className="w-full text-right px-3 py-2 text-sm hover:bg-purple-50 transition-colors flex items-center justify-between gap-2"
+                            disabled={translatingId !== null}
+                            className="w-full text-right px-3 py-2 text-sm hover:bg-purple-50 transition-colors flex items-center justify-between gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             <div className="flex items-center gap-2">
                               <span className="text-lg">{lang.flag}</span>
@@ -3333,7 +3660,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                           </button>
                         ))}
                       </div>
-                    </>
+                    </>,
+                    document.body
                   )}
                 </div>
               )}
@@ -3341,6 +3669,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             <div className="space-y-3 max-h-[500px] overflow-y-auto overflow-x-visible">
               {annotations.map((annotation, index) => {
                 const isEditing = editingTranscriptionId === annotation.id
+                const isTranslatingAnnotation = translatingId === annotation.id
+                const isTranslateBusy = isTranslatingAnnotation || isTranslatingAll
 
                 return (
                   <div
@@ -3444,10 +3774,15 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                                   setShowLanguageDropdown(annotation.id)
                                 }
                               }}
-                              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                              disabled={isTranslateBusy}
+                              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                               title="ترجمة"
                             >
-                              <Languages className="w-4 h-4" />
+                              {isTranslatingAnnotation ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Languages className="w-4 h-4" />
+                              )}
                             </button>
 
                             {/* قائمة اللغات المنسدلة - تُعرض باستخدام Portal */}
@@ -3687,14 +4022,18 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                   className="border-t border-pink-200"
                 >
                   <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-                    {savedComments.map((comment, index) => (
-                      <div
-                        key={comment.id}
-                        className={`bg-white rounded-lg border p-4 transition-all ${editingCommentId === comment.id
-                          ? 'border-pink-500 ring-2 ring-pink-200'
-                          : 'border-gray-200 hover:border-pink-300'
-                          }`}
-                      >
+                    {savedComments.map((comment, index) => {
+                      const displayTitle = comment.title
+                        || (comment.view ? getViewLabel(comment.view) : `التعليق ${index + 1}`)
+
+                      return (
+                        <div
+                          key={comment.id}
+                          className={`bg-white rounded-lg border p-4 transition-all ${editingCommentId === comment.id
+                            ? 'border-pink-500 ring-2 ring-pink-200'
+                            : 'border-gray-200 hover:border-pink-300'
+                            }`}
+                        >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1 min-w-0">
                             {editingCommentTitle === comment.id ? (
@@ -3730,12 +4069,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             ) : (
                               <div className="flex items-center gap-2">
                                 <h5 className="font-medium text-gray-800">
-                                  {comment.title || `التعليق ${index + 1}`}
+                                  {displayTitle}
                                 </h5>
                                 {!disabled && onSavedCommentsChange && (
                                   <button
                                     type="button"
-                                    onClick={() => startEditingCommentTitle(comment.id, comment.title || `التعليق ${index + 1}`)}
+                                    onClick={() => startEditingCommentTitle(comment.id, displayTitle)}
                                     className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                     title="تعديل الاسم"
                                   >
@@ -3790,7 +4129,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                           </div>
                         )}
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </motion.div>
               )}

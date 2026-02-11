@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import {
@@ -22,10 +22,29 @@ import UnifiedNotesInput from './UnifiedNotesInput'
 import NumericInput from './NumericInput'
 import DatePickerWithStats from './DatePickerWithStats'
 import DatePickerForProof from './DatePickerForProof'
-import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
+import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from './InteractiveImageAnnotation'
 import { Order } from '@/lib/services/order-service'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
+
+const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
+
+const getDesignViewFromTitle = (title?: string | null): 'front' | 'back' | null => {
+  if (!title) return null
+  const trimmed = title.trim()
+  if (trimmed.startsWith('أمام')) return 'front'
+  if (trimmed.startsWith('خلف')) return 'back'
+  return null
+}
+
+const getNextDesignViewTitle = (view: 'front' | 'back', comments: SavedDesignComment[]) => {
+  const existingCount = comments.reduce((count, comment) => {
+    const commentView = comment.view ?? getDesignViewFromTitle(comment.title)
+    return commentView === view ? count + 1 : count
+  }, 0)
+  const label = getDesignViewLabel(view)
+  return existingCount === 0 ? label : `${label} ${existingCount + 1}`
+}
 
 interface EditOrderModalProps {
   order: Order | null
@@ -37,6 +56,7 @@ interface EditOrderModalProps {
 
 export default function EditOrderModal({ order, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
   const { t, isArabic } = useTranslation()
+  const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
   const [formData, setFormData] = useState({
     orderNumber: '',
     clientName: '',
@@ -248,13 +268,17 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
 
       // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`
+          title: viewTitle,
+          view: currentView
         }
         allSavedComments.push(currentComment)
       }
@@ -373,15 +397,18 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
 
       // تجميع جميع التعليقات المحفوظة
       let allSavedComments = [...formData.savedDesignComments]
-
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
         const currentComment: SavedDesignComment = {
           id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
           image: customDesignImageBase64 || null,
-          title: `التعليق ${allSavedComments.length + 1}`
+          title: viewTitle,
+          view: currentView
         }
         allSavedComments.push(currentComment)
       }
@@ -641,6 +668,7 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
                   </h3>
 
                   <InteractiveImageAnnotation
+                    ref={annotationRef}
                     imageSrc="/front2.png"
                     annotations={formData.imageAnnotations}
                     onAnnotationsChange={handleImageAnnotationsChange}

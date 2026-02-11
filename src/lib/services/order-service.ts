@@ -118,6 +118,7 @@ export interface CreateOrderData {
     }>
     image: string | null
     title?: string
+    view?: 'front' | 'back'
   }>
   // حقول محاسبية
   branch?: Branch
@@ -210,6 +211,7 @@ export interface UpdateOrderData {
     }>
     image: string | null
     title?: string
+    view?: 'front' | 'back'
   }>
 }
 
@@ -733,4 +735,3 @@ export const orderService = {
   },
 
 }
-
