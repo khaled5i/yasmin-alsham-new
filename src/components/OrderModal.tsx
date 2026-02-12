@@ -24,7 +24,7 @@ import {
   Loader2,
   ChevronDown
 } from 'lucide-react'
-import { Order } from '@/lib/services/order-service'
+import { Order, orderService } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
 import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore' // إضافة
@@ -43,12 +43,15 @@ interface OrderModalProps {
   onClose: () => void
 }
 
-export default function OrderModal({ order, workers, isOpen, onClose }: OrderModalProps) {
+export default function OrderModal({ order: initialOrder, workers, isOpen, onClose }: OrderModalProps) {
   const { user } = useAuthStore()
   const { t, isArabic } = useTranslation()
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [voiceNotes, setVoiceNotes] = useState<any[]>([])
   const [showPrintModal, setShowPrintModal] = useState(false)
+  // Full order data (fetched when lightweight order is missing measurements)
+  const [fullOrder, setFullOrder] = useState<Order | null>(null)
+  const order = fullOrder || initialOrder
 
   const { updateOrder } = useOrderStore()
   const { workerType } = useWorkerPermissions() // للتحقق من صلاجيات مدير الورشة
@@ -86,6 +89,30 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
     const lang = availableLanguages.find(l => l.code === code)
     return lang ? lang.nameAr : code
   }
+
+  // Fetch full order data when opened with lightweight-loaded order
+  // (list views exclude measurements which contains design comments)
+  useEffect(() => {
+    if (!isOpen || !initialOrder) {
+      setFullOrder(null)
+      return
+    }
+
+    // If measurements is already present, no need to fetch
+    if (initialOrder.measurements !== undefined) {
+      setFullOrder(null)
+      return
+    }
+
+    let cancelled = false
+    orderService.getById(initialOrder.id).then(result => {
+      if (!cancelled && result.data) {
+        setFullOrder(result.data)
+      }
+    })
+
+    return () => { cancelled = true }
+  }, [isOpen, initialOrder?.id])
 
   // تحديث الملاحظات الصوتية وتعليقات التصميم عند تغيير الطلب
   useEffect(() => {
@@ -1040,7 +1067,7 @@ export default function OrderModal({ order, workers, isOpen, onClose }: OrderMod
               )}
 
               {/* 4️⃣ قسم المقاسات */}
-              {Object.values(order.measurements).some(val => val !== undefined && val !== '') && (
+              {order.measurements && Object.values(order.measurements).some(val => val !== undefined && val !== '') && (
                 <div className="space-y-4 sm:space-y-6">
                   <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <Ruler className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />

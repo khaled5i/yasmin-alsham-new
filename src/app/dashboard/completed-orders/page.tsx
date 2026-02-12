@@ -73,9 +73,8 @@ export default function CompletedOrdersPage() {
       return
     }
 
-    // OPTIMIZATION: Load data IMMEDIATELY, don't wait for permissions
-    // This eliminates the blank "No orders" state on first visit
-    loadOrders()
+    // OPTIMIZATION: Load only completed orders from the server
+    loadOrders({ status: 'completed' })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
 
@@ -92,10 +91,8 @@ export default function CompletedOrdersPage() {
     }
   }, [user, authLoading, workerType, permissionsLoading, router])
 
-  // فلترة الطلبات المكتملة فقط
+  // فلترة الطلبات - server-side filtering already ensures only completed orders
   const completedOrders = orders.filter(order => {
-    if (order.status !== 'completed') return false
-
     const searchLower = searchTerm.toLowerCase()
     const matchesSearch = !searchTerm ||
       (order.client_name || '').toLowerCase().includes(searchLower) ||
@@ -426,7 +423,7 @@ export default function CompletedOrdersPage() {
                 key={order.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
+                transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
                 onClick={() => handleViewOrder(order)}
                 className="bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
               >

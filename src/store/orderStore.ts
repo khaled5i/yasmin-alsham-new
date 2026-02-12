@@ -2,10 +2,13 @@
  * Order Store - مخزن الطلبات مع Supabase
  * يتعامل مع جميع عمليات الطلبات باستخدام Supabase
  * 
- * PERFORMANCE OPTIMIZATION:
+ * PERFORMANCE OPTIMIZATIONS:
+ * - Server-side pagination: loads only one page at a time
+ * - Server-side status filtering: DB filters instead of client-side
  * - Optimistic loading: Show cached data immediately while fetching
  * - Smart caching: Skip redundant fetches within 30 seconds
  * - isRefreshing vs isLoading: Only show loading UI when no cached data
+ * - Console logging guarded behind isDev
  */
 
 'use client'
@@ -13,6 +16,8 @@
 import { create } from 'zustand'
 import { orderService, Order, CreateOrderData, UpdateOrderData } from '@/lib/services/order-service'
 import { onCacheInvalidation } from '@/store/authStore'
+
+const isDev = process.env.NODE_ENV === 'development'
 
 // Smart fetch TTL: 30 seconds - skip redundant fetches within this window
 const FETCH_TTL_MS = 30 * 1000
@@ -25,19 +30,24 @@ interface OrderState {
   // البيانات
   orders: Order[]
   currentOrder: Order | null
+  totalOrders: number | null  // total count from server for pagination
 
   // حالة التحميل
   isLoading: boolean       // True only if we have NO cached orders AND are fetching
   isRefreshing: boolean    // True when fetching in background (already have cached orders)
   lastFetchedAt: number | null  // Timestamp of last successful fetch
+  lastFilters: string | null    // Serialized last-used filters for cache validation
   error: string | null
 
   // العمليات الأساسية
   loadOrders: (filters?: {
-    status?: string
+    status?: string | string[]
     worker_id?: string
     user_id?: string
     payment_status?: string
+    page?: number
+    pageSize?: number
+    lightweight?: boolean
   }) => Promise<void>
 
   loadOrderById: (id: string) => Promise<void>
@@ -57,7 +67,7 @@ interface OrderState {
   clearCurrentOrder: () => void
   forceRefresh: () => Promise<void>  // Force a fresh fetch, bypassing cache
 
-  // إحصائيات
+  // إحصائيات (computed from current page of orders)
   getStats: () => {
     totalOrders: number
     pendingOrders: number
@@ -80,61 +90,63 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   // البيانات الأولية
   orders: [],
   currentOrder: null,
+  totalOrders: null,
   isLoading: false,
   isRefreshing: false,
   lastFetchedAt: null,
+  lastFilters: null,
   error: null,
 
   // ============================================================================
-  // تحميل الطلبات
+  // تحميل الطلبات (with pagination & server-side filtering)
   // ============================================================================
   loadOrders: async (filters) => {
     const state = get()
     const now = Date.now()
+    const filtersKey = JSON.stringify(filters || {})
 
-    // OPTIMIZATION: Skip redundant fetches if data is fresh
-    if (state.lastFetchedAt && (now - state.lastFetchedAt) < FETCH_TTL_MS) {
-      console.log('⚡ Orders data is fresh, skipping fetch')
+    // OPTIMIZATION: Skip redundant fetches if data is fresh AND filters haven't changed
+    if (
+      state.lastFetchedAt &&
+      (now - state.lastFetchedAt) < FETCH_TTL_MS &&
+      state.lastFilters === filtersKey
+    ) {
+      if (isDev) console.log('⚡ Orders data is fresh, skipping fetch')
       return
     }
 
     // OPTIMISTIC LOADING: If we have cached orders, don't show loading spinner
-    // Instead, show "refreshing" which doesn't block the UI
     const hasCachedOrders = state.orders.length > 0
 
     if (hasCachedOrders) {
-      // We have cached data - refresh in background
       set({ isRefreshing: true, error: null })
     } else {
-      // No cached data - show loading spinner
       set({ isLoading: true, error: null })
     }
 
     try {
-      console.log('📋 Loading orders...', filters)
+      if (isDev) console.log('📋 Loading orders...', filters)
 
       const result = await orderService.getAll(filters)
 
       if (result.error) {
-        // KEY FIX: Do NOT set lastFetchedAt on error — this was caching empty results
-        // and preventing retry. Next loadOrders() call will bypass TTL and retry.
         set({ error: result.error, isLoading: false, isRefreshing: false, lastFetchedAt: null })
         return
       }
 
-      // Only cache timestamp on SUCCESSFUL fetches
       set({
         orders: result.data,
+        totalOrders: result.total ?? null,
         isLoading: false,
         isRefreshing: false,
         lastFetchedAt: Date.now(),
+        lastFilters: filtersKey,
         error: null
       })
 
-      console.log(`✅ Loaded ${result.data.length} orders`)
+      if (isDev) console.log(`✅ Loaded ${result.data.length} orders (total: ${result.total})`)
     } catch (error: any) {
-      console.error('❌ Error loading orders:', error)
-      // KEY FIX: Clear lastFetchedAt on error so next call retries
+      console.error('❌ Error loading orders:', error.message)
       set({
         error: error.message || 'خطأ في تحميل الطلبات',
         isLoading: false,
@@ -145,13 +157,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   // ============================================================================
-  // تحميل طلب واحد بواسطة ID
+  // تحميل طلب واحد بواسطة ID (full data including measurements)
   // ============================================================================
   loadOrderById: async (id) => {
     set({ isLoading: true, error: null })
 
     try {
-      console.log('🔍 Loading order by ID:', id)
+      if (isDev) console.log('🔍 Loading order by ID:', id)
 
       const result = await orderService.getById(id)
 
@@ -166,9 +178,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         error: null
       })
 
-      console.log('✅ Order loaded successfully')
+      if (isDev) console.log('✅ Order loaded successfully')
     } catch (error: any) {
-      console.error('❌ Error loading order:', error)
+      console.error('❌ Error loading order:', error.message)
       set({
         error: error.message || 'خطأ في تحميل الطلب',
         isLoading: false
@@ -183,7 +195,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({ isLoading: true, error: null })
 
     try {
-      console.log('🔍 Loading order by number:', orderNumber)
+      if (isDev) console.log('🔍 Loading order by number:', orderNumber)
 
       const result = await orderService.getByOrderNumber(orderNumber)
 
@@ -198,9 +210,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         error: null
       })
 
-      console.log('✅ Order loaded successfully')
+      if (isDev) console.log('✅ Order loaded successfully')
     } catch (error: any) {
-      console.error('❌ Error loading order:', error)
+      console.error('❌ Error loading order:', error.message)
       set({
         error: error.message || 'خطأ في تحميل الطلب',
         isLoading: false
@@ -215,7 +227,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({ isLoading: true, error: null })
 
     try {
-      console.log('📞 Loading orders by phone:', phoneNumber)
+      if (isDev) console.log('📞 Loading orders by phone:', phoneNumber)
 
       const result = await orderService.getByPhone(phoneNumber)
 
@@ -230,9 +242,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         error: null
       })
 
-      console.log(`✅ Loaded ${result.data.length} orders`)
+      if (isDev) console.log(`✅ Loaded ${result.data.length} orders`)
     } catch (error: any) {
-      console.error('❌ Error loading orders:', error)
+      console.error('❌ Error loading orders:', error.message)
       set({
         error: error.message || 'خطأ في تحميل الطلبات',
         isLoading: false
@@ -247,7 +259,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({ isLoading: true, error: null })
 
     try {
-      console.log('📦 Creating order:', orderData)
+      if (isDev) console.log('📦 Creating order')
 
       const result = await orderService.create(orderData)
 
@@ -259,14 +271,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       // إضافة الطلب الجديد إلى القائمة
       set((state) => ({
         orders: [result.data!, ...state.orders],
+        totalOrders: state.totalOrders !== null ? state.totalOrders + 1 : null,
         isLoading: false,
         error: null
       }))
 
-      console.log('✅ Order created successfully:', result.data.id)
+      if (isDev) console.log('✅ Order created successfully:', result.data.id)
       return { success: true, data: result.data }
     } catch (error: any) {
-      console.error('❌ Error creating order:', error)
+      console.error('❌ Error creating order:', error.message)
       const errorMessage = error.message || 'خطأ في إنشاء الطلب'
       set({ error: errorMessage, isLoading: false })
       return { success: false, error: errorMessage }
@@ -277,10 +290,17 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   // تحديث طلب
   // ============================================================================
   updateOrder: async (id, updates) => {
-    set({ isLoading: true, error: null })
+    // OPTIMISTIC UI: Don't block the entire UI during update  
+    // Only set isLoading if no orders are cached
+    const hasCachedOrders = get().orders.length > 0
+    if (!hasCachedOrders) {
+      set({ isLoading: true, error: null })
+    } else {
+      set({ error: null })
+    }
 
     try {
-      console.log('🔄 Updating order:', id)
+      if (isDev) console.log('🔄 Updating order:', id)
 
       const result = await orderService.update(id, updates)
 
@@ -299,10 +319,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         error: null
       }))
 
-      console.log('✅ Order updated successfully')
+      if (isDev) console.log('✅ Order updated successfully')
       return { success: true, data: result.data }
     } catch (error: any) {
-      console.error('❌ Error updating order:', error)
+      console.error('❌ Error updating order:', error.message)
       const errorMessage = error.message || 'خطأ في تحديث الطلب'
       set({ error: errorMessage, isLoading: false })
       return { success: false, error: errorMessage }
@@ -316,7 +336,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({ isLoading: true, error: null })
 
     try {
-      console.log('🗑️ Deleting order:', id)
+      if (isDev) console.log('🗑️ Deleting order:', id)
 
       const result = await orderService.delete(id)
 
@@ -329,14 +349,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       set((state) => ({
         orders: state.orders.filter(order => order.id !== id),
         currentOrder: state.currentOrder?.id === id ? null : state.currentOrder,
+        totalOrders: state.totalOrders !== null ? Math.max(0, state.totalOrders - 1) : null,
         isLoading: false,
         error: null
       }))
 
-      console.log('✅ Order deleted successfully')
+      if (isDev) console.log('✅ Order deleted successfully')
       return { success: true }
     } catch (error: any) {
-      console.error('❌ Error deleting order:', error)
+      console.error('❌ Error deleting order:', error.message)
       const errorMessage = error.message || 'خطأ في حذف الطلب'
       set({ error: errorMessage, isLoading: false })
       return { success: false, error: errorMessage }
@@ -373,44 +394,70 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
   // Force a fresh fetch, bypassing the cache TTL
   forceRefresh: async () => {
-    console.log('🔄 Force refreshing orders...')
-    set({ lastFetchedAt: null })  // Clear the cache timestamp
+    if (isDev) console.log('🔄 Force refreshing orders...')
+    set({ lastFetchedAt: null, lastFilters: null })
     await get().loadOrders()
   },
 
   // ============================================================================
-  // إحصائيات
+  // إحصائيات (computed from current page of orders)
   // ============================================================================
   getStats: () => {
     const { orders } = get()
 
+    // Pre-compute in a single pass for O(n) instead of 8x O(n)
+    let pendingOrders = 0
+    let inProgressOrders = 0
+    let completedOrders = 0
+    let deliveredOrders = 0
+    let cancelledOrders = 0
+    let totalRevenue = 0
+    let paidAmount = 0
+    let unpaidAmount = 0
+
+    for (const order of orders) {
+      const price = Number(order.price)
+      const paid = Number(order.paid_amount)
+
+      switch (order.status) {
+        case 'pending': pendingOrders++; break
+        case 'in_progress': inProgressOrders++; break
+        case 'completed': completedOrders++; break
+        case 'delivered': deliveredOrders++; break
+        case 'cancelled': cancelledOrders++; break
+      }
+
+      if (order.status !== 'cancelled') {
+        totalRevenue += price
+      }
+
+      paidAmount += paid
+
+      if (order.payment_status !== 'paid') {
+        unpaidAmount += price - paid
+      }
+    }
+
     return {
       totalOrders: orders.length,
-      pendingOrders: orders.filter(o => o.status === 'pending').length,
-      inProgressOrders: orders.filter(o => o.status === 'in_progress').length,
-      completedOrders: orders.filter(o => o.status === 'completed').length,
-      deliveredOrders: orders.filter(o => o.status === 'delivered').length,
-      cancelledOrders: orders.filter(o => o.status === 'cancelled').length,
-      activeOrders: orders.filter(o => ['pending', 'in_progress'].includes(o.status)).length,
-      totalRevenue: orders
-        .filter(o => o.status !== 'cancelled')
-        .reduce((sum, order) => sum + Number(order.price), 0),
-      paidAmount: orders
-        .reduce((sum, order) => sum + Number(order.paid_amount), 0),
-      unpaidAmount: orders
-        .filter(o => o.payment_status !== 'paid')
-        .reduce((sum, order) => sum + (Number(order.price) - Number(order.paid_amount)), 0)
+      pendingOrders,
+      inProgressOrders,
+      completedOrders,
+      deliveredOrders,
+      cancelledOrders,
+      activeOrders: pendingOrders + inProgressOrders,
+      totalRevenue,
+      paidAmount,
+      unpaidAmount
     }
   }
 }))
 
 // AUTO-INVALIDATION: When auth state changes (login/logout/token refresh),
 // clear the fetch cache so orders are re-fetched with the new credentials.
-// This prevents stale empty data from persisting after auth recovery.
 if (typeof window !== 'undefined') {
   onCacheInvalidation(() => {
-    console.log('🔄 orderStore: Auth cache invalidation received, clearing fetch cache')
-    useOrderStore.setState({ lastFetchedAt: null })
+    if (isDev) console.log('🔄 orderStore: Auth cache invalidation received, clearing fetch cache')
+    useOrderStore.setState({ lastFetchedAt: null, lastFilters: null })
   })
 }
-

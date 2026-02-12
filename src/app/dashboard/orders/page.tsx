@@ -62,8 +62,9 @@ export default function OrdersPage() {
       return
     }
 
-    // تحميل الطلبات والعمال
-    loadOrders()
+    // تحميل الطلبات والعمال - server-side status filtering
+    // Only load active orders (exclude delivered/completed to reduce payload)
+    loadOrders({ status: ['pending', 'in_progress', 'cancelled'] })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
 
@@ -268,9 +269,37 @@ export default function OrdersPage() {
   }
 
   // فتح modal المقاسات
-  const handleOpenMeasurements = (order: any) => {
-    setMeasurementsOrder(order)
-    setShowMeasurementsModal(true)
+  const handleOpenMeasurements = async (order: any) => {
+    // يجب تحميل تفاصيل الطلب الكاملة أولاً لأن القائمة تحمل بيانات "خفيفة" فقط
+    // وهذا ضروري لضمان وجود حقل measurements بكامل محتوياته (بما في ذلك التعليقات)
+    setIsProcessing(true)
+    try {
+      // استخدام loadOrderById من المتجر للحصول على أحدث البيانات الكاملة
+      // ولكننا نحتاج إلى التعامل مع النتيجة مباشرة هنا
+      // لذلك سنستخدم orderService مباشرة أو نعتمد على أن loadOrderById يضع النتيجة في currentOrder
+      // الأفضل هنا هو طلب البيانات مباشرة لضمان عدم التداخل مع currentOrder المستخدم في مكان آخر
+
+      /* 
+         ملاحظة: يمكننا استخدام loadOrderById من الـ store، لكنها ستغير state.currentOrder
+         وهذا قد يؤثر على أشياء أخرى إذا كانت مفتوحة.
+         لذلك سنستخدم orderService مباشرة هنا للحصول على البيانات وتمريرها للمودال.
+      */
+      const { orderService } = await import('@/lib/services/order-service')
+      const result = await orderService.getById(order.id)
+
+      if (result.error || !result.data) {
+        toast.error(t('error_loading_order') || 'خطأ في تحميل تفاصيل الطلب')
+        return
+      }
+
+      setMeasurementsOrder(result.data)
+      setShowMeasurementsModal(true)
+    } catch (error) {
+      console.error('Error fetching full order details:', error)
+      toast.error(t('error_loading_order') || 'خطأ في تحميل تفاصيل الطلب')
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   // فتح modal الطباعة
@@ -391,15 +420,8 @@ export default function OrdersPage() {
   const currentWorkerId = getCurrentWorkerId()
 
   const filteredOrders = orders.filter(order => {
-    // استبعاد الطلبات المسلمة - يجب أن تظهر فقط في صفحة "الطلبات المسلمة"
-    if (order.status === 'delivered') {
-      return false
-    }
-
-    // استبعاد الطلبات المكتملة - يجب أن تظهر فقط في صفحة "الطلبات المكتملة"
-    if (order.status === 'completed') {
-      return false
-    }
+    // Server-side filtering already excludes delivered/completed orders.
+    // Client-side filtering handles search, role, and date only.
 
     // فلترة حسب الدور
     // - Admin: يرى جميع الطلبات
@@ -565,7 +587,7 @@ export default function OrdersPage() {
                 key={order.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
+                transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
                 onClick={() => handleViewOrder(order)}
                 className="bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
               >

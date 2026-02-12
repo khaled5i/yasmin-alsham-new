@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import {
@@ -23,7 +23,7 @@ import NumericInput from './NumericInput'
 import DatePickerWithStats from './DatePickerWithStats'
 import DatePickerForProof from './DatePickerForProof'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from './InteractiveImageAnnotation'
-import { Order } from '@/lib/services/order-service'
+import { Order, orderService } from '@/lib/services/order-service'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
 
@@ -54,9 +54,13 @@ interface EditOrderModalProps {
   onSave: (orderId: string, updates: any) => void
 }
 
-export default function EditOrderModal({ order, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
+export default function EditOrderModal({ order: initialOrder, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
   const { t, isArabic } = useTranslation()
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
+  // Full order data (fetched when lightweight order is missing measurements)
+  const [fullOrder, setFullOrder] = useState<Order | null>(null)
+  const order = fullOrder || initialOrder
+
   const [formData, setFormData] = useState({
     orderNumber: '',
     clientName: '',
@@ -89,6 +93,28 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+
+  // Fetch full order data when opened with lightweight-loaded order
+  useEffect(() => {
+    if (!isOpen || !initialOrder) {
+      setFullOrder(null)
+      return
+    }
+
+    if (initialOrder.measurements !== undefined) {
+      setFullOrder(null)
+      return
+    }
+
+    let cancelled = false
+    orderService.getById(initialOrder.id).then(result => {
+      if (!cancelled && result.data) {
+        setFullOrder(result.data)
+      }
+    })
+
+    return () => { cancelled = true }
+  }, [isOpen, initialOrder?.id])
 
   // تحميل بيانات الطلب عند فتح النافذة
   useEffect(() => {
@@ -145,15 +171,15 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
   }, [formData.price, formData.paidAmount])
 
   // معالجة تغيير الحقول
-  const handleInputChange = (field: string, value: string | string[] | null) => {
+  const handleInputChange = useCallback((field: string, value: string | string[] | null) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }))
-  }
+  }, [])
 
   // معالجة تغيير الملاحظات الصوتية
-  const handleVoiceNotesChange = (voiceNotes: Array<{
+  const handleVoiceNotesChange = useCallback((voiceNotes: Array<{
     id: string
     data: string
     timestamp: number
@@ -166,39 +192,39 @@ export default function EditOrderModal({ order, workers, isOpen, onClose, onSave
       ...prev,
       voiceNotes
     }))
-  }
+  }, [])
 
   // معالجة تغيير التعليقات على الصورة
-  const handleImageAnnotationsChange = (annotations: ImageAnnotation[]) => {
+  const handleImageAnnotationsChange = useCallback((annotations: ImageAnnotation[]) => {
     setFormData(prev => ({
       ...prev,
       imageAnnotations: annotations
     }))
-  }
+  }, [])
 
   // معالجة تغيير الرسومات على الصورة
-  const handleImageDrawingsChange = (drawings: DrawingPath[]) => {
+  const handleImageDrawingsChange = useCallback((drawings: DrawingPath[]) => {
     setFormData(prev => ({
       ...prev,
       imageDrawings: drawings
     }))
-  }
+  }, [])
 
   // معالجة تغيير صورة التصميم المخصصة
-  const handleDesignImageChange = (image: File | null) => {
+  const handleDesignImageChange = useCallback((image: File | null) => {
     setFormData(prev => ({
       ...prev,
       customDesignImage: image
     }))
-  }
+  }, [])
 
   // معالجة تغيير التعليقات المحفوظة
-  const handleSavedCommentsChange = (comments: SavedDesignComment[]) => {
+  const handleSavedCommentsChange = useCallback((comments: SavedDesignComment[]) => {
     setFormData(prev => ({
       ...prev,
       savedDesignComments: comments
     }))
-  }
+  }, [])
 
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
