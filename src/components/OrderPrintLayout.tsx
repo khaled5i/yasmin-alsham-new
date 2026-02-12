@@ -97,8 +97,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       return allNotes
     }
 
-    // تحديد الصورة التي ستظهر في الصفحة الأولى
-    // الأولوية: صورة الخلف > صورة الأمام > أول صورة تصميم
+    // تحديد الصورة التي ستظهر في الصفحة الأولى (الخلف)
     const getFirstPageImage = () => {
       // البحث عن صورة الخلف
       const backSnapshot = designCommentsSnapshots.find(s =>
@@ -106,22 +105,30 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       )
       if (backSnapshot) return backSnapshot.imageDataUrl
 
-      // البحث عن صورة الأمام
+      // إذا لم توجد صورة خلف، نستخدم الصورة الأولى من القائمة العامة (بشرط ألا تكون هي صورة الأمام)
+      const frontSnapshot = designCommentsSnapshots.find(s =>
+        s.title.includes('الأمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
+      )
+
+      const firstAvailable = printableImages.find(img => img !== frontSnapshot?.imageDataUrl)
+      return firstAvailable || printableImages[0] || null
+    }
+
+    // تحديد صورة الأمام للصفحة الثانية
+    const getFrontPageImage = () => {
+      // البحث عن صورة الأمام بشكل صريح
       const frontSnapshot = designCommentsSnapshots.find(s =>
         s.title.includes('الأمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
       )
       if (frontSnapshot) return frontSnapshot.imageDataUrl
 
-      // استخدام أول صورة من صور التصميم
-      return printableImages[0] || null
-    }
-
-    // تحديد صورة الأمام للصفحة الثانية
-    const getFrontPageImage = () => {
-      const frontSnapshot = designCommentsSnapshots.find(s =>
-        s.title.includes('الأمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
+      // إذا لم توجد صورة أمام صريحة، نستخدم أول صورة تعليق ليست "خلف"
+      const backSnapshot = designCommentsSnapshots.find(s =>
+        s.title.includes('الخلف') || s.title.includes('خلف') || s.title.toLowerCase().includes('back')
       )
-      return frontSnapshot?.imageDataUrl || null
+
+      const candidate = designCommentsSnapshots.find(s => s !== backSnapshot)
+      return candidate?.imageDataUrl || null
     }
 
     // تحديد صور التصميم المتبقية (بعد استبعاد ما تم استخدامه)
@@ -134,13 +141,14 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       )
     }
 
-    // تصفية تعليقات التصميم لاستبعاد الخلف والأمام (لأنها تعرض في صفحات مخصصة)
+    // تصفية تعليقات التصميم لاستبعاد الخلف والأمام المستخدمين
     const getFilteredDesignComments = () => {
-      return designCommentsSnapshots.filter(snapshot => {
-        const isBack = snapshot.title.includes('الخلف') || snapshot.title.includes('خلف') || snapshot.title.toLowerCase().includes('back')
-        const isFront = snapshot.title.includes('الأمام') || snapshot.title.includes('امام') || snapshot.title.toLowerCase().includes('front')
-        return !isBack && !isFront
-      })
+      const frontImgUrl = getFrontPageImage()
+      const backImgUrl = getFirstPageImage()
+
+      return designCommentsSnapshots.filter(snapshot =>
+        snapshot.imageDataUrl !== frontImgUrl && snapshot.imageDataUrl !== backImgUrl
+      )
     }
 
     const allNotes = getAllNotes()
@@ -261,6 +269,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
 
             {/* الجزء الأيسر - صورة الخلف أو الأمام أو أول صورة تصميم */}
             <div className="print-comments">
+              <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>الخلف</h3>
               <div className="comments-box">
                 {getFirstPageImage() ? (
                   <div className="first-images-grid first-images-single">
@@ -285,6 +294,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
         {/* ========== الصفحة الثانية - صورة الأمام (إن وجدت) ========== */}
         {getFrontPageImage() && (
           <div className="print-page page-front-image">
+            <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>الأمام</h3>
             <div className="design-comment-full">
               <div className="design-comment-image-wrapper">
                 <img

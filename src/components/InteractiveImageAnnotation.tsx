@@ -1007,6 +1007,19 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setEditingCommentId(null)
     setIsDrawingMode(false)
     setIsRecordingActive(false)
+    // تعيين الصورة المناسبة حسب نوع العرض (أمام/خلف)
+    if (comment.view) {
+      const targetPath = comment.view === 'front' ? '/front2.png' : '/back2.png'
+      setInternalImageOverride(targetPath)
+
+      if (imagePreview) {
+        setImagePreview(null)
+        onImageChange?.(null)
+      }
+    } else if (comment.image && comment.image.startsWith('data:')) {
+      setImagePreview(comment.image)
+      setInternalImageOverride(null)
+    }
     // لا نحمل الصورة لأنها base64 وليست File
   }, [annotations, drawings, viewingCommentId, editingCommentId, saveCurrentComment, onAnnotationsChange, onDrawingsChange])
 
@@ -4034,101 +4047,101 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             : 'border-gray-200 hover:border-pink-300'
                             }`}
                         >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1 min-w-0">
-                            {editingCommentTitle === comment.id ? (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={editedCommentTitle}
-                                  onChange={(e) => setEditedCommentTitle(e.target.value)}
-                                  className="flex-1 px-2 py-1 text-sm border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                  autoFocus
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveCommentTitle()
-                                    if (e.key === 'Escape') cancelEditingCommentTitle()
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={saveCommentTitle}
-                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                  title="حفظ"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelEditingCommentTitle}
-                                  className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                                  title="إلغاء"
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <h5 className="font-medium text-gray-800">
-                                  {displayTitle}
-                                </h5>
-                                {!disabled && onSavedCommentsChange && (
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1 min-w-0">
+                              {editingCommentTitle === comment.id ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={editedCommentTitle}
+                                    onChange={(e) => setEditedCommentTitle(e.target.value)}
+                                    className="flex-1 px-2 py-1 text-sm border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveCommentTitle()
+                                      if (e.key === 'Escape') cancelEditingCommentTitle()
+                                    }}
+                                  />
                                   <button
                                     type="button"
-                                    onClick={() => startEditingCommentTitle(comment.id, displayTitle)}
-                                    className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                    title="تعديل الاسم"
+                                    onClick={saveCommentTitle}
+                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                    title="حفظ"
                                   >
-                                    <Pencil className="w-3.5 h-3.5" />
+                                    <Check className="w-4 h-4" />
                                   </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            {!disabled && onSavedCommentsChange && editingCommentTitle !== comment.id && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => loadCommentForViewing(comment)}
-                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                  title="عرض التعليق"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deleteSavedComment(comment.id)}
-                                  disabled={editingCommentId !== null}
-                                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                  title="حذف"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* عرض النصوص المكتوبة */}
-                        {comment.annotations.some(a => a.transcription) && (
-                          <div className="mt-3 pt-3 border-t border-gray-100">
-                            <div className="space-y-1">
-                              {comment.annotations.filter(a => a.transcription).map((a, i) => (
-                                <div key={a.id} className="mb-2">
-                                  <p className="text-sm text-gray-700">
-                                    <span className="text-pink-600 font-medium">{i + 1}.</span> {a.transcription}
-                                  </p>
-                                  {a.translatedText && (
-                                    <p className="text-sm text-purple-600 mt-1 mr-4 bg-purple-50 p-1 rounded">
-                                      <span className="text-xs font-bold ml-1">الترجمة:</span> {a.translatedText}
-                                    </p>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingCommentTitle}
+                                    className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                                    title="إلغاء"
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <h5 className="font-medium text-gray-800">
+                                    {displayTitle}
+                                  </h5>
+                                  {!disabled && onSavedCommentsChange && (
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditingCommentTitle(comment.id, displayTitle)}
+                                      className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                      title="تعديل الاسم"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
                                   )}
                                 </div>
-                              ))}
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {!disabled && onSavedCommentsChange && editingCommentTitle !== comment.id && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => loadCommentForViewing(comment)}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="عرض التعليق"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteSavedComment(comment.id)}
+                                    disabled={editingCommentId !== null}
+                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                    title="حذف"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
-                        )}
-                      </div>
+
+                          {/* عرض النصوص المكتوبة */}
+                          {comment.annotations.some(a => a.transcription) && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <div className="space-y-1">
+                                {comment.annotations.filter(a => a.transcription).map((a, i) => (
+                                  <div key={a.id} className="mb-2">
+                                    <p className="text-sm text-gray-700">
+                                      <span className="text-pink-600 font-medium">{i + 1}.</span> {a.transcription}
+                                    </p>
+                                    {a.translatedText && (
+                                      <p className="text-sm text-purple-600 mt-1 mr-4 bg-purple-50 p-1 rounded">
+                                        <span className="text-xs font-bold ml-1">الترجمة:</span> {a.translatedText}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )
                     })}
                   </div>

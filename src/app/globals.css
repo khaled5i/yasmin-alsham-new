@@ -990,3 +990,50 @@ textarea:focus-visible {
 .print-toggle-btn:hover {
   transform: scale(1.05);
 }
+
+/* تحسين طباعة الصورة الثانية لتعبئة الصفحة مع الحفاظ على النسب */
+@media print {
+
+  .print-page.page-front-image,
+  .print-page.design-comment-page {
+    display: flex !important;
+    flex-direction: column;
+    height: 100vh;
+    justify-content: center;
+    align-items: center;
+    page-break-before: always;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+
+  .page-front-image .design-comment-full,
+  .design-comment-page .design-comment-full {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .page-front-image .design-comment-image-wrapper,
+  .design-comment-page .design-comment-image-wrapper {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .page-front-image .design-comment-full-image,
+  .design-comment-page .design-comment-full-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    max-width: none;
+    max-height: none;
+  }
+}

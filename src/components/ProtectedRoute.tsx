@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { motion } from 'framer-motion'
-import { Shield, AlertCircle } from 'lucide-react'
+import { Shield, AlertCircle, RefreshCw } from 'lucide-react'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -12,64 +12,117 @@ interface ProtectedRouteProps {
   redirectTo?: string
 }
 
+// Timeout for auth check — prevents infinite spinner
+const AUTH_CHECK_TIMEOUT_MS = 8000
+
 export default function ProtectedRoute({
   children,
   requiredRole,
   redirectTo = '/login'
 }: ProtectedRouteProps) {
-  const { user, isLoading, checkAuth, isSessionFresh } = useAuthStore()
+  const { user, isLoading, isSessionFresh, _hasHydrated } = useAuthStore()
   const router = useRouter()
-  const [isChecking, setIsChecking] = useState(true)
+  const [isTimedOut, setIsTimedOut] = useState(false)
 
+  // Timeout safety: if auth takes too long, show error with retry
   useEffect(() => {
-    const initAuth = async () => {
-      // OPTIMIZATION: If session is fresh, skip re-verification completely
-      if (isSessionFresh()) {
-        console.log('⚡ ProtectedRoute: Session is fresh, skipping verification')
-        setIsChecking(false)
-        return
-      }
+    if (_hasHydrated && user) return // Already authenticated, no timeout needed
 
-      // Session is not fresh, need to verify
-      await checkAuth()
-      setIsChecking(false)
-    }
-
-    initAuth()
-  }, [checkAuth, isSessionFresh])
-
-  useEffect(() => {
-    if (!isChecking && !isLoading) {
+    const timer = setTimeout(() => {
       if (!user) {
+        setIsTimedOut(true)
+      }
+    }, AUTH_CHECK_TIMEOUT_MS)
+
+    return () => clearTimeout(timer)
+  }, [_hasHydrated, user])
+
+  // Handle redirects after hydration + auth check complete
+  useEffect(() => {
+    // Don't do anything until hydration is complete
+    if (!_hasHydrated) return
+    // Don't redirect while still loading
+    if (isLoading) return
+
+    if (!user) {
+      // Only redirect if not timed out (timed out shows retry UI instead)
+      if (!isTimedOut) {
         router.push(redirectTo)
-        return
       }
-
-      if (requiredRole && user.role !== requiredRole) {
-        router.push('/dashboard')
-        return
-      }
-
-      if (!user.is_active) {
-        router.push('/login')
-        return
-      }
+      return
     }
-  }, [user, isChecking, isLoading, requiredRole, router, redirectTo])
 
-  // OPTIMIZATION: If user exists and session is fresh, render immediately without loading screen
-  // This is the key fix for admin instant access
-  if (user && user.is_active && isSessionFresh()) {
-    // Quick validation that user has correct role if required
     if (requiredRole && user.role !== requiredRole) {
-      // Will be redirected by the useEffect above
-      return null
+      router.push('/dashboard')
+      return
+    }
+
+    if (!user.is_active) {
+      router.push('/login')
+      return
+    }
+  }, [user, _hasHydrated, isLoading, requiredRole, router, redirectTo, isTimedOut])
+
+  // FAST PATH: If user exists, is active, and session is fresh — render immediately.
+  // No loading screen, no waiting. This is the key fix for instant dashboard access.
+  if (user && user.is_active && (_hasHydrated || isSessionFresh())) {
+    if (requiredRole && user.role !== requiredRole) {
+      return null // Will be redirected by useEffect
     }
     return <>{children}</>
   }
 
-  // عرض شاشة التحميل أثناء التحقق من المصادقة
-  if (isChecking || isLoading) {
+  // Waiting for hydration from localStorage — show nothing (prevents flash)
+  if (!_hasHydrated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-pink-400 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
+
+  // Timed out — show error with retry button instead of infinite spinner
+  if (isTimedOut && !user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="text-center max-w-md mx-auto px-4"
+        >
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">تعذر التحقق من الجلسة</h2>
+          <p className="text-gray-600 mb-6">
+            حدث خطأ أثناء التحقق من صلاحياتك. يرجى المحاولة مرة أخرى.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => {
+                setIsTimedOut(false)
+                useAuthStore.getState().forceRevalidate()
+              }}
+              className="btn-primary px-6 py-3 inline-flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              إعادة المحاولة
+            </button>
+            <button
+              onClick={() => router.push('/login')}
+              className="btn-secondary px-6 py-3"
+            >
+              تسجيل الدخول
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )
+  }
+
+  // Loading state — auth check is in progress
+  if (isLoading || !user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
         <motion.div
@@ -83,34 +136,6 @@ export default function ProtectedRoute({
           </div>
           <div className="w-12 h-12 border-4 border-pink-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">جاري التحقق من الصلاحيات...</p>
-        </motion.div>
-      </div>
-    )
-  }
-
-  // عرض رسالة خطأ إذا لم يكن المستخدم مخول
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="text-center max-w-md mx-auto px-4"
-        >
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-8 h-8 text-red-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-4">غير مخول للوصول</h2>
-          <p className="text-gray-600 mb-6">
-            يجب تسجيل الدخول للوصول إلى هذه الصفحة
-          </p>
-          <button
-            onClick={() => router.push('/login')}
-            className="btn-primary px-6 py-3"
-          >
-            تسجيل الدخول
-          </button>
         </motion.div>
       </div>
     )

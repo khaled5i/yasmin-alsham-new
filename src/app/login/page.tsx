@@ -17,18 +17,24 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isValidatingSession, setIsValidatingSession] = useState(true)
 
-  const { signIn, isLoading: authLoading, user, isSessionFresh } = useAuthStore()
+  const { signIn, isLoading: authLoading, user, isSessionFresh, _hasHydrated } = useAuthStore()
   const router = useRouter()
 
   // Validate session on page load - only redirect if session is actually valid
   // This prevents the auto-login loop caused by stale cached users
   useEffect(() => {
+    // KEY FIX: Wait for Zustand hydration before validating — prevents false "no user" state
+    if (!_hasHydrated) {
+      console.log('⏳ Login: Waiting for store hydration...')
+      return
+    }
+
     async function validateAndRedirect() {
       // If user exists from cache, validate their session with Supabase first
       if (user && user.is_active) {
         console.log('👤 Cached user found, validating session...')
 
-        // If session is fresh (verified within last 5 min), redirect immediately
+        // If session is fresh (verified within TTL), redirect immediately
         if (isSessionFresh()) {
           console.log('✅ Session is fresh, redirecting...')
           await redirectUser(user)
@@ -97,7 +103,10 @@ export default function LoginPage() {
     }
 
     validateAndRedirect()
-  }, [user, router, isSessionFresh])
+    // KEY FIX: removed isSessionFresh from deps — it's a function reference that changes
+    // on every Zustand update, causing unnecessary re-runs. We call it inside the effect instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, router, _hasHydrated])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

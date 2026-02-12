@@ -67,20 +67,20 @@ export default function AlterationTypeModal({
                 </div>
 
                 {/* Options */}
-                <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-4">
                   {/* فستان داخلي (موجود في النظام) */}
                   <button
                     onClick={() => handleSelectType('existing')}
-                    className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-pink-500 hover:bg-pink-50 transition-all group"
+                    className="flex flex-col items-center text-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-pink-500 hover:bg-pink-50 transition-all group h-full"
                   >
                     <div className="flex-shrink-0 w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center group-hover:bg-pink-200 transition-colors">
                       <Package className="w-6 h-6 text-pink-600" />
                     </div>
-                    <div className={`flex-1 ${isArabic ? 'text-right' : 'text-left'}`}>
-                      <h4 className="font-semibold text-gray-900">
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1">
                         {isArabic ? 'فستان داخلي' : 'Existing Dress'}
                       </h4>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-xs text-gray-500 leading-snug">
                         {isArabic
                           ? 'فستان موجود في النظام'
                           : 'Dress already in the system'}
@@ -91,16 +91,16 @@ export default function AlterationTypeModal({
                   {/* فستان خارجي (جديد) */}
                   <button
                     onClick={() => handleSelectType('new')}
-                    className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all group"
+                    className="flex flex-col items-center text-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all group h-full"
                   >
                     <div className="flex-shrink-0 w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
                       <PackagePlus className="w-6 h-6 text-green-600" />
                     </div>
-                    <div className={`flex-1 ${isArabic ? 'text-right' : 'text-left'}`}>
-                      <h4 className="font-semibold text-gray-900">
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1">
                         {isArabic ? 'فستان خارجي' : 'New Dress'}
                       </h4>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-xs text-gray-500 leading-snug">
                         {isArabic
                           ? 'فستان غير موجود في النظام'
                           : 'Dress not in the system'}

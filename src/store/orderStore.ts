@@ -12,6 +12,7 @@
 
 import { create } from 'zustand'
 import { orderService, Order, CreateOrderData, UpdateOrderData } from '@/lib/services/order-service'
+import { onCacheInvalidation } from '@/store/authStore'
 
 // Smart fetch TTL: 30 seconds - skip redundant fetches within this window
 const FETCH_TTL_MS = 30 * 1000
@@ -115,10 +116,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const result = await orderService.getAll(filters)
 
       if (result.error) {
-        set({ error: result.error, isLoading: false, isRefreshing: false })
+        // KEY FIX: Do NOT set lastFetchedAt on error — this was caching empty results
+        // and preventing retry. Next loadOrders() call will bypass TTL and retry.
+        set({ error: result.error, isLoading: false, isRefreshing: false, lastFetchedAt: null })
         return
       }
 
+      // Only cache timestamp on SUCCESSFUL fetches
       set({
         orders: result.data,
         isLoading: false,
@@ -130,10 +134,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       console.log(`✅ Loaded ${result.data.length} orders`)
     } catch (error: any) {
       console.error('❌ Error loading orders:', error)
+      // KEY FIX: Clear lastFetchedAt on error so next call retries
       set({
         error: error.message || 'خطأ في تحميل الطلبات',
         isLoading: false,
-        isRefreshing: false
+        isRefreshing: false,
+        lastFetchedAt: null
       })
     }
   },
@@ -397,4 +403,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
   }
 }))
+
+// AUTO-INVALIDATION: When auth state changes (login/logout/token refresh),
+// clear the fetch cache so orders are re-fetched with the new credentials.
+// This prevents stale empty data from persisting after auth recovery.
+if (typeof window !== 'undefined') {
+  onCacheInvalidation(() => {
+    console.log('🔄 orderStore: Auth cache invalidation received, clearing fetch cache')
+    useOrderStore.setState({ lastFetchedAt: null })
+  })
+}
 

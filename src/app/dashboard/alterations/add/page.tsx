@@ -806,7 +806,7 @@ function AddAlterationContent() {
 
             <InteractiveImageAnnotation
               ref={annotationRef}
-              imageSrc="/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"
+              imageSrc="/front2.png"
               annotations={formData.imageAnnotations}
               onAnnotationsChange={handleImageAnnotationsChange}
               drawings={formData.imageDrawings}
