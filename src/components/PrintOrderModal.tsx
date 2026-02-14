@@ -6,6 +6,7 @@ import { X, Printer, Check, Image as ImageIcon, Loader2 } from 'lucide-react'
 import { Order } from '@/lib/services/order-service'
 import OrderPrintLayout from './OrderPrintLayout'
 import type { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
+import { renderDrawingsOnCanvas, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
 
 // نوع snapshot التعليق للطباعة
 interface DesignCommentSnapshot {
@@ -112,80 +113,24 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
       ctx.fillRect(0, 0, containerWidth, containerHeight)
 
       // حساب أبعاد الصورة مع الحفاظ على النسبة (object-contain)
-      const imgAspect = baseImage.width / baseImage.height
-      const containerAspect = containerWidth / containerHeight
-
-      let drawWidth: number, drawHeight: number, offsetX: number, offsetY: number
-
-      if (imgAspect > containerAspect) {
-        drawWidth = containerWidth
-        drawHeight = containerWidth / imgAspect
-        offsetX = 0
-        offsetY = (containerHeight - drawHeight) / 2
-      } else {
-        drawHeight = containerHeight
-        drawWidth = containerHeight * imgAspect
-        offsetX = (containerWidth - drawWidth) / 2
-        offsetY = 0
-      }
+      const { offsetX, offsetY, drawWidth, drawHeight } = calculateObjectContainDimensions(
+        baseImage.width,
+        baseImage.height,
+        containerWidth,
+        containerHeight
+      )
 
       // رسم الصورة الأساسية
       ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
 
-      // رسم المسارات (الرسومات) - غير الممحاة أولاً
-      for (const path of drawings) {
-        if (path.points.length < 2 || path.isEraser) continue
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.strokeStyle = path.color
-        ctx.lineWidth = path.strokeWidth
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-
-        ctx.setLineDash([])
-        ctx.shadowBlur = 0
-        ctx.globalAlpha = 1
-
-        switch (path.brushType) {
-          case 'dashed': ctx.setLineDash([12, 6]); break
-          case 'dotted': ctx.setLineDash([3, 6]); break
-          case 'soft': ctx.shadowBlur = 8; ctx.shadowColor = path.color; break
-          case 'pencil': ctx.globalAlpha = 0.85; ctx.lineWidth = Math.max(1, path.strokeWidth * 0.5); break
-          case 'highlighter': ctx.globalAlpha = 0.4; ctx.lineWidth = path.strokeWidth * 2.5; ctx.lineCap = 'square'; break
-        }
-
-        const firstPoint = path.points[0]
-        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
-        for (let i = 1; i < path.points.length; i++) {
-          const point = path.points[i]
-          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
-        }
-        ctx.stroke()
-        ctx.restore()
-      }
-
-      // تطبيق الممحاة - رسم الصورة الأساسية فوق مسارات الممحاة
-      for (const path of drawings) {
-        if (path.points.length < 2 || !path.isEraser) continue
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.lineWidth = path.strokeWidth
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-
-        const firstPoint = path.points[0]
-        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
-        for (let i = 1; i < path.points.length; i++) {
-          const point = path.points[i]
-          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
-        }
-
-        ctx.clip()
-        ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
-        ctx.restore()
-      }
+      renderDrawingsOnCanvas(
+        ctx,
+        drawings,
+        containerWidth,
+        containerHeight,
+        baseImage,
+        { offsetX, offsetY, drawWidth, drawHeight }
+      )
 
       // فصل التعليقات المرئية والمخفية
       const visibleAnnotations = annotations.filter(a => !a.isHidden && a.transcription)

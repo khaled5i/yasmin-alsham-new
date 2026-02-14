@@ -7,6 +7,7 @@ import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle,
 import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast'
 import Image from 'next/image'
+import { renderDrawingsOnCanvas, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
 
 
 // نوع نقطة الرسم
@@ -656,85 +657,25 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
       // حساب أبعاد الصورة مع الحفاظ على النسبة (object-contain)
       // الـ container له aspect-[3/4] والصورة تستخدم object-contain
-      const imgAspect = baseImage.width / baseImage.height
-      const containerAspect = containerWidth / containerHeight
-
-      let drawWidth: number, drawHeight: number, offsetX: number, offsetY: number
-
-      if (imgAspect > containerAspect) {
-        // الصورة أعرض - تملأ العرض
-        drawWidth = containerWidth
-        drawHeight = containerWidth / imgAspect
-        offsetX = 0
-        offsetY = (containerHeight - drawHeight) / 2
-      } else {
-        // الصورة أطول - تملأ الارتفاع
-        drawHeight = containerHeight
-        drawWidth = containerHeight * imgAspect
-        offsetX = (containerWidth - drawWidth) / 2
-        offsetY = 0
-      }
+      const { offsetX, offsetY, drawWidth, drawHeight } = calculateObjectContainDimensions(
+        baseImage.width,
+        baseImage.height,
+        containerWidth,
+        containerHeight
+      )
 
       // رسم الصورة الأساسية
       ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
 
-      // رسم المسارات (الرسومات) - نفس المنطق المستخدم في drawPaths
-      // أولاً: رسم جميع المسارات غير الممحاة
-      for (const path of drawings) {
-        if (path.points.length < 2 || path.isEraser) continue
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.strokeStyle = path.color
-        ctx.lineWidth = path.strokeWidth
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-
-        // تطبيق نمط الفرشاة
-        ctx.setLineDash([])
-        ctx.shadowBlur = 0
-        ctx.globalAlpha = 1
-
-        switch (path.brushType) {
-          case 'dashed': ctx.setLineDash([12, 6]); break
-          case 'dotted': ctx.setLineDash([3, 6]); break
-          case 'soft': ctx.shadowBlur = 8; ctx.shadowColor = path.color; break
-          case 'pencil': ctx.globalAlpha = 0.85; ctx.lineWidth = Math.max(1, path.strokeWidth * 0.5); break
-          case 'highlighter': ctx.globalAlpha = 0.4; ctx.lineWidth = path.strokeWidth * 2.5; ctx.lineCap = 'square'; break
-        }
-
-        const firstPoint = path.points[0]
-        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
-        for (let i = 1; i < path.points.length; i++) {
-          const point = path.points[i]
-          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
-        }
-        ctx.stroke()
-        ctx.restore()
-      }
-
-      // ثانياً: تطبيق الممحاة - نرسم الصورة الأساسية فوق مسارات الممحاة
-      for (const path of drawings) {
-        if (path.points.length < 2 || !path.isEraser) continue
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.lineWidth = path.strokeWidth
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-
-        const firstPoint = path.points[0]
-        ctx.moveTo((firstPoint.x / 100) * containerWidth, (firstPoint.y / 100) * containerHeight)
-        for (let i = 1; i < path.points.length; i++) {
-          const point = path.points[i]
-          ctx.lineTo((point.x / 100) * containerWidth, (point.y / 100) * containerHeight)
-        }
-
-        // استخدام المسار كـ clip ورسم الصورة الأساسية داخله
-        ctx.clip()
-        ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
-        ctx.restore()
-      }
+      // رسم المسارات مع الحفاظ على الترتيب الزمني الصحيح (رسم/مسح/رسم)
+      renderDrawingsOnCanvas(
+        ctx,
+        drawings,
+        containerWidth,
+        containerHeight,
+        baseImage,
+        { offsetX, offsetY, drawWidth, drawHeight }
+      )
 
       // رسم علامات التعليقات (الدوائر المرقمة)
       const markerRadius = 10
@@ -1679,27 +1620,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       lastPointRef.current = point
       setIsDrawing(true)
       setCurrentPath([point])
-
-      // رسم نقطة فورية على Canvas
-      const canvas = canvasRef.current
-      if (canvas) {
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          const rect = canvas.getBoundingClientRect()
-          const x = point.x * canvas.width / 100
-          const y = point.y * canvas.height / 100
-
-          // حساب الحجم بناءً على الضغط
-          const width = isEraserMode ? eraserWidth : (strokeWidth * (0.5 + (point.pressure || 0.5)))
-
-          ctx.beginPath()
-          ctx.arc(x, y, width / 2, 0, Math.PI * 2)
-          ctx.fillStyle = isEraserMode ? '#ffffff' : drawingColor
-          ctx.fill()
-        }
-      }
     }
-  }, [isDrawingMode, disabled, showColorPicker, showStrokePicker, showBrushPicker, showEraserSizePicker, showEraserMenu, showPlusMenu, closeAllPickers, getDrawingCoordinates, isEraserMode, eraserWidth, strokeWidth, drawingColor, isPenMode, isAnnotationInteractiveTarget])
+  }, [isDrawingMode, disabled, showColorPicker, showStrokePicker, showBrushPicker, showEraserSizePicker, showEraserMenu, showPlusMenu, closeAllPickers, getDrawingCoordinates, isPenMode, isAnnotationInteractiveTarget])
 
   // الاستمرار في الرسم - محسّن للأداء
   const handleDrawingMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -1709,81 +1631,21 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     e.preventDefault()
 
     const point = getDrawingCoordinates(e)
-    if (point) {
-      // تحقق من المسافة لتجنب النقاط المتكررة جداً
-      const lastPoint = lastPointRef.current
-      if (lastPoint) {
-        const distance = Math.sqrt(
-          Math.pow(point.x - lastPoint.x, 2) + Math.pow(point.y - lastPoint.y, 2)
-        )
-        // تجاهل النقاط القريبة جداً لتحسين الأداء
-        if (distance < 0.3) return
-      }
+    if (!point) return
 
-      lastPointRef.current = point
-      currentPathRef.current = [...currentPathRef.current, point]
-
-      // رسم مباشر على Canvas للاستجابة الفورية
-      const canvas = canvasRef.current
-      if (canvas && lastPoint) {
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          const x1 = lastPoint.x * canvas.width / 100
-          const y1 = lastPoint.y * canvas.height / 100
-          const x2 = point.x * canvas.width / 100
-          const y2 = point.y * canvas.height / 100
-
-          // حساب الطول المتراكم للنقاط السابقة لضبط نمط التقطع
-          let currentLength = 0
-          if (brushType === 'dashed' || brushType === 'dotted') {
-            for (let i = 1; i < currentPathRef.current.length - 1; i++) {
-              const p1 = currentPathRef.current[i - 1]
-              const p2 = currentPathRef.current[i]
-              const px1 = p1.x * canvas.width / 100
-              const py1 = p1.y * canvas.height / 100
-              const px2 = p2.x * canvas.width / 100
-              const py2 = p2.y * canvas.height / 100
-              currentLength += Math.sqrt(Math.pow(px2 - px1, 2) + Math.pow(py2 - py1, 2))
-            }
-            // تطبيق الإزاحة
-            ctx.lineDashOffset = -currentLength
-          } else {
-            ctx.lineDashOffset = 0
-          }
-
-
-          // استخدام الضغط لتحديد سماكة الخط
-          const p1Pressure = lastPoint.pressure || 0.5
-          const p2Pressure = point.pressure || 0.5
-          const avgPressure = (p1Pressure + p2Pressure) / 2
-
-          const currentWidth = isEraserMode
-            ? eraserWidth
-            : strokeWidth * (0.5 + avgPressure)
-
-          ctx.beginPath()
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x2, y2)
-          ctx.strokeStyle = isEraserMode ? '#ffffff' : drawingColor
-          ctx.lineWidth = currentWidth
-          ctx.lineCap = 'round'
-          ctx.lineJoin = 'round'
-          ctx.stroke()
-
-          // رسم دائرة في النهاية لتنعيم الخط عند تغير السمك
-          if (!isEraserMode) {
-            ctx.beginPath()
-            ctx.arc(x2, y2, currentWidth / 2, 0, Math.PI * 2)
-            ctx.fillStyle = drawingColor
-            ctx.fill()
-          }
-        }
-      }
-
-      // تحديث الحالة بشكل أقل تكراراً
-      setCurrentPath([...currentPathRef.current])
+    const lastPoint = lastPointRef.current
+    if (lastPoint) {
+      const distance = Math.sqrt(
+        Math.pow(point.x - lastPoint.x, 2) + Math.pow(point.y - lastPoint.y, 2)
+      )
+      // تجاهل النقاط القريبة جداً لتحسين الأداء
+      if (distance < 0.3) return
     }
-  }, [isDrawingMode, getDrawingCoordinates, isEraserMode, eraserWidth, strokeWidth, drawingColor])
+
+    lastPointRef.current = point
+    currentPathRef.current = [...currentPathRef.current, point]
+    setCurrentPath([...currentPathRef.current])
+  }, [isDrawingMode, getDrawingCoordinates, isPenMode])
 
   // إنهاء الرسم - يدعم النقطة الواحدة
   const handleDrawingEnd = useCallback(() => {
@@ -1959,9 +1821,15 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // ===== نهاية دوال تبديل الصورة =====
 
   // دالة مساعدة لتطبيق نمط الفرشاة
-  const applyBrushStyle = useCallback((ctx: CanvasRenderingContext2D, pathBrushType: BrushType, pathIsEraser: boolean = false) => {
+  const applyBrushStyle = useCallback((
+    ctx: CanvasRenderingContext2D,
+    pathBrushType: BrushType,
+    pathIsEraser: boolean = false,
+    baseWidth: number = ctx.lineWidth
+  ) => {
     // إعادة تعيين الإعدادات
     ctx.setLineDash([])
+    ctx.lineDashOffset = 0
     ctx.shadowBlur = 0
     ctx.shadowColor = 'transparent'
     ctx.globalAlpha = 1
@@ -1974,10 +1842,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
     switch (pathBrushType) {
       case 'dashed':
-        ctx.setLineDash([15, 15]) // زيادة طول الخط والفراغ للوضوح
+        ctx.setLineDash([14, 10])
         break
       case 'dotted':
-        ctx.setLineDash([2, 10]) // نقاط صغيرة ومتباعدة
+        // Dots rendered via round linecap with fixed spacing.
+        ctx.lineCap = 'round'
+        ctx.setLineDash([1, Math.max(6, baseWidth * 2.2)])
         break
       case 'soft':
         ctx.shadowBlur = 8
@@ -1985,11 +1855,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         break
       case 'pencil':
         ctx.globalAlpha = 0.85
-        ctx.lineWidth = Math.max(1, ctx.lineWidth * 0.5)
         break
       case 'highlighter':
-        ctx.globalAlpha = 0.4
-        ctx.lineWidth = ctx.lineWidth * 2.5
+        ctx.globalAlpha = 0.35
         ctx.lineCap = 'square'
         break
       case 'normal':
@@ -2019,63 +1887,70 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     const drawSinglePath = (path: DrawingPoint[], color: string, baseWidth: number, type: BrushType, isEraser: boolean) => {
       if (path.length < 2) return
 
-      applyBrushStyle(ctx, type || 'normal', isEraser || false)
+      applyBrushStyle(ctx, type || 'normal', isEraser || false, baseWidth)
       ctx.strokeStyle = color
-      ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
 
-      // رسم مقاطع منفصلة لدعم تغير العرض
+      const isPatternBrush = type === 'dashed' || type === 'dotted'
+      const isHighlighterBrush = type === 'highlighter'
+      const usesUniformWidth = isEraser || isPatternBrush || isHighlighterBrush
+      const widthMultiplier = isHighlighterBrush ? 2.6 : type === 'pencil' ? 0.5 : 1
 
-      let accumulatedLength = 0
+      if (usesUniformWidth) {
+        ctx.lineWidth = Math.max(1, baseWidth * widthMultiplier)
+        ctx.lineCap = isHighlighterBrush ? 'square' : 'round'
+        ctx.beginPath()
+        ctx.moveTo((path[0].x / 100) * canvas.width, (path[0].y / 100) * canvas.height)
+        for (let i = 1; i < path.length; i++) {
+          const point = path[i]
+          ctx.lineTo((point.x / 100) * canvas.width, (point.y / 100) * canvas.height)
+        }
+        ctx.stroke()
+        return
+      }
 
+      // رسم مقاطع منفصلة لدعم تغير العرض مع الضغط
       for (let i = 1; i < path.length; i++) {
         const p1 = path[i - 1]
         const p2 = path[i]
-
-        // حساب إحداثيات النقاط
         const px1 = (p1.x / 100) * canvas.width
         const py1 = (p1.y / 100) * canvas.height
         const px2 = (p2.x / 100) * canvas.width
         const py2 = (p2.y / 100) * canvas.height
 
-        // حساب المسافة للإزاحة
-        const dist = Math.sqrt(Math.pow(px2 - px1, 2) + Math.pow(py2 - py1, 2))
-
         const p1Pressure = p1.pressure || 0.5
         const p2Pressure = p2.pressure || 0.5
         const avgPressure = (p1Pressure + p2Pressure) / 2
-
-        // حساب العرض لهذا المقطع
-        const width = isEraser ? baseWidth : baseWidth * (0.5 + avgPressure)
+        const width = Math.max(1, baseWidth * (0.5 + avgPressure) * widthMultiplier)
 
         ctx.beginPath()
-
-        // ضبط الإزاحة للخطوط المتقطعة لضمان الاستمرارية
-        if (!isEraser && (type === 'dashed' || type === 'dotted')) {
-          ctx.lineDashOffset = -accumulatedLength
-        } else {
-          ctx.lineDashOffset = 0
-        }
-
-        accumulatedLength += dist
-
         ctx.lineWidth = width
+        ctx.lineCap = 'round'
         ctx.moveTo(px1, py1)
         ctx.lineTo(px2, py2)
         ctx.stroke()
 
-        // دوائر التنعيم
-        if (!isEraser && width > 2) {
+        if (width > 2) {
           ctx.beginPath()
-          ctx.arc((p2.x / 100) * canvas.width, (p2.y / 100) * canvas.height, width / 2, 0, Math.PI * 2)
+          ctx.arc(px2, py2, width / 2, 0, Math.PI * 2)
           ctx.fillStyle = color
           ctx.fill()
         }
       }
     }
 
+    const orderedDrawings = drawings
+      .map((path, index) => ({ path, index }))
+      .sort((a, b) => {
+        const aTime = typeof a.path.timestamp === 'number' ? a.path.timestamp : Number.MAX_SAFE_INTEGER
+        const bTime = typeof b.path.timestamp === 'number' ? b.path.timestamp : Number.MAX_SAFE_INTEGER
+        if (aTime !== bTime) return aTime - bTime
+        return a.index - b.index
+      })
+      .map(item => item.path)
+
     // رسم المسارات المحفوظة
-    drawings.forEach(path => {
+    orderedDrawings.forEach(path => {
       ctx.save()
       drawSinglePath(path.points, path.color, path.strokeWidth, path.brushType, path.isEraser || false)
       ctx.restore()

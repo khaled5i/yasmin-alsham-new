@@ -35,7 +35,7 @@ import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
-import { renderDrawingsOnCanvas, loadImage, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
+import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 
 interface OrderModalProps {
   order: Order | null
@@ -46,7 +46,7 @@ interface OrderModalProps {
 
 export default function OrderModal({ order: initialOrder, workers, isOpen, onClose }: OrderModalProps) {
   const { user } = useAuthStore()
-  const { t, isArabic } = useTranslation()
+  const { t } = useTranslation()
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [voiceNotes, setVoiceNotes] = useState<any[]>([])
   const [showPrintModal, setShowPrintModal] = useState(false)
@@ -304,45 +304,41 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     }
   }, [showAnnotationLanguageDropdown])
 
-  // دالة لرسم الخطوط على canvas مع دعم الممحاة وأنماط الفرش بشكل صحيح
-  const drawPathsOnCanvas = async (canvas: HTMLCanvasElement, drawings: DrawingPath[], imageSrc?: string) => {
+  // دالة لرسم الخطوط على canvas (الـ canvas هنا طبقة فوق الصورة، لذلك الممحاة يجب أن تمسح الطبقة نفسها)
+  const drawPathsOnCanvas = async (
+    canvas: HTMLCanvasElement,
+    drawings: DrawingPath[],
+    retryCount: number = 0
+  ) => {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // تحديث أبعاد canvas لتتوافق مع حجم العرض الفعلي
-    const displayWidth = canvas.clientWidth || canvas.parentElement?.clientWidth || 800
-    const displayHeight = canvas.clientHeight || canvas.parentElement?.clientHeight || 800
+    // تحديث أبعاد canvas لتتوافق مع حجم العرض الفعلي بعد اكتمال التحميل.
+    const displayWidth = Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 0)
+    const displayHeight = Math.round(canvas.clientHeight || canvas.parentElement?.clientHeight || 0)
+    if (displayWidth <= 0 || displayHeight <= 0) {
+      if (retryCount < 12) {
+        setTimeout(() => {
+          void drawPathsOnCanvas(canvas, drawings, retryCount + 1)
+        }, 50)
+      }
+      return
+    }
     canvas.width = displayWidth
     canvas.height = displayHeight
 
     // مسح canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // تحميل الصورة الأساسية لدعم الممحاة (clip + redraw)
-    let baseImage: HTMLImageElement | null = null
-    let imageRect = undefined
-    const hasErasers = drawings.some(d => d.isEraser)
-
-    if (hasErasers && imageSrc) {
-      try {
-        baseImage = await loadImage(imageSrc)
-        imageRect = calculateObjectContainDimensions(
-          baseImage.width, baseImage.height, canvas.width, canvas.height
-        )
-      } catch {
-        // إذا فشل تحميل الصورة، الممحاة لن تعمل بشكل مثالي لكن لن يحدث خطأ
-        baseImage = null
-      }
-    }
-
-    // استخدام المحرك المشترك للرسم
-    renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height, baseImage, imageRect)
+    // استخدام المحرك المشترك للرسم بدون baseImage:
+    // لأن الصورة الأساسية موجودة كعنصر <img> خلف الـ canvas، والممحاة يجب أن تكشفها مباشرة.
+    renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height)
   }
 
   // رسم الخطوط على canvas للتعليقات القديمة
   useEffect(() => {
     if (!canvasRef.current || imageDrawings.length === 0) return
-    drawPathsOnCanvas(canvasRef.current, imageDrawings, customDesignImage || undefined)
+    drawPathsOnCanvas(canvasRef.current, imageDrawings)
   }, [imageDrawings, customDesignImage])
 
   // رسم الخطوط على canvas للتعليقات المتعددة عند التوسيع
@@ -356,7 +352,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     const timer = setTimeout(() => {
       const canvas = canvasRefs.current.get(expandedCommentId)
       if (canvas) {
-        drawPathsOnCanvas(canvas, comment.drawings || [], comment.image || undefined)
+        drawPathsOnCanvas(canvas, comment.drawings || [])
       }
     }, 100)
 
@@ -402,15 +398,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return statusMap[status as keyof typeof statusMap] || statusMap.pending
   }
 
-  // حساب موعد التسليم المعروض (قبل يومين من الموعد الحقيقي)
-  const getDisplayDeliveryDate = (actualDate: string) => {
-    const date = new Date(actualDate)
-    date.setDate(date.getDate() - 2)
-    return date.toISOString()
-  }
-
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+    if (!dateString) return ''
+    const normalizedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
+      ? `${dateString}T12:00:00`
+      : dateString
+    const date = new Date(normalizedDate)
+    if (Number.isNaN(date.getTime())) return dateString
     return date.toLocaleDateString('ar-SA', {
       calendar: 'gregory', // استخدام التقويم الميلادي
       year: 'numeric',
@@ -498,9 +492,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   <div className="bg-white p-2 sm:p-3 rounded-lg">
                     <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
                       <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="text-xs sm:text-sm font-medium truncate">{t('delivery_date')}:</span>
+                      <span className="text-xs sm:text-sm font-medium truncate">{t('due_date')}:</span>
                     </div>
-                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{formatDate(getDisplayDeliveryDate(order.due_date))}</p>
+                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{formatDate(order.due_date)}</p>
                   </div>
 
                   {/* موعد تسليم البروفا */}
@@ -508,9 +502,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     <div className="bg-white p-2 sm:p-3 rounded-lg">
                       <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
                         <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium truncate">{isArabic ? 'موعد تسليم البروفا' : 'Proof Delivery Date'}:</span>
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('proof_delivery_date')}:</span>
                       </div>
-                      <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{formatDate(getDisplayDeliveryDate(order.proof_delivery_date))}</p>
+                      <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{formatDate(order.proof_delivery_date)}</p>
                     </div>
                   )}
 
@@ -740,6 +734,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                           alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
                                           className="w-full h-auto cursor-pointer"
                                           onClick={() => setLightboxImage(comment.image || "/front2.png")}
+                                          onLoad={() => {
+                                            const canvas = canvasRefs.current.get(comment.id)
+                                            if (canvas && comment.drawings && comment.drawings.length > 0) {
+                                              void drawPathsOnCanvas(canvas, comment.drawings)
+                                            }
+                                          }}
                                         />
                                         {/* طبقة الرسومات - فقط إذا لم توجد صورة مركّبة */}
                                         {comment.drawings && comment.drawings.length > 0 && (
@@ -748,7 +748,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                               if (el) {
                                                 canvasRefs.current.set(comment.id, el)
                                                 // رسم الخطوط مباشرة عند تعيين الـ ref
-                                                drawPathsOnCanvas(el, comment.drawings || [], comment.image || undefined)
+                                                drawPathsOnCanvas(el, comment.drawings || [])
                                               }
                                             }}
                                             className="absolute inset-0 w-full h-full pointer-events-none"
@@ -903,6 +903,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                             alt="صورة التصميم"
                             className="w-full h-auto"
                             onClick={() => setLightboxImage(customDesignImage || "/front2.png")}
+                            onLoad={() => {
+                              if (canvasRef.current && imageDrawings.length > 0) {
+                                void drawPathsOnCanvas(canvasRef.current, imageDrawings)
+                              }
+                            }}
                             style={{ cursor: 'pointer' }}
                           />
                           {imageDrawings.length > 0 && (
