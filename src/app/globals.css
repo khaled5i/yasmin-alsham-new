@@ -540,9 +540,9 @@ textarea:focus-visible {
   /* رأس الصفحة */
   .print-header {
     text-align: center;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid #ec4899;
+    margin-bottom: 6px;
+    padding-bottom: 0;
+    border-bottom: none;
   }
 
   /* السطر الأول: رقم الهاتف - الموقع - تاريخ الاستلام */

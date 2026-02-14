@@ -40,13 +40,12 @@ export default function AlterationPrintPage() {
     window.print()
   }
 
-  // تنسيق التاريخ بصيغة يوم\شهر\سنة
+  // تنسيق التاريخ في الطباعة بصيغة شهر\يوم (بدون سنة)
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     const day = date.getDate().toString().padStart(2, '0')
     const month = (date.getMonth() + 1).toString().padStart(2, '0')
-    const year = date.getFullYear()
-    return `${day}\\${month}\\${year}`
+    return `${day}\\${month}`
   }
 
   if (isLoading) {
@@ -106,7 +105,6 @@ export default function AlterationPrintPage() {
             {/* السطر الثاني: اسم المحل */}
             <div className="print-logo">
               <h1 className="print-brand">ياسمين الشام</h1>
-              <p className="print-subtitle">للأزياء الراقية</p>
             </div>
 
             {/* معلومات العميل في صف أفقي واحد */}
@@ -117,12 +115,12 @@ export default function AlterationPrintPage() {
                   <span className="info-value">{alteration.client_name}</span>
                 </div>
                 <div className="info-item-inline">
-                  <span className="info-label">رقم الهاتف:</span>
-                  <span className="info-value" dir="ltr">{alteration.client_phone}</span>
-                </div>
-                <div className="info-item-inline">
                   <span className="info-label">موعد التسليم:</span>
                   <span className="info-value">{formatDate(alteration.alteration_due_date)}</span>
+                </div>
+                <div className="info-item-inline">
+                  <span className="info-label">رقم الهاتف:</span>
+                  <span className="info-value" dir="ltr">{alteration.client_phone}</span>
                 </div>
                 <div className="info-item-inline">
                   <span className="info-label">رقم التعديل:</span>
@@ -180,4 +178,3 @@ export default function AlterationPrintPage() {
     </div>
   )
 }
-

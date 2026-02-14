@@ -41,13 +41,12 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       return key
     }
 
-    // تنسيق التاريخ بصيغة يوم\شهر\سنة
+    // تنسيق التاريخ في الطباعة بصيغة شهر\يوم (بدون سنة)
     const formatDate = (dateString: string) => {
       const date = new Date(dateString)
       const day = date.getDate().toString().padStart(2, '0')
       const month = (date.getMonth() + 1).toString().padStart(2, '0')
-      const year = date.getFullYear()
-      return `${day}\\${month}\\${year}`
+      return `${day}\\${month}`
     }
 
     // استخراج المقاسات الفعلية (MEASUREMENT_ORDER يحتوي فقط على مفاتيح المقاسات الحقيقية)
@@ -183,7 +182,6 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
             {/* السطر الثاني: اسم المحل */}
             <div className="print-logo">
               <h1 className="print-brand">ياسمين الشام</h1>
-              <p className="print-subtitle">للأزياء الراقية</p>
             </div>
 
             {/* معلومات العميل في صف أفقي واحد */}
@@ -194,12 +192,12 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                   <span className="info-value">{order.client_name}</span>
                 </div>
                 <div className="info-item-inline">
-                  <span className="info-label">رقم الهاتف:</span>
-                  <span className="info-value" dir="ltr">{order.client_phone}</span>
-                </div>
-                <div className="info-item-inline">
                   <span className="info-label">موعد التسليم:</span>
                   <span className="info-value">{formatDate(order.due_date)}</span>
+                </div>
+                <div className="info-item-inline">
+                  <span className="info-label">رقم الهاتف:</span>
+                  <span className="info-value" dir="ltr">{order.client_phone}</span>
                 </div>
                 <div className="info-item-inline">
                   <span className="info-label">رقم الطلب:</span>

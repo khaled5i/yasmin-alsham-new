@@ -435,7 +435,7 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
     .print-page { width: 100%; min-height: 100vh; page-break-after: always; padding: 20px; }
     .print-page:last-child { page-break-after: auto; }
     .page-front { display: flex; flex-direction: column; }
-    .print-header { text-align: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #ec4899; }
+    .print-header { text-align: center; margin-bottom: 6px; padding-bottom: 0; border-bottom: none; }
     .print-header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 12px; font-weight: 500; color: #333; }
     .header-item { display: flex; gap: 4px; align-items: center; }
     .header-right { text-align: right; }
