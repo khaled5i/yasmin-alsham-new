@@ -35,7 +35,7 @@ import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
-import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
+import { renderDrawingsOnCanvas, loadImage, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
 
 interface OrderModalProps {
   order: Order | null
@@ -304,10 +304,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     }
   }, [showAnnotationLanguageDropdown])
 
-  // دالة لرسم الخطوط على canvas (الـ canvas هنا طبقة فوق الصورة، لذلك الممحاة يجب أن تمسح الطبقة نفسها)
+  // دالة لرسم الخطوط على canvas مع دعم الممحاة الصحيح
   const drawPathsOnCanvas = async (
     canvas: HTMLCanvasElement,
     drawings: DrawingPath[],
+    imageSrc: string,
     retryCount: number = 0
   ) => {
     const ctx = canvas.getContext('2d')
@@ -319,7 +320,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     if (displayWidth <= 0 || displayHeight <= 0) {
       if (retryCount < 12) {
         setTimeout(() => {
-          void drawPathsOnCanvas(canvas, drawings, retryCount + 1)
+          void drawPathsOnCanvas(canvas, drawings, imageSrc, retryCount + 1)
         }, 50)
       }
       return
@@ -330,15 +331,33 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     // مسح canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // استخدام المحرك المشترك للرسم بدون baseImage:
-    // لأن الصورة الأساسية موجودة كعنصر <img> خلف الـ canvas، والممحاة يجب أن تكشفها مباشرة.
-    renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height)
+    try {
+      // تحميل الصورة الأساسية لدعم الممحاة الصحيح
+      const baseImage = await loadImage(imageSrc)
+
+      // حساب أبعاد الصورة داخل الحاوية (object-contain)
+      const imageRect = calculateObjectContainDimensions(
+        baseImage.width,
+        baseImage.height,
+        canvas.width,
+        canvas.height
+      )
+
+      // استخدام المحرك المشترك للرسم مع baseImage و imageRect:
+      // هذا يضمن أن الممحاة تعمل بشكل صحيح باستخدام clip+redraw
+      renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height, baseImage, imageRect)
+    } catch (error) {
+      console.error('Error loading image for canvas drawing:', error)
+      // Fallback: رسم بدون baseImage (قد لا تعمل الممحاة بشكل مثالي)
+      renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height)
+    }
   }
 
   // رسم الخطوط على canvas للتعليقات القديمة
   useEffect(() => {
     if (!canvasRef.current || imageDrawings.length === 0) return
-    drawPathsOnCanvas(canvasRef.current, imageDrawings)
+    const imageSrc = customDesignImage || "/front2.png"
+    drawPathsOnCanvas(canvasRef.current, imageDrawings, imageSrc)
   }, [imageDrawings, customDesignImage])
 
   // رسم الخطوط على canvas للتعليقات المتعددة عند التوسيع
@@ -352,7 +371,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     const timer = setTimeout(() => {
       const canvas = canvasRefs.current.get(expandedCommentId)
       if (canvas) {
-        drawPathsOnCanvas(canvas, comment.drawings || [])
+        const imageSrc = comment.image || "/front2.png"
+        drawPathsOnCanvas(canvas, comment.drawings || [], imageSrc)
       }
     }, 100)
 
@@ -737,7 +757,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                           onLoad={() => {
                                             const canvas = canvasRefs.current.get(comment.id)
                                             if (canvas && comment.drawings && comment.drawings.length > 0) {
-                                              void drawPathsOnCanvas(canvas, comment.drawings)
+                                              const imageSrc = comment.image || "/front2.png"
+                                              void drawPathsOnCanvas(canvas, comment.drawings, imageSrc)
                                             }
                                           }}
                                         />
@@ -748,7 +769,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                               if (el) {
                                                 canvasRefs.current.set(comment.id, el)
                                                 // رسم الخطوط مباشرة عند تعيين الـ ref
-                                                drawPathsOnCanvas(el, comment.drawings || [])
+                                                const imageSrc = comment.image || "/front2.png"
+                                                drawPathsOnCanvas(el, comment.drawings || [], imageSrc)
                                               }
                                             }}
                                             className="absolute inset-0 w-full h-full pointer-events-none"
@@ -905,7 +927,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                             onClick={() => setLightboxImage(customDesignImage || "/front2.png")}
                             onLoad={() => {
                               if (canvasRef.current && imageDrawings.length > 0) {
-                                void drawPathsOnCanvas(canvasRef.current, imageDrawings)
+                                const imageSrc = customDesignImage || "/front2.png"
+                                void drawPathsOnCanvas(canvasRef.current, imageDrawings, imageSrc)
                               }
                             }}
                             style={{ cursor: 'pointer' }}
