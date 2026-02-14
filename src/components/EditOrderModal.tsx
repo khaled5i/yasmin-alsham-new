@@ -65,6 +65,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
   const [fullOrder, setFullOrder] = useState<Order | null>(null)
   const order = fullOrder || initialOrder
   const [annotationImageSrc, setAnnotationImageSrc] = useState('/front2.png')
+  // base64 image loaded from existing order for InteractiveImageAnnotation
+  const [currentImageBase64, setCurrentImageBase64] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     orderNumber: '',
@@ -175,7 +177,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         images: order.images || [],
         imageAnnotations: annotations,
         imageDrawings: drawings,
-        customDesignImage: customImage ? null : null, // سيتم تحميلها من base64
+        customDesignImage: null as File | null, // File objects are set via handleDesignImageChange
         savedDesignComments: savedComments
       })
 
@@ -183,6 +185,9 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         annotations: JSON.stringify(annotations),
         drawings: JSON.stringify(drawings)
       }
+
+      // تحميل صورة التصميم المخصصة الموجودة كـ base64 لتمريرها إلى InteractiveImageAnnotation
+      setCurrentImageBase64(customImage || null)
     }
   }, [order])
 
@@ -382,7 +387,23 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
+      // توليد صورة مركّبة (compositeImage) لضمان العرض الصحيح في صفحة العرض والطباعة
+      let compositeImage: string | null = null
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        try {
+          compositeImage = await annotationRef.current?.generateCompositeImage() || null
+        } catch (err) {
+          console.error('⚠️ Failed to generate composite image:', err)
+        }
+      }
+
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64).map(comment => {
+        // إضافة compositeImage للتعليق الأخير (الحالي) فقط
+        if (comment.id === latestSavedCommentIdRef.current && compositeImage) {
+          return { ...comment, compositeImage }
+        }
+        return comment
+      })
 
       // تحديث الطلب
       onSave(order.id, {
@@ -409,7 +430,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         image_drawings: formData.imageDrawings,
         custom_design_image: customDesignImageBase64,
         paid_amount: paidAmount,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       })
 
       setMessage({ type: 'success', text: t('order_updated_success') })
@@ -497,7 +518,22 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
+      // توليد صورة مركّبة (compositeImage) لضمان العرض الصحيح في صفحة العرض والطباعة
+      let compositeImage: string | null = null
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        try {
+          compositeImage = await annotationRef.current?.generateCompositeImage() || null
+        } catch (err) {
+          console.error('⚠️ Failed to generate composite image:', err)
+        }
+      }
+
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64).map(comment => {
+        if (comment.id === latestSavedCommentIdRef.current && compositeImage) {
+          return { ...comment, compositeImage }
+        }
+        return comment
+      })
 
       // تحديث الطلب
       onSave(order.id, {
@@ -524,7 +560,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         image_drawings: formData.imageDrawings,
         custom_design_image: customDesignImageBase64,
         paid_amount: paidAmount,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       })
 
       setMessage({ type: 'success', text: t('order_updated_success') })
@@ -767,6 +803,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     savedComments={formData.savedDesignComments}
                     onSavedCommentsChange={handleSavedCommentsChange}
                     showSaveButton={true}
+                    currentImageBase64={currentImageBase64}
                   />
                 </div>
 
@@ -780,6 +817,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                   <ImageUpload
                     images={formData.images}
                     onImagesChange={(images) => handleInputChange('images', images)}
+                    alwaysShowDeleteOnMobileAndTablet={true}
                   />
                 </div>
 

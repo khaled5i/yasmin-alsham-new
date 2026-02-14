@@ -50,15 +50,9 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       return `${day}\\${month}\\${year}`
     }
 
-    // استخراج المقاسات الفعلية (بدون الحقول الخاصة)
+    // استخراج المقاسات الفعلية (MEASUREMENT_ORDER يحتوي فقط على مفاتيح المقاسات الحقيقية)
     const getMeasurementsForPrint = () => {
-      const measurements = order.measurements || {}
-      return MEASUREMENT_ORDER.filter(key =>
-        key !== 'additional_notes' &&
-        key !== 'image_annotations' &&
-        key !== 'image_drawings' &&
-        key !== 'custom_design_image'
-      )
+      return MEASUREMENT_ORDER.filter(key => key !== 'additional_notes')
     }
 
     // استخراج النصوص المحولة من الملاحظات الصوتية مع الترجمات
@@ -131,14 +125,18 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       return candidate?.imageDataUrl || null
     }
 
-    // تحديد صور التصميم المتبقية (بعد استبعاد ما تم استخدامه)
+    // تحديد صور التصميم المتبقية (بعد استبعاد ما تم عرضه في صفحات الأمام والخلف والتعليقات)
     const getRemainingDesignImages = () => {
-      const firstPageImg = getFirstPageImage()
-      const frontPageImg = getFrontPageImage()
+      // إذا لا توجد تعليقات تصميم، نعرض كل الصور المتبقية بعد الأمام والخلف
+      if (designCommentsSnapshots.length === 0) {
+        return printableImages
+      }
 
-      return printableImages.filter(img =>
-        img !== firstPageImg && img !== frontPageImg
-      )
+      // استبعاد الصور التي تم عرضها كتعليقات تصميم (الأمام والخلف والمفلترة)
+      // نستبعد عدد الصور المساوي لعدد التعليقات لأن كل تعليق يمثل صورة واحدة
+      const usedSnapshotCount = designCommentsSnapshots.length
+      // الصور المتبقية هي التي بعد عدد التعليقات المستخدمة
+      return printableImages.slice(usedSnapshotCount)
     }
 
     // تصفية تعليقات التصميم لاستبعاد الخلف والأمام المستخدمين

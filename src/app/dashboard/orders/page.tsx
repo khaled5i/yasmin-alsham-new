@@ -10,6 +10,7 @@ import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { orderService } from '@/lib/services/order-service'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
 import CompletedWorkUpload from '@/components/CompletedWorkUpload'
@@ -192,9 +193,16 @@ export default function OrdersPage() {
       updates.measurements !== undefined
 
     if (hasMeasurementsUpdates) {
-      // جلب measurements الحالية من الطلب المحدد
-      const currentOrder = orders.find(o => o.id === orderId)
-      const currentMeasurements = (currentOrder?.measurements as any) || {}
+      // جلب البيانات الكاملة للطلب من قاعدة البيانات (القائمة تستخدم التحميل الخفيف بدون measurements)
+      let currentMeasurements: any = {}
+      try {
+        const fullOrderResult = await orderService.getById(orderId)
+        if (fullOrderResult.data) {
+          currentMeasurements = (fullOrderResult.data.measurements as any) || {}
+        }
+      } catch (err) {
+        console.error('⚠️ Failed to fetch full order for measurements merge:', err)
+      }
 
       supabaseUpdates.measurements = {
         ...currentMeasurements,

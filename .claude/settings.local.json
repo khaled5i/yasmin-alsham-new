@@ -3,7 +3,8 @@
     "allow": [
       "Bash(dir /s /b *.sql)",
       "Bash(findstr:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

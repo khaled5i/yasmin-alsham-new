@@ -620,25 +620,6 @@ export default function CompletedOrdersPage() {
         </div>
       )}
 
-      {/* نافذة التحذير عند وجود دفعة متبقية */}
-      <RemainingPaymentWarningModal
-        isOpen={showPaymentWarning}
-        remainingAmount={orderToDeliver?.remaining_amount || 0}
-        onMarkAsPaid={() => {
-          if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, true)
-          }
-        }}
-        onIgnore={() => {
-          if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, false)
-          }
-        }}
-        onCancel={() => {
-          setShowPaymentWarning(false)
-          setOrderToDeliver(null)
-        }}
-      />
 
       {/* Lightbox لعرض الصور بالحجم الكامل */}
       {lightboxImage && (

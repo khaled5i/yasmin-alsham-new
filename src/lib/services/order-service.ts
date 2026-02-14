@@ -290,13 +290,13 @@ export const orderService = {
         voice_notes: orderData.voice_notes?.length || 0,
       })
 
-      // التحقق من حجم صورة التصميم المخصصة (الحد الأقصى 5MB)
+      // التحقق من حجم صورة التصميم المخصصة (الحد الأقصى 10MB - متوافق مع واجهة المستخدم)
       if (orderData.custom_design_image) {
         const imageSizeKB = orderData.custom_design_image.length / 1024
-        if (imageSizeKB > 5 * 1024) {
+        if (imageSizeKB > 10 * 1024) {
           return {
             data: null,
-            error: `حجم صورة التصميم كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى المسموح به هو 5MB`
+            error: `حجم صورة التصميم كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى المسموح به هو 10MB`
           }
         }
       }

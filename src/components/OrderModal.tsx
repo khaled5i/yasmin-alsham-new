@@ -35,6 +35,7 @@ import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
+import { renderDrawingsOnCanvas, loadImage, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
 
 interface OrderModalProps {
   order: Order | null
@@ -303,41 +304,46 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     }
   }, [showAnnotationLanguageDropdown])
 
-  // دالة لرسم الخطوط على canvas
-  const drawPathsOnCanvas = (canvas: HTMLCanvasElement, drawings: DrawingPath[]) => {
+  // دالة لرسم الخطوط على canvas مع دعم الممحاة وأنماط الفرش بشكل صحيح
+  const drawPathsOnCanvas = async (canvas: HTMLCanvasElement, drawings: DrawingPath[], imageSrc?: string) => {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+
+    // تحديث أبعاد canvas لتتوافق مع حجم العرض الفعلي
+    const displayWidth = canvas.clientWidth || canvas.parentElement?.clientWidth || 800
+    const displayHeight = canvas.clientHeight || canvas.parentElement?.clientHeight || 800
+    canvas.width = displayWidth
+    canvas.height = displayHeight
 
     // مسح canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // رسم كل مسار
-    drawings.forEach(path => {
-      if (path.points.length < 2) return
+    // تحميل الصورة الأساسية لدعم الممحاة (clip + redraw)
+    let baseImage: HTMLImageElement | null = null
+    let imageRect = undefined
+    const hasErasers = drawings.some(d => d.isEraser)
 
-      ctx.beginPath()
-      ctx.strokeStyle = path.isEraser ? 'white' : path.color
-      ctx.lineWidth = path.strokeWidth
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-
-      const firstPoint = path.points[0]
-      ctx.moveTo((firstPoint.x / 100) * canvas.width, (firstPoint.y / 100) * canvas.height)
-
-      for (let i = 1; i < path.points.length; i++) {
-        const point = path.points[i]
-        ctx.lineTo((point.x / 100) * canvas.width, (point.y / 100) * canvas.height)
+    if (hasErasers && imageSrc) {
+      try {
+        baseImage = await loadImage(imageSrc)
+        imageRect = calculateObjectContainDimensions(
+          baseImage.width, baseImage.height, canvas.width, canvas.height
+        )
+      } catch {
+        // إذا فشل تحميل الصورة، الممحاة لن تعمل بشكل مثالي لكن لن يحدث خطأ
+        baseImage = null
       }
+    }
 
-      ctx.stroke()
-    })
+    // استخدام المحرك المشترك للرسم
+    renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height, baseImage, imageRect)
   }
 
   // رسم الخطوط على canvas للتعليقات القديمة
   useEffect(() => {
     if (!canvasRef.current || imageDrawings.length === 0) return
-    drawPathsOnCanvas(canvasRef.current, imageDrawings)
-  }, [imageDrawings])
+    drawPathsOnCanvas(canvasRef.current, imageDrawings, customDesignImage || undefined)
+  }, [imageDrawings, customDesignImage])
 
   // رسم الخطوط على canvas للتعليقات المتعددة عند التوسيع
   useEffect(() => {
@@ -350,7 +356,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     const timer = setTimeout(() => {
       const canvas = canvasRefs.current.get(expandedCommentId)
       if (canvas) {
-        drawPathsOnCanvas(canvas, comment.drawings || [])
+        drawPathsOnCanvas(canvas, comment.drawings || [], comment.image || undefined)
       }
     }, 100)
 
@@ -730,10 +736,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                     ) : (
                                       <>
                                         <img
-                                          src={comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
+                                          src={comment.image || "/front2.png"}
                                           alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
                                           className="w-full h-auto cursor-pointer"
-                                          onClick={() => setLightboxImage(comment.image || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg")}
+                                          onClick={() => setLightboxImage(comment.image || "/front2.png")}
                                         />
                                         {/* طبقة الرسومات - فقط إذا لم توجد صورة مركّبة */}
                                         {comment.drawings && comment.drawings.length > 0 && (
@@ -742,12 +748,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                               if (el) {
                                                 canvasRefs.current.set(comment.id, el)
                                                 // رسم الخطوط مباشرة عند تعيين الـ ref
-                                                drawPathsOnCanvas(el, comment.drawings || [])
+                                                drawPathsOnCanvas(el, comment.drawings || [], comment.image || undefined)
                                               }
                                             }}
                                             className="absolute inset-0 w-full h-full pointer-events-none"
-                                            width={800}
-                                            height={800}
                                           />
                                         )}
                                         {/* علامات التعليقات - فقط إذا لم توجد صورة مركّبة */}
@@ -895,18 +899,16 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       <div className="relative rounded-xl overflow-hidden border-2 border-pink-200 bg-white">
                         <div className="relative">
                           <img
-                            src={customDesignImage || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg"}
+                            src={customDesignImage || "/front2.png"}
                             alt="صورة التصميم"
                             className="w-full h-auto"
-                            onClick={() => setLightboxImage(customDesignImage || "/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg")}
+                            onClick={() => setLightboxImage(customDesignImage || "/front2.png")}
                             style={{ cursor: 'pointer' }}
                           />
                           {imageDrawings.length > 0 && (
                             <canvas
                               ref={canvasRef}
                               className="absolute inset-0 w-full h-full pointer-events-none"
-                              width={800}
-                              height={800}
                             />
                           )}
                           {imageAnnotations.map((annotation, index) => (

@@ -5,43 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Printer, Check, Image as ImageIcon, Loader2 } from 'lucide-react'
 import { Order } from '@/lib/services/order-service'
 import OrderPrintLayout from './OrderPrintLayout'
-
-// نوع التعليق على الصورة (من InteractiveImageAnnotation)
-interface ImageAnnotation {
-  id: string
-  x: number
-  y: number
-  boxX?: number
-  boxY?: number
-  transcription?: string
-  translatedText?: string
-  translationLanguage?: string
-  isHidden?: boolean
-  textScale?: number
-  timestamp: number
-}
-
-// نوع مسار الرسم (من InteractiveImageAnnotation)
-interface DrawingPath {
-  id: string
-  points: Array<{ x: number; y: number }>
-  color: string
-  strokeWidth: number
-  brushType?: string
-  isEraser?: boolean
-  timestamp: number
-}
-
-// نوع التعليق المحفوظ على التصميم
-interface SavedDesignComment {
-  id: string
-  timestamp: number
-  annotations: ImageAnnotation[]
-  drawings: DrawingPath[]
-  image: string | null
-  title?: string
-  compositeImage?: string | null // الصورة المركّبة المحفوظة
-}
+import type { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 
 // نوع snapshot التعليق للطباعة
 interface DesignCommentSnapshot {
@@ -130,7 +94,7 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
       await new Promise<void>((resolve, reject) => {
         baseImage.onload = () => resolve()
         baseImage.onerror = () => reject(new Error('Failed to load image'))
-        baseImage.src = customImage || '/WhatsApp Image 2026-01-11 at 3.33.05 PM.jpeg'
+        baseImage.src = customImage || '/front2.png'
       })
 
       // استخدام نفس منطق aspect-[3/4] و object-contain المستخدم في العرض
@@ -334,7 +298,8 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
 
           const maxTextWidth = containerWidth * 0.5
           const lineHeight = fontSize * 1.3
-          const fullText = `${annotationIndex}. ${annotation.transcription}`
+          const textToDisplay = annotation.translatedText || annotation.transcription
+          const fullText = `${annotationIndex}. ${textToDisplay}`
 
           const words = fullText.split(' ')
           const lines: string[] = []

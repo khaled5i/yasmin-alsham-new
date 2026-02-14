@@ -52,7 +52,7 @@ export default function DeliveredOrdersPage() {
       return
     }
     // Load data immediately - don't wait for permission check
-    loadOrders()
+    loadOrders({ status: 'delivered' })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
 
@@ -147,7 +147,6 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
       }
       setDeleteModalOpen(false)
       setOrderToDelete(null)
-      await loadOrders()
     }
   }
 

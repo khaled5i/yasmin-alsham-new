@@ -932,6 +932,7 @@ function AddOrderContent() {
                 onImagesChange={(images) => handleInputChange('images', images)}
                 maxImages={999}
                 acceptVideo={true}
+                alwaysShowDeleteOnMobileAndTablet={true}
               />
             </div>
 

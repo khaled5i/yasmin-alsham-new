@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle, Camera } from 'lucide-react'
+import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { imageService, UploadProgress } from '@/lib/services/image-service'
 
@@ -11,7 +12,8 @@ interface ImageUploadProps {
   onImagesChange: (images: string[]) => void
   maxImages?: number
   useSupabaseStorage?: boolean // استخدام Supabase Storage أو base64
-  acceptVideo?: boolean // قبول ملفات الفيديو
+  acceptVideo?: boolean
+  alwaysShowDeleteOnMobileAndTablet?: boolean
 }
 
 interface FileProgress {
@@ -19,23 +21,51 @@ interface FileProgress {
   progress: UploadProgress
 }
 
+const isVideoFile = (fileUrl: string) => {
+  const url = fileUrl.toLowerCase()
+  return (
+    url.includes('.mp4') ||
+    url.includes('.mov') ||
+    url.includes('.avi') ||
+    url.includes('.webm') ||
+    url.includes('video')
+  )
+}
+
 export default function ImageUpload({
   images,
   onImagesChange,
   maxImages = 999,
   useSupabaseStorage = true,
-  acceptVideo = true
+  acceptVideo = true,
+  alwaysShowDeleteOnMobileAndTablet = false
 }: ImageUploadProps) {
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<Map<string, FileProgress>>(new Map())
   const [errors, setErrors] = useState<string[]>([])
   const [showOptions, setShowOptions] = useState(false)
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null) // الصورة المعروضة في Lightbox
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [isClientMounted, setIsClientMounted] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const { t } = useTranslation()
+  const imageOnlyIndices = useMemo(
+    () => images.reduce<number[]>((acc, image, index) => {
+      if (!isVideoFile(image)) acc.push(index)
+      return acc
+    }, []),
+    [images]
+  )
+  const currentLightboxPosition = useMemo(
+    () => (lightboxIndex === null ? -1 : imageOnlyIndices.indexOf(lightboxIndex)),
+    [imageOnlyIndices, lightboxIndex]
+  )
+  const activeLightboxImage = lightboxIndex !== null ? images[lightboxIndex] : null
+  const canNavigateLightbox = imageOnlyIndices.length > 1
+  const deleteButtonVisibilityClass = alwaysShowDeleteOnMobileAndTablet
+    ? 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100'
+    : 'opacity-0 group-hover:opacity-100'
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || uploading) return
@@ -237,7 +267,7 @@ export default function ImageUpload({
 
   // إغلاق القائمة عند النقر خارجها
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = () => {
       if (showOptions) {
         setShowOptions(false)
       }
@@ -251,6 +281,62 @@ export default function ImageUpload({
       document.removeEventListener('click', handleClickOutside)
     }
   }, [showOptions])
+
+  useEffect(() => {
+    setIsClientMounted(true)
+  }, [])
+
+  const closeLightbox = useCallback(() => {
+    setLightboxIndex(null)
+  }, [])
+
+  const goToLightboxPosition = useCallback((nextPosition: number) => {
+    if (imageOnlyIndices.length === 0) return
+    const nextIndex = imageOnlyIndices[nextPosition]
+    if (typeof nextIndex === 'number') {
+      setLightboxIndex(nextIndex)
+    }
+  }, [imageOnlyIndices])
+
+  const showPreviousImage = useCallback(() => {
+    if (!canNavigateLightbox || currentLightboxPosition < 0) return
+    const previousPosition = (currentLightboxPosition - 1 + imageOnlyIndices.length) % imageOnlyIndices.length
+    goToLightboxPosition(previousPosition)
+  }, [canNavigateLightbox, currentLightboxPosition, imageOnlyIndices.length, goToLightboxPosition])
+
+  const showNextImage = useCallback(() => {
+    if (!canNavigateLightbox || currentLightboxPosition < 0) return
+    const nextPosition = (currentLightboxPosition + 1) % imageOnlyIndices.length
+    goToLightboxPosition(nextPosition)
+  }, [canNavigateLightbox, currentLightboxPosition, imageOnlyIndices.length, goToLightboxPosition])
+
+  useEffect(() => {
+    if (lightboxIndex === null) return
+
+    const activeImage = images[lightboxIndex]
+    if (!activeImage || isVideoFile(activeImage)) {
+      setLightboxIndex(imageOnlyIndices[0] ?? null)
+    }
+  }, [images, lightboxIndex, imageOnlyIndices])
+
+  useEffect(() => {
+    if (lightboxIndex === null) return
+
+    const originalOverflow = document.body.style.overflow
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeLightbox()
+      if (event.key === 'ArrowLeft') showPreviousImage()
+      if (event.key === 'ArrowRight') showNextImage()
+    }
+
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = originalOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [lightboxIndex, closeLightbox, showPreviousImage, showNextImage])
 
   return (
     <div className="space-y-4">
@@ -453,9 +539,7 @@ export default function ImageUpload({
             <AnimatePresence>
               {images.map((image, index) => {
                 // تحديد نوع الملف من الرابط
-                const isVideo = image.includes('.mp4') || image.includes('.mov') ||
-                  image.includes('.avi') || image.includes('.webm') ||
-                  image.includes('video')
+                const isVideo = isVideoFile(image)
 
                 return (
                   <motion.div
@@ -467,7 +551,7 @@ export default function ImageUpload({
                   >
                     <div
                       className="aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 cursor-pointer"
-                      onClick={() => !isVideo && setLightboxImage(image)}
+                      onClick={() => !isVideo && setLightboxIndex(index)}
                     >
                       {isVideo ? (
                         <video
@@ -489,7 +573,7 @@ export default function ImageUpload({
                     <button
                       type="button"
                       onClick={() => removeImage(index)}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:bg-red-600"
+                      className={`absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center transition-opacity duration-300 hover:bg-red-600 ${deleteButtonVisibilityClass}`}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -522,37 +606,106 @@ export default function ImageUpload({
       )}
 
       {/* Lightbox لعرض الصورة بحجم كامل */}
-      <AnimatePresence>
-        {lightboxImage && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-            onClick={() => setLightboxImage(null)}
-          >
-            {/* زر الإغلاق */}
-            <button
-              type="button"
-              onClick={() => setLightboxImage(null)}
-              className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-10"
+      {isClientMounted && createPortal(
+        <AnimatePresence>
+          {lightboxIndex !== null && activeLightboxImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm"
+              onClick={closeLightbox}
             >
-              <X className="w-6 h-6" />
-            </button>
+              <div className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeLightbox()
+                  }}
+                  className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
+                >
+                  <X className="w-6 h-6" />
+                </button>
 
-            {/* الصورة */}
-            <motion.img
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              src={lightboxImage}
-              alt="عرض الصورة بحجم كامل"
-              className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+                <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-20">
+                  {Math.max(currentLightboxPosition + 1, 1)} / {imageOnlyIndices.length}
+                </div>
+
+                {canNavigateLightbox && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      showPreviousImage()
+                    }}
+                    className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                )}
+
+                {canNavigateLightbox && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      showNextImage()
+                    }}
+                    className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+
+                <motion.img
+                  key={activeLightboxImage}
+                  initial={{ scale: 0.96, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.96, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  src={activeLightboxImage}
+                  alt={`Preview ${currentLightboxPosition + 1}`}
+                  className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                />
+
+                {canNavigateLightbox && (
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[min(92vw,760px)] z-20">
+                    <div className="bg-black/45 backdrop-blur-md rounded-xl p-2 flex items-center gap-2 overflow-x-auto">
+                      {imageOnlyIndices.map((imageIndex, thumbPosition) => (
+                        <button
+                          key={`${imageIndex}-${thumbPosition}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setLightboxIndex(imageIndex)
+                          }}
+                          className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
+                            imageIndex === lightboxIndex
+                              ? 'border-pink-400 opacity-100'
+                              : 'border-transparent opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <img
+                            src={images[imageIndex]}
+                            alt={`Thumbnail ${thumbPosition + 1}`}
+                            className="w-14 h-14 sm:w-16 sm:h-16 object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   )
 }
+
+
+
