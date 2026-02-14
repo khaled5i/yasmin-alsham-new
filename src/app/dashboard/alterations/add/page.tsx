@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
@@ -18,10 +18,7 @@ import {
   Upload,
   Save,
   User,
-  FileText,
-  Calendar,
   MessageSquare,
-  CheckCircle,
   AlertCircle,
   Loader2,
   MessageCircle
@@ -87,6 +84,9 @@ function AddAlterationContent() {
       }
 
       // تعبئة البيانات من طلب التعديل
+      const initialAnnotations = (alteration as any).image_annotations || []
+      const initialDrawings = (alteration as any).image_drawings || []
+
       setFormData({
         alterationNumber: alteration.alteration_number,
         clientName: alteration.client_name,
@@ -99,11 +99,16 @@ function AddAlterationContent() {
         notes: alteration.notes || '',
         voiceNotes: (alteration as any).voice_transcriptions || [],
         images: alteration.images || [],
-        imageAnnotations: (alteration as any).image_annotations || [],
-        imageDrawings: (alteration as any).image_drawings || [],
+        imageAnnotations: initialAnnotations,
+        imageDrawings: initialDrawings,
         customDesignImage: null,
         savedDesignComments: (alteration as any).saved_design_comments || []
       })
+
+      initialDesignStateRef.current = {
+        annotations: JSON.stringify(initialAnnotations),
+        drawings: JSON.stringify(initialDrawings)
+      }
 
       toast.success(isArabic ? 'تم تحميل بيانات طلب التعديل' : 'Alteration data loaded')
     } catch (error: any) {
@@ -163,9 +168,16 @@ function AddAlterationContent() {
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const initialDesignStateRef = useRef<{ annotations: string; drawings: string }>({
+    annotations: '[]',
+    drawings: '[]'
+  })
 
   // تعبئة البيانات من الطلب الأصلي
   const prefillFormData = (order: Order) => {
+    const initialAnnotations = (order.measurements as any)?.image_annotations || []
+    const initialDrawings = (order.measurements as any)?.image_drawings || []
+
     setFormData(prev => ({
       ...prev,
       clientName: order.client_name,
@@ -173,9 +185,14 @@ function AddAlterationContent() {
       images: order.images || [],
       // استخراج التعليقات المحفوظة من measurements
       savedDesignComments: (order.measurements as any)?.saved_design_comments || [],
-      imageAnnotations: (order.measurements as any)?.image_annotations || [],
-      imageDrawings: (order.measurements as any)?.image_drawings || []
+      imageAnnotations: initialAnnotations,
+      imageDrawings: initialDrawings
     }))
+
+    initialDesignStateRef.current = {
+      annotations: JSON.stringify(initialAnnotations),
+      drawings: JSON.stringify(initialDrawings)
+    }
   }
 
   // حساب المبلغ المتبقي
@@ -241,6 +258,50 @@ function AddAlterationContent() {
     }))
   }
 
+  const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string) => {
+    const allSavedComments = [...formData.savedDesignComments]
+    const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
+
+    if (!hasCurrentPayload) {
+      return allSavedComments
+    }
+
+    const currentAnnotationsJson = JSON.stringify(formData.imageAnnotations)
+    const currentDrawingsJson = JSON.stringify(formData.imageDrawings)
+
+    const isUnchangedFromInitial =
+      currentAnnotationsJson === initialDesignStateRef.current.annotations &&
+      currentDrawingsJson === initialDesignStateRef.current.drawings
+
+    if (isUnchangedFromInitial) {
+      return allSavedComments
+    }
+
+    const hasDuplicateSavedComment = allSavedComments.some(comment =>
+      JSON.stringify(comment.annotations || []) === currentAnnotationsJson &&
+      JSON.stringify(comment.drawings || []) === currentDrawingsJson
+    )
+
+    if (hasDuplicateSavedComment) {
+      return allSavedComments
+    }
+
+    const currentView = annotationRef.current?.getCurrentView() || 'front'
+    const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
+    const currentComment: SavedDesignComment = {
+      id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      annotations: formData.imageAnnotations,
+      drawings: formData.imageDrawings,
+      image: customDesignImageBase64 || null,
+      title: viewTitle,
+      view: currentView
+    }
+
+    return [...allSavedComments, currentComment]
+  }, [formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
+
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -302,25 +363,7 @@ function AddAlterationContent() {
         }
       }
 
-      // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = [...formData.savedDesignComments]
-
-      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
-      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
-        const currentView = annotationRef.current?.getCurrentView() || 'front'
-        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
-
-        const currentComment: SavedDesignComment = {
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(),
-          annotations: formData.imageAnnotations,
-          drawings: formData.imageDrawings,
-          image: customDesignImageBase64 || null,
-          title: viewTitle,
-          view: currentView
-        }
-        allSavedComments.push(currentComment)
-      }
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
 
       // إنشاء أو تحديث طلب التعديل
       if (isEditMode && editId) {
@@ -457,24 +500,7 @@ function AddAlterationContent() {
         }
       }
 
-      // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = [...formData.savedDesignComments]
-
-      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
-        const currentView = annotationRef.current?.getCurrentView() || 'front'
-        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
-
-        const currentComment: SavedDesignComment = {
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(),
-          annotations: formData.imageAnnotations,
-          drawings: formData.imageDrawings,
-          image: customDesignImageBase64 || null,
-          title: viewTitle,
-          view: currentView
-        }
-        allSavedComments.push(currentComment)
-      }
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
 
       let result
       let alterationNumber = formData.alterationNumber
@@ -648,7 +674,7 @@ function AddAlterationContent() {
                   value={formData.alterationNumber}
                   onChange={(e) => handleInputChange('alterationNumber', e.target.value)}
                   placeholder={isArabic ? 'سيتم توليده تلقائياً إذا ترك فارغاً' : 'Auto-generated if left empty'}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                   dir={isArabic ? 'rtl' : 'ltr'}
                   disabled={isEditMode}
                 />
@@ -664,7 +690,7 @@ function AddAlterationContent() {
                   value={formData.clientName}
                   onChange={(e) => handleInputChange('clientName', e.target.value)}
                   placeholder={isArabic ? 'أدخل اسم الزبونة' : 'Enter client name'}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required
                   dir={isArabic ? 'rtl' : 'ltr'}
                 />
@@ -680,14 +706,14 @@ function AddAlterationContent() {
                   value={formData.clientPhone}
                   onChange={(e) => handleInputChange('clientPhone', e.target.value)}
                   placeholder={isArabic ? 'أدخل رقم الهاتف' : 'Enter phone number'}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required
                   dir="ltr"
                 />
               </div>
 
               {/* 1.4. موعد تسليم التعديل */}
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   {isArabic ? 'موعد تسليم التعديل' : 'Alteration Due Date'} <span className="text-red-500">*</span>
                 </label>
@@ -699,7 +725,50 @@ function AddAlterationContent() {
                   statsType="alterations"
                 />
               </div>
+
+              {/* 1.5. السعر - يظهر فقط للتعديلات الخارجية */}
+              {!orderId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'سعر التعديل (ر.س)' : 'Alteration Price (SAR)'} <span className="text-red-500">*</span>
+                  </label>
+                  <NumericInput
+                    type="price"
+                    value={formData.price}
+                    onChange={(value) => handleInputChange('price', value)}
+                    placeholder={isArabic ? 'أدخل السعر' : 'Enter price'}
+                    required
+                  />
+                </div>
+              )}
+
+              {/* 1.6. المبلغ المدفوع - يظهر فقط للتعديلات الخارجية */}
+              {!orderId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'المبلغ المدفوع (ر.س)' : 'Paid Amount (SAR)'}
+                  </label>
+                  <NumericInput
+                    type="price"
+                    value={formData.paidAmount}
+                    onChange={(value) => handleInputChange('paidAmount', value)}
+                    placeholder={isArabic ? 'أدخل المبلغ المدفوع' : 'Enter paid amount'}
+                  />
+                </div>
+              )}
             </div>
+
+            {/* 1.7. المبلغ المتبقي - يظهر فقط للتعديلات الخارجية */}
+            {!orderId && (
+              <div className="mt-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {isArabic ? 'المبلغ المتبقي (ر.س)' : 'Remaining Amount (SAR)'}
+                </label>
+                <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
+                  {remainingAmount.toFixed(2)}
+                </div>
+              </div>
+            )}
           </motion.div>
 
           {/* 2. وصف التعديل المطلوب */}
@@ -715,82 +784,12 @@ function AddAlterationContent() {
             </h2>
 
             <UnifiedNotesInput
-              textNotes={formData.notes}
+              notes={formData.notes}
               voiceNotes={formData.voiceNotes}
-              onTextNotesChange={(notes) => handleInputChange('notes', notes)}
+              onNotesChange={(notes) => handleInputChange('notes', notes)}
               onVoiceNotesChange={handleVoiceNotesChange}
             />
           </motion.div>
-
-          {/* 3. السعر والدفع - يظهر فقط للفساتين الخارجية */}
-          {!orderId && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-            >
-              <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-pink-500" />
-                {isArabic ? 'السعر والدفع' : 'Price & Payment'}
-              </h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* 3.1. السعر */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'سعر التعديل (ر.س)' : 'Alteration Price (SAR)'} <span className="text-red-500">*</span>
-                  </label>
-                  <NumericInput
-                    value={formData.price}
-                    onChange={(value) => handleInputChange('price', value)}
-                    placeholder={isArabic ? 'أدخل السعر' : 'Enter price'}
-                    required
-                  />
-                </div>
-
-                {/* 3.2. المبلغ المدفوع */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'المبلغ المدفوع (ر.س)' : 'Paid Amount (SAR)'}
-                  </label>
-                  <NumericInput
-                    value={formData.paidAmount}
-                    onChange={(value) => handleInputChange('paidAmount', value)}
-                    placeholder={isArabic ? 'أدخل المبلغ المدفوع' : 'Enter paid amount'}
-                  />
-                </div>
-
-                {/* 3.3. طريقة الدفع */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'طريقة الدفع' : 'Payment Method'}
-                  </label>
-                  <select
-                    value={formData.paymentMethod}
-                    onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                    dir={isArabic ? 'rtl' : 'ltr'}
-                  >
-                    <option value="cash">{isArabic ? 'نقدي' : 'Cash'}</option>
-                    <option value="card">{isArabic ? 'بطاقة' : 'Card'}</option>
-                    <option value="bank_transfer">{isArabic ? 'تحويل بنكي' : 'Bank Transfer'}</option>
-                    <option value="check">{isArabic ? 'شيك' : 'Check'}</option>
-                  </select>
-                </div>
-
-                {/* 3.4. المبلغ المتبقي */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'المبلغ المتبقي (ر.س)' : 'Remaining Amount (SAR)'}
-                  </label>
-                  <div className="px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
-                    {remainingAmount.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
 
           {/* 4. تعليقات التصميم */}
           <motion.div

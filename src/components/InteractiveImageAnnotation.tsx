@@ -127,6 +127,9 @@ const getViewFromTitle = (title?: string | null): 'front' | 'back' | null => {
   return null
 }
 
+const serializeDesignState = (annotations: ImageAnnotation[], drawings: DrawingPath[]) =>
+  JSON.stringify({ annotations, drawings })
+
 // واجهة التعليق المحفوظ
 export interface SavedDesignComment {
   id: string
@@ -576,6 +579,39 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     return annotationsChanged || drawingsChanged
   }, [viewingCommentId, annotations, drawings, originalViewingAnnotations, originalViewingDrawings])
 
+  const currentDesignStateKey = useMemo(
+    () => serializeDesignState(annotations, drawings),
+    [annotations, drawings]
+  )
+
+  const matchesSavedCommentState = useMemo(() => {
+    if (savedComments.length === 0) return false
+    return savedComments.some((comment) =>
+      serializeDesignState(comment.annotations, comment.drawings) === currentDesignStateKey
+    )
+  }, [savedComments, currentDesignStateKey])
+
+  const hasUnsavedCommentChanges = useMemo(() => {
+    if (editingCommentId) return false
+
+    const hasCurrentContent = annotations.length > 0 || drawings.length > 0
+    if (!hasCurrentContent) return false
+
+    if (viewingCommentId) {
+      return hasViewingCommentChanges
+    }
+
+    // لا نعتبر المحتوى "غير محفوظ" إذا كان مطابقًا تمامًا لتعليق محفوظ سابقًا
+    return !matchesSavedCommentState
+  }, [
+    editingCommentId,
+    annotations.length,
+    drawings.length,
+    viewingCommentId,
+    hasViewingCommentChanges,
+    matchesSavedCommentState
+  ])
+
   // دالة إنشاء صورة مركّبة يدوياً - تطابق العرض تماماً
   // تستخدم نفس المنطق المستخدم في العرض لضمان التطابق 100%
   const generateCompositeImage = useCallback(async (): Promise<string | null> => {
@@ -981,7 +1017,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // دالة تحميل تعليق محفوظ للعرض (view mode)
   const loadCommentForViewing = useCallback(async (comment: SavedDesignComment) => {
     // التحقق من وجود محتوى حالي غير محفوظ
-    const hasUnsavedContent = (annotations.length > 0 || drawings.length > 0) && !viewingCommentId && !editingCommentId
+    const hasUnsavedContent = hasUnsavedCommentChanges
 
     if (hasUnsavedContent) {
       // عرض تنبيه للمستخدم
@@ -1021,7 +1057,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       setInternalImageOverride(null)
     }
     // لا نحمل الصورة لأنها base64 وليست File
-  }, [annotations, drawings, viewingCommentId, editingCommentId, saveCurrentComment, onAnnotationsChange, onDrawingsChange])
+  }, [hasUnsavedCommentChanges, saveCurrentComment, onAnnotationsChange, onDrawingsChange, imagePreview, onImageChange])
 
   // دالة تحديث التعليق المحفوظ الذي يتم عرضه
   const updateViewingComment = useCallback(async () => {

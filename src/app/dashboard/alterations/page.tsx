@@ -15,9 +15,7 @@ import {
   Plus,
   Loader2,
   Package,
-  Edit,
   Trash2,
-  Eye,
   Printer,
   Clock,
   CheckCircle,
@@ -25,17 +23,24 @@ import {
   ArrowRight
 } from 'lucide-react'
 
+const PAGE_SIZE = 30
+
 export default function AlterationsPage() {
   const { user } = useAuthStore()
-  const { t, isArabic } = useTranslation()
+  const { isArabic } = useTranslation()
   const router = useRouter()
 
   // States
   const [alterations, setAlterations] = useState<Alteration[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalAlterations, setTotalAlterations] = useState(0)
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [showOrderSearchModal, setShowOrderSearchModal] = useState(false)
+
+  const totalPages = Math.max(1, Math.ceil(totalAlterations / PAGE_SIZE))
 
   // التحقق من الصلاحيات وتحميل البيانات
   useEffect(() => {
@@ -44,20 +49,43 @@ export default function AlterationsPage() {
       return
     }
 
-    loadAlterations()
-  }, [user, router])
+    loadAlterations(currentPage, debouncedSearchTerm)
+  }, [user, router, currentPage, debouncedSearchTerm])
 
-  const loadAlterations = async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim())
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  useEffect(() => {
+    setCurrentPage(0)
+  }, [debouncedSearchTerm])
+
+  useEffect(() => {
+    if (currentPage > totalPages - 1) {
+      setCurrentPage(Math.max(0, totalPages - 1))
+    }
+  }, [currentPage, totalPages])
+
+  const loadAlterations = async (page = 0, search = '') => {
     setIsLoading(true)
     try {
-      const { data, error } = await alterationService.getAll()
+      const { data, error, total } = await alterationService.getAll({
+        page,
+        pageSize: PAGE_SIZE,
+        search: search || undefined
+      })
       if (error) {
         toast.error(error)
         return
       }
       setAlterations(data || [])
-    } catch (error: any) {
-      toast.error(error.message)
+      setTotalAlterations(total ?? 0)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Failed to load alterations')
     } finally {
       setIsLoading(false)
     }
@@ -93,9 +121,9 @@ export default function AlterationsPage() {
         return
       }
       toast.success(isArabic ? 'تم حذف طلب التعديل بنجاح' : 'Alteration deleted successfully')
-      loadAlterations()
-    } catch (error: any) {
-      toast.error(error.message)
+      loadAlterations(currentPage, debouncedSearchTerm)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete alteration')
     }
   }
 
@@ -109,18 +137,6 @@ export default function AlterationsPage() {
     }
     return statusMap[status as keyof typeof statusMap] || statusMap.pending
   }
-
-  // فلترة طلبات التعديلات
-  const filteredAlterations = alterations.filter(alteration => {
-    if (!searchTerm.trim()) return true
-
-    const term = searchTerm.toLowerCase()
-    return (
-      alteration.client_name.toLowerCase().includes(term) ||
-      alteration.client_phone.toLowerCase().includes(term) ||
-      alteration.alteration_number.toLowerCase().includes(term)
-    )
-  })
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 p-4 sm:p-6 lg:p-8">
@@ -185,12 +201,20 @@ export default function AlterationsPage() {
           </div>
         </motion.div>
 
+        {!isLoading && (
+          <div className="mb-4 text-sm text-gray-600">
+            {isArabic
+              ? `عرض ${alterations.length} من أصل ${totalAlterations} طلب تعديل`
+              : `Showing ${alterations.length} of ${totalAlterations} alterations`}
+          </div>
+        )}
+
         {/* Alterations List */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-12 h-12 text-pink-500 animate-spin" />
           </div>
-        ) : filteredAlterations.length === 0 ? (
+        ) : alterations.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -213,7 +237,7 @@ export default function AlterationsPage() {
           </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredAlterations.map((alteration, index) => {
+            {alterations.map((alteration, index) => {
               const statusInfo = getStatusInfo(alteration.status)
               const StatusIcon = statusInfo.icon
 
@@ -316,6 +340,32 @@ export default function AlterationsPage() {
             })}
           </div>
         )}
+
+        {!isLoading && totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-center gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(0, prev - 1))}
+              disabled={currentPage === 0}
+              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              {isArabic ? 'السابق' : 'Previous'}
+            </button>
+
+            <span className="px-3 py-2 text-sm text-gray-700">
+              {isArabic
+                ? `صفحة ${currentPage + 1} من ${totalPages}`
+                : `Page ${currentPage + 1} of ${totalPages}`}
+            </span>
+
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1))}
+              disabled={currentPage >= totalPages - 1}
+              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              {isArabic ? 'التالي' : 'Next'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -333,5 +383,3 @@ export default function AlterationsPage() {
     </div>
   )
 }
-
-

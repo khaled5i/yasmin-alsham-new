@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(dir /s /b *.sql)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(ls:*)"
     ]
   }
 }

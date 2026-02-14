@@ -5,6 +5,31 @@
 
 import { supabase, isSupabaseConfigured } from '../supabase'
 
+const ALTERATION_LIST_COLUMNS = [
+  'id',
+  'alteration_number',
+  'original_order_id',
+  'worker_id',
+  'client_name',
+  'client_phone',
+  'description',
+  'price',
+  'paid_amount',
+  'remaining_amount',
+  'payment_status',
+  'payment_method',
+  'status',
+  'alteration_due_date',
+  'delivery_date',
+  'order_received_date',
+  'notes',
+  'admin_notes',
+  'created_at',
+  'updated_at'
+].join(',')
+
+const DEFAULT_PAGE_SIZE = 30
+
 // ============================================================================
 // أنواع البيانات (Types)
 // ============================================================================
@@ -242,23 +267,70 @@ export const alterationService = {
   /**
    * الحصول على جميع طلبات التعديلات
    */
-  async getAll(): Promise<{ data: Alteration[] | null; error: string | null }> {
+  async getAll(filters?: {
+    status?: string | string[]
+    worker_id?: string
+    original_order_id?: string
+    payment_status?: string
+    search?: string
+    page?: number
+    pageSize?: number
+    lightweight?: boolean
+  }): Promise<{ data: Alteration[] | null; error: string | null; total?: number }> {
     if (!isSupabaseConfigured()) {
       return { data: null, error: 'Supabase is not configured.' }
     }
 
     try {
-      const { data, error } = await supabase
+      const useLightColumns = filters?.lightweight !== false
+      const selectColumns = useLightColumns ? ALTERATION_LIST_COLUMNS : '*'
+
+      let query = supabase
         .from('alterations')
-        .select('*')
+        .select(selectColumns, { count: 'exact' })
         .order('created_at', { ascending: false })
+
+      if (filters?.status) {
+        if (Array.isArray(filters.status)) {
+          query = query.in('status', filters.status)
+        } else {
+          query = query.eq('status', filters.status)
+        }
+      }
+
+      if (filters?.worker_id) {
+        query = query.eq('worker_id', filters.worker_id)
+      }
+
+      if (filters?.original_order_id) {
+        query = query.eq('original_order_id', filters.original_order_id)
+      }
+
+      if (filters?.payment_status) {
+        query = query.eq('payment_status', filters.payment_status)
+      }
+
+      if (filters?.search?.trim()) {
+        const safeTerm = filters.search.trim()
+        query = query.or(
+          `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,alteration_number.ilike.%${safeTerm}%`
+        )
+      }
+
+      const pageSize = Math.max(1, filters?.pageSize || DEFAULT_PAGE_SIZE)
+      const page = Math.max(0, filters?.page || 0)
+      const from = page * pageSize
+      const to = from + pageSize - 1
+      query = query.range(from, to)
+
+      const { data, error, count } = await query
 
       if (error) {
         console.error('❌ Error fetching alterations:', error)
         return { data: null, error: error.message }
       }
 
-      return { data, error: null }
+      return { data: (data || []) as unknown as Alteration[], error: null, total: count ?? undefined }
     } catch (error: any) {
       console.error('❌ Exception in getAll alterations:', error)
       return { data: null, error: error.message }
@@ -363,7 +435,7 @@ export const alterationService = {
     try {
       const { data, error } = await supabase
         .from('alterations')
-        .select('*')
+        .select(ALTERATION_LIST_COLUMNS)
         .or(`client_name.ilike.%${searchTerm}%,client_phone.ilike.%${searchTerm}%,alteration_number.ilike.%${searchTerm}%`)
         .order('created_at', { ascending: false })
 
@@ -372,7 +444,7 @@ export const alterationService = {
         return { data: null, error: error.message }
       }
 
-      return { data, error: null }
+      return { data: (data || []) as unknown as Alteration[], error: null }
     } catch (error: any) {
       console.error('❌ Exception in search alterations:', error)
       return { data: null, error: error.message }
@@ -390,7 +462,7 @@ export const alterationService = {
     try {
       const { data, error } = await supabase
         .from('alterations')
-        .select('*')
+        .select(ALTERATION_LIST_COLUMNS)
         .eq('status', status)
         .order('created_at', { ascending: false })
 
@@ -399,7 +471,7 @@ export const alterationService = {
         return { data: null, error: error.message }
       }
 
-      return { data, error: null }
+      return { data: (data || []) as unknown as Alteration[], error: null }
     } catch (error: any) {
       console.error('❌ Exception in getByStatus alterations:', error)
       return { data: null, error: error.message }
@@ -417,7 +489,7 @@ export const alterationService = {
     try {
       const { data, error } = await supabase
         .from('alterations')
-        .select('*')
+        .select(ALTERATION_LIST_COLUMNS)
         .eq('original_order_id', orderId)
         .order('created_at', { ascending: false })
 
@@ -426,7 +498,7 @@ export const alterationService = {
         return { data: null, error: error.message }
       }
 
-      return { data, error: null }
+      return { data: (data || []) as unknown as Alteration[], error: null }
     } catch (error: any) {
       console.error('❌ Exception in getByOriginalOrderId alterations:', error)
       return { data: null, error: error.message }

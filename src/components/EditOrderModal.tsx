@@ -57,9 +57,15 @@ interface EditOrderModalProps {
 export default function EditOrderModal({ order: initialOrder, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
   const { t, isArabic } = useTranslation()
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
+  const initialDesignStateRef = useRef<{ annotations: string; drawings: string }>({
+    annotations: '[]',
+    drawings: '[]'
+  })
+  const latestSavedCommentIdRef = useRef<string | null>(null)
   // Full order data (fetched when lightweight order is missing measurements)
   const [fullOrder, setFullOrder] = useState<Order | null>(null)
   const order = fullOrder || initialOrder
+  const [annotationImageSrc, setAnnotationImageSrc] = useState('/front2.png')
 
   const [formData, setFormData] = useState({
     orderNumber: '',
@@ -135,9 +141,20 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
       // استرجاع تعليقات التصميم من measurements
       const measurements = order.measurements as any
       const savedComments = measurements?.saved_design_comments || []
-      const annotations = measurements?.image_annotations || []
-      const drawings = measurements?.image_drawings || []
+      const latestSavedComment =
+        savedComments.length > 0
+          ? [...savedComments].sort((a: SavedDesignComment, b: SavedDesignComment) => (a.timestamp || 0) - (b.timestamp || 0))[savedComments.length - 1]
+          : null
+      const annotations = latestSavedComment?.annotations || measurements?.image_annotations || []
+      const drawings = latestSavedComment?.drawings || measurements?.image_drawings || []
       const customImage = measurements?.custom_design_image || null
+
+      latestSavedCommentIdRef.current = latestSavedComment?.id || null
+      if (latestSavedComment?.view) {
+        setAnnotationImageSrc(latestSavedComment.view === 'back' ? '/back2.png' : '/front2.png')
+      } else {
+        setAnnotationImageSrc('/front2.png')
+      }
 
       setFormData({
         orderNumber: order.order_number || '',
@@ -160,6 +177,11 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         customDesignImage: customImage ? null : null, // سيتم تحميلها من base64
         savedDesignComments: savedComments
       })
+
+      initialDesignStateRef.current = {
+        annotations: JSON.stringify(annotations),
+        drawings: JSON.stringify(drawings)
+      }
     }
   }, [order])
 
@@ -220,11 +242,81 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
   // معالجة تغيير التعليقات المحفوظة
   const handleSavedCommentsChange = useCallback((comments: SavedDesignComment[]) => {
+    const latestSavedComment =
+      comments.length > 0
+        ? [...comments].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))[comments.length - 1]
+        : null
+    latestSavedCommentIdRef.current = latestSavedComment?.id || null
+
     setFormData(prev => ({
       ...prev,
       savedDesignComments: comments
     }))
   }, [])
+
+  const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string) => {
+    const allSavedComments = [...formData.savedDesignComments]
+    const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
+
+    if (!hasCurrentPayload) {
+      return allSavedComments
+    }
+
+    const currentAnnotationsJson = JSON.stringify(formData.imageAnnotations)
+    const currentDrawingsJson = JSON.stringify(formData.imageDrawings)
+
+    const isUnchangedFromInitial =
+      currentAnnotationsJson === initialDesignStateRef.current.annotations &&
+      currentDrawingsJson === initialDesignStateRef.current.drawings
+
+    if (isUnchangedFromInitial) {
+      return allSavedComments
+    }
+
+    const hasDuplicateSavedComment = allSavedComments.some(comment =>
+      JSON.stringify(comment.annotations || []) === currentAnnotationsJson &&
+      JSON.stringify(comment.drawings || []) === currentDrawingsJson
+    )
+
+    if (hasDuplicateSavedComment) {
+      return allSavedComments
+    }
+
+    const currentView = annotationRef.current?.getCurrentView() || 'front'
+    const latestSavedComment = latestSavedCommentIdRef.current
+      ? allSavedComments.find(comment => comment.id === latestSavedCommentIdRef.current) || null
+      : (allSavedComments.length > 0 ? allSavedComments[allSavedComments.length - 1] : null)
+
+    if (latestSavedComment) {
+      const updatedComments = allSavedComments.map(comment => {
+        if (comment.id !== latestSavedComment.id) return comment
+        return {
+          ...comment,
+          annotations: formData.imageAnnotations,
+          drawings: formData.imageDrawings,
+          image: customDesignImageBase64 || comment.image || null,
+          view: currentView,
+          timestamp: Date.now()
+        }
+      })
+      return updatedComments
+    }
+
+    const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+
+    const currentComment: SavedDesignComment = {
+      id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      annotations: formData.imageAnnotations,
+      drawings: formData.imageDrawings,
+      image: customDesignImageBase64 || null,
+      title: viewTitle,
+      view: currentView
+    }
+
+    latestSavedCommentIdRef.current = currentComment.id
+    return [...allSavedComments, currentComment]
+  }, [formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
 
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
@@ -289,25 +381,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = [...formData.savedDesignComments]
-
-      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً
-      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
-        const currentView = annotationRef.current?.getCurrentView() || 'front'
-        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
-
-        const currentComment: SavedDesignComment = {
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(),
-          annotations: formData.imageAnnotations,
-          drawings: formData.imageDrawings,
-          image: customDesignImageBase64 || null,
-          title: viewTitle,
-          view: currentView
-        }
-        allSavedComments.push(currentComment)
-      }
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
 
       // تحديث الطلب
       onSave(order.id, {
@@ -421,23 +495,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = [...formData.savedDesignComments]
-      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
-        const currentView = annotationRef.current?.getCurrentView() || 'front'
-        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
-
-        const currentComment: SavedDesignComment = {
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(),
-          annotations: formData.imageAnnotations,
-          drawings: formData.imageDrawings,
-          image: customDesignImageBase64 || null,
-          title: viewTitle,
-          view: currentView
-        }
-        allSavedComments.push(currentComment)
-      }
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
 
       // تحديث الطلب
       onSave(order.id, {
@@ -695,7 +753,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
                   <InteractiveImageAnnotation
                     ref={annotationRef}
-                    imageSrc="/front2.png"
+                    imageSrc={annotationImageSrc}
                     annotations={formData.imageAnnotations}
                     onAnnotationsChange={handleImageAnnotationsChange}
                     drawings={formData.imageDrawings}
