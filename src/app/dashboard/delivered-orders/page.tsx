@@ -270,95 +270,128 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
             <p className="text-gray-600">لم يتم تسليم أي طلبات حتى الآن</p>
           </motion.div>
         ) : (
-          <div className="space-y-6">
+          <div className={deliveredOrders.length === 0 ? "space-y-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}>
             {deliveredOrders.map((order, index) => (
               <motion.div
                 key={order.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                onClick={() => handleViewOrder(order)}
-                className="bg-white rounded-xl p-4 border border-gray-200 hover:border-purple-300 hover:shadow-md transition-all duration-200 cursor-pointer"
+                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
               >
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                  {/* معلومات الطلب الأساسية */}
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-semibold text-gray-800">
-                            {order.client_name}
-                          </h3>
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-600">
-                            {t('delivered') || 'تم التسليم'}
-                          </span>
-                        </div>
-                        <p className="text-sm text-purple-600 font-medium">{order.description}</p>
-                        <p className="text-xs text-gray-500 mt-1">#{order.order_number || order.id}</p>
-                      </div>
-                    </div>
+                {/* Container for Main Content (Left) and Actions (Right) */}
+                <div className="flex items-start justify-between mb-2">
+                  {/* Left Side: Info & Details */}
+                  <div className="flex-1 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                    {/* Basic Info */}
+                    <h3 className="font-semibold text-gray-900 mb-1">
+                      {order.client_name}
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-2">
+                      <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}
+                    </p>
 
-                    {/* تفاصيل الطلب */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-600">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                        <span>{formatDate(order.created_at)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-gray-400" />
-                        <span>{formatDate(order.due_date)}</span>
-                      </div>
-                      {order.worker_id && (
-                        <div className="flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="truncate">{getWorkerName(order.worker_id)}</span>
-                        </div>
-                      )}
-                      {order.client_phone && (
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="truncate">{workerType === 'workshop_manager' ? '***' : order.client_phone}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* السعر */}
-                    {workerType !== 'workshop_manager' && (
-                      <div className="mt-3 inline-flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md">
-                        <span className="text-xs text-gray-600">{t('price_label') || 'السعر'}:</span>
-                        <span className="text-sm font-bold text-green-600">{order.price} {t('sar') || 'ريال'}</span>
+                    {/* Fabric Label */}
+                    {order.fabric && (
+                      <div className="mb-3">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+                          {order.fabric}
+                        </span>
                       </div>
                     )}
+
+                    {/* Details - integrated here to avoid specific gap from right column height */}
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-600">
+                        <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{workerType === 'workshop_manager' ? '***' : order.client_phone}</span>
+                      </p>
+                      {order.description && (
+                        <p className="text-sm text-gray-600 line-clamp-2">
+                          <span className="font-medium">{t('description') || (isArabic ? 'الوصف:' : 'Description:')}</span> {order.description}
+                        </p>
+                      )}
+                      <div className="flex flex-col gap-1">
+                        {order.proof_delivery_date && (
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">{t('proof_delivery_date') || (isArabic ? 'موعد البروفة:' : 'Proof Date:')}</span>{' '}
+                            {formatDate(order.proof_delivery_date)}
+                          </p>
+                        )}
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">{t('delivered_date') || (isArabic ? 'تاريخ التسليم:' : 'Delivered Date:')}</span>{' '}
+                          {formatDate(order.due_date)}
+                        </p>
+                      </div>
+                      {order.worker_id && (
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">{t('worker') || (isArabic ? 'العامل:' : 'Worker:')}</span>{' '}
+                          {getWorkerName(order.worker_id)}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  {/* الإجراءات */}
-                  <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                    <Link
-                      href={`/dashboard/alterations/add?orderId=${order.id}`}
-                      className="p-3 bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 rounded-lg transition-all duration-200 text-center"
-                      title={t('request_alteration') || 'طلب تعديل'}
-                    >
-                      <Wrench className="w-5 h-5 mx-auto" />
-                    </Link>
+                  {/* Right Side: Status & Buttons */}
+                  <div className="flex flex-col items-end gap-3 ml-4">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 text-purple-600">
+                      <Truck className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">
+                        {t('delivered') || 'تم التسليم'}
+                      </span>
+                    </div>
 
-                    <button
-                      onClick={() => handleSendThankYouMessage(order)}
-                      disabled={!order.client_phone}
-                      className="p-3 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="إرسال رسالة شكر"
-                    >
-                      <MessageCircle className="w-5 h-5 mx-auto" />
-                    </button>
+                    {/* Action Buttons Stack */}
+                    <div className="flex flex-col gap-2 mt-1">
+                      <Link
+                        href={`/dashboard/alterations/add?orderId=${order.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
+                        title={t('request_alteration') || 'طلب تعديل'}
+                      >
+                        <Wrench className="w-4 h-4" />
+                      </Link>
 
-                    <button
-                      onClick={(e) => handleDeleteOrder(order, e)}
-                      className="p-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg transition-all duration-200 text-center"
-                      title={t('delete_order') || 'حذف الطلب'}
-                    >
-                      <Trash2 className="w-5 h-5 mx-auto" />
-                    </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSendThankYouMessage(order)
+                        }}
+                        disabled={!order.client_phone}
+                        className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-green-100"
+                        title="إرسال رسالة شكر"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={(e) => handleDeleteOrder(order, e)}
+                        className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                        title={t('delete_order') || 'حذف الطلب'}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {/* Footer - Price */}
+                {workerType !== 'workshop_manager' && (
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 mt-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                    <div>
+                      <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {order.price?.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                      </p>
+                    </div>
+                    {/* For delivered orders, it's usually paid, but we can check paid_amount if available or assume price */}
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">{t('paid') || (isArabic ? 'المدفوع' : 'Paid')}</p>
+                      <p className="text-sm font-semibold text-green-600">
+                        {(order.paid_amount || order.price || 0).toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             ))}
           </div>

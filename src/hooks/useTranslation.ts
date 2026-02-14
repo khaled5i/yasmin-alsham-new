@@ -40,7 +40,7 @@ const arTranslations: Translations = {
   'close': 'إغلاق',
   'confirm': 'تأكيد',
   'loading': 'جاري التحميل...',
-  'saving': 'جاري الحفظ...',
+
 
   // حالات الطلبات
   'pending': 'في الانتظار',
@@ -185,7 +185,7 @@ const arTranslations: Translations = {
   'worker_description': 'يمكنك هنا متابعة طلباتك المخصصة لك وتحديث حالتها',
 
   // مفاتيح صفحة إضافة الطلبات
-  'order_add_error': 'حدث خطأ أثناء إضافة الطلب',
+
   'add_new_order_description': 'قم بإدخال تفاصيل الطلب الجديد بما في ذلك معلومات الزبونة والمقاسات',
   'basic_information': 'المعلومات الأساسية',
   'basic_measurements': 'المقاسات الأساسية',
@@ -211,20 +211,19 @@ const arTranslations: Translations = {
   // مفاتيح صفحة الطلبات
   'order_number': 'رقم الطلب',
   'order_description': 'وصف الطلب',
-  'optional': 'اختياري',
-  'enter_order_number': 'أدخل رقم الطلب',
+
   'search_placeholder': 'البحث بالاسم أو رقم الطلب أو الوصف...',
   'search_by_name': 'البحث بالاسم',
   'search_by_phone': 'البحث برقم الهاتف',
   'search_by_order_number': 'البحث برقم الطلب',
-  'enter_client_name': 'أدخل اسم الزبونة',
+
   'enter_phone_number': 'أدخل رقم الهاتف',
-  'all_orders': 'جميع الطلبات',
+
   'no_orders_assigned': 'لا توجد طلبات مخصصة لك',
   'no_orders_assigned_desc': 'لم يتم تخصيص أي طلبات لك بعد',
   'no_orders_found_desc': 'لا توجد طلبات مطابقة لمعايير البحث',
   'price_label': 'السعر',
-  'sar': 'ريال',
+
   'view': 'عرض',
   'completing': 'جاري الإنهاء...',
   'start_work': 'بدء العمل',
@@ -235,6 +234,10 @@ const arTranslations: Translations = {
   'order_deleted_successfully': 'تم حذف الطلب بنجاح',
   'select_delivery_date': 'اختر موعد التسليم',
   'busy_date_warning': 'تحذير: هذا التاريخ مزدحم بـ {count} طلبات. يمكنك الاستمرار لكن قد يتأخر التسليم.',
+  'due_date': 'موعد التسليم',
+  'proof_delivery_date': 'موعد البروفة',
+  'delivered_date': 'تاريخ التسليم',
+  'paid': 'المدفوع',
 
   // مفاتيح مكون حذف الطلب
   'confirm_delete_order': 'تأكيد حذف الطلب',
@@ -297,7 +300,6 @@ const arTranslations: Translations = {
   'enter_full_name': 'أدخل الاسم الكامل',
   'enter_email': 'أدخل البريد الإلكتروني',
   'enter_password': 'أدخل كلمة المرور',
-  'enter_phone': 'أدخل رقم الهاتف',
   'specialty_required': 'التخصص *',
   'specialty_example': 'مثال: خياطة فساتين السهرة',
   'edit_worker': 'تعديل العامل',
@@ -343,16 +345,13 @@ const arTranslations: Translations = {
   'cancel_appointment': 'إلغاء الموعد',
   'total_appointments': 'إجمالي المواعيد',
   'edit_appointment': 'تعديل الموعد',
-  'confirm_delete': 'تأكيد الحذف',
   'confirm_delete_appointment_message': 'هل أنت متأكد من حذف هذا الموعد؟ لا يمكن التراجع عن هذا الإجراء.',
   'yes_delete': 'نعم، احذف',
   'deleting': 'جاري الحذف...',
-  'saving': 'جاري الحفظ...',
-  'save_changes': 'حفظ التعديلات',
+
   'email_placeholder': 'مثال: example@email.com',
   'customer_name_placeholder': 'مثال: أحمد محمد',
-  'phone_placeholder': 'مثال: 0501234567',
-  'service_type_placeholder': 'مثال: استشارة، قياس، تجربة',
+
   'notes_placeholder': 'أي ملاحظات إضافية...',
   'service_type': 'نوع الخدمة',
   'customer_name': 'اسم العميل',
@@ -373,11 +372,10 @@ const arTranslations: Translations = {
 
   // مفاتيح مكون تعديل الطلب
   'edit_order': 'تعديل الطلب',
-  'order_update_error': 'حدث خطأ أثناء تحديث الطلب',
   'price_sar_required': 'السعر (ريال سعودي) *',
   'status_pending': 'في الانتظار',
   'status_in_progress': 'قيد التنفيذ',
-  'status_completed': 'مكتمل',
+
   'status_delivered': 'تم التسليم',
   'status_cancelled': 'ملغي',
 
@@ -393,7 +391,7 @@ const arTranslations: Translations = {
   'order_details': 'تفاصيل الطلب',
   'customer_information': 'معلومات الزبونة',
   'order_date': 'تاريخ الطلب',
-  'delivery_date': 'موعد التسليم',
+
   'assigned_worker': 'العامل المسؤول',
   'chest_bust': 'الصدر',
   'advanced_tailoring_measurements': 'مقاسات التفصيل المتقدمة',
@@ -426,11 +424,10 @@ const arTranslations: Translations = {
   'orders_in_progress': 'طلبات قيد التنفيذ',
   'appointments_today': 'مواعيد اليوم',
   'finished_orders': 'طلبات منتهية',
-  'all_orders': 'جميع الطلبات',
   'new_orders': 'طلبات جديدة',
   'delivered_orders_count': 'طلبات مسلمة',
   'view_all_orders_button': 'جميع الطلبات',
-  'view_completed_orders_button': 'الطلبات المكتملة',
+
   'productive_day_message': 'نتمنى لك يوم عمل مثمر في تنفيذ الطلبات',
 
   // مفاتيح صفحة طلباتي المكتملة للعامل
@@ -439,13 +436,9 @@ const arTranslations: Translations = {
   'no_completed_orders': 'لا توجد طلبات مكتملة',
   'no_completed_orders_desc': 'لم تكمل أي طلبات بعد. ستظهر الطلبات هنا بعد إنهائها.',
   'photos': 'صور',
-  'order_details': 'تفاصيل الطلب',
-  'customer_information': 'معلومات العميل',
   'order_info': 'معلومات الطلب',
-  'order_date': 'تاريخ الطلب',
-  'delivery_date': 'موعد التسليم',
+
   'measurements': 'المقاسات',
-  'completed_work_images': 'صور العمل المكتمل',
   'design': 'تصميم',
   'enlarged_image': 'صورة مكبرة',
 
@@ -526,7 +519,7 @@ const enTranslations: Translations = {
   'close': 'Close',
   'confirm': 'Confirm',
   'loading': 'Loading...',
-  'saving': 'Saving...',
+
 
   // حالات الطلبات
   'pending': 'Pending',
@@ -636,12 +629,12 @@ const enTranslations: Translations = {
   'dress_description': 'Dress Description',
   'dress_description_placeholder': 'Enter detailed dress description...',
   'other_information': 'Other Information',
-  'enter_client_name': 'Enter client name',
+
   'enter_phone': 'Enter phone number',
   'enter_order_number': 'Enter order number',
   'optional': 'Optional',
-  'sar': 'SAR',
-  'all_orders': 'All Orders',
+
+
   'reset_filters': 'Reset Filters',
   'filter_by_date': 'Filter by Date',
   'search_completed_orders': 'Search completed orders...',
@@ -671,7 +664,7 @@ const enTranslations: Translations = {
   'worker_description': 'Here you can track your assigned orders and update their status',
 
   // مفاتيح صفحة إضافة الطلبات
-  'order_add_error': 'An error occurred while adding the order',
+
   'add_new_order_description': 'Enter the new order details including client information and measurements',
   'basic_information': 'Basic Information',
   'basic_measurements': 'Basic Measurements',
@@ -697,20 +690,19 @@ const enTranslations: Translations = {
   // مفاتيح صفحة الطلبات
   'order_number': 'Order Number',
   'order_description': 'Order Description',
-  'optional': 'Optional',
-  'enter_order_number': 'Enter order number',
+
   'search_placeholder': 'Search by name, order number, or description...',
   'search_by_name': 'Search by Name',
   'search_by_phone': 'Search by Phone',
   'search_by_order_number': 'Search by Order Number',
-  'enter_client_name': 'Enter client name',
+
   'enter_phone_number': 'Enter phone number',
-  'all_orders': 'All Orders',
+
   'no_orders_assigned': 'No orders assigned to you',
   'no_orders_assigned_desc': 'No orders have been assigned to you yet',
   'no_orders_found_desc': 'No orders found matching the search criteria',
   'price_label': 'Price',
-  'sar': 'SAR',
+
   'view': 'View',
   'completing': 'Completing...',
   'start_work': 'Start Work',
@@ -734,6 +726,10 @@ const enTranslations: Translations = {
   'confirm_delete': 'Confirm Delete',
   'select_delivery_date': 'Select delivery date',
   'busy_date_warning': 'Warning: This date is busy with {count} orders. You can continue but delivery may be delayed.',
+  'due_date': 'Due Date',
+  'proof_delivery_date': 'Proof Delivery Date',
+  'delivered_date': 'Delivered Date',
+  'paid': 'Paid',
 
   // مفاتيح مكون الملاحظات الصوتية
   'start_recording': 'Start Recording',
@@ -787,7 +783,7 @@ const enTranslations: Translations = {
   'specialty_required': 'Specialty *',
   'specialty_example': 'Example: Evening dress tailoring',
   'edit_worker': 'Edit Worker',
-  'new_password': 'New Password',
+
   'leave_empty_no_change': 'Leave empty if you don\'t want to change it',
   'no_workers': 'No workers',
   'no_workers_found': 'No workers found matching the search criteria',
@@ -850,12 +846,11 @@ const enTranslations: Translations = {
   'confirm_delete_appointment_message': 'Are you sure you want to delete this appointment? This action cannot be undone.',
   'yes_delete': 'Yes, Delete',
   'deleting': 'Deleting...',
-  'saving': 'Saving...',
+
   'save_changes': 'Save Changes',
   'email_placeholder': 'Example: example@email.com',
   'customer_name_placeholder': 'Example: Ahmad Mohammed',
-  'phone_placeholder': 'Example: 0501234567',
-  'service_type_placeholder': 'Example: Consultation, Measurement, Fitting',
+
   'notes_placeholder': 'Any additional notes...',
   'service_type': 'Service Type',
   'customer_name': 'Customer Name',
@@ -880,7 +875,7 @@ const enTranslations: Translations = {
   'price_sar_required': 'Price (SAR) *',
   'status_pending': 'Pending',
   'status_in_progress': 'In Progress',
-  'status_completed': 'Completed',
+
   'status_delivered': 'Delivered',
   'status_cancelled': 'Cancelled',
 
@@ -929,11 +924,11 @@ const enTranslations: Translations = {
   'orders_in_progress': 'Orders in Progress',
   'appointments_today': 'Today\'s Appointments',
   'finished_orders': 'Finished Orders',
-  'all_orders': 'All Orders',
+
   'new_orders': 'New Orders',
   'delivered_orders_count': 'Delivered Orders',
   'view_all_orders_button': 'All Orders',
-  'view_completed_orders_button': 'Completed Orders',
+
   'productive_day_message': 'We wish you a productive day in completing orders',
 
   // مفاتيح صفحة طلباتي المكتملة للعامل
@@ -946,14 +941,7 @@ const enTranslations: Translations = {
   'customer_information': 'Customer Information',
   'order_info': 'Order Information',
   'order_date': 'Order Date',
-  'delivery_date': 'Delivery Date',
-  'measurements': 'Measurements',
-  'completed_work_images': 'Completed Work Images',
-  'design': 'Design',
-  'enlarged_image': 'Enlarged Image',
 
-  // New measurements keys
-  'add_measurements': 'Add Measurements',
   'edit_measurements': 'Edit Measurements',
   'measurements_modal_title': 'Measurements',
   'save_measurements': 'Save Measurements',

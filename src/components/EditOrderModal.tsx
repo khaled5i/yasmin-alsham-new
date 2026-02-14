@@ -8,7 +8,6 @@ import {
   Save,
   User,
   Users,
-  FileText,
   MessageSquare,
   CheckCircle,
   AlertCircle,
@@ -76,6 +75,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     price: '',
     paidAmount: '',
     paymentMethod: 'cash' as 'cash' | 'card',
+    orderStatus: 'pending' as 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled',
     orderReceivedDate: '',
     assignedWorker: '',
     dueDate: '',
@@ -165,6 +165,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         price: order.price.toString(),
         paidAmount: (order.paid_amount || 0).toString(),
         paymentMethod: (order.payment_method || 'cash') as 'cash' | 'card',
+        orderStatus: (order.status || 'pending') as 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled',
         orderReceivedDate: order.order_received_date || new Date().toISOString().split('T')[0],
         assignedWorker: order.worker_id || '',
         dueDate: order.due_date,
@@ -393,6 +394,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         fabric: formData.fabric || null,
         price: price,
         payment_method: formData.paymentMethod,
+        status: formData.orderStatus,
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : null,
         due_date: formData.dueDate,
@@ -507,6 +509,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         fabric: formData.fabric || null,
         price: price,
         payment_method: formData.paymentMethod,
+        status: formData.orderStatus,
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : null,
         due_date: formData.dueDate,
@@ -803,23 +806,42 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     <span>{t('responsible_worker')}</span>
                   </h3>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('choose_worker')} ({t('optional')})
-                    </label>
-                    <select
-                      value={formData.assignedWorker}
-                      onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                      disabled={isSubmitting}
-                    >
-                      <option value="">{t('choose_worker')}</option>
-                      {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
-                        <option key={worker.id} value={worker.id}>
-                          {worker.user?.full_name || worker.specialty} - {worker.specialty}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {t('choose_worker')} ({t('optional')})
+                      </label>
+                      <select
+                        value={formData.assignedWorker}
+                        onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        disabled={isSubmitting}
+                      >
+                        <option value="">{t('choose_worker')}</option>
+                        {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
+                          <option key={worker.id} value={worker.id}>
+                            {worker.user?.full_name || worker.specialty} - {worker.specialty}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {isArabic ? 'حالة الطلب' : 'Order Status'}
+                      </label>
+                      <select
+                        value={formData.orderStatus}
+                        onChange={(e) => handleInputChange('orderStatus', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        disabled={isSubmitting}
+                      >
+                        <option value="pending">{isArabic ? 'في الانتظار' : 'Pending'}</option>
+                        <option value="in_progress">{isArabic ? 'قيد العمل' : 'In Progress'}</option>
+                        <option value="completed">{isArabic ? 'مكتمل' : 'Completed'}</option>
+                        <option value="delivered">{isArabic ? 'تم التسليم' : 'Delivered'}</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </form>

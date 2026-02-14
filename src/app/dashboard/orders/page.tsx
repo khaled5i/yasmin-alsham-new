@@ -92,11 +92,11 @@ export default function OrdersPage() {
 
   const getStatusInfo = (status: string) => {
     const statusMap = {
-      pending: { label: t('pending'), color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
-      in_progress: { label: t('in_progress'), color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
-      completed: { label: t('completed'), color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
-      delivered: { label: t('delivered'), color: 'text-purple-600', bgColor: 'bg-purple-100', icon: CheckCircle },
-      cancelled: { label: t('cancelled'), color: 'text-red-600', bgColor: 'bg-red-100', icon: AlertCircle }
+      pending: { label: t('pending') || (isArabic ? 'قيد الانتظار' : 'Pending'), color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
+      in_progress: { label: t('in_progress') || (isArabic ? 'جاري التنفيذ' : 'In Progress'), color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
+      completed: { label: t('completed') || (isArabic ? 'مكتمل' : 'Completed'), color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
+      delivered: { label: t('delivered') || (isArabic ? 'تم التسليم' : 'Delivered'), color: 'text-purple-600', bgColor: 'bg-purple-100', icon: CheckCircle },
+      cancelled: { label: t('cancelled') || (isArabic ? 'ملغي' : 'Cancelled'), color: 'text-red-600', bgColor: 'bg-red-100', icon: AlertCircle }
     }
     return statusMap[status as keyof typeof statusMap] || statusMap.pending
   }
@@ -566,7 +566,7 @@ export default function OrdersPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
-          className="space-y-6"
+          className={filteredOrders.length === 0 ? "space-y-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}
         >
           {filteredOrders.length === 0 ? (
             <div className="text-center py-12 bg-white/80 backdrop-blur-sm rounded-2xl border border-pink-100">
@@ -582,159 +582,198 @@ export default function OrdersPage() {
               </p>
             </div>
           ) : (
-            filteredOrders.map((order, index) => (
-              <motion.div
-                key={order.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
-                onClick={() => handleViewOrder(order)}
-                className="bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
-              >
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                  {/* معلومات الطلب الأساسية */}
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-semibold text-gray-800">
-                            {order.client_name}
-                          </h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
-                            {getStatusInfo(order.status).label}
+            filteredOrders.map((order, index) => {
+              const statusInfo = getStatusInfo(order.status)
+              const StatusIcon = statusInfo.icon
+
+              return (
+                <motion.div
+                  key={order.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
+                >
+                  {/* Container for Main Content (Left) and Actions (Right) */}
+                  <div className="flex items-start justify-between mb-2">
+                    {/* Left Side: Info & Details */}
+                    <div className="flex-1 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                      {/* Basic Info */}
+                      <h3 className="font-semibold text-gray-900 mb-1">
+                        {order.client_name}
+                      </h3>
+                      <p className="text-sm text-gray-500 mb-2">
+                        <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}
+                      </p>
+
+                      {/* Fabric Label */}
+                      {order.fabric && (
+                        <div className="mb-3">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+                            {order.fabric}
                           </span>
                         </div>
-                        <p className="text-sm text-pink-600 font-medium">{order.description}</p>
-                        <p className="text-xs text-gray-500 mt-1">#{order.order_number || order.id}</p>
+                      )}
+
+                      {/* Details - integrated here to avoid specific gap from right column height */}
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{order.client_phone}</span>
+                        </p>
+                        {order.description && (
+                          <p className="text-sm text-gray-600 line-clamp-2">
+                            <span className="font-medium">{t('description') || (isArabic ? 'الوصف:' : 'Description:')}</span> {order.description}
+                          </p>
+                        )}
+                        <div className="flex flex-col gap-1">
+                          {order.proof_delivery_date && (
+                            <p className="text-sm text-gray-600">
+                              <span className="font-medium">{t('proof_delivery_date') || (isArabic ? 'موعد البروفة:' : 'Proof Date:')}</span>{' '}
+                              {formatDate(order.proof_delivery_date)}
+                            </p>
+                          )}
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">{t('due_date') || (isArabic ? 'موعد التسليم:' : 'Due Date:')}</span>{' '}
+                            {formatDate(order.due_date)}
+                          </p>
+                        </div>
+                        {order.worker_id && (
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">{t('worker') || (isArabic ? 'العامل:' : 'Worker:')}</span>{' '}
+                            {getWorkerName(order.worker_id)}
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    {/* تفاصيل الطلب */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-600">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                        <span>{formatDate(order.created_at)}</span>
+                    {/* Right Side: Status & Buttons */}
+                    <div className="flex flex-col items-end gap-3 ml-4">
+                      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.bgColor}`}>
+                        <StatusIcon className={`w-3.5 h-3.5 ${statusInfo.color}`} />
+                        <span className={`text-xs font-medium ${statusInfo.color}`}>
+                          {statusInfo.label}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-gray-400" />
-                        <span>{formatDate(order.due_date)}</span>
+
+                      {/* Action Buttons Stack */}
+                      <div className="flex flex-col gap-2 mt-1">
+                        {/* Admin Buttons */}
+                        {user.role === 'admin' && (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleOpenMeasurements(order)
+                              }}
+                              className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors border border-transparent hover:border-purple-100"
+                              title={order.measurements && Object.keys(order.measurements).length > 0 ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
+                            >
+                              <Ruler className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditOrder(order)
+                              }}
+                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
+                              title={t('edit') || 'تعديل'}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handlePrintOrder(order)
+                              }}
+                              className="p-2 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors border border-transparent hover:border-pink-100"
+                              title={t('print_order') || 'طباعة'}
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteOrder(order)
+                              }}
+                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                              title={t('delete') || 'حذف'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+
+                        {/* Worker Buttons */}
+                        {user.role === 'worker' && currentWorkerId && order.worker_id === currentWorkerId && (
+                          <>
+                            {order.status === 'pending' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleStartWork(order.id)
+                                }}
+                                disabled={isProcessing}
+                                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-blue-100"
+                                title={t('start_work') || 'بدء العمل'}
+                              >
+                                {isProcessing ? (
+                                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                  <Package className="w-4 h-4" />
+                                )}
+                              </button>
+                            )}
+
+                            {order.status === 'in_progress' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleOpenCompleteModal(order)
+                                }}
+                                disabled={isProcessing}
+                                className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-green-100"
+                                title={t('complete_order') || 'إنهاء الطلب'}
+                              >
+                                {isProcessing ? (
+                                  <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                  <CheckCircle className="w-4 h-4" />
+                                )}
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
-                      {order.worker_id && (
-                        <div className="flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="truncate">{getWorkerName(order.worker_id)}</span>
-                        </div>
-                      )}
-                      {order.fabric && (
-                        <div className="flex items-center gap-1.5">
-                          <Package className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="truncate">{order.fabric}</span>
-                        </div>
-                      )}
                     </div>
+                  </div>
 
-                    {/* السعر */}
-                    {workerType !== 'workshop_manager' && (
-                      <div className="mt-3 inline-flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md">
-                        <span className="text-xs text-gray-600">{t('price_label')}:</span>
-                        <span className="text-sm font-bold text-green-600">{order.price} {t('sar')}</span>
+                  {/* Footer - Price (Full Width) */}
+                  {workerType !== 'workshop_manager' && (
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-200 mt-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                      <div>
+                        <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {order.price?.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                        </p>
                       </div>
-                    )}
-                  </div>
-
-                  {/* الإجراءات */}
-                  <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                    {/* زر المقاسات - للمدراء فقط */}
-                    {user.role === 'admin' && (
-                      <>
-                        <button
-                          onClick={() => handleOpenMeasurements(order)}
-                          className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200 rounded-lg transition-all duration-200"
-                          title={order.measurements && Object.keys(order.measurements).length > 0 ? t('edit_measurements') : t('add_measurements')}
-                        >
-                          <Ruler className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          onClick={() => handleEditOrder(order)}
-                          className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg transition-all duration-200"
-                          title={t('edit')}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-
-                        {/* زر الطباعة */}
-                        <button
-                          onClick={() => handlePrintOrder(order)}
-                          className="p-2 bg-pink-50 hover:bg-pink-100 text-pink-600 border border-pink-200 rounded-lg transition-all duration-200"
-                          title={t('print_order')}
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          onClick={() => handleDeleteOrder(order)}
-                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg transition-all duration-200"
-                          title={t('delete')}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-
-                    {/* أزرار العامل - تحديث حالة الطلب */}
-                    {user.role === 'worker' && currentWorkerId && order.worker_id === currentWorkerId && (
-                      <>
-                        {order.status === 'pending' && (
-                          <button
-                            onClick={() => handleStartWork(order.id)}
-                            disabled={isProcessing}
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 text-sm rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-                          >
-                            {isProcessing ? (
-                              <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                <span>{t('processing') || 'جاري المعالجة...'}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Package className="w-4 h-4" />
-                                <span>{t('start_work') || 'بدء العمل'}</span>
-                              </>
-                            )}
-                          </button>
-                        )}
-
-                        {order.status === 'in_progress' && (
-                          <button
-                            onClick={() => handleOpenCompleteModal(order)}
-                            disabled={isProcessing}
-                            className="bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 text-sm rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 inline-flex items-center justify-center space-x-1 space-x-reverse disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-                          >
-                            {isProcessing ? (
-                              <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                <span>{t('processing') || 'جاري المعالجة...'}</span>
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle className="w-4 h-4" />
-                                <span>{t('complete_order') || 'إنهاء الطلب'}</span>
-                              </>
-                            )}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            ))
-          )}
-        </motion.div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">{t('paid') || (isArabic ? 'المدفوع' : 'Paid')}</p>
+                        <p className="text-sm font-semibold text-green-600">
+                          {(order.paid_amount || 0).toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )
+            })
+          )}</motion.div >
 
         {/* النوافذ المنبثقة */}
-        <OrderModal
+        < OrderModal
           order={selectedOrder}
           workers={workers}
           isOpen={showViewModal}
@@ -750,116 +789,118 @@ export default function OrdersPage() {
         />
 
         {/* نافذة إنهاء الطلب */}
-        {showCompleteModal && selectedOrder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseModals} />
+        {
+          showCompleteModal && selectedOrder && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseModals} />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            >
-              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold text-gray-800">{t('complete_order_modal_title')}</h3>
-                  <button
-                    onClick={handleCloseModals}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <div className="text-center">
-                  <h4 className="text-lg font-medium text-gray-800 mb-2">
-                    {t('order_label')} {selectedOrder.description}
-                  </h4>
-                  <p className="text-gray-600">
-                    {t('for_client')} {selectedOrder.client_name}
-                  </p>
-                </div>
-
-                <CompletedWorkUpload
-                  onImagesChange={setCompletedImages}
-                  maxImages={3}
-                  disabled={isProcessing}
-                />
-
-                {/* رسالة التحذير - رفع الصور إلزامي */}
-                <div className={`p-4 rounded-lg border ${completedImages.length === 0
-                  ? 'bg-red-50 border-red-200'
-                  : 'bg-yellow-50 border-yellow-200'
-                  }`}>
-                  <div className="flex items-start space-x-3 space-x-reverse">
-                    <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${completedImages.length === 0
-                      ? 'text-red-600'
-                      : 'text-yellow-600'
-                      }`} />
-                    <div>
-                      <p className={`font-medium mb-1 ${completedImages.length === 0
-                        ? 'text-red-800'
-                        : 'text-yellow-800'
-                        }`}>
-                        {completedImages.length === 0
-                          ? 'تنبيه مهم - رفع الصور إلزامي'
-                          : t('important_warning')}
-                      </p>
-                      <p className={`text-sm ${completedImages.length === 0
-                        ? 'text-red-700'
-                        : 'text-yellow-700'
-                        }`}>
-                        {completedImages.length === 0
-                          ? 'يجب رفع صورة واحدة على الأقل للعمل المكتمل قبل إنهاء الطلب. الصور ضرورية لتوثيق جودة العمل.'
-                          : t('complete_order_warning')}
-                      </p>
-                    </div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              >
+                <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-gray-800">{t('complete_order_modal_title')}</h3>
+                    <button
+                      onClick={handleCloseModals}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
                   </div>
                 </div>
 
-                {/* رسالة التحقق عند عدم رفع صور */}
-                {completedImages.length === 0 && (
-                  <div className="bg-red-100 border-l-4 border-red-500 p-4 rounded">
-                    <div className="flex items-center space-x-2 space-x-reverse">
-                      <Camera className="w-5 h-5 text-red-600 flex-shrink-0" />
-                      <p className="text-sm font-medium text-red-800">
-                        لا يمكن إنهاء الطلب بدون رفع صور للعمل المكتمل
-                      </p>
-                    </div>
+                <div className="p-6 space-y-6">
+                  <div className="text-center">
+                    <h4 className="text-lg font-medium text-gray-800 mb-2">
+                      {t('order_label')} {selectedOrder.description}
+                    </h4>
+                    <p className="text-gray-600">
+                      {t('for_client')} {selectedOrder.client_name}
+                    </p>
                   </div>
-                )}
 
-                <div className="flex gap-4 justify-end">
-                  <button
-                    onClick={handleCloseModals}
+                  <CompletedWorkUpload
+                    onImagesChange={setCompletedImages}
+                    maxImages={3}
                     disabled={isProcessing}
-                    className="btn-secondary px-6 py-2"
-                  >
-                    {t('cancel')}
-                  </button>
-                  <button
-                    onClick={handleCompleteWork}
-                    disabled={isProcessing || completedImages.length === 0}
-                    className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 space-x-reverse"
-                  >
-                    {isProcessing ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>{t('completing')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="w-4 h-4" />
-                        <span>{t('complete_order')}</span>
-                      </>
-                    )}
-                  </button>
+                  />
+
+                  {/* رسالة التحذير - رفع الصور إلزامي */}
+                  <div className={`p-4 rounded-lg border ${completedImages.length === 0
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-yellow-50 border-yellow-200'
+                    }`}>
+                    <div className="flex items-start space-x-3 space-x-reverse">
+                      <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${completedImages.length === 0
+                        ? 'text-red-600'
+                        : 'text-yellow-600'
+                        }`} />
+                      <div>
+                        <p className={`font-medium mb-1 ${completedImages.length === 0
+                          ? 'text-red-800'
+                          : 'text-yellow-800'
+                          }`}>
+                          {completedImages.length === 0
+                            ? 'تنبيه مهم - رفع الصور إلزامي'
+                            : t('important_warning')}
+                        </p>
+                        <p className={`text-sm ${completedImages.length === 0
+                          ? 'text-red-700'
+                          : 'text-yellow-700'
+                          }`}>
+                          {completedImages.length === 0
+                            ? 'يجب رفع صورة واحدة على الأقل للعمل المكتمل قبل إنهاء الطلب. الصور ضرورية لتوثيق جودة العمل.'
+                            : t('complete_order_warning')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* رسالة التحقق عند عدم رفع صور */}
+                  {completedImages.length === 0 && (
+                    <div className="bg-red-100 border-l-4 border-red-500 p-4 rounded">
+                      <div className="flex items-center space-x-2 space-x-reverse">
+                        <Camera className="w-5 h-5 text-red-600 flex-shrink-0" />
+                        <p className="text-sm font-medium text-red-800">
+                          لا يمكن إنهاء الطلب بدون رفع صور للعمل المكتمل
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-4 justify-end">
+                    <button
+                      onClick={handleCloseModals}
+                      disabled={isProcessing}
+                      className="btn-secondary px-6 py-2"
+                    >
+                      {t('cancel')}
+                    </button>
+                    <button
+                      onClick={handleCompleteWork}
+                      disabled={isProcessing || completedImages.length === 0}
+                      className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 space-x-reverse"
+                    >
+                      {isProcessing ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>{t('completing')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4" />
+                          <span>{t('complete_order')}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
+              </motion.div>
+            </div>
+          )
+        }
 
         {/* نافذة حذف الطلب */}
         <DeleteOrderModal
@@ -870,31 +911,35 @@ export default function OrdersPage() {
         />
 
         {/* نافذة المقاسات */}
-        {measurementsOrder && (
-          <MeasurementsModal
-            isOpen={showMeasurementsModal}
-            onClose={() => {
-              setShowMeasurementsModal(false)
-              setMeasurementsOrder(null)
-            }}
-            onSave={handleSaveMeasurements}
-            initialMeasurements={measurementsOrder.measurements || {}}
-            orderId={measurementsOrder.id}
-          />
-        )}
+        {
+          measurementsOrder && (
+            <MeasurementsModal
+              isOpen={showMeasurementsModal}
+              onClose={() => {
+                setShowMeasurementsModal(false)
+                setMeasurementsOrder(null)
+              }}
+              onSave={handleSaveMeasurements}
+              initialMeasurements={measurementsOrder.measurements || {}}
+              orderId={measurementsOrder.id}
+            />
+          )
+        }
 
         {/* مودال الطباعة */}
-        {printOrder && (
-          <PrintOrderModal
-            isOpen={showPrintModal}
-            onClose={() => {
-              setShowPrintModal(false)
-              setPrintOrder(null)
-            }}
-            order={printOrder}
-          />
-        )}
-      </div>
-    </div>
+        {
+          printOrder && (
+            <PrintOrderModal
+              isOpen={showPrintModal}
+              onClose={() => {
+                setShowPrintModal(false)
+                setPrintOrder(null)
+              }}
+              order={printOrder}
+            />
+          )
+        }
+      </div >
+    </div >
   )
 }
