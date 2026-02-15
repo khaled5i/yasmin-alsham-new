@@ -6,7 +6,8 @@
       "Bash(ls:*)",
       "Bash(npx tsc:*)",
       "Bash(git push:*)",
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(npx next build:*)"
     ]
   }
 }

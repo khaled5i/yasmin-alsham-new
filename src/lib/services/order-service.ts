@@ -701,4 +701,35 @@ export const orderService = {
     }
   },
 
+  /**
+   * جلب المقاسات فقط لطلب معين (أخف بكثير من getById)
+   * يُستخدم لتحميل تعليقات التصميم والمقاسات عند الحاجة فقط
+   */
+  async getMeasurements(id: string): Promise<{ data: Record<string, any> | null; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: null, error: 'Supabase is not configured.' }
+    }
+
+    try {
+      if (isDev) console.log('📐 Fetching measurements for order:', id)
+
+      const { data, error } = await supabase
+        .from('orders')
+        .select('measurements')
+        .eq('id', id)
+        .single()
+
+      if (error) {
+        if (isDev) console.error('❌ Supabase error fetching measurements:', error.message)
+        return { data: null, error: error.message }
+      }
+
+      if (isDev) console.log('✅ Measurements fetched successfully')
+      return { data: (data?.measurements as Record<string, any>) || {}, error: null }
+    } catch (error: any) {
+      console.error('❌ Error in getMeasurements:', error.message)
+      return { data: null, error: error.message || 'خطأ في جلب المقاسات' }
+    }
+  },
+
 }

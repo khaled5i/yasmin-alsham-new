@@ -35,7 +35,7 @@ import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
-import { renderDrawingsOnCanvas, loadImage, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
+import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 
 interface OrderModalProps {
   order: Order | null
@@ -52,6 +52,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [showPrintModal, setShowPrintModal] = useState(false)
   // Full order data (fetched when lightweight order is missing measurements)
   const [fullOrder, setFullOrder] = useState<Order | null>(null)
+  const [measurementsData, setMeasurementsData] = useState<Record<string, any> | null>(null)
+  const [isMeasurementsLoading, setIsMeasurementsLoading] = useState(false)
   const order = fullOrder || initialOrder
 
   const { updateOrder } = useOrderStore()
@@ -92,14 +94,14 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }
 
   // Fetch full order data when opened with lightweight-loaded order
-  // (list views exclude measurements which contains design comments)
+  // (needed for voice_transcriptions, completed_images which aren't in list columns)
   useEffect(() => {
     if (!isOpen || !initialOrder) {
       setFullOrder(null)
       return
     }
 
-    // If measurements is already present, no need to fetch
+    // If measurements is already present, the order is fully loaded
     if (initialOrder.measurements !== undefined) {
       setFullOrder(null)
       return
@@ -115,7 +117,38 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return () => { cancelled = true }
   }, [isOpen, initialOrder?.id])
 
-  // تحديث الملاحظات الصوتية وتعليقات التصميم عند تغيير الطلب
+  // Fetch measurements separately (lighter than getById - only measurements column)
+  // Design comments load from here faster than waiting for the full getById call
+  useEffect(() => {
+    if (!isOpen || !initialOrder) {
+      setMeasurementsData(null)
+      setIsMeasurementsLoading(false)
+      return
+    }
+
+    // If measurements is already present in the order, use it directly
+    if (initialOrder.measurements !== undefined) {
+      setMeasurementsData((initialOrder.measurements as any) || {})
+      setIsMeasurementsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setIsMeasurementsLoading(true)
+
+    orderService.getMeasurements(initialOrder.id)
+      .then((result) => {
+        if (cancelled || result.error) return
+        setMeasurementsData(result.data || {})
+      })
+      .finally(() => {
+        if (!cancelled) setIsMeasurementsLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [isOpen, initialOrder?.id, initialOrder?.measurements])
+
+  // تحديث الملاحظات الصوتية عند وصول بيانات الطلب الكاملة (voice_transcriptions)
   useEffect(() => {
     if (order) {
       const initialVoiceNotes = (order as any).voice_transcriptions && Array.isArray((order as any).voice_transcriptions)
@@ -126,24 +159,23 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           timestamp: Date.now()
         })) || []
       setVoiceNotes(initialVoiceNotes)
-
-      // استرجاع تعليقات التصميم من measurements
-      const measurements = order.measurements as any
-      if (measurements) {
-        // استرجاع التعليقات المتعددة (البنية الجديدة)
-        setSavedDesignComments(measurements.saved_design_comments || [])
-        // للتوافق مع الكود القديم
-        setImageAnnotations(measurements.image_annotations || [])
-        setImageDrawings(measurements.image_drawings || [])
-        setCustomDesignImage(measurements.custom_design_image || null)
-      } else {
-        setSavedDesignComments([])
-        setImageAnnotations([])
-        setImageDrawings([])
-        setCustomDesignImage(null)
-      }
     }
   }, [order])
+
+  // استخراج تعليقات التصميم من measurementsData (أسرع - يصل قبل fullOrder)
+  useEffect(() => {
+    if (measurementsData) {
+      setSavedDesignComments(measurementsData.saved_design_comments || [])
+      setImageAnnotations(measurementsData.image_annotations || [])
+      setImageDrawings(measurementsData.image_drawings || [])
+      setCustomDesignImage(measurementsData.custom_design_image || null)
+    } else {
+      setSavedDesignComments([])
+      setImageAnnotations([])
+      setImageDrawings([])
+      setCustomDesignImage(null)
+    }
+  }, [measurementsData])
 
   // تحديث حالة العامل المحدد عند فتح المودال
   useEffect(() => {
@@ -304,7 +336,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     }
   }, [showAnnotationLanguageDropdown])
 
-  // دالة لرسم الخطوط على canvas مع دعم الممحاة الصحيح
+  // دالة لرسم الخطوط على canvas (overlay فوق <img>)
+  // ملاحظة: لا نمرر baseImage لأن هذا canvas شفاف فوق عنصر <img>.
+  // الممحاة تستخدم destination-out لجعل البكسلات شفافة → الصورة أسفل الـ <img> تظهر بشكل طبيعي.
+  // تمرير baseImage كان يسبب ظهور خطوط بيضاء بحدود واضحة لأن eraseWithBaseImage
+  // يضيف بكسلات مرئية على الطبقة الشفافة.
   const drawPathsOnCanvas = async (
     canvas: HTMLCanvasElement,
     drawings: DrawingPath[],
@@ -331,26 +367,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     // مسح canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    try {
-      // تحميل الصورة الأساسية لدعم الممحاة الصحيح
-      const baseImage = await loadImage(imageSrc)
-
-      // حساب أبعاد الصورة داخل الحاوية (object-contain)
-      const imageRect = calculateObjectContainDimensions(
-        baseImage.width,
-        baseImage.height,
-        canvas.width,
-        canvas.height
-      )
-
-      // استخدام المحرك المشترك للرسم مع baseImage و imageRect:
-      // هذا يضمن أن الممحاة تعمل بشكل صحيح باستخدام clip+redraw
-      renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height, baseImage, imageRect)
-    } catch (error) {
-      console.error('Error loading image for canvas drawing:', error)
-      // Fallback: رسم بدون baseImage (قد لا تعمل الممحاة بشكل مثالي)
-      renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height)
-    }
+    // رسم بدون baseImage: الممحاة تستخدم destination-out (شفافية) بدلاً من clip+redraw
+    renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height)
   }
 
   // رسم الخطوط على canvas للتعليقات القديمة
@@ -1097,7 +1115,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               )}
 
               {/* 4️⃣ قسم المقاسات */}
-              {order.measurements && Object.values(order.measurements).some(val => val !== undefined && val !== '') && (
+              {(measurementsData || order.measurements) && Object.values(measurementsData || order.measurements || {}).some(val => val !== undefined && val !== '') && (
                 <div className="space-y-4 sm:space-y-6">
                   <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <Ruler className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
@@ -1109,7 +1127,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   {/* المقاسات الرقمية */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                     {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => {
-                      const value = (order.measurements as any)?.[key]
+                      const value = (measurementsData || order.measurements as any)?.[key]
                       if (!value) return null
 
                       return (
@@ -1124,14 +1142,14 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   </div>
 
                   {/* مقاسات إضافية */}
-                  {(order.measurements as any)?.additional_notes && (
+                  {(measurementsData || order.measurements as any)?.additional_notes && (
                     <div className="space-y-2">
                       <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
                         {t('measurement_additional_notes')}
                       </h4>
                       <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
                         <p className="text-sm sm:text-base text-gray-700 whitespace-pre-wrap">
-                          {(order.measurements as any).additional_notes}
+                          {(measurementsData || order.measurements as any)?.additional_notes}
                         </p>
                       </div>
                     </div>

@@ -629,8 +629,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       const containerWidth = containerRect.width
       const containerHeight = containerRect.height
 
-      // إنشاء canvas بنفس أبعاد الـ container (مع scale للجودة العالية)
-      const scale = 2
+      // إنشاء canvas بنفس أبعاد الـ container (مع scale للجودة الجيدة)
+      // scale=1.5 بدلاً من 2 لتقليل حجم الصورة المركّبة بنسبة ~45%
+      const scale = 1.5
       const canvas = document.createElement('canvas')
       canvas.width = containerWidth * scale
       canvas.height = containerHeight * scale
@@ -821,7 +822,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ctx.restore()
         })
 
-      return canvas.toDataURL('image/png')
+      // JPEG مع ضغط 0.7 بدلاً من PNG بدون ضغط
+      // هذا يقلل حجم الصورة المركّبة من ~5MB إلى ~500KB
+      return canvas.toDataURL('image/jpeg', 0.7)
     } catch (error) {
       console.error('Error generating composite image:', error)
       return null
