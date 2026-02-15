@@ -463,6 +463,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const drawingScrollLockRef = useRef<{ overflow: string; touchAction: string } | null>(null)
 
   // حالات التعليقات الصوتية
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
@@ -1100,20 +1101,37 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const displayedImageSrc = imagePreview || imageSrc
 
   // ===== منع تحريك الصفحة أثناء الرسم على الأجهزة المحمولة =====
-  useEffect(() => {
-    if (!isDrawingMode) return
+  const lockDrawingScroll = useCallback(() => {
+    if (drawingScrollLockRef.current) return
 
-    // منع التمرير على body
-    const originalOverflow = document.body.style.overflow
-    const originalTouchAction = document.body.style.touchAction
+    drawingScrollLockRef.current = {
+      overflow: document.body.style.overflow,
+      touchAction: document.body.style.touchAction
+    }
+
     document.body.style.overflow = 'hidden'
     document.body.style.touchAction = 'none'
+  }, [])
 
-    // منع أحداث اللمس الافتراضية على الحاوية
-    const container = containerRef.current
-    if (!container) return
+  const unlockDrawingScroll = useCallback(() => {
+    if (!drawingScrollLockRef.current) return
+
+    document.body.style.overflow = drawingScrollLockRef.current.overflow
+    document.body.style.touchAction = drawingScrollLockRef.current.touchAction
+    drawingScrollLockRef.current = null
+  }, [])
+
+  useEffect(() => {
+    if (!isDrawingMode) {
+      unlockDrawingScroll()
+      return
+    }
+
+    lockDrawingScroll()
 
     const preventTouchMove = (e: TouchEvent) => {
+      const container = containerRef.current
+      if (!container) return
       // منع التمرير فقط إذا كان اللمس داخل الحاوية
       if (container.contains(e.target as Node)) {
         e.preventDefault()
@@ -1121,6 +1139,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
 
     const preventTouchStart = (e: TouchEvent) => {
+      const container = containerRef.current
+      if (!container) return
       // منع multi-touch zooming
       if (e.touches.length > 1 && container.contains(e.target as Node)) {
         e.preventDefault()
@@ -1132,13 +1152,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     document.addEventListener('touchstart', preventTouchStart, { passive: false })
 
     return () => {
-      // إعادة الحالة الأصلية
-      document.body.style.overflow = originalOverflow
-      document.body.style.touchAction = originalTouchAction
       document.removeEventListener('touchmove', preventTouchMove)
       document.removeEventListener('touchstart', preventTouchStart)
+      unlockDrawingScroll()
     }
-  }, [isDrawingMode])
+  }, [isDrawingMode, lockDrawingScroll, unlockDrawingScroll])
 
   // ===== إغلاق النوافذ المنبثقة عند الضغط خارجها =====
   useEffect(() => {
