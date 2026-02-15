@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Printer, Check, Image as ImageIcon, Loader2 } from 'lucide-react'
-import { Order } from '@/lib/services/order-service'
+import { Order, orderService } from '@/lib/services/order-service'
 import OrderPrintLayout from './OrderPrintLayout'
 import type { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
@@ -24,13 +24,41 @@ interface PrintOrderModalProps {
   order: Order
 }
 
-export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderModalProps) {
+export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }: PrintOrderModalProps) {
+  // Full order data (fetched when lightweight order is missing measurements)
+  const [fullOrder, setFullOrder] = useState<Order | null>(null)
+  const order = fullOrder || initialOrder
+
   const [printableImages, setPrintableImages] = useState<string[]>([])
   const [designComments, setDesignComments] = useState<string>(order.notes || '')
   const [designCommentsSnapshots, setDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
   const [selectedCommentsIds, setSelectedCommentsIds] = useState<string[]>([]) // التعليقات المحددة للطباعة
   const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
+
+  // Fetch full order data when opened with lightweight-loaded order
+  // (list views exclude measurements which contains design comments)
+  useEffect(() => {
+    if (!isOpen || !initialOrder) {
+      setFullOrder(null)
+      return
+    }
+
+    // If measurements is already present, no need to fetch
+    if (initialOrder.measurements !== undefined) {
+      setFullOrder(null)
+      return
+    }
+
+    let cancelled = false
+    orderService.getById(initialOrder.id).then(result => {
+      if (!cancelled && result.data) {
+        setFullOrder(result.data)
+      }
+    })
+
+    return () => { cancelled = true }
+  }, [isOpen, initialOrder?.id])
 
   // الحصول على التعليقات المحددة فقط
   const selectedCommentsSnapshots = designCommentsSnapshots.filter(
@@ -367,7 +395,7 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
 
   // تهيئة الصور المحددة للطباعة من الطلب
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && order) {
       // تحديد أول صورتين تلقائياً
       const images = order.images || []
       const imageOnlyList = images.filter(img =>
@@ -375,6 +403,9 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
       )
       setPrintableImages(imageOnlyList.slice(0, 2))
       setDesignComments(order.notes || '')
+
+      // إعادة توليد التعليقات عند تحديث البيانات
+      // يحدث هذا عندما يتم جلب fullOrder (مع measurements)
       generateAllSnapshots()
     }
   }, [isOpen, order, generateAllSnapshots])
@@ -432,8 +463,20 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
     html, body { height: 100%; }
     body { font-family: 'Cairo', sans-serif; direction: rtl; }
     .print-layout { display: block !important; }
-    .print-page { width: 100%; min-height: 100vh; page-break-after: always; padding: 20px; }
+    .print-page {
+      width: 100%;
+      min-height: 100vh;
+      page-break-after: always;
+      padding: 20px;
+      position: relative;
+      box-sizing: border-box;
+    }
     .print-page:last-child { page-break-after: auto; }
+    /* منع انقلاب الصفحات في الطباعة على الوجهين */
+    .page-front-image, .design-comment-page, .page-back {
+      transform: rotate(0deg) !important;
+      -webkit-transform: rotate(0deg) !important;
+    }
     .page-front { display: flex; flex-direction: column; }
     .print-header { text-align: center; margin-bottom: 6px; padding-bottom: 0; border-bottom: none; }
     .print-header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 12px; font-weight: 500; color: #333; }
@@ -517,10 +560,44 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
     .mobile-print-btn { display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: linear-gradient(135deg, #ec4899, #f43f5e); color: white; border: none; border-radius: 30px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4); z-index: 1000; font-family: 'Cairo', sans-serif; }
     .mobile-print-btn:active { transform: translateX(-50%) scale(0.95); }
     @media print {
-      @page { size: A4; margin: 1cm; }
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      @page {
+        size: A4 portrait;
+        margin: 1cm;
+      }
+      @page :left {
+        margin-left: 1.5cm;
+        margin-right: 1cm;
+      }
+      @page :right {
+        margin-left: 1cm;
+        margin-right: 1.5cm;
+      }
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        direction: rtl;
+      }
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      .print-layout, .print-container {
+        transform: none !important;
+        -webkit-transform: none !important;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+      }
       html::after { content: none !important; }
       .mobile-print-btn { display: none !important; }
+      /* منع انقلاب الصفحات الزوجية في الطباعة على الوجهين */
+      .print-page {
+        page-break-inside: avoid;
+        transform: none !important;
+      }
     }
     @media screen {
       .mobile-print-btn { display: block; }
@@ -533,18 +610,25 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
     const isMobile = isMobileDevice()
 
     if (isMobile) {
-      // على الأجهزة المحمولة: استخدام iframe مخفي بدلاً من نافذة منبثقة
-      // هذا يعمل بشكل أفضل على iOS Safari و Android Chrome
-
-      // إنشاء iframe مخفي
-      let printFrame = document.getElementById('print-frame') as HTMLIFrameElement
+      // على الهاتف/التابلت: استخدام iframe مرئي مع زر طباعة
+      // إنشاء iframe بحجم كامل
+      let printFrame = document.getElementById('mobile-print-frame') as HTMLIFrameElement
       if (printFrame) {
         printFrame.remove()
       }
 
       printFrame = document.createElement('iframe')
-      printFrame.id = 'print-frame'
-      printFrame.style.cssText = 'position: fixed; top: -10000px; left: -10000px; width: 0; height: 0; border: none;'
+      printFrame.id = 'mobile-print-frame'
+      printFrame.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: none;
+        z-index: 99999;
+        background: white;
+      `
       document.body.appendChild(printFrame)
 
       const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document
@@ -562,49 +646,72 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>طباعة الطلب - ${order.client_name}</title>
           <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-          <style>${getPrintStyles()}</style>
+          <style>
+            ${getPrintStyles()}
+            /* أزرار التحكم للموبايل */
+            .mobile-controls {
+              position: fixed;
+              top: 10px;
+              left: 50%;
+              transform: translateX(-50%);
+              z-index: 1000;
+              display: flex;
+              gap: 10px;
+              background: white;
+              padding: 10px;
+              border-radius: 10px;
+              box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            }
+            .mobile-controls button {
+              padding: 12px 24px;
+              border: none;
+              border-radius: 8px;
+              font-family: 'Cairo', sans-serif;
+              font-size: 16px;
+              font-weight: bold;
+              cursor: pointer;
+              transition: all 0.3s;
+            }
+            .print-btn {
+              background: linear-gradient(135deg, #ec4899, #f43f5e);
+              color: white;
+            }
+            .print-btn:active {
+              transform: scale(0.95);
+            }
+            .close-btn {
+              background: #6b7280;
+              color: white;
+            }
+            .close-btn:active {
+              transform: scale(0.95);
+            }
+            @media print {
+              .mobile-controls { display: none !important; }
+            }
+          </style>
         </head>
         <body>
+          <div class="mobile-controls">
+            <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+            <button class="close-btn" onclick="parent.document.getElementById('mobile-print-frame').remove()">✖ إغلاق</button>
+          </div>
           <div class="print-container">${printContent}</div>
+          <script>
+            // إغلاق iframe بعد الطباعة (اختياري)
+            window.onafterprint = function() {
+              // يمكن إلغاء التعليق لإغلاق تلقائي بعد الطباعة
+              // setTimeout(() => parent.document.getElementById('mobile-print-frame').remove(), 500);
+            };
+          </script>
         </body>
         </html>
       `)
       frameDoc.close()
-
-      // انتظار تحميل الخطوط والصور
-      setTimeout(() => {
-        try {
-          printFrame.contentWindow?.focus()
-          printFrame.contentWindow?.print()
-        } catch (e) {
-          // إذا فشل الـ iframe، نفتح صفحة جديدة
-          const printWindow = window.open('', '_blank')
-          if (printWindow) {
-            printWindow.document.write(`
-              <!DOCTYPE html>
-              <html dir="rtl" lang="ar">
-              <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>طباعة الطلب - ${order.client_name}</title>
-                <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-                <style>${getPrintStyles()}</style>
-              </head>
-              <body>
-                <button class="mobile-print-btn" onclick="window.print()">🖨️ اضغط للطباعة</button>
-                <div class="print-container">${printContent}</div>
-              </body>
-              </html>
-            `)
-            printWindow.document.close()
-          } else {
-            alert('يرجى السماح بالنوافذ المنبثقة للطباعة')
-          }
-        }
-      }, 1000)
     } else {
-      // على الكمبيوتر: استخدام النافذة المنبثقة (الطريقة الأصلية)
-      const printWindow = window.open('', '_blank')
+      // على الكمبيوتر: استخدام نافذة منبثقة (كما هو)
+      const printWindow = window.open('', '_blank', 'width=800,height=600')
+
       if (!printWindow) {
         alert('يرجى السماح بالنوافذ المنبثقة للطباعة')
         return
@@ -628,7 +735,7 @@ export default function PrintOrderModal({ isOpen, onClose, order }: PrintOrderMo
               setTimeout(function() {
                 window.print();
                 window.close();
-              }, 500);
+              }, 1000);
             }
           </script>
         </body>
