@@ -534,27 +534,22 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // حالة لتتبع الصورة المعروضة حالياً (لزر الأمام/الخلف)
   const [internalImageOverride, setInternalImageOverride] = useState<string | null>(null)
 
-  // الصورة الفعلية المعروضة: 
-  // 1. صورة المعاينة (رفع ملف) - لها الأولوية القصوى
-  // 2. تراكب داخلي (زر الأمام/الخلف) - أولوية متوسطة
-  // 3. الصورة الممررة عبر الـ Props - أولوية دنيا
+  // الصورة الفعلية المعروضة:
+  // 1) صورة المعاينة من File الحالي
+  // 2) صورة مخصصة محفوظة سابقاً (base64)
+  // 3) مسار الواجهة الافتراضية (أمام/خلف)
+  // 4) الصورة الممررة عبر props كحل أخير
   const effectiveImageSrc = useMemo(() => {
     if (imagePreview) return imagePreview
+    if (currentImageBase64) return currentImageBase64
     if (internalImageOverride) return internalImageOverride
     return imageSrc
-  }, [imageSrc, imagePreview, internalImageOverride])
+  }, [imageSrc, imagePreview, currentImageBase64, internalImageOverride])
 
   const isAnnotationInteractiveTarget = useCallback((target: EventTarget | null) => {
     if (!(target instanceof Element)) return false
     return Boolean(target.closest('[data-annotation-interactive="true"]'))
   }, [])
-
-  // تحسين: إعادة تعيين التراكب الداخلي عند تغيير الصورة المخصصة
-  useEffect(() => {
-    if (imagePreview) {
-      setInternalImageOverride(null)
-    }
-  }, [imagePreview])
 
   // ضبط الوضع الافتراضي لرفض اللمس بناءً على حجم الشاشة مرة واحدة عند التحميل
   useEffect(() => {
@@ -882,10 +877,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     // مسح التعليق الحالي
     onAnnotationsChange([])
     onDrawingsChange([])
-    onImageChange?.(null)
 
     return newComment
-  }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange, generateCompositeImage, getCurrentView])
+  }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, generateCompositeImage, getCurrentView])
 
   // تحديث المرجع لاستخدامه في handleViewSwitch
   saveCurrentRef.current = saveCurrentComment
@@ -905,8 +899,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     // نعتبر أننا في العرض المطلوب إذا:
     // - لا توجد صورة مخصصة (imagePreview)
     // - المسار الحالي يطابق المسار المستهدف (سواء من الـ override أو الـ prop)
-    const currentPath = internalImageOverride || imageSrc
-    const isAlreadyInView = !imagePreview && currentPath.includes(targetView === 'front' ? 'front2.png' : 'back2.png')
+    const isAlreadyInView = getCurrentView() === targetView
 
     if (isAlreadyInView) return
 
@@ -920,15 +913,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       onDrawingsChange([])
     }
 
-    // 3. إلغاء الصورة المخصصة إذا وجدت
-    if (imagePreview) {
-      onImageChange?.(null)
-    }
-
-    // 4. تعيين العرض الجديد
+    // 3. تعيين العرض الجديد مع الإبقاء على الصورة المخصصة إن وجدت
     setInternalImageOverride(targetPath)
 
-  }, [imageSrc, imagePreview, internalImageOverride, annotations.length, drawings.length, saveCurrentComment, onImageChange, onAnnotationsChange, onDrawingsChange])
+  }, [annotations.length, drawings.length, saveCurrentComment, onAnnotationsChange, onDrawingsChange, getCurrentView])
 
   // دالة حذف تعليق محفوظ
   const deleteSavedComment = useCallback((commentId: string) => {
@@ -989,21 +977,17 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setEditingCommentId(null)
     setIsDrawingMode(false)
     setIsRecordingActive(false)
-    // تعيين الصورة المناسبة حسب نوع العرض (أمام/خلف)
-    if (comment.view) {
-      const targetPath = comment.view === 'front' ? '/front2.png' : '/back2.png'
+    // تعيين الواجهة المناسبة حسب نوع العرض (مع دعم البيانات القديمة المعتمدة على العنوان)
+    const inferredView = comment.view ?? getViewFromTitle(comment.title)
+    if (inferredView) {
+      const targetPath = inferredView === 'front' ? '/front2.png' : '/back2.png'
       setInternalImageOverride(targetPath)
-
-      if (imagePreview) {
-        setImagePreview(null)
-        onImageChange?.(null)
-      }
     } else if (comment.image && comment.image.startsWith('data:')) {
       setImagePreview(comment.image)
       setInternalImageOverride(null)
     }
     // لا نحمل الصورة لأنها base64 وليست File
-  }, [hasUnsavedCommentChanges, saveCurrentComment, onAnnotationsChange, onDrawingsChange, imagePreview, onImageChange])
+  }, [hasUnsavedCommentChanges, saveCurrentComment, onAnnotationsChange, onDrawingsChange])
 
   // دالة تحديث التعليق المحفوظ الذي يتم عرضه
   const updateViewingComment = useCallback(async () => {
@@ -1022,6 +1006,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
     // إنشاء الصورة المركّبة الجديدة
     const compositeImage = await generateCompositeImage()
+    const currentView = getCurrentView()
 
     const updatedComments = savedComments.map(c => {
       if (c.id === viewingCommentId) {
@@ -1030,6 +1015,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           annotations: [...annotations],
           drawings: [...drawings],
           image: imageBase64 ? 'custom' : (c.image || null),
+          view: currentView,
           compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
         }
@@ -1045,7 +1031,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     // مسح التعليقات والرسومات الحالية لتجنب ظهور زر "حفظ التعليق"
     onAnnotationsChange([])
     onDrawingsChange([])
-  }, [viewingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, generateCompositeImage])
+  }, [viewingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, generateCompositeImage, getCurrentView])
 
   // دالة تحديث تعليق محفوظ
   const updateSavedComment = useCallback(async () => {
@@ -1064,6 +1050,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
     // إنشاء الصورة المركّبة الجديدة
     const compositeImage = await generateCompositeImage()
+    const currentView = getCurrentView()
 
     const updatedComments = savedComments.map(c => {
       if (c.id === editingCommentId) {
@@ -1072,6 +1059,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           annotations: [...annotations],
           drawings: [...drawings],
           image: imageBase64 ? 'custom' : (c.image || null),
+          view: currentView,
           compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
         }
@@ -1083,16 +1071,14 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setEditingCommentId(null)
     onAnnotationsChange([])
     onDrawingsChange([])
-    onImageChange?.(null)
-  }, [editingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, onImageChange, generateCompositeImage])
+  }, [editingCommentId, annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, generateCompositeImage, getCurrentView])
 
   // دالة إلغاء التعديل
   const cancelEditing = useCallback(() => {
     setEditingCommentId(null)
     onAnnotationsChange([])
     onDrawingsChange([])
-    onImageChange?.(null)
-  }, [onAnnotationsChange, onDrawingsChange, onImageChange])
+  }, [onAnnotationsChange, onDrawingsChange])
 
   // إنشاء URL للصورة المختارة
   useEffect(() => {
@@ -1105,8 +1091,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
   }, [customImage])
 
-  // الصورة المعروضة (المخصصة أو الافتراضية)
-  const displayedImageSrc = imagePreview || imageSrc
+  const activeView = getCurrentView()
 
   // ===== منع تحريك الصفحة أثناء الرسم على الأجهزة المحمولة =====
   const lockDrawingScroll = useCallback(() => {
@@ -2645,7 +2630,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           <button
             type="button"
             onClick={() => handleViewSwitch('front')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${!imagePreview && (internalImageOverride === '/front2.png' || (!internalImageOverride && imageSrc.includes('front')))
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeView === 'front'
               ? 'bg-pink-100 text-pink-700 border border-pink-300'
               : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
               }`}
@@ -2655,7 +2640,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           <button
             type="button"
             onClick={() => handleViewSwitch('back')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${!imagePreview && (internalImageOverride === '/back2.png' || (!internalImageOverride && imageSrc.includes('back')))
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeView === 'back'
               ? 'bg-pink-100 text-pink-700 border border-pink-300'
               : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
               }`}
