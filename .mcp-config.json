@@ -8,7 +8,14 @@
       "env": {
         "API_KEY": "sk-user-V3AB0gDPY3CxQY4ycKCYaxzd8yx8cCErMJP5-UhHDNvlw4aB2gQud7lHWHK2LUT9wqkS3etWr42O0vwOfHp_yRCmC3GmV_L2ufDmCVunoOW8lJ8hsUGdM5otKuh1yporor4"
       }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--browser-url=http://127.0.0.1:9222"
+      ]
     }
   }
 }
-
