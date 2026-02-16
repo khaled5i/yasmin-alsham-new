@@ -21,6 +21,9 @@ interface FileProgress {
   progress: UploadProgress
 }
 
+const CONCURRENT_UPLOAD_LIMIT = 3
+const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`
+
 const isVideoFile = (fileUrl: string) => {
   const url = fileUrl.toLowerCase()
   return (
@@ -79,11 +82,11 @@ export default function ImageUpload({
     setErrors([])
 
     const newImages: string[] = []
+    const pendingErrors: string[] = []
     const progressMap = new Map<string, FileProgress>()
 
-    // تهيئة progress لكل ملف
     filesToUpload.forEach(file => {
-      progressMap.set(file.name, {
+      progressMap.set(getFileKey(file), {
         file,
         progress: {
           fileName: file.name,
@@ -94,73 +97,98 @@ export default function ImageUpload({
     })
     setUploadProgress(progressMap)
 
-    // رفع الصور والفيديوهات
-    for (const file of filesToUpload) {
+    const uploadSingleFile = async (file: File): Promise<{ url?: string; error?: string }> => {
+      const fileKey = getFileKey(file)
       const isImage = file.type.startsWith('image/')
       const isVideo = file.type.startsWith('video/')
 
       if (!isImage && !isVideo) {
-        setErrors(prev => [...prev, `${file.name}: نوع الملف غير مدعوم`])
-        continue
+        return { error: `${file.name}: نوع الملف غير مدعوم` }
       }
 
       if (isVideo && !acceptVideo) {
-        setErrors(prev => [...prev, `${file.name}: الفيديوهات غير مسموحة`])
-        continue
+        return { error: `${file.name}: الفيديوهات غير مسموحة` }
       }
 
       if (useSupabaseStorage) {
-        // رفع إلى Supabase Storage
-        const { data, error } = await imageService.uploadImage(file, (progress) => {
+        const uploadFn = isVideo ? imageService.uploadVideo.bind(imageService) : imageService.uploadImage.bind(imageService)
+        const { data, error } = await uploadFn(file, (progress) => {
           setUploadProgress(prev => {
             const newMap = new Map(prev)
-            const fileProgress = newMap.get(file.name)
+            const fileProgress = newMap.get(fileKey)
             if (fileProgress) {
               fileProgress.progress = progress
-              newMap.set(file.name, fileProgress)
+              newMap.set(fileKey, fileProgress)
             }
             return newMap
           })
         })
 
         if (error) {
-          setErrors(prev => [...prev, `${file.name}: ${error}`])
-        } else if (data) {
-          newImages.push(data.url)
-        }
-      } else {
-        // تحويل إلى base64 (الطريقة القديمة)
-        const { data, error } = await imageService.uploadAsBase64(file)
-
-        if (error) {
-          setErrors(prev => [...prev, `${file.name}: ${error}`])
-        } else if (data) {
-          newImages.push(data.url)
+          return { error: `${file.name}: ${error}` }
         }
 
-        // تحديث progress يدوياً
-        setUploadProgress(prev => {
-          const newMap = new Map(prev)
-          const fileProgress = newMap.get(file.name)
-          if (fileProgress) {
-            fileProgress.progress = {
-              fileName: file.name,
-              progress: 100,
-              status: 'success'
-            }
-            newMap.set(file.name, fileProgress)
-          }
-          return newMap
-        })
+        if (data) return { url: data.url }
+        return {}
       }
+
+      const { data, error } = await imageService.uploadAsBase64(file)
+
+      if (error) {
+        return { error: `${file.name}: ${error}` }
+      }
+
+      setUploadProgress(prev => {
+        const newMap = new Map(prev)
+        const fileProgress = newMap.get(fileKey)
+        if (fileProgress) {
+          fileProgress.progress = {
+            fileName: file.name,
+            progress: 100,
+            status: 'success'
+          }
+          newMap.set(fileKey, fileProgress)
+        }
+        return newMap
+      })
+
+      if (data) return { url: data.url }
+      return {}
     }
 
-    // إضافة الصور الجديدة
+    for (let i = 0; i < filesToUpload.length; i += CONCURRENT_UPLOAD_LIMIT) {
+      const batch = filesToUpload.slice(i, i + CONCURRENT_UPLOAD_LIMIT)
+      const settled = await Promise.allSettled(batch.map((file) => uploadSingleFile(file)))
+
+      settled.forEach((result, index) => {
+        const file = batch[index]
+        if (result.status === 'rejected') {
+          pendingErrors.push(`${file.name}: ${result.reason instanceof Error ? result.reason.message : 'فشل الرفع'}`)
+          return
+        }
+
+        if (result.value.error) {
+          pendingErrors.push(result.value.error)
+          return
+        }
+
+        if (result.value.url) {
+          newImages.push(result.value.url)
+        }
+      })
+    }
+
     if (newImages.length > 0) {
       onImagesChange([...images, ...newImages])
     }
 
-    // إعادة تعيين الحالة بعد 2 ثانية
+    if (pendingErrors.length > 0) {
+      setErrors(pendingErrors)
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
+
     setTimeout(() => {
       setUploading(false)
       setUploadProgress(new Map())
@@ -500,8 +528,8 @@ export default function ImageUpload({
       {uploadProgress.size > 0 && (
         <div className="space-y-2">
           <h4 className="font-medium text-gray-700 text-sm">جاري الرفع:</h4>
-          {Array.from(uploadProgress.values()).map(({ file, progress }) => (
-            <div key={file.name} className="bg-white border border-gray-200 rounded-lg p-3">
+          {Array.from(uploadProgress.entries()).map(([fileKey, { file, progress }]) => (
+            <div key={fileKey} className="bg-white border border-gray-200 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
                 {progress.status === 'success' && (
@@ -725,6 +753,5 @@ export default function ImageUpload({
     </div>
   )
 }
-
 
 

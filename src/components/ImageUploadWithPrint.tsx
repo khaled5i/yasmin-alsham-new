@@ -22,6 +22,9 @@ interface FileProgress {
   progress: UploadProgress
 }
 
+const CONCURRENT_UPLOAD_LIMIT = 3
+const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`
+
 export default function ImageUploadWithPrint({
   images,
   onImagesChange,
@@ -55,73 +58,108 @@ export default function ImageUploadWithPrint({
     const remainingSlots = maxImages - images.length
     const filesToUpload = Array.from(files).slice(0, remainingSlots)
     if (filesToUpload.length === 0) return
-
     setUploading(true)
     setErrors([])
+
     const newImages: string[] = []
+    const pendingErrors: string[] = []
     const progressMap = new Map<string, FileProgress>()
 
     filesToUpload.forEach(file => {
-      progressMap.set(file.name, {
+      progressMap.set(getFileKey(file), {
         file,
         progress: { fileName: file.name, progress: 0, status: 'uploading' }
       })
     })
     setUploadProgress(progressMap)
 
-    for (const file of filesToUpload) {
+    const uploadSingleFile = async (file: File): Promise<{ url?: string; error?: string }> => {
+      const fileKey = getFileKey(file)
       const isImage = file.type.startsWith('image/')
       const isVideo = file.type.startsWith('video/')
 
       if (!isImage && !isVideo) {
-        setErrors(prev => [...prev, `${file.name}: نوع الملف غير مدعوم`])
-        continue
+        return { error: `${file.name}: نوع الملف غير مدعوم` }
       }
 
       if (isVideo && !acceptVideo) {
-        setErrors(prev => [...prev, `${file.name}: الفيديوهات غير مسموحة`])
-        continue
+        return { error: `${file.name}: الفيديوهات غير مسموحة` }
       }
 
       if (useSupabaseStorage) {
-        const { data, error } = await imageService.uploadImage(file, (progress) => {
+        const uploadFn = isVideo ? imageService.uploadVideo.bind(imageService) : imageService.uploadImage.bind(imageService)
+        const { data, error } = await uploadFn(file, (progress) => {
           setUploadProgress(prev => {
             const newMap = new Map(prev)
-            const fileProgress = newMap.get(file.name)
+            const fileProgress = newMap.get(fileKey)
             if (fileProgress) {
               fileProgress.progress = progress
-              newMap.set(file.name, fileProgress)
+              newMap.set(fileKey, fileProgress)
             }
             return newMap
           })
         })
+
         if (error) {
-          setErrors(prev => [...prev, `${file.name}: ${error}`])
-        } else if (data) {
-          newImages.push(data.url)
+          return { error: `${file.name}: ${error}` }
         }
-      } else {
-        const { data, error } = await imageService.uploadAsBase64(file)
-        if (error) {
-          setErrors(prev => [...prev, `${file.name}: ${error}`])
-        } else if (data) {
-          newImages.push(data.url)
-        }
-        setUploadProgress(prev => {
-          const newMap = new Map(prev)
-          const fileProgress = newMap.get(file.name)
-          if (fileProgress) {
-            fileProgress.progress = { fileName: file.name, progress: 100, status: 'success' }
-            newMap.set(file.name, fileProgress)
-          }
-          return newMap
-        })
+
+        if (data) return { url: data.url }
+        return {}
       }
+
+      const { data, error } = await imageService.uploadAsBase64(file)
+
+      if (error) {
+        return { error: `${file.name}: ${error}` }
+      }
+
+      setUploadProgress(prev => {
+        const newMap = new Map(prev)
+        const fileProgress = newMap.get(fileKey)
+        if (fileProgress) {
+          fileProgress.progress = { fileName: file.name, progress: 100, status: 'success' }
+          newMap.set(fileKey, fileProgress)
+        }
+        return newMap
+      })
+
+      if (data) return { url: data.url }
+      return {}
+    }
+
+    for (let i = 0; i < filesToUpload.length; i += CONCURRENT_UPLOAD_LIMIT) {
+      const batch = filesToUpload.slice(i, i + CONCURRENT_UPLOAD_LIMIT)
+      const settled = await Promise.allSettled(batch.map((file) => uploadSingleFile(file)))
+
+      settled.forEach((result, index) => {
+        const file = batch[index]
+        if (result.status === 'rejected') {
+          pendingErrors.push(`${file.name}: ${result.reason instanceof Error ? result.reason.message : 'فشل الرفع'}`)
+          return
+        }
+
+        if (result.value.error) {
+          pendingErrors.push(result.value.error)
+          return
+        }
+
+        if (result.value.url) {
+          newImages.push(result.value.url)
+        }
+      })
     }
 
     if (newImages.length > 0) {
       onImagesChange([...images, ...newImages])
     }
+
+    if (pendingErrors.length > 0) {
+      setErrors(pendingErrors)
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
 
     setTimeout(() => {
       setUploading(false)
@@ -358,4 +396,5 @@ export default function ImageUploadWithPrint({
     </div>
   )
 }
+
 

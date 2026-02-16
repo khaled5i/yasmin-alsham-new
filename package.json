@@ -39,6 +39,7 @@
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.18.1",
+    "heic2any": "^0.0.4",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.522.0",
     "moment-hijri": "^3.0.0",
