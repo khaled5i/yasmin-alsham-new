@@ -7,14 +7,14 @@
 import type { DrawingPath, BrushType } from '@/components/InteractiveImageAnnotation'
 
 /**
- * Renders drawing paths on a canvas with proper eraser support (clip + base image redraw),
+ * Renders drawing paths on a canvas with proper eraser support,
  * brush type styles, and dynamic coordinate mapping.
  *
  * @param ctx - The 2D canvas rendering context
  * @param drawings - Array of DrawingPath objects to render
  * @param canvasWidth - The logical width of the canvas
  * @param canvasHeight - The logical height of the canvas
- * @param baseImage - Optional HTMLImageElement for eraser clip+redraw. Required if drawings contain erasers.
+ * @param baseImage - Optional HTMLImageElement used to detect flattened export mode.
  * @param imageRect - Optional dimensions/offset of the base image within the canvas (for object-contain layout)
  */
 export function renderDrawingsOnCanvas(
@@ -25,6 +25,10 @@ export function renderDrawingsOnCanvas(
   baseImage?: HTMLImageElement | null,
   imageRect?: { offsetX: number; offsetY: number; drawWidth: number; drawHeight: number }
 ) {
+  // Kept for API compatibility with existing call sites.
+  void imageRect
+  const ownerDocument = (ctx.canvas as HTMLCanvasElement).ownerDocument
+
   const drawPathGeometryOnContext = (
     targetCtx: CanvasRenderingContext2D,
     path: DrawingPath
@@ -37,56 +41,53 @@ export function renderDrawingsOnCanvas(
     }
   }
 
-  const drawPathGeometry = (path: DrawingPath) => {
-    drawPathGeometryOnContext(ctx, path)
-  }
-
   const applyBrushStyle = (
+    targetCtx: CanvasRenderingContext2D,
     pathBrushType: BrushType,
     pathColor: string,
     pathIsEraser: boolean = false,
-    baseWidth: number = ctx.lineWidth
+    baseWidth: number = targetCtx.lineWidth
   ) => {
-    ctx.setLineDash([])
-    ctx.lineDashOffset = 0
-    ctx.shadowBlur = 0
-    ctx.shadowColor = 'transparent'
-    ctx.globalAlpha = 1
-    ctx.strokeStyle = pathColor
-    ctx.lineWidth = baseWidth
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
+    targetCtx.setLineDash([])
+    targetCtx.lineDashOffset = 0
+    targetCtx.shadowBlur = 0
+    targetCtx.shadowColor = 'transparent'
+    targetCtx.globalAlpha = 1
+    targetCtx.strokeStyle = pathColor
+    targetCtx.lineWidth = baseWidth
+    targetCtx.lineCap = 'round'
+    targetCtx.lineJoin = 'round'
 
     if (pathIsEraser) {
-      ctx.setLineDash([])
+      targetCtx.setLineDash([])
       return
     }
 
     switch (pathBrushType) {
       case 'dashed':
-        ctx.setLineDash([14, 10])
+        targetCtx.setLineDash([14, 10])
         break
       case 'dotted':
-        ctx.lineCap = 'round'
-        ctx.setLineDash([1, Math.max(6, baseWidth * 2.2)])
+        targetCtx.lineCap = 'round'
+        targetCtx.setLineDash([1, Math.max(6, baseWidth * 2.2)])
         break
       case 'soft':
-        ctx.shadowBlur = 8
-        ctx.shadowColor = pathColor
+        targetCtx.shadowBlur = 8
+        targetCtx.shadowColor = pathColor
         break
       case 'pencil':
-        ctx.globalAlpha = 0.85
+        targetCtx.globalAlpha = 0.85
         break
       case 'highlighter':
-        ctx.globalAlpha = 0.35
-        ctx.lineCap = 'square'
+        targetCtx.globalAlpha = 0.35
+        targetCtx.lineCap = 'square'
         break
       default:
         break
     }
   }
 
-  const drawStyledPath = (path: DrawingPath) => {
+  const drawStyledPath = (targetCtx: CanvasRenderingContext2D, path: DrawingPath) => {
     if (path.points.length < 2) return
 
     const brushType: BrushType = path.brushType || 'normal'
@@ -96,19 +97,19 @@ export function renderDrawingsOnCanvas(
     const widthMultiplier = isHighlighterBrush ? 2.6 : brushType === 'pencil' ? 0.5 : 1
     const baseWidth = path.strokeWidth
 
-    applyBrushStyle(brushType, path.color, false, baseWidth)
+    applyBrushStyle(targetCtx, brushType, path.color, false, baseWidth)
 
     if (usesUniformWidth) {
-      ctx.beginPath()
-      ctx.lineWidth = Math.max(1, baseWidth * widthMultiplier)
-      ctx.lineCap = isHighlighterBrush ? 'square' : 'round'
+      targetCtx.beginPath()
+      targetCtx.lineWidth = Math.max(1, baseWidth * widthMultiplier)
+      targetCtx.lineCap = isHighlighterBrush ? 'square' : 'round'
       const firstPoint = path.points[0]
-      ctx.moveTo((firstPoint.x / 100) * canvasWidth, (firstPoint.y / 100) * canvasHeight)
+      targetCtx.moveTo((firstPoint.x / 100) * canvasWidth, (firstPoint.y / 100) * canvasHeight)
       for (let i = 1; i < path.points.length; i++) {
         const point = path.points[i]
-        ctx.lineTo((point.x / 100) * canvasWidth, (point.y / 100) * canvasHeight)
+        targetCtx.lineTo((point.x / 100) * canvasWidth, (point.y / 100) * canvasHeight)
       }
-      ctx.stroke()
+      targetCtx.stroke()
       return
     }
 
@@ -125,18 +126,18 @@ export function renderDrawingsOnCanvas(
       const avgPressure = (p1Pressure + p2Pressure) / 2
       const width = Math.max(1, baseWidth * (0.5 + avgPressure) * widthMultiplier)
 
-      ctx.beginPath()
-      ctx.lineWidth = width
-      ctx.lineCap = 'round'
-      ctx.moveTo(px1, py1)
-      ctx.lineTo(px2, py2)
-      ctx.stroke()
+      targetCtx.beginPath()
+      targetCtx.lineWidth = width
+      targetCtx.lineCap = 'round'
+      targetCtx.moveTo(px1, py1)
+      targetCtx.lineTo(px2, py2)
+      targetCtx.stroke()
 
       if (width > 2) {
-        ctx.beginPath()
-        ctx.arc(px2, py2, width / 2, 0, Math.PI * 2)
-        ctx.fillStyle = path.color
-        ctx.fill()
+        targetCtx.beginPath()
+        targetCtx.arc(px2, py2, width / 2, 0, Math.PI * 2)
+        targetCtx.fillStyle = path.color
+        targetCtx.fill()
       }
     }
   }
@@ -152,87 +153,59 @@ export function renderDrawingsOnCanvas(
     })
     .map(item => item.path)
 
-  const ox = imageRect?.offsetX ?? 0
-  const oy = imageRect?.offsetY ?? 0
-  const dw = imageRect?.drawWidth ?? canvasWidth
-  const dh = imageRect?.drawHeight ?? canvasHeight
+  const drawEraserPath = (targetCtx: CanvasRenderingContext2D, path: DrawingPath) => {
+    targetCtx.beginPath()
+    targetCtx.globalCompositeOperation = 'destination-out'
+    targetCtx.lineWidth = path.strokeWidth
+    targetCtx.lineCap = 'round'
+    targetCtx.lineJoin = 'round'
+    drawPathGeometryOnContext(targetCtx, path)
+    targetCtx.stroke()
+  }
 
-  const eraseWithBaseImage = (path: DrawingPath) => {
-    const ownerDocument = (ctx.canvas as HTMLCanvasElement).ownerDocument
-    if (!ownerDocument) {
+  const hasEraser = orderedDrawings.some(path => path.isEraser)
+
+  // For flattened exports (base image + drawings on same canvas), render drawings on a transparent
+  // overlay first, then composite once. This matches editor behavior and avoids eraser edge halos.
+  if (baseImage && hasEraser && ownerDocument) {
+    const overlayCanvas = ownerDocument.createElement('canvas')
+    overlayCanvas.width = canvasWidth
+    overlayCanvas.height = canvasHeight
+    const overlayCtx = overlayCanvas.getContext('2d')
+
+    if (overlayCtx) {
+      for (const path of orderedDrawings) {
+        if (path.points.length < 2) continue
+
+        overlayCtx.save()
+        if (path.isEraser) {
+          drawEraserPath(overlayCtx, path)
+        } else {
+          drawStyledPath(overlayCtx, path)
+        }
+        overlayCtx.restore()
+      }
+
       ctx.save()
-      ctx.beginPath()
-      ctx.globalCompositeOperation = 'destination-out'
-      ctx.lineWidth = path.strokeWidth
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      drawPathGeometry(path)
-      ctx.stroke()
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.drawImage(overlayCanvas, 0, 0)
       ctx.restore()
       return
     }
-
-    const maskCanvas = ownerDocument.createElement('canvas')
-    maskCanvas.width = canvasWidth
-    maskCanvas.height = canvasHeight
-    const maskCtx = maskCanvas.getContext('2d')
-    if (!maskCtx) return
-
-    maskCtx.beginPath()
-    maskCtx.strokeStyle = '#000000'
-    maskCtx.lineWidth = path.strokeWidth
-    maskCtx.lineCap = 'round'
-    maskCtx.lineJoin = 'round'
-    drawPathGeometryOnContext(maskCtx, path)
-    maskCtx.stroke()
-
-    // Remove existing content in mask area (image + drawings).
-    ctx.save()
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.drawImage(maskCanvas, 0, 0)
-    ctx.restore()
-
-    // Restore only base image pixels in the erased region.
-    const restoreCanvas = ownerDocument.createElement('canvas')
-    restoreCanvas.width = canvasWidth
-    restoreCanvas.height = canvasHeight
-    const restoreCtx = restoreCanvas.getContext('2d')
-    if (!restoreCtx) return
-
-    restoreCtx.drawImage(baseImage as HTMLImageElement, ox, oy, dw, dh)
-    restoreCtx.globalCompositeOperation = 'destination-in'
-    restoreCtx.drawImage(maskCanvas, 0, 0)
-
-    ctx.save()
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.drawImage(restoreCanvas, 0, 0)
-    ctx.restore()
   }
 
   for (const path of orderedDrawings) {
     if (path.points.length < 2) continue
 
     if (path.isEraser) {
-      if (baseImage) {
-        // Match eraser width exactly by using a stroked mask, then restore base image only.
-        eraseWithBaseImage(path)
-      } else {
-        // Fallback when no base image exists.
-        ctx.save()
-        ctx.beginPath()
-        ctx.globalCompositeOperation = 'destination-out'
-        ctx.lineWidth = path.strokeWidth
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-        drawPathGeometry(path)
-        ctx.stroke()
-        ctx.restore()
-      }
+      ctx.save()
+      drawEraserPath(ctx, path)
+      ctx.restore()
       continue
     }
 
     ctx.save()
-    drawStyledPath(path)
+    drawStyledPath(ctx, path)
     ctx.restore()
   }
 }

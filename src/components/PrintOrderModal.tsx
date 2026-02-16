@@ -384,8 +384,15 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
       }
 
       setDesignCommentsSnapshots(snapshots)
-      // تحديد جميع التعليقات تلقائياً بعد إنشائها
-      setSelectedCommentsIds(snapshots.map(s => s.id))
+      // تحديد اول صورة امام و اول ظهر خلف بشكل افتراضي والباقي غير محدد بشكل افتراضي
+      const firstFront = snapshots.find(s => s.title.includes('أمام') || s.title.toLowerCase().includes('front'))
+      const firstBack = snapshots.find(s => s.title.includes('خلف') || s.title.toLowerCase().includes('back'))
+
+      const defaultSelectedIds: string[] = []
+      if (firstFront) defaultSelectedIds.push(firstFront.id)
+      if (firstBack) defaultSelectedIds.push(firstBack.id)
+
+      setSelectedCommentsIds(defaultSelectedIds)
     } catch (error) {
       console.error('Error generating snapshots:', error)
     } finally {
@@ -401,7 +408,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
       const imageOnlyList = images.filter(img =>
         !img.includes('.mp4') && !img.includes('.mov') && !img.includes('.avi') && !img.includes('.webm') && !img.includes('video')
       )
-      setPrintableImages(imageOnlyList.slice(0, 2))
+      setPrintableImages([])
       setDesignComments(order.notes || '')
 
       // إعادة توليد التعليقات عند تحديث البيانات
