@@ -137,7 +137,7 @@ export interface SavedDesignComment {
   timestamp: number
   annotations: ImageAnnotation[]
   drawings: DrawingPath[]
-  image: string | null
+  image: string | null // base64 legacy أو "custom" للإشارة إلى custom_design_image
   title?: string
   view?: 'front' | 'back'
   compositeImage?: string | null // الصورة المركّبة (الصورة + الرسومات + التعليقات)
@@ -629,9 +629,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       const containerWidth = containerRect.width
       const containerHeight = containerRect.height
 
-      // إنشاء canvas بنفس أبعاد الـ container (مع scale للجودة الجيدة)
-      // scale=1.5 بدلاً من 2 لتقليل حجم الصورة المركّبة بنسبة ~45%
-      const scale = 1.5
+      // إنشاء canvas بنفس أبعاد الـ container
+      // scale=1.0 وJPEG quality=0.5 لتقليل حجم الصورة المركّبة
+      const scale = 1.0
       const canvas = document.createElement('canvas')
       canvas.width = containerWidth * scale
       canvas.height = containerHeight * scale
@@ -822,9 +822,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ctx.restore()
         })
 
-      // JPEG مع ضغط 0.7 بدلاً من PNG بدون ضغط
-      // هذا يقلل حجم الصورة المركّبة من ~5MB إلى ~500KB
-      return canvas.toDataURL('image/jpeg', 0.7)
+      // JPEG مضغوط لتقليل حجم payload عند الحفظ
+      return canvas.toDataURL('image/jpeg', 0.5)
     } catch (error) {
       console.error('Error generating composite image:', error)
       return null
@@ -843,14 +842,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       return null
     }
 
-    // تحويل الصورة الحالية إلى base64 إذا وجدت
-    let imageBase64 = currentImageBase64
-    if (customImage && !imageBase64) {
+    // اقرأ ملف الصورة الجديدة دائماً إذا وُجد (أولوية أعلى من base64 القديم)
+    let imageBase64: string | null = null
+    if (customImage) {
       imageBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
         reader.readAsDataURL(customImage)
       })
+    } else {
+      imageBase64 = currentImageBase64
     }
 
     // إنشاء الصورة المركّبة (تطابق ما يظهر على الشاشة)
@@ -869,7 +870,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       timestamp: Date.now(),
       annotations: [...annotations],
       drawings: [...drawings],
-      image: imageBase64,
+      image: imageBase64 ? 'custom' : null,
       title: viewTitle,
       view: currentView,
       compositeImage: compositeImage
@@ -1008,13 +1009,15 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const updateViewingComment = useCallback(async () => {
     if (!viewingCommentId) return
 
-    let imageBase64 = currentImageBase64
-    if (customImage && !imageBase64) {
+    let imageBase64: string | null = null
+    if (customImage) {
       imageBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
         reader.readAsDataURL(customImage)
       })
+    } else {
+      imageBase64 = currentImageBase64
     }
 
     // إنشاء الصورة المركّبة الجديدة
@@ -1026,7 +1029,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ...c,
           annotations: [...annotations],
           drawings: [...drawings],
-          image: imageBase64 || c.image,
+          image: imageBase64 ? 'custom' : (c.image || null),
           compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
         }
@@ -1048,13 +1051,15 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const updateSavedComment = useCallback(async () => {
     if (!editingCommentId) return
 
-    let imageBase64 = currentImageBase64
-    if (customImage && !imageBase64) {
+    let imageBase64: string | null = null
+    if (customImage) {
       imageBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
         reader.readAsDataURL(customImage)
       })
+    } else {
+      imageBase64 = currentImageBase64
     }
 
     // إنشاء الصورة المركّبة الجديدة
@@ -1066,7 +1071,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ...c,
           annotations: [...annotations],
           drawings: [...drawings],
-          image: imageBase64 || c.image,
+          image: imageBase64 ? 'custom' : (c.image || null),
           compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
         }

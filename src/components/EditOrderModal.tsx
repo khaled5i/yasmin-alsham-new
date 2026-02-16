@@ -239,11 +239,27 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
   }, [])
 
   // معالجة تغيير صورة التصميم المخصصة
-  const handleDesignImageChange = useCallback((image: File | null) => {
+  const handleDesignImageChange = useCallback(async (image: File | null) => {
     setFormData(prev => ({
       ...prev,
       customDesignImage: image
     }))
+
+    if (image) {
+      try {
+        const reader = new FileReader()
+        const base64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+          reader.readAsDataURL(image)
+        })
+        setCurrentImageBase64(base64)
+      } catch (error) {
+        console.error('Error converting design image to base64:', error)
+      }
+    } else {
+      setCurrentImageBase64(null)
+    }
   }, [])
 
   // معالجة تغيير التعليقات المحفوظة
@@ -260,8 +276,11 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     }))
   }, [])
 
-  const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string) => {
-    const allSavedComments = [...formData.savedDesignComments]
+  const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string, compositeImage?: string | null) => {
+    const allSavedComments = formData.savedDesignComments.map(comment => ({
+      ...comment,
+      image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
+    }))
     const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
 
     if (!hasCurrentPayload) {
@@ -300,7 +319,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
           ...comment,
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
-          image: customDesignImageBase64 || comment.image || null,
+          image: customDesignImageBase64 ? 'custom' : (comment.image || null),
+          compositeImage: compositeImage || comment.compositeImage || null,
           view: currentView,
           timestamp: Date.now()
         }
@@ -315,9 +335,10 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
       timestamp: Date.now(),
       annotations: formData.imageAnnotations,
       drawings: formData.imageDrawings,
-      image: customDesignImageBase64 || null,
+      image: customDesignImageBase64 ? 'custom' : null,
       title: viewTitle,
-      view: currentView
+      view: currentView,
+      compositeImage: compositeImage || null
     }
 
     latestSavedCommentIdRef.current = currentComment.id
@@ -397,13 +418,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64).map(comment => {
-        // إضافة compositeImage للتعليق الأخير (الحالي) فقط
-        if (comment.id === latestSavedCommentIdRef.current && compositeImage) {
-          return { ...comment, compositeImage }
-        }
-        return comment
-      })
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
 
       // تحديث الطلب
       onSave(order.id, {
@@ -528,12 +543,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64).map(comment => {
-        if (comment.id === latestSavedCommentIdRef.current && compositeImage) {
-          return { ...comment, compositeImage }
-        }
-        return comment
-      })
+      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
 
       // تحديث الطلب
       onSave(order.id, {

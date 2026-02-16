@@ -583,6 +583,9 @@ export const orderService = {
 
       if (error) {
         if (isDev) console.error('❌ Supabase error updating order:', error)
+        if (error.message?.includes('too large') || error.message?.includes('size') || error.code === '54000') {
+          return { data: null, error: 'حجم البيانات كبير جداً. يرجى تقليل حجم الصورة أو الرسومات' }
+        }
         throw error
       }
 
@@ -591,6 +594,9 @@ export const orderService = {
       return { data, error: null }
     } catch (error: any) {
       console.error('❌ Error in update order:', error?.message)
+      if (error?.message?.includes('too large') || error?.message?.includes('size') || error?.code === '54000') {
+        return { data: null, error: 'حجم البيانات كبير جداً. يرجى تقليل حجم الصورة أو الرسومات' }
+      }
       const errorMessage = error?.message || error?.hint || error?.details || 'خطأ في تحديث الطلب'
       return { data: null, error: errorMessage }
     }

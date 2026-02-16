@@ -85,7 +85,7 @@ interface FormDataType {
   images: string[]
   imageAnnotations: ImageAnnotation[]
   imageDrawings: DrawingPath[]
-  customDesignImage: string | null // تخزين كـ base64 string بدلاً من File
+  customDesignImage: string | null // legacy فقط؛ لا نخزن base64 جديداً في state
   savedDesignComments: SavedDesignComment[]
 }
 
@@ -259,32 +259,15 @@ function AddOrderContent() {
   }, [setFormData])
 
   // معالجة تغيير صورة التصميم المخصصة
-  const handleDesignImageChange = useCallback(async (image: File | null) => {
+  const handleDesignImageChange = useCallback((image: File | null) => {
     // حفظ ملف الصورة للاستخدام في الإرسال
     setCustomDesignImageFile(image)
 
-    // تحويل الصورة إلى base64 للحفظ في localStorage
-    if (image) {
-      try {
-        const reader = new FileReader()
-        const base64 = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-          reader.readAsDataURL(image)
-        })
-        setFormData(prev => ({
-          ...prev,
-          customDesignImage: base64
-        }))
-      } catch (error) {
-        console.error('Error converting image to base64:', error)
-      }
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        customDesignImage: null
-      }))
-    }
+    // لا نخزن base64 ضخم في React state لتجنب الضغط على الذاكرة وإعادة الرسم
+    setFormData(prev => ({
+      ...prev,
+      customDesignImage: null
+    }))
   }, [setFormData])
 
   // معالجة تغيير التعليقات المحفوظة
@@ -380,7 +363,10 @@ function AddOrderContent() {
       // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
 
       // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = [...formData.savedDesignComments]
+      const allSavedComments = formData.savedDesignComments.map(comment => ({
+        ...comment,
+        image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
+      }))
 
       // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً مع الصورة المركّبة
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
@@ -398,7 +384,7 @@ function AddOrderContent() {
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
-          image: customDesignImageBase64 || null,
+          image: customDesignImageBase64 ? 'custom' : null,
           title: viewTitle,
           view: currentView,
           compositeImage: compositeImage // إضافة الصورة المركّبة
@@ -550,7 +536,10 @@ function AddOrderContent() {
       }
 
       // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = [...formData.savedDesignComments]
+      const allSavedComments = formData.savedDesignComments.map(comment => ({
+        ...comment,
+        image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
+      }))
 
       // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً مع الصورة المركّبة
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
@@ -568,7 +557,7 @@ function AddOrderContent() {
           timestamp: Date.now(),
           annotations: formData.imageAnnotations,
           drawings: formData.imageDrawings,
-          image: customDesignImageBase64 || null,
+          image: customDesignImageBase64 ? 'custom' : null,
           title: viewTitle,
           view: currentView,
           compositeImage: compositeImage // إضافة الصورة المركّبة

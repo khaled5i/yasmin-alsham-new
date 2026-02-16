@@ -194,6 +194,15 @@ export default function OrdersPage() {
       updates.measurements !== undefined
 
     if (hasMeasurementsUpdates) {
+      const normalizedSavedDesignComments = updates.saved_design_comments !== undefined
+        ? updates.saved_design_comments.map((comment: any) => ({
+          ...comment,
+          image: typeof comment.image === 'string' && comment.image.startsWith('data:')
+            ? 'custom'
+            : (comment.image || null)
+        }))
+        : undefined
+
       // جلب البيانات الكاملة للطلب من قاعدة البيانات (القائمة تستخدم التحميل الخفيف بدون measurements)
       let currentMeasurements: any = {}
       try {
@@ -208,7 +217,7 @@ export default function OrdersPage() {
       supabaseUpdates.measurements = {
         ...currentMeasurements,
         ...(updates.measurements || {}),
-        ...(updates.saved_design_comments !== undefined && { saved_design_comments: updates.saved_design_comments }),
+        ...(updates.saved_design_comments !== undefined && { saved_design_comments: normalizedSavedDesignComments }),
         ...(updates.image_annotations !== undefined && { image_annotations: updates.image_annotations }),
         ...(updates.image_drawings !== undefined && { image_drawings: updates.image_drawings }),
         ...(updates.custom_design_image !== undefined && { custom_design_image: updates.custom_design_image })

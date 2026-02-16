@@ -407,7 +407,7 @@ async function uploadBlobWithProgress(
     xhr.setRequestHeader('Authorization', headers.authorization)
     xhr.setRequestHeader('apikey', headers.apikey)
     xhr.setRequestHeader('x-upsert', 'false')
-    xhr.setRequestHeader('cache-control', '3600')
+    xhr.setRequestHeader('Cache-Control', 'max-age=3600')
     xhr.setRequestHeader('content-type', mimeType)
 
     xhr.upload.onprogress = (event) => {

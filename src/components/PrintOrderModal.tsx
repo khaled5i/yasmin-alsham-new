@@ -120,11 +120,12 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
 
       const baseImage = new Image()
       baseImage.crossOrigin = 'anonymous'
+      const baseImageSrc = customImage && customImage !== 'custom' ? customImage : '/front2.png'
 
       await new Promise<void>((resolve, reject) => {
         baseImage.onload = () => resolve()
         baseImage.onerror = () => reject(new Error('Failed to load image'))
-        baseImage.src = customImage || '/front2.png'
+        baseImage.src = baseImageSrc
       })
 
       // استخدام نفس منطق aspect-[3/4] و object-contain المستخدم في العرض
@@ -360,10 +361,14 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
       // إنشاء snapshots للتعليقات المحفوظة
       for (let i = 0; i < savedComments.length; i++) {
         const comment = savedComments[i]
+        const commentImage =
+          comment.image && comment.image !== 'custom'
+            ? comment.image
+            : legacyImage
         const snapshot = await generateSingleSnapshot(
           comment.annotations || [],
           comment.drawings || [],
-          comment.image,
+          commentImage,
           comment.title || `التعليق ${i + 1}`,
           comment.id,
           comment.compositeImage // تمرير الصورة المركّبة المحفوظة

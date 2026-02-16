@@ -140,6 +140,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null)
   const [translatingAnnotationId, setTranslatingAnnotationId] = useState<string | null>(null)
   const [showAnnotationLanguageDropdown, setShowAnnotationLanguageDropdown] = useState<string | null>(null)
+  const resolveCommentImageSrc = useCallback((comment: SavedDesignComment): string => {
+    if (comment.image && comment.image.startsWith('data:')) return comment.image
+    if (comment.image && comment.image !== 'custom') return comment.image
+    if (customDesignImage) return customDesignImage
+    return '/front2.png'
+  }, [customDesignImage])
 
   // حالات تعديل العامل
   const [isEditingWorker, setIsEditingWorker] = useState(false)
@@ -461,13 +467,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     const timer = setTimeout(() => {
       const canvas = canvasRefs.current.get(expandedCommentId)
       if (canvas) {
-        const imageSrc = comment.image || "/front2.png"
+        const imageSrc = resolveCommentImageSrc(comment)
         drawPathsOnCanvas(canvas, comment.drawings || [], imageSrc)
       }
     }, 100)
 
     return () => clearTimeout(timer)
-  }, [expandedCommentId, savedDesignComments])
+  }, [expandedCommentId, savedDesignComments, resolveCommentImageSrc])
 
   if (!order) return null
 
@@ -833,14 +839,14 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                     ) : (
                                       <>
                                         <img
-                                          src={comment.image || "/front2.png"}
+                                          src={resolveCommentImageSrc(comment)}
                                           alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
                                           className="w-full h-auto cursor-pointer"
-                                          onClick={() => openLightbox(0, [comment.image || "/front2.png"])}
+                                          onClick={() => openLightbox(0, [resolveCommentImageSrc(comment)])}
                                           onLoad={() => {
                                             const canvas = canvasRefs.current.get(comment.id)
                                             if (canvas && comment.drawings && comment.drawings.length > 0) {
-                                              const imageSrc = comment.image || "/front2.png"
+                                              const imageSrc = resolveCommentImageSrc(comment)
                                               void drawPathsOnCanvas(canvas, comment.drawings, imageSrc)
                                             }
                                           }}
@@ -852,7 +858,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                               if (el) {
                                                 canvasRefs.current.set(comment.id, el)
                                                 // رسم الخطوط مباشرة عند تعيين الـ ref
-                                                const imageSrc = comment.image || "/front2.png"
+                                                const imageSrc = resolveCommentImageSrc(comment)
                                                 drawPathsOnCanvas(el, comment.drawings || [], imageSrc)
                                               }
                                             }}
