@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X,
@@ -22,7 +22,9 @@ import {
   Pause,
   Languages,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { Order, orderService } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
@@ -36,6 +38,7 @@ import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
+import { formatGregorianDate } from '@/lib/date-utils'
 
 interface OrderModalProps {
   order: Order | null
@@ -47,7 +50,76 @@ interface OrderModalProps {
 export default function OrderModal({ order: initialOrder, workers, isOpen, onClose }: OrderModalProps) {
   const { user } = useAuthStore()
   const { t } = useTranslation()
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  // Lightbox state
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [lightboxImages, setLightboxImages] = useState<string[]>([])
+
+  const canNavigateLightbox = lightboxImages.length > 1
+
+  const closeLightbox = useCallback(() => {
+    setLightboxIndex(null)
+    setLightboxImages([])
+  }, [])
+
+  const openLightbox = useCallback((index: number, images: string[]) => {
+    setLightboxImages(images)
+    setLightboxIndex(index)
+  }, [])
+
+  // Navigation handlers (swapped logic as requested: Right=Prev, Left=Next)
+  const showPreviousImage = useCallback(() => {
+    if (!canNavigateLightbox || lightboxIndex === null) return
+    const previousPosition = (lightboxIndex - 1 + lightboxImages.length) % lightboxImages.length
+    setLightboxIndex(previousPosition)
+  }, [canNavigateLightbox, lightboxIndex, lightboxImages.length])
+
+  const showNextImage = useCallback(() => {
+    if (!canNavigateLightbox || lightboxIndex === null) return
+    const nextPosition = (lightboxIndex + 1) % lightboxImages.length
+    setLightboxIndex(nextPosition)
+  }, [canNavigateLightbox, lightboxIndex, lightboxImages.length])
+
+  // Swipe handling
+  const touchStartX = useRef<number | null>(null)
+  const touchEndX = useRef<number | null>(null)
+  const minSwipeDistance = 50
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchEndX.current = null
+    touchStartX.current = e.targetTouches[0].clientX
+  }
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.targetTouches[0].clientX
+  }
+
+  const onTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return
+    const distance = touchStartX.current - touchEndX.current
+    const isLeftSwipe = distance > minSwipeDistance
+    const isRightSwipe = distance < -minSwipeDistance
+
+    if (isLeftSwipe) {
+      showNextImage()
+    }
+    if (isRightSwipe) {
+      showPreviousImage()
+    }
+  }
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (lightboxIndex === null) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeLightbox()
+      if (event.key === 'ArrowLeft') showNextImage() // Left arrow -> Next (to match button swap)
+      if (event.key === 'ArrowRight') showPreviousImage() // Right arrow -> Prev
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [lightboxIndex, closeLightbox, showNextImage, showPreviousImage])
   const [voiceNotes, setVoiceNotes] = useState<any[]>([])
   const [showPrintModal, setShowPrintModal] = useState(false)
   // Full order data (fetched when lightweight order is missing measurements)
@@ -437,14 +509,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return ''
-    const normalizedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
-      ? `${dateString}T12:00:00`
-      : dateString
-    const date = new Date(normalizedDate)
-    if (Number.isNaN(date.getTime())) return dateString
-    return date.toLocaleDateString('ar-SA', {
-      calendar: 'gregory', // استخدام التقويم الميلادي
+    return formatGregorianDate(dateString, 'ar-SA', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -763,7 +828,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                         src={comment.compositeImage}
                                         alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
                                         className="w-full h-auto cursor-pointer"
-                                        onClick={() => setLightboxImage(comment.compositeImage!)}
+                                        onClick={() => openLightbox(0, [comment.compositeImage!])}
                                       />
                                     ) : (
                                       <>
@@ -771,7 +836,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                           src={comment.image || "/front2.png"}
                                           alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
                                           className="w-full h-auto cursor-pointer"
-                                          onClick={() => setLightboxImage(comment.image || "/front2.png")}
+                                          onClick={() => openLightbox(0, [comment.image || "/front2.png"])}
                                           onLoad={() => {
                                             const canvas = canvasRefs.current.get(comment.id)
                                             if (canvas && comment.drawings && comment.drawings.length > 0) {
@@ -942,7 +1007,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                             src={customDesignImage || "/front2.png"}
                             alt="صورة التصميم"
                             className="w-full h-auto"
-                            onClick={() => setLightboxImage(customDesignImage || "/front2.png")}
+                            onClick={() => openLightbox(0, [customDesignImage || "/front2.png"])}
                             onLoad={() => {
                               if (canvasRef.current && imageDrawings.length > 0) {
                                 const imageSrc = customDesignImage || "/front2.png"
@@ -1172,7 +1237,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                             src={image}
                             alt={`${t('design_image')} ${index + 1}`}
                             className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
-                            onClick={() => setLightboxImage(image)}
+                            onClick={() => openLightbox(index, order.images || [])}
                           />
                         </div>
                         <div className="absolute bottom-2 left-2 bg-pink-600/80 text-white text-xs px-2 py-1 rounded">
@@ -1206,7 +1271,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                               src={image}
                               alt={`${t('completed_work_image_alt')} ${index + 1}`}
                               className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
-                              onClick={() => setLightboxImage(image)}
+                              onClick={() => openLightbox(index, order.completed_images || [])}
                             />
                           </div>
                           <div className="absolute bottom-2 left-2 bg-green-600/80 text-white text-xs px-2 py-1 rounded">
@@ -1236,24 +1301,72 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       )}
 
       {/* Lightbox لعرض الصور بالحجم الكامل */}
-      {lightboxImage && (
+      {/* Lightbox لعرض الصور بالحجم الكامل */}
+      {lightboxIndex !== null && lightboxImages[lightboxIndex] && (
         <div
           key="order-lightbox"
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4"
-          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={closeLightbox}
         >
-          <button
-            onClick={() => setLightboxImage(null)}
-            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
-          >
-            <X className="w-8 h-8" />
-          </button>
-          <img
-            src={lightboxImage}
-            alt="عرض كامل"
-            className="max-w-full max-h-full object-contain"
+          <div
+            className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                closeLightbox()
+              }}
+              className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-30"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-30">
+              {lightboxIndex + 1} / {lightboxImages.length}
+            </div>
+
+            {canNavigateLightbox && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  showNextImage()
+                }}
+                className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-30"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            {canNavigateLightbox && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  showPreviousImage()
+                }}
+                className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-30"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+
+            <motion.img
+              key={lightboxImages[lightboxIndex]}
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              src={lightboxImages[lightboxIndex]}
+              alt="عرض كامل"
+              className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
     </AnimatePresence>

@@ -37,6 +37,7 @@ import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
+import { formatGregorianDate } from '@/lib/date-utils'
 import toast from 'react-hot-toast'
 
 export default function WorkerCompletedOrdersPage() {
@@ -115,9 +116,7 @@ export default function WorkerCompletedOrdersPage() {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('ar-SA', {
-      calendar: 'gregory', // استخدام التقويم الميلادي
+    return formatGregorianDate(dateString, 'ar-SA', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'

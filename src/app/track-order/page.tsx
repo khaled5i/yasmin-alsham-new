@@ -6,6 +6,7 @@ import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare,
 import Link from 'next/link'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
+import { formatGregorianDate } from '@/lib/date-utils'
 import NumericInput from '@/components/NumericInput'
 import Header from '@/components/Header'
 
@@ -122,11 +123,8 @@ export default function TrackOrderPage() {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-
     // التاريخ الميلادي فقط
-    return date.toLocaleDateString('ar-SA', {
-      calendar: 'gregory', // استخدام التقويم الميلادي
+    return formatGregorianDate(dateString, 'ar-SA', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -517,5 +515,4 @@ export default function TrackOrderPage() {
     </>
   )
 }
-
 

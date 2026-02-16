@@ -5,6 +5,7 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { orderService } from '@/lib/services/order-service'
 import { alterationService } from '@/lib/services/alteration-service'
+import { extractDateKey, parseDateKeyForPicker, toLocalDateKey } from '@/lib/date-utils'
 import { useTranslation } from '@/hooks/useTranslation'
 import moment from 'moment-hijri'
 
@@ -51,7 +52,8 @@ export default function DatePickerWithStats({
   const [loading, setLoading] = useState(true)
 
   // تحويل التاريخ من string إلى Date
-  const dateValue = selectedDate ? new Date(selectedDate) : null
+  const dateValue = parseDateKeyForPicker(selectedDate)
+  const selectedDateKey = selectedDate ? extractDateKey(selectedDate) : ''
 
   // جلب الإحصائيات عند تحميل المكون أو تغيير النوع
   useEffect(() => {
@@ -83,8 +85,8 @@ export default function DatePickerWithStats({
       const threeMonthsLater = new Date()
       threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3)
 
-      const startDate = today.toISOString().split('T')[0]
-      const endDate = threeMonthsLater.toISOString().split('T')[0]
+      const startDate = toLocalDateKey(today)
+      const endDate = toLocalDateKey(threeMonthsLater)
 
       let data = null
       let error = null
@@ -111,7 +113,7 @@ export default function DatePickerWithStats({
 
   // دالة لتخصيص عرض كل يوم في التقويم مع التاريخ الهجري
   const renderDayContents = (day: number, date: Date) => {
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = toLocalDateKey(date)
     const count = stats[dateStr] || 0
     const isOverloaded = count > 5
     const hijri = toHijri(date)
@@ -136,7 +138,7 @@ export default function DatePickerWithStats({
 
   // دالة لتخصيص CSS لكل يوم
   const getDayClassName = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = toLocalDateKey(date)
     const count = stats[dateStr] || 0
     const isOverloaded = count > 5
 
@@ -231,11 +233,11 @@ export default function DatePickerWithStats({
       />
 
       {/* رسالة تحذيرية إذا كان التاريخ المختار مزدحم */}
-      {dateValue && stats[selectedDate] > 5 && (
+      {dateValue && selectedDateKey && stats[selectedDateKey] > 5 && (
         <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
           <p className="text-sm text-red-700 flex items-center gap-2">
             <span className="text-lg">⚠️</span>
-            <span>{t('busy_date_warning', { count: stats[selectedDate] })}</span>
+            <span>{t('busy_date_warning', { count: stats[selectedDateKey] })}</span>
           </p>
         </div>
       )}
@@ -365,4 +367,3 @@ export default function DatePickerWithStats({
     </div>
   )
 }
-

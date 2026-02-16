@@ -3,6 +3,8 @@
  * تجهيز وإرسال رسائل واتساب للعملاء
  */
 
+import { formatGregorianDate } from '../lib/date-utils'
+
 interface OrderDetails {
   clientName: string
   clientPhone: string
@@ -58,7 +60,6 @@ export function formatPhoneNumber(phone: string): string {
 export function formatDateArabic(dateString: string): string {
   if (!dateString) return ''
 
-  const date = new Date(dateString)
   const options: Intl.DateTimeFormatOptions = {
     weekday: 'long',
     year: 'numeric',
@@ -66,7 +67,7 @@ export function formatDateArabic(dateString: string): string {
     day: 'numeric'
   }
 
-  return date.toLocaleDateString('ar-SA', options)
+  return formatGregorianDate(dateString, 'ar-SA', options)
 }
 
 /**
@@ -306,4 +307,3 @@ export function sendDeliveredWhatsApp(clientName: string, clientPhone: string): 
   // فتح الرابط في نافذة جديدة
   window.open(whatsappLink, '_blank')
 }
-

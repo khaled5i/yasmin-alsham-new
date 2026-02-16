@@ -23,6 +23,7 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { useTranslation } from '@/hooks/useTranslation'
+import { formatGregorianDate } from '@/lib/date-utils'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 
@@ -92,9 +93,7 @@ export default function DeliveredOrdersPage() {
 
   // تنسيق التاريخ
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('ar-SA', {
-      calendar: 'gregory', // استخدام التقويم الميلادي
+    return formatGregorianDate(dateString, 'ar-SA', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -440,4 +439,3 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
     </div>
   )
 }
-

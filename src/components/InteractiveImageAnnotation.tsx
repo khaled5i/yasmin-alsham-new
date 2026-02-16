@@ -3520,7 +3520,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 style={{ touchAction: 'none' }} // لمنع التمرير في الخلفية
               >
                 {/* حاوية تحدد النسبة وتوسط المحتوى */}
-                <div className="relative w-full max-w-full max-h-full aspect-[3/4] flex items-center justify-center shadow-2xl rounded-lg overflow-hidden my-auto mx-auto">
+                {/* maxWidth يضمن أن العرض لا يتجاوز نسبة 3:4 بالنسبة للارتفاع المتاح - يمنع تمدد الصورة على الشاشات العريضة */}
+                <div
+                  className="relative w-full max-w-full max-h-full aspect-[3/4] flex items-center justify-center shadow-2xl rounded-lg overflow-hidden my-auto mx-auto"
+                  style={{ maxWidth: 'calc((100vh - 2rem) * 0.75)' }}
+                >
                   {content}
                 </div>
               </div>,

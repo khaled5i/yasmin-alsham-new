@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Upload, X, Image as ImageIcon, Loader2, AlertCircle, CheckCircle, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { imageService, UploadProgress } from '@/lib/services/image-service'
 
@@ -310,6 +310,34 @@ export default function ImageUpload({
     goToLightboxPosition(nextPosition)
   }, [canNavigateLightbox, currentLightboxPosition, imageOnlyIndices.length, goToLightboxPosition])
 
+  // Swipe handling
+  const touchStartX = useRef<number | null>(null)
+  const touchEndX = useRef<number | null>(null)
+  const minSwipeDistance = 50
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchEndX.current = null
+    touchStartX.current = e.targetTouches[0].clientX
+  }
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.targetTouches[0].clientX
+  }
+
+  const onTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return
+    const distance = touchStartX.current - touchEndX.current
+    const isLeftSwipe = distance > minSwipeDistance
+    const isRightSwipe = distance < -minSwipeDistance
+
+    if (isLeftSwipe) {
+      showNextImage()
+    }
+    if (isRightSwipe) {
+      showPreviousImage()
+    }
+  }
+
   useEffect(() => {
     if (lightboxIndex === null) return
 
@@ -586,20 +614,7 @@ export default function ImageUpload({
                 )
               })}
 
-              {/* زر إضافة المزيد */}
-              {images.length < maxImages && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-pink-400 hover:bg-pink-50 transition-all duration-300"
-                  onClick={openFileDialog}
-                >
-                  <div className="text-center">
-                    <Plus className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-xs text-gray-500">{t('add_image')}</p>
-                  </div>
-                </motion.div>
-              )}
+
             </AnimatePresence>
           </div>
         </div>
@@ -616,7 +631,12 @@ export default function ImageUpload({
               className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm"
               onClick={closeLightbox}
             >
-              <div className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16">
+              <div
+                className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+              >
                 <button
                   type="button"
                   onClick={(e) => {
@@ -637,7 +657,7 @@ export default function ImageUpload({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
-                      showPreviousImage()
+                      showNextImage()
                     }}
                     className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
                   >
@@ -650,7 +670,7 @@ export default function ImageUpload({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
-                      showNextImage()
+                      showPreviousImage()
                     }}
                     className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
                   >
@@ -681,11 +701,10 @@ export default function ImageUpload({
                             e.stopPropagation()
                             setLightboxIndex(imageIndex)
                           }}
-                          className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
-                            imageIndex === lightboxIndex
-                              ? 'border-pink-400 opacity-100'
-                              : 'border-transparent opacity-70 hover:opacity-100'
-                          }`}
+                          className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${imageIndex === lightboxIndex
+                            ? 'border-pink-400 opacity-100'
+                            : 'border-transparent opacity-70 hover:opacity-100'
+                            }`}
                         >
                           <img
                             src={images[imageIndex]}

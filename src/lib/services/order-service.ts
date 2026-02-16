@@ -10,6 +10,7 @@
  * - Production console.log guarded behind isDev
  */
 
+import { extractDateKey } from '../date-utils'
 import { supabase, isSupabaseConfigured } from '../supabase'
 
 const isDev = process.env.NODE_ENV === 'development'
@@ -650,8 +651,9 @@ export const orderService = {
 
       const stats: Record<string, number> = {}
       data?.forEach((order) => {
-        const date = order.due_date
-        stats[date] = (stats[date] || 0) + 1
+        const dateKey = extractDateKey(order.due_date)
+        if (!dateKey) return
+        stats[dateKey] = (stats[dateKey] || 0) + 1
       })
 
       return { data: stats, error: null }
@@ -688,9 +690,9 @@ export const orderService = {
 
       const stats: Record<string, number> = {}
       data?.forEach((order) => {
-        const date = order.proof_delivery_date
-        if (date) {
-          stats[date] = (stats[date] || 0) + 1
+        const dateKey = order.proof_delivery_date ? extractDateKey(order.proof_delivery_date) : ''
+        if (dateKey) {
+          stats[dateKey] = (stats[dateKey] || 0) + 1
         }
       })
 

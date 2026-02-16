@@ -2,6 +2,7 @@
 
 import { forwardRef } from 'react'
 import { Order } from '@/lib/services/order-service'
+import { parseDateForDisplay } from '@/lib/date-utils'
 import { MEASUREMENT_ORDER, MEASUREMENT_LABELS } from '@/types/measurements'
 
 // نوع snapshot التعليق للطباعة
@@ -43,9 +44,11 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
 
     // تنسيق التاريخ في الطباعة بصيغة شهر\يوم (بدون سنة)
     const formatDate = (dateString: string) => {
-      const date = new Date(dateString)
-      const day = date.getDate().toString().padStart(2, '0')
-      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      const parsed = parseDateForDisplay(dateString)
+      if (!parsed) return dateString
+
+      const day = String(parsed.getDate()).padStart(2, '0')
+      const month = String(parsed.getMonth() + 1).padStart(2, '0')
       return `${day}\\${month}`
     }
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { orderService } from '@/lib/services/order-service'
+import { extractDateKey, parseDateKeyForPicker, toLocalDateKey } from '@/lib/date-utils'
 import { useTranslation } from '@/hooks/useTranslation'
 import moment from 'moment-hijri'
 
@@ -48,7 +49,8 @@ export default function DatePickerForProof({
   const [loading, setLoading] = useState(true)
 
   // تحويل التاريخ من string إلى Date
-  const dateValue = selectedDate ? new Date(selectedDate) : null
+  const dateValue = parseDateKeyForPicker(selectedDate)
+  const selectedDateKey = selectedDate ? extractDateKey(selectedDate) : ''
 
   // جلب إحصائيات مواعيد البروفا عند تحميل المكون
   useEffect(() => {
@@ -80,8 +82,8 @@ export default function DatePickerForProof({
       const threeMonthsLater = new Date()
       threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3)
 
-      const startDate = today.toISOString().split('T')[0]
-      const endDate = threeMonthsLater.toISOString().split('T')[0]
+      const startDate = toLocalDateKey(today)
+      const endDate = toLocalDateKey(threeMonthsLater)
 
       const { data, error } = await orderService.getProofStatsByDate(startDate, endDate)
 
@@ -97,7 +99,7 @@ export default function DatePickerForProof({
 
   // دالة لتخصيص عرض كل يوم في التقويم مع التاريخ الهجري
   const renderDayContents = (day: number, date: Date) => {
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = toLocalDateKey(date)
     const proofCount = proofStats[dateStr] || 0
     const isOverloaded = proofCount >= 4
     const hijri = toHijri(date)
@@ -122,7 +124,7 @@ export default function DatePickerForProof({
 
   // دالة لتخصيص CSS لكل يوم
   const getDayClassName = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = toLocalDateKey(date)
     const proofCount = proofStats[dateStr] || 0
     const isOverloaded = proofCount >= 4
 
@@ -217,14 +219,14 @@ export default function DatePickerForProof({
       />
 
       {/* رسالة تحذيرية إذا كان التاريخ المختار مزدحم */}
-      {dateValue && proofStats[selectedDate] >= 4 && (
+      {dateValue && selectedDateKey && proofStats[selectedDateKey] >= 4 && (
         <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
           <p className="text-sm text-red-700 flex items-center gap-2">
             <span className="text-lg">⚠️</span>
             <span>
               {isArabic
-                ? `تحذير: يوجد ${proofStats[selectedDate]} مواعيد بروفا أو أكثر في هذا اليوم`
-                : `Warning: There are ${proofStats[selectedDate]} or more proof appointments on this day`
+                ? `تحذير: يوجد ${proofStats[selectedDateKey]} مواعيد بروفا أو أكثر في هذا اليوم`
+                : `Warning: There are ${proofStats[selectedDateKey]} or more proof appointments on this day`
               }
             </span>
           </p>
@@ -356,5 +358,3 @@ export default function DatePickerForProof({
     </div>
   )
 }
-
-

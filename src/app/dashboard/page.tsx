@@ -10,6 +10,7 @@ import { useAppointmentStore } from '@/store/appointmentStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { formatGregorianDate } from '@/lib/date-utils'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AlterationTypeModal from '@/components/AlterationTypeModal'
 import OrderSearchModal from '@/components/OrderSearchModal'
@@ -225,9 +226,7 @@ function DashboardContent() {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('ar-SA', {
-      calendar: 'gregory', // استخدام التقويم الميلادي
+    return formatGregorianDate(dateString, 'ar-SA', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'

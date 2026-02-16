@@ -3,6 +3,7 @@
  * تتعامل مع جميع عمليات طلبات التعديلات في Supabase
  */
 
+import { extractDateKey } from '../date-utils'
 import { supabase, isSupabaseConfigured } from '../supabase'
 
 const ALTERATION_LIST_COLUMNS = [
@@ -533,8 +534,9 @@ export const alterationService = {
       // حساب عدد التعديلات لكل تاريخ
       const stats: Record<string, number> = {}
       data?.forEach((alteration) => {
-        const date = alteration.alteration_due_date
-        stats[date] = (stats[date] || 0) + 1
+        const dateKey = extractDateKey(alteration.alteration_due_date)
+        if (!dateKey) return
+        stats[dateKey] = (stats[dateKey] || 0) + 1
       })
 
       console.log('✅ Alteration stats fetched successfully:', stats)

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Printer, Check, Image as ImageIcon, Loader2 } from 'lucide-react'
 import { Order, orderService } from '@/lib/services/order-service'
+import { formatGregorianDate } from '@/lib/date-utils'
 import OrderPrintLayout from './OrderPrintLayout'
 import type { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
@@ -798,7 +799,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
                 <p><span className="text-gray-600">الزبونة:</span> {order.client_name}</p>
                 <p><span className="text-gray-600">الهاتف:</span> {order.client_phone}</p>
                 <p><span className="text-gray-600">رقم الطلب:</span> #{order.order_number || order.id.slice(0, 8)}</p>
-                <p><span className="text-gray-600">موعد التسليم:</span> {new Date(order.due_date).toLocaleDateString('ar-SA')}</p>
+                <p><span className="text-gray-600">موعد التسليم:</span> {formatGregorianDate(order.due_date, 'ar-SA')}</p>
               </div>
             </div>
 
