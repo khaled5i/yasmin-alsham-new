@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, Camera, Printer } from 'lucide-react'
+import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle, Camera, Printer } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { imageService, UploadProgress } from '@/lib/services/image-service'
 
@@ -40,11 +40,12 @@ export default function ImageUploadWithPrint({
 }: ImageUploadWithPrintProps) {
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [, setUploadProgress] = useState<Map<string, FileProgress>>(new Map())
+  const [uploadProgress, setUploadProgress] = useState<Map<string, FileProgress>>(new Map())
   const [errors, setErrors] = useState<string[]>([])
   const [showOptions, setShowOptions] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const uploadControllersRef = useRef<Map<string, AbortController>>(new Map())
   const { t } = useTranslation()
 
   // تبديل حالة الطباعة للصورة
@@ -56,6 +57,36 @@ export default function ImageUploadWithPrint({
     }
   }
 
+  const cancelUploadByKey = useCallback((fileKey: string) => {
+    const controller = uploadControllersRef.current.get(fileKey)
+    if (!controller || controller.signal.aborted) return
+
+    controller.abort()
+    uploadControllersRef.current.delete(fileKey)
+    setUploadProgress((prev) => {
+      const next = new Map(prev)
+      const entry = next.get(fileKey)
+      if (!entry) return next
+      next.set(fileKey, {
+        ...entry,
+        progress: {
+          fileName: entry.file.name,
+          progress: entry.progress.progress,
+          status: 'error',
+          error: 'Upload cancelled'
+        }
+      })
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      uploadControllersRef.current.forEach((controller) => controller.abort())
+      uploadControllersRef.current.clear()
+    }
+  }, [])
+
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || uploading) return
     const remainingSlots = maxImages - images.length
@@ -64,11 +95,28 @@ export default function ImageUploadWithPrint({
     if (filesToUpload.length === 0) return
     setUploading(true)
     setErrors([])
-    const uploadAbortController = new AbortController()
+    const uploadControllers = new Map<string, AbortController>()
+    uploadControllersRef.current = uploadControllers
     const safetyTimeout = window.setTimeout(() => {
-      uploadAbortController.abort()
+      uploadControllers.forEach((controller) => controller.abort())
+      setUploadProgress((prev) => {
+        const next = new Map(prev)
+        next.forEach((value, key) => {
+          const isActive = value.progress.status === 'uploading' || value.progress.status === 'compressing'
+          if (!isActive) return
+          next.set(key, {
+            ...value,
+            progress: {
+              fileName: value.file.name,
+              progress: value.progress.progress,
+              status: 'error',
+              error: 'Upload timed out'
+            }
+          })
+        })
+        return next
+      })
       setUploading(false)
-      setUploadProgress(new Map())
       setErrors(prev => [...prev, 'انتهت مهلة الرفع. يرجى المحاولة مرة أخرى'])
     }, 180_000)
 
@@ -77,7 +125,9 @@ export default function ImageUploadWithPrint({
     const progressMap = new Map<string, FileProgress>()
 
     filesToUpload.forEach(file => {
-      progressMap.set(getFileKey(file), {
+      const fileKey = getFileKey(file)
+      uploadControllers.set(fileKey, new AbortController())
+      progressMap.set(fileKey, {
         file,
         progress: { fileName: file.name, progress: 0, status: 'uploading' }
       })
@@ -86,11 +136,13 @@ export default function ImageUploadWithPrint({
 
     try {
       const uploadSingleFile = async (file: File): Promise<{ url?: string; error?: string }> => {
-        if (uploadAbortController.signal.aborted) {
+        const fileKey = getFileKey(file)
+        const uploadController = uploadControllers.get(fileKey)
+
+        if (!uploadController || uploadController.signal.aborted) {
           return { error: `${file.name}: تم إلغاء الرفع` }
         }
 
-        const fileKey = getFileKey(file)
         const isImage = file.type.startsWith('image/')
         const isVideo = file.type.startsWith('video/')
 
@@ -109,12 +161,18 @@ export default function ImageUploadWithPrint({
               const newMap = new Map(prev)
               const fileProgress = newMap.get(fileKey)
               if (fileProgress) {
-                fileProgress.progress = progress
-                newMap.set(fileKey, fileProgress)
+                newMap.set(fileKey, {
+                  ...fileProgress,
+                  progress
+                })
               }
               return newMap
             })
-          }, { signal: uploadAbortController.signal })
+          }, { signal: uploadController.signal })
+
+          if (uploadController.signal.aborted) {
+            return { error: `${file.name}: Upload cancelled` }
+          }
 
           if (error) {
             return { error: `${file.name}: ${error}` }
@@ -126,6 +184,10 @@ export default function ImageUploadWithPrint({
 
         const { data, error } = await imageService.uploadAsBase64(file)
 
+        if (uploadController.signal.aborted) {
+          return { error: `${file.name}: Upload cancelled` }
+        }
+
         if (error) {
           return { error: `${file.name}: ${error}` }
         }
@@ -134,8 +196,10 @@ export default function ImageUploadWithPrint({
           const newMap = new Map(prev)
           const fileProgress = newMap.get(fileKey)
           if (fileProgress) {
-            fileProgress.progress = { fileName: file.name, progress: 100, status: 'success' }
-            newMap.set(fileKey, fileProgress)
+            newMap.set(fileKey, {
+              ...fileProgress,
+              progress: { fileName: file.name, progress: 100, status: 'success' }
+            })
           }
           return newMap
         })
@@ -150,6 +214,7 @@ export default function ImageUploadWithPrint({
 
         settled.forEach((result, index) => {
           const file = batch[index]
+          uploadControllers.delete(getFileKey(file))
           if (result.status === 'rejected') {
             pendingErrors.push(`${file.name}: ${result.reason instanceof Error ? result.reason.message : 'فشل الرفع'}`)
             return
@@ -165,9 +230,6 @@ export default function ImageUploadWithPrint({
           }
         })
 
-        if (uploadAbortController.signal.aborted) {
-          break
-        }
       }
 
       if (newImages.length > 0) {
@@ -182,6 +244,11 @@ export default function ImageUploadWithPrint({
       setErrors(prev => [...prev, message])
     } finally {
       window.clearTimeout(safetyTimeout)
+      uploadControllers.forEach((controller) => controller.abort())
+      uploadControllers.clear()
+      if (uploadControllersRef.current === uploadControllers) {
+        uploadControllersRef.current = new Map()
+      }
       if (fileInputRef.current) fileInputRef.current.value = ''
       if (cameraInputRef.current) cameraInputRef.current.value = ''
 
@@ -324,6 +391,67 @@ export default function ImageUploadWithPrint({
       </div>
 
       {/* رسائل الأخطاء */}
+      {/* Upload progress */}
+      {uploadProgress.size > 0 && (
+        <div className="space-y-2">
+          <h4 className="font-medium text-gray-700 text-sm">Uploading:</h4>
+          {Array.from(uploadProgress.entries()).map(([fileKey, { file, progress }]) => {
+            const isActive = progress.status === 'uploading' || progress.status === 'compressing'
+            const canCancel = isActive && uploadControllersRef.current.has(fileKey)
+
+            return (
+              <div key={fileKey} className="bg-white border border-gray-200 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {canCancel && (
+                      <button
+                        type="button"
+                        onClick={() => cancelUploadByKey(fileKey)}
+                        className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    {progress.status === 'success' && (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    )}
+                    {progress.status === 'error' && (
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                    )}
+                    {(progress.status === 'uploading' || progress.status === 'compressing') && (
+                      <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${progress.status === 'success'
+                      ? 'bg-green-500'
+                      : progress.status === 'error'
+                        ? 'bg-red-500'
+                        : 'bg-blue-500'
+                      }`}
+                    style={{ width: `${progress.progress}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs text-gray-500">
+                    {progress.status === 'compressing' && 'Compressing...'}
+                    {progress.status === 'uploading' && 'Uploading...'}
+                    {progress.status === 'success' && 'Done'}
+                    {progress.status === 'error' && progress.error}
+                  </span>
+                  <span className="text-xs text-gray-500">{progress.progress}%</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {errors.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
           <div className="flex items-start">

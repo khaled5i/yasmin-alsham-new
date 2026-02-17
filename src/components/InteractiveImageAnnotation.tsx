@@ -134,6 +134,66 @@ const serializeDesignState = (annotations: ImageAnnotation[], drawings: DrawingP
 const MAX_CUSTOM_IMAGE_DIM = 1920
 
 async function resizeImageFile(file: File, maxDim: number): Promise<string> {
+  // استخدام createImageBitmap لتحميل الصورة بكفاءة أعلى (تجنب تجمد المتصفح مع صور الكاميرا الكبيرة)
+  if (typeof createImageBitmap === 'function') {
+    try {
+      // أولاً: تحميل البيانات الأصلية لمعرفة الأبعاد
+      const bitmap = await createImageBitmap(file)
+      const originalWidth = bitmap.width
+      const originalHeight = bitmap.height
+      bitmap.close()
+
+      let targetWidth = originalWidth
+      let targetHeight = originalHeight
+
+      if (originalWidth > maxDim || originalHeight > maxDim) {
+        if (originalWidth > originalHeight) {
+          targetWidth = maxDim
+          targetHeight = Math.round((originalHeight * maxDim) / originalWidth)
+        } else {
+          targetWidth = Math.round((originalWidth * maxDim) / originalHeight)
+          targetHeight = maxDim
+        }
+      }
+
+      // تحميل الصورة بالحجم المطلوب مباشرة (أقل استهلاكاً للذاكرة)
+      const resizedBitmap = await createImageBitmap(file, {
+        resizeWidth: targetWidth,
+        resizeHeight: targetHeight,
+        resizeQuality: 'medium',
+      })
+
+      const canvas = document.createElement('canvas')
+      canvas.width = targetWidth
+      canvas.height = targetHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resizedBitmap.close()
+        throw new Error('Canvas context failed')
+      }
+
+      ctx.drawImage(resizedBitmap, 0, 0)
+      resizedBitmap.close()
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (b) => {
+            canvas.width = 0
+            canvas.height = 0
+            b ? resolve(b) : reject(new Error('Blob creation failed'))
+          },
+          'image/jpeg',
+          0.85
+        )
+      })
+
+      return URL.createObjectURL(blob)
+    } catch {
+      // fallback إلى الطريقة التقليدية
+    }
+  }
+
+  // fallback: استخدام Image element للمتصفحات التي لا تدعم createImageBitmap
   return new Promise((resolve, reject) => {
     const sourceUrl = URL.createObjectURL(file)
     const img = new window.Image()
@@ -552,6 +612,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const cameraVideoRef = useRef<HTMLVideoElement>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
   const drawingScrollLockRef = useRef<{ overflow: string; touchAction: string } | null>(null)
 
   // حالات التعليقات الصوتية
@@ -619,6 +681,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // حالات تبديل الصورة
   const [showImageOptions, setShowImageOptions] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [showCameraCapture, setShowCameraCapture] = useState(false)
 
   // حالة لتتبع الصورة المعروضة حالياً (لزر الأمام/الخلف)
   const [internalImageOverride, setInternalImageOverride] = useState<string | null>(null)
@@ -1881,9 +1944,18 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // التحقق من صحة الملف
   const validateImageFile = useCallback((file: File): boolean => {
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']
+    const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif']
+
     if (!validTypes.includes(file.type)) {
-      setError('الملف يجب أن يكون صورة (JPG, PNG, GIF, WebP)')
-      return false
+      // بعض المتصفحات (خاصة على Android) ترجع file.type فارغ عند التقاط صورة من الكاميرا
+      // في هذه الحالة نتحقق من امتداد الملف كبديل
+      const fileName = file.name.toLowerCase()
+      const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext))
+      // إذا لم يكن هناك نوع ولا امتداد معروف، نقبل الملف لأن عنصر input مقيد بـ accept="image/*"
+      if (file.type && !hasValidExtension) {
+        setError('الملف يجب أن يكون صورة (JPG, PNG, GIF, WebP)')
+        return false
+      }
     }
     // الحد الأقصى 10 ميجابايت
     if (file.size > 10 * 1024 * 1024) {
@@ -1928,10 +2000,83 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     fileInputRef.current?.click()
   }, [])
 
-  // فتح الكاميرا
-  const openCamera = useCallback(() => {
-    cameraInputRef.current?.click()
+  // فتح الكاميرا - استخدام getUserMedia لتجنب مشكلة capture="environment" على أجهزة Samsung/Android
+  const openCamera = useCallback(async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        // المتصفح لا يدعم getUserMedia، استخدام input capture كبديل
+        cameraInputRef.current?.click()
+        return
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1440 },
+        },
+      })
+      cameraStreamRef.current = stream
+      setShowCameraCapture(true)
+      setShowImageOptions(false)
+    } catch {
+      // المستخدم رفض إذن الكاميرا أو حدث خطأ، استخدام input capture كبديل
+      cameraInputRef.current?.click()
+    }
   }, [])
+
+  // التقاط صورة من بث الكاميرا
+  const takeCameraPhoto = useCallback(() => {
+    const video = cameraVideoRef.current
+    if (!video || !video.videoWidth) return
+
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.drawImage(video, 0, 0)
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' })
+          onImageChange?.(file)
+        }
+        canvas.width = 0
+        canvas.height = 0
+        closeCameraCapture()
+      },
+      'image/jpeg',
+      0.9
+    )
+  }, [onImageChange])
+
+  // إغلاق الكاميرا وإيقاف البث
+  const closeCameraCapture = useCallback(() => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(t => t.stop())
+      cameraStreamRef.current = null
+    }
+    setShowCameraCapture(false)
+  }, [])
+
+  // تنظيف بث الكاميرا عند إلغاء تحميل المكوّن
+  useEffect(() => {
+    return () => {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(t => t.stop())
+        cameraStreamRef.current = null
+      }
+    }
+  }, [])
+
+  // ربط بث الكاميرا بعنصر الفيديو عند فتح الكاميرا
+  useEffect(() => {
+    if (showCameraCapture && cameraVideoRef.current && cameraStreamRef.current) {
+      cameraVideoRef.current.srcObject = cameraStreamRef.current
+    }
+  }, [showCameraCapture])
 
   // ===== نهاية دوال تبديل الصورة =====
 
@@ -2716,6 +2861,40 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       {error && (
         <div className="p-3 bg-red-50 text-red-800 border border-red-200 rounded-lg text-sm">
           {error}
+        </div>
+      )}
+
+      {/* واجهة الكاميرا المدمجة - تظهر عند فتح الكاميرا */}
+      {showCameraCapture && (
+        <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
+          <video
+            ref={cameraVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="flex-1 object-cover w-full"
+          />
+          <div className="absolute bottom-0 left-0 right-0 pb-8 pt-4 flex items-center justify-center gap-6 bg-gradient-to-t from-black/70 to-transparent">
+            {/* زر إغلاق */}
+            <button
+              type="button"
+              onClick={closeCameraCapture}
+              className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            {/* زر التقاط */}
+            <button
+              type="button"
+              onClick={takeCameraPhoto}
+              className="w-18 h-18 rounded-full border-4 border-white bg-white/30 backdrop-blur-sm flex items-center justify-center active:bg-white/60 transition-colors"
+              style={{ width: 72, height: 72 }}
+            >
+              <div className="w-14 h-14 rounded-full bg-white" style={{ width: 56, height: 56 }} />
+            </button>
+            {/* فراغ للتوازن */}
+            <div className="w-12 h-12" />
+          </div>
         </div>
       )}
 
