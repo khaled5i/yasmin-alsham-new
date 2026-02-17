@@ -133,6 +133,61 @@ const isFormDataEmpty = (data: FormDataType): boolean => {
   )
 }
 
+async function compressFileForStorage(file: File, maxDim: number = 1920): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const sourceUrl = URL.createObjectURL(file)
+    const image = new window.Image()
+
+    image.onload = () => {
+      URL.revokeObjectURL(sourceUrl)
+
+      let width = image.naturalWidth
+      let height = image.naturalHeight
+
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width)
+          width = maxDim
+        } else {
+          width = Math.round((width * maxDim) / height)
+          height = maxDim
+        }
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('Canvas failed'))
+        return
+      }
+
+      ctx.drawImage(image, 0, 0, width, height)
+      canvas.toBlob(
+        (blob) => {
+          canvas.width = 0
+          canvas.height = 0
+          if (!blob) {
+            reject(new Error('Blob failed'))
+            return
+          }
+          resolve(blob)
+        },
+        'image/jpeg',
+        0.85
+      )
+    }
+
+    image.onerror = () => {
+      URL.revokeObjectURL(sourceUrl)
+      reject(new Error('Image load failed'))
+    }
+
+    image.src = sourceUrl
+  })
+}
+
 function AddOrderContent() {
   const { user } = useAuthStore()
   const { createOrder } = useOrderStore()
@@ -337,16 +392,17 @@ function AddOrderContent() {
           return
         }
       } else if (customDesignImageFile) {
-        // تحويل ملف الصورة إلى base64
+        // ضغط ملف الصورة ثم تحويله إلى base64
         try {
+          const compressedBlob = await compressFileForStorage(customDesignImageFile, 1920)
           const reader = new FileReader()
           customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(customDesignImageFile)
+            reader.readAsDataURL(compressedBlob)
           })
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
-          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
+          console.log(`📸 Custom design image compressed and converted to base64: ${imageSizeKB}KB`)
 
           // التحقق من الحجم (الحد الأقصى 10MB)
           if (imageSizeKB > 10 * 1024) {
@@ -512,16 +568,17 @@ function AddOrderContent() {
           return
         }
       } else if (customDesignImageFile) {
-        // تحويل ملف الصورة إلى base64
+        // ضغط ملف الصورة ثم تحويله إلى base64
         try {
+          const compressedBlob = await compressFileForStorage(customDesignImageFile, 1920)
           const reader = new FileReader()
           customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(customDesignImageFile)
+            reader.readAsDataURL(compressedBlob)
           })
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
-          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
+          console.log(`📸 Custom design image compressed and converted to base64: ${imageSizeKB}KB`)
 
           // التحقق من الحجم (الحد الأقصى 10MB)
           if (imageSizeKB > 10 * 1024) {

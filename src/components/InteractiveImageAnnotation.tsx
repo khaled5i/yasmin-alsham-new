@@ -131,6 +131,95 @@ const getViewFromTitle = (title?: string | null): 'front' | 'back' | null => {
 const serializeDesignState = (annotations: ImageAnnotation[], drawings: DrawingPath[]) =>
   JSON.stringify({ annotations, drawings })
 
+const MAX_CUSTOM_IMAGE_DIM = 1920
+
+async function resizeImageFile(file: File, maxDim: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const sourceUrl = URL.createObjectURL(file)
+    const img = new window.Image()
+
+    img.onload = () => {
+      URL.revokeObjectURL(sourceUrl)
+      const { naturalWidth: originalWidth, naturalHeight: originalHeight } = img
+
+      let targetWidth = originalWidth
+      let targetHeight = originalHeight
+
+      if (originalWidth > maxDim || originalHeight > maxDim) {
+        if (originalWidth > originalHeight) {
+          targetWidth = maxDim
+          targetHeight = Math.round((originalHeight * maxDim) / originalWidth)
+        } else {
+          targetWidth = Math.round((originalWidth * maxDim) / originalHeight)
+          targetHeight = maxDim
+        }
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = targetWidth
+      canvas.height = targetHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('Canvas context failed'))
+        return
+      }
+
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight)
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error('Blob creation failed'))
+            return
+          }
+          resolve(URL.createObjectURL(blob))
+          canvas.width = 0
+          canvas.height = 0
+        },
+        'image/jpeg',
+        0.85
+      )
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(sourceUrl)
+      reject(new Error('Image load failed'))
+    }
+
+    img.src = sourceUrl
+  })
+}
+
+async function loadImageWithTimeout(src: string, timeoutMs: number): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image()
+    let settled = false
+
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return
+      settled = true
+      image.src = ''
+      reject(new Error('انتهت مهلة تحميل الصورة'))
+    }, timeoutMs)
+
+    image.onload = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeoutId)
+      resolve(image)
+    }
+
+    image.onerror = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeoutId)
+      reject(new Error('Failed to load image'))
+    }
+
+    image.crossOrigin = 'anonymous'
+    image.src = src
+  })
+}
+
 // واجهة التعليق المحفوظ
 export interface SavedDesignComment {
   id: string
@@ -643,14 +732,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       // تحميل الصورة الأساسية
       // تحميل الصورة الأساسية
       const baseImageSrc = effectiveImageSrc
-      const baseImage = new window.Image()
-      baseImage.crossOrigin = 'anonymous'
-
-      await new Promise<void>((resolve, reject) => {
-        baseImage.onload = () => resolve()
-        baseImage.onerror = () => reject(new Error('Failed to load image'))
-        baseImage.src = baseImageSrc
-      })
+      const baseImage = await loadImageWithTimeout(baseImageSrc, 15_000)
 
       // حساب أبعاد الصورة مع الحفاظ على النسبة (object-contain)
       // الـ container له aspect-[3/4] والصورة تستخدم object-contain
@@ -1082,12 +1164,34 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
   // إنشاء URL للصورة المختارة
   useEffect(() => {
-    if (customImage) {
-      const url = URL.createObjectURL(customImage)
-      setImagePreview(url)
-      return () => URL.revokeObjectURL(url)
-    } else {
+    if (!customImage) {
       setImagePreview(null)
+      return
+    }
+
+    let cancelled = false
+    let currentUrl: string | null = null
+
+    resizeImageFile(customImage, MAX_CUSTOM_IMAGE_DIM)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        currentUrl = url
+        setImagePreview(url)
+      })
+      .catch((error) => {
+        console.error('فشل ضغط الصورة المخصصة:', error)
+        if (cancelled) return
+        const fallbackUrl = URL.createObjectURL(customImage)
+        currentUrl = fallbackUrl
+        setImagePreview(fallbackUrl)
+      })
+
+    return () => {
+      cancelled = true
+      if (currentUrl) URL.revokeObjectURL(currentUrl)
     }
   }, [customImage])
 
