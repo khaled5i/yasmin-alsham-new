@@ -306,6 +306,10 @@ interface InteractiveImageAnnotationProps {
   onSavedCommentsChange?: (comments: SavedDesignComment[]) => void
   showSaveButton?: boolean
   currentImageBase64?: string | null
+  // العرض الابتدائي (أمام/خلف) - لاستعادة الحالة عند العودة للصفحة
+  initialView?: 'front' | 'back'
+  // إشعار المكون الأب عند تغيير العرض
+  onViewChange?: (view: 'front' | 'back') => void
 }
 
 // نوع الـ ref للوصول إلى دوال المكون من الخارج
@@ -596,7 +600,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   savedComments = [],
   onSavedCommentsChange,
   showSaveButton = true,
-  currentImageBase64 = null
+  currentImageBase64 = null,
+  initialView,
+  onViewChange
 }, ref) => {
   const { t } = useTranslation()
 
@@ -684,7 +690,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [showCameraCapture, setShowCameraCapture] = useState(false)
 
   // حالة لتتبع الصورة المعروضة حالياً (لزر الأمام/الخلف)
-  const [internalImageOverride, setInternalImageOverride] = useState<string | null>(null)
+  // استخدام initialView لتعيين العرض الابتدائي عند استعادة الحالة
+  const [internalImageOverride, setInternalImageOverride] = useState<string | null>(
+    initialView === 'back' ? '/back2.png' : initialView === 'front' ? '/front2.png' : null
+  )
 
   // الصورة الفعلية المعروضة:
   // 1) صورة المعاينة من File الحالي
@@ -1061,7 +1070,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     // 3. تعيين العرض الجديد مع الإبقاء على الصورة المخصصة إن وجدت
     setInternalImageOverride(targetPath)
 
-  }, [annotations.length, drawings.length, saveCurrentComment, onAnnotationsChange, onDrawingsChange, getCurrentView])
+    // 4. إشعار المكون الأب بتغيير العرض
+    onViewChange?.(targetView)
+
+  }, [annotations.length, drawings.length, saveCurrentComment, onAnnotationsChange, onDrawingsChange, getCurrentView, onViewChange])
 
   // دالة حذف تعليق محفوظ
   const deleteSavedComment = useCallback((commentId: string) => {

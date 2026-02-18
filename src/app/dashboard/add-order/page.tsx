@@ -38,6 +38,8 @@ import { openWhatsApp } from '@/utils/whatsapp'
 
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
+const DESIGN_COMMENTS_STORAGE_KEY = 'add-order-design-comments-v1'
+const DESIGN_ACTIVE_VIEW_STORAGE_KEY = 'add-order-design-active-view'
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
 
@@ -238,6 +240,77 @@ function AddOrderContent() {
     }
   }, [hasRestoredData, isArabic])
 
+  // حفظ واسترجاع تعليقات التصميم في localStorage منفصل (بدون compositeImage لتوفير المساحة)
+  const [hasLoadedComments, setHasLoadedComments] = useState(false)
+
+  // حالة العرض النشط (أمام/خلف) - لاستعادتها عند العودة للصفحة
+  const [restoredActiveView, setRestoredActiveView] = useState<'front' | 'back' | undefined>(undefined)
+
+  useEffect(() => {
+    // الانتظار حتى يتم تهيئة formData من useFormPersistence
+    // ثم استرجاع التعليقات المحفوظة والعرض النشط
+    if (hasLoadedComments) return
+
+    // تأخير بسيط للسماح لـ useFormPersistence بالتنفيذ أولاً
+    const timer = setTimeout(() => {
+      try {
+        const savedCommentsJson = localStorage.getItem(DESIGN_COMMENTS_STORAGE_KEY)
+        if (savedCommentsJson) {
+          const savedComments = JSON.parse(savedCommentsJson) as SavedDesignComment[]
+          if (savedComments.length > 0) {
+            setFormData(prev => ({
+              ...prev,
+              savedDesignComments: savedComments
+            }))
+            console.log(`📂 Restored ${savedComments.length} design comments from localStorage`)
+          }
+        }
+      } catch (error) {
+        console.error('Error restoring design comments:', error)
+        localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      }
+
+      // استرجاع العرض النشط الأخير (أمام/خلف)
+      try {
+        const savedView = localStorage.getItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY) as 'front' | 'back' | null
+        if (savedView === 'front' || savedView === 'back') {
+          setRestoredActiveView(savedView)
+          console.log(`📂 Restored active design view: ${savedView}`)
+        }
+      } catch (error) {
+        console.error('Error restoring active view:', error)
+      }
+
+      setHasLoadedComments(true)
+    }, 100)
+
+    return () => clearTimeout(timer)
+  }, [hasLoadedComments, setFormData])
+
+  // حفظ التعليقات عند تغييرها (بدون compositeImage)
+  useEffect(() => {
+    // لا تحفظ/تحذف قبل تحميل التعليقات المحفوظة من localStorage
+    // لتجنب حالة السباق حيث يتم حذف التعليقات قبل استرجاعها
+    if (!hasLoadedComments) return
+
+    if (formData.savedDesignComments.length > 0) {
+      try {
+        // إزالة compositeImage من التعليقات قبل الحفظ لتوفير المساحة
+        const commentsWithoutComposite = formData.savedDesignComments.map(comment => {
+          const { compositeImage, ...rest } = comment as any
+          return rest
+        })
+        localStorage.setItem(DESIGN_COMMENTS_STORAGE_KEY, JSON.stringify(commentsWithoutComposite))
+        console.log(`💾 Saved ${formData.savedDesignComments.length} design comments to localStorage`)
+      } catch (error) {
+        console.error('Error saving design comments:', error)
+      }
+    } else {
+      // حذف التعليقات من localStorage إذا كانت فارغة
+      localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+    }
+  }, [formData.savedDesignComments, hasLoadedComments])
+
   // رسالة تحذيرية عند محاولة إغلاق الصفحة مع بيانات غير محفوظة
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -333,10 +406,24 @@ function AddOrderContent() {
     }))
   }, [setFormData])
 
+  // معالجة تغيير العرض النشط (أمام/خلف) - لحفظه في localStorage
+  const handleViewChange = useCallback((view: 'front' | 'back') => {
+    try {
+      localStorage.setItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY, view)
+    } catch (error) {
+      console.error('Error saving active view:', error)
+    }
+  }, [])
+
   // مسح جميع الحقول
   const handleClearAllFields = useCallback(() => {
     resetToInitial()
     setCustomDesignImageFile(null)
+    // حذف تعليقات التصميم والعرض النشط من localStorage
+    localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+    localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
+    setHasLoadedComments(false)
+    setRestoredActiveView(undefined)
     toast.success(
       isArabic ? 'تم مسح جميع الحقول' : 'All fields cleared',
       { icon: '🗑️', duration: 2000 }
@@ -489,6 +576,8 @@ function AddOrderContent() {
 
       // مسح البيانات المحفوظة من localStorage بعد النجاح
       clearSavedData()
+      localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       // إظهار رسالة النجاح
       toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
@@ -659,6 +748,8 @@ function AddOrderContent() {
 
       // مسح البيانات المحفوظة من localStorage بعد النجاح
       clearSavedData()
+      localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       // إظهار رسالة النجاح
       toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
@@ -963,6 +1054,8 @@ function AddOrderContent() {
                 onSavedCommentsChange={handleSavedCommentsChange}
                 showSaveButton={true}
                 currentImageBase64={formData.customDesignImage}
+                initialView={restoredActiveView}
+                onViewChange={handleViewChange}
               />
             </div>
 
