@@ -15,10 +15,44 @@ import type {
 function toErrorMessage(error: unknown): string {
   if (!error) return 'Unknown error'
   if (typeof error === 'string') return error
-  if (typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return error.message
+  if (typeof error === 'object') {
+    const errorRecord = error as Record<string, unknown>
+    const message = typeof errorRecord.message === 'string' ? errorRecord.message : ''
+    const details = typeof errorRecord.details === 'string' ? errorRecord.details : ''
+    const hint = typeof errorRecord.hint === 'string' ? errorRecord.hint : ''
+
+    const joined = [message, details, hint].filter(Boolean).join(' | ')
+    if (joined) return joined
+
+    try {
+      return JSON.stringify(errorRecord)
+    } catch {
+      return 'Unknown error'
+    }
   }
   return 'Unknown error'
+}
+
+function isMissingSupabaseResourceError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+
+  const errorRecord = error as Record<string, unknown>
+  const code = typeof errorRecord.code === 'string' ? errorRecord.code : ''
+  const message = typeof errorRecord.message === 'string' ? errorRecord.message.toLowerCase() : ''
+  const details = typeof errorRecord.details === 'string' ? errorRecord.details.toLowerCase() : ''
+  const hint = typeof errorRecord.hint === 'string' ? errorRecord.hint.toLowerCase() : ''
+  const blob = `${message} ${details} ${hint}`
+
+  if (code === '42P01' || code === 'PGRST205' || code === 'PGRST202') {
+    return true
+  }
+
+  return (
+    blob.includes('does not exist') ||
+    blob.includes('not found in the schema cache') ||
+    blob.includes('could not find the table') ||
+    blob.includes('could not find the function')
+  )
 }
 
 function monthToYearMonth(monthValue: string): { year: number; month: number } {
@@ -329,13 +363,17 @@ export async function getWorkerPayrollBigDebts(branch: BranchType): Promise<Work
       .order('worker_name', { ascending: true })
 
     if (error) {
-      console.error('Error fetching worker payroll big debts:', error)
+      if (isMissingSupabaseResourceError(error)) {
+        // Backward compatibility: if migration isn't applied yet, don't break dashboard load.
+        return []
+      }
+      console.warn('Warning fetching worker payroll big debts:', toErrorMessage(error))
       return []
     }
 
     return (data || []) as WorkerPayrollBigDebt[]
   } catch (error) {
-    console.error('Error fetching worker payroll big debts:', error)
+    console.warn('Warning fetching worker payroll big debts:', toErrorMessage(error))
     return []
   }
 }
@@ -360,6 +398,9 @@ export async function upsertWorkerPayrollBigDebt(input: UpsertWorkerPayrollBigDe
   })
 
   if (error) {
+    if (isMissingSupabaseResourceError(error)) {
+      throw new Error('Big debt database migration is missing. Please apply worker payroll big debt migration first.')
+    }
     throw new Error(toErrorMessage(error))
   }
 
@@ -386,6 +427,9 @@ export async function registerWorkerPayrollBigDebtPayment(
   })
 
   if (error) {
+    if (isMissingSupabaseResourceError(error)) {
+      throw new Error('Big debt database migration is missing. Please apply worker payroll big debt migration first.')
+    }
     throw new Error(toErrorMessage(error))
   }
 

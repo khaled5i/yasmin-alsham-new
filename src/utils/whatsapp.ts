@@ -11,6 +11,8 @@ interface OrderDetails {
   orderNumber?: string
   proofDeliveryDate?: string
   dueDate: string
+  totalPrice?: number
+  remainingAmount?: number
 }
 
 interface AlterationDetails {
@@ -80,7 +82,9 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
     clientName,
     orderNumber,
     proofDeliveryDate,
-    dueDate
+    dueDate,
+    totalPrice,
+    remainingAmount
   } = orderDetails
 
   // تنسيق التواريخ
@@ -95,6 +99,16 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
   // إضافة رقم الطلب إذا كان موجوداً
   if (orderNumber) {
     message += `- رقم الطلب: ${orderNumber}\n`
+  }
+
+  // إضافة السعر الكلي إذا كان موجوداً
+  if (totalPrice !== undefined && totalPrice > 0) {
+    message += `- السعر الكلي: ${totalPrice.toFixed(2)} ر.س\n`
+  }
+
+  // إضافة الدفعة المتبقية إذا كانت موجودة
+  if (remainingAmount !== undefined && remainingAmount > 0) {
+    message += `- الدفعة المتبقية: ${remainingAmount.toFixed(2)} ر.س\n`
   }
 
   // إضافة موعد تسليم البروفا إذا كان موجوداً

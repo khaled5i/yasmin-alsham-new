@@ -32,10 +32,13 @@ import {
   MessageCircle,
   Users,
   RotateCcw,
-  Info
+  Info,
+  Printer
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
+import PrintOrderModal from '@/components/PrintOrderModal'
+import { Order } from '@/lib/services/order-service'
 
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
@@ -234,6 +237,10 @@ function AddOrderContent() {
 
   // ref للوصول إلى دوال InteractiveImageAnnotation
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
+
+  // حالات modal الطباعة
+  const [showPrintModal, setShowPrintModal] = useState(false)
+  const [savedOrderForPrint, setSavedOrderForPrint] = useState<Order | null>(null)
 
   // تحميل العمال عند تحميل الصفحة
   useEffect(() => {
@@ -784,7 +791,9 @@ function AddOrderContent() {
           clientPhone: formData.clientPhone,
           orderNumber: formData.orderNumber || result.data?.order_number || undefined,
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
-          dueDate: formData.dueDate
+          dueDate: formData.dueDate,
+          totalPrice: price,
+          remainingAmount: Math.max(0, price - paidAmount)
         })
 
         toast.success('تم فتح واتساب لإرسال رسالة التأكيد للعميل', {
@@ -813,7 +822,118 @@ function AddOrderContent() {
     }
   }
 
+  // حفظ الطلب وفتح صفحة الطباعة
+  const handleSubmitAndPrint = async (e: React.MouseEvent) => {
+    e.preventDefault()
 
+    // التحقق من الحقول المطلوبة
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+      setMessage({ type: 'error', text: t('fill_required_fields') })
+      return
+    }
+
+    setIsSubmitting(true)
+    setMessage(null)
+
+    try {
+      console.log('📦 Submitting order and opening print...')
+
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
+        id: vn.id, data: vn.data, timestamp: vn.timestamp, duration: vn.duration,
+        transcription: vn.transcription, translatedText: vn.translatedText, translationLanguage: vn.translationLanguage
+      }))
+
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        customDesignImageBase64 = formData.customDesignImage
+        if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
+          toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
+          return
+        }
+      } else if (customDesignImageFile) {
+        try {
+          const compressedBlob = await compressFileForStorage(customDesignImageFile, 1920)
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(compressedBlob)
+          })
+          if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
+            toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
+            return
+          }
+        } catch {
+          toast.error('خطأ في تحويل الصورة')
+          return
+        }
+      }
+
+      const allSavedComments = formData.savedDesignComments.map(comment => ({
+        ...comment, image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
+      }))
+
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        let compositeImage: string | null = null
+        if (annotationRef.current) {
+          compositeImage = await annotationRef.current.generateCompositeImage()
+        }
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+        allSavedComments.push({
+          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(), annotations: formData.imageAnnotations, drawings: formData.imageDrawings,
+          image: customDesignImageBase64 ? 'custom' : null, title: viewTitle, view: currentView, compositeImage
+        })
+      }
+
+      const result = await createOrder({
+        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
+        client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
+        fabric: formData.fabric || undefined, measurements: {},
+        price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        order_received_date: formData.orderReceivedDate,
+        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        due_date: formData.dueDate,
+        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        notes: formData.notes || undefined,
+        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+        images: formData.images.length > 0 ? formData.images : undefined,
+        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
+      })
+
+      if (!result.success) {
+        toast.error(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', { icon: '✗' })
+        return
+      }
+
+      clearSavedData()
+      localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
+
+      toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', { icon: '✓', duration: 2000 })
+
+      // فتح modal الطباعة مع بيانات الطلب المحفوظ
+      if (result.data) {
+        setSavedOrderForPrint(result.data)
+        setShowPrintModal(true)
+      }
+
+    } catch (error) {
+      console.error('❌ Error adding order:', error)
+      toast.error(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', { icon: '✗' })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20">
@@ -1180,6 +1300,26 @@ function AddOrderContent() {
                 )}
               </button>
 
+              {/* زر حفظ الطلب وطباعته */}
+              <button
+                type="button"
+                onClick={handleSubmitAndPrint}
+                disabled={isSubmitting}
+                className="bg-purple-600 hover:bg-purple-700 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
+              >
+                {isSubmitting ? (
+                  <div className="flex items-center justify-center space-x-2 space-x-reverse">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>{t('saving')}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center space-x-2 space-x-reverse">
+                    <Printer className="w-5 h-5" />
+                    <span>{isArabic ? 'حفظ وطباعة' : 'Save & Print'}</span>
+                  </div>
+                )}
+              </button>
+
               <Link
                 href="/dashboard"
                 className="btn-secondary py-4 px-8 text-lg inline-flex items-center justify-center"
@@ -1190,6 +1330,20 @@ function AddOrderContent() {
           </form >
         </motion.div >
       </div >
+
+      {/* مودال الطباعة */}
+      {savedOrderForPrint && (
+        <PrintOrderModal
+          isOpen={showPrintModal}
+          onClose={() => {
+            setShowPrintModal(false)
+            setSavedOrderForPrint(null)
+            // التوجيه لصفحة الطلبات بعد إغلاق الطباعة
+            router.push('/dashboard/orders')
+          }}
+          order={savedOrderForPrint}
+        />
+      )}
     </div >
   )
 }

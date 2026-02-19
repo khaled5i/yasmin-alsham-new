@@ -609,7 +609,9 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
           clientPhone: formData.clientPhone,
           orderNumber: formData.orderNumber || undefined,
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
-          dueDate: formData.dueDate
+          dueDate: formData.dueDate,
+          totalPrice: price,
+          remainingAmount: Math.max(0, price - paidAmount)
         })
 
         toast.success('تم فتح واتساب لإرسال رسالة التأكيد للعميل', {

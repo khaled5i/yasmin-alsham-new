@@ -12,7 +12,9 @@
       "Bash(node -e \"\nconst WebSocket = require\\(''ws''\\);\nconst ws = new WebSocket\\(''ws://127.0.0.1:9222/devtools/page/776508EC951EED339077DA7E87AE7622''\\);\n\nws.on\\(''open'', \\(\\) => {\n  // Click first order row\n  ws.send\\(JSON.stringify\\({\n    id: 1,\n    method: ''Runtime.evaluate'',\n    params: {\n      expression: \\\\`\n        const firstRow = document.querySelector\\(''table tbody tr''\\);\n        if \\(firstRow\\) {\n          firstRow.click\\(\\);\n          ''Clicked first order'';\n        } else {\n          ''No order found'';\n        }\n      \\\\`,\n      awaitPromise: false\n    }\n  }\\)\\);\n  \n  setTimeout\\(\\(\\) => ws.close\\(\\), 1000\\);\n}\\);\n\nws.on\\(''message'', \\(data\\) => console.log\\(data.toString\\(\\)\\)\\);\n\")",
       "Bash(node -e \"\nconst WebSocket = require\\(''ws''\\);\nconst ws = new WebSocket\\(''ws://127.0.0.1:9222/devtools/page/776508EC951EED339077DA7E87AE7622''\\);\n\nws.on\\(''open'', \\(\\) => {\n  ws.send\\(JSON.stringify\\({\n    id: 1,\n    method: ''Runtime.evaluate'',\n    params: {\n      expression: \\\\`\n        // Find clickable order elements\n        const buttons = Array.from\\(document.querySelectorAll\\(''button''\\)\\).filter\\(b => \n          b.textContent.includes\\(''عرض''\\) || b.textContent.includes\\(''تفاصيل''\\)\n        \\);\n        ''Found '' + buttons.length + '' view buttons'';\n      \\\\`,\n      awaitPromise: false\n    }\n  }\\)\\);\n  \n  setTimeout\\(\\(\\) => ws.close\\(\\), 1000\\);\n}\\);\n\nws.on\\(''message'', \\(data\\) => console.log\\(data.toString\\(\\)\\)\\);\n\")",
       "Bash(node:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

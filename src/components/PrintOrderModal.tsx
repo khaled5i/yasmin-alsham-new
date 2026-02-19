@@ -544,9 +544,11 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
     .image-container { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; aspect-ratio: 1; }
     .design-image { width: 100%; height: 100%; object-fit: cover; }
     .design-comment-page { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 10px; }
-    .design-comment-full { width: 100%; height: 100%; display: flex; flex-direction: column; }
-    .design-comment-image-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; }
-    .design-comment-full-image { max-width: 100%; max-height: 70vh; object-fit: contain; }
+    .page-front-image { padding: 5px; display: flex; flex-direction: column; height: 100vh; }
+    .page-front-image .section-title { margin-bottom: 2px !important; padding-bottom: 2px !important; }
+    .design-comment-full { width: 100%; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .design-comment-image-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+    .design-comment-full-image { max-width: 100%; max-height: 95vh; width: auto; height: auto; object-fit: contain; }
     .design-comment-transcriptions { margin-top: 15px; padding: 10px; background: #fdf2f8; border-radius: 8px; }
     .transcription-item { font-size: 14px; color: #333; padding: 6px 0; border-bottom: 1px dashed #fce7f3; }
     .transcription-item:last-child { border-bottom: none; }

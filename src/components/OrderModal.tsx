@@ -1401,6 +1401,15 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           </div>
         </div>
       )}
+
+      {/* مودال الطباعة */}
+      {showPrintModal && order && (
+        <PrintOrderModal
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          order={order}
+        />
+      )}
     </AnimatePresence>
   )
 }
