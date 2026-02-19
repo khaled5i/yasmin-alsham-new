@@ -15,17 +15,23 @@ import {
   Receipt,
   Pencil
 } from 'lucide-react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
+import { getSuppliers, type Supplier } from '@/lib/services/supplier-service'
 
 function ReadyDesignsPurchasesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<AccountingCategory[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState<Date | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [supplierFilter, setSupplierFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -36,12 +42,15 @@ function ReadyDesignsPurchasesContent() {
     category: '',
     description: '',
     amount: 0,
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    supplier_id: '',
+    supplier_name: ''
   })
 
   useEffect(() => {
     loadExpenses()
     loadCategories()
+    loadSuppliers()
   }, [])
 
   const loadExpenses = async () => {
@@ -62,6 +71,15 @@ function ReadyDesignsPurchasesContent() {
       setCategories(data)
     } catch (error) {
       console.error('Error loading categories:', error)
+    }
+  }
+
+  const loadSuppliers = async () => {
+    try {
+      const data = await getSuppliers()
+      setSuppliers(data)
+    } catch (error) {
+      console.error('Error loading suppliers:', error)
     }
   }
 
@@ -114,7 +132,9 @@ function ReadyDesignsPurchasesContent() {
       description: item.description || '',
       amount: item.amount,
       date: item.date,
-      notes: item.notes || ''
+      notes: item.notes || '',
+      supplier_id: item.supplier_id || '',
+      supplier_name: item.supplier_name || ''
     })
     setShowModal(true)
   }
@@ -140,8 +160,19 @@ function ReadyDesignsPurchasesContent() {
     const categoryLabel = getCategoryLabel(categories, item.category)
     const matchesSearch = item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       categoryLabel.includes(searchQuery)
-    const matchesDate = !dateFilter || item.date?.startsWith(dateFilter)
-    return matchesSearch && matchesDate
+    const matchesCategory = !categoryFilter || item.category === categoryFilter
+    const matchesSupplier = !supplierFilter || item.supplier_id === supplierFilter
+
+
+    let matchesDate = true
+    if (dateFilter) {
+      const itemDate = new Date(item.date)
+      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
+        itemDate.getMonth() === dateFilter.getMonth() &&
+        itemDate.getFullYear() === dateFilter.getFullYear()
+    }
+
+    return matchesSearch && matchesCategory && matchesSupplier && matchesDate
   })
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
@@ -223,15 +254,52 @@ function ReadyDesignsPurchasesContent() {
                 className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               />
             </div>
+
+            <div className="relative min-w-[200px]">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent appearance-none bg-white font-sans"
+              >
+                <option value="">كل الفئات</option>
+                {categoryOptions.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.label}</option>
+                ))}
+              </select>
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                <ShoppingCart className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="relative min-w-[200px]">
+              <select
+                value={supplierFilter}
+                onChange={(e) => setSupplierFilter(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent appearance-none bg-white font-sans"
+              >
+                <option value="">كل الموردين</option>
+                {suppliers.map(sup => (
+                  <option key={sup.id} value={sup.id}>{sup.name}</option>
+                ))}
+              </select>
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                <ShoppingCart className="w-4 h-4" />
+              </div>
+            </div>
+
             <div className="flex gap-2">
               <div className="relative">
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="month"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
+                <div className="relative w-full">
+                  <DatePicker
+                    selected={dateFilter}
+                    onChange={(date: Date | null) => setDateFilter(date)}
+                    dateFormat="yyyy/MM/dd"
+                    placeholderText="اختر التاريخ"
+                    className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent text-right"
+                    isClearable
+                  />
+                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                </div>
               </div>
               <button
                 onClick={() => {
@@ -359,6 +427,26 @@ function ReadyDesignsPurchasesContent() {
                       <option value="">اختر الفئة</option>
                       {categoryOptions.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">المورد (اختياري)</label>
+                    <select
+                      value={formData.supplier_id}
+                      onChange={(e) => {
+                        const supplier = suppliers.find(s => s.id === e.target.value)
+                        setFormData({
+                          ...formData,
+                          supplier_id: e.target.value,
+                          supplier_name: supplier?.name || '' // Use helper to get name? Or just store what we have. API might duplicate, but it's simpler.
+                        })
+                      }}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="">اختر المورد</option>
+                      {suppliers.map(sup => (
+                        <option key={sup.id} value={sup.id}>{sup.name}</option>
                       ))}
                     </select>
                   </div>

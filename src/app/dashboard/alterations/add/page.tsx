@@ -341,11 +341,20 @@ function AddAlterationContent() {
       let customDesignImageBase64: string | undefined = undefined
       if (formData.customDesignImage) {
         try {
+          // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+          let safeBlob: Blob = formData.customDesignImage
+          const isAndroid = /android/i.test(navigator.userAgent)
+          if (isAndroid) {
+            try {
+              const buffer = await formData.customDesignImage.arrayBuffer()
+              safeBlob = new Blob([buffer], { type: formData.customDesignImage.type || 'image/jpeg' })
+            } catch { safeBlob = formData.customDesignImage }
+          }
           const reader = new FileReader()
           customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(formData.customDesignImage!)
+            reader.readAsDataURL(safeBlob)
           })
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
@@ -478,11 +487,20 @@ function AddAlterationContent() {
       let customDesignImageBase64: string | undefined = undefined
       if (formData.customDesignImage) {
         try {
+          // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+          let safeBlob: Blob = formData.customDesignImage
+          const isAndroid = /android/i.test(navigator.userAgent)
+          if (isAndroid) {
+            try {
+              const buffer = await formData.customDesignImage.arrayBuffer()
+              safeBlob = new Blob([buffer], { type: formData.customDesignImage.type || 'image/jpeg' })
+            } catch { safeBlob = formData.customDesignImage }
+          }
           const reader = new FileReader()
           customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(formData.customDesignImage!)
+            reader.readAsDataURL(safeBlob)
           })
           const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
           console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)

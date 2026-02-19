@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import {
   ArrowLeft,
   ShoppingBag,
@@ -17,13 +19,17 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import { MATERIAL_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
+import { getSuppliers, type Supplier } from '@/lib/services/supplier-service'
 
 function MaterialExpensesContent() {
-  const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateFilter, setDateFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState<Date | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [supplierFilter, setSupplierFilter] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
@@ -33,7 +39,9 @@ function MaterialExpensesContent() {
     description: '',
     amount: 0,
     date: new Date().toISOString().split('T')[0],
-    notes: ''
+    notes: '',
+    supplier_id: '',
+    supplier_name: ''
   })
 
   const loadExpenses = async () => {
@@ -49,7 +57,17 @@ function MaterialExpensesContent() {
 
   useEffect(() => {
     loadExpenses()
+    loadSuppliers()
   }, [])
+
+  const loadSuppliers = async () => {
+    try {
+      const data = await getSuppliers()
+      setSuppliers(data)
+    } catch (error) {
+      console.error('Error loading suppliers:', error)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,11 +75,17 @@ function MaterialExpensesContent() {
 
     try {
       if (isEditing && editingId) {
-        await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
-        alert('✅ تم تحديث المصروف بنجاح')
+        const result = await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
+        if (result) {
+          setExpenses(expenses.map(item => item.id === editingId ? result : item))
+          alert('✅ تم تحديث المصروف بنجاح')
+        }
       } else {
-        await createExpense(formData as CreateExpenseInput)
-        alert('✅ تم إضافة المصروف بنجاح')
+        const result = await createExpense(formData as CreateExpenseInput)
+        if (result) {
+          setExpenses([result, ...expenses])
+          alert('✅ تم إضافة المصروف بنجاح')
+        }
       }
 
       setShowModal(false)
@@ -74,9 +98,10 @@ function MaterialExpensesContent() {
         description: '',
         amount: 0,
         date: new Date().toISOString().split('T')[0],
-        notes: ''
+        notes: '',
+        supplier_id: '',
+        supplier_name: ''
       })
-      loadExpenses()
     } catch (error) {
       console.error('Error saving expense:', error)
       alert('❌ حدث خطأ أثناء الحفظ')
@@ -93,7 +118,9 @@ function MaterialExpensesContent() {
       description: item.description || '',
       amount: item.amount,
       date: item.date,
-      notes: item.notes || ''
+      notes: item.notes || '',
+      supplier_id: item.supplier_id || '',
+      supplier_name: item.supplier_name || ''
     })
     setShowModal(true)
   }
@@ -103,8 +130,8 @@ function MaterialExpensesContent() {
 
     try {
       await deleteExpense(id)
+      setExpenses(expenses.filter(item => item.id !== id))
       alert('✅ تم حذف المصروف بنجاح')
-      loadExpenses()
     } catch (error) {
       console.error('Error deleting expense:', error)
       alert('❌ حدث خطأ أثناء الحذف')
@@ -112,10 +139,19 @@ function MaterialExpensesContent() {
   }
 
   const filteredExpenses = expenses.filter(item => {
-    const matchesSearch = item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesDate = !dateFilter || item.date.startsWith(dateFilter)
-    return matchesSearch && matchesDate
+    const matchesSearch = item.description.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = !categoryFilter || item.category === categoryFilter
+    const matchesSupplier = !supplierFilter || item.supplier_id === supplierFilter
+
+    let matchesDate = true
+    if (dateFilter) {
+      const itemDate = new Date(item.date)
+      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
+        itemDate.getMonth() === dateFilter.getMonth() &&
+        itemDate.getFullYear() === dateFilter.getFullYear()
+    }
+
+    return matchesSearch && matchesCategory && matchesSupplier && matchesDate
   })
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
@@ -211,8 +247,8 @@ function MaterialExpensesContent() {
           transition={{ delay: 0.1 }}
           className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6"
         >
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="relative">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
@@ -222,14 +258,51 @@ function MaterialExpensesContent() {
                 className="w-full pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               />
             </div>
+
             <div className="relative">
-              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="month"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              />
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent appearance-none bg-white"
+              >
+                <option value="">كل الفئات</option>
+                {MATERIAL_EXPENSE_CATEGORIES.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.label}</option>
+                ))}
+              </select>
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                <ShoppingBag className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="relative">
+              <select
+                value={supplierFilter}
+                onChange={(e) => setSupplierFilter(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent appearance-none bg-white"
+              >
+                <option value="">كل الموردين</option>
+                {suppliers.map(sup => (
+                  <option key={sup.id} value={sup.id}>{sup.name}</option>
+                ))}
+              </select>
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                <ShoppingBag className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="relative z-10">
+              <div className="relative w-full">
+                <DatePicker
+                  selected={dateFilter}
+                  onChange={(date: Date | null) => setDateFilter(date)}
+                  dateFormat="yyyy/MM/dd"
+                  placeholderText="اختر التاريخ"
+                  className="w-full pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent text-right"
+                  isClearable
+                />
+                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+              </div>
             </div>
           </div>
         </motion.div>
@@ -345,6 +418,26 @@ function MaterialExpensesContent() {
                       <option value="">اختر الفئة</option>
                       {MATERIAL_EXPENSE_CATEGORIES.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">المورد (اختياري)</label>
+                    <select
+                      value={formData.supplier_id}
+                      onChange={(e) => {
+                        const supplier = suppliers.find(s => s.id === e.target.value)
+                        setFormData({
+                          ...formData,
+                          supplier_id: e.target.value,
+                          supplier_name: supplier?.name || ''
+                        })
+                      }}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="">اختر المورد</option>
+                      {suppliers.map(sup => (
+                        <option key={sup.id} value={sup.id}>{sup.name}</option>
                       ))}
                     </select>
                   </div>

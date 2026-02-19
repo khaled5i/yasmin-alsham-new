@@ -21,28 +21,39 @@ export default function CompletedWorkUpload({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
 
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files || disabled) return
 
     const newImages: string[] = []
     const remainingSlots = maxImages - images.length
+    const isAndroid = /android/i.test(navigator.userAgent)
 
-    Array.from(files).slice(0, remainingSlots).forEach(file => {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          const base64 = e.target?.result as string
-          newImages.push(base64)
-          
-          if (newImages.length === Math.min(files.length, remainingSlots)) {
-            const updatedImages = [...images, ...newImages]
-            setImages(updatedImages)
-            onImagesChange(updatedImages)
-          }
-        }
-        reader.readAsDataURL(file)
+    const imageFiles = Array.from(files).slice(0, remainingSlots).filter(f => f.type.startsWith('image/'))
+    const expectedCount = imageFiles.length
+
+    for (const file of imageFiles) {
+      // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+      let safeBlob: Blob = file
+      if (isAndroid) {
+        try {
+          const buffer = await file.arrayBuffer()
+          safeBlob = new Blob([buffer], { type: file.type || 'image/jpeg' })
+        } catch { safeBlob = file }
       }
-    })
+      const reader = new FileReader()
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = (e) => resolve(e.target?.result as string)
+        reader.onerror = (e) => reject(e)
+        reader.readAsDataURL(safeBlob)
+      })
+      newImages.push(base64)
+    }
+
+    if (newImages.length > 0) {
+      const updatedImages = [...images, ...newImages]
+      setImages(updatedImages)
+      onImagesChange(updatedImages)
+    }
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -109,14 +120,12 @@ export default function CompletedWorkUpload({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <label className={`block text-sm font-medium ${
-          images.length === 0 ? 'text-red-700' : 'text-gray-700'
-        }`}>
+        <label className={`block text-sm font-medium ${images.length === 0 ? 'text-red-700' : 'text-gray-700'
+          }`}>
           صور العمل المكتمل <span className="text-red-600">*</span>
         </label>
-        <span className={`text-xs ${
-          images.length === 0 ? 'text-red-600 font-medium' : 'text-gray-500'
-        }`}>
+        <span className={`text-xs ${images.length === 0 ? 'text-red-600 font-medium' : 'text-gray-500'
+          }`}>
           {images.length}/{maxImages} صور
         </span>
       </div>
@@ -163,13 +172,11 @@ export default function CompletedWorkUpload({
           />
 
           <div className="space-y-2">
-            <Camera className={`w-12 h-12 mx-auto ${
-              images.length === 0 ? 'text-red-400' : 'text-gray-400'
-            }`} />
+            <Camera className={`w-12 h-12 mx-auto ${images.length === 0 ? 'text-red-400' : 'text-gray-400'
+              }`} />
             <div>
-              <p className={`text-sm font-medium ${
-                images.length === 0 ? 'text-red-700' : 'text-gray-700'
-              }`}>
+              <p className={`text-sm font-medium ${images.length === 0 ? 'text-red-700' : 'text-gray-700'
+                }`}>
                 {images.length >= maxImages
                   ? 'تم الوصول للحد الأقصى من الصور'
                   : images.length === 0
@@ -178,9 +185,8 @@ export default function CompletedWorkUpload({
                 }
               </p>
               {images.length < maxImages && (
-                <p className={`text-xs mt-1 ${
-                  images.length === 0 ? 'text-red-600' : 'text-gray-500'
-                }`}>
+                <p className={`text-xs mt-1 ${images.length === 0 ? 'text-red-600' : 'text-gray-500'
+                  }`}>
                   {images.length === 0
                     ? 'يجب رفع صورة واحدة على الأقل • التقط صورة أو اختر من المعرض'
                     : 'التقط صورة أو اختر من المعرض أو اسحب الصور هنا'
@@ -248,7 +254,7 @@ export default function CompletedWorkUpload({
                   className="w-full h-full object-cover"
                 />
               </div>
-              
+
               {!disabled && (
                 <button
                   onClick={(e) => {
@@ -260,7 +266,7 @@ export default function CompletedWorkUpload({
                   <X className="w-3 h-3" />
                 </button>
               )}
-              
+
               <div className="absolute bottom-2 left-2 right-2">
                 <div className="bg-black/50 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">
                   صورة {index + 1}

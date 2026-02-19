@@ -6,7 +6,7 @@
 
 'use client'
 
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured, wasRecentlyBackgrounded } from '@/lib/supabase'
 
 const STORAGE_BUCKET = 'product-images'
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -61,8 +61,26 @@ function isMobileDevice(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 }
 
+function isAndroidDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return /Android/i.test(navigator.userAgent || '')
+}
+
 function getMaxImageDimension(): number {
   return isMobileDevice() ? MOBILE_MAX_IMAGE_DIMENSION : MAX_IMAGE_DIMENSION
+}
+
+/**
+ * Materialize a File/Blob into a fresh in-memory Blob by reading its entire
+ * contents into an ArrayBuffer first. This is critical on Android Capacitor
+ * because camera-captured Files are backed by content:// URIs that can become
+ * stale or unreadable after the camera intent returns and the WebView resumes.
+ * By eagerly reading the full bytes into memory we guarantee the data is
+ * available for all subsequent operations (canvas decode, fetch upload, etc.).
+ */
+async function materializeBlob(blob: Blob): Promise<Blob> {
+  const buffer = await blob.arrayBuffer()
+  return new Blob([buffer], { type: blob.type || 'image/jpeg' })
 }
 
 function isHeicLike(file: File): boolean {
@@ -398,15 +416,86 @@ async function createVideoThumbnail(file: File): Promise<Blob> {
 
 async function buildUploadHeaders(): Promise<{ authorization: string; apikey: string }> {
   if (!SUPABASE_ANON_KEY) throw new Error('Supabase anon key is missing')
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token || SUPABASE_ANON_KEY
-  return { authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY }
+
+  const makeHeaders = (token: string) => ({
+    authorization: `Bearer ${token}`,
+    apikey: SUPABASE_ANON_KEY,
+  })
+
+  // Helper: race a promise against a timeout so we never hang indefinitely
+  // (getSession / refreshSession can deadlock when the page was backgrounded).
+  const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
+    Promise.race([
+      promise,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+    ])
+
+  // If the page was recently backgrounded, Supabase's own internal
+  // auto-refresh handler (autoRefreshToken) needs a moment to settle.
+  // We wait briefly then read the (hopefully refreshed) session.
+  if (wasRecentlyBackgrounded()) {
+    await new Promise((r) => setTimeout(r, 1_500))
+  }
+
+  // ── 1. Try to get the cached session ──────────────────────────────────
+  type Session = Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']
+  let session: Session = null
+  try {
+    const result = await withTimeout(supabase.auth.getSession(), 5_000)
+    session = result?.data?.session ?? null
+  } catch { /* timed out or threw */ }
+
+  // If the cached session looks valid (> 60 s until expiry), use it.
+  if (session?.access_token && session.expires_at) {
+    const remaining = session.expires_at - Math.floor(Date.now() / 1000)
+    if (remaining > 60) {
+      return makeHeaders(session.access_token)
+    }
+  }
+
+  // ── 2. Session missing or stale — force a refresh (with retry) ────────
+  // We retry because right after Chrome resumes, the first network request
+  // often fails due to stale TCP connections.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 2_000))
+      const refreshResult = await withTimeout(supabase.auth.refreshSession(), 8_000)
+      const freshToken = refreshResult?.data?.session?.access_token
+      if (freshToken) {
+        return makeHeaders(freshToken)
+      }
+    } catch { /* retry */ }
+  }
+
+  // ── 3. Last resort: re-read session in case Supabase refreshed it ─────
+  // (the auto-refresh handler may have succeeded in the background)
+  try {
+    const lastCheck = await withTimeout(supabase.auth.getSession(), 3_000)
+    if (lastCheck?.data?.session?.access_token) {
+      return makeHeaders(lastCheck.data.session.access_token)
+    }
+  } catch { /* nothing left to try */ }
+
+  // Never fall back to the anon key for uploads — it will always trigger
+  // an RLS violation.  Throw so the caller shows a clear error message.
+  throw new Error('الجلسة منتهية. يرجى إعادة تسجيل الدخول ثم المحاولة مرة أخرى')
 }
 
 /**
- * Upload a blob to Supabase Storage using the fetch API.
- * fetch is significantly more reliable than XHR in Android Capacitor WebViews,
- * which was the root cause of the 40% stall issue.
+ * Upload a blob to Supabase Storage using FormData (matching official client).
+ *
+ * CRITICAL: Uses FormData instead of raw binary body.
+ * The Supabase storage-js official client wraps Blob uploads in FormData:
+ *   formData.append('cacheControl', '3600')
+ *   formData.append('', blob)
+ *
+ * This is essential for Android Capacitor WebView because:
+ * 1. Raw Blob/Uint8Array bodies cause fetch() to hang at ~50% on Android
+ *    WebView after the camera intent returns. FormData uses a completely
+ *    different serialization path that doesn't rely on blob streaming.
+ * 2. FormData is fully serialized in memory before transmission.
+ * 3. The browser auto-sets Content-Type with the correct boundary string.
+ *    (Content-Length is a forbidden header in fetch — was silently ignored.)
  */
 async function uploadBlobToStorage(
   objectPath: string, blob: Blob, mimeType: string, signal?: AbortSignal
@@ -414,9 +503,19 @@ async function uploadBlobToStorage(
   if (!SUPABASE_URL) throw new Error('Supabase URL is missing')
   throwIfAborted(signal)
 
-  const headers = await buildUploadHeaders()
+  const authHeaders = await buildUploadHeaders()
   const encodedPath = encodePathForStorage(objectPath)
   const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${encodedPath}`
+
+  // Materialize blob into a fresh in-memory Blob to sever any ties to
+  // content:// URIs (Android camera files) that may become stale.
+  const freshBlob = new Blob([await blob.arrayBuffer()], { type: mimeType })
+
+  // Build FormData exactly like Supabase's official storage-js client.
+  // Key '' (empty string) is what the Supabase server expects for the file field.
+  const formData = new FormData()
+  formData.append('cacheControl', '3600')
+  formData.append('', freshBlob, 'file')
 
   const controller = new AbortController()
   const combinedSignal = controller.signal
@@ -431,16 +530,15 @@ async function uploadBlobToStorage(
   const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
 
   try {
+    // DO NOT set Content-Type — browser must auto-set multipart/form-data with boundary.
     const response = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        'Authorization': headers.authorization,
-        'apikey': headers.apikey,
-        'Content-Type': mimeType,
+        'Authorization': authHeaders.authorization,
+        'apikey': authHeaders.apikey,
         'x-upsert': 'false',
-        'Cache-Control': 'max-age=3600',
       },
-      body: blob,
+      body: formData,
       signal: combinedSignal,
     })
 
@@ -450,6 +548,15 @@ async function uploadBlobToStorage(
         const errorBody = await response.json()
         errorMessage = errorBody.message || errorBody.error || errorMessage
       } catch { /* ignore parse errors */ }
+
+      // Translate RLS / auth errors into a user-friendly message
+      if (
+        response.status === 403 ||
+        errorMessage.includes('row-level security') ||
+        errorMessage.includes('security policy')
+      ) {
+        throw new Error('الجلسة منتهية. يرجى إعادة تحميل الصفحة أو تسجيل الدخول مرة أخرى')
+      }
       throw new Error(errorMessage)
     }
   } catch (error) {
@@ -510,7 +617,22 @@ export const imageService = {
 
       onProgress?.({ fileName: file.name, progress: 5, status: 'uploading' })
 
-      const normalizedFile = await convertHeicToJpeg(file)
+      // CRITICAL: On Android, camera-captured Files are backed by content:// URIs
+      // from the camera intent. After the camera app closes and the WebView resumes,
+      // these URI-backed File objects can become unreliable — reads may stall or
+      // return incomplete data. We eagerly materialize the entire file into memory
+      // as a fresh Blob to guarantee all bytes are available for subsequent processing.
+      // This is done BEFORE any other operation (HEIC conversion, validation, etc.).
+      let safeFile: File = file
+      if (isAndroidDevice()) {
+        const materialized = await materializeBlob(file)
+        safeFile = new File([materialized], file.name, {
+          type: file.type || 'image/jpeg',
+          lastModified: file.lastModified,
+        })
+      }
+
+      const normalizedFile = await convertHeicToJpeg(safeFile)
       throwIfAborted(options?.signal)
 
       const typeValidation = validateImageFileType(normalizedFile)
@@ -669,19 +791,31 @@ export const imageService = {
   },
 
   async uploadAsBase64(file: File): Promise<{ data: ImageUploadResult | null; error: string | null }> {
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const base64 = e.target?.result as string
-        resolve({
-          data: { url: base64, thumbnailUrl: base64, fileName: file.name },
-          error: null
-        })
+    try {
+      // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+      let safeBlob: Blob = file
+      if (isAndroidDevice()) {
+        try {
+          const buffer = await file.arrayBuffer()
+          safeBlob = new Blob([buffer], { type: file.type || 'image/jpeg' })
+        } catch { safeBlob = file }
       }
-      reader.onerror = () => {
-        resolve({ data: null, error: 'فشل قراءة الملف' })
-      }
-      reader.readAsDataURL(file)
-    })
+      return new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const base64 = e.target?.result as string
+          resolve({
+            data: { url: base64, thumbnailUrl: base64, fileName: file.name },
+            error: null
+          })
+        }
+        reader.onerror = () => {
+          resolve({ data: null, error: 'فشل قراءة الملف' })
+        }
+        reader.readAsDataURL(safeBlob)
+      })
+    } catch {
+      return { data: null, error: 'فشل قراءة الملف' }
+    }
   }
 }

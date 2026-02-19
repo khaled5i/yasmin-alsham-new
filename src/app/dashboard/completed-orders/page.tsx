@@ -33,6 +33,7 @@ import {
   AlertCircle,
   Trash2
 } from 'lucide-react'
+import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 import VoiceNotes from '@/components/VoiceNotes'
@@ -78,6 +79,13 @@ export default function CompletedOrdersPage() {
     loadOrders({ status: 'completed' })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // Re-fetch data when the app resumes from background (mobile)
+  useAppResume(() => {
+    if (!user) return
+    loadOrders({ status: 'completed' })
+    loadWorkers()
+  })
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {

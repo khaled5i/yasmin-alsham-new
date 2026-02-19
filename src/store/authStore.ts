@@ -2,10 +2,6 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
-// Session TTL: 55 minutes — Supabase tokens last 1 hour; refresh happens automatically.
-// A 5-minute TTL was the root cause of excessive re-verification.
-const SESSION_TTL_MS = 55 * 60 * 1000
-
 // تعريف نوع المستخدم
 export interface AuthUser {
   id: string
@@ -23,21 +19,21 @@ interface AuthState {
   isLoading: boolean
   error: string | null
   anonymousUserId: string | null
-  lastVerifiedAt: number | null  // Timestamp of last successful session verification
-  _hasHydrated: boolean           // Whether Zustand has rehydrated from localStorage
+  lastVerifiedAt: number | null
+  _hasHydrated: boolean
 
   // Actions
   signIn: (email: string, password: string) => Promise<boolean>
   signOut: () => Promise<void>
   setUser: (user: AuthUser | null) => void
-  setUserWithTimestamp: (user: AuthUser | null) => void  // setUser + update lastVerifiedAt
+  setUserWithTimestamp: (user: AuthUser | null) => void
   clearError: () => void
   checkAuth: () => Promise<void>
-  forceRevalidate: () => Promise<void>  // Force a fresh session check
+  forceRevalidate: () => Promise<void>
   isAuthenticated: () => boolean
-  isSessionFresh: () => boolean  // Check if session was recently verified
+  isSessionFresh: () => boolean
   ensureAnonymousUser: () => Promise<string>
-  invalidateDataCaches: () => void  // Signal to data stores to clear their caches
+  invalidateDataCaches: () => void
 }
 
 // بيانات المستخدمين الافتراضية (سيتم استبدالها بنظام إدارة العمال)
@@ -65,10 +61,6 @@ const getStoredUsers = () => {
   return defaultUsers
 }
 
-// Deduplication guard: only one checkAuth() call runs at a time.
-// Subsequent callers receive the same promise.
-let _checkAuthPromise: Promise<void> | null = null
-
 // Listeners for data cache invalidation (used by orderStore, etc.)
 type CacheInvalidationListener = () => void
 const _cacheInvalidationListeners: Set<CacheInvalidationListener> = new Set()
@@ -86,19 +78,15 @@ export const useAuthStore = create<AuthState>()(
       error: null,
       anonymousUserId: null,
       lastVerifiedAt: null,
-      _hasHydrated: false,
+      _hasHydrated: true, // Always true — no hydration gating in old system
 
-      // Check if the session was verified recently (within TTL)
+      // Stub: always returns true if user exists (no TTL checking)
       isSessionFresh: () => {
-        const state = get()
-        if (!state.user || !state.lastVerifiedAt) return false
-        const now = Date.now()
-        return (now - state.lastVerifiedAt) < SESSION_TTL_MS
+        return get().user !== null
       },
 
       // Signal to data stores to invalidate their caches
       invalidateDataCaches: () => {
-        console.log('🔄 Invalidating data caches...')
         _cacheInvalidationListeners.forEach(listener => {
           try { listener() } catch (e) { console.error('Cache invalidation listener error:', e) }
         })
@@ -277,9 +265,7 @@ export const useAuthStore = create<AuthState>()(
             localStorage.removeItem('yasmin-auth-user')
           }
 
-          set({ user: null, isLoading: false, error: null, lastVerifiedAt: null })
-          // Invalidate data caches to prevent stale data on next login
-          get().invalidateDataCaches()
+          set({ user: null, isLoading: false, error: null })
           console.log('👋 تم تسجيل الخروج بنجاح')
         } catch (error) {
           console.error('خطأ في تسجيل الخروج:', error)
@@ -300,11 +286,10 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // Update user AND mark session as freshly verified (used by AuthProvider on TOKEN_REFRESHED)
+      // Stub: same as setUser (kept for interface compatibility)
       setUserWithTimestamp: (user: AuthUser | null) => {
-        set({ user, lastVerifiedAt: user ? Date.now() : null })
+        set({ user })
 
-        // تحديث localStorage
         if (typeof window !== 'undefined') {
           if (user) {
             localStorage.setItem('yasmin-auth-user', JSON.stringify(user))
@@ -318,113 +303,27 @@ export const useAuthStore = create<AuthState>()(
         set({ error: null })
       },
 
+      // النظام القديم البسيط: يقرأ فقط من localStorage
       checkAuth: async () => {
-        const state = get()
-
-        // OPTIMIZATION: If session was recently verified, skip re-verification
-        if (state.isSessionFresh()) {
-          console.log('⚡ Session is fresh, skipping re-verification')
-          return
-        }
-
-        // DEDUPLICATION: If a checkAuth is already in-flight, wait for it instead of starting another
-        if (_checkAuthPromise) {
-          console.log('⏳ checkAuth already in-flight, waiting for existing call...')
-          return _checkAuthPromise
-        }
-
-        const doCheck = async () => {
-          set({ isLoading: true })
-
-          try {
-            // أولاً: التحقق من جلسة Supabase Auth
-            if (isSupabaseConfigured()) {
-              console.log('🔐 التحقق من جلسة Supabase...')
-
-              const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-              if (sessionError) {
-                console.error('❌ خطأ في جلب جلسة Supabase:', sessionError.message)
-              }
-
-              if (session?.user) {
-                console.log('✅ جلسة Supabase موجودة:', session.user.email)
-
-                // جلب بيانات المستخدم من جدول users
-                const { data: userData, error: userError } = await supabase
-                  .from('users')
-                  .select('*')
-                  .eq('id', session.user.id)
-                  .single()
-
-                if (!userError && userData) {
-                  const user: AuthUser = {
-                    id: userData.id,
-                    email: userData.email,
-                    full_name: userData.full_name,
-                    role: userData.role,
-                    is_active: userData.is_active,
-                    created_at: userData.created_at,
-                    updated_at: userData.updated_at,
-                    token: session.access_token
-                  }
-
-                  // تحديث localStorage
-                  if (typeof window !== 'undefined') {
-                    localStorage.setItem('yasmin-auth-user', JSON.stringify(user))
-                  }
-
-                  // Mark session as freshly verified
-                  set({ user, isLoading: false, lastVerifiedAt: Date.now() })
-                  console.log('🎉 تم استعادة الجلسة بنجاح!')
-                  return
-                }
-              } else {
-                console.log('⚠️ لا توجد جلسة Supabase نشطة')
-                // IMPORTANT: If Supabase session is expired, clear stale localStorage data
-                if (typeof window !== 'undefined') {
-                  const savedUser = localStorage.getItem('yasmin-auth-user')
-                  if (savedUser) {
-                    console.log('🧹 Clearing stale localStorage user (Supabase session expired)')
-                    localStorage.removeItem('yasmin-auth-user')
-                  }
-                }
-                set({ user: null, isLoading: false, lastVerifiedAt: null })
-                return
-              }
+        set({ isLoading: true })
+        try {
+          if (typeof window !== 'undefined') {
+            const savedUser = localStorage.getItem('yasmin-auth-user')
+            if (savedUser) {
+              const user = JSON.parse(savedUser) as AuthUser
+              set({ user, isLoading: false })
+              return
             }
-
-            // Fallback: التحقق من وجود مستخدم محفوظ في localStorage
-            // Only use this if Supabase is not configured
-            if (typeof window !== 'undefined') {
-              const savedUser = localStorage.getItem('yasmin-auth-user')
-              if (savedUser) {
-                const user = JSON.parse(savedUser) as AuthUser
-                console.log('📦 تم استعادة المستخدم من localStorage:', user.email)
-                set({ user, isLoading: false, lastVerifiedAt: Date.now() })
-                return
-              }
-            }
-
-            set({ user: null, isLoading: false, lastVerifiedAt: null })
-          } catch (error) {
-            console.error('خطأ في التحقق من المصادقة:', error)
-            set({ user: null, isLoading: false, lastVerifiedAt: null })
-          } finally {
-            // Clear the deduplication guard
-            _checkAuthPromise = null
           }
+          set({ user: null, isLoading: false })
+        } catch (error) {
+          console.error('خطأ في التحقق من المصادقة:', error)
+          set({ user: null, isLoading: false })
         }
-
-        _checkAuthPromise = doCheck()
-        return _checkAuthPromise
       },
 
-      // Force a fresh session check, bypassing the TTL cache
+      // Stub: just calls checkAuth (kept for interface compatibility)
       forceRevalidate: async () => {
-        console.log('🔄 Force revalidating session...')
-        set({ lastVerifiedAt: null })  // Clear the cache
-        _checkAuthPromise = null       // Clear deduplication guard
         await get().checkAuth()
       },
 
@@ -435,29 +334,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'yasmin-auth-storage',
-      partialize: (state) => ({ user: state.user, lastVerifiedAt: state.lastVerifiedAt }),
+      partialize: (state) => ({ user: state.user }),
     }
   )
 )
-
-// Hydration tracking — MUST be done after store creation to avoid circular reference.
-// On the server there's no localStorage, so mark hydrated immediately.
-if (typeof window === 'undefined') {
-  useAuthStore.setState({ _hasHydrated: true })
-} else {
-  // Client-side: track when persist middleware finishes loading from localStorage
-  const persistApi = (useAuthStore as any).persist
-  if (persistApi?.onFinishHydration) {
-    persistApi.onFinishHydration(() => {
-      useAuthStore.setState({ _hasHydrated: true })
-      console.log('💧 Auth store hydrated from localStorage')
-    })
-    // If hydration already completed synchronously
-    if (persistApi.hasHydrated?.()) {
-      useAuthStore.setState({ _hasHydrated: true })
-    }
-  } else {
-    // Fallback: if persist API doesn't have onFinishHydration, mark as hydrated
-    useAuthStore.setState({ _hasHydrated: true })
-  }
-}

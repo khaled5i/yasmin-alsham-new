@@ -22,23 +22,26 @@ import {
   Wallet,
   X
 } from 'lucide-react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { useTranslation } from '@/hooks/useTranslation'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { workerService, type WorkerWithUser } from '@/lib/services/worker-service'
-import { createExpense, getExpenses } from '@/lib/services/simple-accounting-service'
+import { createExpense, getExpenses, updateExpense } from '@/lib/services/simple-accounting-service'
 import type { CreateExpenseInput, Expense } from '@/types/simple-accounting'
 
 const OVERTIME_RATE = 12.5
 const PAYROLL_TYPE_STORAGE_KEY = 'tailoring-salary-payroll-types-v1'
 const BASE_SALARY_STORAGE_KEY = 'tailoring-salary-fixed-base-v1'
+const MANUAL_PIECE_RATE_STORAGE_KEY = 'tailoring-salary-manual-piece-rate-v1'
 const LOCAL_WORKERS_STORAGE_KEY = 'tailoring-salary-local-workers-v1'
 
 const SMALL_ADVANCE_CATEGORIES = new Set(['advance', 'small_advance'])
 const LARGE_DEBT_CATEGORIES = new Set(['debt', 'large_debt', 'deduction'])
 
 type PayrollType = 'fixed' | 'piece_rate'
-type TransactionType = 'small_advance' | 'large_debt'
+type TransactionType = 'small_advance' | 'large_debt' | 'debt_repayment'
 type ActiveTab = 'calculate' | 'history' | 'statistics'
 
 interface LocalWorker {
@@ -74,6 +77,9 @@ interface SalarySettlementMeta {
     title: string
     price: number
   }>
+  manualPieceIncome: number
+  manualPieceCount: number
+  manualPiecePrice: number
 }
 
 interface TransactionMeta {
@@ -85,6 +91,7 @@ interface TransactionMeta {
   month: string
   amount: number
   note?: string
+  relatedDebtId?: string
 }
 
 type SalaryMeta = SalarySettlementMeta | TransactionMeta
@@ -101,12 +108,16 @@ interface MonthlyCalculation {
   grossIncome: number
   smallAdvances: number
   largeDebtOutstanding: number
+  largeDebtOriginalTotal: number
   debtRepayment: number
   netSalary: number
   overtimeHours: number
   overtimeValue: number
   baseSalary: number
   pieceIncome: number
+  manualPieceIncome: number
+  manualPieceCount: number
+  manualPiecePrice: number
 }
 
 interface TransactionFormState {
@@ -362,6 +373,290 @@ function AddWorkerModal({
   )
 }
 
+interface DebtItem {
+  id: string
+  date: string
+  originalAmount: number
+  remainingAmount: number
+  description: string
+  isFullyPaid: boolean
+  paidAmount: number // New field to track paid amount
+}
+
+function processDebtsForWorker(workerId: string, expenses: Expense[], localWorker: boolean, workerObj: any): { items: DebtItem[], totalRemaining: number, totalOriginal: number, totalPaid: number } {
+  const debts: DebtItem[] = []
+  let totalRepaidPool = 0
+  const specificRepayments: Record<string, number> = {}
+
+  // 1. Collect all Debts and Repayments
+  expenses.forEach(expense => {
+    const meta = parseSalaryMeta(expense.notes)
+
+    // Check ownership
+    let isOwner = false
+    if (meta?.workerId === workerId) {
+      isOwner = true
+    } else if (!localWorker && expenseBelongsToWorker(expense, workerObj)) {
+      isOwner = true
+    }
+
+    if (!isOwner) return
+
+    // Identify Debts (Unified: Large Debts ONLY - Advances are separate)
+    // EXCLUDE 'small_advance' and 'advance' from this list entirely.
+    const isDebtItem =
+      (meta?.kind === 'large_debt' || LARGE_DEBT_CATEGORIES.has(expense.category)) &&
+      meta?.kind !== 'small_advance' &&
+      !SMALL_ADVANCE_CATEGORIES.has(expense.category)
+
+    if (isDebtItem) {
+      debts.push({
+        id: expense.id,
+        date: expense.date,
+        originalAmount: expense.amount || 0,
+        remainingAmount: expense.amount || 0,
+        paidAmount: 0, // Initialize paid amount to 0
+        description: expense.description || 'دين',
+        isFullyPaid: false
+      })
+    }
+
+    // Identify Repayments
+    let repaymentAmount = 0
+    let relatedDebtId: string | undefined
+
+    if (meta?.kind === 'salary_settlement') {
+      repaymentAmount = meta.debtRepayment || 0
+    } else if (expense.category === 'debt_repayment' || meta?.kind === 'debt_repayment') {
+      repaymentAmount = expense.amount || 0
+      if (meta && 'relatedDebtId' in meta) {
+        relatedDebtId = meta.relatedDebtId
+      }
+    }
+
+    if (repaymentAmount > 0) {
+      if (relatedDebtId) {
+        specificRepayments[relatedDebtId] = (specificRepayments[relatedDebtId] || 0) + repaymentAmount
+      } else {
+        totalRepaidPool += repaymentAmount
+      }
+    }
+  })
+
+  // Sort debts by date (oldest first)
+  debts.sort((a, b) => a.date.localeCompare(b.date))
+
+  // 2. Apply Specific Repayments
+  debts.forEach(debt => {
+    if (specificRepayments[debt.id]) {
+      const repay = specificRepayments[debt.id]
+      const actualDeduction = Math.min(repay, debt.remainingAmount) // Cap at remaining
+      debt.remainingAmount -= actualDeduction
+      debt.paidAmount += actualDeduction
+    }
+  })
+
+  // 3. Apply Pool Repayments (FIFO)
+  debts.forEach(debt => {
+    if (totalRepaidPool > 0 && debt.remainingAmount > 0) {
+      const deduction = Math.min(debt.remainingAmount, totalRepaidPool)
+      debt.remainingAmount -= deduction
+      debt.paidAmount += deduction
+      totalRepaidPool -= deduction
+    }
+    debt.isFullyPaid = debt.remainingAmount <= 0.01 // Tolerance for float errors
+  })
+
+  const totalRemaining = debts.reduce((sum, d) => sum + d.remainingAmount, 0)
+  const totalOriginal = debts.reduce((sum, d) => sum + d.originalAmount, 0)
+  const totalPaid = debts.reduce((sum, d) => sum + d.paidAmount, 0)
+
+  return { items: debts, totalRemaining, totalOriginal, totalPaid }
+}
+
+function DebtRepaymentModal({
+  isOpen,
+  onClose,
+  worker,
+  expenses,
+  onRepay
+}: {
+  isOpen: boolean
+  onClose: () => void
+  worker: WorkerWithUser | LocalWorker
+  expenses: Expense[]
+  onRepay: (amount: number, debtId?: string) => Promise<void>
+}) {
+  const [amount, setAmount] = useState('')
+  const [selectedDebtId, setSelectedDebtId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const { items, totalRemaining, totalOriginal } = useMemo(() => {
+    return processDebtsForWorker(worker.id, expenses, isLocalWorker(worker), worker)
+  }, [worker, expenses])
+
+  const activeDebts = items.filter(d => !d.isFullyPaid)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const val = Number(amount)
+    if (!val || val <= 0) return
+
+    // Validation
+    if (selectedDebtId) {
+      const debt = items.find(d => d.id === selectedDebtId)
+      if (debt && val > debt.remainingAmount) {
+        alert('المبلغ المدخل أكبر من الدين المتبقي')
+        return
+      }
+    } else {
+      if (val > totalRemaining) {
+        alert('المبلغ المدخل أكبر من إجمالي الديون')
+        return
+      }
+    }
+
+    setIsSubmitting(true)
+    try {
+      await onRepay(val, selectedDebtId || undefined)
+      setAmount('')
+      setSelectedDebtId(null)
+      // Optionally close or keep open to start immediate update
+      // onClose() 
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-4 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="text-xl font-bold text-white">إدارة الديون: {getWorkerDisplayName(worker)}</h3>
+            <p className="text-amber-100 text-sm mt-1">إجمالي الديون (الأصل): {formatCurrency(totalOriginal)} | المتبقي للسداد: {formatCurrency(totalRemaining)}</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 transition-colors">
+            <X className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto flex-1">
+          {/* Repayment Form */}
+          <div className="mb-8 bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-indigo-600" />
+              سداد دفعة جديدة
+            </h4>
+            <form onSubmit={handleSubmit} className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-600 mb-1">
+                  {selectedDebtId ? 'المبلغ للسداد (محدد لدين معين)' : 'مبلغ السداد (عام - للأقدم أولاً)'}
+                </label>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  required
+                />
+              </div>
+              {selectedDebtId && (
+                <div className="mb-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDebtId(null)}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    إلغاء التحديد
+                  </button>
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              >
+                {isSubmitting ? 'جاري الحفظ...' : 'تسجيل السداد'}
+              </button>
+            </form>
+          </div>
+
+          {/* Debts Table */}
+          <h4 className="font-bold text-gray-800 mb-3">تفاصيل الديون القائمة</h4>
+          {activeDebts.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-xl">
+              لا توجد ديون قائمة حالياً
+            </div>
+          ) : (
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-sm text-right">
+                <thead className="bg-gray-50 text-gray-600 font-medium">
+                  <tr>
+                    <th className="px-4 py-3">التاريخ</th>
+                    <th className="px-4 py-3">الوصف</th>
+                    <th className="px-4 py-3">القيمة الأصلية</th>
+                    <th className="px-4 py-3">المسدد (المتبقي من الدين)</th>
+                    <th className="px-4 py-3">إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {activeDebts.map(debt => (
+                    <tr key={debt.id} className={selectedDebtId === debt.id ? 'bg-indigo-50' : 'hover:bg-gray-50'}>
+                      <td className="px-4 py-3 text-gray-600">{debt.date}</td>
+                      <td className="px-4 py-3 text-gray-900 font-medium">{debt.description}</td>
+                      <td className="px-4 py-3 text-gray-600">{formatCurrency(debt.originalAmount)}</td>
+                      <td className="px-4 py-3 text-amber-600 font-bold" dir="ltr">
+                        {/* Display Paid Amount, starting at 0 */}
+                        {formatCurrency(debt.paidAmount)}
+                        <span className="text-xs text-gray-400 block">من أصل {formatCurrency(debt.originalAmount)}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedDebtId(debt.id)
+                              setAmount(debt.remainingAmount.toString())
+                            }}
+                            className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                          >
+                            سداد كامل
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedDebtId(debt.id)
+                              setAmount('')
+                            }}
+                            className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                          >
+                            سداد جزء
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="bg-gray-50 px-4 py-2 border-t border-gray-200 text-xs text-gray-500">
+                * يتم سداد الديون القديمة أولاً في حال عدم تحديد دين معين (FIFO)
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function WorkerCard({
   worker,
   payrollType,
@@ -373,7 +668,10 @@ function WorkerCard({
   fixedSalaryInputs,
   pieceRateInputs,
   onSaveSalary,
-  isSaving
+  isSaving,
+  onSaveTransaction,
+  onZeroOut,
+  expenses // Need expenses to calculate per-worker debt details for modal
 }: {
   worker: WorkerWithUser | LocalWorker
   payrollType: PayrollType
@@ -386,14 +684,72 @@ function WorkerCard({
   pieceRateInputs?: React.ReactNode
   onSaveSalary: () => void
   isSaving: boolean
+  onSaveTransaction: (data: TransactionFormState, relatedDebtId?: string) => Promise<void>
+  onZeroOut: () => void
+  expenses: Expense[]
 }) {
   const { t } = useTranslation()
   const hasDebt = calculation.largeDebtOutstanding > 0
   const [showTransactionForm, setShowTransactionForm] = useState(false)
+  const [showDebtModal, setShowDebtModal] = useState(false)
+
   const isLocal = isLocalWorker(worker)
+  const [transactionData, setTransactionData] = useState<TransactionFormState>({
+    workerId: worker.id,
+    type: 'small_advance',
+    amount: '',
+    date: new Date().toISOString().slice(0, 10),
+    note: ''
+  })
+  const [isSavingTransaction, setIsSavingTransaction] = useState(false)
+
+  const handleSaveTransaction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!transactionData.amount || Number(transactionData.amount) <= 0) {
+      alert('الرجاء إدخال مبلغ صحيح')
+      return
+    }
+
+    setIsSavingTransaction(true)
+    try {
+      await onSaveTransaction(transactionData)
+      setShowTransactionForm(false)
+      setTransactionData({
+        workerId: worker.id,
+        type: 'small_advance', // Reset to small_advance
+        amount: '',
+        date: new Date().toISOString().slice(0, 10),
+        note: ''
+      })
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setIsSavingTransaction(false)
+    }
+  }
+
+  const handleRepayDebt = async (amount: number, debtId?: string) => {
+    const data: TransactionFormState = {
+      workerId: worker.id,
+      type: 'debt_repayment',
+      amount: amount.toString(),
+      date: new Date().toISOString().slice(0, 10),
+      note: debtId ? 'سداد دين محدد' : 'سداد ديون'
+    }
+    await onSaveTransaction(data, debtId)
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+      {/* Debt Repayment Modal */}
+      <DebtRepaymentModal
+        isOpen={showDebtModal}
+        onClose={() => setShowDebtModal(false)}
+        worker={worker}
+        expenses={expenses}
+        onRepay={handleRepayDebt}
+      />
+
       {/* Header */}
       <div className="p-6 border-b border-gray-100">
         <div className="flex items-start justify-between">
@@ -424,10 +780,12 @@ function WorkerCard({
                   {payrollType === 'fixed' ? t('fixed_salary_option') : t('piece_rate_option')}
                 </span>
                 {hasDebt && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                  <button
+                    onClick={() => setShowDebtModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     دين: {formatCurrency(calculation.largeDebtOutstanding)}
-                  </span>
+                  </button>
                 )}
               </div>
             </div>
@@ -453,6 +811,17 @@ function WorkerCard({
               </button>
             )}
             <button
+              onClick={() => {
+                if (confirm('هل أنت متأكد من تصفير حساب هذا العامل؟ سيتم جعل جميع القيم المالية (الدخل، الخصومات، الرواتب) صفراً لهذا الشهر.')) {
+                  onZeroOut()
+                }
+              }}
+              className="p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+              title="تصفير الحساب"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+            <button
               onClick={onToggleExpand}
               className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
             >
@@ -472,6 +841,11 @@ function WorkerCard({
             <p className="text-lg font-bold text-red-600">
               {formatCurrency(calculation.smallAdvances + calculation.debtRepayment)}
             </p>
+            {calculation.debtRepayment > 0 && (
+              <p className="text-[10px] text-red-400 mt-1">
+                (سلف: {formatCurrency(calculation.smallAdvances)} + دين: {formatCurrency(calculation.debtRepayment)})
+              </p>
+            )}
           </div>
           <div className="text-center p-3 rounded-lg bg-emerald-50">
             <p className="text-xs text-emerald-600 mb-1">الصافي</p>
@@ -485,6 +859,28 @@ function WorkerCard({
         <div className="p-6 space-y-6">
           {/* Inputs */}
           {payrollType === 'fixed' ? fixedSalaryInputs : pieceRateInputs}
+
+          {/* Debt Management Section - Only show if there is ACTIVE debt (checked by original amount of active debts) */}
+          {calculation.largeDebtOriginalTotal > 0 && (
+            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                  <Wallet className="w-5 h-5 text-amber-600" />
+                  إدارة الديون والمستحقات
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  إجمالي الديون (الأصل): <span className="font-bold text-lg text-amber-700 mx-1">{formatCurrency(calculation.largeDebtOriginalTotal)}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDebtModal(true)}
+                className="px-6 py-2.5 bg-white border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold shadow-sm flex items-center gap-2"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                إدارة الديون / سداد دفعة
+              </button>
+            </div>
+          )}
 
           {/* Detailed Calculation */}
           <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -508,35 +904,65 @@ function WorkerCard({
               ) : (
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">إجمالي دخل القطع</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(calculation.pieceIncome)}</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(calculation.pieceIncome + calculation.manualPieceIncome)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                 <span className="text-gray-600">الدخل الإجمالي</span>
                 <span className="font-semibold text-emerald-600">{formatCurrency(calculation.grossIncome)}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">السلف الصغيرة (تلقائي)</span>
-                <span className="font-semibold text-red-600">- {formatCurrency(calculation.smallAdvances)}</span>
+
+              {/* Deductions Implementation */}
+              {(calculation.smallAdvances > 0 || calculation.debtRepayment > 0) && (
+                <div className="py-2 border-t border-gray-200 space-y-2">
+                  {calculation.smallAdvances > 0 && (
+                    <div className="flex items-center justify-between text-red-600 bg-red-50 p-2 rounded-lg">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">خصم سلفة / خصومات</span>
+                        <span className="text-xs text-red-400">تخصم تلقائياً من الراتب</span>
+                      </div>
+                      <span className="font-bold">-{formatCurrency(calculation.smallAdvances)}</span>
+                    </div>
+                  )}
+
+                  {calculation.debtRepayment > 0 && (
+                    <div className="flex items-center justify-between text-amber-600 bg-amber-50 p-2 rounded-lg">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">سداد دين (هذا الشهر)</span>
+                        <span className="text-xs text-amber-400">جزء من الديون القائمة</span>
+                      </div>
+                      <span className="font-bold">-{formatCurrency(calculation.debtRepayment)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-3 border-t-2 border-gray-300">
+                <span className="font-bold text-gray-900">الراتب الصافي النهائي</span>
+                <span className="font-bold text-xl text-gray-700">{formatCurrency(calculation.netSalary)}</span>
               </div>
+
               {calculation.largeDebtOutstanding > 0 && (
-                <>
-                  <div className="flex items-center justify-between">
+                <div className="mt-4 pt-4 border-t border-dashed border-gray-300 bg-amber-50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-700 font-medium">تسوية الديون</span>
+                    <button
+                      onClick={() => setShowDebtModal(true)}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 underline font-medium"
+                    >
+                      إدارة الديون والسداد
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">الدين المتبقي</span>
                     <span className="font-semibold text-amber-600">
                       {formatCurrency(calculation.largeDebtOutstanding)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">السداد (يدوي)</span>
-                    <span className="font-semibold text-red-600">- {formatCurrency(calculation.debtRepayment)}</span>
-                  </div>
-                </>
+                  {/* Note: Logic for displaying *current* repayments in this session could be added here if needed, 
+                      but since we save immediately in modal, it will reflect in debt balance */}
+                </div>
               )}
-              <div className="flex items-center justify-between pt-3 border-t-2 border-gray-300">
-                <span className="font-bold text-gray-900">الراتب الصافي النهائي</span>
-                <span className="font-bold text-xl text-emerald-600">{formatCurrency(calculation.netSalary)}</span>
-              </div>
             </div>
           </div>
 
@@ -554,7 +980,7 @@ function WorkerCard({
               ) : (
                 <>
                   <Plus className="w-4 h-4" />
-                  إضافة سلفة أو دين
+                  إضافة سلفة أو دين جديد
                 </>
               )}
             </button>
@@ -562,7 +988,66 @@ function WorkerCard({
             {showTransactionForm && (
               <div className="mt-3 p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-3">
                 <p className="text-sm font-medium text-gray-700">إضافة معاملة جديدة</p>
-                {/* Transaction form will be implemented here */}
+                <form onSubmit={handleSaveTransaction} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">النوع</label>
+                      <select
+                        value={transactionData.type}
+                        onChange={(e) =>
+                          setTransactionData({ ...transactionData, type: e.target.value as TransactionType })
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="small_advance">سلفة صغيرة (تخصم تلقائياً)</option>
+                        <option value="large_debt">دين كبير (سداد يدوي)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">المبلغ</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={transactionData.amount}
+                        onChange={(e) =>
+                          setTransactionData({ ...transactionData, amount: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">التاريخ</label>
+                    <input
+                      type="date"
+                      value={transactionData.date}
+                      onChange={(e) => setTransactionData({ ...transactionData, date: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">ملاحظة</label>
+                    <input
+                      type="text"
+                      value={transactionData.note}
+                      onChange={(e) => setTransactionData({ ...transactionData, note: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="اختياري"
+                    />
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSavingTransaction}
+                      className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                    >
+                      {isSavingTransaction ? 'جاري الحفظ...' : 'حفظ المعاملة'}
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
           </div>
@@ -611,6 +1096,8 @@ function SalariesContent() {
   const [overtimeHoursByWorker, setOvertimeHoursByWorker] = useState<Record<string, string>>({})
   const [debtRepaymentByWorker, setDebtRepaymentByWorker] = useState<Record<string, string>>({})
   const [itemPricesByWorker, setItemPricesByWorker] = useState<Record<string, Record<string, string>>>({})
+  const [manualPieceCountByWorker, setManualPieceCountByWorker] = useState<Record<string, string>>({})
+  const [manualPiecePriceByWorker, setManualPiecePriceByWorker] = useState<Record<string, string>>({})
   const [pieceOrdersByWorker, setPieceOrdersByWorker] = useState<Record<string, PieceOrderItem[]>>({})
   const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set())
 
@@ -699,6 +1186,16 @@ function SalariesContent() {
         delete next[workerId]
         return next
       })
+      setManualPieceCountByWorker((prev) => {
+        const next = { ...prev }
+        delete next[workerId]
+        return next
+      })
+      setManualPiecePriceByWorker((prev) => {
+        const next = { ...prev }
+        delete next[workerId]
+        return next
+      })
     }
   }, [])
 
@@ -747,6 +1244,7 @@ function SalariesContent() {
 
     let storedPayrollTypes: Record<string, PayrollType> = {}
     let storedBaseSalaries: Record<string, string> = {}
+    let storedManualPieceRates: Record<string, { count: string, price: string }> = {}
 
     if (typeof window !== 'undefined') {
       try {
@@ -760,10 +1258,18 @@ function SalariesContent() {
       } catch {
         storedBaseSalaries = {}
       }
+
+      try {
+        storedManualPieceRates = JSON.parse(localStorage.getItem(MANUAL_PIECE_RATE_STORAGE_KEY) || '{}')
+      } catch {
+        storedManualPieceRates = {}
+      }
     }
 
     const nextPayrollTypes: Record<string, PayrollType> = {}
     const nextBaseSalaries: Record<string, string> = {}
+    const nextManualCounts: Record<string, string> = {}
+    const nextManualPrices: Record<string, string> = {}
 
     allWorkers.forEach((worker) => {
       const fromSettlement = latestSettlementByWorker.get(worker.id)
@@ -781,10 +1287,20 @@ function SalariesContent() {
       } else {
         nextBaseSalaries[worker.id] = ''
       }
+
+      if (storedManualPieceRates[worker.id]) {
+        nextManualCounts[worker.id] = storedManualPieceRates[worker.id].count || ''
+        nextManualPrices[worker.id] = storedManualPieceRates[worker.id].price || ''
+      } else if (fromSettlement?.manualPieceCount || fromSettlement?.manualPiecePrice) {
+        nextManualCounts[worker.id] = fromSettlement.manualPieceCount ? String(fromSettlement.manualPieceCount) : ''
+        nextManualPrices[worker.id] = fromSettlement.manualPiecePrice ? String(fromSettlement.manualPiecePrice) : ''
+      }
     })
 
     setPayrollTypeByWorker(nextPayrollTypes)
     setFixedBaseSalaryByWorker(nextBaseSalaries)
+    setManualPieceCountByWorker(nextManualCounts)
+    setManualPiecePriceByWorker(nextManualPrices)
   }, [allWorkers, latestSettlementByWorker])
 
   useEffect(() => {
@@ -795,11 +1311,32 @@ function SalariesContent() {
   }, [payrollTypeByWorker])
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !Object.keys(fixedBaseSalaryByWorker).length) {
-      return
-    }
-    localStorage.setItem(BASE_SALARY_STORAGE_KEY, JSON.stringify(fixedBaseSalaryByWorker))
-  }, [fixedBaseSalaryByWorker])
+    if (typeof window === 'undefined') return
+
+    // Only save if we have data to avoid overwriting with empty object on initial load
+    // But we also need to save empty object if user cleared everything... 
+    // The initializedDefaults ref handles the initial load check.
+    if (!initializedDefaults.current) return
+
+    const combined: Record<string, { count: string, price: string }> = {}
+    Object.keys(manualPieceCountByWorker).forEach(id => {
+      combined[id] = {
+        count: manualPieceCountByWorker[id] || '',
+        price: manualPiecePriceByWorker[id] || ''
+      }
+    })
+    // Also include keys from price that might not be in count
+    Object.keys(manualPiecePriceByWorker).forEach(id => {
+      if (!combined[id]) {
+        combined[id] = {
+          count: manualPieceCountByWorker[id] || '',
+          price: manualPiecePriceByWorker[id] || ''
+        }
+      }
+    })
+
+    localStorage.setItem(MANUAL_PIECE_RATE_STORAGE_KEY, JSON.stringify(combined))
+  }, [manualPieceCountByWorker, manualPiecePriceByWorker])
 
   useEffect(() => {
     setOvertimeHoursByWorker({})
@@ -957,6 +1494,46 @@ function SalariesContent() {
     return map
   }, [allWorkers, expenses, selectedMonth])
 
+  const monthlyRepaymentsByWorker = useMemo(() => {
+    const map: Record<string, number> = {}
+
+    for (const worker of allWorkers) {
+      let total = 0
+
+      for (const expense of expenses) {
+        const meta = parseSalaryMeta(expense.notes)
+
+        // Check if this expense is a Debt Repayment
+        const isDebtRepayment =
+          expense.category === 'debt_repayment' ||
+          meta?.kind === 'debt_repayment' ||
+          (meta?.kind === 'salary_settlement' && (meta.debtRepayment || 0) > 0)
+
+        if (!isDebtRepayment) {
+          continue
+        }
+
+        if (!isExpenseInMonth(expense, selectedMonth)) {
+          continue
+        }
+
+        // Check ownership
+        if (meta?.workerId === worker.id) {
+          total += expense.amount || 0
+          continue
+        }
+
+        if (!isLocalWorker(worker) && expenseBelongsToWorker(expense, worker)) {
+          total += expense.amount || 0
+        }
+      }
+
+      map[worker.id] = total
+    }
+
+    return map
+  }, [allWorkers, expenses, selectedMonth])
+
   const largeDebtOutstandingByWorker = useMemo(() => {
     const issuedMap: Record<string, number> = {}
     const repaidMap: Record<string, number> = {}
@@ -984,8 +1561,22 @@ function SalariesContent() {
           }
         }
 
+        // Repayment via Salary Settlement (old logic)
         if (meta?.kind === 'salary_settlement' && meta.workerId === worker.id) {
           repaidMap[worker.id] += meta.debtRepayment || 0
+        }
+
+        // Repayment via separate transaction (new logic)
+        // Check if category is debt_repayment or meta.kind is debt_repayment
+        const isDebtRepayment =
+          expense.category === 'debt_repayment' || meta?.kind === 'debt_repayment'
+
+        if (isDebtRepayment) {
+          if (meta?.workerId === worker.id) {
+            repaidMap[worker.id] += expense.amount || 0
+          } else if (!isLocalWorker(worker) && expenseBelongsToWorker(expense, worker)) {
+            repaidMap[worker.id] += expense.amount || 0
+          }
         }
       }
     }
@@ -998,6 +1589,58 @@ function SalariesContent() {
     return remainingMap
   }, [allWorkers, expenses])
 
+  const largeDebtOriginalByWorker = useMemo(() => {
+    const originalMap: Record<string, number> = {}
+
+    for (const worker of allWorkers) {
+      originalMap[worker.id] = 0
+    }
+
+    for (const worker of allWorkers) {
+      for (const expense of expenses) {
+        const meta = parseSalaryMeta(expense.notes)
+        const isDebtItem =
+          (meta?.kind === 'large_debt' || LARGE_DEBT_CATEGORIES.has(expense.category)) &&
+          meta?.kind !== 'small_advance' &&
+          !SMALL_ADVANCE_CATEGORIES.has(expense.category)
+
+        if (isDebtItem) {
+          // Check by metadata workerId first
+          if (meta?.workerId === worker.id) {
+            originalMap[worker.id] += expense.amount || 0
+          }
+          // Fallback: check by name for imported workers only
+          else if (!isLocalWorker(worker) && expenseBelongsToWorker(expense, worker)) {
+            originalMap[worker.id] += expense.amount || 0
+          }
+        }
+      }
+    }
+
+    // We only want Active debts original total?
+    // The user said "Hide paid debts".
+    // If we use clean 'Active' logic, we should probably reuse processDebtsForWorker logic or similar.
+    // However, recreating processDebtsForWorker for ALL workers might be heavy if done naively.
+    // But `processDebtsForWorker` filters out paid debts internally. 
+    // Actually, `processDebtsForWorker` calculates `debts` then filters `!isFullyPaid` in the Modal.
+    // So `totalOriginal` returned by `processDebtsForWorker` includes ALL debts that match criteria? 
+    // Wait, `processDebtsForWorker` returns `totalOriginal` of ALL items in the list. WITHOUT filtering `isFullyPaid`.
+    // The Modal filters `activeDebts = items.filter(d => !d.isFullyPaid)`.
+    // So `totalOriginal` in Modal (from processDebtsForWorker) is SUM of ALL history?
+    // Checks: 
+    // `processDebtsForWorker` returns `items`.
+    // `items` contains everything.
+    // `remainingAmount` is calculated.
+    // `isFullyPaid` is set.
+    // If I want "Total Original of Active Salaries", I should sum `originalAmount` of items where `!isFullyPaid`.
+
+    // Let's refine `processDebtsForWorker` return values or how they are used.
+    // In Modal: `totalOriginal` was just added to return. It creates sum of ALL.
+    // If I want valid summary, I need sum of ACTIVE.
+
+    return originalMap
+  }, [allWorkers, expenses])
+
   const calculateFixed = useCallback(
     (workerId: string): MonthlyCalculation => {
       const baseSalary = getAmount(fixedBaseSalaryByWorker[workerId])
@@ -1006,24 +1649,31 @@ function SalariesContent() {
       const grossIncome = baseSalary + overtimeValue
       const smallAdvances = smallAdvancesByWorker[workerId] || 0
       const largeDebtOutstanding = largeDebtOutstandingByWorker[workerId] || 0
-      const debtRepaymentRaw = getAmount(debtRepaymentByWorker[workerId])
-      const debtRepayment = Math.max(Math.min(debtRepaymentRaw, largeDebtOutstanding), 0)
+      const largeDebtOriginalTotal = largeDebtOriginalByWorker[workerId] || 0
+      // Calculate repayment from actual transactions in this month
+      const debtRepayment = monthlyRepaymentsByWorker[workerId] || 0
+
+      // DEBT REPAYMENT NOW REDUCES NET SALARY
       const netSalary = grossIncome - smallAdvances - debtRepayment
 
       return {
         grossIncome,
         smallAdvances,
         largeDebtOutstanding,
+        largeDebtOriginalTotal,
         debtRepayment,
         netSalary,
         overtimeHours,
         overtimeValue,
         baseSalary,
-        pieceIncome: 0
+        pieceIncome: 0,
+        manualPieceIncome: 0,
+        manualPieceCount: 0,
+        manualPiecePrice: 0
       }
     },
     [
-      debtRepaymentByWorker,
+      monthlyRepaymentsByWorker,
       fixedBaseSalaryByWorker,
       largeDebtOutstandingByWorker,
       overtimeHoursByWorker,
@@ -1035,12 +1685,20 @@ function SalariesContent() {
     (workerId: string): MonthlyCalculation => {
       const items = pieceOrdersByWorker[workerId] || []
       const priceMap = itemPricesByWorker[workerId] || {}
-      const pieceIncome = items.reduce((sum, item) => sum + getAmount(priceMap[item.id]), 0)
+      const trackedPieceIncome = items.reduce((sum, item) => sum + getAmount(priceMap[item.id]), 0)
+
+      const manualCount = getAmount(manualPieceCountByWorker[workerId])
+      const manualPrice = getAmount(manualPiecePriceByWorker[workerId])
+      const manualPieceIncome = manualCount * manualPrice
+
+      const pieceIncome = trackedPieceIncome + manualPieceIncome
 
       const smallAdvances = smallAdvancesByWorker[workerId] || 0
       const largeDebtOutstanding = largeDebtOutstandingByWorker[workerId] || 0
-      const debtRepaymentRaw = getAmount(debtRepaymentByWorker[workerId])
-      const debtRepayment = Math.max(Math.min(debtRepaymentRaw, largeDebtOutstanding), 0)
+      // Calculate repayment from actual transactions in this month
+      const debtRepayment = monthlyRepaymentsByWorker[workerId] || 0
+
+      // DEBT REPAYMENT NOW REDUCES NET SALARY
       const netSalary = pieceIncome - smallAdvances - debtRepayment
 
       return {
@@ -1052,13 +1710,16 @@ function SalariesContent() {
         overtimeHours: 0,
         overtimeValue: 0,
         baseSalary: 0,
-        pieceIncome
+        pieceIncome: trackedPieceIncome, // Keep track of just the tracked part if needed, or total? Let's use total for consistency in summary
+        manualPieceIncome,
+        manualPieceCount: manualCount,
+        manualPiecePrice: manualPrice
       }
     },
     [
-      debtRepaymentByWorker,
       itemPricesByWorker,
       largeDebtOutstandingByWorker,
+      monthlyRepaymentsByWorker,
       pieceOrdersByWorker,
       smallAdvancesByWorker
     ]
@@ -1087,6 +1748,52 @@ function SalariesContent() {
       workerCount: filteredWorkers.length
     }
   }, [filteredWorkers, payrollTypeByWorker, calculateFixed, calculatePieceRate])
+
+  const saveTransaction = async (data: TransactionFormState, relatedDebtId?: string) => {
+    try {
+      const worker = allWorkers.find(w => w.id === data.workerId)
+      if (!worker) return
+
+      const workerName = getWorkerDisplayName(worker)
+      const amount = Number(data.amount)
+
+      const meta: TransactionMeta = {
+        salaryDashboardMeta: true,
+        version: 1,
+        kind: data.type,
+        workerId: data.workerId,
+        workerName,
+        month: selectedMonth,
+        amount,
+        note: data.note,
+        relatedDebtId // Store the ID of the debt being repaid
+      }
+
+      const input: CreateExpenseInput = {
+        branch: 'tailoring',
+        type: 'salary',
+        category: data.type === 'small_advance' ? 'advance' :
+          data.type === 'debt_repayment' ? 'debt_repayment' : 'debt',
+        description: `${workerName} - ${data.type === 'small_advance' ? 'سلفة' :
+          data.type === 'debt_repayment' ? 'سداد دين' : 'دين'
+          }`,
+        amount,
+        date: data.date,
+        notes: JSON.stringify(meta)
+      }
+
+      const result = await createExpense(input)
+      if (result) {
+        alert(t('transaction_saved_success'))
+        await loadData(true)
+      } else {
+        alert(t('transaction_saved_error'))
+      }
+    } catch (error) {
+      console.error(error)
+      alert(t('transaction_saved_error'))
+    }
+  }
 
   const saveSalarySettlement = useCallback(
     async (worker: WorkerWithUser | LocalWorker) => {
@@ -1122,9 +1829,13 @@ function SalariesContent() {
         overtimeHours: calculation.overtimeHours,
         overtimeRate: OVERTIME_RATE,
         overtimeValue: calculation.overtimeValue,
-        pieceIncome: calculation.pieceIncome,
+        pieceIncome: calculation.pieceIncome, // Now includes manual income
+        manualPieceIncome: calculation.manualPieceIncome,
+        manualPieceCount: calculation.manualPieceCount,
+        manualPiecePrice: calculation.manualPiecePrice,
         smallAdvances: calculation.smallAdvances,
         largeDebtBeforeRepayment: calculation.largeDebtOutstanding,
+        // We still save debtRepayment in meta for record keeping, but it's not a deduction
         debtRepayment: calculation.debtRepayment,
         grossIncome: calculation.grossIncome,
         finalNetSalary: calculation.netSalary,
@@ -1143,10 +1854,37 @@ function SalariesContent() {
 
       setSavingSalaryWorkerId(worker.id)
       try {
+        // 1. Save Salary Expense
         const result = await createExpense(expenseInput)
         if (!result) {
           alert(t('salary_settlement_error'))
           return
+        }
+
+        // 2. Save Repayment Expense (if applicable)
+        if (calculation.debtRepayment > 0) {
+          const repaymentMeta: TransactionMeta = {
+            salaryDashboardMeta: true,
+            version: 1,
+            kind: 'debt_repayment',
+            workerId: worker.id,
+            workerName,
+            month: selectedMonth,
+            amount: calculation.debtRepayment,
+            note: `سداد دين من راتب شهر ${selectedMonth}`
+          }
+
+          const repaymentInput: CreateExpenseInput = {
+            branch: 'tailoring',
+            type: 'salary',
+            category: 'debt_repayment',
+            description: `${workerName} - سداد دين - ${selectedMonth}`,
+            amount: calculation.debtRepayment,
+            date: end,
+            notes: JSON.stringify(repaymentMeta)
+          }
+
+          await createExpense(repaymentInput)
         }
 
         alert(t('salary_settlement_success'))
@@ -1169,6 +1907,61 @@ function SalariesContent() {
       t
     ]
   )
+
+  const handleZeroOutWorker = useCallback(async (workerId: string) => {
+    setIsLoading(true)
+    try {
+      // 1. Reset Local State
+      setFixedBaseSalaryByWorker(prev => ({ ...prev, [workerId]: '' }))
+      setOvertimeHoursByWorker(prev => ({ ...prev, [workerId]: '' }))
+      setManualPieceCountByWorker(prev => ({ ...prev, [workerId]: '' }))
+      setManualPiecePriceByWorker(prev => ({ ...prev, [workerId]: '' }))
+
+      // 2. Identify and Update Expenses
+      const worker = allWorkers.find(w => w.id === workerId)
+      if (!worker) return
+
+      const workerExpenses = expenses.filter(expense => {
+        // Filter by month
+        if (!isExpenseInMonth(expense, selectedMonth)) return false
+
+        const meta = parseSalaryMeta(expense.notes)
+
+        // Filter by worker ownership
+        let isOwner = false
+        if (meta?.workerId === workerId) isOwner = true
+        else if (!isLocalWorker(worker) && expenseBelongsToWorker(expense, worker)) isOwner = true
+
+        if (!isOwner) return false
+
+        // Filter by relevant types (advances, debts, repayments)
+        // We want to zero out EVERYTHING related to salary calculation
+        return (
+          meta?.kind === 'small_advance' ||
+          meta?.kind === 'large_debt' ||
+          meta?.kind === 'debt_repayment' ||
+          meta?.kind === 'salary_settlement' ||
+          SMALL_ADVANCE_CATEGORIES.has(expense.category) ||
+          LARGE_DEBT_CATEGORIES.has(expense.category) ||
+          expense.category === 'debt_repayment'
+        )
+      })
+
+      // Update each expense to 0
+      await Promise.all(workerExpenses.map(expense =>
+        updateExpense(expense.id, { amount: 0 })
+      ))
+
+      alert('تم تصفير الحساب بنجاح')
+      await loadData(true)
+
+    } catch (error) {
+      console.error('Error zeroing out worker:', error)
+      alert('حدث خطأ أثناء تصفير الحساب')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [allWorkers, expenses, loadData, selectedMonth])
 
   if (isLoading) {
     return (
@@ -1306,13 +2099,21 @@ function SalariesContent() {
                     />
                   </div>
                   <div className="relative">
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="month"
-                      value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(e.target.value)}
-                      className="w-full pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
+                    <div className="relative w-full">
+                      <DatePicker
+                        selected={new Date(selectedMonth + '-01')}
+                        onChange={(date: Date | null) => {
+                          if (date) {
+                            setSelectedMonth(toMonthValue(date))
+                          }
+                        }}
+                        dateFormat="yyyy/MM"
+                        showMonthYearPicker
+                        placeholderText="اختر الشهر"
+                        className="w-full pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-right"
+                      />
+                      <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                    </div>
                   </div>
                 </div>
 
@@ -1350,13 +2151,24 @@ function SalariesContent() {
                             })
                           }}
                           onChangePayrollType={(type) => {
+                            if (type === 'fixed') {
+                              // Switching TO Fixed: Clear Piece Rate Data
+                              setManualPieceCountByWorker(prev => ({ ...prev, [worker.id]: '' }))
+                              setManualPiecePriceByWorker(prev => ({ ...prev, [worker.id]: '' }))
+                              setItemPricesByWorker(prev => ({ ...prev, [worker.id]: {} }))
+                            } else {
+                              // Switching TO Piece Rate: Clear Fixed Salary Data
+                              setFixedBaseSalaryByWorker(prev => ({ ...prev, [worker.id]: '' }))
+                              setOvertimeHoursByWorker(prev => ({ ...prev, [worker.id]: '' }))
+                            }
                             setPayrollTypeByWorker((prev) => ({ ...prev, [worker.id]: type }))
                           }}
                           onDeleteWorker={
                             isLocalWorker(worker) ? () => deleteLocalWorker(worker.id) : undefined
                           }
+                          onZeroOut={() => handleZeroOutWorker(worker.id)}
                           fixedSalaryInputs={
-                            <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-4 md:grid-cols-2">
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                   الراتب الأساسي
@@ -1395,33 +2207,65 @@ function SalariesContent() {
                                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                               </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                  سداد الدين
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={debtRepaymentByWorker[worker.id] || ''}
-                                  onChange={(e) =>
-                                    setDebtRepaymentByWorker((prev) => ({
-                                      ...prev,
-                                      [worker.id]: e.target.value
-                                    }))
-                                  }
-                                  placeholder="0.00"
-                                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                />
-                              </div>
                             </div>
                           }
                           pieceRateInputs={
                             <div className="space-y-4">
+                              {/* Manual Piece Rate Input */}
+                              <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-3">
+                                <h4 className="font-semibold text-gray-900 border-b border-gray-100 pb-2">
+                                  حساب يدوي (عدد × سعر)
+                                </h4>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      عدد القطع
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={manualPieceCountByWorker[worker.id] || ''}
+                                      onChange={(e) =>
+                                        setManualPieceCountByWorker((prev) => ({
+                                          ...prev,
+                                          [worker.id]: e.target.value
+                                        }))
+                                      }
+                                      placeholder="0"
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      سعر القطعة
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={manualPiecePriceByWorker[worker.id] || ''}
+                                      onChange={(e) =>
+                                        setManualPiecePriceByWorker((prev) => ({
+                                          ...prev,
+                                          [worker.id]: e.target.value
+                                        }))
+                                      }
+                                      placeholder="0.00"
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                  </div>
+                                </div>
+                                {(getAmount(manualPieceCountByWorker[worker.id]) > 0 || getAmount(manualPiecePriceByWorker[worker.id]) > 0) && (
+                                  <div className="text-left text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg inline-block">
+                                    الإجمالي: {formatCurrency(getAmount(manualPieceCountByWorker[worker.id]) * getAmount(manualPiecePriceByWorker[worker.id]))}
+                                  </div>
+                                )}
+                              </div>
+
                               <div className="rounded-xl border border-gray-200 overflow-hidden">
                                 <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                                   <h4 className="font-semibold text-gray-900">
-                                    القطع المنجزة ({selectedMonth})
+                                    القطع المنجزة (من النظام - {selectedMonth})
                                   </h4>
                                 </div>
                                 {loadingOrdersByWorker[worker.id] ? (
@@ -1472,29 +2316,12 @@ function SalariesContent() {
                                   </div>
                                 )}
                               </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                  سداد الدين
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={debtRepaymentByWorker[worker.id] || ''}
-                                  onChange={(e) =>
-                                    setDebtRepaymentByWorker((prev) => ({
-                                      ...prev,
-                                      [worker.id]: e.target.value
-                                    }))
-                                  }
-                                  placeholder="0.00"
-                                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                />
-                              </div>
                             </div>
                           }
                           onSaveSalary={() => saveSalarySettlement(worker)}
                           isSaving={savingSalaryWorkerId === worker.id}
+                          onSaveTransaction={saveTransaction}
+                          expenses={expenses}
                         />
                       )
                     })}

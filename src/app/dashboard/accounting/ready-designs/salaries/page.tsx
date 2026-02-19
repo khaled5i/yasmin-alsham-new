@@ -15,6 +15,8 @@ import {
   Receipt,
   Pencil
 } from 'lucide-react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
@@ -114,8 +116,7 @@ function ReadyDesignsSalariesContent() {
       description: item.description || '',
       amount: item.amount,
       date: item.date,
-      notes: item.notes || '',
-      employee_name: item.employee_name || ''
+      notes: item.notes || ''
     })
     setShowModal(true)
   }
@@ -226,13 +227,26 @@ function ReadyDesignsSalariesContent() {
             </div>
             <div className="flex gap-2">
               <div className="relative">
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="month"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
+                <div className="relative w-full">
+                  <DatePicker
+                    selected={dateFilter ? new Date(dateFilter) : null}
+                    onChange={(date: Date | null) => {
+                      if (date) {
+                        const year = date.getFullYear()
+                        const month = String(date.getMonth() + 1).padStart(2, '0')
+                        setDateFilter(`${year}-${month}`)
+                      } else {
+                        setDateFilter('')
+                      }
+                    }}
+                    dateFormat="yyyy/MM"
+                    showMonthYearPicker
+                    placeholderText="اختر الشهر"
+                    className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent text-right"
+                    isClearable
+                  />
+                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                </div>
               </div>
               <button
                 onClick={() => {

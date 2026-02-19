@@ -15,6 +15,8 @@ import {
   Receipt,
   Pencil
 } from 'lucide-react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
@@ -25,7 +27,7 @@ function FabricsFixedExpensesContent() {
   const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState<Date | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -139,7 +141,15 @@ function FabricsFixedExpensesContent() {
   const filteredExpenses = expenses.filter(item => {
     const matchesSearch = item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       getCategoryLabel(categories, item.category).includes(searchQuery)
-    const matchesDate = !dateFilter || item.date?.startsWith(dateFilter)
+
+    let matchesDate = true
+    if (dateFilter) {
+      const itemDate = new Date(item.date)
+      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
+        itemDate.getMonth() === dateFilter.getMonth() &&
+        itemDate.getFullYear() === dateFilter.getFullYear()
+    }
+
     return matchesSearch && matchesDate
   })
 
@@ -225,13 +235,17 @@ function FabricsFixedExpensesContent() {
             </div>
             <div className="flex gap-2">
               <div className="relative">
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="month"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                <div className="relative w-full">
+                  <DatePicker
+                    selected={dateFilter}
+                    onChange={(date: Date | null) => setDateFilter(date)}
+                    dateFormat="yyyy/MM/dd"
+                    placeholderText="اختر التاريخ"
+                    className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-right"
+                    isClearable
+                  />
+                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                </div>
               </div>
               <button
                 onClick={() => {

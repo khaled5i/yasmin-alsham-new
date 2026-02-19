@@ -43,6 +43,9 @@ const config: CapacitorConfig = {
 
   // إعدادات الإضافات
   plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
     SplashScreen: {
       launchShowDuration: 2000,
       launchAutoHide: true,

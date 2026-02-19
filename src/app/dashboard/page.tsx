@@ -11,6 +11,7 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { formatGregorianDate } from '@/lib/date-utils'
+import { useAppResume } from '@/hooks/useAppResume'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AlterationTypeModal from '@/components/AlterationTypeModal'
 import OrderSearchModal from '@/components/OrderSearchModal'
@@ -67,6 +68,14 @@ function DashboardContent() {
     loadAppointments()
     loadWorkers()
   }, [loadOrders, loadAppointments, loadWorkers])
+
+  // Re-fetch data when the app resumes from background (mobile)
+  useAppResume(() => {
+    if (!user) return
+    loadOrders()
+    loadAppointments()
+    loadWorkers()
+  })
 
 
 

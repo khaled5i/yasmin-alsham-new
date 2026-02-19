@@ -14,7 +14,8 @@ Write-Host "Checking Node.js installation..." -ForegroundColor Yellow
 try {
     $nodeVersion = node --version
     Write-Host "Node.js version: $nodeVersion" -ForegroundColor Green
-} catch {
+}
+catch {
     Write-Host "Node.js is not installed or not in PATH!" -ForegroundColor Red
     Write-Host "Please install Node.js from https://nodejs.org/" -ForegroundColor Yellow
     pause
@@ -25,7 +26,8 @@ try {
 try {
     $npmVersion = npm --version
     Write-Host "npm version: $npmVersion" -ForegroundColor Green
-} catch {
+}
+catch {
     Write-Host "npm is not available!" -ForegroundColor Red
     pause
     exit 1
@@ -43,7 +45,8 @@ if (-not (Test-Path "node_modules")) {
         exit 1
     }
     Write-Host "Dependencies installed successfully" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "Dependencies found" -ForegroundColor Green
 }
 
@@ -70,13 +73,16 @@ try {
                 Write-Host $processes -ForegroundColor White
                 Write-Host "You may need to manually stop these processes" -ForegroundColor Yellow
             }
-        } catch {
+        }
+        catch {
             Write-Host "Could not check for processes using port 3001" -ForegroundColor Yellow
         }
-    } else {
+    }
+    else {
         Write-Host "Port 3001 is available" -ForegroundColor Green
     }
-} catch {
+}
+catch {
     Write-Host "Port 3001 appears to be available" -ForegroundColor Green
 }
 
@@ -94,7 +100,8 @@ Write-Host ""
 try {
     Write-Host "Attempting to start server on port 3001..." -ForegroundColor Cyan
     npx next dev --port 3001
-} catch {
+}
+catch {
     Write-Host ""
     Write-Host "Error starting development server on port 3001!" -ForegroundColor Red
     Write-Host "Trying alternative startup methods..." -ForegroundColor Yellow
@@ -104,13 +111,15 @@ try {
     try {
         $env:PORT = "3001"
         npm run dev:safe -- --port 3001
-    } catch {
+    }
+    catch {
         Write-Host "Alternative method 1 failed. Trying with Turbopack..." -ForegroundColor Yellow
 
         # Alternative 2: Try with Turbopack but force port
         try {
             npx next dev --turbopack --port 3001
-        } catch {
+        }
+        catch {
             Write-Host "All startup methods failed!" -ForegroundColor Red
             Write-Host "Troubleshooting suggestions:" -ForegroundColor Yellow
             Write-Host "   1. Ensure port 3001 is not in use by another application" -ForegroundColor White

@@ -34,6 +34,7 @@ import {
   RotateCcw,
   Info
 } from 'lucide-react'
+import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
 
 // مفتاح localStorage للحفظ التلقائي
@@ -136,8 +137,22 @@ const isFormDataEmpty = (data: FormDataType): boolean => {
 }
 
 async function compressFileForStorage(file: File, maxDim: number = 1920): Promise<Blob> {
+  // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+  // بعد عودة WebView من camera intent. نقرأ الملف بالكامل إلى الذاكرة أولاً.
+  let safeBlob: Blob = file
+  const isAndroid = /android/i.test(navigator.userAgent)
+  if (isAndroid) {
+    try {
+      const buffer = await file.arrayBuffer()
+      safeBlob = new Blob([buffer], { type: file.type || 'image/jpeg' })
+    } catch {
+      // fallback: استخدام الملف الأصلي
+      safeBlob = file
+    }
+  }
+
   return new Promise((resolve, reject) => {
-    const sourceUrl = URL.createObjectURL(file)
+    const sourceUrl = URL.createObjectURL(safeBlob)
     const image = new window.Image()
 
     image.onload = () => {
@@ -224,6 +239,11 @@ function AddOrderContent() {
   useEffect(() => {
     loadWorkers()
   }, [loadWorkers])
+
+  // Re-fetch workers when the app resumes from background (mobile)
+  useAppResume(() => {
+    loadWorkers()
+  })
 
   // إظهار رسالة عند استرجاع البيانات المحفوظة
   useEffect(() => {

@@ -46,6 +46,7 @@ export default function ImageUploadWithPrint({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const uploadControllersRef = useRef<Map<string, AbortController>>(new Map())
+  const lastProgressTimeRef = useRef<number>(0)
   const { t } = useTranslation()
 
   // تبديل حالة الطباعة للصورة
@@ -87,6 +88,38 @@ export default function ImageUploadWithPrint({
     }
   }, [])
 
+  // ===== Visibility change handler =====
+  // Abort stalled uploads when the user returns to the page after
+  // backgrounding Chrome (common on Android / Capacitor).
+  useEffect(() => {
+    const STALL_THRESHOLD_MS = 15_000
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return
+      if (uploadControllersRef.current.size === 0) return
+
+      const elapsed = Date.now() - lastProgressTimeRef.current
+      if (elapsed >= STALL_THRESHOLD_MS) {
+        uploadControllersRef.current.forEach((controller) => {
+          try { controller.abort() } catch { /* ignore */ }
+        })
+        uploadControllersRef.current = new Map()
+
+        setUploading(false)
+        setUploadProgress(new Map())
+        setErrors(prev => [...prev, 'تم إلغاء الرفع لأن الاتصال انقطع. يرجى المحاولة مرة أخرى'])
+
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        if (cameraInputRef.current) cameraInputRef.current.value = ''
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || uploading) return
     const remainingSlots = maxImages - images.length
@@ -95,6 +128,7 @@ export default function ImageUploadWithPrint({
     if (filesToUpload.length === 0) return
     setUploading(true)
     setErrors([])
+    lastProgressTimeRef.current = Date.now()
     const uploadControllers = new Map<string, AbortController>()
     uploadControllersRef.current = uploadControllers
     const safetyTimeout = window.setTimeout(() => {
@@ -157,6 +191,7 @@ export default function ImageUploadWithPrint({
         if (useSupabaseStorage) {
           const uploadFn = isVideo ? imageService.uploadVideo.bind(imageService) : imageService.uploadImage.bind(imageService)
           const { data, error } = await uploadFn(file, (progress) => {
+            lastProgressTimeRef.current = Date.now()
             setUploadProgress(prev => {
               const newMap = new Map(prev)
               const fileProgress = newMap.get(fileKey)
@@ -316,9 +351,9 @@ export default function ImageUploadWithPrint({
       <div className="relative">
         <div
           className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 ${uploading ? 'border-blue-400 bg-blue-50 cursor-wait'
-              : dragOver ? 'border-pink-400 bg-pink-50 cursor-pointer'
-                : images.length >= maxImages ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
-                  : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50 cursor-pointer'
+            : dragOver ? 'border-pink-400 bg-pink-50 cursor-pointer'
+              : images.length >= maxImages ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                : 'border-gray-300 hover:border-pink-400 hover:bg-pink-50 cursor-pointer'
             }`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}

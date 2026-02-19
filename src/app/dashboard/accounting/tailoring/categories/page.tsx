@@ -26,17 +26,26 @@ import {
   type AccountingCategory,
   type CategoryType
 } from '@/lib/services/accounting-category-service'
+import {
+  getSuppliers,
+  createSupplier,
+  updateSupplier,
+  deleteSupplier,
+  type Supplier
+} from '@/lib/services/supplier-service'
 
 // ============================================================================
 // أسماء الأقسام
 // ============================================================================
 
-const CATEGORY_TYPE_NAMES: Record<CategoryType, { name: string; icon: any; color: string }> = {
+const CATEGORY_TYPE_NAMES: Record<CategoryType | 'suppliers', { name: string; icon: any; color: string }> = {
   income: { name: 'المبيعات', icon: TrendingUp, color: 'emerald' },
   purchase: { name: 'المواد', icon: ShoppingBag, color: 'orange' },
   fixed_expense: { name: 'المصاريف الثابتة', icon: Home, color: 'blue' },
-  salary: { name: 'الرواتب', icon: Users, color: 'purple' }
+  salary: { name: 'الرواتب', icon: Users, color: 'purple' },
+  suppliers: { name: 'الموردين', icon: Users, color: 'indigo' }
 }
+
 
 // ============================================================================
 // المكون الرئيسي
@@ -49,8 +58,9 @@ function CategoriesManagementContent() {
     fixed_expense: [],
     salary: []
   })
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedType, setSelectedType] = useState<CategoryType>('purchase')
+  const [selectedType, setSelectedType] = useState<CategoryType | 'suppliers'>('purchase')
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCategory, setEditingCategory] = useState<AccountingCategory | null>(null)
   const [formData, setFormData] = useState({
@@ -59,11 +69,19 @@ function CategoriesManagementContent() {
     label_en: '',
     description: ''
   })
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
+  const [supplierFormData, setSupplierFormData] = useState({
+    name: '',
+    contact_info: '',
+    notes: ''
+  })
+
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     loadCategories()
+    loadSuppliers()
   }, [])
 
   const loadCategories = async () => {
@@ -79,10 +97,20 @@ function CategoriesManagementContent() {
     }
   }
 
+  const loadSuppliers = async () => {
+    try {
+      const data = await getSuppliers()
+      setSuppliers(data)
+    } catch (error) {
+      console.error('Error loading suppliers:', error)
+    }
+  }
+
   const showMessage = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text })
     setTimeout(() => setMessage(null), 5000)
   }
+
 
   const handleAdd = () => {
     setEditingCategory(null)
@@ -106,11 +134,44 @@ function CategoriesManagementContent() {
     setShowAddModal(true)
   }
 
+  const handleAddSupplier = () => {
+    setEditingSupplier(null)
+    setSupplierFormData({
+      name: '',
+      contact_info: '',
+      notes: ''
+    })
+    setShowAddModal(true)
+  }
+
+  const handleEditSupplier = (supplier: Supplier) => {
+    setEditingSupplier(supplier)
+    setSupplierFormData({
+      name: supplier.name,
+      contact_info: supplier.contact_info || '',
+      notes: supplier.notes || ''
+    })
+    setShowAddModal(true)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
 
     try {
+      if (selectedType === 'suppliers') {
+        if (editingSupplier) {
+          await updateSupplier(editingSupplier.id, supplierFormData)
+          showMessage('success', 'تم تحديث المورد بنجاح')
+        } else {
+          await createSupplier(supplierFormData)
+          showMessage('success', 'تم إضافة المورد بنجاح')
+        }
+        setShowAddModal(false)
+        loadSuppliers()
+        return
+      }
+
       if (editingCategory) {
         // تحديث فئة موجودة
         const result = await updateCategory(editingCategory.id, {
@@ -129,7 +190,7 @@ function CategoriesManagementContent() {
       } else {
         // إضافة فئة جديدة
         const result = await createCategory({
-          category_type: selectedType,
+          category_type: selectedType as CategoryType,
           branch: 'tailoring',
           category_id: formData.category_id,
           label_ar: formData.label_ar,
@@ -146,9 +207,22 @@ function CategoriesManagementContent() {
         }
       }
     } catch (error) {
+      console.error(error)
       showMessage('error', 'حدث خطأ غير متوقع')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDeleteSupplier = async (id: string, name: string) => {
+    if (!confirm(`هل أنت متأكد من حذف المورد "${name}"؟`)) return
+
+    try {
+      await deleteSupplier(id)
+      showMessage('success', 'تم حذف المورد بنجاح')
+      loadSuppliers()
+    } catch (error) {
+      showMessage('error', 'خطأ في حذف المورد')
     }
   }
 
@@ -174,7 +248,8 @@ function CategoriesManagementContent() {
     }
   }
 
-  const currentCategories = categories[selectedType] || []
+  const currentCategories = selectedType === 'suppliers' ? [] : (categories[selectedType] || [])
+
 
   if (loading) {
     return (
@@ -272,61 +347,109 @@ function CategoriesManagementContent() {
           className="bg-white/80 backdrop-blur-md rounded-2xl p-6 shadow-lg border border-blue-100"
         >
           <h2 className="text-lg font-bold text-gray-900 mb-4">
-            {CATEGORY_TYPE_NAMES[selectedType].name} ({currentCategories.length})
+            {CATEGORY_TYPE_NAMES[selectedType].name} ({selectedType === 'suppliers' ? suppliers.length : currentCategories.length})
           </h2>
 
-          {currentCategories.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <Settings className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <p>لا توجد فئات في هذا القسم</p>
-            </div>
-          ) : (
-            <div className="grid gap-3">
-              {currentCategories.map((category, index) => (
-                <motion.div
-                  key={category.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-gray-900">{category.label_ar}</h3>
-                      {category.is_default && (
-                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                          افتراضي
-                        </span>
+          {selectedType === 'suppliers' ? (
+            suppliers.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <p>لا يوجد موردين</p>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {suppliers.map((supplier, index) => (
+                  <motion.div
+                    key={supplier.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900">{supplier.name}</h3>
+                      {supplier.contact_info && (
+                        <p className="text-sm text-gray-500 mt-1">{supplier.contact_info}</p>
+                      )}
+                      {supplier.notes && (
+                        <p className="text-sm text-gray-600 mt-1">{supplier.notes}</p>
                       )}
                     </div>
-                    {category.label_en && (
-                      <p className="text-sm text-gray-500 mt-1">{category.label_en}</p>
-                    )}
-                    {category.description && (
-                      <p className="text-sm text-gray-600 mt-1">{category.description}</p>
-                    )}
-                    <p className="text-xs text-gray-400 mt-1">المعرف: {category.category_id}</p>
-                  </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleEdit(category)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="تعديل"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(category)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="حذف"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleEditSupplier(supplier)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="تعديل"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSupplier(supplier.id, supplier.name)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )
+          ) : (
+            currentCategories.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Settings className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <p>لا توجد فئات في هذا القسم</p>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {currentCategories.map((category, index) => (
+                  <motion.div
+                    key={category.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-gray-900">{category.label_ar}</h3>
+                        {category.is_default && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            افتراضي
+                          </span>
+                        )}
+                      </div>
+                      {category.label_en && (
+                        <p className="text-sm text-gray-500 mt-1">{category.label_en}</p>
+                      )}
+                      {category.description && (
+                        <p className="text-sm text-gray-600 mt-1">{category.description}</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">المعرف: {category.category_id}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleEdit(category)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="تعديل"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(category)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )
           )}
         </motion.div>
 
@@ -360,65 +483,109 @@ function CategoriesManagementContent() {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {!editingCategory && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        المعرف (ID) *
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.category_id}
-                        onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
-                        placeholder="مثال: new_category"
-                        required
-                        disabled={!!editingCategory}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        يستخدم في الكود (حروف إنجليزية صغيرة وشرطة سفلية فقط)
-                      </p>
-                    </div>
+                  {selectedType === 'suppliers' ? (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          اسم المورد *
+                        </label>
+                        <input
+                          type="text"
+                          value={supplierFormData.name}
+                          onChange={(e) => setSupplierFormData({ ...supplierFormData, name: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                          placeholder="مثال: شركة الأقمشة العالمية"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          معلومات الاتصال
+                        </label>
+                        <input
+                          type="text"
+                          value={supplierFormData.contact_info}
+                          onChange={(e) => setSupplierFormData({ ...supplierFormData, contact_info: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                          placeholder="رقم الهاتف أو البريد الإلكتروني"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          ملاحظات
+                        </label>
+                        <textarea
+                          value={supplierFormData.notes}
+                          onChange={(e) => setSupplierFormData({ ...supplierFormData, notes: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                          rows={3}
+                          placeholder="أي ملاحظات إضافية"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {!editingCategory && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            المعرف (ID) *
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.category_id}
+                            onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                            placeholder="مثال: new_category"
+                            required
+                            disabled={!!editingCategory}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            يستخدم في الكود (حروف إنجليزية صغيرة وشرطة سفلية فقط)
+                          </p>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          الاسم بالعربية *
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.label_ar}
+                          onChange={(e) => setFormData({ ...formData, label_ar: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                          placeholder="مثال: خيوط حريرية"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          الاسم بالإنجليزية
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.label_en}
+                          onChange={(e) => setFormData({ ...formData, label_en: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                          placeholder="Example: Silk Threads"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          الوصف
+                        </label>
+                        <textarea
+                          value={formData.description}
+                          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                          rows={3}
+                          placeholder="وصف اختياري للفئة"
+                        />
+                      </div>
+                    </>
                   )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      الاسم بالعربية *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.label_ar}
-                      onChange={(e) => setFormData({ ...formData, label_ar: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
-                      placeholder="مثال: خيوط حريرية"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      الاسم بالإنجليزية
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.label_en}
-                      onChange={(e) => setFormData({ ...formData, label_en: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
-                      placeholder="Example: Silk Threads"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      الوصف
-                    </label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
-                      rows={3}
-                      placeholder="وصف اختياري للفئة"
-                    />
-                  </div>
 
                   <div className="flex gap-3 pt-4">
                     <button
@@ -454,5 +621,6 @@ export default function CategoriesManagementPage() {
     </ProtectedWorkerRoute>
   )
 }
+
 
 

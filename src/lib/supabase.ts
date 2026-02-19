@@ -1,7 +1,7 @@
 /**
  * Supabase Client Configuration
  * تهيئة عميل Supabase
- * 
+ *
  * هذا الملف يقوم بإنشاء وتصدير عميل Supabase للاستخدام في جميع أنحاء التطبيق
  */
 
@@ -32,6 +32,90 @@ export const supabase = createClient(
 )
 
 /**
+ * Track when the page was last hidden (backgrounded).
+ *
+ * We do NOT call refreshSession() here to avoid a race condition with
+ * Supabase's own internal visibilitychange handler (autoRefreshToken).
+ * Supabase uses Refresh Token Rotation — if two refresh calls fire
+ * concurrently with the same token, the second one will fail and
+ * GoTrueClient will sign the user out entirely.
+ *
+ * Instead, we expose `wasRecentlyBackgrounded()` so that code like
+ * `buildUploadHeaders()` can decide to wait for Supabase's internal
+ * refresh to settle before reading the session.
+ */
+let _lastHiddenAt = 0
+let _lastVisibleAt = 0
+
+// ══════════════════════════════════════════════════════════════════════
+// App Resume Detection — for mobile (Capacitor / mobile browsers)
+// ══════════════════════════════════════════════════════════════════════
+
+type ResumeCallback = () => void
+const _resumeCallbacks = new Set<ResumeCallback>()
+
+/**
+ * Register a callback that fires when the app resumes from background.
+ * Callbacks fire AFTER a short delay (to allow Supabase token refresh).
+ * Returns an unsubscribe function.
+ */
+export function onAppResume(callback: ResumeCallback): () => void {
+  _resumeCallbacks.add(callback)
+  return () => { _resumeCallbacks.delete(callback) }
+}
+
+/** Current resume generation — increments each time the app resumes. */
+let _resumeGeneration = 0
+
+/** Get the current resume generation (useful for stale-check in callbacks). */
+export function getResumeGeneration(): number {
+  return _resumeGeneration
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      _lastHiddenAt = Date.now()
+    } else {
+      _lastVisibleAt = Date.now()
+
+      const wasHiddenFor = _lastHiddenAt > 0 ? (_lastVisibleAt - _lastHiddenAt) : 0
+
+      // Only fire resume callbacks if the app was hidden for > 1 second
+      // (ignore quick tab switches or split-screen on desktop)
+      if (wasHiddenFor > 1_000) {
+        _resumeGeneration++
+        const gen = _resumeGeneration
+
+        // Wait 2 seconds for Supabase's auto-refresh to complete,
+        // then notify components to re-fetch their data.
+        setTimeout(() => {
+          // Only fire if no newer resume has happened
+          if (gen === _resumeGeneration) {
+            console.log(`🔄 App resumed after ${Math.round(wasHiddenFor / 1000)}s — notifying ${_resumeCallbacks.size} listeners`)
+            _resumeCallbacks.forEach(cb => {
+              try { cb() } catch (e) { console.error('Resume callback error:', e) }
+            })
+          }
+        }, 2000)
+      }
+    }
+  })
+}
+
+/**
+ * Returns true if the page was recently backgrounded (hidden for > 3 s)
+ * and came back within the last 10 seconds.  Upload code should use this
+ * to decide whether to force a session refresh.
+ */
+export function wasRecentlyBackgrounded(): boolean {
+  if (_lastHiddenAt === 0 || _lastVisibleAt === 0) return false
+  const wasHiddenFor = _lastVisibleAt - _lastHiddenAt
+  const timeSinceVisible = Date.now() - _lastVisibleAt
+  return wasHiddenFor > 3_000 && timeSinceVisible < 10_000
+}
+
+/**
  * التحقق من تكوين Supabase
  * @returns true إذا كانت متغيرات البيئة مضبوطة بشكل صحيح
  */
@@ -59,7 +143,7 @@ export async function testSupabaseConnection(): Promise<boolean> {
   try {
     // محاولة جلب بيانات بسيطة للتحقق من الاتصال
     const { error } = await supabase.from('users').select('count', { count: 'exact', head: true })
-    
+
     if (error) {
       console.error('❌ Supabase connection test failed:', error.message)
       return false
@@ -79,7 +163,7 @@ export async function testSupabaseConnection(): Promise<boolean> {
  */
 export async function getSupabaseStatus() {
   const isConfigured = isSupabaseConfigured()
-  
+
   if (!isConfigured) {
     return {
       configured: false,
@@ -98,4 +182,3 @@ export async function getSupabaseStatus() {
       : 'Supabase is configured but connection failed',
   }
 }
-

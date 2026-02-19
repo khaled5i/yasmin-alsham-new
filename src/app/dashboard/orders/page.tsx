@@ -12,6 +12,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService } from '@/lib/services/order-service'
 import { formatGregorianDate } from '@/lib/date-utils'
+import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
 import CompletedWorkUpload from '@/components/CompletedWorkUpload'
@@ -69,6 +70,15 @@ export default function OrdersPage() {
     loadOrders({ status: ['pending', 'in_progress', 'cancelled'] })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // Re-fetch data when the app resumes from background (mobile).
+  // This ensures that data is refreshed after the session token is updated.
+  useAppResume(() => {
+    if (!user) return
+    console.log('🔄 OrdersPage: re-fetching data after app resume')
+    loadOrders({ status: ['pending', 'in_progress', 'cancelled'] })
+    loadWorkers()
+  })
 
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')

@@ -55,6 +55,8 @@ export default function ImageUpload({
   const [isClientMounted, setIsClientMounted] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const uploadAbortControllerRef = useRef<AbortController | null>(null)
+  const lastProgressTimeRef = useRef<number>(0)
   const { t } = useTranslation()
   const imageOnlyIndices = useMemo(
     () => images.reduce<number[]>((acc, image, index) => {
@@ -85,8 +87,11 @@ export default function ImageUpload({
     setUploading(true)
     setErrors([])
     const uploadAbortController = new AbortController()
+    uploadAbortControllerRef.current = uploadAbortController
+    lastProgressTimeRef.current = Date.now()
     const safetyTimeout = window.setTimeout(() => {
       uploadAbortController.abort()
+      uploadAbortControllerRef.current = null
       setUploading(false)
       setUploadProgress(new Map())
       setErrors(prev => [...prev, 'انتهت مهلة الرفع. يرجى المحاولة مرة أخرى'])
@@ -129,6 +134,7 @@ export default function ImageUpload({
         if (useSupabaseStorage) {
           const uploadFn = isVideo ? imageService.uploadVideo.bind(imageService) : imageService.uploadImage.bind(imageService)
           const { data, error } = await uploadFn(file, (progress) => {
+            lastProgressTimeRef.current = Date.now()
             setUploadProgress(prev => {
               const newMap = new Map(prev)
               const fileProgress = newMap.get(fileKey)
@@ -210,6 +216,7 @@ export default function ImageUpload({
       setErrors(prev => [...prev, message])
     } finally {
       window.clearTimeout(safetyTimeout)
+      uploadAbortControllerRef.current = null
       if (fileInputRef.current) fileInputRef.current.value = ''
       if (cameraInputRef.current) cameraInputRef.current.value = ''
 
@@ -337,6 +344,44 @@ export default function ImageUpload({
 
   useEffect(() => {
     setIsClientMounted(true)
+  }, [])
+
+  // ===== Visibility change handler =====
+  // When the user backgrounds Chrome (e.g. switches apps on Android) and
+  // returns, any in-flight fetch() / WebSocket may be dead.  We detect this
+  // by checking whether the upload has made progress recently.  If the page
+  // becomes visible again while an upload is in progress and no progress has
+  // been reported for > 15 seconds, we abort the stalled upload and reset
+  // the state so the user can retry immediately.
+  useEffect(() => {
+    const STALL_THRESHOLD_MS = 15_000
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return
+
+      // No upload running — nothing to do
+      if (!uploadAbortControllerRef.current) return
+
+      const elapsed = Date.now() - lastProgressTimeRef.current
+      if (elapsed >= STALL_THRESHOLD_MS) {
+        // The upload has been stalled — abort it and reset state
+        try { uploadAbortControllerRef.current.abort() } catch { /* ignore */ }
+        uploadAbortControllerRef.current = null
+
+        setUploading(false)
+        setUploadProgress(new Map())
+        setErrors(prev => [...prev, 'تم إلغاء الرفع لأن الاتصال انقطع. يرجى المحاولة مرة أخرى'])
+
+        // Clear file inputs so the same file can be re-selected
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        if (cameraInputRef.current) cameraInputRef.current.value = ''
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   const closeLightbox = useCallback(() => {

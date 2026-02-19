@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import {
   ArrowLeft,
   Home,
@@ -23,7 +25,7 @@ function FixedExpensesContent() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateFilter, setDateFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState<Date | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
@@ -114,7 +116,15 @@ function FixedExpensesContent() {
   const filteredExpenses = expenses.filter(item => {
     const matchesSearch = item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.category.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesDate = !dateFilter || item.date.startsWith(dateFilter)
+
+    let matchesDate = true
+    if (dateFilter) {
+      const itemDate = new Date(item.date)
+      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
+        itemDate.getMonth() === dateFilter.getMonth() &&
+        itemDate.getFullYear() === dateFilter.getFullYear()
+    }
+
     return matchesSearch && matchesDate
   })
 
@@ -223,13 +233,17 @@ function FixedExpensesContent() {
               />
             </div>
             <div className="relative">
-              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="month"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <div className="relative w-full">
+                <DatePicker
+                  selected={dateFilter}
+                  onChange={(date: Date | null) => setDateFilter(date)}
+                  dateFormat="yyyy/MM/dd"
+                  placeholderText="اختر التاريخ"
+                  className="w-full pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-right"
+                  isClearable
+                />
+                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+              </div>
             </div>
           </div>
         </motion.div>

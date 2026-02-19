@@ -39,6 +39,7 @@ import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measur
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { formatGregorianDate } from '@/lib/date-utils'
+import { useAppResume } from '@/hooks/useAppResume'
 
 interface OrderModalProps {
   order: Order | null
@@ -254,6 +255,31 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       setCustomDesignImage(null)
     }
   }, [measurementsData])
+
+  // Re-fetch data when the app resumes from background (mobile).
+  // On mobile, going to home screen and back can leave the component with
+  // stale/empty data if the Supabase token was expired when the original fetch ran.
+  useAppResume(() => {
+    if (!isOpen || !initialOrder) return
+    // Skip if measurements were already present in the initial order
+    if (initialOrder.measurements !== undefined) return
+
+    console.log('🔄 OrderModal: re-fetching data after app resume')
+
+    // Re-fetch measurements (lightweight — only the measurements column)
+    orderService.getMeasurements(initialOrder.id).then((result) => {
+      if (result.data && Object.keys(result.data).length > 0) {
+        setMeasurementsData(result.data)
+      }
+    })
+
+    // Re-fetch full order
+    orderService.getById(initialOrder.id).then((result) => {
+      if (result.data) {
+        setFullOrder(result.data)
+      }
+    })
+  })
 
   // تحديث حالة العامل المحدد عند فتح المودال
   useEffect(() => {

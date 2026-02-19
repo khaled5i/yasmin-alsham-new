@@ -24,6 +24,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { useTranslation } from '@/hooks/useTranslation'
 import { formatGregorianDate } from '@/lib/date-utils'
+import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 
@@ -56,6 +57,13 @@ export default function DeliveredOrdersPage() {
     loadOrders({ status: 'delivered' })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // Re-fetch data when the app resumes from background (mobile)
+  useAppResume(() => {
+    if (!user) return
+    loadOrders({ status: 'delivered' })
+    loadWorkers()
+  })
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {

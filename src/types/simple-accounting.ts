@@ -23,6 +23,8 @@ export interface Expense {
   notes?: string
   created_at: string
   created_by?: string
+  supplier_id?: string    // معرف المورد (اختياري)
+  supplier_name?: string  // اسم المورد (اختياري - للتسهيل)
 }
 
 export interface CreateExpenseInput {
@@ -33,6 +35,8 @@ export interface CreateExpenseInput {
   amount: number
   date: string
   notes?: string
+  supplier_id?: string
+  supplier_name?: string
 }
 
 // ============================================================================

@@ -134,11 +134,24 @@ const serializeDesignState = (annotations: ImageAnnotation[], drawings: DrawingP
 const MAX_CUSTOM_IMAGE_DIM = 1920
 
 async function resizeImageFile(file: File, maxDim: number): Promise<string> {
+  // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+  // بعد عودة WebView من camera intent. نقرأ الملف بالكامل إلى الذاكرة أولاً.
+  let safeBlob: Blob = file
+  const isAndroid = /android/i.test(navigator.userAgent)
+  if (isAndroid) {
+    try {
+      const buffer = await file.arrayBuffer()
+      safeBlob = new Blob([buffer], { type: file.type || 'image/jpeg' })
+    } catch {
+      safeBlob = file
+    }
+  }
+
   // استخدام createImageBitmap لتحميل الصورة بكفاءة أعلى (تجنب تجمد المتصفح مع صور الكاميرا الكبيرة)
   if (typeof createImageBitmap === 'function') {
     try {
       // أولاً: تحميل البيانات الأصلية لمعرفة الأبعاد
-      const bitmap = await createImageBitmap(file)
+      const bitmap = await createImageBitmap(safeBlob)
       const originalWidth = bitmap.width
       const originalHeight = bitmap.height
       bitmap.close()
@@ -157,7 +170,7 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
       }
 
       // تحميل الصورة بالحجم المطلوب مباشرة (أقل استهلاكاً للذاكرة)
-      const resizedBitmap = await createImageBitmap(file, {
+      const resizedBitmap = await createImageBitmap(safeBlob, {
         resizeWidth: targetWidth,
         resizeHeight: targetHeight,
         resizeQuality: 'medium',
@@ -195,7 +208,7 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
 
   // fallback: استخدام Image element للمتصفحات التي لا تدعم createImageBitmap
   return new Promise((resolve, reject) => {
-    const sourceUrl = URL.createObjectURL(file)
+    const sourceUrl = URL.createObjectURL(safeBlob)
     const img = new window.Image()
 
     img.onload = () => {
@@ -992,12 +1005,24 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
 
     // اقرأ ملف الصورة الجديدة دائماً إذا وُجد (أولوية أعلى من base64 القديم)
+    // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+    // نقرأ الملف بالكامل إلى الذاكرة أولاً ثم نحوّله إلى base64
     let imageBase64: string | null = null
     if (customImage) {
+      let safeBlob: Blob = customImage
+      const isAndroid = /android/i.test(navigator.userAgent)
+      if (isAndroid) {
+        try {
+          const buffer = await customImage.arrayBuffer()
+          safeBlob = new Blob([buffer], { type: customImage.type || 'image/jpeg' })
+        } catch {
+          safeBlob = customImage
+        }
+      }
       imageBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
-        reader.readAsDataURL(customImage)
+        reader.readAsDataURL(safeBlob)
       })
     } else {
       imageBase64 = currentImageBase64
@@ -1152,10 +1177,20 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
     let imageBase64: string | null = null
     if (customImage) {
+      let safeBlob: Blob = customImage
+      const isAndroid = /android/i.test(navigator.userAgent)
+      if (isAndroid) {
+        try {
+          const buffer = await customImage.arrayBuffer()
+          safeBlob = new Blob([buffer], { type: customImage.type || 'image/jpeg' })
+        } catch {
+          safeBlob = customImage
+        }
+      }
       imageBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
-        reader.readAsDataURL(customImage)
+        reader.readAsDataURL(safeBlob)
       })
     } else {
       imageBase64 = currentImageBase64
@@ -1196,10 +1231,20 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
     let imageBase64: string | null = null
     if (customImage) {
+      let safeBlob: Blob = customImage
+      const isAndroid = /android/i.test(navigator.userAgent)
+      if (isAndroid) {
+        try {
+          const buffer = await customImage.arrayBuffer()
+          safeBlob = new Blob([buffer], { type: customImage.type || 'image/jpeg' })
+        } catch {
+          safeBlob = customImage
+        }
+      }
       imageBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
-        reader.readAsDataURL(customImage)
+        reader.readAsDataURL(safeBlob)
       })
     } else {
       imageBase64 = currentImageBase64
@@ -1256,10 +1301,19 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         currentUrl = url
         setImagePreview(url)
       })
-      .catch((error) => {
+      .catch(async (error) => {
         console.error('فشل ضغط الصورة المخصصة:', error)
         if (cancelled) return
-        const fallbackUrl = URL.createObjectURL(customImage)
+        // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
+        let safeBlob: Blob = customImage
+        const isAndroid = /android/i.test(navigator.userAgent)
+        if (isAndroid) {
+          try {
+            const buffer = await customImage.arrayBuffer()
+            safeBlob = new Blob([buffer], { type: customImage.type || 'image/jpeg' })
+          } catch { safeBlob = customImage }
+        }
+        const fallbackUrl = URL.createObjectURL(safeBlob)
         currentUrl = fallbackUrl
         setImagePreview(fallbackUrl)
       })
