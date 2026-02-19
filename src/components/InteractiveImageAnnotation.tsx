@@ -173,7 +173,7 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
       const resizedBitmap = await createImageBitmap(safeBlob, {
         resizeWidth: targetWidth,
         resizeHeight: targetHeight,
-        resizeQuality: 'medium',
+        resizeQuality: 'high',
       })
 
       const canvas = document.createElement('canvas')
@@ -984,8 +984,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ctx.restore()
         })
 
-      // JPEG مضغوط لتقليل حجم payload عند الحفظ
-      return canvas.toDataURL('image/jpeg', 0.5)
+      // JPEG بجودة معقولة للحفاظ على وضوح الصورة المحفوظة
+      return canvas.toDataURL('image/jpeg', 0.82)
     } catch (error) {
       console.error('Error generating composite image:', error)
       return null
@@ -3394,6 +3394,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                         <motion.button
                           type="button"
                           onClick={() => {
+                            const wasInEraserMode = isEraserMode
                             setIsEraserMode(false)
                             setShowEraserMenu(false)
                             setShowEraserSizePicker(false)
@@ -3402,6 +3403,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             setShowPlusMenu(false)
                             if (!isPenMode) {
                               setIsPenMode(true)
+                              setShowBrushPicker(false)
+                              return
+                            }
+                            // إذا كانت الممحاة مفعّلة، فقط تبديل للقلم بدون فتح القائمة
+                            if (wasInEraserMode) {
                               setShowBrushPicker(false)
                               return
                             }
