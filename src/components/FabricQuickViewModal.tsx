@@ -6,6 +6,7 @@ import { X, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Fabric, formatFabricPrice, getFinalPrice } from '@/store/fabricStore'
+import { isVideoFile } from '@/lib/utils/media'
 
 interface FabricQuickViewModalProps {
   fabric: Fabric | null
@@ -107,29 +108,38 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                   {/* الصورة مع خلفية ضبابية */}
                   <div className="relative h-80 md:h-full overflow-hidden bg-gradient-to-br from-pink-50 via-purple-50 to-rose-50">
                     {/* خلفية ضبابية */}
-                    <div className="absolute inset-0">
-                      {isExternalImage || isBase64 ? (
-                        <Image
-                          src={currentImage}
-                          alt=""
-                          fill
-                          className="object-cover blur-2xl scale-110 opacity-40"
-                          quality={50}
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <img
-                          src={currentImage}
-                          alt=""
-                          className="w-full h-full object-cover blur-2xl scale-110 opacity-40"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </div>
+                    {!isVideoFile(currentImage) && (
+                      <div className="absolute inset-0">
+                        {isExternalImage || isBase64 ? (
+                          <Image
+                            src={currentImage}
+                            alt=""
+                            fill
+                            className="object-cover blur-2xl scale-110 opacity-40"
+                            quality={50}
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <img
+                            src={currentImage}
+                            alt=""
+                            className="w-full h-full object-cover blur-2xl scale-110 opacity-40"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </div>
+                    )}
 
-                    {/* الصورة الأصلية */}
+                    {/* الصورة/الفيديو الأصلي */}
                     <div className="relative h-full">
-                      {isExternalImage || isBase64 ? (
+                      {isVideoFile(currentImage) ? (
+                        <video
+                          src={currentImage}
+                          controls
+                          preload="metadata"
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (isExternalImage || isBase64) ? (
                         <Image
                           src={currentImage}
                           alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
@@ -170,9 +180,8 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                             <button
                               key={index}
                               onClick={() => setCurrentImageIndex(index)}
-                              className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                                currentImageIndex === index ? 'bg-white w-6' : 'bg-white/50'
-                              }`}
+                              className={`w-2 h-2 rounded-full transition-all duration-300 ${currentImageIndex === index ? 'bg-white w-6' : 'bg-white/50'
+                                }`}
                               aria-label={`عرض الصورة ${index + 1}`}
                             />
                           ))}
@@ -240,9 +249,8 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                         )}
 
                         {/* حالة التوفر */}
-                        <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${
-                          fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                        }`}>
+                        <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}>
                           {fabric.is_available ? 'متوفر' : 'غير متوفر'}
                         </div>
                       </div>
@@ -251,9 +259,8 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
 
                     {/* حالة التوفر لسطح المكتب */}
                     <div className="hidden md:block mt-3">
-                      <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${
-                        fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                      }`}>
+                      <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}>
                         {fabric.is_available ? 'متوفر' : 'غير متوفر'}
                       </div>
                     </div>
@@ -383,7 +390,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                     >
                       عرض التفاصيل الكاملة
                     </Link>
-                    
+
                     <a
                       href={whatsappLink}
                       target="_blank"

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, X, Image as ImageIcon, Plus, Loader2, AlertCircle, CheckCircle, Camera, Printer } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { imageService, UploadProgress } from '@/lib/services/image-service'
+import { isVideoFile } from '@/lib/utils/media'
 
 interface ImageUploadWithPrintProps {
   images: string[]
@@ -516,7 +517,7 @@ export default function ImageUploadWithPrint({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             <AnimatePresence>
               {images.map((image, index) => {
-                const isVideo = image.includes('.mp4') || image.includes('.mov') || image.includes('.avi') || image.includes('.webm') || image.includes('video')
+                const isVideo = isVideoFile(image)
                 const isPrintable = printableImages.includes(image)
 
                 return (
@@ -527,9 +528,9 @@ export default function ImageUploadWithPrint({
                     exit={{ opacity: 0, scale: 0.8 }}
                     className="relative group"
                   >
-                    <div className={`aspect-square rounded-lg overflow-hidden border-2 bg-gray-100 ${isPrintable ? 'border-pink-500' : 'border-gray-200'}`}>
+                    <div className={`rounded-lg overflow-hidden border-2 ${isPrintable ? 'border-pink-500' : 'border-gray-200'} ${isVideo ? 'bg-black' : 'aspect-square bg-gray-100'}`}>
                       {isVideo ? (
-                        <video src={image} controls className="w-full h-full object-cover" preload="metadata" />
+                        <video src={image} controls className="w-full object-contain" preload="metadata" />
                       ) : (
                         <img src={image} alt={`صورة ${index + 1}`} className="w-full h-full object-cover" />
                       )}

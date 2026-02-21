@@ -9,6 +9,7 @@ import SearchBar from '@/components/SearchBar'
 import SortOptions from '@/components/SortOptions'
 import Header from '@/components/Header'
 import dynamic from 'next/dynamic'
+import { isVideoFile } from '@/lib/utils/media'
 
 // تحميل المكونات الثقيلة بشكل ديناميكي (Code Splitting)
 const FilterSidebar = dynamic(() => import('@/components/FilterSidebar'), {
@@ -374,13 +375,22 @@ export default function DesignsPage() {
                           <div
                             className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
                           >
-                            {/* الصورة الحالية - تم استبدال Next.js Image بـ img العادي لتحسين السرعة */}
-                            <img
-                              src={currentImage}
-                              alt={`${product.name} - صورة ${currentIndex + 1}`}
-                              className="w-full h-full object-cover transition-opacity duration-300"
-                              loading="lazy"
-                            />
+                            {/* الصورة/الفيديو الحالي */}
+                            {isVideoFile(currentImage) ? (
+                              <video
+                                src={currentImage}
+                                muted
+                                preload="metadata"
+                                className="w-full h-full object-cover transition-opacity duration-300"
+                              />
+                            ) : (
+                              <img
+                                src={currentImage}
+                                alt={`${product.name} - صورة ${currentIndex + 1}`}
+                                className="w-full h-full object-cover transition-opacity duration-300"
+                                loading="lazy"
+                              />
+                            )}
 
                             {/* أزرار التنقل - تظهر فقط إذا كان هناك أكثر من صورة */}
                             {productImages.length > 1 && (

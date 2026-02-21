@@ -7,6 +7,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Ruler, Palette, Sparkles, Info, MessageCircle } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
+import { isVideoFile } from '@/lib/utils/media'
 
 export default function FabricDetailPage() {
   const params = useParams()
@@ -109,16 +110,26 @@ export default function FabricDetailPage() {
 
         <div className="grid lg:grid-cols-2 gap-12">
           <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
-            <div className="relative aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 rounded-2xl overflow-hidden mb-4 group cursor-pointer" onClick={openGallery}>
-              <Image
-                src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
-                alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
-                fill
-                sizes="(max-width: 768px) 100vw, 50vw"
-                className="object-cover transition-transform duration-300"
-                priority={currentImageIndex === 0}
-                quality={85}
-              />
+            <div className={`relative ${isVideoFile(fabric.images?.[currentImageIndex] || '') ? 'bg-black/5' : 'aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100'} rounded-2xl overflow-hidden mb-4 group cursor-pointer`} onClick={openGallery}>
+              {isVideoFile(fabric.images?.[currentImageIndex] || '') ? (
+                <video
+                  src={fabric.images?.[currentImageIndex]}
+                  controls
+                  preload="metadata"
+                  className="w-full object-contain rounded-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <Image
+                  src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
+                  alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover transition-transform duration-300"
+                  priority={currentImageIndex === 0}
+                  quality={85}
+                />
+              )}
 
               {(fabric.images?.length || 0) > 1 && (
                 <>
@@ -137,8 +148,8 @@ export default function FabricDetailPage() {
               <div className="relative">
                 {/* عرض في صف واحد إذا كانت الصور 5 أو أقل، وصفين إذا كانت أكثر من 5 */}
                 <div className={`gap-3 pb-2 ${(fabric.images?.length || 0) > 5
-                    ? 'grid grid-cols-5'
-                    : 'flex overflow-x-auto scrollbar-thin scrollbar-thumb-pink-300 scrollbar-track-pink-50'
+                  ? 'grid grid-cols-5'
+                  : 'flex overflow-x-auto scrollbar-thin scrollbar-thumb-pink-300 scrollbar-track-pink-50'
                   }`}>
                   {fabric.images?.map((image, index) => (
                     <motion.button
@@ -147,19 +158,28 @@ export default function FabricDetailPage() {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       className={`relative flex-shrink-0 w-20 h-24 md:w-24 md:h-28 rounded-xl overflow-hidden border-3 transition-all duration-300 ${currentImageIndex === index
-                          ? 'border-pink-500 shadow-lg ring-2 ring-pink-300'
-                          : 'border-gray-200 hover:border-pink-300'
+                        ? 'border-pink-500 shadow-lg ring-2 ring-pink-300'
+                        : 'border-gray-200 hover:border-pink-300'
                         }`}
                     >
-                      <Image
-                        src={image}
-                        alt={`${fabric.name} - صورة ${index + 1}`}
-                        fill
-                        sizes="(max-width: 768px) 80px, 96px"
-                        className="object-cover"
-                        loading="lazy"
-                        quality={60}
-                      />
+                      {isVideoFile(image) ? (
+                        <video
+                          src={image}
+                          muted
+                          preload="metadata"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Image
+                          src={image}
+                          alt={`${fabric.name} - صورة ${index + 1}`}
+                          fill
+                          sizes="(max-width: 768px) 80px, 96px"
+                          className="object-cover"
+                          loading="lazy"
+                          quality={60}
+                        />
+                      )}
                       {currentImageIndex === index && (
                         <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
                       )}
@@ -285,14 +305,23 @@ export default function FabricDetailPage() {
             <X className="w-8 h-8" />
           </button>
           <div className="relative max-w-5xl w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            <Image
-              src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
-              alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
-              fill
-              sizes="100vw"
-              className="object-contain"
-              quality={95}
-            />
+            {isVideoFile(fabric.images?.[currentImageIndex] || '') ? (
+              <video
+                src={fabric.images?.[currentImageIndex]}
+                controls
+                preload="metadata"
+                className="max-w-full max-h-full object-contain"
+              />
+            ) : (
+              <Image
+                src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
+                alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
+                fill
+                sizes="100vw"
+                className="object-contain"
+                quality={95}
+              />
+            )}
             {(fabric.images?.length || 0) > 1 && (
               <>
                 <button onClick={prevImage} className="absolute left-4 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-all duration-300" aria-label="الصورة السابقة">

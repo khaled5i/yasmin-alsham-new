@@ -6,6 +6,7 @@ import { X, ChevronLeft, ChevronRight, Star, ShoppingCart } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Product, formatPrice } from '@/store/shopStore'
+import { isVideoFile } from '@/lib/utils/media'
 
 interface QuickViewModalProps {
   product: Product | null
@@ -107,29 +108,38 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                   {/* الصورة مع خلفية ضبابية */}
                   <div className="relative h-80 md:h-full overflow-hidden bg-gradient-to-br from-pink-50 via-purple-50 to-rose-50">
                     {/* خلفية ضبابية */}
-                    <div className="absolute inset-0">
-                      {isExternalImage || isBase64 ? (
-                        <Image
-                          src={currentImage}
-                          alt=""
-                          fill
-                          className="object-cover blur-2xl scale-110 opacity-40"
-                          quality={50}
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <img
-                          src={currentImage}
-                          alt=""
-                          className="w-full h-full object-cover blur-2xl scale-110 opacity-40"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </div>
+                    {!isVideoFile(currentImage) && (
+                      <div className="absolute inset-0">
+                        {isExternalImage || isBase64 ? (
+                          <Image
+                            src={currentImage}
+                            alt=""
+                            fill
+                            className="object-cover blur-2xl scale-110 opacity-40"
+                            quality={50}
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <img
+                            src={currentImage}
+                            alt=""
+                            className="w-full h-full object-cover blur-2xl scale-110 opacity-40"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </div>
+                    )}
 
-                    {/* الصورة الأصلية */}
+                    {/* الصورة/الفيديو الأصلي */}
                     <div className="relative h-full">
-                      {isExternalImage || isBase64 ? (
+                      {isVideoFile(currentImage) ? (
+                        <video
+                          src={currentImage}
+                          controls
+                          preload="metadata"
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (isExternalImage || isBase64) ? (
                         <Image
                           src={currentImage}
                           alt={`${product.name} - صورة ${currentImageIndex + 1}`}
@@ -170,9 +180,8 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                             <button
                               key={index}
                               onClick={() => setCurrentImageIndex(index)}
-                              className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                                currentImageIndex === index ? 'bg-white w-6' : 'bg-white/50'
-                              }`}
+                              className={`w-2 h-2 rounded-full transition-all duration-300 ${currentImageIndex === index ? 'bg-white w-6' : 'bg-white/50'
+                                }`}
                               aria-label={`عرض الصورة ${index + 1}`}
                             />
                           ))}
@@ -201,9 +210,8 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                         {Array.from({ length: 5 }).map((_, i) => (
                           <Star
                             key={i}
-                            className={`w-4 h-4 ${
-                              i < product.rating! ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'
-                            }`}
+                            className={`w-4 h-4 ${i < product.rating! ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'
+                              }`}
                           />
                         ))}
                       </div>
@@ -229,9 +237,8 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
 
                         {/* حالة التوفر */}
                         {product.is_available !== undefined && (
-                          <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${
-                            product.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                          }`}>
+                          <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${product.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            }`}>
                             {product.is_available ? 'متوفر' : 'غير متوفر'}
                           </div>
                         )}
@@ -241,9 +248,8 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                     {/* حالة التوفر لسطح المكتب */}
                     {product.is_available !== undefined && (
                       <div className="hidden md:block mt-3">
-                        <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${
-                          product.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                        }`}>
+                        <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${product.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}>
                           {product.is_available ? 'متوفر' : 'غير متوفر'}
                         </div>
                       </div>
@@ -264,11 +270,10 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                           <button
                             key={color}
                             onClick={() => setSelectedColor(color)}
-                            className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${
-                              selectedColor === color
+                            className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedColor === color
                                 ? 'border-pink-600 bg-pink-50 text-pink-700 font-semibold'
                                 : 'border-gray-200 hover:border-pink-300 text-gray-700'
-                            }`}
+                              }`}
                           >
                             {color}
                           </button>
@@ -286,11 +291,10 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                           <button
                             key={size}
                             onClick={() => setSelectedSize(size)}
-                            className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${
-                              selectedSize === size
+                            className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedSize === size
                                 ? 'border-pink-600 bg-pink-50 text-pink-700 font-semibold'
                                 : 'border-gray-200 hover:border-pink-300 text-gray-700'
-                            }`}
+                              }`}
                           >
                             {size}
                           </button>

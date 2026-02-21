@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, X, Image as ImageIcon, Loader2, AlertCircle, CheckCircle, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { imageService, UploadProgress } from '@/lib/services/image-service'
+import { isVideoFile } from '@/lib/utils/media'
 
 interface ImageUploadProps {
   images: string[]
@@ -27,16 +28,7 @@ const getConcurrentUploadLimit = (files: File[]) =>
   files.some(file => file.size >= LARGE_UPLOAD_FILE_THRESHOLD) ? 2 : DEFAULT_CONCURRENT_UPLOAD_LIMIT
 const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`
 
-const isVideoFile = (fileUrl: string) => {
-  const url = fileUrl.toLowerCase()
-  return (
-    url.includes('.mp4') ||
-    url.includes('.mov') ||
-    url.includes('.avi') ||
-    url.includes('.webm') ||
-    url.includes('video')
-  )
-}
+// تم نقل isVideoFile إلى src/lib/utils/media.ts كدالة مشتركة
 
 export default function ImageUpload({
   images,
@@ -676,14 +668,14 @@ export default function ImageUpload({
                     className="relative group"
                   >
                     <div
-                      className="aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 cursor-pointer"
+                      className={`rounded-lg overflow-hidden border border-gray-200 cursor-pointer ${isVideo ? 'bg-black' : 'aspect-square bg-gray-100'}`}
                       onClick={() => !isVideo && setLightboxIndex(index)}
                     >
                       {isVideo ? (
                         <video
                           src={image}
                           controls
-                          className="w-full h-full object-cover"
+                          className="w-full object-contain"
                           preload="metadata"
                         />
                       ) : (

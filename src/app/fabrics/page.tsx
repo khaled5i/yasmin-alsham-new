@@ -9,6 +9,7 @@ import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/stor
 import FabricSortOptions from '@/components/FabricSortOptions'
 import Header from '@/components/Header'
 import dynamic from 'next/dynamic'
+import { isVideoFile } from '@/lib/utils/media'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
@@ -282,11 +283,20 @@ export default function FabricsPage() {
                       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
                         <Link href={`/fabrics/${fabric.id}`}>
                           <div className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
-                            <img
-                              src={currentImage}
-                              alt={`${fabric.name} - صورة ${currentIndex + 1}`}
-                              className="w-full h-full object-cover transition-opacity duration-300"
-                            />
+                            {isVideoFile(currentImage) ? (
+                              <video
+                                src={currentImage}
+                                muted
+                                preload="metadata"
+                                className="w-full h-full object-cover transition-opacity duration-300"
+                              />
+                            ) : (
+                              <img
+                                src={currentImage}
+                                alt={`${fabric.name} - صورة ${currentIndex + 1}`}
+                                className="w-full h-full object-cover transition-opacity duration-300"
+                              />
+                            )}
 
                             {fabricImages.length > 1 && (
                               <>

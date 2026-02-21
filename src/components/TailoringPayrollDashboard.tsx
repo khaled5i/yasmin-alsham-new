@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
-  FileText,
   Lock,
+  Unlock,
   RefreshCw,
   Save,
   Search,
@@ -14,7 +15,8 @@ import {
   Trash2,
   DollarSign,
   Scissors,
-  History
+  History,
+  ArrowRight
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { workerService, type WorkerWithUser } from '@/lib/services/worker-service'
@@ -24,6 +26,7 @@ import {
   getWorkerPayrollOperations,
   getWorkerPayrollPeriodLock,
   lockWorkerPayrollPeriod,
+  unlockWorkerPayrollPeriod,
   registerWorkerPayrollPayment,
   saveWorkerPayrollSnapshot
 } from '@/lib/services/worker-payroll-service'
@@ -332,6 +335,7 @@ function StatCard({ title, value }: { title: string; value: string }) {
 }
 
 export default function TailoringPayrollDashboard() {
+  const router = useRouter()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === 'admin'
   const [workers, setWorkers] = useState<WorkerWithUser[]>([])
@@ -347,11 +351,11 @@ export default function TailoringPayrollDashboard() {
   const [actionKey, setActionKey] = useState<string | null>(null)
   const [salaryForms, setSalaryForms] = useState<Record<string, SalaryFormState>>({})
   const [paymentForms, setPaymentForms] = useState<Record<string, PaymentFormState>>({})
-  const [showPaymentsByWorker, setShowPaymentsByWorker] = useState<Record<string, boolean>>({})
   const [showNewWorkerModal, setShowNewWorkerModal] = useState(false)
   const [selectedWorkerForDeductions, setSelectedWorkerForDeductions] = useState<WorkerWithUser | null>(null)
   const [selectedWorkerForSalary, setSelectedWorkerForSalary] = useState<WorkerWithUser | null>(null)
   const [selectedWorkerForOperations, setSelectedWorkerForOperations] = useState<WorkerWithUser | null>(null)
+  const [operationsTab, setOperationsTab] = useState<'all' | 'salary' | 'advances' | 'payments'>('all')
   const [newWorkerForm, setNewWorkerForm] = useState<NewWorkerFormState>({
     full_name: '',
     phone: '',
@@ -415,13 +419,19 @@ export default function TailoringPayrollDashboard() {
         const next: Record<string, SalaryFormState> = {}
         allWorkers.forEach((worker) => {
           const month = monthMap[worker.id] || buildEmptyMonth(worker, selectedMonth)
+          const fixedSalaryValue = month.fixed_salary_value || month.basic_salary || 0
+          const pieceCountValue = month.piece_count || 0
+          const pieceRateValue = month.piece_rate || 0
+          const overtimeHoursValue = month.overtime_hours || 0
+          const advancesTotalValue = month.advances_total || 0
+
           next[worker.id] = {
             salaryType: month.salary_type === 'piecework' ? 'piecework' : 'fixed',
-            fixedSalary: (month.fixed_salary_value || month.basic_salary || 0).toString(),
-            pieceCount: (month.piece_count || 0).toString(),
-            pieceRate: (month.piece_rate || 0).toString(),
-            overtimeHours: (month.overtime_hours || 0).toString(),
-            advancesTotal: month.advances_total.toString(),
+            fixedSalary: fixedSalaryValue > 0 ? fixedSalaryValue.toString() : '',
+            pieceCount: pieceCountValue > 0 ? pieceCountValue.toString() : '',
+            pieceRate: pieceRateValue > 0 ? pieceRateValue.toString() : '',
+            overtimeHours: overtimeHoursValue > 0 ? overtimeHoursValue.toString() : '',
+            advancesTotal: advancesTotalValue > 0 ? advancesTotalValue.toString() : '',
             operationDate: defaultDate,
             reference: '',
             note: ''
@@ -455,6 +465,13 @@ export default function TailoringPayrollDashboard() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // إعادة تعيين تبويب العمليات عند فتح نافذة جديدة
+  useEffect(() => {
+    if (selectedWorkerForOperations) {
+      setOperationsTab('all')
+    }
+  }, [selectedWorkerForOperations])
 
   const getMonthRow = useCallback((worker: WorkerWithUser) => {
     return monthRowsByWorker[worker.id] || buildEmptyMonth(worker, selectedMonth)
@@ -504,6 +521,60 @@ export default function TailoringPayrollDashboard() {
       { deductions: 0, paid: 0, remaining: 0 }
     )
   }, [filteredWorkers, getMonthRow])
+
+  // حساب بيانات سجل العمليات
+  const operationsData = useMemo(() => {
+    if (!selectedWorkerForOperations) {
+      return {
+        operations: [],
+        stats: {
+          totalSalary: 0,
+          totalAdvances: 0,
+          totalPayments: 0,
+          salaryCount: 0,
+          advancesCount: 0,
+          paymentsCount: 0
+        },
+        filteredOperations: []
+      }
+    }
+
+    const operations = (operationsByWorker[selectedWorkerForOperations.id] || []).sort((a, b) =>
+      new Date(b.operation_date).getTime() - new Date(a.operation_date).getTime()
+    )
+
+    const salaryOps = operations.filter(op => op.operation_type === 'salary')
+    const advanceOps = operations.filter(op => op.operation_type === 'advance')
+    const paymentOps = operations.filter(op => op.operation_type === 'payment')
+
+    const stats = {
+      totalSalary: salaryOps.reduce((sum, op) => sum + op.amount, 0),
+      totalAdvances: advanceOps.reduce((sum, op) => sum + op.amount, 0),
+      totalPayments: paymentOps.reduce((sum, op) => sum + op.amount, 0),
+      salaryCount: salaryOps.length,
+      advancesCount: advanceOps.length,
+      paymentsCount: paymentOps.length
+    }
+
+    let filteredOperations = operations
+    if (operationsTab === 'salary') {
+      filteredOperations = operations.filter(op => op.operation_type === 'salary')
+    } else if (operationsTab === 'advances') {
+      filteredOperations = operations.filter(op => op.operation_type === 'advance')
+    } else if (operationsTab === 'payments') {
+      filteredOperations = operations.filter(op => op.operation_type === 'payment')
+    }
+
+    return { operations, stats, filteredOperations }
+  }, [selectedWorkerForOperations, operationsByWorker, operationsTab])
+
+  // دالة للحصول على الأيقونة واللون حسب نوع العملية
+  const getOperationStyle = useCallback((type: PayrollOperationType) => {
+    if (type === 'salary') return { bg: 'bg-blue-100', text: 'text-blue-700', icon: DollarSign }
+    if (type === 'advance') return { bg: 'bg-orange-100', text: 'text-orange-700', icon: Scissors }
+    if (type === 'payment') return { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: Wallet }
+    return { bg: 'bg-gray-100', text: 'text-gray-700', icon: AlertTriangle }
+  }, [])
 
   const handleSaveSnapshot = useCallback(async (worker: WorkerWithUser) => {
     if (isLocked) {
@@ -620,14 +691,6 @@ export default function TailoringPayrollDashboard() {
     }
   }, [getMonthRow, isAdmin, isLocked, loadData, paymentForms, selectedMonth])
 
-  const handleOpenPaymentsTable = useCallback((workerId: string) => {
-    setShowPaymentsByWorker((prev) => ({ ...prev, [workerId]: true }))
-    const table = document.getElementById(`payments-table-${workerId}`)
-    if (table) {
-      table.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [])
-
   const handleSaveSmallAdvance = useCallback(async (worker: WorkerWithUser) => {
     if (isLocked) {
       alert('الشهر مقفل. التعديل متاح فقط عبر إشعار تعديل رسمي.')
@@ -695,6 +758,30 @@ export default function TailoringPayrollDashboard() {
         reason: reason || undefined
       })
       await loadData(true)
+    } catch (error) {
+      alert(toReadableError(error))
+    } finally {
+      setActionKey(null)
+    }
+  }, [isAdmin, isLocked, loadData, selectedMonth])
+
+  const handleUnlockMonth = useCallback(async () => {
+    if (!isLocked) return
+    if (!isAdmin) {
+      alert('إلغاء قفل الشهر مسموح للأدمن فقط.')
+      return
+    }
+    const confirmed = confirm('هل أنت متأكد من إلغاء قفل هذا الشهر؟ سيتم السماح بالتعديلات مرة أخرى.')
+    if (!confirmed) return
+
+    setActionKey('unlock-month')
+    try {
+      await unlockWorkerPayrollPeriod({
+        branch: BRANCH,
+        monthValue: selectedMonth
+      })
+      await loadData(true)
+      alert('تم إلغاء قفل الشهر بنجاح')
     } catch (error) {
       alert(toReadableError(error))
     } finally {
@@ -812,11 +899,21 @@ export default function TailoringPayrollDashboard() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="rounded-2xl border border-gray-200 bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">رواتب العمال - قسم التفصيل</h1>
-              <p className="mt-1 text-sm text-gray-500">
-                نظام شهري مترابط: الراتب، الدفعات، السلف، الخصومات، والقيود المحاسبية.
-              </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.back()}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                title="رجوع"
+              >
+                <ArrowRight className="h-4 w-4" />
+                رجوع
+              </button>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">رواتب العمال - قسم التفصيل</h1>
+                <p className="mt-1 text-sm text-gray-500">
+                  نظام شهري مترابط: الراتب، الدفعات، السلف، الخصومات، والقيود المحاسبية.
+                </p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -835,14 +932,25 @@ export default function TailoringPayrollDashboard() {
                 <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 تحديث
               </button>
-              <button
-                onClick={handleLockMonth}
-                disabled={isLocked || actionKey === 'lock-month' || !isAdmin}
-                className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-              >
-                <Lock className="h-4 w-4" />
-                {isLocked ? 'الشهر مقفل' : 'قفل الشهر'}
-              </button>
+              {isLocked ? (
+                <button
+                  onClick={handleUnlockMonth}
+                  disabled={actionKey === 'unlock-month' || !isAdmin}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  <Unlock className="h-4 w-4" />
+                  {actionKey === 'unlock-month' ? 'جاري الإلغاء...' : 'إلغاء قفل الشهر'}
+                </button>
+              ) : (
+                <button
+                  onClick={handleLockMonth}
+                  disabled={actionKey === 'lock-month' || !isAdmin}
+                  className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                >
+                  <Lock className="h-4 w-4" />
+                  قفل الشهر
+                </button>
+              )}
             </div>
           </div>
 
@@ -1118,50 +1226,50 @@ export default function TailoringPayrollDashboard() {
                     </button>
                   </div>
 
-                  <div className="rounded-xl border border-gray-200 p-4">
-                    <h3 className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
-                      <Wallet className="h-4 w-4 text-indigo-600" />
+                  <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                    <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                      <Scissors className="h-4 w-4 text-orange-600" />
                       إدارة السلفة الصغيرة
                     </h3>
 
-                    <div className="space-y-3">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="مبلغ السلفة الصغيرة"
-                        value={salaryForm.advancesTotal}
-                        onChange={(e) => setSalaryForms((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...prev[worker.id], advancesTotal: sanitizeNonNegativeInput(e.target.value) }
-                        }))}
-                        className={'w-full ' + NUMBER_INPUT_CLASS}
-                      />
-
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                        السلفة الصغيرة تُخصم تلقائيًا من صافي الراتب فورًا.
-                      </div>
-
-                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-                        <p className="font-semibold">صافي الراتب بعد السلفة:</p>
-                        <p className="mt-1 text-lg font-bold text-indigo-700">{formatCurrency(salaryCalculation.netAfterDeductions)}</p>
-                      </div>
-
-                      <button
-                        onClick={() => handleSaveSmallAdvance(worker)}
-                        disabled={!!actionKey || isReadOnly}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-                      >
-                        <Save className="h-4 w-4" />
-                        {actionKey === 'save-advance-' + worker.id ? 'جاري الحفظ...' : 'حفظ السلفة'}
-                      </button>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      السلفة الصغيرة تُخصم تلقائيًا من صافي الراتب
                     </div>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="مبلغ السلفة"
+                      value={salaryForm.advancesTotal}
+                      onChange={(e) => setSalaryForms((prev) => ({
+                        ...prev,
+                        [worker.id]: { ...prev[worker.id], advancesTotal: sanitizeNonNegativeInput(e.target.value) }
+                      }))}
+                      className={'w-full ' + NUMBER_INPUT_CLASS}
+                    />
+
+                    <div className="rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-700">صافي الراتب بعد السلفة:</span>
+                        <span className="text-lg font-bold text-indigo-700">{formatCurrency(salaryCalculation.netAfterDeductions)}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleSaveSmallAdvance(worker)}
+                      disabled={!!actionKey || isReadOnly}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      <Save className="h-4 w-4" />
+                      {actionKey === 'save-advance-' + worker.id ? 'جاري الحفظ...' : 'حفظ السلفة'}
+                    </button>
 
                     {isLocked && (
                       <button
                         onClick={() => handleAdjustmentRequest(worker)}
                         disabled={!!actionKey}
-                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
                       >
                         {actionKey === 'request-' + worker.id ? 'جاري الإرسال...' : 'طلب تعديل رسمي'}
                       </button>
@@ -1183,7 +1291,6 @@ export default function TailoringPayrollDashboard() {
           const operations = operationsByWorker[worker.id] || []
           const paymentOperations = operations.filter((op) => op.operation_type === 'payment')
           const totalPayments = paymentOperations.reduce((sum, op) => sum + op.amount, 0)
-          const isPaymentTableVisible = showPaymentsByWorker[worker.id] === true
 
           if (!salaryForm || !paymentForm) return null
           const salaryCalculation = calculateSalaryValues(salaryForm)
@@ -1219,25 +1326,41 @@ export default function TailoringPayrollDashboard() {
                     </div>
                   )}
 
-                  <div className="rounded-xl border border-gray-200 p-4">
-                    <h3 className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
+                  <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                    <h3 className="flex items-center gap-2 font-semibold text-gray-900">
                       <Save className="h-4 w-4 text-indigo-600" />
                       حساب الراتب الشهري
                     </h3>
 
-                    <button
-                      onClick={() => setSalaryForms((prev) => ({
-                        ...prev,
-                        [worker.id]: {
-                          ...prev[worker.id],
-                          salaryType: prev[worker.id].salaryType === 'fixed' ? 'piecework' : 'fixed'
-                        }
-                      }))}
-                      className="mb-2 inline-flex w-full items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-semibold text-indigo-700"
-                    >
-                      تبديل النظام: {salaryForm.salaryType === 'fixed' ? 'راتب ثابت' : 'راتب حسب القطعة'}
-                    </button>
+                    {/* نوع الراتب */}
+                    <div className="flex gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={salaryForm.salaryType === 'fixed'}
+                          onChange={() => setSalaryForms((prev) => ({
+                            ...prev,
+                            [worker.id]: { ...prev[worker.id], salaryType: 'fixed' }
+                          }))}
+                          className="h-4 w-4 text-indigo-600"
+                        />
+                        <span className="text-sm text-gray-700">راتب ثابت</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={salaryForm.salaryType === 'piecework'}
+                          onChange={() => setSalaryForms((prev) => ({
+                            ...prev,
+                            [worker.id]: { ...prev[worker.id], salaryType: 'piecework' }
+                          }))}
+                          className="h-4 w-4 text-indigo-600"
+                        />
+                        <span className="text-sm text-gray-700">راتب بالقطعة</span>
+                      </label>
+                    </div>
 
+                    {/* حقول الراتب */}
                     {salaryForm.salaryType === 'fixed' ? (
                       <input
                         type="number"
@@ -1280,12 +1403,13 @@ export default function TailoringPayrollDashboard() {
                       </div>
                     )}
 
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    {/* ساعات إضافية */}
+                    <div className="grid grid-cols-2 gap-2">
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        placeholder="عدد ساعات إضافية"
+                        placeholder="ساعات إضافية"
                         value={salaryForm.overtimeHours}
                         onChange={(e) => setSalaryForms((prev) => ({
                           ...prev,
@@ -1293,92 +1417,77 @@ export default function TailoringPayrollDashboard() {
                         }))}
                         className={NUMBER_INPUT_CLASS}
                       />
-                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs text-gray-700">
-                        قيمة الإضافي ({OVERTIME_RATE} ر.س): {formatCurrency(salaryCalculation.overtimeTotal)}
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs text-gray-700 flex items-center">
+                        قيمة الإضافي: {formatCurrency(salaryCalculation.overtimeTotal)}
                       </div>
-                      <input
-                        type="date"
-                        value={salaryForm.operationDate}
-                        onChange={(e) => setSalaryForms((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...prev[worker.id], operationDate: e.target.value }
-                        }))}
-                        className="rounded-lg border border-gray-200 px-2 py-2 text-sm"
-                      />
-                      <button
-                        onClick={() => handleOpenPaymentsTable(worker.id)}
-                        className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                      >
-                        الانتقال إلى جدول الدفعات
-                      </button>
                     </div>
 
-                    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs text-gray-700">
-                      <p>إجمالي القطعة: {formatCurrency(salaryCalculation.pieceTotal)}</p>
-                      <p>الصافي المتوقع بعد السلفة: {formatCurrency(salaryCalculation.netAfterDeductions)}</p>
+                    {/* الملخص */}
+                    <div className="rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-sm space-y-1">
+                      <div className="flex justify-between text-gray-700">
+                        <span>الصافي المتوقع:</span>
+                        <span className="font-bold text-indigo-700">{formatCurrency(salaryCalculation.netAfterDeductions)}</span>
+                      </div>
+                      {salaryForm.salaryType === 'piecework' && (
+                        <div className="flex justify-between text-xs text-gray-600">
+                          <span>إجمالي القطعة:</span>
+                          <span>{formatCurrency(salaryCalculation.pieceTotal)}</span>
+                        </div>
+                      )}
                     </div>
 
-                    <input type="text" placeholder="مرجع (اختياري)" value={salaryForm.reference} onChange={(e) => setSalaryForms((prev) => ({ ...prev, [worker.id]: { ...prev[worker.id], reference: e.target.value } }))} className="mt-2 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm" />
-                    <textarea placeholder="ملاحظة (اختياري)" value={salaryForm.note} onChange={(e) => setSalaryForms((prev) => ({ ...prev, [worker.id]: { ...prev[worker.id], note: e.target.value } }))} className="mt-2 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm" rows={2} />
-                    <button onClick={() => handleSaveSnapshot(worker)} disabled={!!actionKey || isReadOnly} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+                    {/* زر الحفظ */}
+                    <button
+                      onClick={() => handleSaveSnapshot(worker)}
+                      disabled={!!actionKey || isReadOnly}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                    >
                       <Save className="h-4 w-4" />
                       {actionKey === 'snapshot-' + worker.id ? 'جاري الحفظ...' : 'حفظ واعتماد الراتب'}
                     </button>
                   </div>
 
-                  <div id={'payments-table-' + worker.id} className="rounded-xl border border-gray-200">
-                    <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="flex items-center gap-2 font-semibold text-gray-900">
-                          <FileText className="h-4 w-4 text-gray-700" />
-                          جدول الدفعات الشهرية
-                        </h3>
+                  <div id={'payments-table-' + worker.id} className="rounded-xl border border-gray-200 p-4 space-y-3">
+                    <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                      <Wallet className="h-4 w-4 text-emerald-600" />
+                      تسجيل دفعة جديدة
+                    </h3>
+
+                    {/* ملخص الدفعات */}
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-700">المتبقي:</span>
+                        <span className="font-bold text-emerald-700 text-lg">{formatCurrency(row.remaining_due)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs text-gray-600 mt-1">
+                        <span>عدد الدفعات: {paymentOperations.length}</span>
+                        <span>المدفوع: {formatCurrency(totalPayments)}</span>
                       </div>
                     </div>
 
-                    <div className="space-y-3 p-4">
-                      <div className="grid gap-2 text-xs text-gray-700 md:grid-cols-3">
-                        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">عدد الدفعات: <span className="font-semibold text-gray-900">{paymentOperations.length}</span></div>
-                        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">إجمالي المدفوع: <span className="font-semibold text-emerald-700">{formatCurrency(totalPayments)}</span></div>
-                        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">المتبقي الحالي: <span className="font-semibold text-amber-700">{formatCurrency(row.remaining_due)}</span></div>
-                      </div>
+                    {/* حقول الدفعة */}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="مبلغ الدفعة"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForms((prev) => ({
+                        ...prev,
+                        [worker.id]: { ...prev[worker.id], amount: sanitizeNonNegativeInput(e.target.value) }
+                      }))}
+                      className={'w-full ' + NUMBER_INPUT_CLASS}
+                    />
 
-                      <div className="grid gap-2 md:grid-cols-2">
-                        <input type="number" min="0" step="0.01" placeholder="مبلغ الدفعة" value={paymentForm.amount} onChange={(e) => setPaymentForms((prev) => ({ ...prev, [worker.id]: { ...prev[worker.id], amount: sanitizeNonNegativeInput(e.target.value) } }))} className={NUMBER_INPUT_CLASS} />
-                        <input type="date" value={paymentForm.operationDate} onChange={(e) => setPaymentForms((prev) => ({ ...prev, [worker.id]: { ...prev[worker.id], operationDate: e.target.value } }))} className="rounded-lg border border-gray-200 px-2 py-2 text-sm" />
-                      </div>
-                      <input type="text" placeholder="مرجع الدفعة" value={paymentForm.reference} onChange={(e) => setPaymentForms((prev) => ({ ...prev, [worker.id]: { ...prev[worker.id], reference: e.target.value } }))} className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm" />
-                      <textarea placeholder="ملاحظة (اختياري)" value={paymentForm.note} onChange={(e) => setPaymentForms((prev) => ({ ...prev, [worker.id]: { ...prev[worker.id], note: e.target.value } }))} className="w-full rounded-lg border border-gray-200 px-2 py-2 text-sm" rows={2} />
-                      <button onClick={() => handleRegisterPayment(worker)} disabled={!!actionKey || row.salary_status === 'negative' || isReadOnly} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-                        <Wallet className="h-4 w-4" />
-                        {actionKey === 'payment-' + worker.id ? 'جاري التسجيل...' : 'تسجيل دفعة'}
-                      </button>
-
-                      {paymentOperations.length === 0 ? (
-                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">لا توجد دفعات لهذا العامل في هذا الشهر.</div>
-                      ) : (
-                        <div className="overflow-x-auto rounded-lg border border-gray-200">
-                          <table className="w-full text-right text-sm">
-                            <thead className="bg-gray-50 text-gray-600">
-                              <tr>
-                                <th className="px-3 py-2.5">التاريخ</th>
-                                <th className="px-3 py-2.5">المبلغ</th>
-                                <th className="px-3 py-2.5">المرجع</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {paymentOperations.map((op) => (
-                                <tr key={op.id}>
-                                  <td className="px-3 py-2.5 text-gray-600">{op.operation_date}</td>
-                                  <td className="px-3 py-2.5 font-semibold text-emerald-700">{formatCurrency(op.amount)}</td>
-                                  <td className="px-3 py-2.5 text-gray-600">{op.reference || '-'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
+                    {/* زر تسجيل الدفعة */}
+                    <button
+                      onClick={() => handleRegisterPayment(worker)}
+                      disabled={!!actionKey || row.salary_status === 'negative' || isReadOnly}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      <Wallet className="h-4 w-4" />
+                      {actionKey === 'payment-' + worker.id ? 'جاري التسجيل...' : 'تسجيل دفعة'}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1389,26 +1498,26 @@ export default function TailoringPayrollDashboard() {
         {/* نافذة سجل العمليات */}
         {selectedWorkerForOperations && (() => {
           const worker = selectedWorkerForOperations
-          const operations = operationsByWorker[worker.id] || []
+          const { operations, stats, filteredOperations } = operationsData
 
           return (
             <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForOperations(null)}>
-              <div className="mx-auto my-8 max-w-4xl" onClick={(e) => e.stopPropagation()}>
-                <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+              <div className="mx-auto my-8 max-w-5xl" onClick={(e) => e.stopPropagation()}>
+                <div className="space-y-4 rounded-2xl border border-gray-200 bg-white shadow-2xl">
                   {/* رأس النافذة */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 p-6 pb-4">
                     <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-gray-100 p-2">
-                        <History className="h-5 w-5 text-gray-600" />
+                      <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2.5 shadow-lg">
+                        <History className="h-6 w-6 text-white" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-gray-900">سجل العمليات</h2>
-                        <p className="text-sm text-gray-600">{getWorkerName(worker)}</p>
+                        <h2 className="text-xl font-bold text-gray-900">سجل العمليات المالية</h2>
+                        <p className="text-sm text-gray-600">{getWorkerName(worker)} - {selectedMonth}</p>
                       </div>
                     </div>
                     <button
                       onClick={() => setSelectedWorkerForOperations(null)}
-                      className="rounded-lg p-2 hover:bg-gray-100"
+                      className="rounded-lg p-2 transition-colors hover:bg-gray-100"
                       title="إغلاق"
                     >
                       <X className="h-5 w-5 text-gray-500" />
@@ -1416,45 +1525,197 @@ export default function TailoringPayrollDashboard() {
                   </div>
 
                   {operations.length === 0 ? (
-                    <div className="p-6 text-center text-sm text-gray-500">لا توجد عمليات لهذا العامل في هذا الشهر.</div>
+                    <div className="p-12 text-center">
+                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                        <History className="h-8 w-8 text-gray-400" />
+                      </div>
+                      <p className="text-sm text-gray-500">لا توجد عمليات لهذا العامل في هذا الشهر</p>
+                    </div>
                   ) : (
-                    <div className="overflow-x-auto rounded-xl border border-gray-200">
-                      <table className="w-full text-right text-sm">
-                        <thead className="bg-gray-50 text-gray-600">
-                          <tr>
-                            <th className="px-3 py-2.5">التاريخ</th>
-                            <th className="px-3 py-2.5">النوع</th>
-                            <th className="px-3 py-2.5">قبل الحركة</th>
-                            <th className="px-3 py-2.5">القيمة</th>
-                            <th className="px-3 py-2.5">بعد الحركة</th>
-                            <th className="px-3 py-2.5">الحالة</th>
-                            <th className="px-3 py-2.5">المرجع</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {operations.map((op) => (
-                            <tr key={op.id}>
-                              <td className="px-3 py-2.5 text-gray-600">{op.operation_date}</td>
-                              <td className="px-3 py-2.5 font-medium text-gray-900">{operationTypeLabel(op.operation_type)}</td>
-                              <td className="px-3 py-2.5">{formatCurrency(op.before_amount)}</td>
-                              <td className="px-3 py-2.5 font-semibold">
-                                {op.operation_type === 'payment'
-                                  ? '- ' + formatCurrency(op.amount)
-                                  : op.operation_type === 'salary'
-                                    ? '= ' + formatCurrency(op.amount)
-                                    : '+ ' + formatCurrency(op.amount)}
-                              </td>
-                              <td className="px-3 py-2.5">{formatCurrency(op.after_amount)}</td>
-                              <td className="px-3 py-2.5">
-                                <span className={'inline-flex rounded-full border px-2.5 py-1 text-xs ' + STATUS_STYLE[op.salary_status_after]}>
-                                  {STATUS_LABEL[op.salary_status_after]}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2.5 text-gray-600">{op.reference}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="space-y-4 p-6 pt-0">
+                      {/* بطاقات الإحصائيات */}
+                      <div className="grid gap-3 md:grid-cols-3">
+                        {/* إجمالي الرواتب */}
+                        <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 p-4">
+                          <div className="flex items-center gap-2 text-blue-700">
+                            <DollarSign className="h-4 w-4" />
+                            <span className="text-xs font-medium">إجمالي الرواتب</span>
+                          </div>
+                          <p className="mt-2 text-2xl font-bold text-blue-900">{formatCurrency(stats.totalSalary)}</p>
+                          <p className="mt-1 text-xs text-blue-600">{stats.salaryCount} عملية</p>
+                        </div>
+
+                        {/* إجمالي السلفات */}
+                        <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100/50 p-4">
+                          <div className="flex items-center gap-2 text-orange-700">
+                            <Scissors className="h-4 w-4" />
+                            <span className="text-xs font-medium">إجمالي السلفات</span>
+                          </div>
+                          <p className="mt-2 text-2xl font-bold text-orange-900">{formatCurrency(stats.totalAdvances)}</p>
+                          <p className="mt-1 text-xs text-orange-600">{stats.advancesCount} عملية</p>
+                        </div>
+
+                        {/* إجمالي الدفعات */}
+                        <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4">
+                          <div className="flex items-center gap-2 text-emerald-700">
+                            <Wallet className="h-4 w-4" />
+                            <span className="text-xs font-medium">إجمالي الدفعات</span>
+                          </div>
+                          <p className="mt-2 text-2xl font-bold text-emerald-900">{formatCurrency(stats.totalPayments)}</p>
+                          <p className="mt-1 text-xs text-emerald-600">{stats.paymentsCount} عملية</p>
+                        </div>
+                      </div>
+
+                      {/* التبويبات */}
+                      <div className="flex gap-2 overflow-x-auto border-b border-gray-200 pb-0">
+                        <button
+                          onClick={() => setOperationsTab('all')}
+                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
+                            operationsTab === 'all'
+                              ? 'border-b-2 border-indigo-600 bg-indigo-50 text-indigo-700'
+                              : 'text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          كل العمليات ({operations.length})
+                        </button>
+                        <button
+                          onClick={() => setOperationsTab('salary')}
+                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
+                            operationsTab === 'salary'
+                              ? 'border-b-2 border-blue-600 bg-blue-50 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          الرواتب ({stats.salaryCount})
+                        </button>
+                        <button
+                          onClick={() => setOperationsTab('advances')}
+                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
+                            operationsTab === 'advances'
+                              ? 'border-b-2 border-orange-600 bg-orange-50 text-orange-700'
+                              : 'text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          السلفات ({stats.advancesCount})
+                        </button>
+                        <button
+                          onClick={() => setOperationsTab('payments')}
+                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
+                            operationsTab === 'payments'
+                              ? 'border-b-2 border-emerald-600 bg-emerald-50 text-emerald-700'
+                              : 'text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          الدفعات ({stats.paymentsCount})
+                        </button>
+                      </div>
+
+                      {/* قائمة العمليات */}
+                      <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                        {filteredOperations.length === 0 ? (
+                          <div className="py-8 text-center text-sm text-gray-500">
+                            لا توجد عمليات في هذا التصنيف
+                          </div>
+                        ) : (
+                          filteredOperations.map((op) => {
+                            const style = getOperationStyle(op.operation_type)
+                            const Icon = style.icon
+
+                            return (
+                              <div
+                                key={op.id}
+                                className="group rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-gray-300 hover:shadow-md"
+                              >
+                                <div className="flex items-start justify-between gap-4">
+                                  {/* النوع والتاريخ */}
+                                  <div className="flex items-start gap-3">
+                                    <div className={`rounded-lg p-2 ${style.bg}`}>
+                                      <Icon className={`h-5 w-5 ${style.text}`} />
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-bold text-gray-900">{operationTypeLabel(op.operation_type)}</span>
+                                        <span className={'inline-flex rounded-full border px-2 py-0.5 text-xs ' + STATUS_STYLE[op.salary_status_after]}>
+                                          {STATUS_LABEL[op.salary_status_after]}
+                                        </span>
+                                      </div>
+                                      <p className="mt-0.5 text-xs text-gray-500">
+                                        {new Date(op.operation_date).toLocaleDateString('ar-SA', {
+                                          year: 'numeric',
+                                          month: 'long',
+                                          day: 'numeric'
+                                        })}
+                                      </p>
+                                      {op.reference && (
+                                        <p className="mt-1 text-xs text-gray-600">
+                                          <span className="font-medium">المرجع:</span> {op.reference}
+                                        </p>
+                                      )}
+                                      {op.note && (
+                                        <p className="mt-1 text-xs text-gray-600">
+                                          <span className="font-medium">ملاحظة:</span> {op.note}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* القيم المالية */}
+                                  <div className="text-left">
+                                    <div className="flex items-baseline gap-1">
+                                      {op.operation_type === 'payment' && (
+                                        <span className="text-xl font-bold text-emerald-700">-</span>
+                                      )}
+                                      {op.operation_type === 'advance' && (
+                                        <span className="text-xl font-bold text-orange-700">-</span>
+                                      )}
+                                      {op.operation_type === 'salary' && (
+                                        <span className="text-xl font-bold text-blue-700">=</span>
+                                      )}
+                                      <span className={`text-xl font-bold ${
+                                        op.operation_type === 'payment' ? 'text-emerald-700' :
+                                        op.operation_type === 'advance' ? 'text-orange-700' :
+                                        'text-blue-700'
+                                      }`}>
+                                        {formatCurrency(op.amount)}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 space-y-0.5 text-xs text-gray-500">
+                                      <div className="flex justify-between gap-4">
+                                        <span>قبل:</span>
+                                        <span className="font-medium">{formatCurrency(op.before_amount)}</span>
+                                      </div>
+                                      <div className="flex justify-between gap-4">
+                                        <span>بعد:</span>
+                                        <span className="font-medium">{formatCurrency(op.after_amount)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+
+                      {/* ملخص نهائي */}
+                      <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100/50 p-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <div className="text-center">
+                            <p className="text-xs text-gray-600">صافي الراتب</p>
+                            <p className="mt-1 text-lg font-bold text-blue-700">{formatCurrency(stats.totalSalary - stats.totalAdvances)}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-600">المدفوع</p>
+                            <p className="mt-1 text-lg font-bold text-emerald-700">{formatCurrency(stats.totalPayments)}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-600">المتبقي</p>
+                            <p className="mt-1 text-lg font-bold text-amber-700">
+                              {formatCurrency(stats.totalSalary - stats.totalAdvances - stats.totalPayments)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

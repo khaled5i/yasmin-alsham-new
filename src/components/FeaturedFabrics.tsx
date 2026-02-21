@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Palette, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useFabricStore } from '@/store/fabricStore'
 import useEmblaCarousel from 'embla-carousel-react'
+import { isVideoFile } from '@/lib/utils/media'
 
 // صورة احتياطية عند فشل تحميل الصورة
 const FALLBACK_IMAGE = '/yasmin.jpg'
@@ -172,21 +173,30 @@ export default function FeaturedFabrics() {
                         {/* الصورة */}
                         <Link href={`/fabrics/${fabric.id}`}>
                           <div className="aspect-[3/4] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
-                            <img
-                              src={imageLoadErrors[`${fabric.id}-${currentIndex}`]
-                                ? FALLBACK_IMAGE
-                                : (fabricImages[currentIndex] || fabric.image_url || FALLBACK_IMAGE)}
-                              alt={`${fabric.name} - صورة ${currentIndex + 1}`}
-                              className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'
-                                }`}
-                              loading="lazy"
-                              onError={() => {
-                                setImageLoadErrors(prev => ({
-                                  ...prev,
-                                  [`${fabric.id}-${currentIndex}`]: true
-                                }))
-                              }}
-                            />
+                            {isVideoFile(fabricImages[currentIndex] || '') && !imageLoadErrors[`${fabric.id}-${currentIndex}`] ? (
+                              <video
+                                src={fabricImages[currentIndex]}
+                                muted
+                                preload="metadata"
+                                className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'}`}
+                              />
+                            ) : (
+                              <img
+                                src={imageLoadErrors[`${fabric.id}-${currentIndex}`]
+                                  ? FALLBACK_IMAGE
+                                  : (fabricImages[currentIndex] || fabric.image_url || FALLBACK_IMAGE)}
+                                alt={`${fabric.name} - صورة ${currentIndex + 1}`}
+                                className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'
+                                  }`}
+                                loading="lazy"
+                                onError={() => {
+                                  setImageLoadErrors(prev => ({
+                                    ...prev,
+                                    [`${fabric.id}-${currentIndex}`]: true
+                                  }))
+                                }}
+                              />
+                            )}
                             {/* تأثير gradient على الصورة */}
                             <div className={`absolute inset-0 transition-opacity duration-500 ${isActive
                               ? 'bg-gradient-to-t from-black/40 via-transparent to-transparent'
@@ -287,13 +297,22 @@ export default function FeaturedFabrics() {
                       <div
                         className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
                       >
-                        {/* الصورة الحالية */}
-                        <img
-                          src={fabricImages[currentIndex] || fabric.image_url || FALLBACK_IMAGE}
-                          alt={`${fabric.name} - صورة ${currentIndex + 1}`}
-                          className="w-full h-full object-cover transition-opacity duration-300"
-                          loading="lazy"
-                        />
+                        {/* الصورة/الفيديو الحالي */}
+                        {isVideoFile(fabricImages[currentIndex] || '') ? (
+                          <video
+                            src={fabricImages[currentIndex]}
+                            muted
+                            preload="metadata"
+                            className="w-full h-full object-cover transition-opacity duration-300"
+                          />
+                        ) : (
+                          <img
+                            src={fabricImages[currentIndex] || fabric.image_url || FALLBACK_IMAGE}
+                            alt={`${fabric.name} - صورة ${currentIndex + 1}`}
+                            className="w-full h-full object-cover transition-opacity duration-300"
+                            loading="lazy"
+                          />
+                        )}
 
                         {/* أزرار التنقل - تظهر فقط إذا كان هناك أكثر من صورة */}
                         {fabricImages.length > 1 && (

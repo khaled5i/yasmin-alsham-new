@@ -316,6 +316,28 @@ export async function lockWorkerPayrollPeriod(input: LockPayrollPeriodInput): Pr
   }
 }
 
+interface UnlockPayrollPeriodInput {
+  branch: BranchType
+  monthValue: string
+}
+
+export async function unlockWorkerPayrollPeriod(input: UnlockPayrollPeriodInput): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured')
+  }
+
+  const { year, month } = monthToYearMonth(input.monthValue)
+  const { error } = await supabase.rpc('unlock_worker_payroll_period', {
+    p_branch: input.branch,
+    p_year: year,
+    p_month: month
+  })
+
+  if (error) {
+    throw new Error(toErrorMessage(error))
+  }
+}
+
 interface CreateAdjustmentRequestInput {
   branch: BranchType
   workerId: string

@@ -8,6 +8,7 @@ import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { ArrowRight, Star, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react'
 import { useShopStore, formatPrice, Product } from '@/store/shopStore'
+import { isVideoFile } from '@/lib/utils/media'
 
 // تحميل StockIndicator بشكل ديناميكي (Code Splitting)
 const StockIndicator = dynamic(() => import('@/components/StockIndicator'), {
@@ -138,18 +139,28 @@ export default function DesignDetailPage() {
             className="mt-12 lg:mt-0"
           >
             <div
-              className="relative aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 rounded-2xl overflow-hidden mb-4 group cursor-pointer"
+              className={`relative ${isVideoFile(product.images?.[currentImageIndex] || '') ? 'bg-black/5' : 'aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100'} rounded-2xl overflow-hidden mb-4 group cursor-pointer`}
               onClick={openGallery}
             >
-              <Image
-                src={product.images?.[currentImageIndex] || '/wedding-dress-1.jpg.jpg'}
-                alt={`${product.name} - صورة ${currentImageIndex + 1}`}
-                fill
-                sizes="(max-width: 768px) 100vw, 50vw"
-                className="object-cover transition-transform duration-300"
-                priority={currentImageIndex === 0}
-                quality={85}
-              />
+              {isVideoFile(product.images?.[currentImageIndex] || '') ? (
+                <video
+                  src={product.images?.[currentImageIndex]}
+                  controls
+                  preload="metadata"
+                  className="w-full object-contain rounded-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <Image
+                  src={product.images?.[currentImageIndex] || '/wedding-dress-1.jpg.jpg'}
+                  alt={`${product.name} - صورة ${currentImageIndex + 1}`}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover transition-transform duration-300"
+                  priority={currentImageIndex === 0}
+                  quality={85}
+                />
+              )}
 
               {/* أزرار التنقل */}
               {(product.images?.length || 0) > 1 && (
@@ -191,15 +202,24 @@ export default function DesignDetailPage() {
                         : 'border-gray-200 hover:border-pink-300'
                         }`}
                     >
-                      <Image
-                        src={image}
-                        alt={`${product.name} - صورة ${index + 1}`}
-                        fill
-                        sizes="(max-width: 768px) 80px, 96px"
-                        className="object-cover"
-                        loading="lazy"
-                        quality={60}
-                      />
+                      {isVideoFile(image) ? (
+                        <video
+                          src={image}
+                          muted
+                          preload="metadata"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Image
+                          src={image}
+                          alt={`${product.name} - صورة ${index + 1}`}
+                          fill
+                          sizes="(max-width: 768px) 80px, 96px"
+                          className="object-cover"
+                          loading="lazy"
+                          quality={60}
+                        />
+                      )}
                       {currentImageIndex === index && (
                         <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
                       )}
@@ -399,16 +419,25 @@ export default function DesignDetailPage() {
               <X className="w-6 h-6" />
             </button>
 
-            <div className="relative w-full max-h-[80vh] aspect-[4/5]">
-              <Image
-                src={product.images?.[currentImageIndex] || '/wedding-dress-1.jpg.jpg'}
-                alt={`${product.name} - صورة ${currentImageIndex + 1}`}
-                fill
-                sizes="(max-width: 1024px) 100vw, 1024px"
-                className="object-contain rounded-lg"
-                quality={95}
-                priority
-              />
+            <div className={`relative w-full ${isVideoFile(product.images?.[currentImageIndex] || '') ? 'flex items-center justify-center' : 'max-h-[80vh] aspect-[4/5]'}`}>
+              {isVideoFile(product.images?.[currentImageIndex] || '') ? (
+                <video
+                  src={product.images?.[currentImageIndex]}
+                  controls
+                  preload="metadata"
+                  className="max-w-full max-h-[80vh] object-contain rounded-lg"
+                />
+              ) : (
+                <Image
+                  src={product.images?.[currentImageIndex] || '/wedding-dress-1.jpg.jpg'}
+                  alt={`${product.name} - صورة ${currentImageIndex + 1}`}
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 1024px"
+                  className="object-contain rounded-lg"
+                  quality={95}
+                  priority
+                />
+              )}
             </div>
 
             {(product.images?.length || 0) > 1 && (

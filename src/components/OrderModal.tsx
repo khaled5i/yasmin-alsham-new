@@ -38,6 +38,7 @@ import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
+import { isVideoFile } from '@/lib/utils/media'
 import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 
@@ -1264,13 +1265,23 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     {order.images.map((image, index) => (
                       <div key={index} className="relative group">
-                        <div className="aspect-square rounded-lg overflow-hidden border border-pink-200">
-                          <img
-                            src={image}
-                            alt={`${t('design_image')} ${index + 1}`}
-                            className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
-                            onClick={() => openLightbox(index, order.images || [])}
-                          />
+                        <div className={`rounded-lg overflow-hidden border border-pink-200 ${isVideoFile(image) ? 'bg-black' : 'aspect-square'}`}>
+                          {isVideoFile(image) ? (
+                            <video
+                              src={image}
+                              controls
+                              preload="metadata"
+                              className="w-full object-contain cursor-pointer"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <img
+                              src={image}
+                              alt={`${t('design_image')} ${index + 1}`}
+                              className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                              onClick={() => openLightbox(index, order.images || [])}
+                            />
+                          )}
                         </div>
                         <div className="absolute bottom-2 left-2 bg-pink-600/80 text-white text-xs px-2 py-1 rounded">
                           {index + 1}
@@ -1298,13 +1309,23 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {order.completed_images.map((image, index) => (
                         <div key={index} className="relative group">
-                          <div className="aspect-square rounded-lg overflow-hidden border border-green-300">
-                            <img
-                              src={image}
-                              alt={`${t('completed_work_image_alt')} ${index + 1}`}
-                              className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
-                              onClick={() => openLightbox(index, order.completed_images || [])}
-                            />
+                          <div className={`rounded-lg overflow-hidden border border-green-300 ${isVideoFile(image) ? 'bg-black' : 'aspect-square'}`}>
+                            {isVideoFile(image) ? (
+                              <video
+                                src={image}
+                                controls
+                                preload="metadata"
+                                className="w-full object-contain cursor-pointer"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              <img
+                                src={image}
+                                alt={`${t('completed_work_image_alt')} ${index + 1}`}
+                                className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                                onClick={() => openLightbox(index, order.completed_images || [])}
+                              />
+                            )}
                           </div>
                           <div className="absolute bottom-2 left-2 bg-green-600/80 text-white text-xs px-2 py-1 rounded">
                             {index + 1}
@@ -1387,17 +1408,32 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               </button>
             )}
 
-            <motion.img
-              key={lightboxImages[lightboxIndex]}
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              src={lightboxImages[lightboxIndex]}
-              alt="عرض كامل"
-              className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
+            {isVideoFile(lightboxImages[lightboxIndex]) ? (
+              <motion.video
+                key={lightboxImages[lightboxIndex]}
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                src={lightboxImages[lightboxIndex]}
+                controls
+                preload="metadata"
+                className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <motion.img
+                key={lightboxImages[lightboxIndex]}
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                src={lightboxImages[lightboxIndex]}
+                alt="عرض كامل"
+                className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
           </div>
         </div>
       )}

@@ -10,16 +10,18 @@
 -- 1. إنشاء Storage Bucket
 -- ============================================================================
 
--- إنشاء bucket للصور (إذا لم يكن موجوداً)
+-- إنشاء bucket للصور والفيديوهات (إذا لم يكن موجوداً)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'product-images',
   'product-images',
   true, -- public bucket
-  5242880, -- 5MB max file size
-  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+  52428800, -- 50MB max file size (لدعم الفيديوهات)
+  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/mov', 'video/webm', 'video/avi']
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- ============================================================================
 -- 2. إعداد Storage Policies (RLS)
@@ -109,11 +111,12 @@ SELECT * FROM pg_policies WHERE tablename = 'objects' AND policyname LIKE '%Prod
    - الجميع يمكنهم قراءة الصور (public access)
 
 5. **الحد الأقصى لحجم الملف:**
-   - 5MB لكل صورة
+   - 50MB لكل ملف (لدعم الفيديوهات)
    - يمكن تغييره من file_size_limit في الأعلى
 
 6. **أنواع الملفات المدعومة:**
-   - JPG, JPEG, PNG, WEBP فقط
+   - صور: JPG, JPEG, PNG, WEBP
+   - فيديو: MP4, MOV, WEBM, AVI
    - يمكن إضافة أنواع أخرى في allowed_mime_types
 */
 

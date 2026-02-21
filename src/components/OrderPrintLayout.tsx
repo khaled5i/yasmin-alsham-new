@@ -127,18 +127,11 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       return candidate?.imageDataUrl || null
     }
 
-    // تحديد صور التصميم المتبقية (بعد استبعاد ما تم عرضه في صفحات الأمام والخلف والتعليقات)
+    // تحديد صور التصميم المتبقية (صور الطلب المحددة من قِبَل المستخدم)
+    // ملاحظة: printableImages (صور الطلب) و designCommentsSnapshots (صور Canvas المرسومة)
+    // مصفوفتان مستقلتان تماماً، لذا نعرض جميع الصور المحددة دون حذف أي منها
     const getRemainingDesignImages = () => {
-      // إذا لا توجد تعليقات تصميم، نعرض كل الصور المتبقية بعد الأمام والخلف
-      if (designCommentsSnapshots.length === 0) {
-        return printableImages
-      }
-
-      // استبعاد الصور التي تم عرضها كتعليقات تصميم (الأمام والخلف والمفلترة)
-      // نستبعد عدد الصور المساوي لعدد التعليقات لأن كل تعليق يمثل صورة واحدة
-      const usedSnapshotCount = designCommentsSnapshots.length
-      // الصور المتبقية هي التي بعد عدد التعليقات المستخدمة
-      return printableImages.slice(usedSnapshotCount)
+      return printableImages
     }
 
     // تصفية تعليقات التصميم لاستبعاد الخلف والأمام المستخدمين
