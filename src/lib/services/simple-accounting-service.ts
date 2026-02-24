@@ -6,12 +6,117 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import type {
   BranchType,
   ExpenseType,
+  ExpenseRecurrenceType,
   Expense,
   CreateExpenseInput,
   Income,
   CreateIncomeInput,
   FinancialSummary
 } from '@/types/simple-accounting'
+
+const ONE_TIME_RECURRENCE: ExpenseRecurrenceType = 'one_time'
+const MONTHLY_RECURRENCE: ExpenseRecurrenceType = 'monthly'
+
+function getTodayISODate(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getDayFromISODate(dateValue: string): number {
+  const parsedDay = Number(dateValue.split('-')[2])
+  if (Number.isNaN(parsedDay) || parsedDay < 1) {
+    return 1
+  }
+  if (parsedDay > 31) {
+    return 31
+  }
+  return parsedDay
+}
+
+function getMonthStartFromISODate(dateValue: string): string {
+  const [year, month] = dateValue.split('-')
+  if (!year || !month) {
+    const today = getTodayISODate()
+    return `${today.split('-')[0]}-${today.split('-')[1]}-01`
+  }
+  return `${year}-${month}-01`
+}
+
+function normalizeRecurringDay(day: number | null | undefined, fallback: number): number {
+  const candidate = day ?? fallback
+  if (candidate < 1) return 1
+  if (candidate > 31) return 31
+  return candidate
+}
+
+function normalizeCreateExpensePayload(input: CreateExpenseInput): CreateExpenseInput {
+  const payload: CreateExpenseInput = {
+    ...input,
+    recurrence_type: input.recurrence_type ?? ONE_TIME_RECURRENCE
+  }
+
+  if (payload.recurrence_type === MONTHLY_RECURRENCE) {
+    const baseDate = payload.date || getTodayISODate()
+    const fallbackDay = getDayFromISODate(baseDate)
+    payload.recurring_day_of_month = normalizeRecurringDay(payload.recurring_day_of_month, fallbackDay)
+    payload.recurring_month = getMonthStartFromISODate(baseDate)
+    payload.is_auto_generated = payload.is_auto_generated ?? false
+  } else {
+    payload.recurring_day_of_month = null
+    payload.recurring_source_id = null
+    payload.recurring_month = null
+    payload.is_auto_generated = false
+  }
+
+  return payload
+}
+
+function normalizeUpdateExpensePayload(input: Partial<CreateExpenseInput>): Partial<CreateExpenseInput> {
+  const payload: Partial<CreateExpenseInput> = { ...input }
+
+  if (payload.recurrence_type === MONTHLY_RECURRENCE) {
+    const baseDate = payload.date || getTodayISODate()
+    const fallbackDay = getDayFromISODate(baseDate)
+    payload.recurring_day_of_month = normalizeRecurringDay(payload.recurring_day_of_month, fallbackDay)
+    payload.recurring_month = getMonthStartFromISODate(baseDate)
+    if (payload.is_auto_generated === undefined) {
+      payload.is_auto_generated = false
+    }
+  }
+
+  if (payload.recurrence_type === ONE_TIME_RECURRENCE) {
+    payload.recurring_day_of_month = null
+    payload.recurring_source_id = null
+    payload.recurring_month = null
+    payload.is_auto_generated = false
+  }
+
+  return payload
+}
+
+async function ensureRecurringExpensesGenerated(branch: BranchType): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('generate_recurring_expenses', {
+      p_branch: branch
+    })
+
+    if (!error) {
+      return
+    }
+
+    // Function not found: skip silently for environments where migration wasn't applied yet.
+    if (error.code === '42883') {
+      return
+    }
+
+    console.error('Error generating recurring expenses:', error.message || error)
+  } catch (err) {
+    console.error('Error generating recurring expenses:', err)
+  }
+}
 
 // ============================================================================
 // المصروفات
@@ -30,6 +135,10 @@ export async function getExpenses(
   }
 
   try {
+    if (!type || type === 'fixed') {
+      await ensureRecurringExpensesGenerated(branch)
+    }
+
     let query = supabase
       .from('expenses')
       .select('*')
@@ -74,9 +183,11 @@ export async function createExpense(input: CreateExpenseInput): Promise<Expense 
   }
 
   try {
+    const payload = normalizeCreateExpensePayload(input)
+
     const { data, error } = await supabase
       .from('expenses')
-      .insert(input)
+      .insert(payload)
       .select()
       .single()
 
@@ -103,9 +214,11 @@ export async function updateExpense(id: string, input: Partial<CreateExpenseInpu
   }
 
   try {
+    const payload = normalizeUpdateExpensePayload(input)
+
     const { data, error } = await supabase
       .from('expenses')
-      .update(input)
+      .update(payload)
       .eq('id', id)
       .select()
       .single()
@@ -332,6 +445,59 @@ export async function getDeliveredOrdersIncome(
 }
 
 // ============================================================================
+// رواتب العمال من نظام الرواتب الجديد
+// ============================================================================
+
+/**
+ * جلب إجمالي رواتب العمال من جدول worker_payroll_months لفترة زمنية محددة
+ * بدلاً من جدول expenses القديم
+ */
+async function getPayrollSalariesForPeriod(
+  branch: BranchType,
+  startDate: string,
+  endDate: string
+): Promise<number> {
+  if (!isSupabaseConfigured()) return 0
+
+  try {
+    // تحديد الأشهر ضمن النطاق الزمني
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const months: { year: number; month: number }[] = []
+    const current = new Date(start.getFullYear(), start.getMonth(), 1)
+
+    while (current <= end) {
+      months.push({ year: current.getFullYear(), month: current.getMonth() + 1 })
+      current.setMonth(current.getMonth() + 1)
+    }
+
+    if (months.length === 0) return 0
+
+    let total = 0
+    for (const { year, month } of months) {
+      const { data, error } = await supabase
+        .from('worker_payroll_months')
+        .select('net_due')
+        .eq('branch', branch)
+        .eq('payroll_year', year)
+        .eq('payroll_month', month)
+
+      if (!error && data) {
+        total += (data as { net_due: number }[]).reduce(
+          (sum, row) => sum + (row.net_due || 0),
+          0
+        )
+      }
+    }
+
+    return total
+  } catch (err) {
+    console.error('Error fetching payroll salaries for period:', err)
+    return 0
+  }
+}
+
+// ============================================================================
 // الملخص المالي
 // ============================================================================
 
@@ -350,7 +516,7 @@ export async function getFinancialSummary(
   const allIncome = [...ordersIncome, ...manualIncome]
   const totalIncome = allIncome.reduce((sum, i) => sum + i.amount, 0)
 
-  // جلب المصروفات حسب النوع
+  // جلب المصروفات حسب النوع (مواد وثابتة فقط - بدون رواتب)
   const allExpenses = await getExpenses(branch, undefined, startDate, endDate)
 
   const totalMaterialExpenses = allExpenses
@@ -361,9 +527,8 @@ export async function getFinancialSummary(
     .filter(e => e.type === 'fixed')
     .reduce((sum, e) => sum + e.amount, 0)
 
-  const totalSalaries = allExpenses
-    .filter(e => e.type === 'salary')
-    .reduce((sum, e) => sum + e.amount, 0)
+  // جلب الرواتب من نظام رواتب العمال الجديد (worker_payroll_months)
+  const totalSalaries = await getPayrollSalariesForPeriod(branch, startDate, endDate)
 
   const totalExpenses = totalMaterialExpenses + totalFixedExpenses + totalSalaries
 
@@ -390,4 +555,3 @@ export async function getQuickStats(branch: BranchType) {
 
   return getFinancialSummary(branch, startOfMonth, endOfMonth)
 }
-

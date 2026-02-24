@@ -97,6 +97,69 @@ export async function getWorkerPayrollMonths(
   }
 }
 
+/**
+ * معلومات آخر راتب معروف للعامل قبل شهر معين
+ */
+export interface LastSalaryInfo {
+  salary_type: PayrollSalaryType
+  fixed_salary_value: number
+  piece_count: number
+  piece_rate: number
+}
+
+/**
+ * جلب آخر معلومات الراتب لكل عامل قبل شهر معين
+ * يُستخدم لملء نموذج الراتب تلقائياً للأشهر الجديدة مع الحفاظ على نوع الراتب
+ */
+export async function getLastSalaryInfoBeforeMonth(
+  branch: BranchType,
+  beforeMonthValue: string
+): Promise<Record<string, LastSalaryInfo>> {
+  if (!isSupabaseConfigured()) {
+    return {}
+  }
+
+  try {
+    const { year, month } = monthToYearMonth(beforeMonthValue)
+
+    // جلب جميع سجلات الرواتب قبل الشهر المحدد بترتيب تنازلي (بغض النظر عن نوع الراتب)
+    const { data, error } = await supabase
+      .from('worker_payroll_months')
+      .select('worker_id, fixed_salary_value, basic_salary, piece_count, piece_rate, payroll_year, payroll_month, salary_type')
+      .eq('branch', branch)
+      .or(`payroll_year.lt.${year},and(payroll_year.eq.${year},payroll_month.lt.${month})`)
+      .order('payroll_year', { ascending: false })
+      .order('payroll_month', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching last salary info:', error)
+      return {}
+    }
+
+    // بناء خريطة: worker_id → آخر معلومات راتب معروفة
+    const infoMap: Record<string, LastSalaryInfo> = {}
+
+    if (data) {
+      for (const row of data) {
+        // نحتفظ فقط بأحدث سجل لكل عامل
+        if (!infoMap[row.worker_id]) {
+          infoMap[row.worker_id] = {
+            salary_type: (row.salary_type === 'piecework' ? 'piecework' : 'fixed') as PayrollSalaryType,
+            fixed_salary_value: row.fixed_salary_value || row.basic_salary || 0,
+            piece_count: row.piece_count || 0,
+            piece_rate: row.piece_rate || 0
+          }
+        }
+      }
+    }
+
+    return infoMap
+  } catch (error) {
+    console.error('Error fetching last salary info:', error)
+    return {}
+  }
+}
+
 export async function getWorkerPayrollOperations(
   branch: BranchType,
   monthValue: string
@@ -456,4 +519,72 @@ export async function registerWorkerPayrollBigDebtPayment(
   }
 
   return data as WorkerPayrollBigDebt
+}
+
+export async function deleteWorkerPayrollOperation(operationId: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured')
+  }
+
+  const { error } = await supabase.rpc('delete_worker_payroll_operation', {
+    p_operation_id: operationId
+  })
+
+  if (error) {
+    throw new Error(toErrorMessage(error))
+  }
+}
+
+/**
+ * تحديث الراتب الثابت لجميع الأشهر المستقبلية غير المقفلة للعامل
+ * يُستدعى بعد حفظ راتب شهر معين لضمان انعكاس التعديل على الأشهر اللاحقة
+ * يدعم كلا نوعي الراتب: ثابت وقطعة
+ */
+export async function propagateSalaryToFutureMonths(
+  branch: BranchType,
+  workerId: string,
+  workerName: string,
+  fromMonthValue: string,
+  salaryType: 'fixed' | 'piecework',
+  fixedSalaryValue: number,
+  pieceRate: number
+): Promise<void> {
+  if (!isSupabaseConfigured()) return
+
+  try {
+    const { year, month } = monthToYearMonth(fromMonthValue)
+
+    const { data, error } = await supabase.rpc('propagate_worker_salary_to_future_months', {
+      p_branch: branch,
+      p_worker_id: workerId,
+      p_worker_name: workerName,
+      p_from_year: year,
+      p_from_month: month,
+      p_salary_type: salaryType,
+      p_fixed_salary_value: fixedSalaryValue,
+      p_piece_rate: pieceRate
+    })
+
+    if (error) {
+      console.error('Error propagating salary to future months:', error)
+      return
+    }
+
+    console.log(`Propagated salary to ${data} future month(s) for worker ${workerId}`)
+  } catch (err) {
+    console.error('Error propagating salary to future months:', err)
+  }
+}
+
+/**
+ * @deprecated استخدم propagateSalaryToFutureMonths بدلاً منها
+ */
+export async function propagateFixedSalaryToFutureMonths(
+  branch: BranchType,
+  workerId: string,
+  workerName: string,
+  fromMonthValue: string,
+  fixedSalaryValue: number
+): Promise<void> {
+  return propagateSalaryToFutureMonths(branch, workerId, workerName, fromMonthValue, 'fixed', fixedSalaryValue, 0)
 }

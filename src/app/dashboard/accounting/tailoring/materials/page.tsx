@@ -74,14 +74,28 @@ function MaterialExpensesContent() {
     if (!formData.category || !formData.amount) return
 
     try {
+      // تنظيف البيانات: تحويل السلاسل النصية الفارغة إلى undefined
+      const cleanedData = {
+        ...formData,
+        supplier_id: formData.supplier_id && formData.supplier_id.trim() !== ''
+          ? formData.supplier_id
+          : undefined,
+        supplier_name: formData.supplier_name && formData.supplier_name.trim() !== ''
+          ? formData.supplier_name
+          : undefined,
+        notes: formData.notes && formData.notes.trim() !== ''
+          ? formData.notes
+          : undefined,
+      }
+
       if (isEditing && editingId) {
-        const result = await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
+        const result = await updateExpense(editingId, cleanedData as Partial<CreateExpenseInput>)
         if (result) {
           setExpenses(expenses.map(item => item.id === editingId ? result : item))
           alert('✅ تم تحديث المصروف بنجاح')
         }
       } else {
-        const result = await createExpense(formData as CreateExpenseInput)
+        const result = await createExpense(cleanedData as CreateExpenseInput)
         if (result) {
           setExpenses([result, ...expenses])
           alert('✅ تم إضافة المصروف بنجاح')

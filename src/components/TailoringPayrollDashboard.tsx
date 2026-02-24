@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
+  CreditCard,
   Lock,
   Unlock,
   RefreshCw,
@@ -14,19 +15,32 @@ import {
   X,
   Trash2,
   DollarSign,
-  Scissors,
   History,
-  ArrowRight
+  ArrowRight,
+  Tag,
+  Star,
+  Calendar,
+  Clock,
+  User,
+  Phone,
+  Package,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
+import { orderService, type Order } from '@/lib/services/order-service'
+import { formatGregorianDate } from '@/lib/date-utils'
 import { useAuthStore } from '@/store/authStore'
 import { workerService, type WorkerWithUser } from '@/lib/services/worker-service'
 import {
-  createWorkerPayrollAdjustmentRequest,
+  deleteWorkerPayrollOperation,
+  getLastSalaryInfoBeforeMonth,
   getWorkerPayrollMonths,
   getWorkerPayrollOperations,
   getWorkerPayrollPeriodLock,
   lockWorkerPayrollPeriod,
   unlockWorkerPayrollPeriod,
+  propagateSalaryToFutureMonths,
+  registerWorkerPayrollAdjustment,
   registerWorkerPayrollPayment,
   saveWorkerPayrollSnapshot
 } from '@/lib/services/worker-payroll-service'
@@ -41,61 +55,7 @@ import type {
 const BRANCH = 'tailoring' as const
 const OVERTIME_RATE = 12.5
 const NUMBER_INPUT_CLASS = 'rounded-lg border border-gray-200 px-2 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
-const LOCAL_WORKERS_STORAGE_KEY = 'tailoring-payroll-local-workers-v1'
 
-// دوال للعمال المحليين
-function getLocalWorkers(): LocalWorker[] {
-  try {
-    const stored = localStorage.getItem(LOCAL_WORKERS_STORAGE_KEY)
-    if (!stored) return []
-    return JSON.parse(stored)
-  } catch (error) {
-    console.error('Failed to load local workers:', error)
-    return []
-  }
-}
-
-function saveLocalWorkers(workers: LocalWorker[]): void {
-  try {
-    localStorage.setItem(LOCAL_WORKERS_STORAGE_KEY, JSON.stringify(workers))
-  } catch (error) {
-    console.error('Failed to save local workers:', error)
-  }
-}
-
-function createLocalWorker(data: { full_name: string; phone: string; specialty: string }): LocalWorker {
-  const now = new Date().toISOString()
-  const id = `local-worker-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-
-  return {
-    id,
-    user_id: id,
-    specialty: data.specialty,
-    worker_type: 'tailor',
-    experience_years: 0,
-    hourly_rate: 0,
-    performance_rating: 0,
-    total_completed_orders: 0,
-    skills: [],
-    availability: {},
-    bio: '',
-    portfolio_images: [],
-    is_available: true,
-    created_at: now,
-    updated_at: now,
-    is_local: true,
-    user: {
-      id,
-      email: '',
-      full_name: data.full_name,
-      phone: data.phone || undefined,
-      role: 'worker',
-      is_active: true,
-      created_at: now,
-      updated_at: now
-    }
-  }
-}
 
 interface SalaryFormState {
   salaryType: PayrollSalaryType
@@ -122,34 +82,51 @@ interface NewWorkerFormState {
   specialty: string
 }
 
-interface LocalWorker {
-  id: string
-  user_id: string
-  specialty: string
-  worker_type: 'tailor'
-  experience_years: number
-  hourly_rate: number
-  performance_rating: number
-  total_completed_orders: number
-  skills: string[]
-  availability: Record<string, string>
-  bio: string
-  portfolio_images: string[]
-  is_available: boolean
-  created_at: string
-  updated_at: string
-  is_local: true
-  user: {
-    id: string
-    email: string
-    full_name: string
-    phone?: string
-    role: 'worker'
-    is_active: boolean
-    created_at: string
-    updated_at: string
+interface AdvanceFormState {
+  amount: string
+  operationDate: string
+  note: string
+}
+
+// ============================================================================
+// بيانات التسعير والتقييم
+// ============================================================================
+
+interface OrderPricingData {
+  orderId: string
+  price: string
+  notes: string
+  bonus: string
+  rating: number // 0-5
+}
+
+const PRICING_STORAGE_KEY = 'tailoring-payroll-order-pricing-v1'
+
+function getAllPricingData(): Record<string, OrderPricingData> {
+  try {
+    const stored = localStorage.getItem(PRICING_STORAGE_KEY)
+    if (!stored) return {}
+    return JSON.parse(stored)
+  } catch {
+    return {}
   }
 }
+
+function savePricingData(orderId: string, data: OrderPricingData): void {
+  try {
+    const all = getAllPricingData()
+    all[orderId] = data
+    localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(all))
+  } catch (error) {
+    console.error('Failed to save pricing data:', error)
+  }
+}
+
+function getPricingData(orderId: string): OrderPricingData {
+  const all = getAllPricingData()
+  return all[orderId] || { orderId, price: '', notes: '', bonus: '', rating: 0 }
+}
+
 
 interface SalaryCalculation {
   fixedSalaryValue: number
@@ -342,6 +319,7 @@ export default function TailoringPayrollDashboard() {
   const [monthRowsByWorker, setMonthRowsByWorker] = useState<Record<string, WorkerPayrollMonth>>({})
   const [operationsByWorker, setOperationsByWorker] = useState<Record<string, WorkerPayrollOperation[]>>({})
   const [previousRemainingByWorker, setPreviousRemainingByWorker] = useState<Record<string, number>>({})
+  const [previousNegativeByWorker, setPreviousNegativeByWorker] = useState<Record<string, number>>({})
   const [selectedMonth, setSelectedMonth] = useState(() => toMonthValue(new Date()))
   const [searchTerm, setSearchTerm] = useState('')
   const [isLocked, setIsLocked] = useState(false)
@@ -352,15 +330,25 @@ export default function TailoringPayrollDashboard() {
   const [salaryForms, setSalaryForms] = useState<Record<string, SalaryFormState>>({})
   const [paymentForms, setPaymentForms] = useState<Record<string, PaymentFormState>>({})
   const [showNewWorkerModal, setShowNewWorkerModal] = useState(false)
-  const [selectedWorkerForDeductions, setSelectedWorkerForDeductions] = useState<WorkerWithUser | null>(null)
   const [selectedWorkerForSalary, setSelectedWorkerForSalary] = useState<WorkerWithUser | null>(null)
-  const [selectedWorkerForOperations, setSelectedWorkerForOperations] = useState<WorkerWithUser | null>(null)
-  const [operationsTab, setOperationsTab] = useState<'all' | 'salary' | 'advances' | 'payments'>('all')
+  const [selectedWorkerForAdvances, setSelectedWorkerForAdvances] = useState<WorkerWithUser | null>(null)
+  const [advanceForms, setAdvanceForms] = useState<Record<string, AdvanceFormState>>({})
   const [newWorkerForm, setNewWorkerForm] = useState<NewWorkerFormState>({
     full_name: '',
     phone: '',
     specialty: ''
   })
+
+  // حالة نافذة التسعير والتقييم
+  const [selectedWorkerForPricing, setSelectedWorkerForPricing] = useState<WorkerWithUser | null>(null)
+  const [pricingOrders, setPricingOrders] = useState<Order[]>([])
+  const [pricingOrdersLoading, setPricingOrdersLoading] = useState(false)
+  const [selectedOrderForPricing, setSelectedOrderForPricing] = useState<Order | null>(null)
+  const [pricingForms, setPricingForms] = useState<Record<string, OrderPricingData>>({})
+  // كاش التفاصيل الكاملة للطلبات (يشمل completed_images)
+  const [orderFullDetails, setOrderFullDetails] = useState<Record<string, Order>>({})
+  // الصورة المعروضة في معرض الصور الكامل
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
   const isReadOnly = isLocked || !isAdmin
 
@@ -370,21 +358,20 @@ export default function TailoringPayrollDashboard() {
 
     try {
       const prevMonth = previousMonthValue(selectedMonth)
-      const [workerResult, months, operations, lockRow, previousMonths] = await Promise.all([
+      const [workerResult, months, operations, lockRow, previousMonths, lastSalaryInfo] = await Promise.all([
         workerService.getAll(),
         getWorkerPayrollMonths(BRANCH, selectedMonth),
         getWorkerPayrollOperations(BRANCH, selectedMonth),
         getWorkerPayrollPeriodLock(BRANCH, selectedMonth),
-        getWorkerPayrollMonths(BRANCH, prevMonth)
+        getWorkerPayrollMonths(BRANCH, prevMonth),
+        getLastSalaryInfoBeforeMonth(BRANCH, selectedMonth)
       ])
 
       const tailoringWorkers = (workerResult.data || []).filter(
         (worker) => worker.worker_type === 'tailor' && worker.user?.is_active !== false
       )
 
-      // دمج العمال المحليين
-      const localWorkers = getLocalWorkers()
-      const allWorkers = [...tailoringWorkers, ...localWorkers] as WorkerWithUser[]
+      const allWorkers = tailoringWorkers
 
       const monthMap: Record<string, WorkerPayrollMonth> = {}
       months.forEach((row) => {
@@ -400,33 +387,105 @@ export default function TailoringPayrollDashboard() {
       })
 
       const previousRemainingMap: Record<string, number> = {}
+      const previousNegativeMap: Record<string, number> = {}
       previousMonths.forEach((row) => {
         if (row.remaining_due > 0.009) {
           previousRemainingMap[row.worker_id] = row.remaining_due
+        } else if (row.remaining_due < -0.009) {
+          previousNegativeMap[row.worker_id] = Math.abs(row.remaining_due)
         }
       })
+
+      const defaultDate = monthEndDate(selectedMonth)
+      const isPeriodLocked = lockRow?.is_locked === true
+
+      // حفظ تلقائي للراتب الثابت فقط: إذا كان المستخدم أدمن والشهر غير مقفل،
+      // نحفظ تلقائياً الراتب للعمال ذوي الراتب الثابت الذين لا يوجد لهم سجل في الشهر الحالي.
+      // عمال القطعة لا يُحفظون تلقائياً لأن عدد القطع يتغير كل شهر.
+      if (isAdmin && !isPeriodLocked) {
+        const workersNeedingAutoSave = allWorkers.filter((worker) => {
+          if (monthMap[worker.id]) return false
+          const info = lastSalaryInfo[worker.id]
+          return info && info.salary_type === 'fixed' && info.fixed_salary_value > 0
+        })
+
+        if (workersNeedingAutoSave.length > 0) {
+          await Promise.allSettled(
+            workersNeedingAutoSave.map((worker) => {
+              const info = lastSalaryInfo[worker.id]
+              const lastSalary = info.fixed_salary_value
+              return saveWorkerPayrollSnapshot({
+                branch: BRANCH,
+                workerId: worker.id,
+                workerName: getWorkerName(worker),
+                monthValue: selectedMonth,
+                basicSalary: lastSalary,
+                worksTotal: 0,
+                salaryType: 'fixed',
+                fixedSalaryValue: lastSalary,
+                pieceCount: 0,
+                pieceRate: 0,
+                overtimeHours: 0,
+                overtimeRate: OVERTIME_RATE,
+                allowancesTotal: 0,
+                deductionsTotal: 0,
+                advancesTotal: 0,
+                operationDate: defaultDate
+              })
+            })
+          )
+
+          // إعادة تحميل سجلات الشهر بعد الحفظ التلقائي
+          const updatedMonths = await getWorkerPayrollMonths(BRANCH, selectedMonth)
+          updatedMonths.forEach((row) => {
+            monthMap[row.worker_id] = row
+          })
+        }
+      }
 
       setWorkers(allWorkers)
       setMonthRowsByWorker(monthMap)
       setOperationsByWorker(operationMap)
       setPreviousRemainingByWorker(previousRemainingMap)
-      setIsLocked(lockRow?.is_locked === true)
+      setPreviousNegativeByWorker(previousNegativeMap)
+      setIsLocked(isPeriodLocked)
       setLockReason(lockRow?.lock_reason || '')
-
-      const defaultDate = monthEndDate(selectedMonth)
 
       setSalaryForms(() => {
         const next: Record<string, SalaryFormState> = {}
         allWorkers.forEach((worker) => {
-          const month = monthMap[worker.id] || buildEmptyMonth(worker, selectedMonth)
-          const fixedSalaryValue = month.fixed_salary_value || month.basic_salary || 0
-          const pieceCountValue = month.piece_count || 0
-          const pieceRateValue = month.piece_rate || 0
-          const overtimeHoursValue = month.overtime_hours || 0
-          const advancesTotalValue = month.advances_total || 0
+          const month = monthMap[worker.id]
+
+          // If no record exists for this month, use the last fixed salary from previous months
+          let fixedSalaryValue = 0
+          let pieceCountValue = 0
+          let pieceRateValue = 0
+          let overtimeHoursValue = 0
+          let advancesTotalValue = 0
+          let salaryType: PayrollSalaryType = 'fixed'
+
+          if (month) {
+            // Month record exists - use its values
+            fixedSalaryValue = month.fixed_salary_value || month.basic_salary || 0
+            pieceCountValue = month.piece_count || 0
+            pieceRateValue = month.piece_rate || 0
+            overtimeHoursValue = month.overtime_hours || 0
+            advancesTotalValue = month.advances_total || 0
+            salaryType = month.salary_type === 'piecework' ? 'piecework' : 'fixed'
+          } else {
+            // لا يوجد سجل لهذا الشهر - نستخدم آخر معلومات راتب معروفة مع الحفاظ على نوع الراتب
+            const lastInfo = lastSalaryInfo[worker.id]
+            if (lastInfo) {
+              salaryType = lastInfo.salary_type
+              fixedSalaryValue = lastInfo.fixed_salary_value
+              // لعمال القطعة: نُبقي عدد القطع وسعرها من آخر شهر كمرجع
+              pieceCountValue = lastInfo.piece_count
+              pieceRateValue = lastInfo.piece_rate
+            }
+          }
 
           next[worker.id] = {
-            salaryType: month.salary_type === 'piecework' ? 'piecework' : 'fixed',
+            salaryType,
             fixedSalary: fixedSalaryValue > 0 ? fixedSalaryValue.toString() : '',
             pieceCount: pieceCountValue > 0 ? pieceCountValue.toString() : '',
             pieceRate: pieceRateValue > 0 ? pieceRateValue.toString() : '',
@@ -453,6 +512,18 @@ export default function TailoringPayrollDashboard() {
         })
         return next
       })
+
+      setAdvanceForms(() => {
+        const next: Record<string, AdvanceFormState> = {}
+        allWorkers.forEach((worker) => {
+          next[worker.id] = {
+            amount: '',
+            operationDate: defaultDate,
+            note: ''
+          }
+        })
+        return next
+      })
     } catch (error) {
       console.error('Failed loading payroll dashboard:', error)
       alert('فشل تحميل بيانات الرواتب')
@@ -460,18 +531,11 @@ export default function TailoringPayrollDashboard() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [selectedMonth])
+  }, [selectedMonth, isAdmin])
 
   useEffect(() => {
     loadData()
   }, [loadData])
-
-  // إعادة تعيين تبويب العمليات عند فتح نافذة جديدة
-  useEffect(() => {
-    if (selectedWorkerForOperations) {
-      setOperationsTab('all')
-    }
-  }, [selectedWorkerForOperations])
 
   const getMonthRow = useCallback((worker: WorkerWithUser) => {
     return monthRowsByWorker[worker.id] || buildEmptyMonth(worker, selectedMonth)
@@ -513,68 +577,15 @@ export default function TailoringPayrollDashboard() {
     return filteredWorkers.reduce(
       (acc, worker) => {
         const row = getMonthRow(worker)
+        acc.salary += row.basic_salary + row.works_total
         acc.deductions += row.deductions_total + row.advances_total
         acc.paid += row.total_paid
         acc.remaining += row.remaining_due
         return acc
       },
-      { deductions: 0, paid: 0, remaining: 0 }
+      { salary: 0, deductions: 0, paid: 0, remaining: 0 }
     )
   }, [filteredWorkers, getMonthRow])
-
-  // حساب بيانات سجل العمليات
-  const operationsData = useMemo(() => {
-    if (!selectedWorkerForOperations) {
-      return {
-        operations: [],
-        stats: {
-          totalSalary: 0,
-          totalAdvances: 0,
-          totalPayments: 0,
-          salaryCount: 0,
-          advancesCount: 0,
-          paymentsCount: 0
-        },
-        filteredOperations: []
-      }
-    }
-
-    const operations = (operationsByWorker[selectedWorkerForOperations.id] || []).sort((a, b) =>
-      new Date(b.operation_date).getTime() - new Date(a.operation_date).getTime()
-    )
-
-    const salaryOps = operations.filter(op => op.operation_type === 'salary')
-    const advanceOps = operations.filter(op => op.operation_type === 'advance')
-    const paymentOps = operations.filter(op => op.operation_type === 'payment')
-
-    const stats = {
-      totalSalary: salaryOps.reduce((sum, op) => sum + op.amount, 0),
-      totalAdvances: advanceOps.reduce((sum, op) => sum + op.amount, 0),
-      totalPayments: paymentOps.reduce((sum, op) => sum + op.amount, 0),
-      salaryCount: salaryOps.length,
-      advancesCount: advanceOps.length,
-      paymentsCount: paymentOps.length
-    }
-
-    let filteredOperations = operations
-    if (operationsTab === 'salary') {
-      filteredOperations = operations.filter(op => op.operation_type === 'salary')
-    } else if (operationsTab === 'advances') {
-      filteredOperations = operations.filter(op => op.operation_type === 'advance')
-    } else if (operationsTab === 'payments') {
-      filteredOperations = operations.filter(op => op.operation_type === 'payment')
-    }
-
-    return { operations, stats, filteredOperations }
-  }, [selectedWorkerForOperations, operationsByWorker, operationsTab])
-
-  // دالة للحصول على الأيقونة واللون حسب نوع العملية
-  const getOperationStyle = useCallback((type: PayrollOperationType) => {
-    if (type === 'salary') return { bg: 'bg-blue-100', text: 'text-blue-700', icon: DollarSign }
-    if (type === 'advance') return { bg: 'bg-orange-100', text: 'text-orange-700', icon: Scissors }
-    if (type === 'payment') return { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: Wallet }
-    return { bg: 'bg-gray-100', text: 'text-gray-700', icon: AlertTriangle }
-  }, [])
 
   const handleSaveSnapshot = useCallback(async (worker: WorkerWithUser) => {
     if (isLocked) {
@@ -627,9 +638,83 @@ export default function TailoringPayrollDashboard() {
         reference: form.reference || undefined,
         note: form.note || undefined
       })
+
+      // نُحدّث جميع الأشهر المستقبلية غير المقفلة بنوع الراتب والقيمة الجديدة
+      await propagateSalaryToFutureMonths(
+        BRANCH,
+        worker.id,
+        getWorkerName(worker),
+        selectedMonth,
+        form.salaryType,
+        salary.fixedSalaryValue,
+        salary.pieceRate
+      )
+
       await loadData(true)
     } catch (error) {
       alert(toReadableError(error))
+    } finally {
+      setActionKey(null)
+    }
+  }, [isAdmin, isLocked, salaryForms, selectedMonth, loadData])
+
+  /**
+   * يُستدعى عند تغيير نوع الراتب من dropdown/radio
+   * يحفظ التغيير تلقائياً ويُطبّقه على جميع الأشهر المستقبلية غير المقفلة
+   */
+  const handleSalaryTypeChange = useCallback(async (worker: WorkerWithUser, newSalaryType: PayrollSalaryType) => {
+    // تحديث الواجهة فوراً (optimistic update)
+    setSalaryForms((prev) => ({
+      ...prev,
+      [worker.id]: { ...prev[worker.id], salaryType: newSalaryType }
+    }))
+
+    // إذا كان الشهر مقفلاً أو المستخدم ليس أدمن، لا نحفظ - فقط نحدّث الواجهة
+    if (isLocked || !isAdmin) return
+
+    const currentForm = salaryForms[worker.id]
+    if (!currentForm) return
+
+    // حساب قيم الراتب بالنوع الجديد
+    const updatedForm: SalaryFormState = { ...currentForm, salaryType: newSalaryType }
+    const salary = calculateSalaryValues(updatedForm)
+
+    setActionKey(`snapshot-${worker.id}`)
+    try {
+      // حفظ الشهر الحالي بالنوع الجديد
+      await saveWorkerPayrollSnapshot({
+        branch: BRANCH,
+        workerId: worker.id,
+        workerName: getWorkerName(worker),
+        monthValue: selectedMonth,
+        basicSalary: salary.basicSalaryForSnapshot,
+        worksTotal: salary.worksTotalForSnapshot,
+        salaryType: newSalaryType,
+        fixedSalaryValue: salary.fixedSalaryValue,
+        pieceCount: salary.pieceCount,
+        pieceRate: salary.pieceRate,
+        overtimeHours: salary.overtimeHours,
+        overtimeRate: OVERTIME_RATE,
+        allowancesTotal: 0,
+        deductionsTotal: 0,
+        advancesTotal: salary.advancesTotal,
+        operationDate: currentForm.operationDate
+      })
+
+      // تطبيق النوع الجديد على جميع الأشهر المستقبلية غير المقفلة
+      await propagateSalaryToFutureMonths(
+        BRANCH,
+        worker.id,
+        getWorkerName(worker),
+        selectedMonth,
+        newSalaryType,
+        salary.fixedSalaryValue,
+        salary.pieceRate
+      )
+
+      await loadData(true)
+    } catch (error) {
+      console.error('Error saving salary type change:', error)
     } finally {
       setActionKey(null)
     }
@@ -691,58 +776,6 @@ export default function TailoringPayrollDashboard() {
     }
   }, [getMonthRow, isAdmin, isLocked, loadData, paymentForms, selectedMonth])
 
-  const handleSaveSmallAdvance = useCallback(async (worker: WorkerWithUser) => {
-    if (isLocked) {
-      alert('الشهر مقفل. التعديل متاح فقط عبر إشعار تعديل رسمي.')
-      return
-    }
-
-    if (!isAdmin) {
-      alert('حفظ السلفة مسموح للأدمن فقط.')
-      return
-    }
-
-    const form = salaryForms[worker.id]
-    if (!form) return
-
-    const salary = calculateSalaryValues(form)
-
-    if (salary.advancesTotal < 0) {
-      alert('لا يمكن إدخال قيمة سلفة سالبة')
-      return
-    }
-
-    setActionKey(`save-advance-${worker.id}`)
-    try {
-      await saveWorkerPayrollSnapshot({
-        branch: BRANCH,
-        workerId: worker.id,
-        workerName: getWorkerName(worker),
-        monthValue: selectedMonth,
-        basicSalary: salary.basicSalaryForSnapshot,
-        worksTotal: salary.worksTotalForSnapshot,
-        salaryType: form.salaryType,
-        fixedSalaryValue: salary.fixedSalaryValue,
-        pieceCount: salary.pieceCount,
-        pieceRate: salary.pieceRate,
-        overtimeHours: salary.overtimeHours,
-        overtimeRate: OVERTIME_RATE,
-        allowancesTotal: 0,
-        deductionsTotal: 0,
-        advancesTotal: salary.advancesTotal,
-        operationDate: form.operationDate,
-        reference: form.reference || undefined,
-        note: form.note || undefined
-      })
-      await loadData(true)
-      setSelectedWorkerForDeductions(null)
-    } catch (error) {
-      alert(toReadableError(error))
-    } finally {
-      setActionKey(null)
-    }
-  }, [isAdmin, isLocked, salaryForms, selectedMonth, loadData])
-
   const handleLockMonth = useCallback(async () => {
     if (isLocked) return
     if (!isAdmin) {
@@ -789,44 +822,22 @@ export default function TailoringPayrollDashboard() {
     }
   }, [isAdmin, isLocked, loadData, selectedMonth])
 
-  const handleAdjustmentRequest = useCallback(async (worker: WorkerWithUser) => {
-    const reason = prompt('سبب طلب التعديل الرسمي:')
-    if (!reason) return
-
-    setActionKey(`request-${worker.id}`)
-    try {
-      await createWorkerPayrollAdjustmentRequest({
-        branch: BRANCH,
-        workerId: worker.id,
-        workerName: getWorkerName(worker),
-        monthValue: selectedMonth,
-        reason
-      })
-      alert('تم إنشاء إشعار التعديل الرسمي بنجاح')
-    } catch (error) {
-      alert(toReadableError(error))
-    } finally {
-      setActionKey(null)
-    }
-  }, [selectedMonth])
-
-  const handleDeleteLocalWorker = useCallback(async (workerId: string) => {
+  const handleDeleteWorker = useCallback(async (workerId: string) => {
     if (!isAdmin) {
-      alert('حذف العامل المحلي مسموح للأدمن فقط.')
+      alert('حذف العامل مسموح للأدمن فقط.')
       return
     }
 
-    if (!confirm('هل أنت متأكد من حذف هذا العامل المحلي؟')) {
+    if (!confirm('هل أنت متأكد من حذف هذا العامل؟ سيتم حذفه نهائياً من قاعدة البيانات.')) {
       return
     }
 
     setActionKey(`delete-worker-${workerId}`)
     try {
-      const existingWorkers = getLocalWorkers()
-      const updatedWorkers = existingWorkers.filter(w => w.id !== workerId)
-      saveLocalWorkers(updatedWorkers)
+      const { error } = await workerService.delete(workerId)
+      if (error) throw new Error(error)
 
-      alert('تم حذف العامل المحلي بنجاح')
+      alert('تم حذف العامل بنجاح')
       await loadData(true)
     } catch (error) {
       alert(toReadableError(error))
@@ -854,16 +865,22 @@ export default function TailoringPayrollDashboard() {
 
     setActionKey('create-worker')
     try {
-      // إنشاء عامل محلي
-      const newLocalWorker = createLocalWorker({
+      // توليد بيانات اعتماد تلقائية للعامل (لا يحتاج لتسجيل دخول)
+      const timestamp = Date.now()
+      const randomStr = Math.random().toString(36).substring(2, 9)
+      const autoEmail = `payroll.worker.${timestamp}.${randomStr}@yasmin-alsham.internal`
+      const autoPassword = `PWR-${timestamp}-${Math.random().toString(36).substring(2, 15)}`
+
+      const { data, error } = await workerService.create({
+        email: autoEmail,
+        password: autoPassword,
         full_name: newWorkerForm.full_name.trim(),
-        phone: newWorkerForm.phone.trim(),
-        specialty: newWorkerForm.specialty.trim()
+        phone: newWorkerForm.phone.trim() || undefined,
+        specialty: newWorkerForm.specialty.trim(),
+        worker_type: 'tailor'
       })
 
-      // حفظ في localStorage
-      const existingWorkers = getLocalWorkers()
-      saveLocalWorkers([...existingWorkers, newLocalWorker])
+      if (error || !data) throw new Error(error || 'فشل إنشاء العامل')
 
       alert('تم إضافة العامل بنجاح!')
 
@@ -883,6 +900,163 @@ export default function TailoringPayrollDashboard() {
       setActionKey(null)
     }
   }, [isAdmin, newWorkerForm, loadData])
+
+  const handleDeleteOperation = useCallback(async (operationId: string, operationType: string) => {
+    if (!isAdmin) {
+      alert('حذف العمليات مسموح للأدمن فقط.')
+      return
+    }
+
+    if (isLocked) {
+      alert('الشهر مقفل. لا يمكن حذف العمليات.')
+      return
+    }
+
+    const operationTypeAr = operationType === 'payment' ? 'الدفعة' : operationType === 'advance' ? 'السلفة' : operationType === 'salary' ? 'عملية الراتب' : 'العملية'
+    if (!confirm(`هل أنت متأكد من حذف ${operationTypeAr}؟`)) {
+      return
+    }
+
+    setActionKey(`delete-operation-${operationId}`)
+    try {
+      await deleteWorkerPayrollOperation(operationId)
+      alert('تم حذف العملية بنجاح')
+      await loadData(true)
+    } catch (error) {
+      alert(toReadableError(error))
+    } finally {
+      setActionKey(null)
+    }
+  }, [isAdmin, isLocked, loadData])
+
+  const handleRegisterAdvance = useCallback(async (worker: WorkerWithUser) => {
+    if (isLocked) {
+      alert('الشهر مقفل. لا يمكن تسجيل سلفة.')
+      return
+    }
+    if (!isAdmin) {
+      alert('تسجيل السُّلَف مسموح للأدمن فقط.')
+      return
+    }
+
+    const form = advanceForms[worker.id]
+    if (!form) return
+
+    const amount = toNumber(form.amount)
+    if (amount <= 0) {
+      alert('يرجى إدخال مبلغ سلفة صحيح')
+      return
+    }
+
+    setActionKey(`advance-${worker.id}`)
+    try {
+      await registerWorkerPayrollAdjustment({
+        branch: BRANCH,
+        workerId: worker.id,
+        workerName: getWorkerName(worker),
+        monthValue: selectedMonth,
+        operationType: 'advance',
+        operationDate: form.operationDate,
+        amount,
+        note: form.note || undefined
+      })
+      // إعادة تعيين النموذج
+      setAdvanceForms((prev) => ({
+        ...prev,
+        [worker.id]: { ...prev[worker.id], amount: '', note: '' }
+      }))
+      await loadData(true)
+    } catch (error) {
+      alert(toReadableError(error))
+    } finally {
+      setActionKey(null)
+    }
+  }, [isAdmin, isLocked, advanceForms, selectedMonth, loadData])
+
+  // ============================================================================
+  // معالجات التسعير والتقييم
+  // ============================================================================
+
+  const handleOpenPricingModal = useCallback(async (worker: WorkerWithUser) => {
+    setSelectedWorkerForPricing(worker)
+    setSelectedOrderForPricing(null)
+    setPricingOrdersLoading(true)
+    try {
+      const result = await orderService.getAll({
+        status: 'completed',
+        worker_id: worker.id,
+        pageSize: 200
+      })
+      const orders = result.data || []
+      setPricingOrders(orders)
+      // تحميل بيانات التسعير المحفوظة
+      const forms: Record<string, OrderPricingData> = {}
+      orders.forEach((order) => {
+        forms[order.id] = getPricingData(order.id)
+      })
+      setPricingForms(forms)
+    } catch (error) {
+      console.error('Failed to load orders for pricing:', error)
+    } finally {
+      setPricingOrdersLoading(false)
+    }
+  }, [])
+
+  const handleClosePricingModal = useCallback(() => {
+    setSelectedWorkerForPricing(null)
+    setPricingOrders([])
+    setSelectedOrderForPricing(null)
+    setPricingForms({})
+    setOrderFullDetails({})
+    setLightboxImage(null)
+  }, [])
+
+  // اختيار طلب للتسعير + جلب صوره الكاملة عند الحاجة
+  const handleSelectOrderForPricing = useCallback(async (order: Order) => {
+    // إغلاق إذا كان مفتوحاً
+    if (selectedOrderForPricing?.id === order.id) {
+      setSelectedOrderForPricing(null)
+      return
+    }
+    setSelectedOrderForPricing(order)
+    // جلب التفاصيل الكاملة إذا لم تكن محفوظة في الكاش
+    if (!orderFullDetails[order.id]) {
+      try {
+        const result = await orderService.getById(order.id)
+        if (result.data) {
+          setOrderFullDetails((prev) => ({ ...prev, [order.id]: result.data! }))
+        }
+      } catch {
+        // تجاهل الخطأ — الصور ستكون غير متاحة فقط
+      }
+    }
+  }, [selectedOrderForPricing, orderFullDetails])
+
+  const handleSavePricingForm = useCallback((orderId: string, data: OrderPricingData) => {
+    savePricingData(orderId, data)
+    setPricingForms((prev) => ({ ...prev, [orderId]: data }))
+  }, [])
+
+  const handleApplyPricingToSalary = useCallback((worker: WorkerWithUser) => {
+    const pricedOrders = Object.values(pricingForms).filter(
+      (f) => f.price && toNumber(f.price) > 0
+    )
+    const pieceCount = pricedOrders.length
+    const totalPrice = pricedOrders.reduce((sum, f) => sum + toNumber(f.price), 0)
+
+    setSalaryForms((prev) => ({
+      ...prev,
+      [worker.id]: {
+        ...prev[worker.id],
+        salaryType: 'piecework',
+        pieceCount: pieceCount > 0 ? pieceCount.toString() : '',
+        pieceRate: pieceCount > 0 ? (totalPrice / pieceCount).toFixed(2) : ''
+      }
+    }))
+
+    handleClosePricingModal()
+    setSelectedWorkerForSalary(worker)
+  }, [pricingForms, handleClosePricingModal])
 
   if (isLoading) {
     return (
@@ -997,10 +1171,23 @@ export default function TailoringPayrollDashboard() {
           </div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <StatCard title="إجمالي الخصومات" value={formatCurrency(totals.deductions)} />
-          <StatCard title="إجمالي المدفوع" value={formatCurrency(totals.paid)} />
-          <StatCard title="المتبقي" value={formatCurrency(totals.remaining)} />
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-xl border border-blue-200 bg-white p-4">
+            <p className="text-sm text-blue-600">إجمالي الرواتب</p>
+            <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(totals.salary)}</p>
+          </div>
+          <div className="rounded-xl border border-red-200 bg-white p-4">
+            <p className="text-sm text-red-600">إجمالي الخصومات</p>
+            <p className="mt-1 text-xl font-bold text-red-700">{formatCurrency(totals.deductions)}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-600">إجمالي المدفوع</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{formatCurrency(totals.paid)}</p>
+          </div>
+          <div className="rounded-xl border border-green-200 bg-white p-4">
+            <p className="text-sm text-green-600">المتبقي</p>
+            <p className="mt-1 text-xl font-bold text-green-700">{formatCurrency(totals.remaining)}</p>
+          </div>
         </div>
 
         {/* جدول عمال نظام القطعة */}
@@ -1019,6 +1206,7 @@ export default function TailoringPayrollDashboard() {
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
                       <th className="px-3 py-2.5">العامل</th>
+                      <th className="px-3 py-2.5">الراتب</th>
                       <th className="px-3 py-2.5">إجمالي الخصومات</th>
                       <th className="px-3 py-2.5">إجمالي المدفوع</th>
                       <th className="px-3 py-2.5">المتبقي</th>
@@ -1029,35 +1217,45 @@ export default function TailoringPayrollDashboard() {
                   <tbody className="divide-y divide-gray-100">
                     {pieceworkWorkers.map((worker) => {
                       const row = getMonthRow(worker)
-                      const isLocalWorker = 'is_local' in worker && worker.is_local === true
+                      const isPayrollWorker = worker.user?.email?.startsWith('payroll.worker.') === true
+                      const prevCarryover = previousNegativeByWorker[worker.id] || 0
+                      const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
+                      const currentBaseRemaining = row.remaining_due < 0 ? 0 : row.remaining_due
+                      const displayedRemaining = Math.max(0, currentBaseRemaining - prevCarryover)
                       return (
                         <tr key={worker.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-900">{getWorkerName(worker)}</span>
-                              {isLocalWorker && (
-                                <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
-                                  محلي
-                                </span>
-                              )}
-                              {isLocalWorker && isAdmin && (
+                              {isPayrollWorker && isAdmin && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleDeleteLocalWorker(worker.id)
+                                    handleDeleteWorker(worker.id)
                                   }}
                                   disabled={!!actionKey}
                                   className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 p-1 text-red-700 hover:bg-red-100 disabled:opacity-60"
-                                  title="حذف العامل المحلي"
+                                  title="حذف العامل"
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </button>
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-gray-700">{formatCurrency(row.deductions_total + row.advances_total)}</td>
-                          <td className="px-3 py-2.5 text-emerald-700">{formatCurrency(row.total_paid)}</td>
-                          <td className="px-3 py-2.5 font-semibold text-amber-700">{formatCurrency(row.remaining_due)}</td>
+                          <td className="px-3 py-2.5 font-semibold text-blue-700">{formatCurrency(row.basic_salary + row.works_total)}</td>
+                          <td className="px-3 py-2.5 font-semibold text-red-700">
+                            {formatCurrency(row.deductions_total + row.advances_total + prevCarryover)}
+                            {prevCarryover > 0.009 && (
+                              <p className="text-xs font-normal text-orange-600 mt-0.5">خصومات متراكمة</p>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 font-semibold text-gray-900">{formatCurrency(row.total_paid)}</td>
+                          <td className="px-3 py-2.5 font-semibold text-green-700">
+                            {formatCurrency(displayedRemaining)}
+                            {hasPreviousPositive && (
+                              <p className="text-xs font-normal text-amber-600 mt-0.5">هنالك متبقي من الشهر السابق</p>
+                            )}
+                          </td>
                           <td className="px-3 py-2.5">
                             <span className={'inline-flex rounded-full border px-2.5 py-1 text-xs ' + STATUS_STYLE[row.salary_status]}>
                               {STATUS_LABEL[row.salary_status]}
@@ -1066,11 +1264,11 @@ export default function TailoringPayrollDashboard() {
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <button
-                                onClick={() => setSelectedWorkerForDeductions(worker)}
-                                className="group inline-flex items-center justify-center rounded-lg border border-orange-200 bg-orange-50 p-2 text-orange-600 transition-all hover:bg-orange-100 hover:shadow-sm"
-                                title="فئة الخصومات"
+                                onClick={() => setSelectedWorkerForAdvances(worker)}
+                                className="group inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-600 transition-all hover:bg-amber-100 hover:shadow-sm"
+                                title="إدارة السُّلَف"
                               >
-                                <Scissors className="h-4 w-4" />
+                                <CreditCard className="h-4 w-4" />
                               </button>
                               <button
                                 onClick={() => setSelectedWorkerForSalary(worker)}
@@ -1080,11 +1278,11 @@ export default function TailoringPayrollDashboard() {
                                 <DollarSign className="h-4 w-4" />
                               </button>
                               <button
-                                onClick={() => setSelectedWorkerForOperations(worker)}
-                                className="group inline-flex items-center justify-center rounded-lg border border-gray-300 bg-gray-50 p-2 text-gray-600 transition-all hover:bg-gray-100 hover:shadow-sm"
-                                title="سجل العمليات"
+                                onClick={() => handleOpenPricingModal(worker)}
+                                className="group inline-flex items-center justify-center rounded-lg border border-pink-200 bg-pink-50 p-2 text-pink-600 transition-all hover:bg-pink-100 hover:shadow-sm"
+                                title="تسعير وتقييم الطلبات"
                               >
-                                <History className="h-4 w-4" />
+                                <Tag className="h-4 w-4" />
                               </button>
                             </div>
                           </td>
@@ -1114,6 +1312,7 @@ export default function TailoringPayrollDashboard() {
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
                       <th className="px-3 py-2.5">العامل</th>
+                      <th className="px-3 py-2.5">الراتب</th>
                       <th className="px-3 py-2.5">إجمالي الخصومات</th>
                       <th className="px-3 py-2.5">إجمالي المدفوع</th>
                       <th className="px-3 py-2.5">المتبقي</th>
@@ -1124,35 +1323,45 @@ export default function TailoringPayrollDashboard() {
                   <tbody className="divide-y divide-gray-100">
                     {fixedSalaryWorkers.map((worker) => {
                       const row = getMonthRow(worker)
-                      const isLocalWorker = 'is_local' in worker && worker.is_local === true
+                      const isPayrollWorker = worker.user?.email?.startsWith('payroll.worker.') === true
+                      const prevCarryover = previousNegativeByWorker[worker.id] || 0
+                      const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
+                      const currentBaseRemaining = row.remaining_due < 0 ? 0 : row.remaining_due
+                      const displayedRemaining = Math.max(0, currentBaseRemaining - prevCarryover)
                       return (
                         <tr key={worker.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-900">{getWorkerName(worker)}</span>
-                              {isLocalWorker && (
-                                <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
-                                  محلي
-                                </span>
-                              )}
-                              {isLocalWorker && isAdmin && (
+                              {isPayrollWorker && isAdmin && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleDeleteLocalWorker(worker.id)
+                                    handleDeleteWorker(worker.id)
                                   }}
                                   disabled={!!actionKey}
                                   className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 p-1 text-red-700 hover:bg-red-100 disabled:opacity-60"
-                                  title="حذف العامل المحلي"
+                                  title="حذف العامل"
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </button>
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-gray-700">{formatCurrency(row.deductions_total + row.advances_total)}</td>
-                          <td className="px-3 py-2.5 text-emerald-700">{formatCurrency(row.total_paid)}</td>
-                          <td className="px-3 py-2.5 font-semibold text-amber-700">{formatCurrency(row.remaining_due)}</td>
+                          <td className="px-3 py-2.5 font-semibold text-blue-700">{formatCurrency(row.basic_salary + row.works_total)}</td>
+                          <td className="px-3 py-2.5 font-semibold text-red-700">
+                            {formatCurrency(row.deductions_total + row.advances_total + prevCarryover)}
+                            {prevCarryover > 0.009 && (
+                              <p className="text-xs font-normal text-orange-600 mt-0.5">خصومات متراكمة</p>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 font-semibold text-gray-900">{formatCurrency(row.total_paid)}</td>
+                          <td className="px-3 py-2.5 font-semibold text-green-700">
+                            {formatCurrency(displayedRemaining)}
+                            {hasPreviousPositive && (
+                              <p className="text-xs font-normal text-amber-600 mt-0.5">هنالك متبقي من الشهر السابق</p>
+                            )}
+                          </td>
                           <td className="px-3 py-2.5">
                             <span className={'inline-flex rounded-full border px-2.5 py-1 text-xs ' + STATUS_STYLE[row.salary_status]}>
                               {STATUS_LABEL[row.salary_status]}
@@ -1161,11 +1370,11 @@ export default function TailoringPayrollDashboard() {
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <button
-                                onClick={() => setSelectedWorkerForDeductions(worker)}
-                                className="group inline-flex items-center justify-center rounded-lg border border-orange-200 bg-orange-50 p-2 text-orange-600 transition-all hover:bg-orange-100 hover:shadow-sm"
-                                title="فئة الخصومات"
+                                onClick={() => setSelectedWorkerForAdvances(worker)}
+                                className="group inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-600 transition-all hover:bg-amber-100 hover:shadow-sm"
+                                title="إدارة السُّلَف"
                               >
-                                <Scissors className="h-4 w-4" />
+                                <CreditCard className="h-4 w-4" />
                               </button>
                               <button
                                 onClick={() => setSelectedWorkerForSalary(worker)}
@@ -1173,13 +1382,6 @@ export default function TailoringPayrollDashboard() {
                                 title="فئة الراتب الشهري"
                               >
                                 <DollarSign className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={() => setSelectedWorkerForOperations(worker)}
-                                className="group inline-flex items-center justify-center rounded-lg border border-gray-300 bg-gray-50 p-2 text-gray-600 transition-all hover:bg-gray-100 hover:shadow-sm"
-                                title="سجل العمليات"
-                              >
-                                <History className="h-4 w-4" />
                               </button>
                             </div>
                           </td>
@@ -1193,32 +1395,34 @@ export default function TailoringPayrollDashboard() {
           </div>
         )}
 
-        {/* نافذة فئة الخصومات */}
-        {selectedWorkerForDeductions && (() => {
-          const worker = selectedWorkerForDeductions
+        {/* نافذة إدارة السُّلَف */}
+        {selectedWorkerForAdvances && (() => {
+          const worker = selectedWorkerForAdvances
           const row = getMonthRow(worker)
-          const salaryForm = salaryForms[worker.id]
+          const advanceForm = advanceForms[worker.id]
+          const operations = operationsByWorker[worker.id] || []
+          const advanceOperations = operations.filter((op) => op.operation_type === 'advance')
+          const totalAdvances = advanceOperations.reduce((sum, op) => sum + op.amount, 0)
 
-          if (!salaryForm) return null
-          const salaryCalculation = calculateSalaryValues(salaryForm)
+          if (!advanceForm) return null
 
           return (
-            <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForDeductions(null)}>
+            <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForAdvances(null)}>
               <div className="mx-auto my-8 max-w-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
                   {/* رأس النافذة */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
                     <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-orange-100 p-2">
-                        <Scissors className="h-5 w-5 text-orange-600" />
+                      <div className="rounded-lg bg-amber-100 p-2">
+                        <CreditCard className="h-5 w-5 text-amber-600" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-gray-900">السلفة الصغيرة</h2>
+                        <h2 className="text-lg font-bold text-gray-900">إدارة السُّلَف</h2>
                         <p className="text-sm text-gray-600">{getWorkerName(worker)}</p>
                       </div>
                     </div>
                     <button
-                      onClick={() => setSelectedWorkerForDeductions(null)}
+                      onClick={() => setSelectedWorkerForAdvances(null)}
                       className="rounded-lg p-2 hover:bg-gray-100"
                       title="إغلاق"
                     >
@@ -1226,53 +1430,124 @@ export default function TailoringPayrollDashboard() {
                     </button>
                   </div>
 
+                  {/* ملخص السُّلَف */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+                      <p className="text-xs text-amber-700">إجمالي السُّلَف</p>
+                      <p className="mt-1 text-lg font-bold text-amber-900">{formatCurrency(totalAdvances)}</p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-center">
+                      <p className="text-xs text-gray-600">صافي الراتب المستحق</p>
+                      <p className="mt-1 text-lg font-bold text-gray-900">{formatCurrency(row.net_due)}</p>
+                    </div>
+                  </div>
+
+                  {/* نموذج إضافة سلفة جديدة */}
+                  {!isReadOnly && (
+                    <div className="rounded-xl border border-amber-200 p-4 space-y-3">
+                      <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                        <CreditCard className="h-4 w-4 text-amber-600" />
+                        تسجيل سلفة جديدة
+                      </h3>
+
+                      <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        السلفة تُخصم تلقائيًا من صافي الراتب عند حفظ الراتب الشهري
+                      </div>
+
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="مبلغ السلفة"
+                        value={advanceForm.amount}
+                        onChange={(e) => setAdvanceForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], amount: sanitizeNonNegativeInput(e.target.value) }
+                        }))}
+                        className={'w-full ' + NUMBER_INPUT_CLASS}
+                      />
+
+                      <input
+                        type="date"
+                        value={advanceForm.operationDate}
+                        onChange={(e) => setAdvanceForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], operationDate: e.target.value }
+                        }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="ملاحظة (اختياري)"
+                        value={advanceForm.note}
+                        onChange={(e) => setAdvanceForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], note: e.target.value }
+                        }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                      />
+
+                      <button
+                        onClick={() => handleRegisterAdvance(worker)}
+                        disabled={!!actionKey}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                      >
+                        <CreditCard className="h-4 w-4" />
+                        {actionKey === 'advance-' + worker.id ? 'جاري التسجيل...' : 'تسجيل السلفة'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* سجل السُّلَف */}
                   <div className="rounded-xl border border-gray-200 p-4 space-y-3">
                     <h3 className="flex items-center gap-2 font-semibold text-gray-900">
-                      <Scissors className="h-4 w-4 text-orange-600" />
-                      إدارة السلفة الصغيرة
+                      <History className="h-4 w-4 text-gray-600" />
+                      سجل السُّلَف ({advanceOperations.length})
                     </h3>
 
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      السلفة الصغيرة تُخصم تلقائيًا من صافي الراتب
-                    </div>
-
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="مبلغ السلفة"
-                      value={salaryForm.advancesTotal}
-                      onChange={(e) => setSalaryForms((prev) => ({
-                        ...prev,
-                        [worker.id]: { ...prev[worker.id], advancesTotal: sanitizeNonNegativeInput(e.target.value) }
-                      }))}
-                      className={'w-full ' + NUMBER_INPUT_CLASS}
-                    />
-
-                    <div className="rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-700">صافي الراتب بعد السلفة:</span>
-                        <span className="text-lg font-bold text-indigo-700">{formatCurrency(salaryCalculation.netAfterDeductions)}</span>
+                    {advanceOperations.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
+                        لا توجد سُلَف مسجلة لهذا الشهر
                       </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleSaveSmallAdvance(worker)}
-                      disabled={!!actionKey || isReadOnly}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-                    >
-                      <Save className="h-4 w-4" />
-                      {actionKey === 'save-advance-' + worker.id ? 'جاري الحفظ...' : 'حفظ السلفة'}
-                    </button>
-
-                    {isLocked && (
-                      <button
-                        onClick={() => handleAdjustmentRequest(worker)}
-                        disabled={!!actionKey}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                      >
-                        {actionKey === 'request-' + worker.id ? 'جاري الإرسال...' : 'طلب تعديل رسمي'}
-                      </button>
+                    ) : (
+                      <div className="max-h-[350px] space-y-2 overflow-y-auto">
+                        {advanceOperations.map((op) => (
+                          <div
+                            key={op.id}
+                            className="group flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 transition-all hover:border-amber-300 hover:shadow-sm"
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className="rounded-lg bg-amber-100 p-1.5">
+                                <CreditCard className="h-4 w-4 text-amber-700" />
+                              </div>
+                              <div>
+                                <p className="font-semibold text-amber-900">{formatCurrency(op.amount)}</p>
+                                <p className="text-xs text-amber-700">
+                                  {new Date(op.operation_date).toLocaleDateString('ar-SA', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })}
+                                </p>
+                                {op.note && (
+                                  <p className="text-xs text-gray-600 mt-0.5">{op.note}</p>
+                                )}
+                              </div>
+                            </div>
+                            {isAdmin && !isLocked && (
+                              <button
+                                onClick={() => handleDeleteOperation(op.id, 'advance')}
+                                disabled={!!actionKey}
+                                className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                title="حذف السلفة"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1290,6 +1565,7 @@ export default function TailoringPayrollDashboard() {
           const previousRemaining = previousRemainingByWorker[worker.id] || 0
           const operations = operationsByWorker[worker.id] || []
           const paymentOperations = operations.filter((op) => op.operation_type === 'payment')
+          const salaryOperations = operations.filter((op) => op.operation_type === 'salary')
           const totalPayments = paymentOperations.reduce((sum, op) => sum + op.amount, 0)
 
           if (!salaryForm || !paymentForm) return null
@@ -1332,16 +1608,20 @@ export default function TailoringPayrollDashboard() {
                       حساب الراتب الشهري
                     </h3>
 
+                    {/* ملاحظة: تم تحميل آخر راتب ثابت */}
+                    {!monthRowsByWorker[worker.id] && salaryForm.fixedSalary && (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                        <span className="font-semibold">ℹ️ تم تحميل آخر راتب ثابت تلقائيًا:</span> يمكنك تعديله أو تركه كما هو
+                      </div>
+                    )}
+
                     {/* نوع الراتب */}
                     <div className="flex gap-3">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="radio"
                           checked={salaryForm.salaryType === 'fixed'}
-                          onChange={() => setSalaryForms((prev) => ({
-                            ...prev,
-                            [worker.id]: { ...prev[worker.id], salaryType: 'fixed' }
-                          }))}
+                          onChange={() => handleSalaryTypeChange(worker, 'fixed')}
                           className="h-4 w-4 text-indigo-600"
                         />
                         <span className="text-sm text-gray-700">راتب ثابت</span>
@@ -1350,10 +1630,7 @@ export default function TailoringPayrollDashboard() {
                         <input
                           type="radio"
                           checked={salaryForm.salaryType === 'piecework'}
-                          onChange={() => setSalaryForms((prev) => ({
-                            ...prev,
-                            [worker.id]: { ...prev[worker.id], salaryType: 'piecework' }
-                          }))}
+                          onChange={() => handleSalaryTypeChange(worker, 'piecework')}
                           className="h-4 w-4 text-indigo-600"
                         />
                         <span className="text-sm text-gray-700">راتب بالقطعة</span>
@@ -1375,52 +1652,40 @@ export default function TailoringPayrollDashboard() {
                         className={'w-full ' + NUMBER_INPUT_CLASS}
                       />
                     ) : (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="عدد القطع"
+                        value={salaryForm.pieceCount}
+                        onChange={(e) => setSalaryForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], pieceCount: sanitizeNonNegativeInput(e.target.value) }
+                        }))}
+                        className={'w-full ' + NUMBER_INPUT_CLASS}
+                      />
+                    )}
+
+                    {/* ساعات إضافية - تظهر فقط للراتب الثابت */}
+                    {salaryForm.salaryType === 'fixed' && (
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           type="number"
                           min="0"
                           step="0.01"
-                          placeholder="عدد القطع"
-                          value={salaryForm.pieceCount}
+                          placeholder="ساعات إضافية"
+                          value={salaryForm.overtimeHours}
                           onChange={(e) => setSalaryForms((prev) => ({
                             ...prev,
-                            [worker.id]: { ...prev[worker.id], pieceCount: sanitizeNonNegativeInput(e.target.value) }
+                            [worker.id]: { ...prev[worker.id], overtimeHours: sanitizeNonNegativeInput(e.target.value) }
                           }))}
                           className={NUMBER_INPUT_CLASS}
                         />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="سعر القطعة"
-                          value={salaryForm.pieceRate}
-                          onChange={(e) => setSalaryForms((prev) => ({
-                            ...prev,
-                            [worker.id]: { ...prev[worker.id], pieceRate: sanitizeNonNegativeInput(e.target.value) }
-                          }))}
-                          className={NUMBER_INPUT_CLASS}
-                        />
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs text-gray-700 flex items-center">
+                          قيمة الإضافي: {formatCurrency(salaryCalculation.overtimeTotal)}
+                        </div>
                       </div>
                     )}
-
-                    {/* ساعات إضافية */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="ساعات إضافية"
-                        value={salaryForm.overtimeHours}
-                        onChange={(e) => setSalaryForms((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...prev[worker.id], overtimeHours: sanitizeNonNegativeInput(e.target.value) }
-                        }))}
-                        className={NUMBER_INPUT_CLASS}
-                      />
-                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs text-gray-700 flex items-center">
-                        قيمة الإضافي: {formatCurrency(salaryCalculation.overtimeTotal)}
-                      </div>
-                    </div>
 
                     {/* الملخص */}
                     <div className="rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-sm space-y-1">
@@ -1488,233 +1753,99 @@ export default function TailoringPayrollDashboard() {
                       <Wallet className="h-4 w-4" />
                       {actionKey === 'payment-' + worker.id ? 'جاري التسجيل...' : 'تسجيل دفعة'}
                     </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        })()}
 
-        {/* نافذة سجل العمليات */}
-        {selectedWorkerForOperations && (() => {
-          const worker = selectedWorkerForOperations
-          const { operations, stats, filteredOperations } = operationsData
-
-          return (
-            <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForOperations(null)}>
-              <div className="mx-auto my-8 max-w-5xl" onClick={(e) => e.stopPropagation()}>
-                <div className="space-y-4 rounded-2xl border border-gray-200 bg-white shadow-2xl">
-                  {/* رأس النافذة */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 p-6 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2.5 shadow-lg">
-                        <History className="h-6 w-6 text-white" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-gray-900">سجل العمليات المالية</h2>
-                        <p className="text-sm text-gray-600">{getWorkerName(worker)} - {selectedMonth}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSelectedWorkerForOperations(null)}
-                      className="rounded-lg p-2 transition-colors hover:bg-gray-100"
-                      title="إغلاق"
-                    >
-                      <X className="h-5 w-5 text-gray-500" />
-                    </button>
-                  </div>
-
-                  {operations.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
-                        <History className="h-8 w-8 text-gray-400" />
-                      </div>
-                      <p className="text-sm text-gray-500">لا توجد عمليات لهذا العامل في هذا الشهر</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4 p-6 pt-0">
-                      {/* بطاقات الإحصائيات */}
-                      <div className="grid gap-3 md:grid-cols-3">
-                        {/* إجمالي الرواتب */}
-                        <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 p-4">
-                          <div className="flex items-center gap-2 text-blue-700">
-                            <DollarSign className="h-4 w-4" />
-                            <span className="text-xs font-medium">إجمالي الرواتب</span>
-                          </div>
-                          <p className="mt-2 text-2xl font-bold text-blue-900">{formatCurrency(stats.totalSalary)}</p>
-                          <p className="mt-1 text-xs text-blue-600">{stats.salaryCount} عملية</p>
-                        </div>
-
-                        {/* إجمالي السلفات */}
-                        <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100/50 p-4">
-                          <div className="flex items-center gap-2 text-orange-700">
-                            <Scissors className="h-4 w-4" />
-                            <span className="text-xs font-medium">إجمالي السلفات</span>
-                          </div>
-                          <p className="mt-2 text-2xl font-bold text-orange-900">{formatCurrency(stats.totalAdvances)}</p>
-                          <p className="mt-1 text-xs text-orange-600">{stats.advancesCount} عملية</p>
-                        </div>
-
-                        {/* إجمالي الدفعات */}
-                        <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4">
-                          <div className="flex items-center gap-2 text-emerald-700">
-                            <Wallet className="h-4 w-4" />
-                            <span className="text-xs font-medium">إجمالي الدفعات</span>
-                          </div>
-                          <p className="mt-2 text-2xl font-bold text-emerald-900">{formatCurrency(stats.totalPayments)}</p>
-                          <p className="mt-1 text-xs text-emerald-600">{stats.paymentsCount} عملية</p>
-                        </div>
-                      </div>
-
-                      {/* التبويبات */}
-                      <div className="flex gap-2 overflow-x-auto border-b border-gray-200 pb-0">
-                        <button
-                          onClick={() => setOperationsTab('all')}
-                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
-                            operationsTab === 'all'
-                              ? 'border-b-2 border-indigo-600 bg-indigo-50 text-indigo-700'
-                              : 'text-gray-600 hover:bg-gray-50'
-                          }`}
-                        >
-                          كل العمليات ({operations.length})
-                        </button>
-                        <button
-                          onClick={() => setOperationsTab('salary')}
-                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
-                            operationsTab === 'salary'
-                              ? 'border-b-2 border-blue-600 bg-blue-50 text-blue-700'
-                              : 'text-gray-600 hover:bg-gray-50'
-                          }`}
-                        >
-                          الرواتب ({stats.salaryCount})
-                        </button>
-                        <button
-                          onClick={() => setOperationsTab('advances')}
-                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
-                            operationsTab === 'advances'
-                              ? 'border-b-2 border-orange-600 bg-orange-50 text-orange-700'
-                              : 'text-gray-600 hover:bg-gray-50'
-                          }`}
-                        >
-                          السلفات ({stats.advancesCount})
-                        </button>
-                        <button
-                          onClick={() => setOperationsTab('payments')}
-                          className={`whitespace-nowrap rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-all ${
-                            operationsTab === 'payments'
-                              ? 'border-b-2 border-emerald-600 bg-emerald-50 text-emerald-700'
-                              : 'text-gray-600 hover:bg-gray-50'
-                          }`}
-                        >
-                          الدفعات ({stats.paymentsCount})
-                        </button>
-                      </div>
-
-                      {/* قائمة العمليات */}
-                      <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                        {filteredOperations.length === 0 ? (
-                          <div className="py-8 text-center text-sm text-gray-500">
-                            لا توجد عمليات في هذا التصنيف
-                          </div>
-                        ) : (
-                          filteredOperations.map((op) => {
-                            const style = getOperationStyle(op.operation_type)
-                            const Icon = style.icon
-
-                            return (
-                              <div
-                                key={op.id}
-                                className="group rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-gray-300 hover:shadow-md"
-                              >
-                                <div className="flex items-start justify-between gap-4">
-                                  {/* النوع والتاريخ */}
-                                  <div className="flex items-start gap-3">
-                                    <div className={`rounded-lg p-2 ${style.bg}`}>
-                                      <Icon className={`h-5 w-5 ${style.text}`} />
-                                    </div>
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-gray-900">{operationTypeLabel(op.operation_type)}</span>
-                                        <span className={'inline-flex rounded-full border px-2 py-0.5 text-xs ' + STATUS_STYLE[op.salary_status_after]}>
-                                          {STATUS_LABEL[op.salary_status_after]}
-                                        </span>
-                                      </div>
-                                      <p className="mt-0.5 text-xs text-gray-500">
-                                        {new Date(op.operation_date).toLocaleDateString('ar-SA', {
-                                          year: 'numeric',
-                                          month: 'long',
-                                          day: 'numeric'
-                                        })}
-                                      </p>
-                                      {op.reference && (
-                                        <p className="mt-1 text-xs text-gray-600">
-                                          <span className="font-medium">المرجع:</span> {op.reference}
-                                        </p>
-                                      )}
-                                      {op.note && (
-                                        <p className="mt-1 text-xs text-gray-600">
-                                          <span className="font-medium">ملاحظة:</span> {op.note}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* القيم المالية */}
-                                  <div className="text-left">
-                                    <div className="flex items-baseline gap-1">
-                                      {op.operation_type === 'payment' && (
-                                        <span className="text-xl font-bold text-emerald-700">-</span>
-                                      )}
-                                      {op.operation_type === 'advance' && (
-                                        <span className="text-xl font-bold text-orange-700">-</span>
-                                      )}
-                                      {op.operation_type === 'salary' && (
-                                        <span className="text-xl font-bold text-blue-700">=</span>
-                                      )}
-                                      <span className={`text-xl font-bold ${
-                                        op.operation_type === 'payment' ? 'text-emerald-700' :
-                                        op.operation_type === 'advance' ? 'text-orange-700' :
-                                        'text-blue-700'
-                                      }`}>
-                                        {formatCurrency(op.amount)}
-                                      </span>
-                                    </div>
-                                    <div className="mt-1 space-y-0.5 text-xs text-gray-500">
-                                      <div className="flex justify-between gap-4">
-                                        <span>قبل:</span>
-                                        <span className="font-medium">{formatCurrency(op.before_amount)}</span>
-                                      </div>
-                                      <div className="flex justify-between gap-4">
-                                        <span>بعد:</span>
-                                        <span className="font-medium">{formatCurrency(op.after_amount)}</span>
-                                      </div>
-                                    </div>
-                                  </div>
+                    {/* سجل الدفعات */}
+                    {paymentOperations.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <h4 className="text-sm font-semibold text-gray-700">سجل الدفعات</h4>
+                        <div className="max-h-[300px] space-y-2 overflow-y-auto">
+                          {paymentOperations.map((op) => (
+                            <div
+                              key={op.id}
+                              className="group flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-3 transition-all hover:border-emerald-300 hover:shadow-sm"
+                            >
+                              <div className="flex items-start gap-2">
+                                <div className="rounded-lg bg-emerald-100 p-1.5">
+                                  <Wallet className="h-4 w-4 text-emerald-700" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-emerald-900">{formatCurrency(op.amount)}</p>
+                                  <p className="text-xs text-emerald-700">
+                                    {new Date(op.operation_date).toLocaleDateString('ar-SA', {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric'
+                                    })}
+                                  </p>
+                                  {op.reference && (
+                                    <p className="text-xs text-gray-600">
+                                      المرجع: {op.reference}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
-                            )
-                          })
-                        )}
-                      </div>
-
-                      {/* ملخص نهائي */}
-                      <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100/50 p-4">
-                        <div className="grid gap-3 md:grid-cols-3">
-                          <div className="text-center">
-                            <p className="text-xs text-gray-600">صافي الراتب</p>
-                            <p className="mt-1 text-lg font-bold text-blue-700">{formatCurrency(stats.totalSalary - stats.totalAdvances)}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-gray-600">المدفوع</p>
-                            <p className="mt-1 text-lg font-bold text-emerald-700">{formatCurrency(stats.totalPayments)}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-gray-600">المتبقي</p>
-                            <p className="mt-1 text-lg font-bold text-amber-700">
-                              {formatCurrency(stats.totalSalary - stats.totalAdvances - stats.totalPayments)}
-                            </p>
-                          </div>
+                              {isAdmin && !isLocked && (
+                                <button
+                                  onClick={() => handleDeleteOperation(op.id, 'payment')}
+                                  disabled={!!actionKey}
+                                  className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                  title="حذف الدفعة"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
                         </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* سجل عمليات الراتب */}
+                  {salaryOperations.length > 0 && (
+                    <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                      <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                        <History className="h-4 w-4 text-gray-600" />
+                        سجل عمليات الراتب ({salaryOperations.length})
+                      </h3>
+                      <div className="max-h-[300px] space-y-2 overflow-y-auto">
+                        {salaryOperations.map((op) => (
+                          <div
+                            key={op.id}
+                            className="group flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 p-3 transition-all hover:border-indigo-300 hover:shadow-sm"
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className="rounded-lg bg-indigo-100 p-1.5">
+                                <DollarSign className="h-4 w-4 text-indigo-700" />
+                              </div>
+                              <div>
+                                <p className="font-semibold text-indigo-900">{formatCurrency(op.amount)}</p>
+                                <p className="text-xs text-indigo-700">
+                                  {new Date(op.operation_date).toLocaleDateString('ar-SA', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })}
+                                </p>
+                                {op.reference && (
+                                  <p className="text-xs text-gray-600">
+                                    المرجع: {op.reference}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {isAdmin && !isLocked && (
+                              <button
+                                onClick={() => handleDeleteOperation(op.id, 'salary')}
+                                disabled={!!actionKey}
+                                className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                title="حذف عملية الراتب"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -1811,6 +1942,425 @@ export default function TailoringPayrollDashboard() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* نافذة التسعير والتقييم */}
+      {/* ============================================================ */}
+      {selectedWorkerForPricing && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-2 sm:p-4"
+          dir="rtl"
+          onClick={handleClosePricingModal}
+        >
+          <div
+            className="mx-auto my-4 sm:my-8 max-w-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+              {/* رأس النافذة */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 sm:p-6 rounded-t-2xl z-10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-pink-100 p-2">
+                      <Tag className="h-5 w-5 text-pink-600" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg sm:text-xl font-bold text-gray-800">تسعير وتقييم الطلبات</h2>
+                      <p className="text-sm text-gray-500">{getWorkerName(selectedWorkerForPricing)}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleClosePricingModal}
+                    className="p-2 text-gray-400 hover:text-gray-600 transition-colors duration-300 rounded-full hover:bg-gray-100"
+                  >
+                    <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* محتوى النافذة */}
+              <div className="p-4 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                {pricingOrdersLoading ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <div className="w-8 h-8 border-2 border-pink-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                    جاري تحميل الطلبات...
+                  </div>
+                ) : pricingOrders.length === 0 ? (
+                  <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-12 border border-pink-100 text-center">
+                    <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-xl font-bold text-gray-800 mb-2">لا توجد طلبات مكتملة</h3>
+                    <p className="text-gray-600">لا توجد طلبات مكتملة لهذا العامل حتى الآن</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* ملخص التسعير */}
+                    {(() => {
+                      const pricedCount = Object.values(pricingForms).filter(f => toNumber(f.price) > 0).length
+                      const totalPriced = Object.values(pricingForms).reduce((s, f) => s + toNumber(f.price), 0)
+                      return pricedCount > 0 ? (
+                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <Tag className="w-5 h-5 text-green-600" />
+                              <div>
+                                <p className="text-sm font-semibold text-green-800">
+                                  {pricedCount} طلب مسعَّر من {pricingOrders.length}
+                                </p>
+                                <p className="text-xs text-green-600">
+                                  الإجمالي: {formatCurrency(totalPriced)}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleApplyPricingToSalary(selectedWorkerForPricing)}
+                              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 transition-colors"
+                            >
+                              <DollarSign className="h-4 w-4" />
+                              ترحيل إلى الراتب الشهري
+                            </button>
+                          </div>
+                        </div>
+                      ) : null
+                    })()}
+
+                    {/* قائمة الطلبات */}
+                    <div className="space-y-4">
+                      {pricingOrders.map((order, index) => {
+                        const isSelected = selectedOrderForPricing?.id === order.id
+                        const formData = pricingForms[order.id] || { orderId: order.id, price: '', notes: '', bonus: '', rating: 0 }
+                        const hasPricing = toNumber(formData.price) > 0
+
+                        const getStatusInfo = (status: string) => {
+                          if (status === 'completed') return { label: 'مكتمل', bgColor: 'bg-green-100', color: 'text-green-700' }
+                          if (status === 'delivered') return { label: 'تم التسليم', bgColor: 'bg-blue-100', color: 'text-blue-700' }
+                          return { label: status, bgColor: 'bg-gray-100', color: 'text-gray-700' }
+                        }
+                        const statusInfo = getStatusInfo(order.status)
+
+                        const formatDate = (dateString: string) => {
+                          return formatGregorianDate(dateString, 'ar-SA', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })
+                        }
+
+                        return (
+                          <div
+                            key={order.id}
+                            style={{ animationDelay: `${index * 0.05}s` }}
+                            className={`bg-white rounded-xl border transition-all duration-200 ${isSelected
+                              ? 'border-pink-400 shadow-md'
+                              : hasPricing
+                                ? 'border-green-300 hover:border-green-400 hover:shadow-md'
+                                : 'border-gray-200 hover:border-pink-300 hover:shadow-md'
+                              }`}
+                          >
+                            {/* بطاقة الطلب - قابلة للنقر */}
+                            <div
+                              className="p-4 cursor-pointer"
+                              onClick={() => handleSelectOrderForPricing(order)}
+                            >
+                              <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-start justify-between mb-3">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                        <h3 className="text-lg font-semibold text-gray-800">
+                                          {order.client_name}
+                                        </h3>
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusInfo.bgColor} ${statusInfo.color}`}>
+                                          {statusInfo.label}
+                                        </span>
+                                        {hasPricing && (
+                                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 flex items-center gap-1">
+                                            <Tag className="w-3 h-3" />
+                                            {formatCurrency(toNumber(formData.price))}
+                                          </span>
+                                        )}
+                                        {formData.rating > 0 && (
+                                          <span className="flex items-center gap-0.5">
+                                            {Array.from({ length: 5 }).map((_, i) => (
+                                              <Star
+                                                key={i}
+                                                className={`w-3 h-3 ${i < formData.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`}
+                                              />
+                                            ))}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-sm text-pink-600 font-medium">{order.description}</p>
+                                      <p className="text-xs text-gray-500 mt-1">#{order.order_number || order.id}</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-600">
+                                    <div className="flex items-center gap-1.5">
+                                      <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                      <span>{formatDate(order.created_at)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                      <span>{formatDate(order.due_date)}</span>
+                                    </div>
+                                    {order.worker_id && (
+                                      <div className="flex items-center gap-1.5">
+                                        <User className="w-3.5 h-3.5 text-gray-400" />
+                                        <span className="truncate">{getWorkerName(selectedWorkerForPricing)}</span>
+                                      </div>
+                                    )}
+                                    {order.client_phone && (
+                                      <div className="flex items-center gap-1.5">
+                                        <Phone className="w-3.5 h-3.5 text-gray-400" />
+                                        <span className="truncate">***</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* مؤشر التوسع */}
+                                <div className="flex items-center justify-center text-gray-400">
+                                  {isSelected ? (
+                                    <ChevronLeft className="w-5 h-5 rotate-90" />
+                                  ) : (
+                                    <ChevronRight className="w-5 h-5 -rotate-90" />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* قسم التسعير والتقييم - يظهر عند النقر */}
+                            {isSelected && (
+                              <div className="border-t border-pink-100 p-4 bg-gradient-to-r from-pink-50/50 to-purple-50/50">
+
+                                {/* ===== صور العمل المكتمل ===== */}
+                                {(() => {
+                                  const fullOrder = orderFullDetails[order.id]
+                                  const imgs = fullOrder?.completed_images
+                                  if (!fullOrder) {
+                                    return (
+                                      <div className="mb-4 flex items-center gap-2 text-xs text-gray-400">
+                                        <div className="w-3 h-3 border border-gray-300 border-t-transparent rounded-full animate-spin" />
+                                        جاري تحميل صور العمل...
+                                      </div>
+                                    )
+                                  }
+                                  if (!imgs || imgs.length === 0) return null
+                                  return (
+                                    <div className="mb-5">
+                                      <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
+                                        <Package className="w-3.5 h-3.5 text-pink-500" />
+                                        صور العمل المكتمل ({imgs.length})
+                                      </p>
+                                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                        {imgs.map((src, imgIdx) => (
+                                          <button
+                                            key={imgIdx}
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); setLightboxImage(src) }}
+                                            className="relative aspect-square overflow-hidden rounded-lg border-2 border-pink-200 hover:border-pink-400 transition-all duration-200 hover:shadow-md group focus:outline-none"
+                                          >
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                              src={src}
+                                              alt={`صورة العمل ${imgIdx + 1}`}
+                                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                              loading="lazy"
+                                            />
+                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
+                                              <svg className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16zm0 0v.01" />
+                                              </svg>
+                                            </div>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+
+                                <h4 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                  <Tag className="w-4 h-4 text-pink-600" />
+                                  التسعير والتقييم
+                                </h4>
+                                <div className="space-y-4">
+                                  {/* السعر */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                      السعر (ر.س)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="أدخل السعر"
+                                      value={formData.price}
+                                      onChange={(e) => {
+                                        const updated = { ...formData, price: sanitizeNonNegativeInput(e.target.value) }
+                                        handleSavePricingForm(order.id, updated)
+                                      }}
+                                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    />
+                                  </div>
+
+                                  {/* الملاحظات */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                      الملاحظات
+                                    </label>
+                                    <textarea
+                                      rows={2}
+                                      placeholder="أدخل الملاحظات"
+                                      value={formData.notes}
+                                      onChange={(e) => {
+                                        const updated = { ...formData, notes: e.target.value }
+                                        handleSavePricingForm(order.id, updated)
+                                      }}
+                                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 resize-none"
+                                    />
+                                  </div>
+
+                                  {/* المكافأة */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                      المكافأة (ر.س)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="أدخل قيمة المكافأة"
+                                      value={formData.bonus}
+                                      onChange={(e) => {
+                                        const updated = { ...formData, bonus: sanitizeNonNegativeInput(e.target.value) }
+                                        handleSavePricingForm(order.id, updated)
+                                      }}
+                                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    />
+                                  </div>
+
+                                  {/* التقييم */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-2">
+                                      التقييم
+                                    </label>
+                                    <div className="flex items-center gap-1">
+                                      {Array.from({ length: 5 }).map((_, i) => (
+                                        <button
+                                          key={i}
+                                          type="button"
+                                          onClick={() => {
+                                            const newRating = formData.rating === i + 1 ? 0 : i + 1
+                                            const updated = { ...formData, rating: newRating }
+                                            handleSavePricingForm(order.id, updated)
+                                          }}
+                                          className="transition-transform hover:scale-110 focus:outline-none"
+                                          title={`${i + 1} نجوم`}
+                                        >
+                                          <Star
+                                            className={`w-7 h-7 transition-colors ${i < formData.rating
+                                              ? 'text-yellow-400 fill-yellow-400'
+                                              : 'text-gray-300 hover:text-yellow-300'
+                                              }`}
+                                          />
+                                        </button>
+                                      ))}
+                                      {formData.rating > 0 && (
+                                        <span className="text-xs text-gray-500 mr-2">
+                                          {formData.rating} / 5
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* زر الحفظ */}
+                                  <div className="flex justify-end">
+                                    <button
+                                      onClick={() => setSelectedOrderForPricing(null)}
+                                      className="inline-flex items-center gap-2 rounded-lg bg-pink-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pink-700 transition-colors"
+                                    >
+                                      <Save className="h-4 w-4" />
+                                      حفظ التسعير
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* تذييل النافذة */}
+              {!pricingOrdersLoading && pricingOrders.length > 0 && (
+                <div className="border-t border-gray-200 p-4 sm:p-5 bg-gray-50 rounded-b-2xl">
+                  {(() => {
+                    const pricedCount = Object.values(pricingForms).filter(f => toNumber(f.price) > 0).length
+                    const totalPriced = Object.values(pricingForms).reduce((s, f) => s + toNumber(f.price), 0)
+                    return (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm text-gray-600">
+                          <span className="font-semibold text-gray-800">{pricedCount}</span> طلب مسعَّر
+                          {pricedCount > 0 && (
+                            <span className="mr-2 text-green-700 font-semibold">
+                              — إجمالي: {formatCurrency(totalPriced)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          {pricedCount > 0 && (
+                            <button
+                              onClick={() => handleApplyPricingToSalary(selectedWorkerForPricing)}
+                              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 transition-colors"
+                            >
+                              <DollarSign className="h-4 w-4" />
+                              ترحيل إلى الراتب الشهري
+                            </button>
+                          )}
+                          <button
+                            onClick={handleClosePricingModal}
+                            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
+                          >
+                            إغلاق
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Lightbox: عرض الصورة بالشاشة الكاملة ===== */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          {/* زر الإغلاق */}
+          <button
+            className="absolute top-4 left-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+            onClick={() => setLightboxImage(null)}
+            title="إغلاق"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          {/* الصورة */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxImage}
+            alt="صورة العمل المكتمل"
+            className="max-h-[90vh] max-w-full rounded-xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

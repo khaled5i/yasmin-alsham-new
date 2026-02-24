@@ -50,7 +50,7 @@ export default function Home() {
         id="main-scroll-container"
         className="
           lg:block
-          max-lg:h-screen max-lg:overflow-y-auto max-lg:overflow-x-hidden max-lg:snap-y max-lg:snap-mandatory
+          max-lg:h-[100dvh] max-lg:overflow-y-auto max-lg:overflow-x-hidden max-lg:snap-y max-lg:snap-mandatory
           max-lg:scroll-smooth max-lg:overscroll-none
         "
         style={{

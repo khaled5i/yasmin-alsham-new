@@ -97,6 +97,9 @@ function TailoringAccountingContent() {
   }
 
   // تحديد مسار العودة حسب نوع المستخدم
+  const displayedExpenses =
+    (stats?.totalMaterialExpenses || 0) + (stats?.totalFixedExpenses || 0)
+
   const getBackRoute = () => {
     if (user?.role === 'admin') {
       return '/dashboard/accounting'
@@ -154,7 +157,7 @@ function TailoringAccountingContent() {
               <div className="text-center p-4 bg-red-50 rounded-xl">
                 <TrendingDown className="w-8 h-8 text-red-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-500 mb-1">المصروفات</p>
-                <p className="text-xl font-bold text-red-700">{formatCurrency(stats?.totalExpenses || 0)}</p>
+                <p className="text-xl font-bold text-red-700">{formatCurrency(displayedExpenses)}</p>
               </div>
               <div className="text-center p-4 bg-purple-50 rounded-xl">
                 <Users className="w-8 h-8 text-purple-600 mx-auto mb-2" />
@@ -248,4 +251,3 @@ export default function TailoringAccountingPage() {
 
   return <TailoringAccountingContent />
 }
-

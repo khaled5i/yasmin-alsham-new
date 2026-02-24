@@ -124,7 +124,7 @@ export default function ReadyDesigns() {
 
 
   return (
-    <section id="ready-designs" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-screen max-lg:h-screen max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:overflow-x-hidden max-lg:pt-[10vh] max-lg:pb-[2vh]">
+    <section id="ready-designs" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-[100dvh] max-lg:h-[100dvh] max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:overflow-x-hidden max-lg:pt-[10vh] max-lg:pb-[2vh]">
       <div className="container mx-auto px-3 sm:px-6 lg:px-8 max-lg:flex max-lg:flex-col max-lg:h-full max-lg:justify-between">
         {/* العنوان */}
         <motion.div

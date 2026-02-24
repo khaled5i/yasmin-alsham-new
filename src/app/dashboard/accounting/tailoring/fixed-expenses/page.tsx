@@ -21,6 +21,7 @@ import { FIXED_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 
 function FixedExpensesContent() {
+  const todayISO = new Date().toISOString().split('T')[0]
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -34,9 +35,18 @@ function FixedExpensesContent() {
     category: '',
     description: '',
     amount: 0,
-    date: new Date().toISOString().split('T')[0],
-    notes: ''
+    date: todayISO,
+    notes: '',
+    recurrence_type: 'one_time',
+    recurring_day_of_month: Number(todayISO.split('-')[2])
   })
+
+  const getDayFromDate = (dateValue?: string) => {
+    const parsedDay = Number((dateValue || todayISO).split('-')[2])
+    if (Number.isNaN(parsedDay) || parsedDay < 1) return 1
+    if (parsedDay > 31) return 31
+    return parsedDay
+  }
 
   const loadExpenses = async () => {
     try {
@@ -56,6 +66,13 @@ function FixedExpensesContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.category || !formData.amount) return
+    if (
+      formData.recurrence_type === 'monthly' &&
+      (!formData.recurring_day_of_month || formData.recurring_day_of_month < 1 || formData.recurring_day_of_month > 31)
+    ) {
+      alert('يرجى اختيار يوم استحقاق صالح من 1 إلى 31')
+      return
+    }
 
     try {
       if (isEditing && editingId) {
@@ -75,8 +92,10 @@ function FixedExpensesContent() {
         category: '',
         description: '',
         amount: 0,
-        date: new Date().toISOString().split('T')[0],
-        notes: ''
+        date: todayISO,
+        notes: '',
+        recurrence_type: 'one_time',
+        recurring_day_of_month: Number(todayISO.split('-')[2])
       })
       loadExpenses()
     } catch (error) {
@@ -95,7 +114,9 @@ function FixedExpensesContent() {
       description: item.description || '',
       amount: item.amount,
       date: item.date,
-      notes: item.notes || ''
+      notes: item.notes || '',
+      recurrence_type: item.recurrence_type || 'one_time',
+      recurring_day_of_month: item.recurring_day_of_month ?? getDayFromDate(item.date)
     })
     setShowModal(true)
   }
@@ -183,8 +204,10 @@ function FixedExpensesContent() {
                   category: '',
                   description: '',
                   amount: 0,
-                  date: new Date().toISOString().split('T')[0],
-                  notes: ''
+                  date: todayISO,
+                  notes: '',
+                  recurrence_type: 'one_time',
+                  recurring_day_of_month: Number(todayISO.split('-')[2])
                 })
                 setShowModal(true)
               }}
@@ -286,7 +309,23 @@ function FixedExpensesContent() {
                       <div>
                         <h4 className="font-bold text-gray-900">{getCategoryLabel(item.category)}</h4>
                         <p className="text-sm text-gray-500">{item.description || 'بدون وصف'}</p>
-                        <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
+                        <div className="flex items-center flex-wrap gap-2 mt-1">
+                          <p className="text-xs text-gray-400">{formatDate(item.date)}</p>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                            item.recurrence_type === 'monthly'
+                              ? 'bg-purple-100 text-purple-700'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {item.recurrence_type === 'monthly'
+                              ? `متكرر شهرياً - يوم ${item.recurring_day_of_month ?? getDayFromDate(item.date)}`
+                              : 'مصروف ثابت'}
+                          </span>
+                          {item.is_auto_generated ? (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                              مولد تلقائياً
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -363,6 +402,44 @@ function FixedExpensesContent() {
                     </select>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">دورية المصروف</label>
+                    <select
+                      value={formData.recurrence_type || 'one_time'}
+                      onChange={(e) => {
+                        const recurrenceType = e.target.value as 'one_time' | 'monthly'
+                        setFormData({
+                          ...formData,
+                          recurrence_type: recurrenceType,
+                          recurring_day_of_month: recurrenceType === 'monthly'
+                            ? (formData.recurring_day_of_month ?? getDayFromDate(formData.date))
+                            : null
+                        })
+                      }}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="one_time">مصروف ثابت (مرة واحدة)</option>
+                      <option value="monthly">مصروف متكرر شهرياً</option>
+                    </select>
+                  </div>
+                  {formData.recurrence_type === 'monthly' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">يوم الاستحقاق الشهري</label>
+                      <input
+                        type="number"
+                        value={formData.recurring_day_of_month || ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          recurring_day_of_month: Number(e.target.value)
+                        })}
+                        min="1"
+                        max="31"
+                        className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">سيتم إنشاء مصروف جديد تلقائياً بهذا اليوم كل شهر.</p>
+                    </div>
+                  )}
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">المبلغ</label>
                     <input
                       type="number"
@@ -378,7 +455,16 @@ function FixedExpensesContent() {
                     <input
                       type="date"
                       value={formData.date}
-                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      onChange={(e) => {
+                        const nextDate = e.target.value
+                        setFormData({
+                          ...formData,
+                          date: nextDate,
+                          recurring_day_of_month: formData.recurrence_type === 'monthly'
+                            ? getDayFromDate(nextDate)
+                            : formData.recurring_day_of_month
+                        })
+                      }}
                       className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                       required
                     />
@@ -416,4 +502,3 @@ export default function FixedExpensesPage() {
     </ProtectedRoute>
   )
 }
-

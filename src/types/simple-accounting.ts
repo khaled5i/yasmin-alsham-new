@@ -7,6 +7,7 @@ export type BranchType = 'tailoring' | 'fabrics' | 'ready_designs'
 
 // نوع المصروف
 export type ExpenseType = 'material' | 'fixed' | 'salary' | 'other'
+export type ExpenseRecurrenceType = 'one_time' | 'monthly'
 
 // ============================================================================
 // المصروفات
@@ -21,6 +22,11 @@ export interface Expense {
   amount: number
   date: string
   notes?: string
+  recurrence_type?: ExpenseRecurrenceType
+  recurring_day_of_month?: number | null
+  recurring_source_id?: string | null
+  recurring_month?: string | null
+  is_auto_generated?: boolean
   created_at: string
   created_by?: string
   supplier_id?: string    // معرف المورد (اختياري)
@@ -37,6 +43,11 @@ export interface CreateExpenseInput {
   notes?: string
   supplier_id?: string
   supplier_name?: string
+  recurrence_type?: ExpenseRecurrenceType
+  recurring_day_of_month?: number | null
+  recurring_source_id?: string | null
+  recurring_month?: string | null
+  is_auto_generated?: boolean
 }
 
 // ============================================================================
@@ -128,4 +139,3 @@ export const BRANCH_NAMES: Record<BranchType, string> = {
   fabrics: 'قسم الأقمشة',
   ready_designs: 'قسم الجاهز'
 }
-

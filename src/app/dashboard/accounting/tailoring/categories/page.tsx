@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
-  Scissors,
   ArrowLeft,
   Settings,
   Plus,
@@ -17,6 +16,7 @@ import {
   Home,
   Users
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import {
   getAllCategoriesForBranch,
@@ -38,7 +38,7 @@ import {
 // أسماء الأقسام
 // ============================================================================
 
-const CATEGORY_TYPE_NAMES: Record<CategoryType | 'suppliers', { name: string; icon: any; color: string }> = {
+const CATEGORY_TYPE_NAMES: Record<CategoryType | 'suppliers', { name: string; icon: LucideIcon; color: string }> = {
   income: { name: 'المبيعات', icon: TrendingUp, color: 'emerald' },
   purchase: { name: 'المواد', icon: ShoppingBag, color: 'orange' },
   fixed_expense: { name: 'المصاريف الثابتة', icon: Home, color: 'blue' },
@@ -79,12 +79,7 @@ function CategoriesManagementContent() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  useEffect(() => {
-    loadCategories()
-    loadSuppliers()
-  }, [])
-
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     setLoading(true)
     try {
       const data = await getAllCategoriesForBranch('tailoring')
@@ -95,16 +90,38 @@ function CategoriesManagementContent() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const loadSuppliers = async () => {
+  const loadSuppliers = useCallback(async () => {
     try {
       const data = await getSuppliers()
       setSuppliers(data)
     } catch (error) {
       console.error('Error loading suppliers:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void loadCategories()
+    void loadSuppliers()
+  }, [loadCategories, loadSuppliers])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void loadSuppliers()
+    }, 10000)
+
+    const handleFocus = () => {
+      void loadSuppliers()
+    }
+
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [loadSuppliers])
 
   const showMessage = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text })
@@ -161,14 +178,24 @@ function CategoriesManagementContent() {
     try {
       if (selectedType === 'suppliers') {
         if (editingSupplier) {
-          await updateSupplier(editingSupplier.id, supplierFormData)
+          const updatedSupplier = await updateSupplier(editingSupplier.id, supplierFormData)
+          setSuppliers((prev) =>
+            prev.map((supplier) =>
+              supplier.id === editingSupplier.id ? updatedSupplier : supplier
+            )
+          )
           showMessage('success', 'تم تحديث المورد بنجاح')
         } else {
-          await createSupplier(supplierFormData)
+          const createdSupplier = await createSupplier(supplierFormData)
+          setSuppliers((prev) =>
+            [...prev, createdSupplier].sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )
+          )
           showMessage('success', 'تم إضافة المورد بنجاح')
         }
         setShowAddModal(false)
-        loadSuppliers()
+        setEditingSupplier(null)
         return
       }
 
@@ -183,7 +210,7 @@ function CategoriesManagementContent() {
         if (result.success) {
           showMessage('success', 'تم تحديث الفئة بنجاح')
           setShowAddModal(false)
-          loadCategories()
+          void loadCategories()
         } else {
           showMessage('error', result.error || 'خطأ في تحديث الفئة')
         }
@@ -201,7 +228,7 @@ function CategoriesManagementContent() {
         if (result.success) {
           showMessage('success', 'تم إضافة الفئة بنجاح')
           setShowAddModal(false)
-          loadCategories()
+          void loadCategories()
         } else {
           showMessage('error', result.error || 'خطأ في إضافة الفئة')
         }
@@ -220,8 +247,8 @@ function CategoriesManagementContent() {
     try {
       await deleteSupplier(id)
       showMessage('success', 'تم حذف المورد بنجاح')
-      loadSuppliers()
-    } catch (error) {
+      setSuppliers((prev) => prev.filter((supplier) => supplier.id !== id))
+    } catch {
       showMessage('error', 'خطأ في حذف المورد')
     }
   }
@@ -239,16 +266,18 @@ function CategoriesManagementContent() {
       const result = await deleteCategory(category.id)
       if (result.success) {
         showMessage('success', 'تم حذف الفئة بنجاح')
-        loadCategories()
+        void loadCategories()
       } else {
         showMessage('error', result.error || 'خطأ في حذف الفئة')
       }
-    } catch (error) {
+    } catch {
       showMessage('error', 'حدث خطأ غير متوقع')
     }
   }
 
   const currentCategories = selectedType === 'suppliers' ? [] : (categories[selectedType] || [])
+  const getTabCount = (type: CategoryType | 'suppliers') =>
+    type === 'suppliers' ? suppliers.length : (categories[type]?.length || 0)
 
 
   if (loading) {
@@ -305,17 +334,17 @@ function CategoriesManagementContent() {
               </div>
             </div>
             <button
-              onClick={handleAdd}
+              onClick={selectedType === 'suppliers' ? handleAddSupplier : handleAdd}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-full hover:from-blue-600 hover:to-indigo-600 transition-all shadow-lg"
             >
               <Plus className="w-5 h-5" />
-              <span>إضافة فئة</span>
+              <span>{selectedType === 'suppliers' ? '\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0631\u062F' : '\u0625\u0636\u0627\u0641\u0629 \u0641\u0626\u0629'}</span>
             </button>
           </div>
 
           {/* تبويبات الأقسام */}
           <div className="flex gap-2 overflow-x-auto pb-2">
-            {(Object.keys(CATEGORY_TYPE_NAMES) as CategoryType[]).map((type) => {
+            {(Object.keys(CATEGORY_TYPE_NAMES) as Array<CategoryType | 'suppliers'>).map((type) => {
               const typeInfo = CATEGORY_TYPE_NAMES[type]
               const Icon = typeInfo.icon
               const isActive = selectedType === type
@@ -331,7 +360,7 @@ function CategoriesManagementContent() {
                   <Icon className="w-4 h-4" />
                   <span className="font-medium">{typeInfo.name}</span>
                   <span className="text-xs bg-white px-2 py-0.5 rounded-full">
-                    {categories[type]?.length || 0}
+                    {getTabCount(type)}
                   </span>
                 </button>
               )
@@ -367,7 +396,12 @@ function CategoriesManagementContent() {
                     className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{supplier.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-700">
+                          {index + 1}
+                        </span>
+                        <h3 className="font-semibold text-gray-900">{supplier.name}</h3>
+                      </div>
                       {supplier.contact_info && (
                         <p className="text-sm text-gray-500 mt-1">{supplier.contact_info}</p>
                       )}
@@ -472,7 +506,7 @@ function CategoriesManagementContent() {
               >
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xl font-bold text-gray-900">
-                    {editingCategory ? 'تعديل الفئة' : 'إضافة فئة جديدة'}
+                    {selectedType === 'suppliers' ? (editingSupplier ? '\u062A\u0639\u062F\u064A\u0644 \u0627\u0644\u0645\u0648\u0631\u062F' : '\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0631\u062F \u062C\u062F\u064A\u062F') : (editingCategory ? '\u062A\u0639\u062F\u064A\u0644 \u0627\u0644\u0641\u0626\u0629' : '\u0625\u0636\u0627\u0641\u0629 \u0641\u0626\u0629 \u062C\u062F\u064A\u062F\u0629')}
                   </h3>
                   <button
                     onClick={() => setShowAddModal(false)}
@@ -621,6 +655,4 @@ export default function CategoriesManagementPage() {
     </ProtectedWorkerRoute>
   )
 }
-
-
 

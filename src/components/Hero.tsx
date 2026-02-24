@@ -7,7 +7,7 @@ import { Calendar, Sparkles, Heart, Star, Shirt } from 'lucide-react'
 
 export default function Hero() {
   return (
-    <section className="relative min-h-screen overflow-hidden lg:pt-28 max-lg:h-screen max-lg:snap-start max-lg:snap-always max-lg:overflow-x-hidden">
+    <section className="relative min-h-[100dvh] overflow-hidden lg:pt-28 max-lg:h-[100dvh] max-lg:snap-start max-lg:snap-always max-lg:overflow-x-hidden">
       {/* خلفية للموبايل - صورة كاملة الشاشة */}
       <div className="lg:hidden absolute inset-0">
         <Image
@@ -80,7 +80,7 @@ export default function Hero() {
       </div>
 
       {/* ===== تصميم الموبايل الجديد - Hero كامل الشاشة ===== */}
-      <div className="lg:hidden relative z-10 min-h-screen flex flex-col justify-end pb-8 px-4">
+      <div className="lg:hidden relative z-10 min-h-[100dvh] flex flex-col justify-end pb-8 px-4">
         {/* المحتوى في الأسفل */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
