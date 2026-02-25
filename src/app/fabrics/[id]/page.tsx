@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
@@ -18,6 +18,9 @@ export default function FabricDetailPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isGalleryOpen, setIsGalleryOpen] = useState(false)
   const [selectedColor, setSelectedColor] = useState('')
+  const touchStartX = useRef<number>(0)
+  const touchEndX = useRef<number>(0)
+  const MIN_SWIPE_DISTANCE = 50
 
   useEffect(() => {
     if (fabrics.length === 0) loadFabrics()
@@ -83,6 +86,19 @@ export default function FabricDetailPage() {
     document.body.style.overflow = 'unset'
   }
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.targetTouches[0].clientX
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    touchEndX.current = e.changedTouches[0].clientX
+    const distance = touchStartX.current - touchEndX.current
+    if (Math.abs(distance) >= MIN_SWIPE_DISTANCE) {
+      if (distance > 0) nextImage()
+      else prevImage()
+    }
+  }
+
   const finalPrice = getFinalPrice(fabric)
 
   // رابط واتساب للاستفسار
@@ -110,7 +126,12 @@ export default function FabricDetailPage() {
 
         <div className="grid lg:grid-cols-2 gap-12">
           <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
-            <div className={`relative ${isVideoFile(fabric.images?.[currentImageIndex] || '') ? 'bg-black/5' : 'aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100'} rounded-2xl overflow-hidden mb-4 group cursor-pointer`} onClick={openGallery}>
+            <div
+              className={`relative ${isVideoFile(fabric.images?.[currentImageIndex] || '') ? 'bg-black/5' : 'aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100'} rounded-2xl overflow-hidden mb-4 group cursor-pointer`}
+              onClick={openGallery}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
               {isVideoFile(fabric.images?.[currentImageIndex] || '') ? (
                 <video
                   src={fabric.images?.[currentImageIndex]}
@@ -133,11 +154,11 @@ export default function FabricDetailPage() {
 
               {(fabric.images?.length || 0) > 1 && (
                 <>
-                  <button onClick={(e) => { e.stopPropagation(); prevImage() }} className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة السابقة">
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); nextImage() }} className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة التالية">
+                  <button onClick={(e) => { e.stopPropagation(); nextImage() }} className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة التالية">
                     <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); prevImage() }} className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة السابقة">
+                    <ChevronRight className="w-5 h-5" />
                   </button>
                 </>
               )}
@@ -183,9 +204,6 @@ export default function FabricDetailPage() {
                       {currentImageIndex === index && (
                         <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
                       )}
-                      <div className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-full">
-                        {index + 1}
-                      </div>
                     </motion.button>
                   ))}
                 </div>
@@ -197,7 +215,7 @@ export default function FabricDetailPage() {
             <div>
               <span className="bg-gradient-to-r from-pink-100 to-rose-100 text-pink-700 px-3 py-1 rounded-full text-sm font-medium">{fabric.category}</span>
               <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mt-4 mb-4">{fabric.name}</h1>
-              <p className="text-lg text-gray-600 leading-relaxed">{fabric.description}</p>
+              <p className="text-lg text-gray-600 leading-relaxed whitespace-pre-wrap">{fabric.description}</p>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -304,7 +322,12 @@ export default function FabricDetailPage() {
           <button onClick={closeGallery} className="absolute top-4 right-4 text-white hover:text-pink-400 transition-colors duration-300 z-10" aria-label="إغلاق">
             <X className="w-8 h-8" />
           </button>
-          <div className="relative max-w-5xl w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="relative max-w-5xl w-full h-full flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             {isVideoFile(fabric.images?.[currentImageIndex] || '') ? (
               <video
                 src={fabric.images?.[currentImageIndex]}
@@ -324,11 +347,11 @@ export default function FabricDetailPage() {
             )}
             {(fabric.images?.length || 0) > 1 && (
               <>
-                <button onClick={prevImage} className="absolute left-4 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-all duration-300" aria-label="الصورة السابقة">
-                  <ChevronRight className="w-6 h-6" />
-                </button>
-                <button onClick={nextImage} className="absolute right-4 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-all duration-300" aria-label="الصورة التالية">
+                <button onClick={nextImage} className="absolute left-4 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-all duration-300" aria-label="الصورة التالية">
                   <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button onClick={prevImage} className="absolute right-4 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-all duration-300" aria-label="الصورة السابقة">
+                  <ChevronRight className="w-6 h-6" />
                 </button>
               </>
             )}

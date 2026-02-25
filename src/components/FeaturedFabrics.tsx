@@ -172,7 +172,7 @@ export default function FeaturedFabrics() {
                       >
                         {/* الصورة */}
                         <Link href={`/fabrics/${fabric.id}`}>
-                          <div className="aspect-[3/4] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
+                          <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
                             {isVideoFile(fabricImages[currentIndex] || '') && !imageLoadErrors[`${fabric.id}-${currentIndex}`] ? (
                               <video
                                 src={fabricImages[currentIndex]}
@@ -210,18 +210,17 @@ export default function FeaturedFabrics() {
                           </div>
                         </Link>
 
-                        {/* المعلومات */}
-                        <Link href={`/fabrics/${fabric.id}`}>
-                          <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
-                            }`}>
-                            <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
-                              {fabric.name}
-                            </h3>
-                            <p className="text-sm text-gray-600 text-center mt-1 line-clamp-2">
-                              {fabric.description}
-                            </p>
-                          </div>
-                        </Link>
+                        {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
+                        {fabric.name && (
+                          <Link href={`/fabrics/${fabric.id}`}>
+                            <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
+                              }`}>
+                              <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
+                                {fabric.name}
+                              </h3>
+                            </div>
+                          </Link>
+                        )}
                       </div>
                     </div>
                   )
@@ -295,7 +294,7 @@ export default function FeaturedFabrics() {
                     {/* الصورة */}
                     <Link href={`/fabrics/${fabric.id}`}>
                       <div
-                        className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
+                        className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
                       >
                         {/* الصورة/الفيديو الحالي */}
                         {isVideoFile(fabricImages[currentIndex] || '') ? (
@@ -355,18 +354,16 @@ export default function FeaturedFabrics() {
                       </div>
                     </Link>
 
-                    {/* المعلومات - بدون السعر */}
-                    <Link href={`/fabrics/${fabric.id}`}>
-                      <div className="p-4 cursor-pointer hover:bg-pink-50/50 transition-colors duration-300">
-                        <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center text-base">
-                          {fabric.name}
-                        </h3>
-
-                        <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 text-center mt-1">
-                          {fabric.description}
-                        </p>
-                      </div>
-                    </Link>
+                    {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
+                    {fabric.name && (
+                      <Link href={`/fabrics/${fabric.id}`}>
+                        <div className="p-4 cursor-pointer hover:bg-pink-50/50 transition-colors duration-300">
+                          <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center text-base">
+                            {fabric.name}
+                          </h3>
+                        </div>
+                      </Link>
+                    )}
                   </div>
                 </motion.div>
               )

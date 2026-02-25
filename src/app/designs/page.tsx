@@ -28,7 +28,7 @@ function ProductSkeleton() {
     <div className="group">
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg">
         {/* Skeleton للصورة */}
-        <div className="aspect-[4/5] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
+        <div className="aspect-[9/16] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
 
         {/* Skeleton للمعلومات */}
         <div className="p-3 space-y-2">
@@ -373,7 +373,7 @@ export default function DesignsPage() {
                         {/* الصورة */}
                         <Link href={`/designs/${product.id}`}>
                           <div
-                            className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
+                            className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
                           >
                             {/* الصورة/الفيديو الحالي */}
                             {isVideoFile(currentImage) ? (
@@ -396,19 +396,19 @@ export default function DesignsPage() {
                             {productImages.length > 1 && (
                               <>
                                 <button
-                                  onClick={(e) => prevCardImage(product.id, productImages.length, e)}
-                                  className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
-                                  aria-label="الصورة السابقة"
-                                >
-                                  <ChevronRight className="w-4 h-4" />
-                                </button>
-
-                                <button
                                   onClick={(e) => nextCardImage(product.id, productImages.length, e)}
-                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
+                                  className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
                                   aria-label="الصورة التالية"
                                 >
                                   <ChevronLeft className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                  onClick={(e) => prevCardImage(product.id, productImages.length, e)}
+                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10"
+                                  aria-label="الصورة السابقة"
+                                >
+                                  <ChevronRight className="w-4 h-4" />
                                 </button>
 
                                 {/* مؤشرات الصور */}
@@ -438,20 +438,18 @@ export default function DesignsPage() {
                           </div>
                         </Link>
 
-                        {/* المعلومات */}
-                        <div className="p-3">
-                          <Link href={`/designs/${product.id}`}>
-                            <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
-                              <h3 className="font-bold text-gray-800 mb-1 group-hover:text-pink-600 transition-colors duration-300 text-center">
-                                {product.name}
-                              </h3>
-
-                              <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 text-center">
-                                {product.description}
-                              </p>
-                            </div>
-                          </Link>
-                        </div>
+                        {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
+                        {product.name && (
+                          <div className="p-3">
+                            <Link href={`/designs/${product.id}`}>
+                              <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
+                                <h3 className="font-bold text-gray-800 mb-1 group-hover:text-pink-600 transition-colors duration-300 text-center">
+                                  {product.name}
+                                </h3>
+                              </div>
+                            </Link>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )

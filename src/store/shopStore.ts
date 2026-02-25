@@ -333,6 +333,7 @@ export const useShopStore = create<ShopState>()(
 )
 
 // دالة مساعدة لتنسيق السعر
-export const formatPrice = (price: number): string => {
+export const formatPrice = (price: number | null | undefined): string => {
+  if (price == null) return 'السعر عند الطلب'
   return `${price.toLocaleString('en')} ريال`
 }

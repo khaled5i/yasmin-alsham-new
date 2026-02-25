@@ -201,10 +201,6 @@ function FabricsAdminContent() {
   }
 
   const handleCreateFabric = async () => {
-    if (!newFabricData.name?.trim()) {
-      setError('يرجى إدخال اسم القماش')
-      return
-    }
     if (!newFabricData.description?.trim()) {
       setError('يرجى إدخال وصف القماش')
       return
@@ -392,13 +388,13 @@ function FabricsAdminContent() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium mb-2 text-gray-700">اسم القماش *</label>
+                  <label className="block font-medium mb-2 text-gray-700">اسم القماش</label>
                   <input
                     type="text"
                     value={newFabricData.name || ''}
                     onChange={(e) => handleNewFabricChange('name', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    placeholder="مثال: حرير وردي فاخر"
+                    placeholder="مثال: حرير وردي فاخر (اختياري)"
                   />
                 </div>
 
@@ -642,13 +638,13 @@ function FabricsAdminContent() {
               {/* الاسم والفئة */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium mb-2 text-gray-700">اسم القماش *</label>
+                  <label className="block font-medium mb-2 text-gray-700">اسم القماش</label>
                   <input
                     type="text"
                     value={editData.name || ''}
                     onChange={(e) => handleEditChange('name', e.target.value)}
                     className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    placeholder="مثال: حرير وردي فاخر"
+                    placeholder="مثال: حرير وردي فاخر (اختياري)"
                   />
                 </div>
                 <div>

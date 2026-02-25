@@ -347,18 +347,18 @@ export default function FabricsPage() {
                           </div>
                         </Link>
 
-                        <div className="p-3">
-                          <Link href={`/fabrics/${fabric.id}`}>
-                            <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
-                              <h3 className="font-bold text-gray-800 mb-1 group-hover:text-pink-600 transition-colors duration-300 text-center">
-                                {fabric.name}
-                              </h3>
-                              <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 text-center">
-                                {fabric.description}
-                              </p>
-                            </div>
-                          </Link>
-                        </div>
+                        {/* اسم القماش - يظهر فقط إذا كان هناك اسم */}
+                        {fabric.name && (
+                          <div className="p-3">
+                            <Link href={`/fabrics/${fabric.id}`}>
+                              <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
+                                <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center">
+                                  {fabric.name}
+                                </h3>
+                              </div>
+                            </Link>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )

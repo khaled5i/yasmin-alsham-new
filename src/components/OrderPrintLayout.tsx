@@ -154,14 +154,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
           <div className="print-header">
             {/* السطر الأول: رقم الهاتف - الموقع - التواريخ */}
             <div className="print-header-top">
-              <div className="header-item header-right">
-                <span>رقم الهاتف: </span>
-                <span dir="ltr">0598862609</span>
-              </div>
-              <div className="header-item header-center">
-                <span dir="ltr">www.yasmin-alsham.fashion</span>
-              </div>
-              <div className="header-item header-left header-dates">
+              <div className="header-item header-right header-dates">
                 <div className="date-row">
                   <span>تاريخ استلام الطلب: </span>
                   <span>{formatDate(order.order_received_date || order.created_at)}</span>
@@ -172,6 +165,13 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                     <span>{formatDate(order.proof_delivery_date)}</span>
                   </div>
                 )}
+              </div>
+              <div className="header-item header-center">
+                <span dir="ltr">www.yasmin-alsham.fashion</span>
+              </div>
+              <div className="header-item header-left">
+                <span>رقم الهاتف: </span>
+                <span dir="ltr">0598862609</span>
               </div>
             </div>
 
@@ -261,7 +261,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
 
             {/* الجزء الأيسر - صورة الخلف أو الأمام أو أول صورة تصميم */}
             <div className="print-comments">
-              <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>الخلف</h3>
+              <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Back</h3>
               <div className="comments-box">
                 {getFirstPageImage() ? (
                   <div className="first-images-grid first-images-single">
@@ -286,7 +286,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
         {/* ========== الصفحة الثانية - صورة الأمام (إن وجدت) ========== */}
         {getFrontPageImage() && (
           <div className="print-page page-front-image">
-            <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>الأمام</h3>
+            <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Front</h3>
             <div className="design-comment-full">
               <div className="design-comment-image-wrapper">
                 <img

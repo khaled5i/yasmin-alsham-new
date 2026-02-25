@@ -509,15 +509,15 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
     .info-value { color: #111827; font-size: 11px; }
     .print-content { display: flex; flex: 1; gap: 20px; }
     .print-measurements-section { width: 30%; display: flex; flex-direction: column; gap: 10px; }
-    .print-measurements { border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; min-height: 360px; }
+    .print-measurements { border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; }
     .print-measurements-compact { padding: 8px 12px; }
     .section-title { font-size: 16px; font-weight: bold; color: #ec4899; margin: 0 0 15px 0; padding-bottom: 8px; border-bottom: 1px solid #fce7f3; }
-    .section-title-compact { font-size: 13px; margin: 0 0 8px 0; padding-bottom: 4px; }
+    .section-title-compact { font-size: 14px; margin: 0 0 8px 0; padding-bottom: 4px; }
     .measurements-list { display: flex; flex-direction: column; gap: 8px; }
-    .measurements-list-compact { gap: 4px; }
-    .measurement-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fdf2f8; border-radius: 4px; font-size: 12px; }
-    .measurement-item-compact { padding: 3px 7px; font-size: 10px; }
-    .measurement-label { color: #374151; font-weight: 500; }
+    .measurements-list-compact { gap: 6px; }
+    .measurement-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fdf2f8; border-radius: 4px; font-size: 13px; }
+    .measurement-item-compact { padding: 5px 7px; font-size: 11px; }
+    .measurement-label { color: #000000; font-weight: bold; }
     .measurement-value { color: #111827; font-weight: bold; min-width: 50px; text-align: center; }
     .print-additional-notes { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; background: #f0fdf4; }
     .additional-notes-list { display: flex; flex-direction: column; gap: 4px; }

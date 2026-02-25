@@ -14,7 +14,8 @@
       "Bash(node:*)",
       "Bash(find:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

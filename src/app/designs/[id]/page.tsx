@@ -166,18 +166,18 @@ export default function DesignDetailPage() {
               {(product.images?.length || 0) > 1 && (
                 <>
                   <button
-                    onClick={prevImage}
-                    className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10"
-                    aria-label="الصورة السابقة"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                  <button
                     onClick={nextImage}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10"
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10"
                     aria-label="الصورة التالية"
                   >
                     <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={prevImage}
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10"
+                    aria-label="الصورة السابقة"
+                  >
+                    <ChevronRight className="w-5 h-5" />
                   </button>
                 </>
               )}
@@ -223,9 +223,6 @@ export default function DesignDetailPage() {
                       {currentImageIndex === index && (
                         <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
                       )}
-                      <div className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-full">
-                        {index + 1}
-                      </div>
                     </motion.button>
                   ))}
                 </div>
@@ -254,7 +251,7 @@ export default function DesignDetailPage() {
               <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mt-4 mb-4">
                 {product.name}
               </h1>
-              <p className="text-lg text-gray-600 leading-relaxed">
+              <p className="text-lg text-gray-600 leading-relaxed whitespace-pre-wrap">
                 {product.description}
               </p>
             </div>
@@ -443,16 +440,18 @@ export default function DesignDetailPage() {
             {(product.images?.length || 0) > 1 && (
               <>
                 <button
-                  onClick={prevImage}
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
-                >
-                  <ChevronRight className="w-6 h-6" />
-                </button>
-                <button
                   onClick={nextImage}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
+                  aria-label="الصورة التالية"
                 >
                   <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={prevImage}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-colors duration-300"
+                  aria-label="الصورة السابقة"
+                >
+                  <ChevronRight className="w-6 h-6" />
                 </button>
               </>
             )}

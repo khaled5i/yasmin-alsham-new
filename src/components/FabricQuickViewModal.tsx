@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
@@ -16,6 +16,9 @@ interface FabricQuickViewModalProps {
 
 export default function FabricQuickViewModal({ fabric, isOpen, onClose }: FabricQuickViewModalProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const touchStartX = useRef<number>(0)
+  const touchEndX = useRef<number>(0)
+  const MIN_SWIPE_DISTANCE = 50
 
   // إعادة تعيين الحالة عند فتح modal جديد
   useEffect(() => {
@@ -62,6 +65,19 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
     setCurrentImageIndex((prev) => (prev === 0 ? fabricImages.length - 1 : prev - 1))
   }
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.targetTouches[0].clientX
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    touchEndX.current = e.changedTouches[0].clientX
+    const distance = touchStartX.current - touchEndX.current
+    if (Math.abs(distance) >= MIN_SWIPE_DISTANCE) {
+      if (distance > 0) nextImage()
+      else prevImage()
+    }
+  }
+
   const finalPrice = getFinalPrice(fabric)
   const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabric.name}`
   const whatsappLink = `https://wa.me/966500000000?text=${encodeURIComponent(whatsappMessage)}`
@@ -106,7 +122,11 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                   </button>
 
                   {/* الصورة مع خلفية ضبابية */}
-                  <div className="relative h-80 md:h-full overflow-hidden bg-gradient-to-br from-pink-50 via-purple-50 to-rose-50">
+                  <div
+                    className="relative h-80 md:h-full overflow-hidden bg-gradient-to-br from-pink-50 via-purple-50 to-rose-50"
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                  >
                     {/* خلفية ضبابية */}
                     {!isVideoFile(currentImage) && (
                       <div className="absolute inset-0">
@@ -160,18 +180,18 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                     {fabricImages.length > 1 && (
                       <>
                         <button
-                          onClick={prevImage}
-                          className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
-                          aria-label="الصورة السابقة"
-                        >
-                          <ChevronRight className="w-5 h-5" />
-                        </button>
-                        <button
                           onClick={nextImage}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
+                          className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
                           aria-label="الصورة التالية"
                         >
                           <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={prevImage}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
+                          aria-label="الصورة السابقة"
+                        >
+                          <ChevronRight className="w-5 h-5" />
                         </button>
 
                         {/* مؤشرات الصور */}

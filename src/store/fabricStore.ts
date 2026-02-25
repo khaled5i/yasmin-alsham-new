@@ -268,7 +268,8 @@ export const useFabricStore = create<FabricStoreState>()(
 )
 
 // دالة مساعدة لتنسيق السعر
-export const formatFabricPrice = (pricePerMeter: number): string => {
+export const formatFabricPrice = (pricePerMeter: number | null | undefined): string => {
+  if (pricePerMeter == null) return 'السعر عند الطلب'
   return `${pricePerMeter.toLocaleString('en')} ريال/متر`
 }
 

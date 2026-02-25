@@ -207,7 +207,7 @@ export default function ReadyDesigns() {
                       >
                         {/* الصورة */}
                         <Link href={`/designs/${product.id}`}>
-                          <div className="aspect-[3/4] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
+                          <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
                             <img
                               src={imageLoadErrors[`${product.id}-${currentIndex}`]
                                 ? FALLBACK_IMAGE
@@ -231,18 +231,17 @@ export default function ReadyDesigns() {
                           </div>
                         </Link>
 
-                        {/* المعلومات */}
-                        <Link href={`/designs/${product.id}`}>
-                          <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
-                            }`}>
-                            <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
-                              {product.name}
-                            </h3>
-                            <p className="text-sm text-gray-600 text-center mt-1 line-clamp-2">
-                              {product.description}
-                            </p>
-                          </div>
-                        </Link>
+                        {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
+                        {product.name && (
+                          <Link href={`/designs/${product.id}`}>
+                            <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
+                              }`}>
+                              <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
+                                {product.name}
+                              </h3>
+                            </div>
+                          </Link>
+                        )}
                       </div>
                     </div>
                   )
@@ -316,7 +315,7 @@ export default function ReadyDesigns() {
                     {/* الصورة */}
                     <Link href={`/designs/${product.id}`}>
                       <div
-                        className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
+                        className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
                       >
                         {/* الصورة الحالية مع lazy loading */}
                         <img
@@ -370,18 +369,16 @@ export default function ReadyDesigns() {
                       </div>
                     </Link>
 
-                    {/* المعلومات */}
-                    <Link href={`/designs/${product.id}`}>
-                      <div className="p-4 cursor-pointer hover:bg-pink-50/50 transition-colors duration-300">
-                        <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center text-base">
-                          {product.name}
-                        </h3>
-
-                        <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 text-center mt-1">
-                          {product.description}
-                        </p>
-                      </div>
-                    </Link>
+                    {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
+                    {product.name && (
+                      <Link href={`/designs/${product.id}`}>
+                        <div className="p-4 cursor-pointer hover:bg-pink-50/50 transition-colors duration-300">
+                          <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center text-base">
+                            {product.name}
+                          </h3>
+                        </div>
+                      </Link>
+                    )}
                   </div>
                 </motion.div>
               )

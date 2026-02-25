@@ -160,18 +160,18 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                     {productImages.length > 1 && (
                       <>
                         <button
-                          onClick={prevImage}
-                          className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
-                          aria-label="الصورة السابقة"
-                        >
-                          <ChevronRight className="w-5 h-5" />
-                        </button>
-                        <button
                           onClick={nextImage}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
+                          className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
                           aria-label="الصورة التالية"
                         >
                           <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={prevImage}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
+                          aria-label="الصورة السابقة"
+                        >
+                          <ChevronRight className="w-5 h-5" />
                         </button>
 
                         {/* مؤشرات الصور */}
@@ -271,8 +271,8 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                             key={color}
                             onClick={() => setSelectedColor(color)}
                             className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedColor === color
-                                ? 'border-pink-600 bg-pink-50 text-pink-700 font-semibold'
-                                : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                              ? 'border-pink-600 bg-pink-50 text-pink-700 font-semibold'
+                              : 'border-gray-200 hover:border-pink-300 text-gray-700'
                               }`}
                           >
                             {color}
@@ -292,8 +292,8 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                             key={size}
                             onClick={() => setSelectedSize(size)}
                             className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedSize === size
-                                ? 'border-pink-600 bg-pink-50 text-pink-700 font-semibold'
-                                : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                              ? 'border-pink-600 bg-pink-50 text-pink-700 font-semibold'
+                              : 'border-gray-200 hover:border-pink-300 text-gray-700'
                               }`}
                           >
                             {size}
