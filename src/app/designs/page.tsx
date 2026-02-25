@@ -7,7 +7,7 @@ import { ArrowRight, ChevronLeft, ChevronRight, Grid3X3, Grid2X2, Loader2, Slide
 import { useShopStore, formatPrice, Product } from '@/store/shopStore'
 import SearchBar from '@/components/SearchBar'
 import SortOptions from '@/components/SortOptions'
-import Header from '@/components/Header'
+
 import dynamic from 'next/dynamic'
 import { isVideoFile } from '@/lib/utils/media'
 
@@ -185,29 +185,30 @@ export default function DesignsPage() {
 
   return (
     <>
-      <Header />
-      <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20 lg:pt-24">
+      <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-4 lg:pt-8">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
 
-          {/* العنوان */}
+          {/* العنوان مع زر العودة */}
           <motion.header
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
-            className="text-center mb-12"
+            className="mb-12"
           >
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
-              <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-                تصاميمنا الجاهزة
-              </span>
-            </h1>
-
-            {/* ملاحظة مهمة */}
-            <aside className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-4 max-w-2xl mx-auto" role="note" aria-label="معلومة مهمة">
-              <p className="text-green-900 font-semibold text-center">
-                ✨ الفساتين الجاهزة متوفرة للشراء المباشر - لا يتطلب حجز موعد
-              </p>
-            </aside>
+            <div className="relative flex items-center justify-center">
+              <Link
+                href="/#ready-designs"
+                className="absolute right-0 inline-flex items-center gap-1.5 text-pink-600 hover:text-pink-700 bg-white/80 backdrop-blur-sm hover:bg-white border border-pink-200 rounded-full px-4 py-2 shadow-sm hover:shadow-md transition-all duration-300"
+              >
+                <ArrowRight className="w-5 h-5" />
+                <span className="text-sm font-medium">رجوع</span>
+              </Link>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold">
+                <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                  الفساتين الجاهزة
+                </span>
+              </h1>
+            </div>
           </motion.header>
 
           {/* شريط البحث والفلاتر */}

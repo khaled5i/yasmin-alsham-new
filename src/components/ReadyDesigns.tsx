@@ -124,7 +124,7 @@ export default function ReadyDesigns() {
 
 
   return (
-    <section id="ready-designs" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-[100dvh] max-lg:h-[100dvh] max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:overflow-x-hidden max-lg:pt-[10vh] max-lg:pb-[2vh]">
+    <section id="ready-designs" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-[100dvh] max-lg:h-[100dvh] max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:overflow-x-hidden max-lg:pt-[2vh] max-lg:pb-[2vh]">
       <div className="container mx-auto px-3 sm:px-6 lg:px-8 max-lg:flex max-lg:flex-col max-lg:h-full max-lg:justify-between">
         {/* العنوان */}
         <motion.div
@@ -134,9 +134,9 @@ export default function ReadyDesigns() {
           viewport={{ once: true }}
           className="text-center max-lg:mb-[1.5vh] lg:mb-16"
         >
-          <h2 className="max-lg:text-[clamp(1.75rem,5.5vw,2.25rem)] lg:text-5xl font-bold">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold">
             <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              متجر الفساتين الجاهزة
+              الفساتين الجاهزة
             </span>
           </h2>
         </motion.div>
@@ -180,9 +180,9 @@ export default function ReadyDesigns() {
 
         {/* ========== عرض الموبايل: Carousel ========== */}
         {!isLoading && !error && readyDesigns.length > 0 && (
-          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center max-w-full overflow-x-hidden">
+          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center max-w-full overflow-x-hidden overflow-y-visible">
             {/* Embla Carousel */}
-            <div className="overflow-hidden" ref={emblaRef}>
+            <div className="overflow-x-hidden overflow-y-visible" ref={emblaRef}>
               <div className="flex" style={{ gap: '4px' }}>
                 {readyDesigns.map((product, index) => {
                   const productImages = product.images || []
@@ -199,49 +199,56 @@ export default function ReadyDesigns() {
                         zIndex: isActive ? 10 : 1
                       }}
                     >
-                      <div
-                        className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 transition-all duration-500 ${isActive
-                          ? 'shadow-2xl'
-                          : 'shadow-lg opacity-60'
-                          }`}
-                      >
-                        {/* الصورة */}
-                        <Link href={`/designs/${product.id}`}>
-                          <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
-                            <img
-                              src={imageLoadErrors[`${product.id}-${currentIndex}`]
-                                ? FALLBACK_IMAGE
-                                : (productImages[currentIndex] || product.image || FALLBACK_IMAGE)}
-                              alt={`${product.name} - صورة ${currentIndex + 1}`}
-                              className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'
-                                }`}
-                              loading="lazy"
-                              onError={() => {
-                                setImageLoadErrors(prev => ({
-                                  ...prev,
-                                  [`${product.id}-${currentIndex}`]: true
-                                }))
-                              }}
-                            />
-                            {/* تأثير gradient على الصورة */}
-                            <div className={`absolute inset-0 transition-opacity duration-500 ${isActive
-                              ? 'bg-gradient-to-t from-black/40 via-transparent to-transparent'
-                              : 'bg-gradient-to-t from-black/60 via-black/20 to-black/10'
-                              }`} />
-                          </div>
-                        </Link>
-
-                        {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
-                        {product.name && (
+                      {/* Stacked cards container */}
+                      <div className="relative pb-5">
+                        {/* البطاقة الخلفية - تظهر فقط للبطاقة النشطة */}
+                        {isActive && (
+                          <div className="absolute inset-x-3 top-4 -bottom-3 rounded-2xl bg-pink-50/40 backdrop-blur-sm border border-white/30 shadow-lg z-0 transition-all duration-500" />
+                        )}
+                        <div
+                          className={`relative z-10 overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 transition-all duration-500 ${isActive
+                            ? 'shadow-2xl'
+                            : 'shadow-lg opacity-60'
+                            }`}
+                        >
+                          {/* الصورة */}
                           <Link href={`/designs/${product.id}`}>
-                            <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
-                              }`}>
-                              <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
-                                {product.name}
-                              </h3>
+                            <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
+                              <img
+                                src={imageLoadErrors[`${product.id}-${currentIndex}`]
+                                  ? FALLBACK_IMAGE
+                                  : (productImages[currentIndex] || product.image || FALLBACK_IMAGE)}
+                                alt={`${product.name} - صورة ${currentIndex + 1}`}
+                                className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'
+                                  }`}
+                                loading="lazy"
+                                onError={() => {
+                                  setImageLoadErrors(prev => ({
+                                    ...prev,
+                                    [`${product.id}-${currentIndex}`]: true
+                                  }))
+                                }}
+                              />
+                              {/* تأثير gradient على الصورة */}
+                              <div className={`absolute inset-0 transition-opacity duration-500 ${isActive
+                                ? 'bg-gradient-to-t from-black/40 via-transparent to-transparent'
+                                : 'bg-gradient-to-t from-black/60 via-black/20 to-black/10'
+                                }`} />
                             </div>
                           </Link>
-                        )}
+
+                          {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
+                          {product.name && (
+                            <Link href={`/designs/${product.id}`}>
+                              <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
+                                }`}>
+                                <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
+                                  {product.name}
+                                </h3>
+                              </div>
+                            </Link>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
@@ -404,6 +411,6 @@ export default function ReadyDesigns() {
 
 
       </div>
-    </section>
+    </section >
   )
 }

@@ -1132,17 +1132,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
   // دالة تحميل تعليق محفوظ للعرض (view mode)
   const loadCommentForViewing = useCallback(async (comment: SavedDesignComment) => {
-    // التحقق من وجود محتوى حالي غير محفوظ
-    const hasUnsavedContent = hasUnsavedCommentChanges
-
-    if (hasUnsavedContent) {
-      // عرض تنبيه للمستخدم
-      const shouldSave = window.confirm(
-        'لديك تعليقات أو رسومات غير محفوظة. هل تريد حفظها قبل عرض التعليق المحفوظ؟'
-      )
-
-      if (shouldSave) {
-        // حفظ التعليق الحالي تلقائياً
+    // الحفظ التلقائي إذا كان هناك محتوى غير محفوظ
+    if (hasUnsavedCommentChanges) {
+      if (viewingCommentId) {
+        // إذا كنا نعرض تعليقاً وتم تعديله، نحدّثه تلقائياً
+        await updateViewingComment()
+      } else {
+        // حفظ التعليق الحالي كتعليق جديد تلقائياً
         await saveCurrentComment()
       }
     }

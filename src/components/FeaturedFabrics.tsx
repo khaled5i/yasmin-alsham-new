@@ -111,7 +111,7 @@ export default function FeaturedFabrics() {
   }
 
   return (
-    <section id="featured-fabrics" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-[100dvh] max-lg:h-[100dvh] max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:overflow-x-hidden max-lg:pt-[10vh] max-lg:pb-[2vh]">
+    <section id="featured-fabrics" className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 max-lg:min-h-[100dvh] max-lg:h-[100dvh] max-lg:snap-start max-lg:snap-always max-lg:flex max-lg:flex-col max-lg:justify-between max-lg:overflow-hidden max-lg:overflow-x-hidden max-lg:pt-[2vh] max-lg:pb-[2vh]">
       <div className="container mx-auto px-3 sm:px-6 lg:px-8 max-lg:flex max-lg:flex-col max-lg:h-full max-lg:justify-between">
         {/* العنوان */}
         <motion.div
@@ -121,7 +121,7 @@ export default function FeaturedFabrics() {
           viewport={{ once: true }}
           className="text-center max-lg:mb-[1.5vh] lg:mb-16"
         >
-          <h2 className="max-lg:text-[clamp(1.75rem,5.5vw,2.25rem)] lg:text-5xl font-bold">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold">
             <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
               متجر الأقمشة
             </span>
@@ -145,9 +145,9 @@ export default function FeaturedFabrics() {
 
         {/* ========== عرض الموبايل: Carousel ========== */}
         {!isLoading && featuredFabrics.length > 0 && (
-          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center max-w-full overflow-x-hidden">
+          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center max-w-full overflow-x-hidden overflow-y-visible">
             {/* Embla Carousel */}
-            <div className="overflow-hidden" ref={emblaRef}>
+            <div className="overflow-x-hidden overflow-y-visible" ref={emblaRef}>
               <div className="flex" style={{ gap: '4px' }}>
                 {featuredFabrics.map((fabric, index) => {
                   const fabricImages = fabric.images || []
@@ -164,63 +164,67 @@ export default function FeaturedFabrics() {
                         zIndex: isActive ? 10 : 1
                       }}
                     >
-                      <div
-                        className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 transition-all duration-500 ${isActive
-                          ? 'shadow-2xl'
-                          : 'shadow-lg opacity-60'
-                          }`}
-                      >
-                        {/* الصورة */}
-                        <Link href={`/fabrics/${fabric.id}`}>
-                          <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
-                            {isVideoFile(fabricImages[currentIndex] || '') && !imageLoadErrors[`${fabric.id}-${currentIndex}`] ? (
-                              <video
-                                src={fabricImages[currentIndex]}
-                                muted
-                                preload="metadata"
-                                className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'}`}
-                              />
-                            ) : (
-                              <img
-                                src={imageLoadErrors[`${fabric.id}-${currentIndex}`]
-                                  ? FALLBACK_IMAGE
-                                  : (fabricImages[currentIndex] || fabric.image_url || FALLBACK_IMAGE)}
-                                alt={`${fabric.name} - صورة ${currentIndex + 1}`}
-                                className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'
-                                  }`}
-                                loading="lazy"
-                                onError={() => {
-                                  setImageLoadErrors(prev => ({
-                                    ...prev,
-                                    [`${fabric.id}-${currentIndex}`]: true
-                                  }))
-                                }}
-                              />
-                            )}
-                            {/* تأثير gradient على الصورة */}
-                            <div className={`absolute inset-0 transition-opacity duration-500 ${isActive
-                              ? 'bg-gradient-to-t from-black/40 via-transparent to-transparent'
-                              : 'bg-gradient-to-t from-black/60 via-black/20 to-black/10'
-                              }`} />
-
-                            {/* شارة الفئة */}
-                            <div className="absolute top-2 right-2 bg-gradient-to-r from-pink-600 to-purple-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-                              {fabric.category}
-                            </div>
-                          </div>
-                        </Link>
-
-                        {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
-                        {fabric.name && (
+                      {/* Stacked cards container */}
+                      <div className="relative pb-5">
+                        {/* البطاقة الخلفية - تظهر فقط للبطاقة النشطة */}
+                        {isActive && (
+                          <div className="absolute inset-x-3 top-4 -bottom-3 rounded-2xl bg-pink-50/40 backdrop-blur-sm border border-white/30 shadow-lg z-0 transition-all duration-500" />
+                        )}
+                        <div
+                          className={`relative z-10 overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 transition-all duration-500 ${isActive
+                            ? 'shadow-2xl'
+                            : 'shadow-lg opacity-60'
+                            }`}
+                        >
+                          {/* الصورة */}
                           <Link href={`/fabrics/${fabric.id}`}>
-                            <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
-                              }`}>
-                              <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
-                                {fabric.name}
-                              </h3>
+                            <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
+                              {isVideoFile(fabricImages[currentIndex] || '') && !imageLoadErrors[`${fabric.id}-${currentIndex}`] ? (
+                                <video
+                                  src={fabricImages[currentIndex]}
+                                  muted
+                                  preload="metadata"
+                                  className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'}`}
+                                />
+                              ) : (
+                                <img
+                                  src={imageLoadErrors[`${fabric.id}-${currentIndex}`]
+                                    ? FALLBACK_IMAGE
+                                    : (fabricImages[currentIndex] || fabric.image_url || FALLBACK_IMAGE)}
+                                  alt={`${fabric.name} - صورة ${currentIndex + 1}`}
+                                  className={`w-full h-full object-cover transition-all duration-500 ${isActive ? '' : 'blur-[2px] brightness-75'
+                                    }`}
+                                  loading="lazy"
+                                  onError={() => {
+                                    setImageLoadErrors(prev => ({
+                                      ...prev,
+                                      [`${fabric.id}-${currentIndex}`]: true
+                                    }))
+                                  }}
+                                />
+                              )}
+                              {/* تأثير gradient على الصورة */}
+                              <div className={`absolute inset-0 transition-opacity duration-500 ${isActive
+                                ? 'bg-gradient-to-t from-black/40 via-transparent to-transparent'
+                                : 'bg-gradient-to-t from-black/60 via-black/20 to-black/10'
+                                }`} />
+
+
                             </div>
                           </Link>
-                        )}
+
+                          {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
+                          {fabric.name && (
+                            <Link href={`/fabrics/${fabric.id}`}>
+                              <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
+                                }`}>
+                                <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
+                                  {fabric.name}
+                                </h3>
+                              </div>
+                            </Link>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
@@ -347,10 +351,7 @@ export default function FeaturedFabrics() {
                           </>
                         )}
 
-                        {/* شارة الفئة */}
-                        <div className="absolute top-2 right-2 bg-gradient-to-r from-pink-600 to-purple-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-                          {fabric.category}
-                        </div>
+
                       </div>
                     </Link>
 

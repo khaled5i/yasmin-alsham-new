@@ -1,11 +1,57 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Calendar, Sparkles, Heart, Star, Shirt } from 'lucide-react'
 
 export default function Hero() {
+  const [heroOpacity, setHeroOpacity] = useState(1)
+  const [isHeroVisible, setIsHeroVisible] = useState(true)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const isMobile = window.innerWidth < 1024
+      let scrollY = 0
+
+      if (isMobile) {
+        const container = document.getElementById('main-scroll-container')
+        scrollY = container ? container.scrollTop : 0
+      } else {
+        scrollY = window.scrollY
+      }
+
+      // بدء الإخفاء من 50px وإخفاء كامل عند 250px
+      const threshold = 250
+      const startFade = 50
+      if (scrollY <= startFade) {
+        setHeroOpacity(1)
+        setIsHeroVisible(true)
+      } else if (scrollY >= threshold) {
+        setHeroOpacity(0)
+        setIsHeroVisible(false)
+      } else {
+        const opacity = 1 - (scrollY - startFade) / (threshold - startFade)
+        setHeroOpacity(Math.max(0, Math.min(1, opacity)))
+        setIsHeroVisible(true)
+      }
+    }
+
+    const container = document.getElementById('main-scroll-container')
+    if (container) {
+      container.addEventListener('scroll', handleScroll, { passive: true })
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+
+    return () => {
+      if (container) {
+        container.removeEventListener('scroll', handleScroll)
+      }
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
   return (
     <section className="relative min-h-[100dvh] overflow-hidden lg:pt-28 max-lg:h-[100dvh] max-lg:snap-start max-lg:snap-always max-lg:overflow-x-hidden">
       {/* خلفية للموبايل - صورة كاملة الشاشة */}
@@ -81,12 +127,17 @@ export default function Hero() {
 
       {/* ===== تصميم الموبايل الجديد - Hero كامل الشاشة ===== */}
       <div className="lg:hidden relative z-10 min-h-[100dvh] flex flex-col justify-end pb-8 px-4">
-        {/* المحتوى في الأسفل */}
+        {/* المحتوى في الأسفل - يختفي عند التمرير */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3 }}
           className="text-center space-y-6"
+          style={{
+            opacity: heroOpacity,
+            transition: 'opacity 0.3s ease-out',
+            pointerEvents: isHeroVisible ? 'auto' : 'none',
+          }}
         >
           {/* نص ترحيبي */}
           <motion.h2
@@ -145,7 +196,14 @@ export default function Hero() {
       </div>
 
       {/* تخطيط للشاشات الكبيرة */}
-      <div className="hidden lg:block container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-8 sm:pt-12 lg:pt-16">
+      <div
+        className="hidden lg:block container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-8 sm:pt-12 lg:pt-16"
+        style={{
+          opacity: heroOpacity,
+          transition: 'opacity 0.3s ease-out',
+          pointerEvents: isHeroVisible ? 'auto' : 'none',
+        }}
+      >
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* المحتوى النصي */}
           <motion.div

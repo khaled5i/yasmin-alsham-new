@@ -7,7 +7,7 @@ import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2 } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
 import FabricSortOptions from '@/components/FabricSortOptions'
-import Header from '@/components/Header'
+
 import dynamic from 'next/dynamic'
 import { isVideoFile } from '@/lib/utils/media'
 
@@ -25,7 +25,7 @@ function FabricSkeleton() {
   return (
     <div className="group">
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg">
-        <div className="aspect-[4/5] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
+        <div className="aspect-[9/16] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
         <div className="p-3 space-y-2">
           <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4 mx-auto" />
           <div className="space-y-1">
@@ -127,22 +127,31 @@ export default function FabricsPage() {
 
   return (
     <>
-      <Header />
-      <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20 lg:pt-24">
+      <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-4 lg:pt-8">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
 
-          {/* العنوان */}
+          {/* العنوان مع زر العودة */}
           <motion.header
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
-            className="text-center mb-12"
+            className="mb-12"
           >
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
-              <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-                متجر الأقمشة
-              </span>
-            </h1>
+            <div className="relative flex items-center justify-center mb-2">
+              <Link
+                href="/#featured-fabrics"
+                className="absolute right-0 inline-flex items-center gap-1.5 text-pink-600 hover:text-pink-700 bg-white/80 backdrop-blur-sm hover:bg-white border border-pink-200 rounded-full px-4 py-2 shadow-sm hover:shadow-md transition-all duration-300"
+              >
+                <ArrowRight className="w-5 h-5" />
+                <span className="text-sm font-medium">رجوع</span>
+              </Link>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold">
+                <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                  متجر الأقمشة
+                </span>
+              </h1>
+            </div>
+            <p className="text-sm text-gray-500 text-center">بالتعاون مع بروكار الشرقية ✨</p>
           </motion.header>
 
           {/* شريط البحث والفلاتر */}
@@ -282,7 +291,7 @@ export default function FabricsPage() {
                     >
                       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
                         <Link href={`/fabrics/${fabric.id}`}>
-                          <div className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
+                          <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
                             {isVideoFile(currentImage) ? (
                               <video
                                 src={currentImage}
