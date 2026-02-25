@@ -513,7 +513,7 @@ export const orderService = {
         .from('orders')
         .select('*')
         .eq('order_number', orderNumber)
-        .single()
+        .maybeSingle()
 
       if (error) {
         if (isDev) console.error('❌ Supabase error fetching order:', error.message)

@@ -40,22 +40,29 @@ export default function TrackOrderPage() {
         // البحث برقم الطلب
         await loadOrderByNumber(searchTerm)
 
-        if (currentOrder) {
+        // استخدام getState() للحصول على أحدث قيمة من المخزن بعد التحميل
+        // (المتغيرات المغلقة من useOrderStore() تحتفظ بالقيمة القديمة من آخر render)
+        const latestState = useOrderStore.getState()
+
+        if (latestState.error) {
+          setError('لم يتم العثور على طلب بهذا الرقم. يرجى التأكد من رقم الطلب والمحاولة مرة أخرى.')
+        } else if (latestState.currentOrder) {
           // تحويل البيانات إلى الصيغة المطلوبة
+          const order = latestState.currentOrder
           const orderInfo = {
-            order_number: currentOrder.order_number,
-            client_name: currentOrder.client_name,
-            client_phone: currentOrder.client_phone,
-            dress_type: currentOrder.description,
-            order_date: currentOrder.created_at,
-            due_date: currentOrder.due_date,
-            proof_delivery_date: currentOrder.proof_delivery_date,
-            status: currentOrder.status,
-            estimated_price: currentOrder.price,
-            progress_percentage: getProgressPercentage(currentOrder.status),
-            notes: currentOrder.notes,
-            fabric: currentOrder.fabric,
-            measurements: currentOrder.measurements
+            order_number: order.order_number,
+            client_name: order.client_name,
+            client_phone: order.client_phone,
+            dress_type: order.description,
+            order_date: order.created_at,
+            due_date: order.due_date,
+            proof_delivery_date: order.proof_delivery_date,
+            status: order.status,
+            estimated_price: order.price,
+            progress_percentage: getProgressPercentage(order.status),
+            notes: order.notes,
+            fabric: order.fabric,
+            measurements: order.measurements
           }
 
           setOrderData(orderInfo)
@@ -67,9 +74,14 @@ export default function TrackOrderPage() {
         // البحث برقم الهاتف
         await loadOrdersByPhone(searchTerm)
 
-        if (orders && orders.length > 0) {
+        // استخدام getState() للحصول على أحدث قيمة من المخزن بعد التحميل
+        const latestState = useOrderStore.getState()
+
+        if (latestState.error) {
+          setError('لم يتم العثور على طلبات مرتبطة بهذا الرقم. يرجى التأكد من رقم الهاتف والمحاولة مرة أخرى.')
+        } else if (latestState.orders && latestState.orders.length > 0) {
           // عرض أول طلب (يمكن تحسين هذا لعرض جميع الطلبات)
-          const foundOrder = orders[0]
+          const foundOrder = latestState.orders[0]
           const orderInfo = {
             order_number: foundOrder.order_number,
             client_name: foundOrder.client_name,
