@@ -410,7 +410,7 @@ export default function ImageUploadWithPrint({
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-20"
+            className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-[9999]"
           >
             <button onClick={(e) => { e.stopPropagation(); openCameraDialog() }}
               className="w-full px-4 py-3 text-right hover:bg-pink-50 flex items-center space-x-3 space-x-reverse border-b border-gray-100">

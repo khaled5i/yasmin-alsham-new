@@ -259,47 +259,44 @@ function AddAlterationContent() {
   }
 
   const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string) => {
-    const allSavedComments = [...formData.savedDesignComments]
+    let allSavedComments = [...formData.savedDesignComments]
     const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
 
     if (!hasCurrentPayload) {
       return allSavedComments
     }
 
-    const currentAnnotationsJson = JSON.stringify(formData.imageAnnotations)
-    const currentDrawingsJson = JSON.stringify(formData.imageDrawings)
-
-    const isUnchangedFromInitial =
-      currentAnnotationsJson === initialDesignStateRef.current.annotations &&
-      currentDrawingsJson === initialDesignStateRef.current.drawings
-
-    if (isUnchangedFromInitial) {
-      return allSavedComments
-    }
-
-    const hasDuplicateSavedComment = allSavedComments.some(comment =>
-      JSON.stringify(comment.annotations || []) === currentAnnotationsJson &&
-      JSON.stringify(comment.drawings || []) === currentDrawingsJson
-    )
-
-    if (hasDuplicateSavedComment) {
-      return allSavedComments
-    }
-
     const currentView = annotationRef.current?.getCurrentView() || 'front'
-    const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
+    const viewLabel = currentView === 'front' ? 'أمام' : 'خلف'
 
-    const currentComment: SavedDesignComment = {
+    // البحث عن slot العرض الحالي وتحديثه أو إنشاؤه
+    const existingSlotIndex = allSavedComments.findIndex(c => {
+      const v = c.view ?? (c.title?.trim().startsWith('أمام') ? 'front' : c.title?.trim().startsWith('خلف') ? 'back' : null)
+      return v === currentView
+    })
+
+    if (existingSlotIndex >= 0) {
+      allSavedComments = [...allSavedComments]
+      allSavedComments[existingSlotIndex] = {
+        ...allSavedComments[existingSlotIndex],
+        annotations: formData.imageAnnotations,
+        drawings: formData.imageDrawings,
+        image: customDesignImageBase64 || (allSavedComments[existingSlotIndex].image || null),
+        view: currentView,
+        timestamp: Date.now()
+      }
+      return allSavedComments
+    }
+
+    return [...allSavedComments, {
       id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       timestamp: Date.now(),
       annotations: formData.imageAnnotations,
       drawings: formData.imageDrawings,
       image: customDesignImageBase64 || null,
-      title: viewTitle,
+      title: viewLabel,
       view: currentView
-    }
-
-    return [...allSavedComments, currentComment]
+    }]
   }, [formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
 
   // إرسال النموذج

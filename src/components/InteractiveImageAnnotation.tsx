@@ -997,17 +997,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     return currentPath.includes('back') ? 'back' : 'front'
   }, [internalImageOverride, imageSrc])
 
-  // دالة حفظ التعليق الحالي
-  const saveCurrentComment = useCallback(async () => {
-    // التحقق من وجود محتوى للحفظ
-    if (annotations.length === 0 && drawings.length === 0) {
-      return null
-    }
-
-    // اقرأ ملف الصورة الجديدة دائماً إذا وُجد (أولوية أعلى من base64 القديم)
-    // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
-    // نقرأ الملف بالكامل إلى الذاكرة أولاً ثم نحوّله إلى base64
-    let imageBase64: string | null = null
+  // دالة مساعدة لقراءة الصورة كـ base64
+  const getImageBase64 = useCallback(async (): Promise<string | null> => {
     if (customImage) {
       let safeBlob: Blob = customImage
       const isAndroid = /android/i.test(navigator.userAgent)
@@ -1019,46 +1010,65 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           safeBlob = customImage
         }
       }
-      imageBase64 = await new Promise<string>((resolve) => {
+      return new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
         reader.readAsDataURL(safeBlob)
       })
-    } else {
-      imageBase64 = currentImageBase64
+    }
+    return currentImageBase64
+  }, [customImage, currentImageBase64])
+
+  // دالة حفظ/تحديث التعليق للعرض الحالي (أمام أو خلف) - نظام slot ثابت
+  const saveCurrentComment = useCallback(async () => {
+    if (annotations.length === 0 && drawings.length === 0) {
+      return null
     }
 
-    // إنشاء الصورة المركّبة (تطابق ما يظهر على الشاشة)
+    const imageBase64 = await getImageBase64()
     const compositeImage = await generateCompositeImage()
-
     const currentView = getCurrentView()
-    const existingViewCount = savedComments.reduce((count, comment) => {
-      const commentView = comment.view ?? getViewFromTitle(comment.title)
-      return commentView === currentView ? count + 1 : count
-    }, 0)
     const viewLabel = getViewLabel(currentView)
-    const viewTitle = existingViewCount === 0 ? viewLabel : `${viewLabel} ${existingViewCount + 1}`
 
-    const newComment: SavedDesignComment = {
-      id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: Date.now(),
-      annotations: [...annotations],
-      drawings: [...drawings],
-      image: imageBase64 ? 'custom' : null,
-      title: viewTitle,
-      view: currentView,
-      compositeImage: compositeImage
+    // البحث عن slot موجود لهذا العرض
+    const existingSlot = savedComments.find(c => {
+      const commentView = c.view ?? getViewFromTitle(c.title)
+      return commentView === currentView
+    })
+
+    if (existingSlot) {
+      // تحديث slot موجود
+      const updatedComments = savedComments.map(c => {
+        if (c.id !== existingSlot.id) return c
+        return {
+          ...c,
+          annotations: [...annotations],
+          drawings: [...drawings],
+          image: imageBase64 ? 'custom' : (c.image || null),
+          compositeImage: compositeImage || c.compositeImage,
+          view: currentView,
+          timestamp: Date.now()
+        }
+      })
+      onSavedCommentsChange?.(updatedComments)
+      return existingSlot
+    } else {
+      // إنشاء slot جديد
+      const newComment: SavedDesignComment = {
+        id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: Date.now(),
+        annotations: [...annotations],
+        drawings: [...drawings],
+        image: imageBase64 ? 'custom' : null,
+        title: viewLabel,
+        view: currentView,
+        compositeImage: compositeImage
+      }
+      const updatedComments = [...savedComments, newComment]
+      onSavedCommentsChange?.(updatedComments)
+      return newComment
     }
-
-    const updatedComments = [...savedComments, newComment]
-    onSavedCommentsChange?.(updatedComments)
-
-    // مسح التعليق الحالي
-    onAnnotationsChange([])
-    onDrawingsChange([])
-
-    return newComment
-  }, [annotations, drawings, customImage, currentImageBase64, savedComments, onSavedCommentsChange, onAnnotationsChange, onDrawingsChange, generateCompositeImage, getCurrentView])
+  }, [annotations, drawings, getImageBase64, savedComments, onSavedCommentsChange, generateCompositeImage, getCurrentView])
 
   // تحديث المرجع لاستخدامه في handleViewSwitch
   saveCurrentRef.current = saveCurrentComment
@@ -1070,35 +1080,44 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     getCurrentView
   }), [generateCompositeImage, saveCurrentComment, getCurrentView])
 
-  // دالة التبديل بين الأمام والخلف
+  // دالة التبديل بين الأمام والخلف - نظام slot ثابت
   const handleViewSwitch = useCallback(async (targetView: 'front' | 'back') => {
     const targetPath = targetView === 'front' ? '/front2.png' : '/back2.png'
-
-    // 1. التحقق مما إذا كنا بالفعل في العرض المطلوب
-    // نعتبر أننا في العرض المطلوب إذا:
-    // - لا توجد صورة مخصصة (imagePreview)
-    // - المسار الحالي يطابق المسار المستهدف (سواء من الـ override أو الـ prop)
     const isAlreadyInView = getCurrentView() === targetView
-
     if (isAlreadyInView) return
 
-    // 2. الحفظ التلقائي إذا كان هناك تعديلات
+    // 1. حفظ المحتوى الحالي في slot العرض الحالي (إذا كان هناك محتوى)
     if (annotations.length > 0 || drawings.length > 0) {
       await saveCurrentComment()
-      toast.success('تم حفظ التعديلات السابقة تلقائياً', { icon: '💾' })
+    }
+
+    // 2. إلغاء أوضاع العرض/التعديل
+    if (viewingCommentId) {
+      setViewingCommentId(null)
+      setOriginalViewingAnnotations(null)
+      setOriginalViewingDrawings(null)
+    }
+    setEditingCommentId(null)
+
+    // 3. تحميل محتوى slot العرض المستهدف (إن وجد)
+    const targetSlot = savedComments.find(c => {
+      const commentView = c.view ?? getViewFromTitle(c.title)
+      return commentView === targetView
+    })
+
+    if (targetSlot) {
+      onAnnotationsChange(targetSlot.annotations || [])
+      onDrawingsChange(targetSlot.drawings || [])
     } else {
-      // إذا لم يكن هناك حفظ، يجب تنظيف اللوحة يدوياً
       onAnnotationsChange([])
       onDrawingsChange([])
     }
 
-    // 3. تعيين العرض الجديد مع الإبقاء على الصورة المخصصة إن وجدت
+    // 4. تعيين العرض الجديد
     setInternalImageOverride(targetPath)
-
-    // 4. إشعار المكون الأب بتغيير العرض
     onViewChange?.(targetView)
 
-  }, [annotations.length, drawings.length, saveCurrentComment, onAnnotationsChange, onDrawingsChange, getCurrentView, onViewChange])
+  }, [annotations.length, drawings.length, saveCurrentComment, viewingCommentId, savedComments, onAnnotationsChange, onDrawingsChange, getCurrentView, onViewChange])
 
   // دالة حذف تعليق محفوظ
   const deleteSavedComment = useCallback((commentId: string) => {
@@ -4210,224 +4229,76 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         )
       }
 
-      {/* زر حفظ التعليق الحالي */}
-      {
-        showSaveButton && onSavedCommentsChange && (annotations.length > 0 || drawings.length > 0) && (
-          <div className="flex flex-col sm:flex-row gap-2">
-            {viewingCommentId ? (
-              <>
-                {/* زر حفظ التعديلات - يظهر فقط عند وجود تغييرات */}
-                {hasViewingCommentChanges && (
-                  <button
-                    type="button"
-                    onClick={updateViewingComment}
-                    disabled={disabled}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                  >
-                    <Save className="w-5 h-5" />
-                    <span>حفظ التعديلات على التعليق المحفوظ</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewingCommentId(null)
-                    setOriginalViewingAnnotations([])
-                    setOriginalViewingDrawings([])
-                    onAnnotationsChange([])
-                    onDrawingsChange([])
-                  }}
-                  disabled={disabled}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
-                >
-                  <XCircle className="w-5 h-5" />
-                  <span>{hasViewingCommentChanges ? 'إلغاء وحذف التعديلات' : 'إغلاق العرض'}</span>
-                </button>
-              </>
-            ) : editingCommentId ? (
-              <>
-                <button
-                  type="button"
-                  onClick={updateSavedComment}
-                  disabled={disabled}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-                >
-                  <Check className="w-5 h-5" />
-                  <span>حفظ التعديلات</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelEditing}
-                  disabled={disabled}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
-                >
-                  <XCircle className="w-5 h-5" />
-                  <span>إلغاء</span>
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={saveCurrentComment}
-                disabled={disabled}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-lg hover:from-pink-700 hover:to-purple-700 transition-all disabled:opacity-50 shadow-md"
-              >
-                <Save className="w-5 h-5" />
-                <span>حفظ التعليق وإضافة تعليق جديد</span>
-              </button>
-            )}
-          </div>
-        )
-      }
+      {/* قسم النصوص والترجمات والتسجيلات من جميع التعليقات المحفوظة */}
+      {(() => {
+        // جمع النصوص من التعليقات المحفوظة (غير الحالية) + التعليقات الحالية
+        const allAnnotationsWithText: Array<{ annotation: ImageAnnotation; viewLabel: string; commentId: string }> = []
 
-      {/* قائمة التعليقات المحفوظة */}
-      {
-        savedComments.length > 0 && (
-          <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-xl border border-pink-200 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowSavedComments(!showSavedComments)}
-              className="w-full flex items-center justify-between p-4 hover:bg-pink-100/50 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <Save className="w-5 h-5 text-pink-600" />
-                <span className="font-medium text-gray-800">
-                  التعليقات المحفوظة ({savedComments.length})
-                </span>
-              </div>
-              {showSavedComments ? (
-                <ChevronUp className="w-5 h-5 text-gray-500" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-500" />
-              )}
-            </button>
+        // من التعليقات المحفوظة
+        savedComments.forEach(comment => {
+          const commentView = comment.view ?? getViewFromTitle(comment.title)
+          const currentView = getCurrentView()
+          // تخطي التعليق الخاص بالعرض الحالي (لأن النصوص الحالية تُعرض أعلاه)
+          if (commentView === currentView) return
+          const label = comment.title || (commentView ? getViewLabel(commentView) : 'تعليق')
+          comment.annotations.forEach(a => {
+            if (a.transcription || a.audioData) {
+              allAnnotationsWithText.push({ annotation: a, viewLabel: label, commentId: comment.id })
+            }
+          })
+        })
 
-            <AnimatePresence>
-              {showSavedComments && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="border-t border-pink-200"
-                >
-                  <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-                    {savedComments.map((comment, index) => {
-                      const displayTitle = comment.title
-                        || (comment.view ? getViewLabel(comment.view) : `التعليق ${index + 1}`)
+        if (allAnnotationsWithText.length === 0) return null
 
-                      return (
-                        <div
-                          key={comment.id}
-                          className={`bg-white rounded-lg border p-4 transition-all ${editingCommentId === comment.id
-                            ? 'border-pink-500 ring-2 ring-pink-200'
-                            : 'border-gray-200 hover:border-pink-300'
-                            }`}
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1 min-w-0">
-                              {editingCommentTitle === comment.id ? (
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="text"
-                                    value={editedCommentTitle}
-                                    onChange={(e) => setEditedCommentTitle(e.target.value)}
-                                    className="flex-1 px-2 py-1 text-sm border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') saveCommentTitle()
-                                      if (e.key === 'Escape') cancelEditingCommentTitle()
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={saveCommentTitle}
-                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                    title="حفظ"
-                                  >
-                                    <Check className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={cancelEditingCommentTitle}
-                                    className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                                    title="إلغاء"
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <h5 className="font-medium text-gray-800">
-                                    {displayTitle}
-                                  </h5>
-                                  {!disabled && onSavedCommentsChange && (
-                                    <button
-                                      type="button"
-                                      onClick={() => startEditingCommentTitle(comment.id, displayTitle)}
-                                      className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                      title="تعديل الاسم"
-                                    >
-                                      <Pencil className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {!disabled && onSavedCommentsChange && editingCommentTitle !== comment.id && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => loadCommentForViewing(comment)}
-                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="عرض التعليق"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteSavedComment(comment.id)}
-                                    disabled={editingCommentId !== null}
-                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                    title="حذف"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
+        return (
+          <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl border border-purple-200 overflow-hidden">
+            <div className="p-4">
+              <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-3">
+                <FileText className="w-4 h-4 text-purple-600" />
+                نصوص وترجمات من عروض أخرى
+              </h4>
+              <div className="space-y-2">
+                {allAnnotationsWithText.map(({ annotation: a, viewLabel }, idx) => (
+                  <div key={a.id || idx} className="bg-white rounded-lg p-3 border border-gray-200">
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full flex-shrink-0">{viewLabel}</span>
+                      <div className="flex-1 min-w-0">
+                        {a.transcription && (
+                          <p className="text-sm text-gray-700 break-words">{a.transcription}</p>
+                        )}
+                        {!a.transcription && a.audioData && (
+                          <p className="text-sm text-gray-500">تسجيل صوتي</p>
+                        )}
+                        {a.translatedText && (
+                          <div className="mt-1.5 bg-purple-50 border border-purple-200 rounded p-2">
+                            <p className="text-xs text-purple-600 font-medium mb-0.5">
+                              الترجمة ({getLanguageName(a.translationLanguage || 'en')})
+                            </p>
+                            <p className="text-sm text-gray-700 break-words" dir="auto">{a.translatedText}</p>
                           </div>
-
-                          {/* عرض النصوص المكتوبة */}
-                          {comment.annotations.some(a => a.transcription) && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <div className="space-y-1">
-                                {comment.annotations.filter(a => a.transcription).map((a, i) => (
-                                  <div key={a.id} className="mb-2">
-                                    <p className="text-sm text-gray-700">
-                                      <span className="text-pink-600 font-medium">{i + 1}.</span> {a.transcription}
-                                    </p>
-                                    {a.translatedText && (
-                                      <p className="text-sm text-purple-600 mt-1 mr-4 bg-purple-50 p-1 rounded">
-                                        <span className="text-xs font-bold ml-1">الترجمة:</span> {a.translatedText}
-                                      </p>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                        )}
+                        {a.audioData && (
+                          <button
+                            type="button"
+                            onClick={() => togglePlayback(a)}
+                            className={`mt-1.5 p-1.5 rounded transition-colors ${playingId === a.id
+                              ? 'bg-green-500 text-white'
+                              : 'text-green-600 hover:bg-green-50'
+                              }`}
+                            title={playingId === a.id ? 'إيقاف' : 'تشغيل الصوت'}
+                          >
+                            {playingId === a.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                ))}
+              </div>
+            </div>
           </div>
         )
-      }
+      })()}
 
 
 

@@ -457,6 +457,46 @@ function AddOrderContent() {
     )
   }, [resetToInitial, isArabic])
 
+  // دالة مساعدة لتحديث أو إنشاء slot (أمام/خلف) في التعليقات
+  const upsertSlotComment = (
+    comments: SavedDesignComment[],
+    currentView: 'front' | 'back',
+    newAnnotations: ImageAnnotation[],
+    newDrawings: DrawingPath[],
+    image: string | null | undefined,
+    compositeImage: string | null | undefined
+  ): SavedDesignComment[] => {
+    const viewLabel = currentView === 'front' ? 'أمام' : 'خلف'
+    const existingIndex = comments.findIndex(c => {
+      const v = c.view ?? (c.title?.trim().startsWith('أمام') ? 'front' : c.title?.trim().startsWith('خلف') ? 'back' : null)
+      return v === currentView
+    })
+    if (existingIndex >= 0) {
+      const updated = [...comments]
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        annotations: newAnnotations,
+        drawings: newDrawings,
+        image: image ? 'custom' : (updated[existingIndex].image || null),
+        compositeImage: compositeImage || updated[existingIndex].compositeImage || null,
+        view: currentView,
+        timestamp: Date.now()
+      }
+      return updated
+    }
+    return [...comments, {
+      id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      annotations: newAnnotations,
+      drawings: newDrawings,
+      image: image ? 'custom' : null,
+      title: viewLabel,
+      view: currentView,
+      compositeImage
+    }]
+  }
+
+
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -533,33 +573,19 @@ function AddOrderContent() {
       // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
 
       // تجميع جميع التعليقات المحفوظة
-      const allSavedComments = formData.savedDesignComments.map(comment => ({
+      let allSavedComments = formData.savedDesignComments.map(comment => ({
         ...comment,
         image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
       }))
 
-      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً مع الصورة المركّبة
+      // حفظ التعليق الحالي في slot العرض الحالي
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
-        // إنشاء الصورة المركّبة باستخدام ref
         let compositeImage: string | null = null
         if (annotationRef.current) {
           compositeImage = await annotationRef.current.generateCompositeImage()
         }
-
         const currentView = annotationRef.current?.getCurrentView() || 'front'
-        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
-
-        const currentComment: SavedDesignComment = {
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(),
-          annotations: formData.imageAnnotations,
-          drawings: formData.imageDrawings,
-          image: customDesignImageBase64 ? 'custom' : null,
-          title: viewTitle,
-          view: currentView,
-          compositeImage: compositeImage // إضافة الصورة المركّبة
-        }
-        allSavedComments.push(currentComment)
+        allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
       }
 
       // إنشاء الطلب باستخدام Supabase
@@ -709,33 +735,19 @@ function AddOrderContent() {
       }
 
       // تجميع جميع التعليقات المحفوظة
-      const allSavedComments = formData.savedDesignComments.map(comment => ({
+      let allSavedComments = formData.savedDesignComments.map(comment => ({
         ...comment,
         image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
       }))
 
-      // إذا كان هناك تعليق حالي غير محفوظ، نحفظه تلقائياً مع الصورة المركّبة
+      // حفظ التعليق الحالي في slot العرض الحالي
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
-        // إنشاء الصورة المركّبة باستخدام ref
         let compositeImage: string | null = null
         if (annotationRef.current) {
           compositeImage = await annotationRef.current.generateCompositeImage()
         }
-
         const currentView = annotationRef.current?.getCurrentView() || 'front'
-        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
-
-        const currentComment: SavedDesignComment = {
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(),
-          annotations: formData.imageAnnotations,
-          drawings: formData.imageDrawings,
-          image: customDesignImageBase64 ? 'custom' : null,
-          title: viewTitle,
-          view: currentView,
-          compositeImage: compositeImage // إضافة الصورة المركّبة
-        }
-        allSavedComments.push(currentComment)
+        allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
       }
 
       // إنشاء الطلب باستخدام Supabase
@@ -873,7 +885,7 @@ function AddOrderContent() {
         }
       }
 
-      const allSavedComments = formData.savedDesignComments.map(comment => ({
+      let allSavedComments = formData.savedDesignComments.map(comment => ({
         ...comment, image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
       }))
 
@@ -883,12 +895,7 @@ function AddOrderContent() {
           compositeImage = await annotationRef.current.generateCompositeImage()
         }
         const currentView = annotationRef.current?.getCurrentView() || 'front'
-        const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
-        allSavedComments.push({
-          id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: Date.now(), annotations: formData.imageAnnotations, drawings: formData.imageDrawings,
-          image: customDesignImageBase64 ? 'custom' : null, title: viewTitle, view: currentView, compositeImage
-        })
+        allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
       }
 
       const result = await createOrder({

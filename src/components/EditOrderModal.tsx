@@ -143,17 +143,20 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
       // استرجاع تعليقات التصميم من measurements
       const measurements = order.measurements as any
       const savedComments = measurements?.saved_design_comments || []
-      const latestSavedComment =
-        savedComments.length > 0
-          ? [...savedComments].sort((a: SavedDesignComment, b: SavedDesignComment) => (a.timestamp || 0) - (b.timestamp || 0))[savedComments.length - 1]
-          : null
-      const annotations = latestSavedComment?.annotations || measurements?.image_annotations || []
-      const drawings = latestSavedComment?.drawings || measurements?.image_drawings || []
       const customImage = measurements?.custom_design_image || null
 
-      latestSavedCommentIdRef.current = latestSavedComment?.id || null
-      if (latestSavedComment?.view) {
-        setAnnotationImageSrc(latestSavedComment.view === 'back' ? '/back2.png' : '/front2.png')
+      // تحميل slot الأمام بشكل افتراضي، أو أول slot موجود
+      const frontSlot = savedComments.find((c: SavedDesignComment) => {
+        const view = c.view ?? (c.title?.trim().startsWith('أمام') ? 'front' : c.title?.trim().startsWith('خلف') ? 'back' : null)
+        return view === 'front'
+      })
+      const initialSlot = frontSlot || (savedComments.length > 0 ? savedComments[0] : null)
+      const annotations = initialSlot?.annotations || measurements?.image_annotations || []
+      const drawings = initialSlot?.drawings || measurements?.image_drawings || []
+
+      latestSavedCommentIdRef.current = initialSlot?.id || null
+      if (initialSlot?.view) {
+        setAnnotationImageSrc(initialSlot.view === 'back' ? '/back2.png' : '/front2.png')
       } else {
         setAnnotationImageSrc('/front2.png')
       }
@@ -296,48 +299,28 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
       return allSavedComments
     }
 
-    const currentAnnotationsJson = JSON.stringify(formData.imageAnnotations)
-    const currentDrawingsJson = JSON.stringify(formData.imageDrawings)
-
-    const isUnchangedFromInitial =
-      currentAnnotationsJson === initialDesignStateRef.current.annotations &&
-      currentDrawingsJson === initialDesignStateRef.current.drawings
-
-    if (isUnchangedFromInitial) {
-      return allSavedComments
-    }
-
-    const hasDuplicateSavedComment = allSavedComments.some(comment =>
-      JSON.stringify(comment.annotations || []) === currentAnnotationsJson &&
-      JSON.stringify(comment.drawings || []) === currentDrawingsJson
-    )
-
-    if (hasDuplicateSavedComment) {
-      return allSavedComments
-    }
-
     const currentView = annotationRef.current?.getCurrentView() || 'front'
-    const latestSavedComment = latestSavedCommentIdRef.current
-      ? allSavedComments.find(comment => comment.id === latestSavedCommentIdRef.current) || null
-      : (allSavedComments.length > 0 ? allSavedComments[allSavedComments.length - 1] : null)
+    const viewLabel = currentView === 'front' ? 'أمام' : 'خلف'
 
-    if (latestSavedComment) {
-      const updatedComments = allSavedComments.map(comment => {
-        if (comment.id !== latestSavedComment.id) return comment
-        return {
-          ...comment,
-          annotations: formData.imageAnnotations,
-          drawings: formData.imageDrawings,
-          image: customDesignImageBase64 ? 'custom' : (comment.image || null),
-          compositeImage: compositeImage || comment.compositeImage || null,
-          view: currentView,
-          timestamp: Date.now()
-        }
-      })
+    // البحث عن slot العرض الحالي وتحديثه أو إنشاؤه
+    const existingSlotIndex = allSavedComments.findIndex(c => {
+      const commentView = c.view ?? (c.title?.trim().startsWith('أمام') ? 'front' : c.title?.trim().startsWith('خلف') ? 'back' : null)
+      return commentView === currentView
+    })
+
+    if (existingSlotIndex >= 0) {
+      const updatedComments = [...allSavedComments]
+      updatedComments[existingSlotIndex] = {
+        ...updatedComments[existingSlotIndex],
+        annotations: formData.imageAnnotations,
+        drawings: formData.imageDrawings,
+        image: customDesignImageBase64 ? 'custom' : (updatedComments[existingSlotIndex].image || null),
+        compositeImage: compositeImage || updatedComments[existingSlotIndex].compositeImage || null,
+        view: currentView,
+        timestamp: Date.now()
+      }
       return updatedComments
     }
-
-    const viewTitle = getNextDesignViewTitle(currentView, allSavedComments)
 
     const currentComment: SavedDesignComment = {
       id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -345,12 +328,11 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
       annotations: formData.imageAnnotations,
       drawings: formData.imageDrawings,
       image: customDesignImageBase64 ? 'custom' : null,
-      title: viewTitle,
+      title: viewLabel,
       view: currentView,
       compositeImage: compositeImage || null
     }
 
-    latestSavedCommentIdRef.current = currentComment.id
     return [...allSavedComments, currentComment]
   }, [formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
 
@@ -847,7 +829,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                 </div>
 
                 {/* صور التصميم */}
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100">
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100 relative z-20">
                   <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
                     <ImageIcon className="w-5 h-5 text-pink-600" />
                     <span>صور التصميم</span>
