@@ -27,8 +27,6 @@ export default function ReadyDesigns() {
     direction: 'rtl'
   })
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [canScrollPrev, setCanScrollPrev] = useState(false)
-  const [canScrollNext, setCanScrollNext] = useState(false)
 
   // تحميل المنتجات عند تحميل المكون - بدون forceReload للاستفادة من الكاش
   useEffect(() => {
@@ -42,13 +40,10 @@ export default function ReadyDesigns() {
     setIsRetrying(false)
   }, [loadProducts])
 
-  // متابعة تغيير الـ slide الحالي وحالة التنقل
+  // متابعة تغيير الـ slide الحالي
   const onSelect = useCallback(() => {
     if (!emblaApi) return
     setSelectedIndex(emblaApi.selectedScrollSnap())
-    // تحديث حالة أزرار التنقل
-    setCanScrollPrev(emblaApi.canScrollPrev())
-    setCanScrollNext(emblaApi.canScrollNext())
   }, [emblaApi])
 
   useEffect(() => {
@@ -61,19 +56,6 @@ export default function ReadyDesigns() {
       emblaApi.off('reInit', onSelect)
     }
   }, [emblaApi, onSelect])
-
-  // التنقل في الـ Carousel
-  const scrollPrev = useCallback(() => {
-    if (emblaApi) emblaApi.scrollPrev()
-  }, [emblaApi])
-
-  const scrollNext = useCallback(() => {
-    if (emblaApi) emblaApi.scrollNext()
-  }, [emblaApi])
-
-  const scrollTo = useCallback((index: number) => {
-    if (emblaApi) emblaApi.scrollTo(index)
-  }, [emblaApi])
 
   // تحديث مؤشرات الصور عند تحميل المنتجات
   useEffect(() => {
@@ -180,9 +162,9 @@ export default function ReadyDesigns() {
 
         {/* ========== عرض الموبايل: Carousel ========== */}
         {!isLoading && !error && readyDesigns.length > 0 && (
-          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center max-w-full overflow-x-hidden overflow-y-visible">
+          <div className="lg:hidden max-lg:flex-1 max-lg:flex max-lg:flex-col max-lg:justify-center max-w-full overflow-visible">
             {/* Embla Carousel */}
-            <div className="overflow-x-hidden overflow-y-visible" ref={emblaRef}>
+            <div className="overflow-visible" ref={emblaRef}>
               <div className="flex" style={{ gap: '4px' }}>
                 {readyDesigns.map((product, index) => {
                   const productImages = product.images || []
@@ -200,19 +182,19 @@ export default function ReadyDesigns() {
                       }}
                     >
                       {/* Stacked cards container */}
-                      <div className="relative pb-5">
-                        {/* البطاقة الخلفية - تظهر فقط للبطاقة النشطة */}
+                      <div className="relative">
+                        {/* البطاقة الخلفية - تبرز من الجانبين */}
                         {isActive && (
-                          <div className="absolute inset-x-3 top-4 -bottom-3 rounded-2xl bg-pink-50/40 backdrop-blur-sm border border-white/30 shadow-lg z-0 transition-all duration-500" />
+                          <div className="absolute -inset-x-2 top-2 bottom-0 rounded-2xl bg-pink-50/40 backdrop-blur-sm border border-white/30 shadow-lg z-0 transition-all duration-500" />
                         )}
-                        <div
-                          className={`relative z-10 overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 transition-all duration-500 ${isActive
-                            ? 'shadow-2xl'
-                            : 'shadow-lg opacity-60'
-                            }`}
-                        >
-                          {/* الصورة */}
-                          <Link href={`/designs/${product.id}`}>
+                        <Link href={`/designs/${product.id}`}>
+                          <div
+                            className={`relative z-10 overflow-hidden rounded-2xl transition-all duration-500 ${isActive
+                              ? 'shadow-2xl'
+                              : 'shadow-lg opacity-60'
+                              }`}
+                          >
+                            {/* الصورة */}
                             <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
                               <img
                                 src={imageLoadErrors[`${product.id}-${currentIndex}`]
@@ -235,20 +217,18 @@ export default function ReadyDesigns() {
                                 : 'bg-gradient-to-t from-black/60 via-black/20 to-black/10'
                                 }`} />
                             </div>
-                          </Link>
 
-                          {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
-                          {product.name && (
-                            <Link href={`/designs/${product.id}`}>
-                              <div className={`p-4 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
+                            {/* المعلومات - تظهر فقط إذا كان هناك اسم حقيقي */}
+                            {product.name && product.name !== 'منتج بدون اسم' && (
+                              <div className={`p-4 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 cursor-pointer transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-50'
                                 }`}>
                                 <h3 className="font-bold text-gray-800 text-center text-lg line-clamp-1">
                                   {product.name}
                                 </h3>
                               </div>
-                            </Link>
-                          )}
-                        </div>
+                            )}
+                          </div>
+                        </Link>
                       </div>
                     </div>
                   )
@@ -256,49 +236,7 @@ export default function ReadyDesigns() {
               </div>
             </div>
 
-            {/* أزرار التنقل */}
-            <div className="flex justify-center items-center gap-4 mt-4">
-              {/* زر السابق (يمين) - يختفي عند الوصول للبداية */}
-              <button
-                onClick={scrollPrev}
-                disabled={!canScrollPrev}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${canScrollPrev
-                  ? 'bg-pink-100 hover:bg-pink-200 text-pink-600'
-                  : 'bg-gray-100 text-gray-300 cursor-not-allowed opacity-0 pointer-events-none'
-                  }`}
-                aria-label="السابق"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
 
-              {/* مؤشرات النقاط */}
-              <div className="flex gap-2">
-                {readyDesigns.map((_, index) => (
-                  <button
-                    key={index}
-                    onClick={() => scrollTo(index)}
-                    className={`h-2.5 rounded-full transition-all duration-300 ${selectedIndex === index
-                      ? 'bg-pink-600 w-6'
-                      : 'bg-pink-300 hover:bg-pink-400 w-2.5'
-                      }`}
-                    aria-label={`الانتقال للتصميم ${index + 1}`}
-                  />
-                ))}
-              </div>
-
-              {/* زر التالي (يسار) - يختفي عند الوصول للنهاية */}
-              <button
-                onClick={scrollNext}
-                disabled={!canScrollNext}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${canScrollNext
-                  ? 'bg-pink-100 hover:bg-pink-200 text-pink-600'
-                  : 'bg-gray-100 text-gray-300 cursor-not-allowed opacity-0 pointer-events-none'
-                  }`}
-                aria-label="التالي"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-            </div>
           </div>
         )}
 
@@ -376,8 +314,8 @@ export default function ReadyDesigns() {
                       </div>
                     </Link>
 
-                    {/* المعلومات - تظهر فقط إذا كان هناك اسم */}
-                    {product.name && (
+                    {/* المعلومات - تظهر فقط إذا كان هناك اسم حقيقي */}
+                    {product.name && product.name !== 'منتج بدون اسم' && (
                       <Link href={`/designs/${product.id}`}>
                         <div className="p-4 cursor-pointer hover:bg-pink-50/50 transition-colors duration-300">
                           <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center text-base">
