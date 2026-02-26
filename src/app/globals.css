@@ -741,6 +741,25 @@ textarea:focus-visible {
     gap: 4px;
   }
 
+  /* قسم نوع القماش */
+  .print-fabric-type .section-title-compact {
+    background-color: #f0fdf4 !important;
+    color: #ae78ce !important;
+    border-bottom: 2px solid #bbf7d0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-fabric-type .additional-note-item {
+    background-color: #f0fdf4 !important;
+    border: 1px solid #bbf7d0 !important;
+    border-left: 3px solid #166534 !important;
+    border-radius: 4px !important;
+    padding: 8px !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
   .additional-note-item {
     display: flex;
     gap: 6px;

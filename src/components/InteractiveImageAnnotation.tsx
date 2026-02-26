@@ -708,6 +708,19 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     initialView === 'back' ? '/back2.png' : initialView === 'front' ? '/front2.png' : null
   )
 
+  // مزامنة initialView عند تغيّره من undefined إلى قيمة فعلية (بعد استعادة الحالة من localStorage)
+  // useState لا يتفاعل مع تغيير الـ prop بعد التهيئة الأولى
+  const initialViewAppliedRef = useRef(false)
+  useEffect(() => {
+    if (initialView && !initialViewAppliedRef.current) {
+      initialViewAppliedRef.current = true
+      const targetPath = initialView === 'back' ? '/back2.png' : '/front2.png'
+      if (internalImageOverride !== targetPath) {
+        setInternalImageOverride(targetPath)
+      }
+    }
+  }, [initialView]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // الصورة الفعلية المعروضة:
   // 1) صورة المعاينة من File الحالي
   // 2) صورة مخصصة محفوظة سابقاً (base64)

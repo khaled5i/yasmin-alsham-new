@@ -1177,6 +1177,21 @@ function AddOrderContent() {
                     {remainingAmount.toFixed(2)} {t('sar')}
                   </div>
                 </div>
+
+                {/* 10. نوع القماش */}
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    نوع القماش
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.fabric || ''}
+                    onChange={(e) => handleInputChange('fabric', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder="أدخل نوع القماش..."
+                    disabled={isSubmitting}
+                  />
+                </div>
               </div>
             </div>
 

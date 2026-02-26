@@ -81,7 +81,15 @@ export default function TrackOrderPage() {
           setError('لم يتم العثور على طلبات مرتبطة بهذا الرقم. يرجى التأكد من رقم الهاتف والمحاولة مرة أخرى.')
         } else if (latestState.orders && latestState.orders.length > 0) {
           // عرض أول طلب (يمكن تحسين هذا لعرض جميع الطلبات)
-          const foundOrder = latestState.orders[0]
+          let foundOrder = latestState.orders[0]
+
+          // جلب التفاصيل الكاملة للطلب بما فيها المقاسات
+          await latestState.loadOrderById(foundOrder.id)
+          const fullOrderState = useOrderStore.getState()
+          if (fullOrderState.currentOrder && fullOrderState.currentOrder.id === foundOrder.id) {
+            foundOrder = fullOrderState.currentOrder
+          }
+
           const orderInfo = {
             order_number: foundOrder.order_number,
             client_name: foundOrder.client_name,
@@ -446,7 +454,7 @@ export default function TrackOrderPage() {
                             return (
                               <div key={key} className="p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-100">
                                 <span className="text-sm text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
-                                <span className="text-lg font-medium text-gray-800">{String(value)} سم</span>
+                                <span className="text-lg font-medium text-gray-800">{String(value)} انش</span>
                               </div>
                             )
                           })}

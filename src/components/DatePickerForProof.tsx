@@ -197,8 +197,11 @@ export default function DatePickerForProof({
             const day = String(date.getDate()).padStart(2, '0')
             const dateStr = `${year}-${month}-${day}`
             onChange(dateStr)
+          } else {
+            onChange('')
           }
         }}
+        isClearable={!required}
         minDate={minDate}
         dateFormat="yyyy-MM-dd"
         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
@@ -353,6 +356,23 @@ export default function DatePickerForProof({
             width: 2.25rem;
             font-size: 0.6rem;
           }
+        }
+
+        /* تعديل موقع زر الحذف (X) ليكون في اليسار بدلاً من اليمين لتجنب تداخله مع النص في الواجهة العربية */
+        .date-picker-wrapper .react-datepicker__close-icon {
+          right: auto !important;
+          left: 0 !important;
+          padding-right: 0 !important;
+          padding-left: 10px !important;
+        }
+        .date-picker-wrapper .react-datepicker__close-icon::after {
+          background-color: #ef4444 !important; /* لون أحمر للزر */
+          color: white !important;
+          font-size: 1.1rem !important;
+          height: 20px !important;
+          width: 20px !important;
+          padding: 0 !important;
+          line-height: 20px !important;
         }
       `}</style>
     </div>

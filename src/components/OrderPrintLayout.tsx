@@ -234,6 +234,21 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                 </div>
               </div>
 
+              {/* قسم نوع القماش */}
+              {order.fabric && (
+                <div className="print-fabric-type print-additional-notes" style={{ marginBottom: '15px' }}>
+                  <h2 className="section-title section-title-compact">نوع القماش</h2>
+                  <div className="additional-notes-list">
+                    <div className="additional-note-item">
+                      <span className="note-number">1.</span>
+                      <div className="note-content">
+                        <span className="note-text font-bold text-gray-800">{order.fabric}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* قسم ملاحظات إضافية - جميع أنواع الملاحظات مع الترجمات */}
               <div className="print-additional-notes">
                 <h2 className="section-title section-title-compact">ملاحظات إضافية</h2>

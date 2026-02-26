@@ -624,6 +624,17 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.order_number || order.id}</p>
                   </div>
 
+                  {/* نوع القماش */}
+                  {order.fabric && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">نوع القماش:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.fabric}</p>
+                    </div>
+                  )}
+
                   {/* موعد التسليم */}
                   <div className="bg-white p-2 sm:p-3 rounded-lg">
                     <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
