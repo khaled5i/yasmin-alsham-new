@@ -3889,14 +3889,41 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           if (typeof document !== 'undefined') {
             return createPortal(
               <div
-                className="fixed inset-0 z-[9999] bg-gray-900/90 flex items-center justify-center p-4 tablet:p-8"
+                className="fixed inset-0 z-[9999] bg-gray-900/90 flex flex-col items-center justify-center p-4 tablet:p-8 gap-3"
                 style={{ touchAction: 'none' }} // لمنع التمرير في الخلفية
               >
+                {/* زر التبديل بين الأمام والخلف - يظهر فوق الصورة مباشرة */}
+                {!customImage && !currentImageBase64 && (
+                  <div className="flex items-center bg-gray-800/80 backdrop-blur-sm rounded-full p-1 shadow-lg border border-gray-700 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleViewSwitch('front')}
+                      className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
+                        activeView === 'front'
+                          ? 'bg-pink-500 text-white shadow-md'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      الأمام
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleViewSwitch('back')}
+                      className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
+                        activeView === 'back'
+                          ? 'bg-pink-500 text-white shadow-md'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      الخلف
+                    </button>
+                  </div>
+                )}
                 {/* حاوية تحدد النسبة وتوسط المحتوى */}
                 {/* maxWidth يضمن أن العرض لا يتجاوز نسبة 3:4 بالنسبة للارتفاع المتاح - يمنع تمدد الصورة على الشاشات العريضة */}
                 <div
-                  className="relative w-full max-w-full max-h-full aspect-[3/4] flex items-center justify-center shadow-2xl rounded-lg overflow-hidden my-auto mx-auto"
-                  style={{ maxWidth: 'calc((100vh - 2rem) * 0.75)' }}
+                  className="relative w-full max-w-full aspect-[3/4] flex items-center justify-center shadow-2xl rounded-lg overflow-hidden mx-auto"
+                  style={{ maxWidth: 'calc((100vh - 2rem) * 0.75)', maxHeight: 'calc(100% - 3.5rem)' }}
                 >
                   {content}
                 </div>
