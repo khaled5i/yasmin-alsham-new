@@ -725,17 +725,17 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                       />
                     </div>
 
-                    {/* 5. رقم الطلب */}
+                    {/* 5. نوع القماش */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
+                        نوع القماش
                       </label>
                       <input
                         type="text"
-                        value={formData.orderNumber}
-                        onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
+                        value={formData.fabric || ''}
+                        onChange={(e) => handleInputChange('fabric', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        placeholder="أدخل نوع القماش..."
                         disabled={isSubmitting}
                       />
                     </div>
@@ -802,17 +802,17 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                       </div>
                     </div>
 
-                    {/* 10. نوع القماش */}
+                    {/* 10. رقم الطلب */}
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        نوع القماش
+                        {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
                       </label>
                       <input
                         type="text"
-                        value={formData.fabric || ''}
-                        onChange={(e) => handleInputChange('fabric', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        placeholder="أدخل نوع القماش..."
+                        value={formData.orderNumber}
+                        onChange={(e) => handleInputChange('orderNumber', e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                        placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
                         disabled={isSubmitting}
                       />
                     </div>
