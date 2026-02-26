@@ -688,7 +688,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                             .filter(worker => worker.worker_type === 'tailor')
                             .map(worker => (
                               <option key={worker.id} value={worker.id}>
-                                {worker.user?.full_name || worker.phone || (worker as any).user?.phone}
+                                {getWorkerName(worker.id)}
                               </option>
                             ))}
                         </select>
