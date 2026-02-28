@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import DatePicker from 'react-datepicker'
+import { shift } from '@floating-ui/dom'
 import 'react-datepicker/dist/react-datepicker.css'
 import { orderService } from '@/lib/services/order-service'
 import { extractDateKey, parseDateKeyForPicker, toLocalDateKey } from '@/lib/date-utils'
@@ -106,11 +107,11 @@ export default function DatePickerForProof({
 
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
-        <span className={`text-sm leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
-        <span className="text-[8px] text-gray-500 leading-none mt-0.5">{hijri.day}</span>
+        <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
+        <span className="text-[12px] text-gray-500 leading-none mt-0.5">{hijri.day}</span>
         {proofCount > 0 && (
           <span
-            className={`text-[8px] font-semibold leading-none ${isOverloaded
+            className={`text-[12px] font-semibold leading-none ${isOverloaded
               ? 'text-red-600'
               : 'text-green-600'
               }`}
@@ -214,7 +215,9 @@ export default function DatePickerForProof({
         required={required}
         showPopperArrow={false}
         popperPlacement="bottom-start"
+        popperModifiers={[shift({ padding: 8 })]}
         portalId="datepicker-portal-root"
+        onFocus={(e) => e.target.blur()}
         onKeyDown={(e) => {
           // منع الكتابة اليدوية مع السماح بفتح التقويم
           e.preventDefault()
@@ -287,9 +290,9 @@ export default function DatePickerForProof({
         .custom-calendar-proof-hijri .react-datepicker__day-name {
           color: #047857;
           font-weight: 600;
-          font-size: 0.7rem;
-          width: 2.75rem;
-          margin: 0.1rem;
+          font-size: 1.05rem;
+          width: 4.125rem;
+          margin: 0.15rem;
         }
 
         .custom-calendar-proof-hijri .react-datepicker__month {
@@ -297,10 +300,10 @@ export default function DatePickerForProof({
         }
 
         .custom-calendar-proof-hijri .react-datepicker__day {
-          width: 2.75rem;
-          height: 3rem;
+          width: 4.125rem;
+          height: 4.5rem;
           line-height: 1;
-          margin: 0.1rem;
+          margin: 0.15rem;
           border-radius: 0.5rem;
           transition: all 0.2s ease;
           display: inline-flex;
@@ -347,14 +350,14 @@ export default function DatePickerForProof({
 
         @media (max-width: 640px) {
           .custom-calendar-proof-hijri .react-datepicker__day {
-            width: 2.25rem;
-            height: 2.5rem;
-            margin: 0.05rem;
+            width: 3.375rem;
+            height: 3.75rem;
+            margin: 0.075rem;
           }
 
           .custom-calendar-proof-hijri .react-datepicker__day-name {
-            width: 2.25rem;
-            font-size: 0.6rem;
+            width: 3.375rem;
+            font-size: 0.9rem;
           }
         }
 
