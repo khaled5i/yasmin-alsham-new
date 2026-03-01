@@ -1,11 +1,39 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Save, Ruler } from 'lucide-react'
+import { X, Save, Ruler, RotateCcw } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import NumericInput from './NumericInput'
 import { Measurements, MEASUREMENT_ORDER } from '@/types/measurements'
+
+const STORAGE_KEY_PREFIX = 'measurements-draft-'
+
+function getStorageKey(orderId: string) {
+  return `${STORAGE_KEY_PREFIX}${orderId}`
+}
+
+function saveDraftToLocal(orderId: string, data: Measurements) {
+  try {
+    localStorage.setItem(getStorageKey(orderId), JSON.stringify({ data, timestamp: Date.now() }))
+  } catch {}
+}
+
+function loadDraftFromLocal(orderId: string): { data: Measurements; timestamp: number } | null {
+  try {
+    const raw = localStorage.getItem(getStorageKey(orderId))
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function clearDraftFromLocal(orderId: string) {
+  try {
+    localStorage.removeItem(getStorageKey(orderId))
+  } catch {}
+}
 
 interface MeasurementsModalProps {
   isOpen: boolean
@@ -25,19 +53,56 @@ export default function MeasurementsModal({
   const { t } = useTranslation()
   const [measurements, setMeasurements] = useState<Measurements>(initialMeasurements || {})
   const [isSaving, setIsSaving] = useState(false)
+  const [showDraftBanner, setShowDraftBanner] = useState(false)
+  const userHasEdited = useRef(false)
+  const draftRestoredRef = useRef(false)
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // تحديث المقاسات عند تغيير initialMeasurements
+  // عند فتح المودال: استعادة المسودة تلقائياً
   useEffect(() => {
-    if (initialMeasurements) {
+    if (isOpen && orderId) {
+      const draft = loadDraftFromLocal(orderId)
+      if (draft) {
+        setMeasurements(draft.data)
+        setShowDraftBanner(true)
+        draftRestoredRef.current = true
+      } else {
+        draftRestoredRef.current = false
+      }
+      userHasEdited.current = false
+    }
+  }, [isOpen, orderId])
+
+  // تحديث المقاسات عند تغيير initialMeasurements (فقط إذا لم يتم استعادة مسودة)
+  useEffect(() => {
+    if (initialMeasurements && !draftRestoredRef.current) {
       setMeasurements(initialMeasurements)
     }
   }, [initialMeasurements])
 
+  // حفظ تلقائي محلي مع debounce
+  const saveDraftDebounced = useCallback((data: Measurements) => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => {
+      saveDraftToLocal(orderId, data)
+    }, 500)
+  }, [orderId])
+
   const handleMeasurementChange = (key: keyof Measurements, value: string) => {
-    setMeasurements(prev => ({
-      ...prev,
-      [key]: key === 'additional_notes' ? value : value
-    }))
+    userHasEdited.current = true
+    setMeasurements(prev => {
+      const updated = { ...prev, [key]: key === 'additional_notes' ? value : value }
+      saveDraftDebounced(updated)
+      return updated
+    })
+  }
+
+  // مسح المسودة والعودة للبيانات الأصلية
+  const handleClearDraft = () => {
+    clearDraftFromLocal(orderId)
+    draftRestoredRef.current = false
+    setMeasurements(initialMeasurements || {})
+    setShowDraftBanner(false)
   }
 
   const handleSave = async () => {
@@ -58,6 +123,8 @@ export default function MeasurementsModal({
       })
 
       await onSave(processedMeasurements)
+      // عند الحفظ الناجح، مسح المسودة المحلية
+      clearDraftFromLocal(orderId)
       onClose()
     } catch (error) {
       console.error('Error saving measurements:', error)
@@ -103,6 +170,22 @@ export default function MeasurementsModal({
                   <X className="w-5 h-5 text-gray-600" />
                 </button>
               </div>
+
+              {/* شريط إشعار استعادة المسودة */}
+              {showDraftBanner && (
+                <div className="mx-6 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-amber-800 text-sm">
+                    <RotateCcw className="w-4 h-4 flex-shrink-0" />
+                    <span>تم استعادة بيانات محفوظة محلياً بشكل تلقائي</span>
+                  </div>
+                  <button
+                    onClick={handleClearDraft}
+                    className="px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors flex-shrink-0"
+                  >
+                    مسح الكل
+                  </button>
+                </div>
+              )}
 
               {/* Content */}
               <div className="p-6">
@@ -162,4 +245,3 @@ export default function MeasurementsModal({
     </AnimatePresence>
   )
 }
-
