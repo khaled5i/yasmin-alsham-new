@@ -635,6 +635,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const cameraStreamRef = useRef<MediaStream | null>(null)
   const drawingScrollLockRef = useRef<{ overflow: string; touchAction: string } | null>(null)
 
+  // تتبع الصور المخصصة لكل واجهة (أمام/خلف) منفصلة
+  const viewCustomImagesRef = useRef<{ front: string | null; back: string | null }>({ front: null, back: null })
+
   // حالات التعليقات الصوتية
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [activeTranscriptionId, setActiveTranscriptionId] = useState<string | null>(null)
@@ -721,9 +724,29 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
   }, [initialView]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // تهيئة الصور المخصصة لكل واجهة من التعليقات المحفوظة عند التحميل
+  const viewCustomImagesInitializedRef = useRef(false)
+  useEffect(() => {
+    if (viewCustomImagesInitializedRef.current) return
+    if (savedComments.length === 0) return
+    viewCustomImagesInitializedRef.current = true
+    for (const comment of savedComments) {
+      const commentView = comment.view ?? getViewFromTitle(comment.title)
+      if (commentView && comment.image && comment.image.startsWith('data:')) {
+        viewCustomImagesRef.current[commentView] = comment.image
+      }
+    }
+    // عرض الصورة المخصصة للواجهة الحالية إن وجدت
+    const currentView = (internalImageOverride || imageSrc).toLowerCase().includes('back') ? 'back' : 'front'
+    const currentViewImage = viewCustomImagesRef.current[currentView]
+    if (currentViewImage && !imagePreview && !customImage) {
+      setImagePreview(currentViewImage)
+    }
+  }, [savedComments]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // الصورة الفعلية المعروضة:
-  // 1) صورة المعاينة من File الحالي
-  // 2) صورة مخصصة محفوظة سابقاً (base64)
+  // 1) صورة المعاينة من File الحالي أو صورة مخصصة محفوظة للواجهة
+  // 2) صورة مخصصة محفوظة سابقاً (base64) من props
   // 3) مسار الواجهة الافتراضية (أمام/خلف)
   // 4) الصورة الممررة عبر props كحل أخير
   const effectiveImageSrc = useMemo(() => {
@@ -1043,6 +1066,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     const currentView = getCurrentView()
     const viewLabel = getViewLabel(currentView)
 
+    // استخدام الصورة المخصصة المحفوظة للواجهة الحالية (base64 فعلي بدلاً من 'custom')
+    const viewCustomImage = viewCustomImagesRef.current[currentView]
+    const imageToStore = imageBase64 || viewCustomImage || null
+
     // البحث عن slot موجود لهذا العرض
     const existingSlot = savedComments.find(c => {
       const commentView = c.view ?? getViewFromTitle(c.title)
@@ -1057,7 +1084,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ...c,
           annotations: [...annotations],
           drawings: [...drawings],
-          image: imageBase64 ? 'custom' : (c.image || null),
+          image: imageToStore,
           compositeImage: compositeImage || c.compositeImage,
           view: currentView,
           timestamp: Date.now()
@@ -1072,7 +1099,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         timestamp: Date.now(),
         annotations: [...annotations],
         drawings: [...drawings],
-        image: imageBase64 ? 'custom' : null,
+        image: imageToStore,
         title: viewLabel,
         view: currentView,
         compositeImage: compositeImage
@@ -1096,15 +1123,21 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // دالة التبديل بين الأمام والخلف - نظام slot ثابت
   const handleViewSwitch = useCallback(async (targetView: 'front' | 'back') => {
     const targetPath = targetView === 'front' ? '/front2.png' : '/back2.png'
-    const isAlreadyInView = getCurrentView() === targetView
+    const currentView = getCurrentView()
+    const isAlreadyInView = currentView === targetView
     if (isAlreadyInView) return
 
-    // 1. حفظ المحتوى الحالي في slot العرض الحالي (إذا كان هناك محتوى)
+    // 1. حفظ الصورة المخصصة الحالية في ref قبل التبديل
+    if (imagePreview && imagePreview.startsWith('data:')) {
+      viewCustomImagesRef.current[currentView] = imagePreview
+    }
+
+    // 2. حفظ المحتوى الحالي في slot العرض الحالي (إذا كان هناك محتوى)
     if (annotations.length > 0 || drawings.length > 0) {
       await saveCurrentComment()
     }
 
-    // 2. إلغاء أوضاع العرض/التعديل
+    // 3. إلغاء أوضاع العرض/التعديل
     if (viewingCommentId) {
       setViewingCommentId(null)
       setOriginalViewingAnnotations(null)
@@ -1112,7 +1145,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
     setEditingCommentId(null)
 
-    // 3. تحميل محتوى slot العرض المستهدف (إن وجد)
+    // 4. مسح ملف الصورة المخصصة (لأنها خاصة بالواجهة السابقة)
+    onImageChange?.(null)
+
+    // 5. تحميل محتوى slot العرض المستهدف (إن وجد)
     const targetSlot = savedComments.find(c => {
       const commentView = c.view ?? getViewFromTitle(c.title)
       return commentView === targetView
@@ -1126,11 +1162,19 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       onDrawingsChange([])
     }
 
-    // 4. تعيين العرض الجديد
+    // 6. استعادة الصورة المخصصة للواجهة المستهدفة (إن وجدت)
+    const targetCustomImage = viewCustomImagesRef.current[targetView]
+    if (targetCustomImage) {
+      setImagePreview(targetCustomImage)
+    } else {
+      setImagePreview(null)
+    }
+
+    // 7. تعيين العرض الجديد
     setInternalImageOverride(targetPath)
     onViewChange?.(targetView)
 
-  }, [annotations.length, drawings.length, saveCurrentComment, viewingCommentId, savedComments, onAnnotationsChange, onDrawingsChange, getCurrentView, onViewChange])
+  }, [annotations.length, drawings.length, saveCurrentComment, viewingCommentId, savedComments, onAnnotationsChange, onDrawingsChange, getCurrentView, onViewChange, imagePreview, onImageChange])
 
   // دالة حذف تعليق محفوظ
   const deleteSavedComment = useCallback((commentId: string) => {
@@ -1192,11 +1236,18 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     if (inferredView) {
       const targetPath = inferredView === 'front' ? '/front2.png' : '/back2.png'
       setInternalImageOverride(targetPath)
+      // استعادة الصورة المخصصة للواجهة المستهدفة
+      if (comment.image && comment.image.startsWith('data:')) {
+        setImagePreview(comment.image)
+        viewCustomImagesRef.current[inferredView] = comment.image
+      } else {
+        const savedViewImage = viewCustomImagesRef.current[inferredView]
+        setImagePreview(savedViewImage || null)
+      }
     } else if (comment.image && comment.image.startsWith('data:')) {
       setImagePreview(comment.image)
       setInternalImageOverride(null)
     }
-    // لا نحمل الصورة لأنها base64 وليست File
   }, [hasUnsavedCommentChanges, saveCurrentComment, onAnnotationsChange, onDrawingsChange])
 
   // دالة تحديث التعليق المحفوظ الذي يتم عرضه
@@ -1234,7 +1285,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ...c,
           annotations: [...annotations],
           drawings: [...drawings],
-          image: imageBase64 ? 'custom' : (c.image || null),
+          image: imageBase64 || viewCustomImagesRef.current[currentView] || (c.image || null),
           view: currentView,
           compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
@@ -1288,7 +1339,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ...c,
           annotations: [...annotations],
           drawings: [...drawings],
-          image: imageBase64 ? 'custom' : (c.image || null),
+          image: imageBase64 || viewCustomImagesRef.current[currentView] || (c.image || null),
           view: currentView,
           compositeImage: compositeImage || c.compositeImage, // تحديث الصورة المركّبة
           timestamp: Date.now()
@@ -1310,15 +1361,33 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     onDrawingsChange([])
   }, [onAnnotationsChange, onDrawingsChange])
 
-  // إنشاء URL للصورة المختارة
+  // إنشاء URL للصورة المختارة وحفظ base64 لكل واجهة
   useEffect(() => {
     if (!customImage) {
-      setImagePreview(null)
+      // لا نمسح imagePreview هنا - يتم التحكم بها عبر handleViewSwitch
+      // فقط نمسحها إذا لم تكن هناك صورة مخصصة محفوظة للواجهة الحالية
+      const currentView = (internalImageOverride || imageSrc).toLowerCase().includes('back') ? 'back' : 'front'
+      const savedViewImage = viewCustomImagesRef.current[currentView]
+      if (!savedViewImage) {
+        setImagePreview(null)
+      }
       return
     }
 
     let cancelled = false
     let currentUrl: string | null = null
+
+    // حفظ base64 للواجهة الحالية
+    const saveBase64ForView = async (blob: Blob) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (!cancelled) {
+          const currentView = (internalImageOverride || imageSrc).toLowerCase().includes('back') ? 'back' : 'front'
+          viewCustomImagesRef.current[currentView] = reader.result as string
+        }
+      }
+      reader.readAsDataURL(blob)
+    }
 
     resizeImageFile(customImage, MAX_CUSTOM_IMAGE_DIM)
       .then((url) => {
@@ -1328,11 +1397,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         }
         currentUrl = url
         setImagePreview(url)
+        // حفظ base64 للواجهة الحالية
+        saveBase64ForView(customImage)
       })
       .catch(async (error) => {
         console.error('فشل ضغط الصورة المخصصة:', error)
         if (cancelled) return
-        // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
         let safeBlob: Blob = customImage
         const isAndroid = /android/i.test(navigator.userAgent)
         if (isAndroid) {
@@ -1344,13 +1414,14 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         const fallbackUrl = URL.createObjectURL(safeBlob)
         currentUrl = fallbackUrl
         setImagePreview(fallbackUrl)
+        saveBase64ForView(safeBlob)
       })
 
     return () => {
       cancelled = true
       if (currentUrl) URL.revokeObjectURL(currentUrl)
     }
-  }, [customImage])
+  }, [customImage]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeView = getCurrentView()
 
@@ -2085,9 +2156,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // إعادة الصورة الافتراضية
   const handleResetImage = useCallback(() => {
     onImageChange?.(null)
+    // مسح الصورة المخصصة للواجهة الحالية
+    const currentView = getCurrentView()
+    viewCustomImagesRef.current[currentView] = null
+    setImagePreview(null)
     setShowImageOptions(false)
     setError(null)
-  }, [onImageChange])
+  }, [onImageChange, getCurrentView])
 
   // فتح اختيار الصورة من المعرض
   const openGallery = useCallback(() => {
@@ -3893,27 +3968,25 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 style={{ touchAction: 'none' }} // لمنع التمرير في الخلفية
               >
                 {/* زر التبديل بين الأمام والخلف - يظهر فوق الصورة مباشرة */}
-                {!customImage && !currentImageBase64 && (
+                {(
                   <div className="flex items-center bg-gray-800/80 backdrop-blur-sm rounded-full p-1 shadow-lg border border-gray-700 shrink-0">
                     <button
                       type="button"
                       onClick={() => handleViewSwitch('front')}
-                      className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
-                        activeView === 'front'
+                      className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${activeView === 'front'
                           ? 'bg-pink-500 text-white shadow-md'
                           : 'text-gray-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       الأمام
                     </button>
                     <button
                       type="button"
                       onClick={() => handleViewSwitch('back')}
-                      className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
-                        activeView === 'back'
+                      className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${activeView === 'back'
                           ? 'bg-pink-500 text-white shadow-md'
                           : 'text-gray-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       الخلف
                     </button>

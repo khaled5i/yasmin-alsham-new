@@ -323,14 +323,26 @@ function AddOrderContent() {
     if (formData.savedDesignComments.length > 0) {
       try {
         // إزالة compositeImage من التعليقات قبل الحفظ لتوفير المساحة
-        const commentsWithoutComposite = formData.savedDesignComments.map(comment => {
+        // الاحتفاظ بـ image (base64 للصورة المخصصة لكل واجهة) للاستعادة عند العودة
+        const commentsForStorage = formData.savedDesignComments.map(comment => {
           const { compositeImage, ...rest } = comment as any
           return rest
         })
-        localStorage.setItem(DESIGN_COMMENTS_STORAGE_KEY, JSON.stringify(commentsWithoutComposite))
+        localStorage.setItem(DESIGN_COMMENTS_STORAGE_KEY, JSON.stringify(commentsForStorage))
         console.log(`💾 Saved ${formData.savedDesignComments.length} design comments to localStorage`)
       } catch (error) {
+        // إذا فشل الحفظ بسبب حجم localStorage، نحاول بدون الصور المخصصة
         console.error('Error saving design comments:', error)
+        try {
+          const commentsMinimal = formData.savedDesignComments.map(comment => {
+            const { compositeImage, image, ...rest } = comment as any
+            return { ...rest, image: (image && image.startsWith('data:')) ? 'custom' : image }
+          })
+          localStorage.setItem(DESIGN_COMMENTS_STORAGE_KEY, JSON.stringify(commentsMinimal))
+          console.log('💾 Saved design comments without custom images (fallback)')
+        } catch (fallbackError) {
+          console.error('Error saving design comments (fallback):', fallbackError)
+        }
       }
     } else {
       // حذف التعليقات من localStorage إذا كانت فارغة
