@@ -19,6 +19,7 @@ import CompletedWorkUpload from '@/components/CompletedWorkUpload'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 import MeasurementsModal from '@/components/MeasurementsModal'
 import NumericInput from '@/components/NumericInput'
+import OrderDateFilterPicker from '@/components/OrderDateFilterPicker'
 import {
   ArrowRight,
   Package,
@@ -30,7 +31,6 @@ import {
   CheckCircle,
   AlertCircle,
   Plus,
-  Calendar,
   User,
   X,
   Languages,
@@ -82,6 +82,7 @@ export default function OrdersPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [dateFilterType, setDateFilterType] = useState<'received' | 'delivery'>('received')
   const [dateFilter, setDateFilter] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -472,7 +473,11 @@ export default function OrdersPage() {
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
-    const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
+    const selectedOrderDate = dateFilterType === 'received'
+      ? (order.order_received_date || order.created_at)
+      : order.due_date
+
+    const matchesDate = !dateFilter || Boolean(selectedOrderDate?.startsWith(dateFilter))
 
     return matchesRole && matchesSearch && matchesStatus && matchesDate
   })
@@ -575,14 +580,14 @@ export default function OrdersPage() {
             </div>
 
             {/* فلتر التاريخ */}
-            <div className="relative min-w-0">
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all"
+            <div className="min-w-0">
+              <OrderDateFilterPicker
+                selectedDate={dateFilter}
+                onDateChange={setDateFilter}
+                filterType={dateFilterType}
+                onFilterTypeChange={setDateFilterType}
+                orders={orders}
               />
-              <Calendar className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
             </div>
           </div>
         </motion.div>

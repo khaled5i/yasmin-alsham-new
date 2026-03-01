@@ -100,7 +100,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Fetch full order data when opened with lightweight-loaded order
   useEffect(() => {
@@ -344,12 +345,12 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
     // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setMessage({ type: 'error', text: t('fill_required_fields') })
+      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
     setIsSubmitting(true)
-    setMessage(null)
+    setSaveError(null)
 
     try {
       console.log('📦 Updating order...')
@@ -448,16 +449,16 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         updated_at: new Date().toISOString()
       })
 
-      setMessage({ type: 'success', text: t('order_updated_success') })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 1200)
 
       setTimeout(() => {
         onClose()
-        setMessage(null)
       }, 1500)
 
     } catch (error) {
       console.error('❌ Error updating order:', error)
-      setMessage({ type: 'error', text: t('order_update_error') })
+      setSaveError(t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب')
     } finally {
       setIsSubmitting(false)
     }
@@ -479,12 +480,12 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
     // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setMessage({ type: 'error', text: t('fill_required_fields') })
+      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
     setIsSubmitting(true)
-    setMessage(null)
+    setSaveError(null)
 
     try {
       console.log('📦 Updating order and sending WhatsApp...')
@@ -582,7 +583,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         updated_at: new Date().toISOString()
       })
 
-      setMessage({ type: 'success', text: t('order_updated_success') })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 1200)
 
       // فتح واتساب مع الرسالة المجهزة
       try {
@@ -609,12 +611,11 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
       setTimeout(() => {
         onClose()
-        setMessage(null)
       }, 2000)
 
     } catch (error) {
       console.error('❌ Error updating order:', error)
-      setMessage({ type: 'error', text: t('order_update_error') })
+      setSaveError(t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب')
     } finally {
       setIsSubmitting(false)
     }
@@ -922,22 +923,16 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
               {/* تذييل النافذة */}
               <div className="sticky bottom-0 bg-white/90 backdrop-blur-sm border-t border-pink-100 p-6 rounded-b-2xl z-30 shadow-lg">
-                {/* رسالة النجاح/الخطأ */}
-                {message && (
+                {/* رسالة الخطأ - تصميم مطابق لصفحة الأقمشة */}
+                {saveError && (
                   <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`mb-4 p-4 rounded-lg flex items-center space-x-2 space-x-reverse ${message.type === 'success'
-                      ? 'bg-green-50 text-green-800 border border-green-200'
-                      : 'bg-red-50 text-red-800 border border-red-200'
-                      }`}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3 }}
+                    className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg"
                   >
-                    {message.type === 'success' ? (
-                      <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                    )}
-                    <span>{message.text}</span>
+                    <p className="font-bold">خطأ:</p>
+                    <p className="text-sm">{saveError}</p>
                   </motion.div>
                 )}
 
@@ -998,6 +993,24 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         )}
       </AnimatePresence>
 
+      {/* مودال رسالة النجاح - تصميم مطابق لصفحة الأقمشة */}
+      {saveSuccess && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center"
+          >
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">تم إتمام الإجراء بنجاح</h3>
+          </motion.div>
+        </div>
+      )}
     </>
   )
 }

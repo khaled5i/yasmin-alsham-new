@@ -376,7 +376,8 @@ function AddOrderContent() {
   }, [formData, isArabic])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // حساب المبلغ المتبقي
   const remainingAmount = useMemo(() => {
@@ -515,12 +516,12 @@ function AddOrderContent() {
 
     // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setMessage({ type: 'error', text: t('fill_required_fields') })
+      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
     setIsSubmitting(true)
-    setMessage(null)
+    setSaveError(null)
 
     try {
       console.log('📦 Submitting order...')
@@ -631,9 +632,7 @@ function AddOrderContent() {
       })
 
       if (!result.success) {
-        toast.error(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
-          icon: '✗',
-        })
+        setSaveError(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
         return
       }
 
@@ -645,10 +644,8 @@ function AddOrderContent() {
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       // إظهار رسالة النجاح
-      toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
-        icon: '✓',
-        duration: 2000,
-      })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 1200)
 
       // التوجيه بعد 2 ثانية
       setTimeout(() => {
@@ -657,9 +654,7 @@ function AddOrderContent() {
 
     } catch (error) {
       console.error('❌ Error adding order:', error)
-      toast.error(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
-        icon: '✗',
-      })
+      setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
       setIsSubmitting(false)
     }
@@ -679,12 +674,12 @@ function AddOrderContent() {
 
     // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setMessage({ type: 'error', text: t('fill_required_fields') })
+      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
     setIsSubmitting(true)
-    setMessage(null)
+    setSaveError(null)
 
     try {
       console.log('📦 Submitting order and sending WhatsApp...')
@@ -789,9 +784,7 @@ function AddOrderContent() {
       })
 
       if (!result.success) {
-        toast.error(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
-          icon: '✗',
-        })
+        setSaveError(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
         return
       }
 
@@ -803,10 +796,8 @@ function AddOrderContent() {
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       // إظهار رسالة النجاح
-      toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', {
-        icon: '✓',
-        duration: 2000,
-      })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 1200)
 
       // فتح واتساب مع الرسالة المجهزة
       try {
@@ -838,9 +829,7 @@ function AddOrderContent() {
 
     } catch (error) {
       console.error('❌ Error adding order:', error)
-      toast.error(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', {
-        icon: '✗',
-      })
+      setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
       setIsSubmitting(false)
     }
@@ -852,12 +841,12 @@ function AddOrderContent() {
 
     // التحقق من الحقول المطلوبة
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setMessage({ type: 'error', text: t('fill_required_fields') })
+      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
     setIsSubmitting(true)
-    setMessage(null)
+    setSaveError(null)
 
     try {
       console.log('📦 Submitting order and opening print...')
@@ -930,7 +919,7 @@ function AddOrderContent() {
       })
 
       if (!result.success) {
-        toast.error(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', { icon: '✗' })
+        setSaveError(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
         return
       }
 
@@ -938,7 +927,8 @@ function AddOrderContent() {
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
-      toast.success(t('order_added_success') || 'تم إضافة الطلب بنجاح', { icon: '✓', duration: 2000 })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 1200)
 
       // فتح modal الطباعة مع بيانات الطلب المحفوظ
       if (result.data) {
@@ -948,7 +938,7 @@ function AddOrderContent() {
 
     } catch (error) {
       console.error('❌ Error adding order:', error)
-      toast.error(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب', { icon: '✗' })
+      setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
       setIsSubmitting(false)
     }
@@ -990,23 +980,51 @@ function AddOrderContent() {
           </p>
         </motion.div>
 
-        {/* رسالة النجاح/الخطأ */}
-        {message && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`mb-8 p-4 rounded-lg flex items-center space-x-3 space-x-reverse max-w-4xl mx-auto ${message.type === 'success'
-              ? 'bg-green-50 text-green-800 border border-green-200'
-              : 'bg-red-50 text-red-800 border border-red-200'
-              }`}
-          >
-            {message.type === 'success' ? (
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            ) : (
-              <AlertCircle className="w-5 h-5 text-red-600" />
-            )}
-            <span>{message.text}</span>
-          </motion.div>
+        {/* رسالة الخطأ - تصميم مطابق لصفحة الأقمشة */}
+        {saveError && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+              className="bg-white rounded-2xl p-8 shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">{saveError}</h3>
+              <button
+                onClick={() => setSaveError(null)}
+                className="mt-4 px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
+              >
+                حسناً
+              </button>
+            </motion.div>
+          </div>
+        )}
+        {saveError && (
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => setSaveError(null)} />
+        )}
+
+        {/* مودال رسالة النجاح - تصميم مطابق لصفحة الأقمشة */}
+        {saveSuccess && (
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">تم إتمام الإجراء بنجاح</h3>
+            </motion.div>
+          </div>
         )}
 
         {/* النموذج */}

@@ -15,7 +15,13 @@
       "Bash(find:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(xargs grep -l \"toast\\\\|notification\\\\|alert\")",
+      "Bash(wc -l \"/c/Users/khale/OneDrive/yasmin-alsham-main \\(1\\)/src/app/dashboard/fabrics/page.tsx\")",
+      "Bash(wc -l \"/c/Users/khale/OneDrive/yasmin-alsham-main \\(1\\)/src/components/EditOrderModal.tsx\")",
+      "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\app\\\\dashboard\\\\add-order\\\\page.tsx\")",
+      "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\components\\\\EditOrderModal.tsx\")",
+      "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\app\\\\dashboard\\\\orders\\\\page.tsx\")"
     ]
   }
 }
