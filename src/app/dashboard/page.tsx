@@ -20,6 +20,7 @@ import {
   BarChart3,
   Users,
   Calendar,
+  CalendarDays,
   Package,
   Settings,
   LogOut,
@@ -475,6 +476,14 @@ function DashboardContent() {
                     <Wrench className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
                     <span className="whitespace-nowrap">{isArabic ? 'إضافة طلب تعديل' : 'Add Alteration'}</span>
                   </button>
+
+                  <Link
+                    href="/dashboard/order-schedule"
+                    className="inline-flex items-center justify-center space-x-2 space-x-reverse px-2 py-3 sm:px-6 sm:py-4 group text-xs sm:text-base flex-1 min-w-0 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all duration-300"
+                  >
+                    <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
+                    <span className="whitespace-nowrap">{isArabic ? 'عرض مواعيد الطلبات' : 'Order Schedule'}</span>
+                  </Link>
                 </div>
               )}
 

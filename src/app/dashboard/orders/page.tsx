@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
@@ -80,11 +80,24 @@ export default function OrdersPage() {
     loadWorkers()
   })
 
+  const searchParams = useSearchParams()
+
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFilterType, setDateFilterType] = useState<'received' | 'delivery'>('received')
   const [dateFilter, setDateFilter] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
+
+  // Read URL query params on first render (set from schedule calendar page)
+  useEffect(() => {
+    const dateParam = searchParams?.get('date')
+    const typeParam = searchParams?.get('type')
+    if (dateParam) setDateFilter(dateParam)
+    if (typeParam === 'delivery' || typeParam === 'proof') {
+      setDateFilterType('delivery')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [showViewModal, setShowViewModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
