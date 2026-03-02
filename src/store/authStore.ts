@@ -80,9 +80,12 @@ export const useAuthStore = create<AuthState>()(
       lastVerifiedAt: null,
       _hasHydrated: true, // Always true — no hydration gating in old system
 
-      // Stub: always returns true if user exists (no TTL checking)
+      // Returns true only if session was verified within the last 5 minutes
       isSessionFresh: () => {
-        return get().user !== null
+        const { user, lastVerifiedAt } = get()
+        if (!user || !lastVerifiedAt) return false
+        const SESSION_TTL = 5 * 60 * 1000 // 5 دقائق
+        return (Date.now() - lastVerifiedAt) < SESSION_TTL
       },
 
       // Signal to data stores to invalidate their caches

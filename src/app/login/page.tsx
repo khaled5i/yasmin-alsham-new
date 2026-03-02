@@ -42,21 +42,27 @@ export default function LoginPage() {
           return
         }
 
-        // Session is not fresh, need to validate with Supabase
+        // Session is not fresh, need to validate with Supabase server
         if (isSupabaseConfigured()) {
           try {
-            const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+            // getUser() يتصل بالسيرفر فعلياً للتحقق من صلاحية الـ token
+            // بخلاف getSession() الذي يقرأ من localStorage فقط
+            const { data: { user: supabaseUser }, error: sessionError } = await supabase.auth.getUser()
 
-            if (sessionError || !session?.user) {
+            if (sessionError || !supabaseUser) {
               console.log('⚠️ Supabase session is invalid or expired, staying on login page')
               // Clear stale user data - let them log in again
               useAuthStore.setState({ user: null, lastVerifiedAt: null })
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('yasmin-auth-user')
+              }
               setIsValidatingSession(false)
               return
             }
 
-            // Session is valid, redirect
-            console.log('✅ Supabase session validated, redirecting...')
+            // Session is valid, update lastVerifiedAt and redirect
+            console.log('✅ Supabase session validated with server, redirecting...')
+            useAuthStore.setState({ lastVerifiedAt: Date.now() })
             await redirectUser(user)
           } catch (err) {
             console.error('Error validating session:', err)
