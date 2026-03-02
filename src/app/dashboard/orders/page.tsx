@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -45,7 +45,7 @@ import {
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 
-export default function OrdersPage() {
+function OrdersPageInner() {
   const { user, isLoading: authLoading } = useAuthStore()
   const { orders, loadOrders, updateOrder, deleteOrder, startOrderWork, completeOrder, isLoading: ordersLoading } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
@@ -1026,5 +1026,17 @@ export default function OrdersPage() {
         )}
       </div >
     </div >
+  )
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-12 h-12 border-4 border-pink-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <OrdersPageInner />
+    </Suspense>
   )
 }
