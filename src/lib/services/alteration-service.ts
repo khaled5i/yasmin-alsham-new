@@ -4,7 +4,7 @@
  */
 
 import { extractDateKey } from '../date-utils'
-import { supabase, isSupabaseConfigured } from '../supabase'
+import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
 
 const ALTERATION_LIST_COLUMNS = [
   'id',
@@ -182,6 +182,8 @@ export const alterationService = {
     }
 
     try {
+      await ensureValidSession()
+
       console.log('🔧 Creating alteration:', {
         ...alterationData,
         custom_design_image: alterationData.custom_design_image
@@ -374,6 +376,8 @@ export const alterationService = {
     }
 
     try {
+      await ensureValidSession()
+
       console.log('🔧 Updating alteration:', id, updateData)
 
       const { data, error } = await supabase
@@ -405,6 +409,8 @@ export const alterationService = {
     }
 
     try {
+      await ensureValidSession()
+
       console.log('🗑️ Deleting alteration:', id)
 
       const { error } = await supabase

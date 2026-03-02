@@ -5,7 +5,7 @@
 
 'use client'
 
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured, ensureValidSession } from '@/lib/supabase'
 
 // ============================================================================
 // أنواع البيانات (Types)
@@ -253,6 +253,8 @@ export const fabricService = {
         return { data: null, error: 'Supabase not configured' }
       }
 
+      await ensureValidSession()
+
       const { data, error } = await supabase
         .from('fabrics')
         .insert([fabricData])
@@ -283,12 +285,13 @@ export const fabricService = {
   async update(id: string, updates: UpdateFabricData): Promise<{ data: Fabric | null; error: string | null }> {
     try {
       console.log(`🔄 تحديث القماش ${id} في Supabase...`)
-      console.log('📝 البيانات المرسلة:', updates)
 
       if (!isSupabaseConfigured()) {
         console.warn('⚠️ Supabase غير مُكوّن')
         return { data: null, error: 'Supabase not configured' }
       }
+
+      await ensureValidSession()
 
       // تنظيف البيانات: إزالة القيم undefined
       const cleanUpdates = Object.fromEntries(
@@ -368,6 +371,8 @@ export const fabricService = {
         console.warn('⚠️ Supabase غير مُكوّن')
         return { error: 'Supabase not configured' }
       }
+
+      await ensureValidSession()
 
       const { error } = await supabase
         .from('fabrics')

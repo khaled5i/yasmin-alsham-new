@@ -6,7 +6,7 @@
 
 'use client'
 
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured, ensureValidSession } from '@/lib/supabase'
 
 // ============================================================================
 // ثوابت التكوين
@@ -407,6 +407,8 @@ export const productService = {
         return { data: null, error: 'Supabase not configured' }
       }
 
+      await ensureValidSession()
+
       const { data, error } = await supabase
         .from('products')
         .insert([productData])
@@ -442,12 +444,13 @@ export const productService = {
   async update(id: string, updates: UpdateProductData): Promise<{ data: Product | null; error: string | null }> {
     try {
       console.log(`🔄 تحديث المنتج ${id} في Supabase...`)
-      console.log('📦 البيانات المرسلة للتحديث:', JSON.stringify(updates, null, 2))
 
       if (!isSupabaseConfigured()) {
         console.warn('⚠️ Supabase غير مُكوّن')
         return { data: null, error: 'Supabase not configured' }
       }
+
+      await ensureValidSession()
 
       const { data, error } = await supabase
         .from('products')
@@ -490,6 +493,8 @@ export const productService = {
         console.warn('⚠️ Supabase غير مُكوّن')
         return { error: 'Supabase not configured' }
       }
+
+      await ensureValidSession()
 
       const { error } = await supabase
         .from('products')

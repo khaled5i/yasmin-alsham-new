@@ -11,7 +11,7 @@
  */
 
 import { extractDateKey } from '../date-utils'
-import { supabase, isSupabaseConfigured } from '../supabase'
+import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -285,6 +285,9 @@ export const orderService = {
     }
 
     try {
+      // التحقق من صلاحية الجلسة قبل الإنشاء
+      await ensureValidSession()
+
       if (isDev) console.log('📦 Creating order with', {
         image_annotations: orderData.image_annotations?.length || 0,
         image_drawings: orderData.image_drawings?.length || 0,
@@ -568,6 +571,9 @@ export const orderService = {
     }
 
     try {
+      // التحقق من صلاحية الجلسة قبل التحديث
+      await ensureValidSession()
+
       if (isDev) console.log('🔄 Updating order:', id)
 
       // PERF FIX: Removed redundant SELECT * read-before-write.
@@ -611,6 +617,9 @@ export const orderService = {
     }
 
     try {
+      // التحقق من صلاحية الجلسة قبل الحذف
+      await ensureValidSession()
+
       if (isDev) console.log('🗑️ Deleting order:', id)
 
       const { error } = await supabase

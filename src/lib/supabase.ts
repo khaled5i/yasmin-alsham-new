@@ -158,6 +158,54 @@ export async function testSupabaseConnection(): Promise<boolean> {
 }
 
 /**
+ * التحقق من وجود جلسة صالحة قبل العمليات الحساسة (إنشاء/تحديث/حذف).
+ * - يقرأ الجلسة الحالية أولاً
+ * - إذا كانت منتهية أو غير موجودة، يحاول تجديدها
+ * - إذا فشل التجديد، يرمي خطأ واضح للمستخدم
+ *
+ * ⚠️ لا تستدعي هذه الدالة لعمليات القراءة (SELECT) حتى لا تبطئ التحميل.
+ */
+export async function ensureValidSession(): Promise<void> {
+  if (!isSupabaseConfigured()) return
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (session?.access_token) {
+      // الجلسة موجودة — تحقق هل هي قريبة من الانتهاء (أقل من 60 ثانية)
+      const expiresAt = session.expires_at // Unix timestamp بالثواني
+      if (expiresAt && (expiresAt - Math.floor(Date.now() / 1000)) < 60) {
+        console.log('⏰ الجلسة قريبة من الانتهاء، جاري التجديد...')
+        const { error } = await supabase.auth.refreshSession()
+        if (error) {
+          console.error('❌ فشل تجديد الجلسة:', error.message)
+          throw new Error('SESSION_EXPIRED')
+        }
+        console.log('✅ تم تجديد الجلسة بنجاح')
+      }
+      return // الجلسة صالحة
+    }
+
+    // لا توجد جلسة — محاولة تجديد
+    console.log('⚠️ لا توجد جلسة، جاري محاولة التجديد...')
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+
+    if (refreshError || !refreshData.session) {
+      console.error('❌ فشل تجديد الجلسة:', refreshError?.message)
+      throw new Error('SESSION_EXPIRED')
+    }
+
+    console.log('✅ تم تجديد الجلسة بنجاح')
+  } catch (err: any) {
+    if (err.message === 'SESSION_EXPIRED') {
+      throw new Error('جلستك انتهت. يرجى إعادة تسجيل الدخول ثم المحاولة مرة أخرى')
+    }
+    // أخطاء شبكة أو غيرها — لا نمنع العملية
+    console.warn('⚠️ تعذر التحقق من الجلسة:', err.message)
+  }
+}
+
+/**
  * الحصول على حالة Supabase
  * @returns كائن يحتوي على معلومات حالة الاتصال
  */
