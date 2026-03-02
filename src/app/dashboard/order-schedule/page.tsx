@@ -247,7 +247,7 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        {orders.length === 0 && extraCount > 0 && (
+                        {orders.length === 0 && extraCount > 0 && extraSlots.filter(s => s.label).length === 0 && (
                             <div className="text-center py-6 text-gray-400 text-sm">
                                 <CalendarDays className="w-10 h-10 mx-auto mb-2 opacity-30" />
                                 <p>لا توجد طلبات فعلية في هذا التاريخ</p>
@@ -265,6 +265,26 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                                         <span dir="ltr">{order.client_phone}</span>
                                     </p>
                                     {order.order_number && <p className="text-xs text-gray-400 mt-0.5">#{order.order_number}</p>}
+                                </div>
+                            </div>
+                        ))}
+                        {extraSlots.filter(slot => slot.label).map((slot) => (
+                            <div key={slot.id} className="bg-white border border-dashed border-gray-300 rounded-xl p-4 shadow-sm flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${mode === 'proof' ? 'bg-[#d1fae5]' : 'bg-pink-100'}`}>
+                                    <User className={`w-5 h-5 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-start">
+                                        <p className="font-semibold text-gray-900 truncate max-w-[70%]">{slot.label}</p>
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-md border ${mode === 'proof' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-pink-50 text-pink-700 border-pink-200'} shrink-0 whitespace-nowrap`}>
+                                            مضاف بشكل يدوي
+                                        </span>
+                                    </div>
+                                    {slot.count > 1 && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            العدد: <span className="font-bold">{slot.count}</span>
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -363,8 +383,8 @@ function AddSlotModal({ defaultMode, onClose, onAdd }: AddSlotModalProps) {
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-400 focus:border-teal-400 text-sm" required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظة (اختياري)</label>
-                            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثال: طلبات خارج النظام"
+                            <label className="block text-sm font-medium text-gray-700 mb-1">الاسم (اختياري)</label>
+                            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثال: أحمد عبد الله"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-400 focus:border-teal-400 text-sm" />
                         </div>
                         <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-2">
