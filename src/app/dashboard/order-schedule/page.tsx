@@ -130,18 +130,20 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
         }
     }
 
+    const isProof = mode === 'proof'
+
     return (
-        <div className="bg-white rounded-2xl shadow-md border border-pink-100 overflow-hidden">
+        <div className={`bg-white rounded-2xl shadow-md border overflow-hidden ${isProof ? 'border-green-100' : 'border-pink-100'}`}>
             {/* Month Header */}
-            <div className="bg-gradient-to-r from-pink-50 to-rose-50 px-4 py-3 border-b border-pink-100 text-center">
-                <div className="text-lg font-bold text-pink-900">{hijriFirstDay.monthName} {hijriFirstDay.year}</div>
-                <div className="text-sm text-pink-700 font-medium">{gregorianMonth} {year}</div>
+            <div className={`px-4 py-3 border-b text-center ${isProof ? 'bg-[#d1fae5] border-[#6ee7b7]' : 'bg-gradient-to-r from-pink-50 to-rose-50 border-pink-100'}`}>
+                <div className={`text-lg font-bold ${isProof ? 'text-green-900' : 'text-pink-900'}`}>{hijriFirstDay.monthName} {hijriFirstDay.year}</div>
+                <div className={`text-sm font-medium ${isProof ? 'text-green-700' : 'text-pink-700'}`}>{gregorianMonth} {year}</div>
             </div>
 
             {/* Day names row - full names, LTR order */}
-            <div dir="ltr" className="grid grid-cols-7 bg-pink-50 border-b border-pink-100">
+            <div dir="ltr" className={`grid grid-cols-7 border-b ${isProof ? 'bg-[#ecfdf5] border-[#d1fae5]' : 'bg-pink-50 border-pink-100'}`}>
                 {arabicDayNames.map((d) => (
-                    <div key={d} className="py-2 text-center text-[11px] sm:text-xs font-bold text-rose-800 truncate px-0.5">
+                    <div key={d} className={`py-2 text-center text-[11px] sm:text-xs font-bold truncate px-0.5 ${isProof ? 'text-[#047857]' : 'text-rose-800'}`}>
                         {d}
                     </div>
                 ))}
@@ -158,7 +160,7 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
                             const extra = extraMap[dateKey] || 0
                             const total = realCount + extra
                             const isToday = dateKey === todayKey
-                            const isOverloaded = total > 5
+                            const isOverloaded = isProof ? total >= 4 : total >= 6
                             const hijri = toHijri(date)
 
                             return (
@@ -167,17 +169,17 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
                                     onClick={() => onDateClick(dateKey)}
                                     className={`
                     aspect-square flex flex-col items-center justify-center rounded-lg m-0.5 transition-all duration-200 gap-0.5
-                    ${isToday ? 'ring-2 ring-pink-500' : ''}
-                    ${isOverloaded ? 'bg-red-50 border border-red-200 hover:bg-red-100' : 'hover:bg-pink-50'}
+                    ${isToday ? (isProof ? 'ring-2 ring-green-500' : 'ring-2 ring-pink-500') : ''}
+                    ${isOverloaded ? 'bg-red-50 border border-red-200 hover:bg-red-100' : (isProof ? 'hover:bg-green-50' : 'hover:bg-pink-50')}
                     cursor-pointer
                   `}
                                 >
-                                    <span className={`text-xl font-bold leading-none ${isOverloaded ? 'text-red-700' : isToday ? 'text-pink-600' : 'text-gray-800'}`}>
+                                    <span className={`text-xl font-bold leading-none ${isOverloaded ? 'text-red-700' : isToday ? (isProof ? 'text-[#10b981]' : 'text-pink-600') : 'text-gray-800'}`}>
                                         {date.getDate()}
                                     </span>
                                     <span className="text-xs text-gray-400 leading-none">{hijri.day}</span>
                                     {total > 0 && (
-                                        <span className={`text-sm font-extrabold leading-none px-1.5 py-0.5 rounded-full ${isOverloaded ? 'text-red-700 bg-red-100' : 'text-pink-700 bg-pink-100'}`}>
+                                        <span className={`text-sm font-extrabold leading-none px-1.5 py-0.5 rounded-full ${isOverloaded ? 'text-red-700 bg-red-100' : (isProof ? 'text-green-900 bg-[#d1fae5]' : 'text-pink-700 bg-pink-100')}`}>
                                             {total}
                                         </span>
                                     )}
@@ -225,19 +227,19 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                     className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <div className="bg-gradient-to-r from-pink-500 to-rose-600 px-6 py-4 flex items-center justify-between">
+                    <div className={`px-6 py-4 flex items-center justify-between ${mode === 'proof' ? 'bg-gradient-to-r from-[#10b981] to-[#059669]' : 'bg-gradient-to-r from-pink-500 to-rose-600'}`}>
                         <div>
                             <p className="text-white font-bold text-lg">{gregorianLabel}</p>
-                            <p className="text-pink-100 text-sm">{hijri.monthName} {hijri.day}، {hijri.year}</p>
+                            <p className={`text-sm ${mode === 'proof' ? 'text-green-100' : 'text-pink-100'}`}>{hijri.monthName} {hijri.day}، {hijri.year}</p>
                         </div>
-                        <button onClick={onClose} className="text-white hover:text-pink-200"><X className="w-6 h-6" /></button>
+                        <button onClick={onClose} className={`text-white hover:text-opacity-80`}><X className="w-6 h-6" /></button>
                     </div>
 
-                    <div className="bg-pink-50 px-6 py-2 border-b border-pink-100 flex items-center gap-2">
-                        <CalendarDays className="w-4 h-4 text-pink-600" />
-                        <span className="text-sm text-pink-700 font-medium">
+                    <div className={`px-6 py-2 border-b flex items-center gap-2 ${mode === 'proof' ? 'bg-[#ecfdf5] border-[#d1fae5]' : 'bg-pink-50 border-pink-100'}`}>
+                        <CalendarDays className={`w-4 h-4 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
+                        <span className={`text-sm font-medium ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-700'}`}>
                             {mode === 'delivery' ? 'مواعيد التسليم' : 'مواعيد البروفا'}:
-                            <span className="text-pink-900 font-bold mr-1">{orders.length + extraCount}</span> طلب
+                            <span className={`font-bold mr-1 ${mode === 'proof' ? 'text-green-900' : 'text-pink-900'}`}>{orders.length + extraCount}</span> طلب
                         </span>
                         {extraCount > 0 && (
                             <span className="text-xs text-gray-400 mr-auto">({extraCount} مضاف يدوياً)</span>
@@ -253,8 +255,8 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                         )}
                         {orders.map((order) => (
                             <div key={order.id} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
-                                    <User className="w-5 h-5 text-pink-600" />
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${mode === 'proof' ? 'bg-[#d1fae5]' : 'bg-pink-100'}`}>
+                                    <User className={`w-5 h-5 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="font-semibold text-gray-900 truncate">{order.client_name}</p>
@@ -272,7 +274,7 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                         <div className="border-t border-gray-100 p-4">
                             <button
                                 onClick={onViewMore}
-                                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-pink-500 to-rose-600 text-white rounded-xl font-semibold hover:from-pink-600 hover:to-rose-700 transition-all duration-300 shadow-md hover:shadow-lg"
+                                className={`w-full flex items-center justify-center gap-2 py-3 px-4 text-white rounded-xl font-semibold transition-all duration-300 shadow-md hover:shadow-lg ${mode === 'proof' ? 'bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857]' : 'bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700'}`}
                             >
                                 <Eye className="w-5 h-5" />
                                 عرض تفاصيل أكثر في صفحة الطلبات
@@ -342,8 +344,8 @@ function AddSlotModal({ defaultMode, onClose, onAdd }: AddSlotModalProps) {
                                 </button>
                                 <button type="button" onClick={() => setSlotType('proof')}
                                     className={`py-2 px-3 rounded-lg text-sm font-semibold border-2 transition-all ${slotType === 'proof'
-                                        ? 'bg-purple-500 text-white border-purple-500'
-                                        : 'bg-white text-gray-500 border-gray-200 hover:border-purple-300'
+                                        ? 'bg-[#10b981] text-white border-[#10b981]'
+                                        : 'bg-white text-gray-500 border-gray-200 hover:border-[#10b981]'
                                         }`}>
                                     📋 موعد بروفا
                                 </button>
@@ -657,7 +659,7 @@ export default function OrderSchedulePage() {
                             موعد التسليم
                         </button>
                         <button onClick={() => setMode('proof')}
-                            className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${mode === 'proof' ? 'bg-gradient-to-r from-purple-500 to-violet-600 text-white shadow-md' : 'text-gray-500 hover:text-purple-600'}`}>
+                            className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${mode === 'proof' ? 'bg-gradient-to-r from-[#10b981] to-[#059669] text-white shadow-md' : 'text-gray-500 hover:text-green-600'}`}>
                             موعد تسليم البروفا
                         </button>
                     </div>
@@ -693,9 +695,9 @@ export default function OrderSchedulePage() {
 
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
                     className="mt-4 flex flex-wrap gap-4 justify-center text-xs text-gray-500">
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-pink-500" /><span>به طلبات</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-100 border border-red-300" /><span>أكثر من 5 طلبات</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded border-2 border-pink-500" /><span>اليوم</span></div>
+                    <div className="flex items-center gap-1.5"><div className={`w-3 h-3 rounded ${mode === 'proof' ? 'bg-[#10b981]' : 'bg-pink-500'}`} /><span>به طلبات</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-100 border border-red-300" /><span>أكثر من {mode === 'proof' ? '3' : '5'} طلبات</span></div>
+                    <div className="flex items-center gap-1.5"><div className={`w-3 h-3 rounded border-2 ${mode === 'proof' ? 'border-[#10b981]' : 'border-pink-500'}`} /><span>اليوم</span></div>
                 </motion.div>
             </div>
 
