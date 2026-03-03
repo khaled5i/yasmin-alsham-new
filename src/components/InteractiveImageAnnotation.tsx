@@ -3106,83 +3106,84 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
         {/* زر تبديل الصورة */}
         {onImageChange && (
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowImageOptions(!showImageOptions)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${customImage
-                ? 'bg-green-100 border border-green-400 text-green-700'
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                }`}
-              disabled={disabled || isRecordingActive}
-            >
-              <ImageIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">{customImage ? 'صورة مخصصة' : 'تبديل الصورة'}</span>
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowImageOptions(!showImageOptions)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${imagePreview
+                  ? 'bg-green-100 border border-green-400 text-green-700'
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
+                disabled={disabled || isRecordingActive}
+              >
+                <ImageIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">{imagePreview ? 'صورة مخصصة' : 'تبديل الصورة'}</span>
+              </button>
 
-            {/* قائمة خيارات الصورة */}
-            <AnimatePresence>
-              {showImageOptions && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="absolute top-full mt-1 left-0 sm:right-0 sm:left-auto bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50 min-w-48"
-                >
-                  {/* اختيار من المعرض */}
-                  <button
-                    type="button"
-                    onClick={openGallery}
-                    className="flex items-center gap-2 w-full px-3 py-2 rounded hover:bg-gray-100 text-gray-700"
+              {/* قائمة خيارات الصورة */}
+              <AnimatePresence>
+                {showImageOptions && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute top-full mt-1 left-0 sm:right-0 sm:left-auto bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-50 min-w-48"
                   >
-                    <Upload className="w-4 h-4 text-blue-500" />
-                    <span className="text-sm">اختيار من المعرض</span>
-                  </button>
+                    {/* اختيار من المعرض */}
+                    <button
+                      type="button"
+                      onClick={openGallery}
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded hover:bg-gray-100 text-gray-700"
+                    >
+                      <Upload className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm">اختيار من المعرض</span>
+                    </button>
 
-                  {/* التقاط من الكاميرا */}
-                  <button
-                    type="button"
-                    onClick={openCamera}
-                    className="flex items-center gap-2 w-full px-3 py-2 rounded hover:bg-gray-100 text-gray-700"
-                  >
-                    <Camera className="w-4 h-4 text-green-500" />
-                    <span className="text-sm">التقاط صورة</span>
-                  </button>
+                    {/* التقاط من الكاميرا */}
+                    <button
+                      type="button"
+                      onClick={openCamera}
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded hover:bg-gray-100 text-gray-700"
+                    >
+                      <Camera className="w-4 h-4 text-green-500" />
+                      <span className="text-sm">التقاط صورة</span>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                  {/* إعادة الصورة الافتراضية */}
-                  {customImage && (
-                    <>
-                      <div className="h-px bg-gray-200 my-1" />
-                      <button
-                        type="button"
-                        onClick={handleResetImage}
-                        className="flex items-center gap-2 w-full px-3 py-2 rounded hover:bg-red-50 text-red-600"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                        <span className="text-sm">إعادة الصورة الافتراضية</span>
-                      </button>
-                    </>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+              {/* حقول اختيار الملفات المخفية */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleCameraCapture}
+                className="hidden"
+              />
+            </div>
 
-            {/* حقول اختيار الملفات المخفية */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelect}
-              className="hidden"
-            />
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleCameraCapture}
-              className="hidden"
-            />
+            {/* زر إعادة الصورة الافتراضية - خارجي، يظهر دائماً عند وجود صورة محملة */}
+            {imagePreview && (
+              <button
+                type="button"
+                onClick={handleResetImage}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all bg-red-50 border border-red-300 text-red-600 hover:bg-red-100"
+                disabled={disabled || isRecordingActive}
+                title="إعادة الصورة الافتراضية"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span className="hidden sm:inline">إعادة الافتراضية</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -3974,8 +3975,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       type="button"
                       onClick={() => handleViewSwitch('front')}
                       className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${activeView === 'front'
-                          ? 'bg-pink-500 text-white shadow-md'
-                          : 'text-gray-400 hover:text-white'
+                        ? 'bg-pink-500 text-white shadow-md'
+                        : 'text-gray-400 hover:text-white'
                         }`}
                     >
                       الأمام
@@ -3984,8 +3985,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       type="button"
                       onClick={() => handleViewSwitch('back')}
                       className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${activeView === 'back'
-                          ? 'bg-pink-500 text-white shadow-md'
-                          : 'text-gray-400 hover:text-white'
+                        ? 'bg-pink-500 text-white shadow-md'
+                        : 'text-gray-400 hover:text-white'
                         }`}
                     >
                       الخلف

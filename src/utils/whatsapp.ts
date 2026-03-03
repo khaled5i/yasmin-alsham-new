@@ -127,7 +127,7 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
   message += `يُرجى الحضور في المواعيد المحددة لضمان استلام طلبك في الوقت المناسب.\n\n`
 
   message += `شكراً لثقتكم بنا\n`
-  message += `ياسمين الشام للأزياء`
+  message += `ياسمين الشام`
 
   return message
 }
@@ -202,7 +202,7 @@ export function generateAlterationWhatsAppMessage(alterationDetails: AlterationD
   message += `يُرجى الحضور في الموعد المحدد لاستلام طلب التعديل.\n\n`
 
   message += `شكراً لثقتكم بنا\n`
-  message += `ياسمين الشام للأزياء`
+  message += `ياسمين الشام`
 
   return message
 }
@@ -254,7 +254,7 @@ export function generateReadyForPickupMessage(clientName: string): string {
   message += `جميع أيام الأسبوع ماعدا الجمعة\n`
   message += `من الساعة 4 عصراً إلى الساعة 10 مساءً\n\n`
   message += `شكراً لثقتكم بنا\n`
-  message += `ياسمين الشام للأزياء`
+  message += `ياسمين الشام`
 
   return message
 }
@@ -273,7 +273,7 @@ export function generateDeliveredMessage(clientName: string): string {
   message += `https://maps.app.goo.gl/oor8FHoTwaGS8GMb9\n\n`
   message += `ننتظر زيارتكم مرة أخرى\n\n`
   message += `شكراً لثقتكم بنا\n`
-  message += `ياسمين الشام للأزياء`
+  message += `ياسمين الشام`
 
   return message
 }
