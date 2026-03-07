@@ -27,12 +27,15 @@ import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
+import PaginationControls from '@/components/PaginationControls'
+
+const PAGE_SIZE = 50
 
 export default function DeliveredOrdersPage() {
   const router = useRouter()
   const { t, isArabic } = useTranslation() // Add translation hook
   const { user, isLoading: authLoading } = useAuthStore()
-  const { orders, loadOrders, deleteOrder } = useOrderStore()
+  const { orders, loadOrders, deleteOrder, totalOrders, isLoading: ordersLoading } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { workerType, isLoading: permissionsLoading, getDashboardRoute } = useWorkerPermissions()
   const [showViewModal, setShowViewModal] = useState(false)
@@ -45,6 +48,7 @@ export default function DeliveredOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(0)
 
   // OPTIMIZATION: Load data immediately, don't wait for permissions
   useEffect(() => {
@@ -54,16 +58,25 @@ export default function DeliveredOrdersPage() {
       return
     }
     // Load data immediately - don't wait for permission check
-    loadOrders({ status: 'delivered' })
+    loadOrders({ status: 'delivered', page: currentPage, pageSize: PAGE_SIZE })
     loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers, currentPage])
 
   // Re-fetch data when the app resumes from background (mobile)
   useAppResume(() => {
     if (!user) return
-    loadOrders({ status: 'delivered' })
+    loadOrders({ status: 'delivered', page: currentPage, pageSize: PAGE_SIZE })
     loadWorkers()
   })
+
+  useEffect(() => {
+    if (totalOrders === null) return
+
+    const maxPage = Math.max(0, Math.ceil(totalOrders / PAGE_SIZE) - 1)
+    if (currentPage > maxPage) {
+      setCurrentPage(maxPage)
+    }
+  }, [currentPage, totalOrders])
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {
@@ -405,6 +418,15 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
       </div>
 
       {/* مودال عرض التفاصيل الموحد */}
+      <PaginationControls
+        currentPage={currentPage}
+        pageSize={PAGE_SIZE}
+        totalItems={totalOrders ?? deliveredOrders.length}
+        currentCount={deliveredOrders.length}
+        isLoading={ordersLoading}
+        onPageChange={setCurrentPage}
+      />
+
       <OrderModal
         order={selectedOrder}
         workers={workers}

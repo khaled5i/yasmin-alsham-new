@@ -20,6 +20,7 @@ import DeleteOrderModal from '@/components/DeleteOrderModal'
 import MeasurementsModal from '@/components/MeasurementsModal'
 import NumericInput from '@/components/NumericInput'
 import OrderDateFilterPicker from '@/components/OrderDateFilterPicker'
+import PaginationControls from '@/components/PaginationControls'
 import {
   ArrowRight,
   Package,
@@ -45,13 +46,25 @@ import {
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 
+const PAGE_SIZE = 50
+
 function OrdersPageInner() {
   const { user, isLoading: authLoading } = useAuthStore()
-  const { orders, loadOrders, updateOrder, deleteOrder, startOrderWork, completeOrder, isLoading: ordersLoading } = useOrderStore()
+  const {
+    orders,
+    loadOrders,
+    updateOrder,
+    deleteOrder,
+    startOrderWork,
+    completeOrder,
+    isLoading: ordersLoading,
+    totalOrders
+  } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, language, changeLanguage, isArabic } = useTranslation()
   const { getDashboardRoute, workerType } = useWorkerPermissions()
   const router = useRouter()
+  const [currentPage, setCurrentPage] = useState(0)
 
   // التحقق من الصلاحيات وتحميل البيانات
   useEffect(() => {
@@ -67,16 +80,24 @@ function OrdersPageInner() {
 
     // تحميل الطلبات والعمال - server-side status filtering
     // Only load active orders (exclude delivered/completed to reduce payload)
-    loadOrders({ status: ['pending', 'in_progress', 'cancelled'] })
+    loadOrders({
+      status: ['pending', 'in_progress', 'cancelled'],
+      page: currentPage,
+      pageSize: PAGE_SIZE
+    })
     loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers, currentPage])
 
   // Re-fetch data when the app resumes from background (mobile).
   // This ensures that data is refreshed after the session token is updated.
   useAppResume(() => {
     if (!user) return
     console.log('🔄 OrdersPage: re-fetching data after app resume')
-    loadOrders({ status: ['pending', 'in_progress', 'cancelled'] })
+    loadOrders({
+      status: ['pending', 'in_progress', 'cancelled'],
+      page: currentPage,
+      pageSize: PAGE_SIZE
+    })
     loadWorkers()
   })
 
@@ -98,6 +119,16 @@ function OrdersPageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (totalOrders === null) return
+
+    const maxPage = Math.max(0, Math.ceil(totalOrders / PAGE_SIZE) - 1)
+    if (currentPage > maxPage) {
+      setCurrentPage(maxPage)
+    }
+  }, [currentPage, totalOrders])
+
   const [showViewModal, setShowViewModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
@@ -944,6 +975,15 @@ function OrdersPageInner() {
         }
 
         {/* نافذة حذف الطلب */}
+        <PaginationControls
+          currentPage={currentPage}
+          pageSize={PAGE_SIZE}
+          totalItems={totalOrders ?? filteredOrders.length}
+          currentCount={filteredOrders.length}
+          isLoading={ordersLoading}
+          onPageChange={setCurrentPage}
+        />
+
         <DeleteOrderModal
           isOpen={deleteModalOpen}
           onClose={closeDeleteModal}

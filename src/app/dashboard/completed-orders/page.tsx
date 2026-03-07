@@ -36,14 +36,17 @@ import {
 import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
+import PaginationControls from '@/components/PaginationControls'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import { formatGregorianDate } from '@/lib/date-utils'
 import toast from 'react-hot-toast'
 
+const PAGE_SIZE = 50
+
 export default function CompletedOrdersPage() {
   const { user, isLoading: authLoading } = useAuthStore()
-  const { orders, loadOrders, updateOrder, deleteOrder } = useOrderStore()
+  const { orders, loadOrders, updateOrder, deleteOrder, totalOrders, isLoading: ordersLoading } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
@@ -58,6 +61,7 @@ export default function CompletedOrdersPage() {
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(0)
 
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -76,16 +80,25 @@ export default function CompletedOrdersPage() {
     }
 
     // OPTIMIZATION: Load only completed orders from the server
-    loadOrders({ status: 'completed' })
+    loadOrders({ status: 'completed', page: currentPage, pageSize: PAGE_SIZE })
     loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers, currentPage])
 
   // Re-fetch data when the app resumes from background (mobile)
   useAppResume(() => {
     if (!user) return
-    loadOrders({ status: 'completed' })
+    loadOrders({ status: 'completed', page: currentPage, pageSize: PAGE_SIZE })
     loadWorkers()
   })
+
+  useEffect(() => {
+    if (totalOrders === null) return
+
+    const maxPage = Math.max(0, Math.ceil(totalOrders / PAGE_SIZE) - 1)
+    if (currentPage > maxPage) {
+      setCurrentPage(maxPage)
+    }
+  }, [currentPage, totalOrders])
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {
@@ -575,6 +588,15 @@ export default function CompletedOrdersPage() {
       </div>
 
       {/* نوافذ منبثقة */}
+      <PaginationControls
+        currentPage={currentPage}
+        pageSize={PAGE_SIZE}
+        totalItems={totalOrders ?? completedOrders.length}
+        currentCount={completedOrders.length}
+        isLoading={ordersLoading}
+        onPageChange={setCurrentPage}
+      />
+
       <OrderModal
         order={selectedOrder}
         workers={workers}
