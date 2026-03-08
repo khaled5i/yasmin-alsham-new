@@ -34,7 +34,7 @@ export default function OrderSearchModal({
   const loadAllOrders = async () => {
     setIsSearching(true)
     try {
-      const { data, error } = await orderService.getAll()
+      const { data, error } = await orderService.getAll({ noPagination: true })
       if (error) {
         toast.error(error)
         return

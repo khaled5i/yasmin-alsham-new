@@ -419,6 +419,8 @@ export const orderService = {
     page?: number       // 0-indexed page number
     pageSize?: number   // items per page (default: DEFAULT_PAGE_SIZE)
     lightweight?: boolean // if false, fetch all columns (default: true)
+    search?: string     // server-side search: client_name, client_phone, order_number
+    noPagination?: boolean // if true, fetch all records without page limit
   }): Promise<{ data: Order[]; error: string | null; total?: number }> {
     if (!isSupabaseConfigured()) {
       return { data: [], error: 'Supabase is not configured.' }
@@ -455,12 +457,22 @@ export const orderService = {
         query = query.eq('payment_status', filters.payment_status)
       }
 
-      // Pagination
-      const pageSize = filters?.pageSize || DEFAULT_PAGE_SIZE
-      const page = filters?.page || 0
-      const from = page * pageSize
-      const to = from + pageSize - 1
-      query = query.range(from, to)
+      // Server-side search: client_name, client_phone, order_number
+      if (filters?.search?.trim()) {
+        const safeTerm = filters.search.trim()
+        query = query.or(
+          `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,order_number.ilike.%${safeTerm}%`
+        )
+      }
+
+      // Pagination (skip if noPagination is true)
+      if (!filters?.noPagination) {
+        const pageSize = filters?.pageSize || DEFAULT_PAGE_SIZE
+        const page = filters?.page || 0
+        const from = page * pageSize
+        const to = from + pageSize - 1
+        query = query.range(from, to)
+      }
 
       const { data, error, count } = await query
 

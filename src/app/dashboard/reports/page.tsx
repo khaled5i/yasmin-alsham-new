@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
+import { orderService, Order } from '@/lib/services/order-service'
 
 import { useTranslation } from '@/hooks/useTranslation'
 import {
@@ -80,7 +80,8 @@ interface DateFilter {
 
 export default function ReportsPage() {
   const { user } = useAuthStore()
-  const { orders, loadOrders, getStats: getOrderStats } = useOrderStore()
+  const [orders, setOrders] = useState<Order[]>([])
+  const [isLoadingOrders, setIsLoadingOrders] = useState(true)
   const { workers, loadWorkers } = useWorkerStore()
   const { t } = useTranslation()
   const router = useRouter()
@@ -100,11 +101,15 @@ export default function ReportsPage() {
   // Effects
   // ============================================================================
 
-  // تحميل البيانات عند تحميل الصفحة
+  // تحميل جميع الطلبات بدون pagination للتقارير الدقيقة
   useEffect(() => {
-    loadOrders()
+    setIsLoadingOrders(true)
+    orderService.getAll({ noPagination: true }).then(({ data }) => {
+      setOrders(data || [])
+      setIsLoadingOrders(false)
+    })
     loadWorkers()
-  }, [loadOrders, loadWorkers])
+  }, [loadWorkers])
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -608,7 +613,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-blue-700 mb-0.5 sm:mb-1 leading-tight">
-                  {comprehensiveStats.totalOrders}
+                  {isLoadingOrders ? '...' : comprehensiveStats.totalOrders}
                 </h3>
                 <p className="text-xs sm:text-sm font-semibold text-blue-800 leading-tight">إجمالي الطلبات</p>
                 <p className="text-[10px] sm:text-xs text-blue-600 mt-0.5 sm:mt-1">في الفترة المحددة</p>

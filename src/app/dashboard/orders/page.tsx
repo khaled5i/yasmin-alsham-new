@@ -104,6 +104,9 @@ function OrdersPageInner() {
   const searchParams = useSearchParams()
 
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<any[] | null>(null) // null = not searching
+  const [isSearching, setIsSearching] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFilterType, setDateFilterType] = useState<'received' | 'delivery'>('received')
   const [dateFilter, setDateFilter] = useState('')
@@ -119,6 +122,31 @@ function OrdersPageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  // Server-side search: when debouncedSearch changes, fetch from server
+  useEffect(() => {
+    if (!debouncedSearch) {
+      setSearchResults(null)
+      return
+    }
+    let cancelled = false
+    setIsSearching(true)
+    orderService.getAll({ search: debouncedSearch, noPagination: true }).then(({ data }) => {
+      if (!cancelled) {
+        setSearchResults(data || [])
+        setIsSearching(false)
+      }
+    }).catch(() => {
+      if (!cancelled) setIsSearching(false)
+    })
+    return () => { cancelled = true }
+  }, [debouncedSearch])
 
   useEffect(() => {
     if (totalOrders === null) return
@@ -534,30 +562,19 @@ function OrdersPageInner() {
 
   const currentWorkerId = getCurrentWorkerId()
 
-  const filteredOrders = orders.filter(order => {
-    // Server-side filtering already excludes delivered/completed orders.
-    // Client-side filtering handles search, role, and date only.
+  // Use server-side search results when searching, otherwise use paginated store orders
+  const baseOrders = searchResults !== null ? searchResults : orders
 
+  const filteredOrders = baseOrders.filter(order => {
     // فلترة حسب الدور
-    // - Admin: يرى جميع الطلبات
-    // - Workshop Manager: يرى جميع الطلبات
-    // - العمال الآخرون: يرون طلباتهم المعينة لهم فقط
     let matchesRole = user?.role === 'admin' || workerType === 'workshop_manager'
 
     if (!matchesRole && user?.role === 'worker') {
-      // البحث عن العامل الذي user_id يطابق user.id
       const currentWorker = workers.find(w => w.user_id === user.id)
       if (currentWorker) {
         matchesRole = order.worker_id === currentWorker.id
       }
     }
-
-    // البحث الشامل في جميع الحقول: الاسم، الهاتف، رقم الطلب
-    const searchLower = searchTerm.toLowerCase()
-    const matchesSearch = !searchTerm ||
-      (order.client_name || '').toLowerCase().includes(searchLower) ||
-      (order.client_phone || '').toLowerCase().includes(searchLower) ||
-      (order.order_number || '').toLowerCase().includes(searchLower)
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
@@ -567,7 +584,7 @@ function OrdersPageInner() {
 
     const matchesDate = !dateFilter || Boolean(selectedOrderDate?.startsWith(dateFilter))
 
-    return matchesRole && matchesSearch && matchesStatus && matchesDate
+    return matchesRole && matchesStatus && matchesDate
   })
 
   // عرض شاشة التحميل أثناء التحقق من المصادقة
@@ -643,7 +660,10 @@ function OrdersPageInner() {
           <div className="grid grid-cols-3 gap-2 sm:gap-3 overflow-x-auto">
             {/* حقل البحث الشامل */}
             <div className="relative min-w-0">
-              <Search className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
+              {isSearching
+                ? <Loader className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-pink-400 animate-spin" />
+                : <Search className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
+              }
               <input
                 type="text"
                 value={searchTerm}
@@ -1028,14 +1048,17 @@ function OrdersPageInner() {
         }
 
         {/* نافذة حذف الطلب */}
-        <PaginationControls
-          currentPage={currentPage}
-          pageSize={PAGE_SIZE}
-          totalItems={totalOrders ?? filteredOrders.length}
-          currentCount={filteredOrders.length}
-          isLoading={ordersLoading}
-          onPageChange={setCurrentPage}
-        />
+        {/* إخفاء الترقيم عند البحث لأن النتائج كاملة من السيرفر */}
+        {searchResults === null && (
+          <PaginationControls
+            currentPage={currentPage}
+            pageSize={PAGE_SIZE}
+            totalItems={totalOrders ?? filteredOrders.length}
+            currentCount={filteredOrders.length}
+            isLoading={ordersLoading}
+            onPageChange={setCurrentPage}
+          />
+        )}
 
         <DeleteOrderModal
           isOpen={deleteModalOpen}
