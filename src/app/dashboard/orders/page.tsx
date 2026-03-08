@@ -13,6 +13,7 @@ import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService } from '@/lib/services/order-service'
 import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
+import { openWhatsApp } from '@/utils/whatsapp'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
 import CompletedWorkUpload from '@/components/CompletedWorkUpload'
@@ -42,7 +43,8 @@ import {
   Truck,
   Camera,
   Ruler,
-  Printer
+  Printer,
+  MessageCircle
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 
@@ -513,6 +515,48 @@ function OrdersPageInner() {
     }
   }
 
+  // إرسال رسالة واتساب من بطاقة الطلب بدون حفظ
+  const handleSendWhatsAppOnly = (order: any) => {
+    if (!order?.client_phone || order.client_phone.trim() === '') {
+      toast.error(isArabic ? 'لا يوجد رقم هاتف للزبونة' : 'Client phone number is missing', {
+        icon: '⚠️',
+      })
+      return
+    }
+
+    if (!order?.due_date) {
+      toast.error(isArabic ? 'لا يوجد موعد تسليم لهذا الطلب' : 'Due date is missing for this order', {
+        icon: '⚠️',
+      })
+      return
+    }
+
+    try {
+      const totalPrice = Number(order.price) || 0
+      const paidAmount = Number(order.paid_amount) || 0
+
+      openWhatsApp({
+        clientName: order.client_name || '',
+        clientPhone: order.client_phone,
+        orderNumber: order.order_number || undefined,
+        proofDeliveryDate: order.proof_delivery_date || undefined,
+        dueDate: order.due_date,
+        totalPrice,
+        remainingAmount: Math.max(0, totalPrice - paidAmount)
+      })
+
+      toast.success(isArabic ? 'تم فتح واتساب لإرسال رسالة التأكيد' : 'WhatsApp opened with confirmation message', {
+        icon: '📱',
+        duration: 3000
+      })
+    } catch (error) {
+      console.error('❌ Error opening WhatsApp:', error)
+      toast.error(isArabic ? 'حدث خطأ أثناء فتح واتساب' : 'Failed to open WhatsApp', {
+        icon: '⚠️',
+      })
+    }
+  }
+
   // فتح نافذة إنهاء الطلب
   const handleOpenCompleteModal = (order: any) => {
     setSelectedOrder(order)
@@ -822,6 +866,17 @@ function OrdersPageInner() {
                               title={t('edit') || 'تعديل'}
                             >
                               <Edit className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleSendWhatsAppOnly(order)
+                              }}
+                              className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-transparent hover:border-green-100"
+                              title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
+                            >
+                              <MessageCircle className="w-4 h-4" />
                             </button>
 
                             <button
