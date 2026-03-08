@@ -23,9 +23,10 @@ interface PrintOrderModalProps {
   isOpen: boolean
   onClose: () => void
   order: Order
+  onPrint?: () => void
 }
 
-export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }: PrintOrderModalProps) {
+export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, onPrint }: PrintOrderModalProps) {
   // Full order data (fetched when lightweight order is missing measurements)
   const [fullOrder, setFullOrder] = useState<Order | null>(null)
   const order = fullOrder || initialOrder
@@ -500,13 +501,17 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
     .print-logo { text-align: center; margin-bottom: 15px; }
     .print-brand { font-size: 28px; font-weight: bold; color: #ec4899; margin: 0; }
     .print-subtitle { font-size: 14px; color: #666; margin: 5px 0 0 0; }
-    .print-order-info { margin-top: 10px; }
+    .print-order-info { margin-top: 10px; --order-info-scale: 1.25; }
     .info-grid-single-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb; }
     .info-item-inline { display: flex; gap: 4px; align-items: center; font-size: 11px; }
     .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; text-align: right; }
     .info-item { display: flex; gap: 4px; padding: 4px 8px; background: #f9fafb; border-radius: 4px; border: 1px solid #e5e7eb; font-size: 11px; }
     .info-label { font-weight: bold; color: #374151; white-space: nowrap; font-size: 11px; }
     .info-value { color: #111827; font-size: 11px; }
+    .print-order-info .info-item-inline { font-size: calc(11px * var(--order-info-scale)); }
+    .print-order-info .info-item { font-size: calc(11px * var(--order-info-scale)); }
+    .print-order-info .info-label { font-size: calc(11px * var(--order-info-scale)); }
+    .print-order-info .info-value { font-size: calc(11px * var(--order-info-scale)); }
     .print-content { display: flex; flex: 1; gap: 20px; }
     .print-measurements-section { width: 30%; display: flex; flex-direction: column; gap: 10px; }
     .print-measurements { border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; }
@@ -623,6 +628,10 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder }
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML || ''
     const isMobile = isMobileDevice()
+
+    if (onPrint) {
+      onPrint()
+    }
 
     if (isMobile) {
       // على الهاتف/التابلت: استخدام iframe مرئي مع زر طباعة

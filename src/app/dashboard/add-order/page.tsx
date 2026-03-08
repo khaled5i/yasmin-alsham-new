@@ -93,6 +93,7 @@ interface FormDataType {
   imageDrawings: DrawingPath[]
   customDesignImage: string | null // legacy فقط؛ لا نخزن base64 جديداً في state
   savedDesignComments: SavedDesignComment[]
+  fabricType: 'external' | 'internal' | null
 }
 
 // القيم الأولية للنموذج
@@ -115,7 +116,8 @@ const getInitialFormData = (): FormDataType => ({
   imageAnnotations: [],
   imageDrawings: [],
   customDesignImage: null,
-  savedDesignComments: []
+  savedDesignComments: [],
+  fabricType: null
 })
 
 // دالة للتحقق من أن البيانات فارغة
@@ -135,7 +137,8 @@ const isFormDataEmpty = (data: FormDataType): boolean => {
     data.imageAnnotations.length === 0 &&
     data.imageDrawings.length === 0 &&
     !data.customDesignImage &&
-    data.savedDesignComments.length === 0
+    data.savedDesignComments.length === 0 &&
+    !data.fabricType
   )
 }
 
@@ -609,7 +612,9 @@ function AddOrderContent() {
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
-        measurements: {}, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
+        measurements: {
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {})
+        }, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -764,7 +769,9 @@ function AddOrderContent() {
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
-        measurements: {},
+        measurements: {
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {})
+        },
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -902,7 +909,9 @@ function AddOrderContent() {
       const result = await createOrder({
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
-        fabric: formData.fabric || undefined, measurements: {},
+        fabric: formData.fabric || undefined, measurements: {
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {})
+        },
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1221,6 +1230,39 @@ function AddOrderContent() {
                     placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
                     disabled={isSubmitting}
                   />
+                </div>
+
+                {/* 11. مصدر القماش */}
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    مصدر القماش (داخلي للمشغل)
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="fabricType"
+                        value="external"
+                        checked={formData.fabricType === 'external'}
+                        onChange={(e) => handleInputChange('fabricType', e.target.value)}
+                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                        disabled={isSubmitting}
+                      />
+                      <span className="text-gray-700 font-medium">قماش خارجي</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="fabricType"
+                        value="internal"
+                        checked={formData.fabricType === 'internal'}
+                        onChange={(e) => handleInputChange('fabricType', e.target.value)}
+                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                        disabled={isSubmitting}
+                      />
+                      <span className="text-gray-700 font-medium">قماش داخلي</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>

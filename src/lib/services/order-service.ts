@@ -45,6 +45,9 @@ const ORDER_LIST_COLUMNS = [
   'due_date',
   'proof_delivery_date',
   'delivery_date',
+  'measurements->fabric_type',
+  'measurements->has_measurements',
+  'measurements->is_printed',
   'notes',
   'admin_notes',
   'images',
@@ -76,6 +79,10 @@ export interface Order {
   description: string
   fabric?: string | null
   measurements: Record<string, any>
+  // Lightweight list projection fields from measurements JSONB
+  fabric_type?: string | null
+  has_measurements?: boolean | string | null
+  is_printed?: boolean | string | null
   price: number
   paid_amount: number
   remaining_amount: number

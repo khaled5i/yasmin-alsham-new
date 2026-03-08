@@ -96,7 +96,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     imageAnnotations: [] as ImageAnnotation[],
     imageDrawings: [] as DrawingPath[],
     customDesignImage: null as File | null,
-    savedDesignComments: [] as SavedDesignComment[]
+    savedDesignComments: [] as SavedDesignComment[],
+    fabricType: null as 'external' | 'internal' | null
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -182,7 +183,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         imageAnnotations: annotations,
         imageDrawings: drawings,
         customDesignImage: null as File | null, // File objects are set via handleDesignImageChange
-        savedDesignComments: savedComments
+        savedDesignComments: savedComments,
+        fabricType: measurements?.fabric_type || null
       })
 
       initialDesignStateRef.current = {
@@ -423,6 +425,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
       // تحديث الطلب
       onSave(order.id, {
+        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType },
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -557,6 +560,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
       // تحديث الطلب
       onSave(order.id, {
+        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType },
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -816,6 +820,39 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                         placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
                         disabled={isSubmitting}
                       />
+                    </div>
+
+                    {/* 11. مصدر القماش */}
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        مصدر القماش (داخلي للمشغل)
+                      </label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="fabricTypeEdit"
+                            value="external"
+                            checked={formData.fabricType === 'external'}
+                            onChange={(e) => handleInputChange('fabricType', e.target.value)}
+                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="text-gray-700 font-medium">قماش خارجي</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="fabricTypeEdit"
+                            value="internal"
+                            checked={formData.fabricType === 'internal'}
+                            onChange={(e) => handleInputChange('fabricType', e.target.value)}
+                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="text-gray-700 font-medium">قماش داخلي</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </div>

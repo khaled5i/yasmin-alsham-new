@@ -400,6 +400,7 @@ textarea:focus-visible {
   padding: 15px;
   border-radius: 8px;
   margin-bottom: 15px;
+  --order-info-scale: 1.25;
 }
 
 .info-grid-single-row {
@@ -424,6 +425,18 @@ textarea:focus-visible {
 .info-value {
   color: #666;
   font-size: 14px;
+}
+
+.print-order-info .info-item-inline {
+  font-size: calc(14px * var(--order-info-scale));
+}
+
+.print-order-info .info-label {
+  font-size: calc(14px * var(--order-info-scale));
+}
+
+.print-order-info .info-value {
+  font-size: calc(14px * var(--order-info-scale));
 }
 
 .print-content {
@@ -594,6 +607,7 @@ textarea:focus-visible {
 
   .print-order-info {
     margin-top: 10px;
+    --order-info-scale: 1.25;
   }
 
   .info-grid {
@@ -643,6 +657,22 @@ textarea:focus-visible {
   .info-value {
     color: #111827;
     font-size: 11px;
+  }
+
+  .print-order-info .info-item-inline {
+    font-size: calc(11px * var(--order-info-scale));
+  }
+
+  .print-order-info .info-item {
+    font-size: calc(11px * var(--order-info-scale));
+  }
+
+  .print-order-info .info-label {
+    font-size: calc(11px * var(--order-info-scale));
+  }
+
+  .print-order-info .info-value {
+    font-size: calc(11px * var(--order-info-scale));
   }
 
   /* المحتوى الرئيسي - مقسم لجزئين */

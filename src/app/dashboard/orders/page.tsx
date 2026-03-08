@@ -149,6 +149,48 @@ function OrdersPageInner() {
   const [measurementsSaveSuccess, setMeasurementsSaveSuccess] = useState(false)
   const [measurementsSaveError, setMeasurementsSaveError] = useState<string | null>(null)
 
+  const NON_MEASUREMENT_KEYS = new Set([
+    'is_printed',
+    'has_measurements',
+    'saved_design_comments',
+    'image_annotations',
+    'image_drawings',
+    'custom_design_image',
+    'fabric_type'
+  ])
+
+  const parseBooleanFlag = (value: unknown) => {
+    return value === true || value === 'true' || value === 1 || value === '1'
+  }
+
+  const hasMeaningfulValue = (value: unknown) => {
+    if (value === null || value === undefined) return false
+    if (typeof value === 'string') return value.trim() !== ''
+    if (typeof value === 'number') return !Number.isNaN(value)
+    if (typeof value === 'boolean') return value
+    if (Array.isArray(value)) return value.length > 0
+    if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+    return false
+  }
+
+  const hasMeasurementsData = (measurements: Record<string, unknown> | null | undefined) => {
+    if (!measurements || typeof measurements !== 'object') return false
+    return Object.entries(measurements).some(([key, value]) => (
+      !NON_MEASUREMENT_KEYS.has(key) && hasMeaningfulValue(value)
+    ))
+  }
+
+  const hasMeasurementsBadge = (order: any) => {
+    if (parseBooleanFlag(order?.has_measurements)) return true
+    if (parseBooleanFlag(order?.measurements?.has_measurements)) return true
+    return hasMeasurementsData(order?.measurements)
+  }
+
+  const isOrderPrinted = (order: any) => {
+    if (parseBooleanFlag(order?.is_printed)) return true
+    return parseBooleanFlag(order?.measurements?.is_printed)
+  }
+
   const getStatusInfo = (status: string) => {
     const statusMap = {
       pending: { label: t('pending') || (isArabic ? 'قيد الانتظار' : 'Pending'), color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
@@ -390,8 +432,13 @@ function OrdersPageInner() {
     try {
       // الحفاظ على بيانات التعليقات والرسومات عند حفظ المقاسات
       const existingMeasurements = measurementsOrder.measurements || {}
+      const shouldMarkHasMeasurements =
+        hasMeasurementsData(measurements) ||
+        parseBooleanFlag(existingMeasurements.has_measurements)
       const updatedMeasurements = {
         ...measurements,
+        is_printed: parseBooleanFlag(existingMeasurements.is_printed),
+        has_measurements: shouldMarkHasMeasurements,
         // الاحتفاظ بالتعليقات والرسومات والصورة المخصصة
         saved_design_comments: existingMeasurements.saved_design_comments || [],
         image_annotations: existingMeasurements.image_annotations || [],
@@ -737,10 +784,13 @@ function OrdersPageInner() {
                                 e.stopPropagation()
                                 handleOpenMeasurements(order)
                               }}
-                              className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors border border-transparent hover:border-purple-100"
-                              title={order.measurements && Object.keys(order.measurements).length > 0 ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
+                              className="relative flex items-center justify-center p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors border border-transparent hover:border-purple-100"
+                              title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
                             >
                               <Ruler className="w-4 h-4" />
+                              {hasMeasurementsBadge(order) && (
+                                <CheckCircle className="w-[18px] h-[18px] text-green-500 bg-white rounded-full fill-white absolute -right-3 top-1/2 -translate-y-1/2" />
+                              )}
                             </button>
 
                             <button
@@ -759,10 +809,13 @@ function OrdersPageInner() {
                                 e.stopPropagation()
                                 handlePrintOrder(order)
                               }}
-                              className="p-2 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors border border-transparent hover:border-pink-100"
+                              className="relative flex items-center justify-center p-2 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors border border-transparent hover:border-pink-100"
                               title={t('print_order') || 'طباعة'}
                             >
                               <Printer className="w-4 h-4" />
+                              {isOrderPrinted(order) && (
+                                <CheckCircle className="w-[18px] h-[18px] text-green-500 bg-white rounded-full fill-white absolute -right-3 top-1/2 -translate-y-1/2" />
+                              )}
                             </button>
 
                             <button
@@ -1017,6 +1070,25 @@ function OrdersPageInner() {
                 setPrintOrder(null)
               }}
               order={printOrder}
+              onPrint={async () => {
+                try {
+                  const measurementsResult = await orderService.getMeasurements(printOrder.id)
+                  const currentMeasurements = measurementsResult.data || printOrder.measurements || {}
+                  if (!parseBooleanFlag(currentMeasurements.is_printed)) {
+                    const shouldMarkHasMeasurements =
+                      hasMeasurementsData(currentMeasurements) ||
+                      parseBooleanFlag(currentMeasurements.has_measurements)
+                    const updatedMeasurements = {
+                      ...currentMeasurements,
+                      is_printed: true,
+                      has_measurements: shouldMarkHasMeasurements
+                    }
+                    await updateOrder(printOrder.id, { measurements: updatedMeasurements })
+                  }
+                } catch (error) {
+                  console.error('Error marking order as printed:', error)
+                }
+              }}
             />
           )
         }

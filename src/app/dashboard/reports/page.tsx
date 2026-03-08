@@ -238,12 +238,12 @@ export default function ReportsPage() {
     )
     const avgCompletionTime = completedOrdersWithDates.length > 0
       ? Math.round(
-          completedOrdersWithDates.reduce((sum, o) => {
-            const start = new Date(o.created_at).getTime()
-            const end = new Date(o.delivery_date!).getTime()
-            return sum + (end - start) / (1000 * 60 * 60 * 24) // days
-          }, 0) / completedOrdersWithDates.length
-        )
+        completedOrdersWithDates.reduce((sum, o) => {
+          const start = new Date(o.created_at).getTime()
+          const end = new Date(o.delivery_date!).getTime()
+          return sum + (end - start) / (1000 * 60 * 60 * 24) // days
+        }, 0) / completedOrdersWithDates.length
+      )
       : 0
 
     // Orders by Status
@@ -253,6 +253,12 @@ export default function ReportsPage() {
       completed: currentOrders.filter(o => o.status === 'completed').length,
       delivered: currentOrders.filter(o => o.status === 'delivered').length,
       cancelled: currentOrders.filter(o => o.status === 'cancelled').length
+    }
+
+    // Orders by Fabric Type
+    const fabricStats = {
+      external: currentOrders.filter(o => (o as any).fabric_type === 'external').length,
+      internal: currentOrders.filter(o => (o as any).fabric_type === 'internal').length
     }
 
 
@@ -288,6 +294,7 @@ export default function ReportsPage() {
       averageOrderValue,
       avgCompletionTime,
       ordersByStatus,
+      fabricStats,
 
       // Customers
       uniqueCustomers,
@@ -312,12 +319,12 @@ export default function ReportsPage() {
       const completedWithDates = completedOrders.filter(o => o.delivery_date)
       const avgTime = completedWithDates.length > 0
         ? Math.round(
-            completedWithDates.reduce((sum, o) => {
-              const start = new Date(o.created_at).getTime()
-              const end = new Date(o.delivery_date!).getTime()
-              return sum + (end - start) / (1000 * 60 * 60 * 24)
-            }, 0) / completedWithDates.length
-          )
+          completedWithDates.reduce((sum, o) => {
+            const start = new Date(o.created_at).getTime()
+            const end = new Date(o.delivery_date!).getTime()
+            return sum + (end - start) / (1000 * 60 * 60 * 24)
+          }, 0) / completedWithDates.length
+        )
         : 0
 
       return {
@@ -331,8 +338,8 @@ export default function ReportsPage() {
         efficiency: completionRate >= 80 ? 'excellent' : completionRate >= 60 ? 'good' : 'needs_improvement'
       }
     })
-    .filter(w => w.totalOrders > 0)
-    .sort((a, b) => b.revenue - a.revenue)
+      .filter(w => w.totalOrders > 0)
+      .sort((a, b) => b.revenue - a.revenue)
   }, [workers, filteredData])
 
   // Orders by Type
@@ -343,9 +350,9 @@ export default function ReportsPage() {
     currentOrders.forEach(order => {
       const desc = order.description.toLowerCase()
       const type = desc.includes('زفاف') || desc.includes('wedding') ? 'فستان زفاف' :
-                   desc.includes('سهرة') || desc.includes('evening') ? 'فستان سهرة' :
-                   desc.includes('خطوبة') || desc.includes('engagement') ? 'فستان خطوبة' :
-                   desc.includes('يومي') || desc.includes('casual') ? 'فستان يومي' : 'أخرى'
+        desc.includes('سهرة') || desc.includes('evening') ? 'فستان سهرة' :
+          desc.includes('خطوبة') || desc.includes('engagement') ? 'فستان خطوبة' :
+            desc.includes('يومي') || desc.includes('casual') ? 'فستان يومي' : 'أخرى'
 
       typeCount[type] = (typeCount[type] || 0) + 1
     })
@@ -368,13 +375,13 @@ export default function ReportsPage() {
         .filter(o => o.status === 'completed' || o.status === 'delivered')
         .reduce((sum, o) => sum + Number(o.price || 0), 0)
     }))
-    .sort((a, b) => b.count - a.count)
+      .sort((a, b) => b.count - a.count)
   }, [filteredData])
 
   // Monthly Trend (last 6 months)
   const monthlyTrend = useMemo(() => {
     const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-                   'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
     const trend = []
     const currentDate = new Date()
 
@@ -386,7 +393,7 @@ export default function ReportsPage() {
       const monthOrders = orders.filter(order => {
         const orderDate = new Date(order.created_at)
         return orderDate.getMonth() === date.getMonth() &&
-               orderDate.getFullYear() === date.getFullYear()
+          orderDate.getFullYear() === date.getFullYear()
       })
 
       const revenue = monthOrders
@@ -558,9 +565,8 @@ export default function ReportsPage() {
                   <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-green-400 to-emerald-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
                     <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
                   </div>
-                  <div className={`flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold ${
-                    comprehensiveStats.revenueChange > 0 ? 'text-green-600' : comprehensiveStats.revenueChange < 0 ? 'text-red-600' : 'text-gray-600'
-                  }`}>
+                  <div className={`flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold ${comprehensiveStats.revenueChange > 0 ? 'text-green-600' : comprehensiveStats.revenueChange < 0 ? 'text-red-600' : 'text-gray-600'
+                    }`}>
                     {comprehensiveStats.revenueChange > 0 ? (
                       <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
                     ) : comprehensiveStats.revenueChange < 0 ? (
@@ -591,9 +597,8 @@ export default function ReportsPage() {
                   <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
                     <Package className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
                   </div>
-                  <div className={`flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold ${
-                    comprehensiveStats.ordersChange > 0 ? 'text-green-600' : comprehensiveStats.ordersChange < 0 ? 'text-red-600' : 'text-gray-600'
-                  }`}>
+                  <div className={`flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold ${comprehensiveStats.ordersChange > 0 ? 'text-green-600' : comprehensiveStats.ordersChange < 0 ? 'text-red-600' : 'text-gray-600'
+                    }`}>
                     {comprehensiveStats.ordersChange > 0 ? (
                       <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
                     ) : comprehensiveStats.ordersChange < 0 ? (
@@ -794,6 +799,45 @@ export default function ReportsPage() {
           </div>
         </motion.div>
 
+        {/* Orders By Fabric Type Breakdown */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.85 }}
+          className="mb-8"
+        >
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <Package className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
+            <span>حالة الأقمشة</span>
+          </h2>
+
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* External Fabric */}
+            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-indigo-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <Package className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-indigo-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-indigo-700 bg-indigo-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
+                  {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.fabricStats.external / comprehensiveStats.totalOrders) * 100) : 0}%
+                </span>
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-bold text-indigo-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.fabricStats.external}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-indigo-800 leading-tight">قماش خارجي</p>
+            </div>
+
+            {/* Internal Fabric */}
+            <div className="bg-gradient-to-br from-teal-50 to-emerald-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-teal-200 hover:shadow-lg transition-all duration-300">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <PackageCheck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-teal-600" />
+                <span className="text-[10px] sm:text-xs font-semibold text-teal-700 bg-teal-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
+                  {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.fabricStats.internal / comprehensiveStats.totalOrders) * 100) : 0}%
+                </span>
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-bold text-teal-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.fabricStats.internal}</h3>
+              <p className="text-xs sm:text-sm font-semibold text-teal-800 leading-tight">قماش داخلي</p>
+            </div>
+          </div>
+        </motion.div>
+
         <div className="grid lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-8">
           {/* Worker Performance */}
           <motion.div
@@ -812,12 +856,11 @@ export default function ReportsPage() {
                 <div key={worker.id} className="relative overflow-hidden bg-gradient-to-r from-pink-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-pink-200 hover:shadow-md transition-all duration-300">
                   <div className="flex items-center justify-between gap-2 sm:gap-3">
                     <div className="flex items-center space-x-2 sm:space-x-3 space-x-reverse flex-1 min-w-0">
-                      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md text-sm sm:text-base ${
-                        index === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
+                      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md text-sm sm:text-base ${index === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
                         index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500' :
-                        index === 2 ? 'bg-gradient-to-br from-orange-400 to-orange-600' :
-                        'bg-gradient-to-br from-pink-400 to-pink-600'
-                      }`}>
+                          index === 2 ? 'bg-gradient-to-br from-orange-400 to-orange-600' :
+                            'bg-gradient-to-br from-pink-400 to-pink-600'
+                        }`}>
                         {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -843,11 +886,10 @@ export default function ReportsPage() {
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="font-bold text-green-600 text-sm sm:text-base lg:text-lg leading-tight">{worker.revenue.toLocaleString()} ر.س</p>
-                      <div className={`text-[10px] sm:text-xs font-semibold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full inline-block mt-0.5 sm:mt-1 ${
-                        worker.efficiency === 'excellent' ? 'bg-green-100 text-green-700' :
+                      <div className={`text-[10px] sm:text-xs font-semibold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full inline-block mt-0.5 sm:mt-1 ${worker.efficiency === 'excellent' ? 'bg-green-100 text-green-700' :
                         worker.efficiency === 'good' ? 'bg-blue-100 text-blue-700' :
-                        'bg-orange-100 text-orange-700'
-                      }`}>
+                          'bg-orange-100 text-orange-700'
+                        }`}>
                         {worker.efficiency === 'excellent' ? 'ممتاز' : worker.efficiency === 'good' ? 'جيد' : 'يحتاج تحسين'}
                       </div>
                     </div>
