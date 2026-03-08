@@ -160,7 +160,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                   <span>{formatDate(order.order_received_date || order.created_at)}</span>
                 </div>
                 {order.proof_delivery_date && (
-                  <div className="date-row">
+                  <div className="date-row" style={{ color: '#16a34a', fontWeight: 'bold' }}>
                     <span>تاريخ تسليم البروفا: </span>
                     <span>{formatDate(order.proof_delivery_date)}</span>
                   </div>
