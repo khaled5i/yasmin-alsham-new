@@ -173,6 +173,7 @@ function OrdersPageInner() {
   const [showMeasurementsModal, setShowMeasurementsModal] = useState(false)
   const [measurementsOrder, setMeasurementsOrder] = useState<any>(null)
 
+
   // حالات modal الطباعة
   const [showPrintModal, setShowPrintModal] = useState(false)
   const [printOrder, setPrintOrder] = useState<any>(null)
@@ -186,7 +187,8 @@ function OrdersPageInner() {
     'image_annotations',
     'image_drawings',
     'custom_design_image',
-    'fabric_type'
+    'fabric_type',
+    'ai_generated_images'
   ])
 
   const parseBooleanFlag = (value: unknown) => {

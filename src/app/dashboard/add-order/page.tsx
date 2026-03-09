@@ -48,6 +48,8 @@ const DESIGN_ACTIVE_VIEW_STORAGE_KEY = 'add-order-design-active-view'
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
 
+// ضغط صورة data URL لتناسب حد localStorage (تصغير + JPEG جودة منخفضة)
+
 const getDesignViewFromTitle = (title?: string | null): 'front' | 'back' | null => {
   if (!title) return null
   const trimmed = title.trim()
@@ -328,8 +330,8 @@ function AddOrderContent() {
 
     if (formData.savedDesignComments.length > 0) {
       try {
-        // إزالة compositeImage من التعليقات قبل الحفظ لتوفير المساحة
-        // الاحتفاظ بـ image (base64 للصورة المخصصة لكل واجهة) للاستعادة عند العودة
+
+        // إزالة compositeImage من التعليقات قبل الحفظ الرئيسي لتوفير المساحة
         const commentsForStorage = formData.savedDesignComments.map(comment => {
           const { compositeImage, ...rest } = comment as any
           return rest
@@ -1323,8 +1325,29 @@ function AddOrderContent() {
                   fabricType={formData.fabricType}
                   generatedImages={formData.aiGeneratedImages}
                   disabled={isSubmitting}
+                  onRequestDesignImages={async () => {
+                    // توليد compositeImage مباشرة من Canvas للـ view الحالي
+                    let currentComposite: string | null = null
+                    let currentView: 'front' | 'back' = 'front'
+                    if (annotationRef.current) {
+                      currentView = annotationRef.current.getCurrentView()
+                      currentComposite = await annotationRef.current.generateCompositeImage()
+                    }
+                    // الـ view الآخر: نأخذه من savedDesignComments إن وجد
+                    const otherView = currentView === 'front' ? 'back' : 'front'
+                    const otherComposite = formData.savedDesignComments.find(c => c.view === otherView)?.compositeImage || null
+                    return {
+                      front: currentView === 'front' ? currentComposite : otherComposite,
+                      back: currentView === 'back' ? currentComposite : otherComposite,
+                    }
+                  }}
                   onGenerated={(imageDataUrl) => {
                     handleInputChange('aiGeneratedImages', [...formData.aiGeneratedImages, imageDataUrl])
+                  }}
+                  onDeleteGeneratedImage={(index) => {
+                    const newImages = [...formData.aiGeneratedImages]
+                    newImages.splice(index, 1)
+                    handleInputChange('aiGeneratedImages', newImages)
                   }}
                 />
               </div>

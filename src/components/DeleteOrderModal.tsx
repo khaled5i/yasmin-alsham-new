@@ -11,11 +11,7 @@ interface DeleteOrderModalProps {
   isOpen: boolean
   onClose: () => void
   onConfirm: () => void
-  orderInfo: {
-    id: string
-    clientName: string
-    description: string
-  }
+  orderInfo: any // Use any or specific type to accommodate both clientName and client_name
 }
 
 export default function DeleteOrderModal({ isOpen, onClose, onConfirm, orderInfo }: DeleteOrderModalProps) {
@@ -169,9 +165,9 @@ export default function DeleteOrderModal({ isOpen, onClose, onConfirm, orderInfo
               <div className="bg-gray-50 rounded-lg p-4 mb-6">
                 <h4 className="font-medium text-gray-800 mb-2">{t('order_details')}</h4>
                 <div className="space-y-1 text-sm text-gray-600">
-                  <p><span className="font-medium">{t('order_id')}:</span> #{orderInfo.id}</p>
-                  <p><span className="font-medium">{t('client_name')}:</span> {orderInfo.clientName}</p>
-                  <p><span className="font-medium">{t('description')}:</span> {orderInfo.description}</p>
+                  <p><span className="font-medium">{t('order_id')}:</span> #{orderInfo?.order_number || orderInfo?.id}</p>
+                  <p><span className="font-medium">{t('client_name')}:</span> {orderInfo?.client_name || orderInfo?.clientName}</p>
+                  <p><span className="font-medium">{t('description')}:</span> {orderInfo?.description}</p>
                 </div>
               </div>
 

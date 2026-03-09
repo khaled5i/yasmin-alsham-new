@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { Sparkles, X, Check, Loader2, ChevronDown, ChevronUp, Download, Plus, MapPin, SkipForward } from 'lucide-react'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { Sparkles, X, Check, Loader2, ChevronDown, ChevronUp, Download, Plus, MapPin, SkipForward, ChevronLeft, ChevronRight } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { SavedDesignComment } from './InteractiveImageAnnotation'
 import { isVideoFile } from '@/lib/utils/media'
 
@@ -11,8 +12,11 @@ export interface GenerateDesignButtonProps {
   fabric?: string | null
   fabricType?: 'external' | 'internal' | null
   onGenerated: (imageDataUrl: string) => void
+  onDeleteGeneratedImage?: (index: number) => void
   generatedImages?: string[]
   disabled?: boolean
+  /** اختياري: callback يطلب من الـ parent توليد compositeImages مباشرة من Canvas */
+  onRequestDesignImages?: () => Promise<{ front: string | null; back: string | null }>
 }
 
 type Step = 'idle' | 'selecting' | 'location-picking' | 'generating-prompt' | 'generating-image' | 'done' | 'error'
@@ -84,8 +88,10 @@ export default function GenerateDesignButton({
   fabric,
   fabricType,
   onGenerated,
+  onDeleteGeneratedImage,
   generatedImages = [],
-  disabled = false
+  disabled = false,
+  onRequestDesignImages
 }: GenerateDesignButtonProps) {
   const [step, setStep] = useState<Step>('idle')
   const [selectedFabricImages, setSelectedFabricImages] = useState<string[]>([])
@@ -97,6 +103,7 @@ export default function GenerateDesignButton({
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null)
   const [showResult, setShowResult] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null)
 
   // Secondary fabric modal
   const [showSecondaryFabricModal, setShowSecondaryFabricModal] = useState(false)
@@ -224,8 +231,17 @@ export default function GenerateDesignButton({
   const doGenerate = async (locations: Record<string, string[]>) => {
     setStep('generating-prompt')
 
-    const frontDesignImage = getFrontDesignImage()
-    const backDesignImage = getBackDesignImage()
+    // إذا كان يوجد callback، اطلب الصور مباشرة من Canvas (أحدث وأدق)
+    let frontDesignImage: string | null
+    let backDesignImage: string | null
+    if (onRequestDesignImages) {
+      const fresh = await onRequestDesignImages()
+      frontDesignImage = fresh.front
+      backDesignImage = fresh.back
+    } else {
+      frontDesignImage = getFrontDesignImage()
+      backDesignImage = getBackDesignImage()
+    }
     const fabricInfo = { fabric: fabric || '', fabricType: fabricType || null }
 
     const fabricKeys = getFabricKeys()
@@ -301,6 +317,76 @@ export default function GenerateDesignButton({
     a.click()
   }
 
+  // Lightbox state
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+
+  const canNavigateLightbox = generatedImages.length > 1
+
+  const closeLightbox = useCallback(() => {
+    setLightboxIndex(null)
+  }, [])
+
+  const openLightbox = useCallback((index: number) => {
+    setLightboxIndex(index)
+  }, [])
+
+  // Navigation handlers
+  const showPreviousImage = useCallback(() => {
+    if (!canNavigateLightbox || lightboxIndex === null) return
+    const previousPosition = (lightboxIndex - 1 + generatedImages.length) % generatedImages.length
+    setLightboxIndex(previousPosition)
+  }, [canNavigateLightbox, lightboxIndex, generatedImages.length])
+
+  const showNextImage = useCallback(() => {
+    if (!canNavigateLightbox || lightboxIndex === null) return
+    const nextPosition = (lightboxIndex + 1) % generatedImages.length
+    setLightboxIndex(nextPosition)
+  }, [canNavigateLightbox, lightboxIndex, generatedImages.length])
+
+  // Swipe handling
+  const touchStartX = useRef<number | null>(null)
+  const touchEndX = useRef<number | null>(null)
+  const minSwipeDistance = 50
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchEndX.current = null
+    touchStartX.current = e.targetTouches[0].clientX
+  }
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.targetTouches[0].clientX
+  }
+
+  const onTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return
+    const distance = touchStartX.current - touchEndX.current
+    const isLeftSwipe = distance > minSwipeDistance
+    const isRightSwipe = distance < -minSwipeDistance
+
+    if (isLeftSwipe) {
+      showNextImage()
+    }
+    if (isRightSwipe) {
+      showPreviousImage()
+    }
+  }
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (lightboxIndex === null) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeLightbox()
+      if (event.key === 'ArrowLeft') showNextImage()
+      if (event.key === 'ArrowRight') showPreviousImage()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [lightboxIndex, closeLightbox, showNextImage, showPreviousImage])
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+
   const isGenerating = step === 'generating-prompt' || step === 'generating-image'
 
   // ──────────────────────────────────────────
@@ -334,7 +420,12 @@ export default function GenerateDesignButton({
               <span>التصاميم المولدة ({generatedImages.length})</span>
             </button>
             {showHistory && (
-              <GeneratedImagesGallery images={generatedImages} onDownload={handleDownload} />
+              <GeneratedImagesGallery
+                images={generatedImages}
+                onDownload={handleDownload}
+                onDelete={onDeleteGeneratedImage}
+                onViewFullscreen={openLightbox}
+              />
             )}
           </div>
         )}
@@ -373,11 +464,10 @@ export default function GenerateDesignButton({
                     key={i}
                     type="button"
                     onClick={() => toggleFabricImage(img)}
-                    className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all duration-200 ${
-                      selected
-                        ? 'border-purple-500 ring-2 ring-purple-300 scale-105'
-                        : 'border-gray-200 hover:border-purple-300'
-                    }`}
+                    className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all duration-200 ${selected
+                      ? 'border-purple-500 ring-2 ring-purple-300 scale-105'
+                      : 'border-gray-200 hover:border-purple-300'
+                      }`}
                   >
                     <img src={img} alt={`صورة ${i + 1}`} className="w-full h-full object-cover" />
                     {selected && (
@@ -528,11 +618,10 @@ export default function GenerateDesignButton({
                         key={area}
                         type="button"
                         onClick={() => toggleLocation(fk.key, area)}
-                        className={`text-xs px-2.5 py-1.5 rounded-full border transition-all duration-150 ${
-                          isSelected
-                            ? 'bg-purple-600 text-white border-purple-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400'
-                        } ${area === 'كامل الفستان' ? 'font-semibold' : ''}`}
+                        className={`text-xs px-2.5 py-1.5 rounded-full border transition-all duration-150 ${isSelected
+                          ? 'bg-purple-600 text-white border-purple-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400'
+                          } ${area === 'كامل الفستان' ? 'font-semibold' : ''}`}
                       >
                         {area}
                       </button>
@@ -541,11 +630,10 @@ export default function GenerateDesignButton({
                   <button
                     type="button"
                     onClick={() => setShowCustomLocationFor(prev => ({ ...prev, [fk.key]: !prev[fk.key] }))}
-                    className={`text-xs px-2.5 py-1.5 rounded-full border transition-all duration-150 ${
-                      isCustomShown
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
-                    }`}
+                    className={`text-xs px-2.5 py-1.5 rounded-full border transition-all duration-150 ${isCustomShown
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+                      }`}
                   >
                     مكان آخر
                   </button>
@@ -638,16 +726,39 @@ export default function GenerateDesignButton({
             <span className="font-bold text-green-800">تم توليد التصميم بنجاح!</span>
           </div>
           {showResult && (
-            <div className="relative rounded-xl overflow-hidden border border-green-200">
-              <img src={generatedImageUrl} alt="التصميم المولد" className="w-full object-contain max-h-96" />
+            <div className="relative rounded-xl overflow-hidden border border-green-200 cursor-pointer" onClick={() => {
+              const idx = generatedImages.findIndex(img => img === generatedImageUrl)
+              if (idx !== -1) {
+                openLightbox(idx)
+              } else {
+                openLightbox(0) // Fallback if it's the only one
+              }
+            }}>
+              <img src={generatedImageUrl} alt="التصميم المولد" className="w-full object-contain max-h-96 hover:opacity-95 transition-opacity" />
               <button
                 type="button"
-                onClick={() => handleDownload(generatedImageUrl, generatedImages.length)}
-                className="absolute top-2 left-2 bg-white/80 hover:bg-white text-gray-700 rounded-lg p-2 shadow"
+                onClick={(e) => { e.stopPropagation(); handleDownload(generatedImageUrl, generatedImages.length) }}
+                className="absolute top-2 left-2 bg-white/80 hover:bg-white text-gray-700 rounded-lg p-2 shadow z-10"
                 title="تحميل"
               >
                 <Download className="w-4 h-4" />
               </button>
+              {onDeleteGeneratedImage && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const idx = generatedImages.findIndex(img => img === generatedImageUrl)
+                    if (idx !== -1) onDeleteGeneratedImage(idx)
+                    setGeneratedImageUrl(null)
+                    setStep('idle')
+                  }}
+                  className="absolute top-2 right-2 p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow z-10"
+                  title="حذف"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -672,10 +783,87 @@ export default function GenerateDesignButton({
               <span>جميع التصاميم المولدة ({generatedImages.length})</span>
             </button>
             {showHistory && (
-              <GeneratedImagesGallery images={generatedImages} onDownload={handleDownload} />
+              <GeneratedImagesGallery
+                images={generatedImages}
+                onDownload={handleDownload}
+                onDelete={onDeleteGeneratedImage}
+                onViewFullscreen={openLightbox}
+              />
             )}
           </div>
         )}
+
+        {/* Fullscreen Overlay - Lightbox */}
+        <AnimatePresence>
+          {lightboxIndex !== null && generatedImages[lightboxIndex] && (
+            <div
+              key="generate-design-lightbox"
+              className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+              onClick={closeLightbox}
+            >
+              <div
+                className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeLightbox()
+                  }}
+                  className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[210]"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+
+                <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-[210]">
+                  {lightboxIndex + 1} / {generatedImages.length}
+                </div>
+
+                {canNavigateLightbox && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      showNextImage()
+                    }}
+                    className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[210]"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                )}
+
+                {canNavigateLightbox && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      showPreviousImage()
+                    }}
+                    className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[210]"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+
+                <motion.img
+                  key={generatedImages[lightboxIndex]}
+                  initial={{ scale: 0.96, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.96, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  src={generatedImages[lightboxIndex]}
+                  alt="Fullscreen"
+                  className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
@@ -738,11 +926,10 @@ function SecondaryFabricModal({
                   key={name}
                   type="button"
                   onClick={() => onSelectName(name)}
-                  className={`text-sm px-3 py-2.5 rounded-xl border transition-all text-right font-medium ${
-                    pendingName === name
-                      ? 'bg-purple-600 text-white border-purple-600'
-                      : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-200 hover:border-purple-400'
-                  }`}
+                  className={`text-sm px-3 py-2.5 rounded-xl border transition-all text-right font-medium ${pendingName === name
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-200 hover:border-purple-400'
+                    }`}
                 >
                   {name}
                 </button>
@@ -795,11 +982,10 @@ function SecondaryFabricModal({
                     type="button"
                     onClick={() => { onSelectColor(c.label); setShowCustomColorInput(false) }}
                     title={c.label}
-                    className={`flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-full border transition-all ${
-                      isSelected
-                        ? 'border-purple-600 ring-2 ring-purple-300 bg-purple-50 text-purple-800 font-semibold'
-                        : 'border-gray-200 hover:border-purple-300 text-gray-700'
-                    }`}
+                    className={`flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-full border transition-all ${isSelected
+                      ? 'border-purple-600 ring-2 ring-purple-300 bg-purple-50 text-purple-800 font-semibold'
+                      : 'border-gray-200 hover:border-purple-300 text-gray-700'
+                      }`}
                   >
                     <span
                       className="w-4 h-4 rounded-full border border-gray-300 flex-shrink-0"
@@ -812,11 +998,10 @@ function SecondaryFabricModal({
               <button
                 type="button"
                 onClick={() => { setShowCustomColorInput(true); onSelectColor('') }}
-                className={`text-xs px-2.5 py-1.5 rounded-full border transition-all ${
-                  showCustomColorInput
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'border-gray-300 text-gray-600 hover:border-indigo-400'
-                }`}
+                className={`text-xs px-2.5 py-1.5 rounded-full border transition-all ${showCustomColorInput
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'border-gray-300 text-gray-600 hover:border-indigo-400'
+                  }`}
               >
                 لون آخر
               </button>
@@ -863,27 +1048,46 @@ function SecondaryFabricModal({
 // ──────────────────────────────────────────
 function GeneratedImagesGallery({
   images,
-  onDownload
+  onDownload,
+  onDelete,
+  onViewFullscreen
 }: {
   images: string[]
   onDownload: (url: string, index: number) => void
+  onDelete?: (index: number) => void
+  onViewFullscreen: (index: number) => void
 }) {
   return (
     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
       {images.map((img, i) => (
-        <div key={i} className="relative rounded-xl overflow-hidden border border-purple-200 bg-purple-50">
-          <img src={img} alt={`تصميم مولد ${i + 1}`} className="w-full object-contain max-h-64" />
+        <div key={i} className="relative rounded-xl overflow-hidden border border-purple-200 bg-purple-50 group">
+          <img
+            src={img}
+            alt={`تصميم مولد ${i + 1}`}
+            className="w-full object-contain max-h-64 cursor-pointer hover:opacity-95 transition-opacity"
+            onClick={() => onViewFullscreen(i)}
+          />
           <div className="absolute top-2 left-2 flex gap-1">
             <button
               type="button"
-              onClick={() => onDownload(img, i)}
-              className="bg-white/80 hover:bg-white text-gray-700 rounded-lg p-1.5 shadow text-xs"
+              onClick={(e) => { e.stopPropagation(); onDownload(img, i); }}
+              className="bg-white/80 hover:bg-white text-gray-700 rounded-lg p-1.5 shadow text-xs transition-colors"
               title="تحميل"
             >
               <Download className="w-3.5 h-3.5" />
             </button>
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onDelete(i); }}
+                className="bg-red-50 hover:bg-red-100 text-red-600 rounded-lg p-1.5 shadow text-xs transition-colors"
+                title="حذف"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-          <div className="absolute bottom-2 right-2 bg-purple-600/80 text-white text-xs px-2 py-0.5 rounded">
+          <div className="absolute bottom-2 right-2 bg-purple-600/80 text-white text-xs px-2 py-0.5 rounded pointer-events-none">
             تصميم {i + 1}
           </div>
         </div>

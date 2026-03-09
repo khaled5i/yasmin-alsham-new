@@ -128,7 +128,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   // Full order data (fetched when lightweight order is missing measurements)
   const [fullOrder, setFullOrder] = useState<Order | null>(null)
   // AI generated images (local state, auto-saved to order on generation)
+  // يُعاد تهيئته عند تغيير الطلب لمنع التسريب بين الطلبات
   const [localAiImages, setLocalAiImages] = useState<string[]>([])
+  const prevOrderIdRef = useRef<string | null>(null)
   const [measurementsData, setMeasurementsData] = useState<Record<string, any> | null>(null)
   const [isMeasurementsLoading, setIsMeasurementsLoading] = useState(false)
   const order = fullOrder || initialOrder
@@ -177,6 +179,14 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }
 
   // Fetch full order data when opened with lightweight-loaded order
+  // إعادة تهيئة localAiImages عند تغيير الطلب لمنع التسريب بين الطلبات
+  useEffect(() => {
+    if (initialOrder?.id && initialOrder.id !== prevOrderIdRef.current) {
+      prevOrderIdRef.current = initialOrder.id
+      setLocalAiImages([])
+    }
+  }, [initialOrder?.id])
+
   // (needed for voice_transcriptions, completed_images which aren't in list columns)
   useEffect(() => {
     if (!isOpen || !initialOrder) {
@@ -1332,6 +1342,25 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                           toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
                         }
                       }}
+                      onDeleteGeneratedImage={async (index) => {
+                        const currentDbImages = Array.isArray((order.measurements as any)?.ai_generated_images) ? (order.measurements as any).ai_generated_images : []
+                        const allImages = [...currentDbImages, ...localAiImages]
+                        const newImages = allImages.filter((_, i) => i !== index)
+
+                        try {
+                          await updateOrder(order.id, {
+                            measurements: {
+                              ...(order.measurements || {}),
+                              ai_generated_images: newImages
+                            }
+                          })
+                          setLocalAiImages([])
+                          toast.success('تم حذف التصميم')
+                        } catch (err) {
+                          console.error('Failed to delete AI image:', err)
+                          toast.error('فشل حذف التصميم')
+                        }
+                      }}
                     />
                   </div>
                 </div>
@@ -1359,6 +1388,25 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         toast.success('تم حفظ التصميم المولد في الطلب')
                       } catch {
                         toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
+                      }
+                    }}
+                    onDeleteGeneratedImage={async (index) => {
+                      const currentDbImages = Array.isArray((order.measurements as any)?.ai_generated_images) ? (order.measurements as any).ai_generated_images : []
+                      const allImages = [...currentDbImages, ...localAiImages]
+                      const newImages = allImages.filter((_, i) => i !== index)
+
+                      try {
+                        await updateOrder(order.id, {
+                          measurements: {
+                            ...(order.measurements || {}),
+                            ai_generated_images: newImages
+                          }
+                        })
+                        setLocalAiImages([])
+                        toast.success('تم حذف التصميم')
+                      } catch (err) {
+                        console.error('Failed to delete AI image:', err)
+                        toast.error('فشل حذف التصميم')
                       }
                     }}
                   />

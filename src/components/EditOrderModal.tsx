@@ -909,6 +909,11 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                       onGenerated={(imageDataUrl) => {
                         handleInputChange('aiGeneratedImages', [...formData.aiGeneratedImages, imageDataUrl])
                       }}
+                      onDeleteGeneratedImage={(index) => {
+                        const newImages = [...formData.aiGeneratedImages]
+                        newImages.splice(index, 1)
+                        handleInputChange('aiGeneratedImages', newImages)
+                      }}
                     />
                   </div>
                 </div>
