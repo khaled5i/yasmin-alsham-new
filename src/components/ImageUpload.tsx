@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, Image as ImageIcon, Loader2, AlertCircle, CheckCircle, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Upload, X, Image as ImageIcon, Loader2, AlertCircle, CheckCircle, Camera, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { imageService, UploadProgress } from '@/lib/services/image-service'
 import { isVideoFile } from '@/lib/utils/media'
+import ImageCropRotateModal from '@/components/ImageCropRotateModal'
 
 interface ImageUploadProps {
   images: string[]
@@ -45,6 +46,8 @@ export default function ImageUpload({
   const [showOptions, setShowOptions] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [isClientMounted, setIsClientMounted] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [editUploading, setEditUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const uploadAbortControllerRef = useRef<AbortController | null>(null)
@@ -239,6 +242,35 @@ export default function ImageUpload({
     const newImages = images.filter((_, i) => i !== index)
     onImagesChange(newImages)
   }
+
+  const handleEditSave = useCallback(async (dataUrl: string) => {
+    if (editingIndex === null) return
+    setEditUploading(true)
+    try {
+      // Convert base64 dataUrl to File
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      const file = new File([blob], `edited-${Date.now()}.jpg`, { type: 'image/jpeg' })
+
+      let newUrl: string
+      if (useSupabaseStorage) {
+        const { data, error } = await imageService.uploadImage(file, () => {})
+        if (error || !data?.url) throw new Error(error || 'فشل رفع الصورة')
+        newUrl = data.url
+      } else {
+        newUrl = dataUrl
+      }
+
+      const newImages = images.map((img, i) => (i === editingIndex ? newUrl : img))
+      onImagesChange(newImages)
+    } catch (err) {
+      console.error('Error saving edited image:', err)
+      setErrors(prev => [...prev, 'فشل حفظ الصورة المعدلة'])
+    } finally {
+      setEditUploading(false)
+      setEditingIndex(null)
+    }
+  }, [editingIndex, images, onImagesChange, useSupabaseStorage])
 
   // دالة للصق الصور من الحافظة
   const handlePaste = async (e: ClipboardEvent) => {
@@ -696,6 +728,19 @@ export default function ImageUpload({
                       <X className="w-3 h-3" />
                     </button>
 
+                    {/* زر التعديل (قص وتدوير) - للصور فقط */}
+                    {!isVideo && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setEditingIndex(index) }}
+                        className={`absolute -top-2 -left-2 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center transition-opacity duration-300 hover:bg-blue-600 ${deleteButtonVisibilityClass}`}
+                        title="تعديل الصورة (قص وتدوير)"
+                        disabled={editUploading}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+
                     {/* رقم الملف ونوعه */}
                     <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
                       {index + 1} {isVideo && '🎥'}
@@ -812,6 +857,23 @@ export default function ImageUpload({
         </AnimatePresence>,
         document.body
       )}
+
+      {/* مودال تعديل الصورة (قص وتدوير) */}
+      {editUploading && (
+        <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-xl p-6 flex items-center gap-3 shadow-xl">
+            <Loader2 className="w-5 h-5 animate-spin text-pink-600" />
+            <span className="text-gray-700 font-medium">جاري حفظ الصورة المعدلة...</span>
+          </div>
+        </div>
+      )}
+      <ImageCropRotateModal
+        imageSrc={editingIndex !== null ? images[editingIndex] : ''}
+        isOpen={editingIndex !== null}
+        onClose={() => setEditingIndex(null)}
+        onSave={handleEditSave}
+        title="تعديل صورة التصميم"
+      />
     </div>
   )
 }

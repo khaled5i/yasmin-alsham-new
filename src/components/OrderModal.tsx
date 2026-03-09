@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { createPortal } from 'react-dom'
 import {
   X,
   User,
@@ -1475,88 +1476,92 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       )}
 
       {/* Lightbox لعرض الصور بالحجم الكامل */}
-      {/* Lightbox لعرض الصور بالحجم الكامل */}
-      {lightboxIndex !== null && lightboxImages[lightboxIndex] && (
-        <div
-          key="order-lightbox"
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-          onClick={closeLightbox}
-        >
-          <div
-            className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                closeLightbox()
-              }}
-              className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-30"
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {lightboxIndex !== null && lightboxImages[lightboxIndex] && (
+            <div
+              key="order-lightbox"
+              className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+              onClick={closeLightbox}
             >
-              <X className="w-6 h-6" />
-            </button>
+              <div
+                className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeLightbox()
+                  }}
+                  className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
+                >
+                  <X className="w-6 h-6" />
+                </button>
 
-            <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-30">
-              {lightboxIndex + 1} / {lightboxImages.length}
+                <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-[999999]">
+                  {lightboxIndex + 1} / {lightboxImages.length}
+                </div>
+
+                {canNavigateLightbox && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      showNextImage()
+                    }}
+                    className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                )}
+
+                {canNavigateLightbox && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      showPreviousImage()
+                    }}
+                    className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+
+                {isVideoFile(lightboxImages[lightboxIndex]) ? (
+                  <motion.video
+                    key={lightboxImages[lightboxIndex]}
+                    initial={{ scale: 0.96, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.96, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    src={lightboxImages[lightboxIndex]}
+                    controls
+                    preload="metadata"
+                    className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <motion.img
+                    key={lightboxImages[lightboxIndex]}
+                    initial={{ scale: 0.96, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.96, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    src={lightboxImages[lightboxIndex]}
+                    alt="عرض كامل"
+                    className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+              </div>
             </div>
-
-            {canNavigateLightbox && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  showNextImage()
-                }}
-                className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-30"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-
-            {canNavigateLightbox && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  showPreviousImage()
-                }}
-                className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-30"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
-
-            {isVideoFile(lightboxImages[lightboxIndex]) ? (
-              <motion.video
-                key={lightboxImages[lightboxIndex]}
-                initial={{ scale: 0.96, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.96, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                src={lightboxImages[lightboxIndex]}
-                controls
-                preload="metadata"
-                className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <motion.img
-                key={lightboxImages[lightboxIndex]}
-                initial={{ scale: 0.96, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.96, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                src={lightboxImages[lightboxIndex]}
-                alt="عرض كامل"
-                className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              />
-            )}
-          </div>
-        </div>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
 
       {/* مودال الطباعة */}

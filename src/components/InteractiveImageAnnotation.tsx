@@ -8,6 +8,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast'
 import Image from 'next/image'
 import { renderDrawingsOnCanvas, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
+import ImageCropRotateModal from '@/components/ImageCropRotateModal'
 
 
 // نوع نقطة الرسم
@@ -704,6 +705,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [showImageOptions, setShowImageOptions] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [showCameraCapture, setShowCameraCapture] = useState(false)
+  const [showImageEditModal, setShowImageEditModal] = useState(false)
 
   // حالة لتتبع الصورة المعروضة حالياً (لزر الأمام/الخلف)
   // استخدام initialView لتعيين العرض الابتدائي عند استعادة الحالة
@@ -3171,6 +3173,20 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               />
             </div>
 
+            {/* زر تعديل الصورة المخصصة (قص وتدوير) */}
+            {imagePreview && (
+              <button
+                type="button"
+                onClick={() => setShowImageEditModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all bg-blue-50 border border-blue-300 text-blue-700 hover:bg-blue-100"
+                disabled={disabled || isRecordingActive}
+                title="تعديل الصورة (قص وتدوير)"
+              >
+                <Pencil className="w-4 h-4" />
+                <span className="hidden sm:inline">تعديل الصورة</span>
+              </button>
+            )}
+
             {/* زر إعادة الصورة الافتراضية - خارجي، يظهر دائماً عند وجود صورة محملة */}
             {imagePreview && (
               <button
@@ -4487,6 +4503,25 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           </>
         )}
       </AnimatePresence>
+
+      {/* مودال تعديل الصورة المخصصة (قص وتدوير) */}
+      <ImageCropRotateModal
+        imageSrc={imagePreview || ''}
+        isOpen={showImageEditModal}
+        onClose={() => setShowImageEditModal(false)}
+        onSave={async (dataUrl) => {
+          try {
+            const res = await fetch(dataUrl)
+            const blob = await res.blob()
+            const file = new File([blob], `edited-custom-${Date.now()}.jpg`, { type: 'image/jpeg' })
+            onImageChange?.(file)
+          } catch (err) {
+            console.error('Error applying image edit:', err)
+          }
+          setShowImageEditModal(false)
+        }}
+        title="تعديل الصورة المخصصة"
+      />
     </div >
   )
 })

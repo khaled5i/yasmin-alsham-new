@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Sparkles, X, Check, Loader2, ChevronDown, ChevronUp, Download, Plus, MapPin, SkipForward, ChevronLeft, ChevronRight } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { createPortal } from 'react-dom'
 import { SavedDesignComment } from './InteractiveImageAnnotation'
 import { isVideoFile } from '@/lib/utils/media'
 
@@ -388,13 +389,91 @@ export default function GenerateDesignButton({
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const isGenerating = step === 'generating-prompt' || step === 'generating-image'
+  const renderLightboxPortal = () => {
+    if (typeof document === 'undefined') return null
+
+    return createPortal(
+      <AnimatePresence>
+        {lightboxIndex !== null && generatedImages[lightboxIndex] && (
+          <div
+            key="generate-design-lightbox"
+            className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+            onClick={closeLightbox}
+          >
+            <div
+              className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  closeLightbox()
+                }}
+                className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-[999999]">
+                {lightboxIndex + 1} / {generatedImages.length}
+              </div>
+
+              {canNavigateLightbox && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    showNextImage()
+                  }}
+                  className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              )}
+
+              {canNavigateLightbox && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    showPreviousImage()
+                  }}
+                  className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              )}
+
+              <motion.img
+                key={generatedImages[lightboxIndex]}
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                src={generatedImages[lightboxIndex]}
+                alt="Fullscreen"
+                className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          </div>
+        )}
+      </AnimatePresence>,
+      document.body
+    )
+  }
 
   // ──────────────────────────────────────────
   // IDLE / ERROR
   // ──────────────────────────────────────────
   if (step === 'idle' || step === 'error') {
     return (
-      <div className="space-y-3">
+      <>
+        <div className="space-y-3">
         <button
           type="button"
           onClick={() => { setStep('selecting'); setErrorMsg('') }}
@@ -429,7 +508,9 @@ export default function GenerateDesignButton({
             )}
           </div>
         )}
-      </div>
+        </div>
+        {renderLightboxPortal()}
+      </>
     )
   }
 
@@ -793,77 +874,7 @@ export default function GenerateDesignButton({
           </div>
         )}
 
-        {/* Fullscreen Overlay - Lightbox */}
-        <AnimatePresence>
-          {lightboxIndex !== null && generatedImages[lightboxIndex] && (
-            <div
-              key="generate-design-lightbox"
-              className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-              onClick={closeLightbox}
-            >
-              <div
-                className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
-                onTouchEnd={onTouchEnd}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeLightbox()
-                  }}
-                  className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[210]"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-
-                <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-[210]">
-                  {lightboxIndex + 1} / {generatedImages.length}
-                </div>
-
-                {canNavigateLightbox && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      showNextImage()
-                    }}
-                    className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[210]"
-                  >
-                    <ChevronLeft className="w-6 h-6" />
-                  </button>
-                )}
-
-                {canNavigateLightbox && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      showPreviousImage()
-                    }}
-                    className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[210]"
-                  >
-                    <ChevronRight className="w-6 h-6" />
-                  </button>
-                )}
-
-                <motion.img
-                  key={generatedImages[lightboxIndex]}
-                  initial={{ scale: 0.96, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.96, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  src={generatedImages[lightboxIndex]}
-                  alt="Fullscreen"
-                  className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-            </div>
-          )}
-        </AnimatePresence>
+        {renderLightboxPortal()}
       </div>
     )
   }
