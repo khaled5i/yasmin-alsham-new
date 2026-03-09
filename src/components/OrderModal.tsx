@@ -41,6 +41,7 @@ import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
+import GenerateDesignButton from './GenerateDesignButton'
 
 interface OrderModalProps {
   order: Order | null
@@ -126,6 +127,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [showPrintModal, setShowPrintModal] = useState(false)
   // Full order data (fetched when lightweight order is missing measurements)
   const [fullOrder, setFullOrder] = useState<Order | null>(null)
+  // AI generated images (local state, auto-saved to order on generation)
+  const [localAiImages, setLocalAiImages] = useState<string[]>([])
   const [measurementsData, setMeasurementsData] = useState<Record<string, any> | null>(null)
   const [isMeasurementsLoading, setIsMeasurementsLoading] = useState(false)
   const order = fullOrder || initialOrder
@@ -1300,6 +1303,65 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       </div>
                     ))}
                   </div>
+
+                  {/* زر توليد التصميم بالذكاء الاصطناعي */}
+                  <div className="pt-4 border-t border-gray-100">
+                    <GenerateDesignButton
+                      images={order.images || []}
+                      designComments={savedDesignComments}
+                      fabric={order.fabric}
+                      fabricType={(order.measurements as any)?.fabric_type || null}
+                      generatedImages={[
+                        ...((order.measurements as any)?.ai_generated_images || []),
+                        ...localAiImages
+                      ]}
+                      onGenerated={async (imageDataUrl) => {
+                        const newImages = [...((order.measurements as any)?.ai_generated_images || []), ...localAiImages, imageDataUrl]
+                        setLocalAiImages(prev => [...prev, imageDataUrl])
+                        // Auto-save to order
+                        try {
+                          await orderService.update(order.id, {
+                            measurements: {
+                              ...(order.measurements || {}),
+                              ai_generated_images: newImages
+                            }
+                          })
+                          toast.success('تم حفظ التصميم المولد في الطلب')
+                        } catch (err) {
+                          console.error('Failed to save AI image:', err)
+                          toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* قسم التصاميم المولدة - يظهر حتى لو لا توجد صور (بدون صور) */}
+              {(!order.images || order.images.length === 0) && (
+                <div className="space-y-3">
+                  <GenerateDesignButton
+                    images={order.images || []}
+                    designComments={savedDesignComments}
+                    fabric={order.fabric}
+                    fabricType={(order.measurements as any)?.fabric_type || null}
+                    generatedImages={[
+                      ...((order.measurements as any)?.ai_generated_images || []),
+                      ...localAiImages
+                    ]}
+                    onGenerated={async (imageDataUrl) => {
+                      const newImages = [...((order.measurements as any)?.ai_generated_images || []), ...localAiImages, imageDataUrl]
+                      setLocalAiImages(prev => [...prev, imageDataUrl])
+                      try {
+                        await orderService.update(order.id, {
+                          measurements: { ...(order.measurements || {}), ai_generated_images: newImages }
+                        })
+                        toast.success('تم حفظ التصميم المولد في الطلب')
+                      } catch {
+                        toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
+                      }
+                    }}
+                  />
                 </div>
               )}
 

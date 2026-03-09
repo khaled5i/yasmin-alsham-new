@@ -1,0 +1,893 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+import { Sparkles, X, Check, Loader2, ChevronDown, ChevronUp, Download, Plus, MapPin, SkipForward } from 'lucide-react'
+import { SavedDesignComment } from './InteractiveImageAnnotation'
+import { isVideoFile } from '@/lib/utils/media'
+
+export interface GenerateDesignButtonProps {
+  images: string[]
+  designComments: SavedDesignComment[]
+  fabric?: string | null
+  fabricType?: 'external' | 'internal' | null
+  onGenerated: (imageDataUrl: string) => void
+  generatedImages?: string[]
+  disabled?: boolean
+}
+
+type Step = 'idle' | 'selecting' | 'location-picking' | 'generating-prompt' | 'generating-image' | 'done' | 'error'
+
+interface SecondaryFabric {
+  name: string
+  color?: string
+}
+
+const BODY_AREAS = [
+  'كامل الفستان',
+  'الصدر',
+  'البطن',
+  'الظهر',
+  'الكتفان',
+  'الأكمام',
+  'التنورة (الذيل)',
+  'الخصر',
+  'الياقة',
+  'الحاشية (الحافة السفلية)',
+  'الأكمام العلوية',
+]
+
+const SECONDARY_FABRIC_OPTIONS = [
+  'دانتيل',
+  'شيفون',
+  'ساتان',
+  'تول',
+  'جورجيت',
+  'كريب',
+  'مخمل',
+  'حرير',
+  'قطيفة',
+  'موسلين',
+  'أورغانزا',
+  'جاكار',
+  'تافتا',
+  'نيوبرين',
+  'بروكار',
+  'مزدوج',
+]
+
+const COLOR_OPTIONS = [
+  { label: 'أبيض', hex: '#FFFFFF' },
+  { label: 'أسود', hex: '#1a1a1a' },
+  { label: 'كريمي', hex: '#F5F0E8' },
+  { label: 'ذهبي', hex: '#D4AF37' },
+  { label: 'فضي', hex: '#C0C0C0' },
+  { label: 'وردي فاتح', hex: '#FFB6C1' },
+  { label: 'وردي غامق', hex: '#C71585' },
+  { label: 'أحمر', hex: '#CC0000' },
+  { label: 'برغندي', hex: '#800020' },
+  { label: 'أزرق فاتح', hex: '#87CEEB' },
+  { label: 'أزرق كحلي', hex: '#1B2A6B' },
+  { label: 'أخضر زيتي', hex: '#6B7C3B' },
+  { label: 'أخضر نعناعي', hex: '#98D9C2' },
+  { label: 'بنفسجي', hex: '#8B008B' },
+  { label: 'ليلكي', hex: '#C8A2C8' },
+  { label: 'تركوازي', hex: '#40E0D0' },
+  { label: 'برتقالي', hex: '#FF7F00' },
+  { label: 'بيج', hex: '#D4B896' },
+  { label: 'رمادي', hex: '#808080' },
+  { label: 'بني', hex: '#8B4513' },
+]
+
+export default function GenerateDesignButton({
+  images,
+  designComments,
+  fabric,
+  fabricType,
+  onGenerated,
+  generatedImages = [],
+  disabled = false
+}: GenerateDesignButtonProps) {
+  const [step, setStep] = useState<Step>('idle')
+  const [selectedFabricImages, setSelectedFabricImages] = useState<string[]>([])
+  const [secondaryFabrics, setSecondaryFabrics] = useState<SecondaryFabric[]>([])
+  // Multi-select: Record<fabricKey, string[]>
+  const [fabricLocations, setFabricLocations] = useState<Record<string, string[]>>({})
+  const [additionalNotes, setAdditionalNotes] = useState('')
+  const [errorMsg, setErrorMsg] = useState<string>('')
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null)
+  const [showResult, setShowResult] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+
+  // Secondary fabric modal
+  const [showSecondaryFabricModal, setShowSecondaryFabricModal] = useState(false)
+  const [showCustomFabricInput, setShowCustomFabricInput] = useState(false)
+  const [customFabricInput, setCustomFabricInput] = useState('')
+  const [pendingFabricName, setPendingFabricName] = useState<string | null>(null)
+  const [pendingFabricColor, setPendingFabricColor] = useState<string>('')
+  const [customColorInput, setCustomColorInput] = useState('')
+  const [showCustomColorInput, setShowCustomColorInput] = useState(false)
+
+  // Location picker: custom "other" inputs
+  const [customLocationInputs, setCustomLocationInputs] = useState<Record<string, string>>({})
+  const [showCustomLocationFor, setShowCustomLocationFor] = useState<Record<string, boolean>>({})
+
+  const imageOnlyItems = images.filter(img => !isVideoFile(img))
+
+  const toggleFabricImage = useCallback((img: string) => {
+    setSelectedFabricImages(prev =>
+      prev.includes(img) ? prev.filter(i => i !== img) : [...prev, img]
+    )
+  }, [])
+
+  const getFrontDesignImage = (): string | null => {
+    const frontComment = designComments.find(c => c.view === 'front' || c.title?.startsWith('أمام'))
+    return frontComment?.compositeImage || null
+  }
+
+  const getBackDesignImage = (): string | null => {
+    const backComment = designComments.find(c => c.view === 'back' || c.title?.startsWith('خلف'))
+    return backComment?.compositeImage || null
+  }
+
+  const totalFabrics = selectedFabricImages.length + secondaryFabrics.length
+
+  // ── Secondary fabric modal handlers ──
+  const handleSelectFabricName = (name: string) => {
+    setPendingFabricName(name)
+    setShowCustomFabricInput(false)
+    setCustomFabricInput('')
+  }
+
+  const handleConfirmSecondaryFabric = () => {
+    const name = pendingFabricName
+    if (!name) return
+    const color = showCustomColorInput ? customColorInput.trim() : pendingFabricColor
+    const label = color ? `${name} (${color})` : name
+    if (!secondaryFabrics.some(f => f.name === label)) {
+      setSecondaryFabrics(prev => [...prev, { name: label, color }])
+    }
+    closeSecondaryModal()
+  }
+
+  const closeSecondaryModal = () => {
+    setShowSecondaryFabricModal(false)
+    setPendingFabricName(null)
+    setPendingFabricColor('')
+    setShowCustomFabricInput(false)
+    setCustomFabricInput('')
+    setShowCustomColorInput(false)
+    setCustomColorInput('')
+  }
+
+  const removeSecondaryFabric = (name: string) => {
+    setSecondaryFabrics(prev => prev.filter(f => f.name !== name))
+  }
+
+  // ── Location picker helpers ──
+  const getFabricKeys = () => {
+    const keys: { key: string; label: string; imageUrl?: string }[] = []
+    selectedFabricImages.forEach((img, i) => {
+      keys.push({ key: `img_${i}`, label: `القماش الرئيسي ${i + 1}`, imageUrl: img })
+    })
+    secondaryFabrics.forEach((f, i) => {
+      keys.push({ key: `sec_${i}`, label: f.name })
+    })
+    return keys
+  }
+
+  const toggleLocation = (key: string, area: string) => {
+    setFabricLocations(prev => {
+      const current = prev[key] || []
+      if (area === 'كامل الفستان') {
+        // Selecting "كامل الفستان" clears everything else
+        return { ...prev, [key]: current.includes('كامل الفستان') ? [] : ['كامل الفستان'] }
+      }
+      // Deselect "كامل الفستان" if selecting a specific area
+      const without = current.filter(a => a !== 'كامل الفستان')
+      if (without.includes(area)) {
+        return { ...prev, [key]: without.filter(a => a !== area) }
+      }
+      return { ...prev, [key]: [...without, area] }
+    })
+    setShowCustomLocationFor(prev => ({ ...prev, [key]: false }))
+  }
+
+  const addCustomLocation = (key: string) => {
+    const val = customLocationInputs[key]?.trim()
+    if (!val) return
+    setFabricLocations(prev => {
+      const current = (prev[key] || []).filter(a => a !== 'كامل الفستان')
+      if (current.includes(val)) return prev
+      return { ...prev, [key]: [...current, val] }
+    })
+    setCustomLocationInputs(prev => ({ ...prev, [key]: '' }))
+    setShowCustomLocationFor(prev => ({ ...prev, [key]: false }))
+  }
+
+  const handleClickGenerate = () => {
+    if (selectedFabricImages.length === 0 && imageOnlyItems.length > 0 && secondaryFabrics.length === 0) {
+      setErrorMsg('يرجى اختيار صورة القماش أولاً أو إضافة قماش ثانوي')
+      return
+    }
+    setErrorMsg('')
+
+    if (totalFabrics > 1) {
+      setFabricLocations({})
+      setCustomLocationInputs({})
+      setShowCustomLocationFor({})
+      setStep('location-picking')
+    } else {
+      doGenerate({})
+    }
+  }
+
+  const doGenerate = async (locations: Record<string, string[]>) => {
+    setStep('generating-prompt')
+
+    const frontDesignImage = getFrontDesignImage()
+    const backDesignImage = getBackDesignImage()
+    const fabricInfo = { fabric: fabric || '', fabricType: fabricType || null }
+
+    const fabricKeys = getFabricKeys()
+    const fabricLocationDescriptions = fabricKeys.map(fk => ({
+      label: fk.label,
+      locations: locations[fk.key] || []
+    })).filter(f => f.locations.length > 0)
+
+    const secondaryFabricNames = secondaryFabrics.map(f => f.name)
+
+    try {
+      const promptRes = await fetch('/api/generate-design-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          frontDesignImage,
+          backDesignImage,
+          fabricImages: selectedFabricImages,
+          secondaryFabrics: secondaryFabricNames,
+          fabricInfo,
+          fabricLocationDescriptions,
+          additionalNotes: additionalNotes.trim() || null
+        })
+      })
+
+      if (!promptRes.ok) {
+        const err = await promptRes.json().catch(() => ({}))
+        throw new Error(err.error || 'فشل في إنشاء وصف التصميم')
+      }
+
+      const { prompt: enhancedPrompt } = await promptRes.json()
+
+      setStep('generating-image')
+
+      const imageRes = await fetch('/api/generate-design-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enhancedPrompt,
+          frontDesignImage,
+          backDesignImage,
+          fabricImages: selectedFabricImages,
+          secondaryFabrics: secondaryFabricNames,
+          fabricInfo,
+          fabricLocationDescriptions,
+          additionalNotes: additionalNotes.trim() || null
+        })
+      })
+
+      if (!imageRes.ok) {
+        const err = await imageRes.json().catch(() => ({}))
+        throw new Error(err.error || 'فشل في توليد صورة التصميم')
+      }
+
+      const { imageUrl } = await imageRes.json()
+
+      setGeneratedImageUrl(imageUrl)
+      setShowResult(true)
+      setStep('done')
+      onGenerated(imageUrl)
+
+    } catch (err) {
+      console.error('Design generation error:', err)
+      setErrorMsg(err instanceof Error ? err.message : 'حدث خطأ أثناء توليد التصميم')
+      setStep('error')
+    }
+  }
+
+  const handleDownload = (url: string, index: number) => {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ai-design-${index + 1}.png`
+    a.click()
+  }
+
+  const isGenerating = step === 'generating-prompt' || step === 'generating-image'
+
+  // ──────────────────────────────────────────
+  // IDLE / ERROR
+  // ──────────────────────────────────────────
+  if (step === 'idle' || step === 'error') {
+    return (
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={() => { setStep('selecting'); setErrorMsg('') }}
+          disabled={disabled}
+          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Sparkles className="w-5 h-5" />
+          <span>توليد التصميم بالذكاء الاصطناعي</span>
+        </button>
+
+        {step === 'error' && errorMsg && (
+          <p className="text-red-600 text-sm">{errorMsg}</p>
+        )}
+
+        {generatedImages.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowHistory(v => !v)}
+              className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 font-medium"
+            >
+              {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              <span>التصاميم المولدة ({generatedImages.length})</span>
+            </button>
+            {showHistory && (
+              <GeneratedImagesGallery images={generatedImages} onDownload={handleDownload} />
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ──────────────────────────────────────────
+  // SELECTING
+  // ──────────────────────────────────────────
+  if (step === 'selecting') {
+    return (
+      <>
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              <h4 className="font-bold text-gray-800">اختر صورة القماش</h4>
+            </div>
+            <button type="button" onClick={() => setStep('idle')} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-600">
+            اختر صورة أو أكثر من صور الطلب لاستخدامها كمرجع للقماش
+            {imageOnlyItems.length === 0 && ' (لا توجد صور متاحة)'}
+          </p>
+
+          {imageOnlyItems.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              {imageOnlyItems.map((img, i) => {
+                const selected = selectedFabricImages.includes(img)
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => toggleFabricImage(img)}
+                    className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all duration-200 ${
+                      selected
+                        ? 'border-purple-500 ring-2 ring-purple-300 scale-105'
+                        : 'border-gray-200 hover:border-purple-300'
+                    }`}
+                  >
+                    <img src={img} alt={`صورة ${i + 1}`} className="w-full h-full object-cover" />
+                    {selected && (
+                      <div className="absolute inset-0 bg-purple-600/20 flex items-center justify-center">
+                        <div className="bg-purple-600 rounded-full p-1">
+                          <Check className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+                    )}
+                    <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-1 rounded">
+                      {i + 1}
+                    </div>
+                  </button>
+                )
+              })}
+
+              {/* Add secondary fabric button */}
+              <button
+                type="button"
+                onClick={() => setShowSecondaryFabricModal(true)}
+                className="aspect-square rounded-xl border-2 border-dashed border-purple-300 hover:border-purple-500 bg-purple-50 hover:bg-purple-100 flex flex-col items-center justify-center gap-1 transition-all duration-200 text-purple-600"
+              >
+                <Plus className="w-5 h-5" />
+                <span className="text-xs text-center leading-tight px-1">إضافة قماش ثانوي</span>
+              </button>
+            </div>
+          )}
+
+          {secondaryFabrics.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {secondaryFabrics.map((f, i) => (
+                <div key={i} className="flex items-center gap-1 bg-indigo-100 text-indigo-700 rounded-full px-3 py-1 text-sm font-medium">
+                  <span>{f.name}</span>
+                  <button type="button" onClick={() => removeSecondaryFabric(f.name)} className="text-indigo-400 hover:text-indigo-700">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Additional notes */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700">
+              ملاحظات إضافية <span className="text-gray-400">(اختياري)</span>
+            </label>
+            <textarea
+              value={additionalNotes}
+              onChange={e => setAdditionalNotes(e.target.value)}
+              placeholder="أي تعليمات أو ملاحظات إضافية للذكاء الاصطناعي (مثال: أريد الفستان بأكمام طويلة، أضف ترتر على الصدر...)"
+              rows={3}
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white placeholder-gray-400"
+            />
+          </div>
+
+          {errorMsg && <p className="text-red-600 text-sm">{errorMsg}</p>}
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleClickGenerate}
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold transition-all duration-300"
+            >
+              <Sparkles className="w-5 h-5" />
+              <span>توليد التصميم</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep('idle')}
+              className="px-4 py-3 border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+
+        {showSecondaryFabricModal && (
+          <SecondaryFabricModal
+            pendingName={pendingFabricName}
+            onSelectName={handleSelectFabricName}
+            onConfirm={handleConfirmSecondaryFabric}
+            onClose={closeSecondaryModal}
+            showCustomInput={showCustomFabricInput}
+            setShowCustomInput={setShowCustomFabricInput}
+            customInput={customFabricInput}
+            setCustomInput={setCustomFabricInput}
+            selectedColor={pendingFabricColor}
+            onSelectColor={setPendingFabricColor}
+            showCustomColorInput={showCustomColorInput}
+            setShowCustomColorInput={setShowCustomColorInput}
+            customColorInput={customColorInput}
+            setCustomColorInput={setCustomColorInput}
+          />
+        )}
+      </>
+    )
+  }
+
+  // ──────────────────────────────────────────
+  // LOCATION PICKING (multi-select)
+  // ──────────────────────────────────────────
+  if (step === 'location-picking') {
+    const fabricKeys = getFabricKeys()
+    return (
+      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-5 space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-purple-600" />
+            <h4 className="font-bold text-gray-800">تحديد مكان كل قماش في الجسم</h4>
+          </div>
+          <button type="button" onClick={() => setStep('selecting')} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-sm text-gray-600">يمكنك اختيار أكثر من منطقة لكل قماش</p>
+
+        <div className="space-y-4">
+          {fabricKeys.map(fk => {
+            const selected = fabricLocations[fk.key] || []
+            const isCustomShown = showCustomLocationFor[fk.key]
+            return (
+              <div key={fk.key} className="bg-white rounded-xl p-4 border border-purple-100 space-y-3">
+                <div className="flex items-center gap-3">
+                  {fk.imageUrl && (
+                    <img src={fk.imageUrl} alt={fk.label} className="w-12 h-12 rounded-lg object-cover border border-purple-200 flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-800 text-sm">{fk.label}</p>
+                    {selected.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {selected.map(area => (
+                          <span key={area} className="inline-flex items-center gap-0.5 bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">
+                            {area}
+                            <button type="button" onClick={() => toggleLocation(fk.key, area)}>
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {BODY_AREAS.map(area => {
+                    const isSelected = selected.includes(area)
+                    return (
+                      <button
+                        key={area}
+                        type="button"
+                        onClick={() => toggleLocation(fk.key, area)}
+                        className={`text-xs px-2.5 py-1.5 rounded-full border transition-all duration-150 ${
+                          isSelected
+                            ? 'bg-purple-600 text-white border-purple-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400'
+                        } ${area === 'كامل الفستان' ? 'font-semibold' : ''}`}
+                      >
+                        {area}
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomLocationFor(prev => ({ ...prev, [fk.key]: !prev[fk.key] }))}
+                    className={`text-xs px-2.5 py-1.5 rounded-full border transition-all duration-150 ${
+                      isCustomShown
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+                    }`}
+                  >
+                    مكان آخر
+                  </button>
+                </div>
+                {isCustomShown && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="اكتب المكان..."
+                      value={customLocationInputs[fk.key] || ''}
+                      onChange={e => setCustomLocationInputs(prev => ({ ...prev, [fk.key]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomLocation(fk.key) } }}
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addCustomLocation(fk.key)}
+                      className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
+                    >
+                      إضافة
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            onClick={() => doGenerate(fabricLocations)}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold transition-all duration-300"
+          >
+            <Sparkles className="w-5 h-5" />
+            <span>توليد التصميم</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => doGenerate({})}
+            className="flex items-center gap-1.5 px-4 py-3 border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors text-sm"
+          >
+            <SkipForward className="w-4 h-4" />
+            <span>تخطي</span>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ──────────────────────────────────────────
+  // LOADING
+  // ──────────────────────────────────────────
+  if (isGenerating) {
+    const stepLabel = step === 'generating-prompt'
+      ? 'جاري تحليل التصميم وإنشاء الوصف الاحترافي...'
+      : 'جاري توليد صورة التصميم...'
+    const stepNum = step === 'generating-prompt' ? 1 : 2
+
+    return (
+      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-6 text-center space-y-4">
+        <div className="flex items-center justify-center gap-3">
+          <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+          <Sparkles className="w-6 h-6 text-indigo-500 animate-pulse" />
+        </div>
+        <div>
+          <p className="font-bold text-gray-800 text-lg">جاري توليد التصميم</p>
+          <p className="text-sm text-purple-600 mt-1">{stepLabel}</p>
+          <p className="text-xs text-gray-400 mt-1">الخطوة {stepNum} من 2 — يمكنك حفظ الطلب الآن والانتظار</p>
+        </div>
+        <div className="w-full bg-purple-100 rounded-full h-2">
+          <div
+            className="bg-gradient-to-r from-purple-500 to-indigo-500 h-2 rounded-full transition-all duration-1000"
+            style={{ width: step === 'generating-prompt' ? '40%' : '80%' }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // ──────────────────────────────────────────
+  // DONE
+  // ──────────────────────────────────────────
+  if (step === 'done' && generatedImageUrl) {
+    return (
+      <div className="space-y-3">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Check className="w-5 h-5 text-green-600" />
+            <span className="font-bold text-green-800">تم توليد التصميم بنجاح!</span>
+          </div>
+          {showResult && (
+            <div className="relative rounded-xl overflow-hidden border border-green-200">
+              <img src={generatedImageUrl} alt="التصميم المولد" className="w-full object-contain max-h-96" />
+              <button
+                type="button"
+                onClick={() => handleDownload(generatedImageUrl, generatedImages.length)}
+                className="absolute top-2 left-2 bg-white/80 hover:bg-white text-gray-700 rounded-lg p-2 shadow"
+                title="تحميل"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => { setStep('idle'); setGeneratedImageUrl(null) }}
+          className="flex items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:text-purple-800 font-medium"
+        >
+          <Sparkles className="w-4 h-4" />
+          <span>توليد تصميم جديد</span>
+        </button>
+
+        {generatedImages.length > 0 && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowHistory(v => !v)}
+              className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 font-medium"
+            >
+              {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              <span>جميع التصاميم المولدة ({generatedImages.length})</span>
+            </button>
+            {showHistory && (
+              <GeneratedImagesGallery images={generatedImages} onDownload={handleDownload} />
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return null
+}
+
+// ──────────────────────────────────────────
+// Secondary Fabric Modal
+// ──────────────────────────────────────────
+function SecondaryFabricModal({
+  pendingName,
+  onSelectName,
+  onConfirm,
+  onClose,
+  showCustomInput,
+  setShowCustomInput,
+  customInput,
+  setCustomInput,
+  selectedColor,
+  onSelectColor,
+  showCustomColorInput,
+  setShowCustomColorInput,
+  customColorInput,
+  setCustomColorInput,
+}: {
+  pendingName: string | null
+  onSelectName: (name: string) => void
+  onConfirm: () => void
+  onClose: () => void
+  showCustomInput: boolean
+  setShowCustomInput: (v: boolean) => void
+  customInput: string
+  setCustomInput: (v: string) => void
+  selectedColor: string
+  onSelectColor: (c: string) => void
+  showCustomColorInput: boolean
+  setShowCustomColorInput: (v: boolean) => void
+  customColorInput: string
+  setCustomColorInput: (v: string) => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 pb-3 flex-shrink-0">
+          <h5 className="font-bold text-gray-800">إضافة قماش ثانوي</h5>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 space-y-4 pb-4">
+          {/* Fabric name selection */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">نوع القماش</p>
+            <div className="grid grid-cols-2 gap-2">
+              {SECONDARY_FABRIC_OPTIONS.map(name => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onSelectName(name)}
+                  className={`text-sm px-3 py-2.5 rounded-xl border transition-all text-right font-medium ${
+                    pendingName === name
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-200 hover:border-purple-400'
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+
+            {!showCustomInput ? (
+              <button
+                type="button"
+                onClick={() => setShowCustomInput(true)}
+                className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-gray-300 hover:border-purple-400 text-gray-600 hover:text-purple-600 rounded-xl transition-all text-sm font-medium"
+              >
+                <Plus className="w-4 h-4" />
+                قماش آخر
+              </button>
+            ) : (
+              <div className="flex gap-2 mt-2">
+                <input
+                  type="text"
+                  placeholder="اكتب نوع القماش..."
+                  value={customInput}
+                  onChange={e => setCustomInput(e.target.value)}
+                  autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter' && customInput.trim()) { e.preventDefault(); onSelectName(customInput.trim()) } }}
+                  className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                />
+                <button
+                  type="button"
+                  onClick={() => { if (customInput.trim()) onSelectName(customInput.trim()) }}
+                  disabled={!customInput.trim()}
+                  className="px-3 py-2 bg-purple-600 text-white text-sm rounded-xl hover:bg-purple-700 disabled:opacity-50"
+                >
+                  اختيار
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Color selection */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              لون القماش <span className="text-gray-400 font-normal">(اختياري)</span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {COLOR_OPTIONS.map(c => {
+                const isSelected = selectedColor === c.label && !showCustomColorInput
+                return (
+                  <button
+                    key={c.label}
+                    type="button"
+                    onClick={() => { onSelectColor(c.label); setShowCustomColorInput(false) }}
+                    title={c.label}
+                    className={`flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-full border transition-all ${
+                      isSelected
+                        ? 'border-purple-600 ring-2 ring-purple-300 bg-purple-50 text-purple-800 font-semibold'
+                        : 'border-gray-200 hover:border-purple-300 text-gray-700'
+                    }`}
+                  >
+                    <span
+                      className="w-4 h-4 rounded-full border border-gray-300 flex-shrink-0"
+                      style={{ backgroundColor: c.hex }}
+                    />
+                    {c.label}
+                  </button>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => { setShowCustomColorInput(true); onSelectColor('') }}
+                className={`text-xs px-2.5 py-1.5 rounded-full border transition-all ${
+                  showCustomColorInput
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'border-gray-300 text-gray-600 hover:border-indigo-400'
+                }`}
+              >
+                لون آخر
+              </button>
+            </div>
+
+            {showCustomColorInput && (
+              <input
+                type="text"
+                placeholder="اكتب اللون..."
+                value={customColorInput}
+                onChange={e => setCustomColorInput(e.target.value)}
+                autoFocus
+                className="mt-2 w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-5 pt-3 flex gap-3 flex-shrink-0 border-t border-gray-100">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!pendingName && !customInput.trim()}
+            className="flex-1 py-2.5 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            إضافة
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50 text-sm transition-colors"
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────
+// Generated images gallery
+// ──────────────────────────────────────────
+function GeneratedImagesGallery({
+  images,
+  onDownload
+}: {
+  images: string[]
+  onDownload: (url: string, index: number) => void
+}) {
+  return (
+    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {images.map((img, i) => (
+        <div key={i} className="relative rounded-xl overflow-hidden border border-purple-200 bg-purple-50">
+          <img src={img} alt={`تصميم مولد ${i + 1}`} className="w-full object-contain max-h-64" />
+          <div className="absolute top-2 left-2 flex gap-1">
+            <button
+              type="button"
+              onClick={() => onDownload(img, i)}
+              className="bg-white/80 hover:bg-white text-gray-700 rounded-lg p-1.5 shadow text-xs"
+              title="تحميل"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="absolute bottom-2 right-2 bg-purple-600/80 text-white text-xs px-2 py-0.5 rounded">
+            تصميم {i + 1}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}

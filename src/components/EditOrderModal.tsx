@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
 import ImageUpload from './ImageUpload'
+import GenerateDesignButton from './GenerateDesignButton'
 import UnifiedNotesInput from './UnifiedNotesInput'
 import NumericInput from './NumericInput'
 import DatePickerWithStats from './DatePickerWithStats'
@@ -97,7 +98,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     imageDrawings: [] as DrawingPath[],
     customDesignImage: null as File | null,
     savedDesignComments: [] as SavedDesignComment[],
-    fabricType: null as 'external' | 'internal' | null
+    fabricType: null as 'external' | 'internal' | null,
+    aiGeneratedImages: [] as string[]
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -184,7 +186,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         imageDrawings: drawings,
         customDesignImage: null as File | null, // File objects are set via handleDesignImageChange
         savedDesignComments: savedComments,
-        fabricType: measurements?.fabric_type || null
+        fabricType: measurements?.fabric_type || null,
+        aiGeneratedImages: measurements?.ai_generated_images || []
       })
 
       initialDesignStateRef.current = {
@@ -425,7 +428,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
       // تحديث الطلب
       onSave(order.id, {
-        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType },
+        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType, ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -560,7 +563,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
       // تحديث الطلب
       onSave(order.id, {
-        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType },
+        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType, ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -893,6 +896,21 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     onImagesChange={(images) => handleInputChange('images', images)}
                     alwaysShowDeleteOnMobileAndTablet={true}
                   />
+
+                  {/* زر توليد التصميم بالذكاء الاصطناعي */}
+                  <div className="mt-6 pt-6 border-t border-pink-100">
+                    <GenerateDesignButton
+                      images={formData.images}
+                      designComments={formData.savedDesignComments}
+                      fabric={formData.fabric}
+                      fabricType={formData.fabricType}
+                      generatedImages={formData.aiGeneratedImages}
+                      disabled={isSubmitting}
+                      onGenerated={(imageDataUrl) => {
+                        handleInputChange('aiGeneratedImages', [...formData.aiGeneratedImages, imageDataUrl])
+                      }}
+                    />
+                  </div>
                 </div>
 
                 {/* ملاحظات إضافية */}

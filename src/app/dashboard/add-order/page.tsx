@@ -38,6 +38,7 @@ import {
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
 import PrintOrderModal from '@/components/PrintOrderModal'
+import GenerateDesignButton from '@/components/GenerateDesignButton'
 import { Order } from '@/lib/services/order-service'
 
 // مفتاح localStorage للحفظ التلقائي
@@ -94,6 +95,7 @@ interface FormDataType {
   customDesignImage: string | null // legacy فقط؛ لا نخزن base64 جديداً في state
   savedDesignComments: SavedDesignComment[]
   fabricType: 'external' | 'internal' | null
+  aiGeneratedImages: string[]
 }
 
 // القيم الأولية للنموذج
@@ -117,7 +119,8 @@ const getInitialFormData = (): FormDataType => ({
   imageDrawings: [],
   customDesignImage: null,
   savedDesignComments: [],
-  fabricType: null
+  fabricType: null,
+  aiGeneratedImages: []
 })
 
 // دالة للتحقق من أن البيانات فارغة
@@ -613,7 +616,8 @@ function AddOrderContent() {
         description: formData.description,
         fabric: formData.fabric || undefined,
         measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {})
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
         }, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
@@ -770,7 +774,8 @@ function AddOrderContent() {
         description: formData.description,
         fabric: formData.fabric || undefined,
         measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {})
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
         },
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
@@ -910,7 +915,8 @@ function AddOrderContent() {
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined, measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {})
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
         },
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -1307,6 +1313,21 @@ function AddOrderContent() {
                 acceptVideo={true}
                 alwaysShowDeleteOnMobileAndTablet={true}
               />
+
+              {/* زر توليد التصميم بالذكاء الاصطناعي */}
+              <div className="mt-6 pt-6 border-t border-pink-100">
+                <GenerateDesignButton
+                  images={formData.images}
+                  designComments={formData.savedDesignComments}
+                  fabric={formData.fabric}
+                  fabricType={formData.fabricType}
+                  generatedImages={formData.aiGeneratedImages}
+                  disabled={isSubmitting}
+                  onGenerated={(imageDataUrl) => {
+                    handleInputChange('aiGeneratedImages', [...formData.aiGeneratedImages, imageDataUrl])
+                  }}
+                />
+              </div>
             </div>
 
             {/* ملاحظات إضافية */}
