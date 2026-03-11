@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
       additionalNotes?: string | null
     }
 
-    const { text, contentParts } = buildImagePrompt({
+    const { contentParts } = buildImagePrompt({
       enhancedPrompt,
       frontDesignImage,
       backDesignImage,
@@ -204,10 +204,6 @@ export async function POST(request: NextRequest) {
       fabricLocationDescriptions,
       additionalNotes
     })
-
-    console.log('\n================ FINAL AI PROMPT ================')
-    console.log(text)
-    console.log('=================================================\n')
 
     const response = await fetch(OPENROUTER_API_URL, {
       method: 'POST',

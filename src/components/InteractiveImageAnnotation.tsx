@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion'
-import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, RotateCw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut, MousePointer2, ScanText, Plus } from 'lucide-react'
+import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, RotateCw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut, MousePointer2, ScanText, Plus, Wand2 } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast'
 import Image from 'next/image'
@@ -706,6 +706,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [showCameraCapture, setShowCameraCapture] = useState(false)
   const [showImageEditModal, setShowImageEditModal] = useState(false)
+  const [isRemovingModel, setIsRemovingModel] = useState(false)
 
   // حالة لتتبع الصورة المعروضة حالياً (لزر الأمام/الخلف)
   // استخدام initialView لتعيين العرض الابتدائي عند استعادة الحالة
@@ -2166,6 +2167,66 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setError(null)
   }, [onImageChange, getCurrentView])
 
+  // إزالة العارضة البشرية واستبدالها بمانيكان بالذكاء الاصطناعي
+  const handleRemoveModel = useCallback(async () => {
+    const currentView = getCurrentView()
+
+    // الحصول على الصورة الخام (بدون رسومات) للواجهة الحالية
+    let imageBase64: string | null = viewCustomImagesRef.current[currentView]
+
+    // إذا لم تكن موجودة في المرجع، نحاول قراءة imagePreview كـ blob URL
+    if (!imageBase64 && imagePreview) {
+      try {
+        const res = await fetch(imagePreview)
+        const blob = await res.blob()
+        imageBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        })
+      } catch {
+        toast.error('تعذّر قراءة الصورة الحالية')
+        return
+      }
+    }
+
+    if (!imageBase64) {
+      toast.error('لا توجد صورة محملة للمعالجة')
+      return
+    }
+
+    setIsRemovingModel(true)
+    const toastId = toast.loading('جارٍ إزالة العارضة بالذكاء الاصطناعي...')
+
+    try {
+      const response = await fetch('/api/remove-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64 })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.imageUrl) {
+        throw new Error(data.error || 'فشل في معالجة الصورة')
+      }
+
+      // تحويل data URL إلى File واستدعاء onImageChange لتحديث الصورة
+      const imgRes = await fetch(data.imageUrl)
+      const blob = await imgRes.blob()
+      const file = new File([blob], 'mannequin-result.jpg', { type: blob.type || 'image/jpeg' })
+      onImageChange?.(file)
+
+      toast.success('تمت إزالة العارضة بنجاح!', { id: toastId })
+    } catch (error) {
+      console.error('خطأ في إزالة العارضة:', error)
+      toast.error(error instanceof Error ? error.message : 'حدث خطأ أثناء المعالجة', { id: toastId })
+    } finally {
+      setIsRemovingModel(false)
+    }
+  }, [getCurrentView, imagePreview, onImageChange])
+
   // فتح اختيار الصورة من المعرض
   const openGallery = useCallback(() => {
     fileInputRef.current?.click()
@@ -3184,6 +3245,24 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               >
                 <Pencil className="w-4 h-4" />
                 <span className="hidden sm:inline">تعديل الصورة</span>
+              </button>
+            )}
+
+            {/* زر إزالة العارضة بالذكاء الاصطناعي */}
+            {imagePreview && onImageChange && (
+              <button
+                type="button"
+                onClick={handleRemoveModel}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all bg-purple-50 border border-purple-300 text-purple-700 hover:bg-purple-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={disabled || isRecordingActive || isRemovingModel}
+                title="إزالة العارضة واستبدالها بمانيكان"
+              >
+                {isRemovingModel ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Wand2 className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">{isRemovingModel ? 'جارٍ المعالجة...' : 'إزالة العارضة'}</span>
               </button>
             )}
 
