@@ -25,7 +25,12 @@ import {
   Loader2,
   ChevronDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Wand2,
+  Upload,
+  AlertTriangle,
+  PrinterIcon,
+  Trash2
 } from 'lucide-react'
 import { Order, orderService } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
@@ -49,9 +54,10 @@ interface OrderModalProps {
   workers: any[] // Using any to handle WorkerWithUser and legacy Worker types
   isOpen: boolean
   onClose: () => void
+  showCartoonButton?: boolean
 }
 
-export default function OrderModal({ order: initialOrder, workers, isOpen, onClose }: OrderModalProps) {
+export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, showCartoonButton = false }: OrderModalProps) {
   const { user } = useAuthStore()
   const { t } = useTranslation()
   // Lightbox state
@@ -155,6 +161,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return '/front2.png'
   }, [customDesignImage])
 
+  // حالات تحويل الصورة إلى كرتون
+  const [isConvertingToCartoon, setIsConvertingToCartoon] = useState(false)
+  const [cartoonImage, setCartoonImage] = useState<string | null>(null)
+  const [showCartoonUploadModal, setShowCartoonUploadModal] = useState(false)
+  const [cartoonUploadImage, setCartoonUploadImage] = useState<string | null>(null)
+  const cartoonImageRef = useRef<HTMLDivElement | null>(null)
+
   // حالات تعديل العامل
   const [isEditingWorker, setIsEditingWorker] = useState(false)
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
@@ -179,12 +192,106 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return lang ? lang.nameAr : code
   }
 
+  // دالة تحويل الصورة إلى كرتون
+  const handleConvertToCartoon = useCallback(async (imageToConvert?: string) => {
+    const completedImages = order?.completed_images
+    const sourceImage = imageToConvert || (completedImages && completedImages.length > 0 ? completedImages[0] : null)
+
+    if (!sourceImage) {
+      setShowCartoonUploadModal(true)
+      return
+    }
+
+    setIsConvertingToCartoon(true)
+    try {
+      const response = await fetch('/api/convert-to-cartoon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completedImage: sourceImage })
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'فشل تحويل الصورة')
+      }
+
+      const generatedUrl: string = data.imageUrl
+      setCartoonImage(generatedUrl)
+
+      // حفظ الصورة في قاعدة البيانات
+      if (order) {
+        try {
+          await orderService.update(order.id, {
+            measurements: {
+              ...(order.measurements || {}),
+              cartoon_image: generatedUrl
+            }
+          })
+          toast.success('تم تحويل الصورة وحفظها بنجاح')
+        } catch {
+          toast.success('تم تحويل الصورة بنجاح')
+        }
+      }
+    } catch (err) {
+      console.error('Cartoon conversion error:', err)
+      toast.error(err instanceof Error ? err.message : 'فشل تحويل الصورة إلى كرتون')
+    } finally {
+      setIsConvertingToCartoon(false)
+    }
+  }, [order])
+
+  // طباعة صورة الكرتون
+  const handlePrintCartoonImage = useCallback((imageUrl: string) => {
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) {
+      toast.error('تعذر فتح نافذة الطباعة')
+      return
+    }
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html dir="rtl">
+        <head>
+          <title>طباعة التصميم الكرتوني</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
+            img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+            @media print { body { margin: 0; } img { width: 100%; height: auto; } }
+          </style>
+        </head>
+        <body>
+          <img src="${imageUrl}" onload="window.print(); window.close();" />
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+  }, [])
+
+  // دالة حذف الصورة الكرتونية نهائياً
+  const handleDeleteCartoonImage = useCallback(async () => {
+    if (!order) return
+    setCartoonImage(null)
+    try {
+      await orderService.update(order.id, {
+        measurements: {
+          ...(order.measurements || {}),
+          cartoon_image: null
+        }
+      })
+      toast.success('تم حذف الصورة الكرتونية')
+    } catch {
+      toast.error('فشل حذف الصورة')
+    }
+  }, [order])
+
   // Fetch full order data when opened with lightweight-loaded order
   // إعادة تهيئة localAiImages عند تغيير الطلب لمنع التسريب بين الطلبات
   useEffect(() => {
     if (initialOrder?.id && initialOrder.id !== prevOrderIdRef.current) {
       prevOrderIdRef.current = initialOrder.id
       setLocalAiImages([])
+      setCartoonImage(null)
+      setCartoonUploadImage(null)
     }
   }, [initialOrder?.id])
 
@@ -263,6 +370,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       setImageAnnotations(measurementsData.image_annotations || [])
       setImageDrawings(measurementsData.image_drawings || [])
       setCustomDesignImage(measurementsData.custom_design_image || null)
+      if (measurementsData.cartoon_image) {
+        setCartoonImage(measurementsData.cartoon_image)
+      }
     } else {
       setSavedDesignComments([])
       setImageAnnotations([])
@@ -1315,61 +1425,81 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     ))}
                   </div>
 
-                  {/* زر توليد التصميم بالذكاء الاصطناعي */}
+                  {/* أزرار الذكاء الاصطناعي */}
                   <div className="pt-4 border-t border-gray-100">
-                    <GenerateDesignButton
-                      images={order.images || []}
-                      designComments={savedDesignComments}
-                      fabric={order.fabric}
-                      fabricType={(order.measurements as any)?.fabric_type || null}
-                      generatedImages={[
-                        ...((order.measurements as any)?.ai_generated_images || []),
-                        ...localAiImages
-                      ]}
-                      onGenerated={async (imageDataUrl) => {
-                        const newImages = [...((order.measurements as any)?.ai_generated_images || []), ...localAiImages, imageDataUrl]
-                        setLocalAiImages(prev => [...prev, imageDataUrl])
-                        // Auto-save to order
-                        try {
-                          await orderService.update(order.id, {
-                            measurements: {
-                              ...(order.measurements || {}),
-                              ai_generated_images: newImages
-                            }
-                          })
-                          toast.success('تم حفظ التصميم المولد في الطلب')
-                        } catch (err) {
-                          console.error('Failed to save AI image:', err)
-                          toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
-                        }
-                      }}
-                      onDeleteGeneratedImage={async (index) => {
-                        const currentDbImages = Array.isArray((order.measurements as any)?.ai_generated_images) ? (order.measurements as any).ai_generated_images : []
-                        const allImages = [...currentDbImages, ...localAiImages]
-                        const newImages = allImages.filter((_, i) => i !== index)
-
-                        try {
-                          await updateOrder(order.id, {
-                            measurements: {
-                              ...(order.measurements || {}),
-                              ai_generated_images: newImages
-                            }
-                          })
-                          setLocalAiImages([])
-                          toast.success('تم حذف التصميم')
-                        } catch (err) {
-                          console.error('Failed to delete AI image:', err)
-                          toast.error('فشل حذف التصميم')
-                        }
-                      }}
-                    />
+                    <div className="flex flex-wrap gap-3 items-start">
+                      <GenerateDesignButton
+                        images={order.images || []}
+                        designComments={savedDesignComments}
+                        fabric={order.fabric}
+                        fabricType={(order.measurements as any)?.fabric_type || null}
+                        generatedImages={[
+                          ...((order.measurements as any)?.ai_generated_images || []),
+                          ...localAiImages
+                        ]}
+                        onGenerated={async (imageDataUrl) => {
+                          const newImages = [...((order.measurements as any)?.ai_generated_images || []), ...localAiImages, imageDataUrl]
+                          setLocalAiImages(prev => [...prev, imageDataUrl])
+                          try {
+                            await orderService.update(order.id, {
+                              measurements: {
+                                ...(order.measurements || {}),
+                                ai_generated_images: newImages
+                              }
+                            })
+                            toast.success('تم حفظ التصميم المولد في الطلب')
+                          } catch (err) {
+                            console.error('Failed to save AI image:', err)
+                            toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
+                          }
+                        }}
+                        onDeleteGeneratedImage={async (index) => {
+                          const currentDbImages = Array.isArray((order.measurements as any)?.ai_generated_images) ? (order.measurements as any).ai_generated_images : []
+                          const allImages = [...currentDbImages, ...localAiImages]
+                          const newImages = allImages.filter((_, i) => i !== index)
+                          try {
+                            await updateOrder(order.id, {
+                              measurements: {
+                                ...(order.measurements || {}),
+                                ai_generated_images: newImages
+                              }
+                            })
+                            setLocalAiImages([])
+                            toast.success('تم حذف التصميم')
+                          } catch (err) {
+                            console.error('Failed to delete AI image:', err)
+                            toast.error('فشل حذف التصميم')
+                          }
+                        }}
+                      />
+                      {/* زر تحويل الصورة إلى كرتون */}
+                      {showCartoonButton && (
+                        <button
+                          onClick={() => handleConvertToCartoon()}
+                          disabled={isConvertingToCartoon}
+                          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isConvertingToCartoon ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              <span>جاري التحويل...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Wand2 className="w-5 h-5" />
+                              <span>تحويل الصورة الى كرتون</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* قسم التصاميم المولدة - يظهر حتى لو لا توجد صور (بدون صور) */}
               {(!order.images || order.images.length === 0) && (
-                <div className="space-y-3">
+                <div className="flex flex-wrap gap-3 items-start">
                   <GenerateDesignButton
                     images={order.images || []}
                     designComments={savedDesignComments}
@@ -1395,7 +1525,6 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       const currentDbImages = Array.isArray((order.measurements as any)?.ai_generated_images) ? (order.measurements as any).ai_generated_images : []
                       const allImages = [...currentDbImages, ...localAiImages]
                       const newImages = allImages.filter((_, i) => i !== index)
-
                       try {
                         await updateOrder(order.id, {
                           measurements: {
@@ -1411,6 +1540,26 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       }
                     }}
                   />
+                  {/* زر تحويل الصورة إلى كرتون */}
+                  {showCartoonButton && (
+                    <button
+                      onClick={() => handleConvertToCartoon()}
+                      disabled={isConvertingToCartoon}
+                      className="flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isConvertingToCartoon ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span>جاري التحويل...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 className="w-5 h-5" />
+                          <span>تحويل الصورة الى كرتون</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1458,6 +1607,59 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   </div>
                 </div>
               )}
+
+              {/* قسم الصورة الكرتونية المولدة */}
+              {cartoonImage && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Wand2 className="w-5 h-5 text-purple-600" />
+                    <span>التصميم الكرتوني</span>
+                  </h3>
+                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 space-y-3">
+                    <div ref={cartoonImageRef} className="relative rounded-lg overflow-hidden border border-purple-300">
+                      <img
+                        src={cartoonImage}
+                        alt="التصميم الكرتوني"
+                        className="w-full object-contain max-h-[500px] cursor-pointer hover:opacity-95 transition-opacity"
+                        onClick={() => openLightbox(0, [cartoonImage])}
+                      />
+                      {/* زر الطباعة فوق الصورة */}
+                      <button
+                        onClick={() => handlePrintCartoonImage(cartoonImage)}
+                        className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-purple-700 rounded-lg text-sm font-medium shadow-md border border-purple-200 transition-all duration-200"
+                        title="طباعة الصورة"
+                      >
+                        <PrinterIcon className="w-4 h-4" />
+                        <span>طباعة</span>
+                      </button>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => handleConvertToCartoon()}
+                        disabled={isConvertingToCartoon}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                      >
+                        {isConvertingToCartoon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                        <span>إعادة التوليد</span>
+                      </button>
+                      <button
+                        onClick={() => handlePrintCartoonImage(cartoonImage)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 transition-colors"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>طباعة</span>
+                      </button>
+                      <button
+                        onClick={handleDeleteCartoonImage}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium border border-red-200 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>حذف</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* تذييل النافذة */}
@@ -1472,6 +1674,83 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               </div>
             </div>
           </motion.div>
+
+          {/* مودال رفع صورة للتحويل إلى كرتون - داخل الحاوية الرئيسية لضمان الظهور */}
+          {showCartoonUploadModal && (
+            <div
+              className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              onClick={() => setShowCartoonUploadModal(false)}
+            >
+              <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5"
+                onClick={(e) => e.stopPropagation()}
+                dir="rtl"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-500" />
+                    <span>لا توجد صورة عمل مكتمل</span>
+                  </h3>
+                  <button
+                    onClick={() => setShowCartoonUploadModal(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+                  >
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-600">
+                  لم يتم رفع صورة للعمل المكتمل بعد. يمكنك رفع صورة من جهازك لاستخدامها في التحويل إلى كرتون.
+                </p>
+                {cartoonUploadImage ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg overflow-hidden border border-purple-200 max-h-64">
+                      <img src={cartoonUploadImage} alt="الصورة المرفوعة" className="w-full object-contain max-h-64" />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          const img = cartoonUploadImage
+                          setShowCartoonUploadModal(false)
+                          setCartoonUploadImage(null)
+                          handleConvertToCartoon(img)
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-medium hover:from-purple-600 hover:to-indigo-700 transition-all"
+                      >
+                        <Wand2 className="w-4 h-4" />
+                        <span>تحويل إلى كرتون</span>
+                      </button>
+                      <button
+                        onClick={() => setCartoonUploadImage(null)}
+                        className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+                      >
+                        تغيير
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center gap-3 p-6 border-2 border-dashed border-purple-300 rounded-xl cursor-pointer hover:bg-purple-50 transition-colors">
+                    <Upload className="w-8 h-8 text-purple-400" />
+                    <span className="text-sm font-medium text-purple-600">اضغط لرفع صورة الفستان</span>
+                    <span className="text-xs text-gray-400">JPG, PNG, WEBP</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = (ev) => {
+                          setCartoonUploadImage(ev.target?.result as string)
+                        }
+                        reader.readAsDataURL(file)
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

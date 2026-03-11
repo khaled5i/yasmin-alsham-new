@@ -602,6 +602,7 @@ export default function CompletedOrdersPage() {
         workers={workers}
         isOpen={showViewModal}
         onClose={handleCloseModal}
+        showCartoonButton={true}
       />
 
       <RemainingPaymentWarningModal
