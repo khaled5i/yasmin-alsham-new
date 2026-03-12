@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { completedImage } = body as { completedImage: string }
+    const { completedImage, clientName } = body as { completedImage: string; clientName?: string }
 
     if (!completedImage) {
       return NextResponse.json({ error: 'No completed image provided' }, { status: 400 })
@@ -34,6 +34,10 @@ export async function POST(request: NextRequest) {
       ? completedImage
       : `data:image/jpeg;base64,${completedImage}`
 
+    const clientNameInstruction = clientName
+      ? `\n\nText addition (mandatory):\n- At the bottom-right of the image write the text "ياسمين الشام للخياطة" in Arabic diwani (ديواني) script.\n- At the bottom-left of the image write the client's name "${clientName}" in the same Arabic diwani (ديواني) script.\n- Both texts must be exactly the same font style (diwani), the same color, and the same font size.\n- The texts should be subtle and integrated into the background — not overlapping the model or dress.\n- Choose a color that complements the illustration (e.g. soft gold, muted rose, or dark navy).`
+      : ''
+
     const prompt = `You will receive two images:
 
 Image 1: A hand-drawn fashion illustration of a model (cartoon / sketch style).
@@ -45,8 +49,7 @@ Place the exact dress from Image 2 onto the illustrated model in Image 1.
 Strict requirements:
 
 - Preserve the original illustration completely: do NOT change the model, pose, proportions, line style, colors, shading, or the background.
-- Do NOT add text, objects, accessories, lighting effects, or any new design elements.
-- The only modification allowed is replacing the model's clothing with the dress from Image 2.
+- The only modification allowed is replacing the model's clothing with the dress from Image 2, and adding the client name text described below.
 
 Dress accuracy (extremely important):
 
@@ -63,7 +66,7 @@ Style constraints:
 - Keep the background identical to the original illustration.
 
 Goal:
-Create a seamless fashion illustration where the photographed dress is accurately translated into the exact drawing style of the model illustration while preserving every design detail of the dress.`
+Create a seamless fashion illustration where the photographed dress is accurately translated into the exact drawing style of the model illustration while preserving every design detail of the dress.${clientNameInstruction}`
 
     const contentParts: any[] = [
       { type: 'text', text: prompt },

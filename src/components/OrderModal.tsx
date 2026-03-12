@@ -63,6 +63,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   // Lightbox state
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [lightboxImages, setLightboxImages] = useState<string[]>([])
+  const [isClientMounted, setIsClientMounted] = useState(false)
+
+  useEffect(() => {
+    setIsClientMounted(true)
+  }, [])
 
   const canNavigateLightbox = lightboxImages.length > 1
 
@@ -130,6 +135,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [lightboxIndex, closeLightbox, showNextImage, showPreviousImage])
+
+  // Reset lightbox when modal closes
+  useEffect(() => {
+    if (!isOpen) closeLightbox()
+  }, [isOpen, closeLightbox])
+
   const [voiceNotes, setVoiceNotes] = useState<any[]>([])
   const [showPrintModal, setShowPrintModal] = useState(false)
   // Full order data (fetched when lightweight order is missing measurements)
@@ -207,7 +218,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       const response = await fetch('/api/convert-to-cartoon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completedImage: sourceImage })
+        body: JSON.stringify({ completedImage: sourceImage, clientName: order?.client_name || '' })
       })
 
       const data = await response.json()
@@ -247,6 +258,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       toast.error('تعذر فتح نافذة الطباعة')
       return
     }
+    const secondPageUrl = `${window.location.origin}/image.png`
     printWindow.document.write(`
       <!DOCTYPE html>
       <html dir="rtl">
@@ -254,13 +266,27 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           <title>طباعة التصميم الكرتوني</title>
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
+            body { background: white; }
+            .page { display: flex; justify-content: center; align-items: center; width: 100%; height: 100vh; page-break-after: always; }
+            .page:last-child { page-break-after: avoid; }
             img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-            @media print { body { margin: 0; } img { width: 100%; height: auto; } }
+            @media print {
+              body { margin: 0; }
+              .page { height: 100vh; page-break-after: always; }
+              .page:last-child { page-break-after: avoid; }
+              img { width: 100%; height: auto; }
+            }
           </style>
         </head>
         <body>
-          <img src="${imageUrl}" onload="window.print(); window.close();" />
+          <div class="page"><img id="img1" src="${imageUrl}" /></div>
+          <div class="page"><img id="img2" src="${secondPageUrl}" /></div>
+          <script>
+            var loaded = 0;
+            function onImgLoad() { loaded++; if (loaded >= 2) { window.print(); window.close(); } }
+            document.getElementById('img1').onload = onImgLoad;
+            document.getElementById('img2').onload = onImgLoad;
+          </script>
         </body>
       </html>
     `)
@@ -674,6 +700,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }
 
   return (
+    <>
     <AnimatePresence>
       {isOpen && (
         <div key="order-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1754,95 +1781,6 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
         </div>
       )}
 
-      {/* Lightbox لعرض الصور بالحجم الكامل */}
-      {typeof document !== 'undefined' && createPortal(
-        <AnimatePresence>
-          {lightboxIndex !== null && lightboxImages[lightboxIndex] && (
-            <div
-              key="order-lightbox"
-              className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-              onClick={closeLightbox}
-            >
-              <div
-                className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
-                onTouchEnd={onTouchEnd}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeLightbox()
-                  }}
-                  className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-
-                <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-[999999]">
-                  {lightboxIndex + 1} / {lightboxImages.length}
-                </div>
-
-                {canNavigateLightbox && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      showNextImage()
-                    }}
-                    className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
-                  >
-                    <ChevronLeft className="w-6 h-6" />
-                  </button>
-                )}
-
-                {canNavigateLightbox && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      showPreviousImage()
-                    }}
-                    className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-[999999]"
-                  >
-                    <ChevronRight className="w-6 h-6" />
-                  </button>
-                )}
-
-                {isVideoFile(lightboxImages[lightboxIndex]) ? (
-                  <motion.video
-                    key={lightboxImages[lightboxIndex]}
-                    initial={{ scale: 0.96, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.96, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    src={lightboxImages[lightboxIndex]}
-                    controls
-                    preload="metadata"
-                    className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <motion.img
-                    key={lightboxImages[lightboxIndex]}
-                    initial={{ scale: 0.96, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.96, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    src={lightboxImages[lightboxIndex]}
-                    alt="عرض كامل"
-                    className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
-
       {/* مودال الطباعة */}
       {showPrintModal && order && (
         <PrintOrderModal
@@ -1852,5 +1790,109 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
         />
       )}
     </AnimatePresence>
+
+    {/* Lightbox لعرض الصور بالحجم الكامل - خارج AnimatePresence لتجنب تداخل framer-motion */}
+    {isClientMounted && lightboxIndex !== null && lightboxImages[lightboxIndex] && createPortal(
+      <div
+        className="fixed inset-0 z-[99999] bg-black/90 backdrop-blur-sm"
+        onClick={closeLightbox}
+      >
+        <div
+          className="relative h-full w-full flex items-center justify-center px-4 sm:px-8 py-16"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closeLightbox()
+            }}
+            className="absolute top-4 right-4 w-11 h-11 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
+          >
+            <X className="w-6 h-6" />
+          </button>
+
+          <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/50 text-white text-sm z-20">
+            {lightboxIndex + 1} / {lightboxImages.length}
+          </div>
+
+          {canNavigateLightbox && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                showNextImage()
+              }}
+              className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+
+          {canNavigateLightbox && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                showPreviousImage()
+              }}
+              className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 w-11 h-11 sm:w-12 sm:h-12 bg-white/20 hover:bg-white/30 text-white rounded-full flex items-center justify-center transition-colors z-20"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+
+          {isVideoFile(lightboxImages[lightboxIndex]) ? (
+            <video
+              key={lightboxImages[lightboxIndex]}
+              src={lightboxImages[lightboxIndex]}
+              controls
+              preload="metadata"
+              className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <img
+              key={lightboxImages[lightboxIndex]}
+              src={lightboxImages[lightboxIndex]}
+              alt="عرض كامل"
+              className="max-w-full max-h-[calc(100vh-11rem)] object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+
+          {canNavigateLightbox && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[min(92vw,760px)] z-20">
+              <div className="bg-black/45 backdrop-blur-md rounded-xl p-2 flex items-center gap-2 overflow-x-auto">
+                {lightboxImages.map((img, thumbIndex) => (
+                  <button
+                    key={thumbIndex}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setLightboxIndex(thumbIndex)
+                    }}
+                    className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${thumbIndex === lightboxIndex
+                      ? 'border-pink-400 opacity-100'
+                      : 'border-transparent opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <img
+                      src={img}
+                      alt={`Thumbnail ${thumbIndex + 1}`}
+                      className="w-14 h-14 sm:w-16 sm:h-16 object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>,
+      document.body
+    )}
+  </>
   )
 }
