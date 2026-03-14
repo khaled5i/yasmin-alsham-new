@@ -440,12 +440,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }, [order])
 
   // حفظ تغيير العامل
-  const handleSaveWorker = async () => {
+  const handleSaveWorker = async (workerId?: string) => {
     if (!order) return
 
+    const idToSave = workerId !== undefined ? workerId : selectedWorkerId
     setIsLoading(true)
     try {
-      const result = await updateOrder(order.id, { worker_id: selectedWorkerId || null })
+      const result = await updateOrder(order.id, { worker_id: idToSave || null })
 
       if (result.success) {
         setIsEditingWorker(false)
@@ -831,26 +832,24 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         <select
                           className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 focus:ring-1 focus:ring-pink-500 focus:border-pink-500 outline-none"
                           value={selectedWorkerId || ''}
-                          onChange={(e) => setSelectedWorkerId(e.target.value)}
+                          onChange={(e) => {
+                            const newId = e.target.value
+                            setSelectedWorkerId(newId)
+                            handleSaveWorker(newId)
+                          }}
                           onClick={(e) => e.stopPropagation()}
+                          disabled={isLoading}
                         >
                           <option value="">{t('select_worker')}</option>
                           {workers
-                            .filter(worker => worker.worker_type === 'tailor')
+                            .filter(worker => worker.worker_type === 'tailor' && worker.is_available)
                             .map(worker => (
                               <option key={worker.id} value={worker.id}>
                                 {getWorkerName(worker.id)}
                               </option>
                             ))}
                         </select>
-                        <button
-                          onClick={handleSaveWorker}
-                          disabled={isLoading}
-                          className="bg-green-500 text-white p-1 rounded hover:bg-green-600 transition-colors flex-shrink-0"
-                          title={t('save') || 'حفظ'}
-                        >
-                          {isLoading ? <Loader2 className="w-3 h-3 animate-spin api-loading" /> : <CheckCircle className="w-3 h-3" />}
-                        </button>
+                        {isLoading && <Loader2 className="w-3 h-3 animate-spin text-pink-500 flex-shrink-0" />}
                         <button
                           onClick={() => {
                             setIsEditingWorker(false)
@@ -864,7 +863,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       </div>
                     ) : (
                       <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">
-                        {getWorkerName(order.worker_id)}
+                        {getWorkerName(selectedWorkerId || order.worker_id)}
                       </p>
                     )}
                   </div>

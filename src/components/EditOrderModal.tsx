@@ -953,9 +953,9 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                         disabled={isSubmitting}
                       >
                         <option value="">{t('choose_worker')}</option>
-                        {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
+                        {workers.filter(w => w.is_available && w.worker_type === 'tailor').map(worker => (
                           <option key={worker.id} value={worker.id}>
-                            {worker.user?.full_name || worker.specialty} - {worker.specialty}
+                            {worker.user.full_name} - {worker.specialty}
                           </option>
                         ))}
                       </select>
