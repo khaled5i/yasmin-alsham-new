@@ -1,26 +1,56 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare, ArrowRight } from 'lucide-react'
-import Link from 'next/link'
+import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare } from 'lucide-react'
 import { useOrderStore } from '@/store/orderStore'
-import { useWorkerStore } from '@/store/workerStore'
 import { formatGregorianDate } from '@/lib/date-utils'
 import NumericInput from '@/components/NumericInput'
 import Header from '@/components/Header'
 
+const EXCLUDED_KEYS = [
+  'image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments',
+  'cartoon_image', 'is_printed', 'has_measurements'
+]
+
+interface OrderInfo {
+  order_number: string
+  client_name: string
+  client_phone: string
+  order_date: string
+  due_date: string
+  proof_delivery_date?: string
+  status: string
+  measurements?: Record<string, unknown>
+}
+
 export default function TrackOrderPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchType, setSearchType] = useState<'order' | 'phone'>('order')
-  const [orderData, setOrderData] = useState<any>(null)
+  const [ordersData, setOrdersData] = useState<OrderInfo[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
-  const { loadOrderByNumber, loadOrdersByPhone, currentOrder, orders } = useOrderStore()
-  const { workers } = useWorkerStore()
+  const { loadOrderByNumber, loadOrdersByPhone } = useOrderStore()
 
-  // البحث عن الطلب
+  const toOrderInfo = (order: any): OrderInfo => ({
+    order_number: order.order_number,
+    client_name: order.client_name,
+    client_phone: order.client_phone,
+    order_date: order.created_at,
+    due_date: order.due_date,
+    proof_delivery_date: order.proof_delivery_date,
+    status: order.status,
+    measurements: order.measurements
+  })
+
+  const scrollToResults = () => {
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 300)
+  }
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -31,104 +61,47 @@ export default function TrackOrderPage() {
 
     setIsLoading(true)
     setError(null)
-    setOrderData(null)
+    setOrdersData([])
 
     try {
-      console.log('🔍 Searching for order:', searchTerm, 'type:', searchType)
-
       if (searchType === 'order') {
-        // البحث برقم الطلب
         await loadOrderByNumber(searchTerm)
+        const state = useOrderStore.getState()
 
-        // استخدام getState() للحصول على أحدث قيمة من المخزن بعد التحميل
-        // (المتغيرات المغلقة من useOrderStore() تحتفظ بالقيمة القديمة من آخر render)
-        const latestState = useOrderStore.getState()
-
-        if (latestState.error) {
+        if (state.error || !state.currentOrder) {
           setError('لم يتم العثور على طلب بهذا الرقم. يرجى التأكد من رقم الطلب والمحاولة مرة أخرى.')
-        } else if (latestState.currentOrder) {
-          // تحويل البيانات إلى الصيغة المطلوبة
-          const order = latestState.currentOrder
-          const orderInfo = {
-            order_number: order.order_number,
-            client_name: order.client_name,
-            client_phone: order.client_phone,
-            dress_type: order.description,
-            order_date: order.created_at,
-            due_date: order.due_date,
-            proof_delivery_date: order.proof_delivery_date,
-            status: order.status,
-            estimated_price: order.price,
-            progress_percentage: getProgressPercentage(order.status),
-            notes: order.notes,
-            fabric: order.fabric,
-            measurements: order.measurements
-          }
-
-          setOrderData(orderInfo)
-          console.log('✅ Order found:', orderInfo)
         } else {
-          setError('لم يتم العثور على طلب بهذا الرقم. يرجى التأكد من رقم الطلب والمحاولة مرة أخرى.')
+          setOrdersData([toOrderInfo(state.currentOrder)])
+          scrollToResults()
         }
       } else {
-        // البحث برقم الهاتف
         await loadOrdersByPhone(searchTerm)
+        const state = useOrderStore.getState()
 
-        // استخدام getState() للحصول على أحدث قيمة من المخزن بعد التحميل
-        const latestState = useOrderStore.getState()
-
-        if (latestState.error) {
+        if (state.error || !state.orders || state.orders.length === 0) {
           setError('لم يتم العثور على طلبات مرتبطة بهذا الرقم. يرجى التأكد من رقم الهاتف والمحاولة مرة أخرى.')
-        } else if (latestState.orders && latestState.orders.length > 0) {
-          // عرض أول طلب (يمكن تحسين هذا لعرض جميع الطلبات)
-          let foundOrder = latestState.orders[0]
-
-          // جلب التفاصيل الكاملة للطلب بما فيها المقاسات
-          await latestState.loadOrderById(foundOrder.id)
-          const fullOrderState = useOrderStore.getState()
-          if (fullOrderState.currentOrder && fullOrderState.currentOrder.id === foundOrder.id) {
-            foundOrder = fullOrderState.currentOrder
-          }
-
-          const orderInfo = {
-            order_number: foundOrder.order_number,
-            client_name: foundOrder.client_name,
-            client_phone: foundOrder.client_phone,
-            dress_type: foundOrder.description,
-            order_date: foundOrder.created_at,
-            due_date: foundOrder.due_date,
-            proof_delivery_date: foundOrder.proof_delivery_date,
-            status: foundOrder.status,
-            estimated_price: foundOrder.price,
-            progress_percentage: getProgressPercentage(foundOrder.status),
-            notes: foundOrder.notes,
-            fabric: foundOrder.fabric,
-            measurements: foundOrder.measurements
-          }
-
-          setOrderData(orderInfo)
-          console.log('✅ Order found by phone:', orderInfo)
         } else {
-          setError('لم يتم العثور على طلبات مرتبطة بهذا الرقم. يرجى التأكد من رقم الهاتف والمحاولة مرة أخرى.')
+          // جلب التفاصيل الكاملة لكل طلب بما فيها المقاسات
+          const results: OrderInfo[] = []
+          for (const order of state.orders) {
+            await state.loadOrderById(order.id)
+            const fullState = useOrderStore.getState()
+            if (fullState.currentOrder && fullState.currentOrder.id === order.id) {
+              results.push(toOrderInfo(fullState.currentOrder))
+            } else {
+              results.push(toOrderInfo(order))
+            }
+          }
+          setOrdersData(results)
+          scrollToResults()
         }
       }
-    } catch (error) {
-      console.error('❌ Error searching for order:', error)
+    } catch (err) {
+      console.error('❌ Error searching:', err)
       setError('حدث خطأ أثناء البحث. يرجى المحاولة مرة أخرى.')
     } finally {
       setIsLoading(false)
     }
-  }
-
-  // حساب نسبة التقدم حسب الحالة
-  const getProgressPercentage = (status: string) => {
-    const progressMap = {
-      pending: 10,
-      in_progress: 50,
-      completed: 90,
-      delivered: 100
-    }
-    return progressMap[status as keyof typeof progressMap] || 0
   }
 
   const getStatusInfo = (status: string) => {
@@ -143,7 +116,6 @@ export default function TrackOrderPage() {
   }
 
   const formatDate = (dateString: string) => {
-    // التاريخ الميلادي فقط
     return formatGregorianDate(dateString, 'ar-SA', {
       year: 'numeric',
       month: 'long',
@@ -151,10 +123,8 @@ export default function TrackOrderPage() {
     })
   }
 
-  // دالة ترجمة أسماء المقاسات إلى العربية (ثابتة بالعربية للزبائن)
   const getMeasurementNameInArabic = (key: string) => {
     const measurementNames: { [key: string]: string } = {
-      // المقاسات الجديدة
       'sh': 'الكتف',
       'shr': 'دوران الكتف',
       'ch': 'الصدر',
@@ -168,9 +138,7 @@ export default function TrackOrderPage() {
       'S': 'الزند',
       'S1': 'الإسوارة',
       'L_front': 'طول الأمام',
-      'LB': 'طول الخلف',
       'additional_notes': 'مقاسات إضافية',
-      // المقاسات القديمة (للتوافق)
       'shoulder': 'الكتف',
       'shoulderCircumference': 'دوران الكتف',
       'chest': 'الصدر',
@@ -184,9 +152,188 @@ export default function TrackOrderPage() {
       'forearm': 'الزند',
       'cuff': 'الإسوارة',
       'frontLength': 'طول الأمام',
-      'backLength': 'طول الخلف'
+      'LB': 'طول الخلف',
+      'backLength': 'طول الخلف',
     }
     return measurementNames[key] || key
+  }
+
+  const renderOrderCard = (orderData: OrderInfo, index: number, total: number) => {
+    const statusInfo = getStatusInfo(orderData.status)
+    const hasMeasurements = orderData.measurements &&
+      Object.keys(orderData.measurements).some(key =>
+        !EXCLUDED_KEYS.includes(key) &&
+        orderData.measurements![key] !== null &&
+        orderData.measurements![key] !== undefined &&
+        orderData.measurements![key] !== ''
+      )
+
+    return (
+      <div key={orderData.order_number || index} className="space-y-4">
+        {/* عنوان الطلب عند وجود أكثر من طلب */}
+        {total > 1 && (
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-pink-500 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+              {index + 1}
+            </div>
+            <h3 className="text-base font-bold text-gray-700">طلب {index + 1}</h3>
+            <div className="flex-1 h-px bg-pink-100"></div>
+          </div>
+        )}
+
+        {/* معلومات الطلب */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden border border-pink-100 shadow-sm">
+          <div className="px-6 py-4 flex items-center space-x-3 space-x-reverse border-b border-pink-100">
+            <Package className="w-5 h-5 text-pink-500" />
+            <h2 className="text-lg font-bold text-gray-800">معلومات الطلب</h2>
+          </div>
+
+          <div className="p-5 space-y-3">
+            {/* السطر الأول: الاسم + موعد البروفا */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 rounded-xl p-3">
+                <span className="text-xs text-gray-400 block mb-1">الاسم</span>
+                <p className="text-base font-semibold text-gray-800 truncate">{orderData.client_name}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <span className="text-xs text-gray-400 block mb-1">موعد البروفا</span>
+                <p className="text-sm font-medium text-gray-800">
+                  {orderData.proof_delivery_date ? formatDate(orderData.proof_delivery_date) : '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* السطر الثاني: رقم الهاتف أو رقم الطلب + تاريخ الطلب */}
+            <div className="grid grid-cols-2 gap-3">
+              {searchType === 'order' ? (
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <span className="text-xs text-gray-400 block mb-1">رقم الهاتف</span>
+                  <p className="text-sm font-medium text-gray-800 dir-ltr text-right">{orderData.client_phone}</p>
+                </div>
+              ) : (
+                <div className="bg-pink-50 rounded-xl p-3">
+                  <span className="text-xs text-pink-400 block mb-1">رقم الطلب</span>
+                  <p className="text-sm font-bold text-pink-600">{orderData.order_number}</p>
+                </div>
+              )}
+              <div className="bg-gray-50 rounded-xl p-3">
+                <span className="text-xs text-gray-400 block mb-1">تاريخ الطلب</span>
+                <p className="text-sm font-medium text-gray-800">{formatDate(orderData.order_date)}</p>
+              </div>
+            </div>
+
+            {/* حالة الطلب */}
+            <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-10 h-10 rounded-full ${statusInfo.bgColor} flex items-center justify-center flex-shrink-0`}>
+                    {React.createElement(statusInfo.icon, {
+                      className: `w-5 h-5 ${statusInfo.color}`
+                    })}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500">حالة الطلب</p>
+                    <p className={`text-base font-bold whitespace-nowrap ${statusInfo.color}`}>
+                      {statusInfo.label}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-left flex-shrink-0">
+                  <p className="text-xs text-gray-500 whitespace-nowrap">موعد التسليم</p>
+                  <p className="text-sm font-bold text-gray-800">{formatDate(orderData.due_date)}</p>
+                </div>
+              </div>
+
+              {orderData.status === 'completed' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200"
+                >
+                  <div className="flex items-center space-x-3 space-x-reverse">
+                    <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium text-green-800 text-sm">طلبك جاهز للاستلام!</p>
+                      <p className="text-xs text-green-700 mt-0.5">
+                        بإمكانك الحضور واستلام الفستان في أي وقت تريدينه
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* المقاسات */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden border border-pink-100 shadow-sm">
+          <div className="px-6 py-4 flex items-center space-x-3 space-x-reverse border-b border-pink-100">
+            <Package className="w-5 h-5 text-pink-500" />
+            <h3 className="text-lg font-bold text-gray-800">المقاسات</h3>
+          </div>
+
+          {hasMeasurements ? (
+            <div className="p-5">
+              <div className="grid grid-cols-3 gap-3">
+                {Object.entries(orderData.measurements!)
+                  .filter(([key]) => !EXCLUDED_KEYS.includes(key))
+                  .filter(([, value]) => value !== null && value !== undefined && value !== '')
+                  .map(([key, value]) => {
+                    if (key === 'additional_notes') {
+                      return (
+                        <div key={key} className="col-span-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                          <span className="text-xs text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
+                          <p className="text-sm font-medium text-gray-800 whitespace-pre-wrap">{String(value)}</p>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={key} className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-center">
+                        <span className="text-xs text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
+                        <span className="text-base font-semibold text-gray-800">{String(value)}</span>
+                        <span className="text-xs text-gray-400 block">انش</span>
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 text-center">
+              <p className="text-gray-500 text-base">لا توجد مقاسات مسجلة لهذا الطلب حتى الآن</p>
+            </div>
+          )}
+        </div>
+
+        {/* معلومات التواصل */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 shadow-sm">
+          <h3 className="text-base font-bold text-gray-800 mb-2 text-center">
+            هل لديك استفسار حول طلبك؟
+          </h3>
+          <p className="text-gray-500 text-sm text-center mb-4">
+            لا تترددي في التواصل معنا للحصول على مزيد من التفاصيل
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <a
+              href="tel:+966598862609"
+              className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse"
+            >
+              <Phone className="w-5 h-5" />
+              <span>اتصلي بنا</span>
+            </a>
+            <a
+              href={`https://wa.me/+966598862609?text=استفسار عن الطلب رقم: ${orderData.order_number}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse"
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span>واتساب</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -322,180 +469,29 @@ export default function TrackOrderPage() {
             </motion.div>
 
             {/* نتائج البحث */}
-            {orderData && (
+            {ordersData.length > 0 && (
               <motion.div
+                ref={resultsRef}
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8 }}
+                transition={{ duration: 0.6 }}
                 className="space-y-8"
               >
-                {/* معلومات الطلب الأساسية */}
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center space-x-3 space-x-reverse">
-                    <Package className="w-6 h-6 text-pink-600" />
-                    <span>معلومات الطلب</span>
-                  </h2>
-
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* العمود الأول */}
-                    <div className="space-y-4">
-                      {/* 1. اسم العميلة */}
-                      <div>
-                        <span className="text-sm text-gray-500">اسم العميلة</span>
-                        <p className="text-lg font-medium text-gray-800">{orderData.client_name}</p>
-                      </div>
-
-                      {/* 2. رقم الطلب */}
-                      <div>
-                        <span className="text-sm text-gray-500">رقم الطلب</span>
-                        <p className="text-lg font-bold text-pink-600">{orderData.order_number}</p>
-                      </div>
-
-                      {/* 3. رقم الهاتف */}
-                      <div>
-                        <span className="text-sm text-gray-500">رقم الهاتف</span>
-                        <p className="text-lg font-medium text-gray-800">{orderData.client_phone}</p>
-                      </div>
-                    </div>
-
-                    {/* العمود الثاني */}
-                    <div className="space-y-4">
-                      {/* 4. موعد تسليم البروفا */}
-                      {orderData.proof_delivery_date && (
-                        <div>
-                          <span className="text-sm text-gray-500">موعد تسليم البروفا</span>
-                          <p className="text-lg font-medium text-gray-800">{formatDate(orderData.proof_delivery_date)}</p>
-                        </div>
-                      )}
-
-                      {/* 5. تاريخ الطلب */}
-                      <div>
-                        <span className="text-sm text-gray-500">تاريخ الطلب</span>
-                        <p className="text-lg font-medium text-gray-800">{formatDate(orderData.order_date)}</p>
-                      </div>
-                    </div>
+                {/* عنوان النتائج عند وجود أكثر من طلب */}
+                {ordersData.length > 1 && (
+                  <div className="text-center">
+                    <p className="text-gray-600 font-medium">
+                      تم العثور على <span className="text-pink-600 font-bold">{ordersData.length}</span> طلبات مرتبطة بهذا الرقم
+                    </p>
                   </div>
+                )}
 
-                  {/* حالة الطلب */}
-                  <div className="mt-6 p-6 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center space-x-3 space-x-reverse">
-                        <div className={`w-12 h-12 rounded-full ${getStatusInfo(orderData.status).bgColor} flex items-center justify-center`}>
-                          {React.createElement(getStatusInfo(orderData.status).icon, {
-                            className: `w-6 h-6 ${getStatusInfo(orderData.status).color}`
-                          })}
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500">حالة الطلب</p>
-                          <p className={`text-xl font-bold ${getStatusInfo(orderData.status).color}`}>
-                            {getStatusInfo(orderData.status).label}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-sm text-gray-500">موعد التسليم المتوقع</p>
-                        <p className="text-lg font-bold text-gray-800">{formatDate(orderData.due_date)}</p>
-                      </div>
-                    </div>
-
-                    {/* رسالة إكمال الطلب */}
-                    {orderData.status === 'completed' && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.6, delay: 0.8 }}
-                        className="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200"
-                      >
-                        <div className="flex items-center space-x-3 space-x-reverse">
-                          <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
-                          <div>
-                            <p className="font-medium text-green-800 mb-1">طلبك جاهز للاستلام!</p>
-                            <p className="text-sm text-green-700">
-                              مكتمل - بإمكانك الحضور واستلام الفستان في أي وقت تريدينه
-                            </p>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </div>
-                </div>
-
-                {/* عرض المقاسات إن وُجدت */}
-                {orderData.measurements && Object.keys(orderData.measurements).filter(key =>
-                  !['image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments'].includes(key) &&
-                  orderData.measurements[key] !== null &&
-                  orderData.measurements[key] !== undefined &&
-                  orderData.measurements[key] !== ''
-                ).length > 0 && (
-                    <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
-                      <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center space-x-3 space-x-reverse">
-                        <Package className="w-6 h-6 text-pink-600" />
-                        <span>المقاسات</span>
-                      </h3>
-
-                      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {Object.entries(orderData.measurements)
-                          .filter(([key]) =>
-                            !['image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments'].includes(key)
-                          )
-                          .filter(([_, value]) => value !== null && value !== undefined && value !== '')
-                          .map(([key, value]) => {
-                            // إذا كان الحقل additional_notes، نعرضه بشكل مختلف
-                            if (key === 'additional_notes') {
-                              return (
-                                <div key={key} className="md:col-span-2 lg:col-span-3 p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-100">
-                                  <span className="text-sm text-gray-500 block mb-2">{getMeasurementNameInArabic(key)}</span>
-                                  <p className="text-base font-medium text-gray-800 whitespace-pre-wrap">{String(value)}</p>
-                                </div>
-                              )
-                            }
-
-                            return (
-                              <div key={key} className="p-4 bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl border border-pink-100">
-                                <span className="text-sm text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
-                                <span className="text-lg font-medium text-gray-800">{String(value)} انش</span>
-                              </div>
-                            )
-                          })}
-                      </div>
-                    </div>
-                  )}
-
-                {/* معلومات التواصل */}
-                <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-2xl p-8 border border-pink-100">
-                  <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">
-                    هل لديك استفسار حول طلبك؟
-                  </h3>
-                  <p className="text-gray-600 text-center mb-6">
-                    لا تترددي في التواصل معنا للحصول على مزيد من التفاصيل
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                    <a
-                      href="tel:+966598862609"
-                      className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse"
-                    >
-                      <Phone className="w-5 h-5" />
-                      <span>اتصلي بنا</span>
-                    </a>
-
-                    <a
-                      href={`https://wa.me/+966598862609?text=استفسار عن الطلب رقم: ${orderData.order_number}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse"
-                    >
-                      <MessageSquare className="w-5 h-5" />
-                      <span>واتساب</span>
-                    </a>
-                  </div>
-                </div>
+                {ordersData.map((order, index) => renderOrderCard(order, index, ordersData.length))}
               </motion.div>
             )}
 
             {/* نصائح للاستخدام */}
-            {!orderData && !isLoading && (
+            {ordersData.length === 0 && !isLoading && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -535,4 +531,3 @@ export default function TrackOrderPage() {
     </>
   )
 }
-
