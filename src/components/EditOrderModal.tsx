@@ -13,7 +13,8 @@ import {
   AlertCircle,
   Image as ImageIcon,
   Ruler,
-  MessageCircle
+  MessageCircle,
+  Download
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
 import ImageUpload from './ImageUpload'
@@ -341,6 +342,54 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
     return [...allSavedComments, currentComment]
   }, [formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
+
+  // تحميل صور التصاميم (أمام/خلف) إلى جهاز المستخدم
+  const handleDownloadDesigns = useCallback(async () => {
+    let comments = [...formData.savedDesignComments]
+    if (annotationRef.current) {
+      const currentView = annotationRef.current.getCurrentView()
+      const compositeImage = await annotationRef.current.generateCompositeImage()
+      if (compositeImage) {
+        const viewLabel = currentView === 'front' ? 'أمام' : 'خلف'
+        const existingIndex = comments.findIndex(c => {
+          const v = c.view ?? (c.title?.trim().startsWith('أمام') ? 'front' : c.title?.trim().startsWith('خلف') ? 'back' : null)
+          return v === currentView
+        })
+        if (existingIndex >= 0) {
+          comments[existingIndex] = { ...comments[existingIndex], compositeImage, view: currentView }
+        } else {
+          comments.push({ id: `dl_${Date.now()}`, timestamp: Date.now(), annotations: [], drawings: [], image: null, title: viewLabel, view: currentView, compositeImage })
+        }
+      }
+    }
+
+    const downloadable = comments.filter(c => c.compositeImage)
+    if (downloadable.length === 0) {
+      toast.error('لا توجد تصاميم للحفظ')
+      return
+    }
+
+    const clientName = formData.clientName || 'تصميم'
+    const prefix = formData.orderNumber ? `${formData.orderNumber}_${clientName}` : clientName
+
+    for (const comment of downloadable) {
+      const view = comment.view ?? (comment.title?.trim().startsWith('أمام') ? 'front' : 'back')
+      const viewLabel = view === 'front' ? 'أمام' : 'خلف'
+      const fileName = `${prefix}_${viewLabel}.jpg`
+
+      const link = document.createElement('a')
+      link.href = comment.compositeImage!
+      link.download = fileName
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      document.body.removeChild(link)
+    }
+
+    toast.success(`تم حفظ ${downloadable.length} ${downloadable.length === 1 ? 'تصميم' : 'تصميمين'}`)
+  }, [formData.savedDesignComments, formData.clientName, formData.orderNumber])
 
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent) => {
@@ -882,6 +931,18 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     showSaveButton={true}
                     currentImageBase64={currentImageBase64}
                   />
+
+                  {/* زر حفظ التصاميم على الجهاز */}
+                  {(formData.savedDesignComments.some(c => c.compositeImage) || formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleDownloadDesigns}
+                      className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                    >
+                      <Download className="w-5 h-5" />
+                      <span className="font-medium">حفظ التصاميم</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* صور التصميم */}

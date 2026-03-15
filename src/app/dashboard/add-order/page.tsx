@@ -33,7 +33,8 @@ import {
   Users,
   RotateCcw,
   Info,
-  Printer
+  Printer,
+  Download
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
@@ -462,6 +463,55 @@ function AddOrderContent() {
       console.error('Error saving active view:', error)
     }
   }, [])
+
+  // تحميل صور التصاميم (أمام/خلف) إلى جهاز المستخدم
+  const handleDownloadDesigns = useCallback(async () => {
+    // حفظ التعليق الحالي أولاً إن وجد
+    let comments = [...formData.savedDesignComments]
+    if (annotationRef.current) {
+      const currentView = annotationRef.current.getCurrentView()
+      const compositeImage = await annotationRef.current.generateCompositeImage()
+      if (compositeImage) {
+        const viewLabel = currentView === 'front' ? 'أمام' : 'خلف'
+        const existingIndex = comments.findIndex(c => {
+          const v = c.view ?? (c.title?.trim().startsWith('أمام') ? 'front' : c.title?.trim().startsWith('خلف') ? 'back' : null)
+          return v === currentView
+        })
+        if (existingIndex >= 0) {
+          comments[existingIndex] = { ...comments[existingIndex], compositeImage, view: currentView }
+        } else {
+          comments.push({ id: `dl_${Date.now()}`, timestamp: Date.now(), annotations: [], drawings: [], image: null, title: viewLabel, view: currentView, compositeImage })
+        }
+      }
+    }
+
+    const downloadable = comments.filter(c => c.compositeImage)
+    if (downloadable.length === 0) {
+      toast.error('لا توجد تصاميم للحفظ')
+      return
+    }
+
+    for (const comment of downloadable) {
+      const view = comment.view ?? (comment.title?.trim().startsWith('أمام') ? 'front' : 'back')
+      const viewLabel = view === 'front' ? 'أمام' : 'خلف'
+      const clientName = formData.clientName || 'تصميم'
+      const prefix = formData.orderNumber ? `${formData.orderNumber}_${clientName}` : clientName
+      const fileName = `${prefix}_${viewLabel}.jpg`
+
+      const link = document.createElement('a')
+      link.href = comment.compositeImage!
+      link.download = fileName
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+
+      // انتظار قبل التحميل التالي (للتوافق مع الهواتف)
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      document.body.removeChild(link)
+    }
+
+    toast.success(`تم حفظ ${downloadable.length} ${downloadable.length === 1 ? 'تصميم' : 'تصميمين'}`)
+  }, [formData.savedDesignComments, formData.clientName, formData.orderNumber])
 
   // مسح جميع الحقول
   const handleClearAllFields = useCallback(() => {
@@ -1299,6 +1349,18 @@ function AddOrderContent() {
                 initialView={restoredActiveView}
                 onViewChange={handleViewChange}
               />
+
+              {/* زر حفظ التصاميم على الجهاز */}
+              {(formData.savedDesignComments.some(c => c.compositeImage) || formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) && (
+                <button
+                  type="button"
+                  onClick={handleDownloadDesigns}
+                  className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                >
+                  <Download className="w-5 h-5" />
+                  <span className="font-medium">حفظ التصاميم</span>
+                </button>
+              )}
             </div>
 
             {/* صور التصميم */}
