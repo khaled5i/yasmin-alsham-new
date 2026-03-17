@@ -397,10 +397,10 @@ textarea:focus-visible {
 
 .print-order-info {
   background: #f8f9fa;
-  padding: 15px;
+  padding: 25px;
   border-radius: 8px;
   margin-bottom: 15px;
-  --order-info-scale: 1.25;
+  --order-info-scale: 1.8;
 }
 
 .info-grid-single-row {
@@ -607,7 +607,8 @@ textarea:focus-visible {
 
   .print-order-info {
     margin-top: 10px;
-    --order-info-scale: 1.25;
+    padding: 12px;
+    --order-info-scale: 1.8;
   }
 
   .info-grid {
