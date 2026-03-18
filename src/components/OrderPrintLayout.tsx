@@ -152,44 +152,32 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
         <div className="print-page page-front">
           {/* القسم العلوي - المعلومات الأساسية */}
           <div className="print-header">
-            {/* السطر الأول: رقم الهاتف - الموقع - التواريخ */}
+            {/* السطر الأول: اسم المحل + التواريخ */}
             <div className="print-header-top">
               <div className="header-item header-right header-dates">
-                <div className="date-row">
-                  <span>تاريخ استلام الطلب: </span>
-                  <span>{formatDate(order.order_received_date || order.created_at)}</span>
-                </div>
                 {order.proof_delivery_date && (
-                  <div className="date-row" style={{ color: '#16a34a', fontWeight: 'bold' }}>
-                    <span>تاريخ تسليم البروفا: </span>
+                  <div className="date-row" style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '1.2em' }}>
+                    <span>موعد تسليم البروفا: </span>
                     <span>{formatDate(order.proof_delivery_date)}</span>
                   </div>
                 )}
+                <div className="date-row" style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '1.2em' }}>
+                  <span>موعد التسليم النهائي: </span>
+                  <span>{formatDate(order.due_date)}</span>
+                </div>
               </div>
-              <div className="header-item header-center">
-                <span dir="ltr">www.yasmin-alsham.fashion</span>
-              </div>
-              <div className="header-item header-left">
-                <span>رقم الهاتف: </span>
-                <span dir="ltr">0598862609</span>
+              <div className="header-item" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '40px', paddingLeft: '25%' }}>
+                <h1 className="print-brand" style={{ margin: 0 }}>ياسمين الشام</h1>
               </div>
             </div>
 
-            {/* السطر الثاني: اسم المحل */}
-            <div className="print-logo">
-              <h1 className="print-brand">ياسمين الشام</h1>
-            </div>
 
             {/* معلومات العميل في صف أفقي واحد */}
             <div className="print-order-info">
-              <div className="info-grid-single-row">
+              <div className="info-grid-single-row" style={{ fontSize: '1.3em' }}>
                 <div className="info-item-inline">
-                  <span className="info-label">اسم العميل:</span>
+                  <span className="info-label">الاسم:</span>
                   <span className="info-value">{order.client_name}</span>
-                </div>
-                <div className="info-item-inline">
-                  <span className="info-label">موعد التسليم:</span>
-                  <span className="info-value">{formatDate(order.due_date)}</span>
                 </div>
                 <div className="info-item-inline">
                   <span className="info-label">رقم الهاتف:</span>
@@ -198,6 +186,10 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                 <div className="info-item-inline">
                   <span className="info-label">رقم الطلب:</span>
                   <span className="info-value">#{order.order_number || order.id.slice(0, 8)}</span>
+                </div>
+                <div className="info-item-inline">
+                  <span className="info-label">تاريخ الطلب:</span>
+                  <span className="info-value">{formatDate(order.order_received_date || order.created_at)}</span>
                 </div>
               </div>
             </div>
@@ -294,6 +286,17 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* تذييل الصفحة الأولى - الموقع ورقم الهاتف */}
+          <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '6px', marginTop: '6px', display: 'flex', alignItems: 'center', position: 'relative' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, textAlign: 'center', fontSize: '11px', color: '#6b7280' }}>
+              <span dir="ltr">www.yasmin-alsham.fashion</span>
+            </div>
+            <div style={{ marginRight: 'auto', fontSize: '11px', color: '#6b7280' }}>
+              <span>رقم الهاتف: </span>
+              <span dir="ltr">0598862609</span>
             </div>
           </div>
         </div>
