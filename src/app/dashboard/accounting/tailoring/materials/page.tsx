@@ -3,14 +3,13 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
-import DatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
 import {
   ArrowLeft,
   ShoppingBag,
   Plus,
   Search,
-  Calendar,
+  ChevronRight,
+  ChevronLeft,
   Trash2,
   X,
   Pencil
@@ -25,7 +24,10 @@ function MaterialExpensesContent() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateFilter, setDateFilter] = useState<Date | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() }
+  })
   const [categoryFilter, setCategoryFilter] = useState('')
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -152,30 +154,48 @@ function MaterialExpensesContent() {
     }
   }
 
+  const goToPrevMonth = () => {
+    setSelectedMonth(prev => {
+      if (prev.month === 0) return { year: prev.year - 1, month: 11 }
+      return { year: prev.year, month: prev.month - 1 }
+    })
+  }
+
+  const goToNextMonth = () => {
+    setSelectedMonth(prev => {
+      if (prev.month === 11) return { year: prev.year + 1, month: 0 }
+      return { year: prev.year, month: prev.month + 1 }
+    })
+  }
+
+  const selectedMonthLabel = new Date(selectedMonth.year, selectedMonth.month, 1)
+    .toLocaleDateString('ar-SA-u-nu-latn', { month: 'long', year: 'numeric' })
+
+  const isCurrentMonth = (() => {
+    const now = new Date()
+    return selectedMonth.year === now.getFullYear() && selectedMonth.month === now.getMonth()
+  })()
+
   const filteredExpenses = expenses.filter(item => {
     const matchesSearch = item.description.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = !categoryFilter || item.category === categoryFilter
     const matchesSupplier = !supplierFilter || item.supplier_id === supplierFilter
 
-    let matchesDate = true
-    if (dateFilter) {
-      const itemDate = new Date(item.date)
-      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
-        itemDate.getMonth() === dateFilter.getMonth() &&
-        itemDate.getFullYear() === dateFilter.getFullYear()
-    }
+    const itemDate = new Date(item.date)
+    const matchesMonth = itemDate.getFullYear() === selectedMonth.year &&
+      itemDate.getMonth() === selectedMonth.month
 
-    return matchesSearch && matchesCategory && matchesSupplier && matchesDate
+    return matchesSearch && matchesCategory && matchesSupplier && matchesMonth
   })
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
+    return new Intl.NumberFormat('en-US').format(amount) + ' ر.س'
   }
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ar-SA', {
+    return new Date(dateStr).toLocaleDateString('ar-SA-u-nu-latn', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
@@ -305,18 +325,23 @@ function MaterialExpensesContent() {
               </div>
             </div>
 
-            <div className="relative z-10">
-              <div className="relative w-full">
-                <DatePicker
-                  selected={dateFilter}
-                  onChange={(date: Date | null) => setDateFilter(date)}
-                  dateFormat="yyyy/MM/dd"
-                  placeholderText="اختر التاريخ"
-                  className="w-full pr-10 pl-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent text-right"
-                  isClearable
-                />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-              </div>
+            <div className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+              <button
+                onClick={goToPrevMonth}
+                className="p-1 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <ChevronRight className="w-5 h-5 text-gray-600" />
+              </button>
+              <span className="font-medium text-gray-700 text-sm flex-1 text-center">
+                {selectedMonthLabel}
+              </span>
+              <button
+                onClick={goToNextMonth}
+                disabled={isCurrentMonth}
+                className="p-1 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="w-5 h-5 text-gray-600" />
+              </button>
             </div>
           </div>
         </motion.div>

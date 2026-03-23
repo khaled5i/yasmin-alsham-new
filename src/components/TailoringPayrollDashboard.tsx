@@ -190,9 +190,9 @@ function sanitizeNonNegativeInput(value: string): string {
 }
 
 function formatCurrency(value: number): string {
-  return `${new Intl.NumberFormat('ar-SA', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+  return `${new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
   }).format(value)} ر.س`
 }
 
@@ -397,6 +397,7 @@ export default function TailoringPayrollDashboard() {
       })
 
       const defaultDate = monthEndDate(selectedMonth)
+      const todayDate = new Date().toISOString().split('T')[0]
       const isPeriodLocked = lockRow?.is_locked === true
 
       // حفظ تلقائي للراتب الثابت فقط: إذا كان المستخدم أدمن والشهر غير مقفل،
@@ -518,7 +519,7 @@ export default function TailoringPayrollDashboard() {
         allWorkers.forEach((worker) => {
           next[worker.id] = {
             amount: '',
-            operationDate: defaultDate,
+            operationDate: todayDate,
             note: ''
           }
         })
@@ -735,19 +736,9 @@ export default function TailoringPayrollDashboard() {
     const row = getMonthRow(worker)
     if (!form) return
 
-    if (row.net_due < 0) {
-      alert('لا يمكن الدفع، صافي المستحق بالسالب')
-      return
-    }
-
     const amount = toNumber(form.amount)
     if (amount <= 0) {
       alert('يرجى إدخال مبلغ صحيح')
-      return
-    }
-
-    if (amount > row.remaining_due + 0.009) {
-      alert('لا يمكن أن تتجاوز الدفعة صافي المستحق')
       return
     }
 
@@ -1220,8 +1211,7 @@ export default function TailoringPayrollDashboard() {
                       const isPayrollWorker = worker.user?.email?.startsWith('payroll.worker.') === true
                       const prevCarryover = previousNegativeByWorker[worker.id] || 0
                       const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
-                      const currentBaseRemaining = row.remaining_due < 0 ? 0 : row.remaining_due
-                      const displayedRemaining = Math.max(0, currentBaseRemaining - prevCarryover)
+                      const displayedRemaining = row.remaining_due - prevCarryover
                       return (
                         <tr key={worker.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2.5">
@@ -1250,7 +1240,7 @@ export default function TailoringPayrollDashboard() {
                             )}
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-gray-900">{formatCurrency(row.total_paid)}</td>
-                          <td className="px-3 py-2.5 font-semibold text-green-700">
+                          <td className={`px-3 py-2.5 font-semibold ${displayedRemaining < 0 ? 'text-red-700' : 'text-green-700'}`}>
                             {formatCurrency(displayedRemaining)}
                             {hasPreviousPositive && (
                               <p className="text-xs font-normal text-amber-600 mt-0.5">هنالك متبقي من الشهر السابق</p>
@@ -1326,8 +1316,7 @@ export default function TailoringPayrollDashboard() {
                       const isPayrollWorker = worker.user?.email?.startsWith('payroll.worker.') === true
                       const prevCarryover = previousNegativeByWorker[worker.id] || 0
                       const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
-                      const currentBaseRemaining = row.remaining_due < 0 ? 0 : row.remaining_due
-                      const displayedRemaining = Math.max(0, currentBaseRemaining - prevCarryover)
+                      const displayedRemaining = row.remaining_due - prevCarryover
                       return (
                         <tr key={worker.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2.5">
@@ -1356,7 +1345,7 @@ export default function TailoringPayrollDashboard() {
                             )}
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-gray-900">{formatCurrency(row.total_paid)}</td>
-                          <td className="px-3 py-2.5 font-semibold text-green-700">
+                          <td className={`px-3 py-2.5 font-semibold ${displayedRemaining < 0 ? 'text-red-700' : 'text-green-700'}`}>
                             {formatCurrency(displayedRemaining)}
                             {hasPreviousPositive && (
                               <p className="text-xs font-normal text-amber-600 mt-0.5">هنالك متبقي من الشهر السابق</p>
@@ -1524,7 +1513,7 @@ export default function TailoringPayrollDashboard() {
                               <div>
                                 <p className="font-semibold text-amber-900">{formatCurrency(op.amount)}</p>
                                 <p className="text-xs text-amber-700">
-                                  {new Date(op.operation_date).toLocaleDateString('ar-SA', {
+                                  {new Date(op.operation_date).toLocaleDateString('ar-SA-u-nu-latn', {
                                     year: 'numeric',
                                     month: 'short',
                                     day: 'numeric'
@@ -1771,7 +1760,7 @@ export default function TailoringPayrollDashboard() {
                                 <div>
                                   <p className="font-semibold text-emerald-900">{formatCurrency(op.amount)}</p>
                                   <p className="text-xs text-emerald-700">
-                                    {new Date(op.operation_date).toLocaleDateString('ar-SA', {
+                                    {new Date(op.operation_date).toLocaleDateString('ar-SA-u-nu-latn', {
                                       year: 'numeric',
                                       month: 'short',
                                       day: 'numeric'
@@ -1821,7 +1810,7 @@ export default function TailoringPayrollDashboard() {
                               <div>
                                 <p className="font-semibold text-indigo-900">{formatCurrency(op.amount)}</p>
                                 <p className="text-xs text-indigo-700">
-                                  {new Date(op.operation_date).toLocaleDateString('ar-SA', {
+                                  {new Date(op.operation_date).toLocaleDateString('ar-SA-u-nu-latn', {
                                     year: 'numeric',
                                     month: 'short',
                                     day: 'numeric'
@@ -2040,7 +2029,7 @@ export default function TailoringPayrollDashboard() {
                         const statusInfo = getStatusInfo(order.status)
 
                         const formatDate = (dateString: string) => {
-                          return formatGregorianDate(dateString, 'ar-SA', {
+                          return formatGregorianDate(dateString, 'ar-SA-u-nu-latn', {
                             year: 'numeric',
                             month: 'short',
                             day: 'numeric'

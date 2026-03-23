@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Menu, X, Calendar, Search, Scissors, Palette, Home, Sparkles, HelpCircle, Wand2 } from 'lucide-react'
+import { Menu, X, Calendar, Search, Scissors, Palette, Home, Sparkles, HelpCircle, Wand2, Share2 } from 'lucide-react'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -175,6 +175,7 @@ export default function Header() {
     { href: 'https://yasmin-alsham-ai.com', label: 'مصمم ياسمين الشام الذكي', icon: Wand2, onClick: null, external: true },
     { href: '/services', label: 'خدماتنا', icon: Sparkles, onClick: null, external: false },
     { href: '/faq', label: 'الأسئلة الشائعة', icon: HelpCircle, onClick: null, external: false },
+    { href: '/social', label: 'تواصل معنا', icon: Share2, onClick: null, external: false },
   ]
 
   // هل يجب إخفاء الهيدر (الصفحة الرئيسية بعد التمرير على الجوال فقط)؟
