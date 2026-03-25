@@ -45,7 +45,7 @@ import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measur
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
-import { formatGregorianDate } from '@/lib/date-utils'
+import { formatGregorianDate, parseDateForDisplay } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import GenerateDesignButton from './GenerateDesignButton'
 
@@ -693,11 +693,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }
 
   const formatDate = (dateString: string) => {
-    return formatGregorianDate(dateString, 'ar-SA', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
+    if (!dateString) return ''
+    const parsed = parseDateForDisplay(dateString)
+    if (!parsed) return dateString
+    const day = String(parsed.getDate()).padStart(2, '0')
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    const year = parsed.getFullYear()
+    return `${day}/${month}/${year}`
   }
 
   return (
@@ -781,7 +783,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     <div className="bg-white p-2 sm:p-3 rounded-lg">
                       <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
                         <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium truncate">نوع القماش:</span>
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('fabric_type')}:</span>
                       </div>
                       <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.fabric}</p>
                     </div>
@@ -961,10 +963,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <Pencil className="w-5 h-5 text-pink-600" />
-                    <span>تعليقات على التصميم</span>
+                    <span>{t('design_comments')}</span>
                     {savedDesignComments.length > 0 && (
                       <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded-full">
-                        {savedDesignComments.length} تعليق
+                        {t('comment_badge', { count: savedDesignComments.length })}
                       </span>
                     )}
                   </h3>
@@ -987,10 +989,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                 {commentIndex + 1}
                               </div>
                               <span className="font-medium text-gray-800">
-                                {comment.title || `التعليق ${commentIndex + 1}`}
-                              </span>
-                              <span className="text-xs text-gray-500">
-                                ({comment.annotations?.length || 0} علامة، {comment.drawings?.length || 0} رسم)
+                                {comment.title
+                                  ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back'))
+                                  : `${t('comment_default_title')} ${commentIndex + 1}`}
                               </span>
                             </div>
                             <motion.div
@@ -1020,7 +1021,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                     {comment.compositeImage ? (
                                       <img
                                         src={comment.compositeImage}
-                                        alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
+                                        alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`}`}
                                         className="w-full h-auto cursor-pointer"
                                         onClick={() => openLightbox(0, [comment.compositeImage!])}
                                       />
@@ -1028,7 +1029,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                       <>
                                         <img
                                           src={resolveCommentImageSrc(comment)}
-                                          alt={`صورة ${comment.title || `التعليق ${commentIndex + 1}`}`}
+                                          alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`}`}
                                           className="w-full h-auto cursor-pointer"
                                           onClick={() => openLightbox(0, [resolveCommentImageSrc(comment)])}
                                           onLoad={() => {
@@ -1073,7 +1074,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                   {comment.annotations && comment.annotations.length > 0 && (
                                     <div className="bg-gray-50 rounded-lg p-3 border border-gray-200" style={{ overflow: 'visible' }}>
                                       <h4 className="text-sm font-medium text-gray-700 mb-2">
-                                        التعليقات ({comment.annotations.length})
+                                        {t('annotations_count', { count: comment.annotations.length })}
                                       </h4>
                                       <div className="space-y-2" style={{ overflow: 'visible' }}>
                                         {comment.annotations.map((annotation, idx) => (
@@ -1101,7 +1102,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                                       ? 'bg-green-500 text-white'
                                                       : 'text-green-600 hover:bg-green-50'
                                                       }`}
-                                                    title={playingAudioId === annotation.id ? 'إيقاف' : 'تشغيل الصوت'}
+                                                    title={playingAudioId === annotation.id ? t('stop_audio') : t('play_audio')}
                                                   >
                                                     {playingAudioId === annotation.id ? (
                                                       <Pause className="w-4 h-4" />
@@ -1120,7 +1121,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                                       )}
                                                       disabled={translatingAnnotationId === annotation.id}
                                                       className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
-                                                      title="ترجمة"
+                                                      title={t('translate')}
                                                     >
                                                       {translatingAnnotationId === annotation.id ? (
                                                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -1171,7 +1172,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                               <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-7">
                                                 <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
                                                   <Languages className="w-3 h-3" />
-                                                  الترجمة ({getLanguageName(annotation.translationLanguage || 'en')})
+                                                  {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
                                                 </p>
                                                 <p className="text-sm text-gray-600" dir="auto">
                                                   {annotation.translatedText}
@@ -1199,7 +1200,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         <div className="relative">
                           <img
                             src={customDesignImage || "/front2.png"}
-                            alt="صورة التصميم"
+                            alt={t('design_image_alt')}
                             className="w-full h-auto"
                             onClick={() => openLightbox(0, [customDesignImage || "/front2.png"])}
                             onLoad={() => {
@@ -1233,7 +1234,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       {imageAnnotations.length > 0 && (
                         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200" style={{ overflow: 'visible' }}>
                           <h4 className="text-sm font-medium text-gray-700 mb-3">
-                            التعليقات ({imageAnnotations.length})
+                            {t('annotations_count', { count: imageAnnotations.length })}
                           </h4>
                           <div className="space-y-3" style={{ overflow: 'visible' }}>
                             {imageAnnotations.map((annotation, index) => (
@@ -1251,7 +1252,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                       <p className="text-sm text-gray-700 mb-2">{annotation.transcription}</p>
                                     )}
                                     {!annotation.transcription && !annotation.audioData && (
-                                      <p className="text-sm text-gray-400 italic">علامة بدون تعليق</p>
+                                      <p className="text-sm text-gray-400 italic">{t('marker_without_comment')}</p>
                                     )}
                                   </div>
                                   {/* أزرار التحكم */}
@@ -1264,7 +1265,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                           ? 'bg-green-500 text-white'
                                           : 'text-green-600 hover:bg-green-50'
                                           }`}
-                                        title={playingAudioId === annotation.id ? 'إيقاف' : 'تشغيل الصوت'}
+                                        title={playingAudioId === annotation.id ? t('stop_audio') : t('play_audio')}
                                       >
                                         {playingAudioId === annotation.id ? (
                                           <Pause className="w-4 h-4" />
@@ -1283,7 +1284,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                           )}
                                           disabled={translatingAnnotationId === annotation.id}
                                           className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
-                                          title="ترجمة"
+                                          title={t('translate')}
                                         >
                                           {translatingAnnotationId === annotation.id ? (
                                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1356,7 +1357,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                   <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-9">
                                     <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
                                       <Languages className="w-3 h-3" />
-                                      الترجمة ({getLanguageName(annotation.translationLanguage || 'en')})
+                                      {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
                                     </p>
                                     <p className="text-sm text-gray-600" dir="auto">
                                       {annotation.translatedText}
@@ -1508,12 +1509,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                           {isConvertingToCartoon ? (
                             <>
                               <Loader2 className="w-5 h-5 animate-spin" />
-                              <span>جاري التحويل...</span>
+                              <span>{t('converting_to_cartoon')}</span>
                             </>
                           ) : (
                             <>
                               <Wand2 className="w-5 h-5" />
-                              <span>تحويل الصورة الى كرتون</span>
+                              <span>{t('convert_to_cartoon')}</span>
                             </>
                           )}
                         </button>
@@ -1639,13 +1640,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <Wand2 className="w-5 h-5 text-purple-600" />
-                    <span>التصميم الكرتوني</span>
+                    <span>{t('cartoon_design')}</span>
                   </h3>
                   <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 space-y-3">
                     <div ref={cartoonImageRef} className="relative rounded-lg overflow-hidden border border-purple-300">
                       <img
                         src={cartoonImage}
-                        alt="التصميم الكرتوني"
+                        alt={t('cartoon_design')}
                         className="w-full object-contain max-h-[500px] cursor-pointer hover:opacity-95 transition-opacity"
                         onClick={() => openLightbox(0, [cartoonImage])}
                       />
@@ -1653,10 +1654,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       <button
                         onClick={() => handlePrintCartoonImage(cartoonImage)}
                         className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-purple-700 rounded-lg text-sm font-medium shadow-md border border-purple-200 transition-all duration-200"
-                        title="طباعة الصورة"
+                        title={t('print_image')}
                       >
                         <PrinterIcon className="w-4 h-4" />
-                        <span>طباعة</span>
+                        <span>{t('print')}</span>
                       </button>
                     </div>
                     <div className="flex gap-2 flex-wrap">
@@ -1666,21 +1667,21 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                       >
                         {isConvertingToCartoon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                        <span>إعادة التوليد</span>
+                        <span>{t('regenerate')}</span>
                       </button>
                       <button
                         onClick={() => handlePrintCartoonImage(cartoonImage)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 transition-colors"
                       >
                         <Printer className="w-4 h-4" />
-                        <span>طباعة</span>
+                        <span>{t('print')}</span>
                       </button>
                       <button
                         onClick={handleDeleteCartoonImage}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium border border-red-200 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
-                        <span>حذف</span>
+                        <span>{t('delete')}</span>
                       </button>
                     </div>
                   </div>
@@ -1715,7 +1716,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5 text-amber-500" />
-                    <span>لا توجد صورة عمل مكتمل</span>
+                    <span>{t('no_completed_image_title')}</span>
                   </h3>
                   <button
                     onClick={() => setShowCartoonUploadModal(false)}
@@ -1725,12 +1726,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   </button>
                 </div>
                 <p className="text-sm text-gray-600">
-                  لم يتم رفع صورة للعمل المكتمل بعد. يمكنك رفع صورة من جهازك لاستخدامها في التحويل إلى كرتون.
+                  {t('no_completed_image_desc')}
                 </p>
                 {cartoonUploadImage ? (
                   <div className="space-y-3">
                     <div className="rounded-lg overflow-hidden border border-purple-200 max-h-64">
-                      <img src={cartoonUploadImage} alt="الصورة المرفوعة" className="w-full object-contain max-h-64" />
+                      <img src={cartoonUploadImage} alt={t('uploaded_image_alt')} className="w-full object-contain max-h-64" />
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1743,20 +1744,20 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-medium hover:from-purple-600 hover:to-indigo-700 transition-all"
                       >
                         <Wand2 className="w-4 h-4" />
-                        <span>تحويل إلى كرتون</span>
+                        <span>{t('convert_to_cartoon_btn')}</span>
                       </button>
                       <button
                         onClick={() => setCartoonUploadImage(null)}
                         className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
                       >
-                        تغيير
+                        {t('change')}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <label className="flex flex-col items-center justify-center gap-3 p-6 border-2 border-dashed border-purple-300 rounded-xl cursor-pointer hover:bg-purple-50 transition-colors">
                     <Upload className="w-8 h-8 text-purple-400" />
-                    <span className="text-sm font-medium text-purple-600">اضغط لرفع صورة الفستان</span>
+                    <span className="text-sm font-medium text-purple-600">{t('click_to_upload_dress')}</span>
                     <span className="text-xs text-gray-400">JPG, PNG, WEBP</span>
                     <input
                       type="file"

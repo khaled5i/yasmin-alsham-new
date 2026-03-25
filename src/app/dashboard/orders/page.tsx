@@ -592,11 +592,11 @@ function OrdersPageInner() {
   }
 
   const formatDate = (dateString: string) => {
-    return formatGregorianDate(dateString, 'ar-SA', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    })
+    const d = new Date(dateString)
+    const day = d.getDate()
+    const month = d.getMonth() + 1
+    const year = d.getFullYear()
+    return `${day}/${month}/${year}`
   }
 
   // الحصول على معرف العامل الحالي
@@ -812,13 +812,13 @@ function OrdersPageInner() {
                         )}
                         <div className="flex flex-col gap-1">
                           {order.proof_delivery_date && (
-                            <p className="text-sm text-gray-600">
-                              <span className="font-medium">{t('proof_delivery_date') || (isArabic ? 'موعد البروفة:' : 'Proof Date:')}</span>{' '}
+                            <p className="text-sm text-gray-700">
+                              <span className="font-semibold">{isArabic ? 'البروفا:' : 'Proof:'}</span>{' '}
                               {formatDate(order.proof_delivery_date)}
                             </p>
                           )}
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">{t('due_date') || (isArabic ? 'موعد التسليم:' : 'Due Date:')}</span>{' '}
+                          <p className="text-sm text-gray-700">
+                            <span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span>{' '}
                             {formatDate(order.due_date)}
                           </p>
                         </div>

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { SavedDesignComment } from './InteractiveImageAnnotation'
 import { isVideoFile } from '@/lib/utils/media'
+import { useTranslation } from '@/hooks/useTranslation'
 
 export interface GenerateDesignButtonProps {
   images: string[]
@@ -94,6 +95,7 @@ export default function GenerateDesignButton({
   disabled = false,
   onRequestDesignImages
 }: GenerateDesignButtonProps) {
+  const { t } = useTranslation()
   const [step, setStep] = useState<Step>('idle')
   const [selectedFabricImages, setSelectedFabricImages] = useState<string[]>([])
   const [secondaryFabrics, setSecondaryFabrics] = useState<SecondaryFabric[]>([])
@@ -175,7 +177,7 @@ export default function GenerateDesignButton({
   const getFabricKeys = () => {
     const keys: { key: string; label: string; imageUrl?: string }[] = []
     selectedFabricImages.forEach((img, i) => {
-      keys.push({ key: `img_${i}`, label: `القماش الرئيسي ${i + 1}`, imageUrl: img })
+      keys.push({ key: `img_${i}`, label: `${t('primary_fabric')} ${i + 1}`, imageUrl: img })
     })
     secondaryFabrics.forEach((f, i) => {
       keys.push({ key: `sec_${i}`, label: f.name })
@@ -214,7 +216,7 @@ export default function GenerateDesignButton({
 
   const handleClickGenerate = () => {
     if (selectedFabricImages.length === 0 && imageOnlyItems.length > 0 && secondaryFabrics.length === 0) {
-      setErrorMsg('يرجى اختيار صورة القماش أولاً أو إضافة قماش ثانوي')
+      setErrorMsg(t('select_fabric_first'))
       return
     }
     setErrorMsg('')
@@ -481,7 +483,7 @@ export default function GenerateDesignButton({
           className="flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Sparkles className="w-5 h-5" />
-          <span>توليد التصميم بالذكاء الاصطناعي</span>
+          <span>{t('ai_generate_design')}</span>
         </button>
 
         {step === 'error' && errorMsg && (
@@ -496,7 +498,7 @@ export default function GenerateDesignButton({
               className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 font-medium"
             >
               {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              <span>التصاميم المولدة ({generatedImages.length})</span>
+              <span>{t('generated_designs_count', { count: generatedImages.length })}</span>
             </button>
             {showHistory && (
               <GeneratedImagesGallery
@@ -524,7 +526,7 @@ export default function GenerateDesignButton({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-purple-600" />
-              <h4 className="font-bold text-gray-800">اختر صورة القماش</h4>
+              <h4 className="font-bold text-gray-800">{t('select_fabric_image')}</h4>
             </div>
             <button type="button" onClick={() => setStep('idle')} className="text-gray-400 hover:text-gray-600">
               <X className="w-5 h-5" />
@@ -532,8 +534,8 @@ export default function GenerateDesignButton({
           </div>
 
           <p className="text-sm text-gray-600">
-            اختر صورة أو أكثر من صور الطلب لاستخدامها كمرجع للقماش
-            {imageOnlyItems.length === 0 && ' (لا توجد صور متاحة)'}
+            {t('fabric_image_desc')}
+            {imageOnlyItems.length === 0 && ` ${t('no_images_available')}`}
           </p>
 
           {imageOnlyItems.length > 0 && (
@@ -550,7 +552,7 @@ export default function GenerateDesignButton({
                       : 'border-gray-200 hover:border-purple-300'
                       }`}
                   >
-                    <img src={img} alt={`صورة ${i + 1}`} className="w-full h-full object-cover" />
+                    <img src={img} alt={t('image_alt_number', { n: i + 1 })} className="w-full h-full object-cover" />
                     {selected && (
                       <div className="absolute inset-0 bg-purple-600/20 flex items-center justify-center">
                         <div className="bg-purple-600 rounded-full p-1">
@@ -572,7 +574,7 @@ export default function GenerateDesignButton({
                 className="aspect-square rounded-xl border-2 border-dashed border-purple-300 hover:border-purple-500 bg-purple-50 hover:bg-purple-100 flex flex-col items-center justify-center gap-1 transition-all duration-200 text-purple-600"
               >
                 <Plus className="w-5 h-5" />
-                <span className="text-xs text-center leading-tight px-1">إضافة قماش ثانوي</span>
+                <span className="text-xs text-center leading-tight px-1">{t('add_secondary_fabric')}</span>
               </button>
             </div>
           )}
@@ -593,12 +595,12 @@ export default function GenerateDesignButton({
           {/* Additional notes */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-gray-700">
-              ملاحظات إضافية <span className="text-gray-400">(اختياري)</span>
+              {t('additional_notes')} <span className="text-gray-400">({t('optional')})</span>
             </label>
             <textarea
               value={additionalNotes}
               onChange={e => setAdditionalNotes(e.target.value)}
-              placeholder="أي تعليمات أو ملاحظات إضافية للذكاء الاصطناعي (مثال: أريد الفستان بأكمام طويلة، أضف ترتر على الصدر...)"
+              placeholder={t('ai_notes_placeholder')}
               rows={3}
               className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white placeholder-gray-400"
             />
@@ -613,14 +615,14 @@ export default function GenerateDesignButton({
               className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold transition-all duration-300"
             >
               <Sparkles className="w-5 h-5" />
-              <span>توليد التصميم</span>
+              <span>{t('generate_design')}</span>
             </button>
             <button
               type="button"
               onClick={() => setStep('idle')}
               className="px-4 py-3 border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
             >
-              إلغاء
+              {t('cancel')}
             </button>
           </div>
         </div>
@@ -657,13 +659,13 @@ export default function GenerateDesignButton({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MapPin className="w-5 h-5 text-purple-600" />
-            <h4 className="font-bold text-gray-800">تحديد مكان كل قماش في الجسم</h4>
+            <h4 className="font-bold text-gray-800">{t('select_fabric_location')}</h4>
           </div>
           <button type="button" onClick={() => setStep('selecting')} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-sm text-gray-600">يمكنك اختيار أكثر من منطقة لكل قماش</p>
+        <p className="text-sm text-gray-600">{t('fabric_location_desc')}</p>
 
         <div className="space-y-4">
           {fabricKeys.map(fk => {
@@ -716,14 +718,14 @@ export default function GenerateDesignButton({
                       : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
                       }`}
                   >
-                    مكان آخر
+                    {t('other_location')}
                   </button>
                 </div>
                 {isCustomShown && (
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="اكتب المكان..."
+                      placeholder={t('type_location_placeholder')}
                       value={customLocationInputs[fk.key] || ''}
                       onChange={e => setCustomLocationInputs(prev => ({ ...prev, [fk.key]: e.target.value }))}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomLocation(fk.key) } }}
@@ -734,7 +736,7 @@ export default function GenerateDesignButton({
                       onClick={() => addCustomLocation(fk.key)}
                       className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
                     >
-                      إضافة
+                      {t('add')}
                     </button>
                   </div>
                 )}
@@ -750,7 +752,7 @@ export default function GenerateDesignButton({
             className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold transition-all duration-300"
           >
             <Sparkles className="w-5 h-5" />
-            <span>توليد التصميم</span>
+            <span>{t('generate_design')}</span>
           </button>
           <button
             type="button"
@@ -758,7 +760,7 @@ export default function GenerateDesignButton({
             className="flex items-center gap-1.5 px-4 py-3 border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors text-sm"
           >
             <SkipForward className="w-4 h-4" />
-            <span>تخطي</span>
+            <span>{t('skip')}</span>
           </button>
         </div>
       </div>
@@ -770,8 +772,8 @@ export default function GenerateDesignButton({
   // ──────────────────────────────────────────
   if (isGenerating) {
     const stepLabel = step === 'generating-prompt'
-      ? 'جاري تحليل التصميم وإنشاء الوصف الاحترافي...'
-      : 'جاري توليد صورة التصميم...'
+      ? t('analyzing_design')
+      : t('generating_image_text')
     const stepNum = step === 'generating-prompt' ? 1 : 2
 
     return (
@@ -781,9 +783,9 @@ export default function GenerateDesignButton({
           <Sparkles className="w-6 h-6 text-indigo-500 animate-pulse" />
         </div>
         <div>
-          <p className="font-bold text-gray-800 text-lg">جاري توليد التصميم</p>
+          <p className="font-bold text-gray-800 text-lg">{t('generating_design_heading')}</p>
           <p className="text-sm text-purple-600 mt-1">{stepLabel}</p>
-          <p className="text-xs text-gray-400 mt-1">الخطوة {stepNum} من 2 — يمكنك حفظ الطلب الآن والانتظار</p>
+          <p className="text-xs text-gray-400 mt-1">{t('generation_step', { step: stepNum })}</p>
         </div>
         <div className="w-full bg-purple-100 rounded-full h-2">
           <div
@@ -804,7 +806,7 @@ export default function GenerateDesignButton({
         <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <Check className="w-5 h-5 text-green-600" />
-            <span className="font-bold text-green-800">تم توليد التصميم بنجاح!</span>
+            <span className="font-bold text-green-800">{t('design_generated_success')}</span>
           </div>
           {showResult && (
             <div className="relative rounded-xl overflow-hidden border border-green-200 cursor-pointer" onClick={() => {
@@ -815,12 +817,12 @@ export default function GenerateDesignButton({
                 openLightbox(0) // Fallback if it's the only one
               }
             }}>
-              <img src={generatedImageUrl} alt="التصميم المولد" className="w-full object-contain max-h-96 hover:opacity-95 transition-opacity" />
+              <img src={generatedImageUrl} alt={t('design_generated_success')} className="w-full object-contain max-h-96 hover:opacity-95 transition-opacity" />
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleDownload(generatedImageUrl, generatedImages.length) }}
                 className="absolute top-2 left-2 bg-white/80 hover:bg-white text-gray-700 rounded-lg p-2 shadow z-10"
-                title="تحميل"
+                title={t('download')}
               >
                 <Download className="w-4 h-4" />
               </button>
@@ -835,7 +837,7 @@ export default function GenerateDesignButton({
                     setStep('idle')
                   }}
                   className="absolute top-2 right-2 p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow z-10"
-                  title="حذف"
+                  title={t('delete')}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -850,7 +852,7 @@ export default function GenerateDesignButton({
           className="flex items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:text-purple-800 font-medium"
         >
           <Sparkles className="w-4 h-4" />
-          <span>توليد تصميم جديد</span>
+          <span>{t('generate_new_design')}</span>
         </button>
 
         {generatedImages.length > 0 && (
@@ -861,7 +863,7 @@ export default function GenerateDesignButton({
               className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 font-medium"
             >
               {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              <span>جميع التصاميم المولدة ({generatedImages.length})</span>
+              <span>{t('all_generated_designs', { count: generatedImages.length })}</span>
             </button>
             {showHistory && (
               <GeneratedImagesGallery
@@ -916,12 +918,13 @@ function SecondaryFabricModal({
   customColorInput: string
   setCustomColorInput: (v: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-5 pb-3 flex-shrink-0">
-          <h5 className="font-bold text-gray-800">إضافة قماش ثانوي</h5>
+          <h5 className="font-bold text-gray-800">{t('add_secondary_fabric')}</h5>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
@@ -930,7 +933,7 @@ function SecondaryFabricModal({
         <div className="overflow-y-auto flex-1 px-5 space-y-4 pb-4">
           {/* Fabric name selection */}
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">نوع القماش</p>
+            <p className="text-sm font-medium text-gray-700 mb-2">{t('fabric_type')}</p>
             <div className="grid grid-cols-2 gap-2">
               {SECONDARY_FABRIC_OPTIONS.map(name => (
                 <button
@@ -954,13 +957,13 @@ function SecondaryFabricModal({
                 className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-gray-300 hover:border-purple-400 text-gray-600 hover:text-purple-600 rounded-xl transition-all text-sm font-medium"
               >
                 <Plus className="w-4 h-4" />
-                قماش آخر
+                {t('other_fabric')}
               </button>
             ) : (
               <div className="flex gap-2 mt-2">
                 <input
                   type="text"
-                  placeholder="اكتب نوع القماش..."
+                  placeholder={t('type_fabric_placeholder')}
                   value={customInput}
                   onChange={e => setCustomInput(e.target.value)}
                   autoFocus
@@ -973,7 +976,7 @@ function SecondaryFabricModal({
                   disabled={!customInput.trim()}
                   className="px-3 py-2 bg-purple-600 text-white text-sm rounded-xl hover:bg-purple-700 disabled:opacity-50"
                 >
-                  اختيار
+                  {t('select_action')}
                 </button>
               </div>
             )}
@@ -982,7 +985,7 @@ function SecondaryFabricModal({
           {/* Color selection */}
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">
-              لون القماش <span className="text-gray-400 font-normal">(اختياري)</span>
+              {t('fabric_color')} <span className="text-gray-400 font-normal">({t('optional')})</span>
             </p>
             <div className="flex flex-wrap gap-2">
               {COLOR_OPTIONS.map(c => {
@@ -1014,14 +1017,14 @@ function SecondaryFabricModal({
                   : 'border-gray-300 text-gray-600 hover:border-indigo-400'
                   }`}
               >
-                لون آخر
+                {t('other_color')}
               </button>
             </div>
 
             {showCustomColorInput && (
               <input
                 type="text"
-                placeholder="اكتب اللون..."
+                placeholder={t('type_color_placeholder')}
                 value={customColorInput}
                 onChange={e => setCustomColorInput(e.target.value)}
                 autoFocus
@@ -1039,14 +1042,14 @@ function SecondaryFabricModal({
             disabled={!pendingName && !customInput.trim()}
             className="flex-1 py-2.5 bg-gradient-to-l from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            إضافة
+            {t('add')}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50 text-sm transition-colors"
           >
-            إلغاء
+            {t('cancel')}
           </button>
         </div>
       </div>
@@ -1068,13 +1071,14 @@ function GeneratedImagesGallery({
   onDelete?: (index: number) => void
   onViewFullscreen: (index: number) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
       {images.map((img, i) => (
         <div key={i} className="relative rounded-xl overflow-hidden border border-purple-200 bg-purple-50 group">
           <img
             src={img}
-            alt={`تصميم مولد ${i + 1}`}
+            alt={t('generated_design_alt', { n: i + 1 })}
             className="w-full object-contain max-h-64 cursor-pointer hover:opacity-95 transition-opacity"
             onClick={() => onViewFullscreen(i)}
           />
@@ -1083,7 +1087,7 @@ function GeneratedImagesGallery({
               type="button"
               onClick={(e) => { e.stopPropagation(); onDownload(img, i); }}
               className="bg-white/80 hover:bg-white text-gray-700 rounded-lg p-1.5 shadow text-xs transition-colors"
-              title="تحميل"
+              title={t('download')}
             >
               <Download className="w-3.5 h-3.5" />
             </button>
@@ -1092,14 +1096,14 @@ function GeneratedImagesGallery({
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onDelete(i); }}
                 className="bg-red-50 hover:bg-red-100 text-red-600 rounded-lg p-1.5 shadow text-xs transition-colors"
-                title="حذف"
+                title={t('delete')}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
           <div className="absolute bottom-2 right-2 bg-purple-600/80 text-white text-xs px-2 py-0.5 rounded pointer-events-none">
-            تصميم {i + 1}
+            {t('design_number', { n: i + 1 })}
           </div>
         </div>
       ))}
