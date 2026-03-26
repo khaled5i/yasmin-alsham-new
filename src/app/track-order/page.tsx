@@ -21,6 +21,7 @@ interface OrderInfo {
   due_date: string
   proof_delivery_date?: string
   status: string
+  admin_confirmed?: boolean
   measurements?: Record<string, unknown>
 }
 
@@ -42,6 +43,7 @@ export default function TrackOrderPage() {
     due_date: order.due_date,
     proof_delivery_date: order.proof_delivery_date,
     status: order.status,
+    admin_confirmed: order.admin_confirmed,
     measurements: order.measurements
   })
 
@@ -104,12 +106,14 @@ export default function TrackOrderPage() {
     }
   }
 
-  const getStatusInfo = (status: string) => {
+  const getStatusInfo = (status: string, adminConfirmed?: boolean) => {
     const statusMap = {
       pending: { label: 'في الانتظار', color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
       assigned: { label: 'تم التعيين', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
       in_progress: { label: 'قيد التنفيذ', color: 'text-purple-600', bgColor: 'bg-purple-100', icon: Package },
-      completed: { label: 'مكتمل', color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
+      completed: adminConfirmed
+        ? { label: 'جاهز للاستلام', color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle }
+        : { label: 'قيد الإنهاء', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
       delivered: { label: 'تم التسليم', color: 'text-green-700', bgColor: 'bg-green-200', icon: CheckCircle }
     }
     return statusMap[status as keyof typeof statusMap] || statusMap.pending
@@ -159,7 +163,7 @@ export default function TrackOrderPage() {
   }
 
   const renderOrderCard = (orderData: OrderInfo, index: number, total: number) => {
-    const statusInfo = getStatusInfo(orderData.status)
+    const statusInfo = getStatusInfo(orderData.status, orderData.admin_confirmed)
     const hasMeasurements = orderData.measurements &&
       Object.keys(orderData.measurements).some(key =>
         !EXCLUDED_KEYS.includes(key) &&
@@ -244,7 +248,7 @@ export default function TrackOrderPage() {
                 </div>
               </div>
 
-              {orderData.status === 'completed' && (
+              {orderData.status === 'completed' && orderData.admin_confirmed && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}

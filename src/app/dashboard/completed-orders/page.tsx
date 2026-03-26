@@ -55,9 +55,11 @@ export default function CompletedOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showViewModal, setShowViewModal] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [confirmingOrderId, setConfirmingOrderId] = useState<string | null>(null)
   const [deliverySuccess, setDeliverySuccess] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState('')
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'reviewed' | 'not_reviewed'>('all')
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
@@ -113,8 +115,11 @@ export default function CompletedOrdersPage() {
     }
   }, [user, authLoading, workerType, permissionsLoading, router])
 
-  // فلترة الطلبات - server-side filtering already ensures only completed orders
+  // فلترة الطلبات - نفلتر على status === 'completed' هنا أيضاً
+  // لأن المتجر مشترك وقد يحتوي على طلبات بحالات أخرى من صفحات سابقة
   const completedOrders = orders.filter(order => {
+    if (order.status !== 'completed') return false
+
     const searchLower = searchTerm.toLowerCase()
     const matchesSearch = !searchTerm ||
       (order.client_name || '').toLowerCase().includes(searchLower) ||
@@ -123,8 +128,17 @@ export default function CompletedOrdersPage() {
 
     const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
 
-    return matchesSearch && matchesDate
+    const matchesReview =
+      reviewFilter === 'all' ||
+      (reviewFilter === 'reviewed' && order.admin_confirmed === true) ||
+      (reviewFilter === 'not_reviewed' && !order.admin_confirmed)
+
+    return matchesSearch && matchesDate && matchesReview
   })
+
+  const completedOnly = orders.filter(o => o.status === 'completed')
+  const reviewedCount = completedOnly.filter(o => o.admin_confirmed === true).length
+  const notReviewedCount = completedOnly.filter(o => !o.admin_confirmed).length
 
   const getWorkerName = (workerId?: string | null) => {
     if (!workerId) return t('not_specified') || 'غير محدد'
@@ -241,8 +255,8 @@ export default function CompletedOrdersPage() {
     }
   }
 
-  // إرسال رسالة "جاهز للاستلام" عبر واتساب
-  const handleSendReadyForPickup = (order: any) => {
+  // إرسال رسالة "جاهز للاستلام" + تأكيد المراجعة من المسؤول
+  const handleSendReadyForPickup = async (order: any) => {
     if (!order.client_phone || order.client_phone.trim() === '') {
       toast.error('لا يوجد رقم هاتف للعميل', {
         icon: '⚠️',
@@ -250,17 +264,26 @@ export default function CompletedOrdersPage() {
       return
     }
 
+    setConfirmingOrderId(order.id)
     try {
+      // تأكيد المراجعة في قاعدة البيانات
+      const result = await updateOrder(order.id, { admin_confirmed: true } as any)
+      if (!result.success) {
+        toast.error('حدث خطأ أثناء تأكيد المراجعة', { icon: '⚠️' })
+        return
+      }
+
+      // إرسال رسالة واتساب للعميل
       sendReadyForPickupWhatsApp(order.client_name, order.client_phone)
-      toast.success('تم فتح واتساب لإرسال رسالة الاستلام', {
-        icon: '📱',
+      toast.success('تم تأكيد المراجعة وفتح واتساب لإرسال رسالة الاستلام', {
+        icon: '✅',
         duration: 3000,
       })
     } catch (error) {
-      console.error('❌ Error opening WhatsApp:', error)
-      toast.error('حدث خطأ أثناء فتح واتساب', {
-        icon: '⚠️',
-      })
+      console.error('❌ Error confirming order:', error)
+      toast.error('حدث خطأ أثناء تأكيد المراجعة', { icon: '⚠️' })
+    } finally {
+      setConfirmingOrderId(null)
     }
   }
 
@@ -397,8 +420,42 @@ export default function CompletedOrdersPage() {
             </div>
           </div>
 
+          {/* فلتر المراجعة */}
+          <div className="mt-3 flex gap-2 flex-wrap">
+            <button
+              onClick={() => setReviewFilter('all')}
+              className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg font-medium transition-all ${
+                reviewFilter === 'all'
+                  ? 'bg-gray-700 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              الكل ({completedOnly.length})
+            </button>
+            <button
+              onClick={() => setReviewFilter('not_reviewed')}
+              className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg font-medium transition-all ${
+                reviewFilter === 'not_reviewed'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
+              }`}
+            >
+              لم تتم المراجعة ({notReviewedCount})
+            </button>
+            <button
+              onClick={() => setReviewFilter('reviewed')}
+              className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg font-medium transition-all ${
+                reviewFilter === 'reviewed'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-green-50 text-green-600 hover:bg-green-100'
+              }`}
+            >
+              تمت المراجعة ({reviewedCount})
+            </button>
+          </div>
+
           {/* زر إعادة تعيين الفلاتر */}
-          {(searchTerm || dateFilter) && (
+          {(searchTerm || dateFilter || reviewFilter !== 'all') && (
             <div className="mt-3 flex justify-between items-center">
               <div className="text-xs sm:text-sm text-gray-600">
                 {t('showing')} {completedOrders.length} {t('orders')}
@@ -407,6 +464,7 @@ export default function CompletedOrdersPage() {
                 onClick={() => {
                   setSearchTerm('')
                   setDateFilter('')
+                  setReviewFilter('all')
                 }}
                 className="inline-flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
               >
@@ -448,16 +506,26 @@ export default function CompletedOrdersPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
+                  className={`bg-white rounded-xl shadow-sm border p-6 hover:shadow-lg transition-all ${
+                    order.admin_confirmed ? 'border-green-200' : 'border-gray-200'
+                  }`}
                 >
                   {/* Container for Main Content (Left) and Actions (Right) */}
                   <div className="flex items-start justify-between mb-2">
                     {/* Left Side: Info & Details */}
                     <div className="flex-1 cursor-pointer" onClick={() => handleViewOrder(order)}>
                       {/* Basic Info */}
-                      <h3 className="font-semibold text-gray-900 mb-1">
-                        {order.client_name}
-                      </h3>
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 className="font-semibold text-gray-900">
+                          {order.client_name}
+                        </h3>
+                        {order.admin_confirmed && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                            <CheckCircle className="w-3 h-3" />
+                            تمت المراجعة
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500 mb-2">
                         <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}
                       </p>
@@ -528,11 +596,27 @@ export default function CompletedOrdersPage() {
                               e.stopPropagation()
                               handleSendReadyForPickup(order)
                             }}
-                            disabled={!order.client_phone || order.client_phone.trim() === ''}
-                            className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-green-100"
-                            title={!order.client_phone ? (t('no_client_phone') || 'لا يوجد رقم هاتف للعميل') : (t('send_pickup_message') || 'إرسال رسالة استلام')}
+                            disabled={!order.client_phone || order.client_phone.trim() === '' || confirmingOrderId === order.id}
+                            className={`p-2 rounded-lg transition-colors border ${
+                              order.admin_confirmed
+                                ? 'text-green-600 bg-green-50 border-green-200 hover:bg-green-100'
+                                : 'text-gray-500 hover:text-green-600 hover:bg-green-50 border-transparent hover:border-green-100'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={
+                              !order.client_phone
+                                ? 'لا يوجد رقم هاتف للعميل'
+                                : order.admin_confirmed
+                                  ? 'تمت المراجعة - إعادة إرسال رسالة الاستلام'
+                                  : 'تأكيد المراجعة وإرسال رسالة الاستلام'
+                            }
                           >
-                            <MessageCircle className="w-4 h-4" />
+                            {confirmingOrderId === order.id ? (
+                              <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                            ) : order.admin_confirmed ? (
+                              <CheckCircle className="w-4 h-4" />
+                            ) : (
+                              <MessageCircle className="w-4 h-4" />
+                            )}
                           </button>
 
                           <button

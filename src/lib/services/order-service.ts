@@ -56,7 +56,8 @@ const ORDER_LIST_COLUMNS = [
   'discount_amount',
   'tax_amount',
   'created_at',
-  'updated_at'
+  'updated_at',
+  'admin_confirmed'
 ].join(',')
 
 /**
@@ -100,6 +101,7 @@ export interface Order {
   completed_images?: string[]
   created_at: string
   updated_at: string
+  admin_confirmed?: boolean
 }
 
 export interface CreateOrderData {
