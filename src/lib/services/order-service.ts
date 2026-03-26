@@ -700,6 +700,39 @@ export const orderService = {
   },
 
   /**
+   * جلب إحصائيات الطلبات حسب تاريخ الاستلام
+   */
+  async getOrderReceivedStatsByDate(startDate: string, endDate: string): Promise<{ data: Record<string, number> | null; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: null, error: 'Supabase is not configured.' }
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('order_received_date, created_at')
+        .gte('order_received_date', startDate)
+        .lte('order_received_date', endDate)
+        .not('status', 'eq', 'cancelled')
+
+      if (error) {
+        return { data: null, error: error.message }
+      }
+
+      const stats: Record<string, number> = {}
+      data?.forEach((order) => {
+        const dateKey = extractDateKey(order.order_received_date || order.created_at)
+        if (!dateKey) return
+        stats[dateKey] = (stats[dateKey] || 0) + 1
+      })
+
+      return { data: stats, error: null }
+    } catch (error: any) {
+      return { data: null, error: error.message || 'خطأ في جلب إحصائيات الاستلام' }
+    }
+  },
+
+  /**
    * جلب إحصائيات مواعيد البروفا حسب التاريخ
    */
   async getProofStatsByDate(startDate: string, endDate: string): Promise<{ data: Record<string, number> | null; error: string | null }> {

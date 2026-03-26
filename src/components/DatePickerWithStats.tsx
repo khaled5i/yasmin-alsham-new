@@ -119,8 +119,13 @@ export default function DatePickerWithStats({
     const isOverloaded = count > 5
     const hijri = toHijri(date)
 
+    const isFriday = date.getDay() === 5
+
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
+        {isFriday && (
+          <span className="text-[10px] text-black font-bold leading-none">✕</span>
+        )}
         <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
         <span className="text-[12px] text-gray-500 leading-none mt-0.5">{hijri.day}</span>
         {count > 0 && (
@@ -141,12 +146,10 @@ export default function DatePickerWithStats({
   const getDayClassName = (date: Date) => {
     const dateStr = toLocalDateKey(date)
     const count = stats[dateStr] || 0
-    const isOverloaded = count > 5
-
-    if (isOverloaded) {
-      return 'overloaded-date'
-    }
-    return ''
+    const classes: string[] = []
+    if (count > 5) classes.push('overloaded-date')
+    if (date.getDay() === 5) classes.push('friday-day')
+    return classes.join(' ')
   }
 
   // دالة لتخصيص رأس التقويم مع التاريخ الهجري
@@ -180,10 +183,10 @@ export default function DatePickerWithStats({
         </button>
         <div className="text-center">
           <div className="text-sm font-bold text-pink-900">
-            {hijri.monthName} {hijri.year}
+            {gregorianMonth}
           </div>
           <div className="text-xs text-pink-700">
-            {gregorianMonth}
+            {hijri.monthName} {hijri.year}
           </div>
         </div>
         <button
@@ -329,6 +332,14 @@ export default function DatePickerWithStats({
 
         .custom-calendar-hijri .react-datepicker__day.overloaded-date:hover {
           background-color: #fecaca;
+        }
+
+        .custom-calendar-hijri .react-datepicker__day.friday-day {
+          background-color: #f3f3f3;
+        }
+
+        .custom-calendar-hijri .react-datepicker__day.friday-day:hover {
+          background-color: #e5e5e5;
         }
 
         .custom-calendar-hijri .react-datepicker__day--selected {

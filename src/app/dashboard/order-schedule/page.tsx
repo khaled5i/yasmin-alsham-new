@@ -136,15 +136,15 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
         <div className={`bg-white rounded-2xl shadow-md border overflow-hidden ${isProof ? 'border-green-100' : 'border-pink-100'}`}>
             {/* Month Header */}
             <div className={`px-4 py-3 border-b text-center ${isProof ? 'bg-[#d1fae5] border-[#6ee7b7]' : 'bg-gradient-to-r from-pink-50 to-rose-50 border-pink-100'}`}>
-                <div className={`text-lg font-bold ${isProof ? 'text-green-900' : 'text-pink-900'}`}>{hijriFirstDay.monthName} {hijriFirstDay.year}</div>
-                <div className={`text-sm font-medium ${isProof ? 'text-green-700' : 'text-pink-700'}`}>{gregorianMonth} {year}</div>
+                <div className={`text-lg font-bold ${isProof ? 'text-green-900' : 'text-pink-900'}`}>{gregorianMonth} {year}</div>
+                <div className={`text-sm font-medium ${isProof ? 'text-green-700' : 'text-pink-700'}`}>{hijriFirstDay.monthName} {hijriFirstDay.year}</div>
             </div>
 
             {/* Day names row - full names, LTR order */}
             <div dir="ltr" className={`grid grid-cols-7 border-b ${isProof ? 'bg-[#ecfdf5] border-[#d1fae5]' : 'bg-pink-50 border-pink-100'}`}>
-                {arabicDayNames.map((d) => (
-                    <div key={d} className={`py-2 text-center text-[11px] sm:text-xs font-bold truncate px-0.5 ${isProof ? 'text-[#047857]' : 'text-rose-800'}`}>
-                        {d}
+                {arabicDayNames.map((d, i) => (
+                    <div key={d} className={`py-2 text-center text-[11px] sm:text-xs font-bold truncate px-0.5 ${i === 5 ? 'text-black bg-gray-100' : (isProof ? 'text-[#047857]' : 'text-rose-800')}`}>
+                        {i === 5 ? '✕' : d}
                     </div>
                 ))}
             </div>
@@ -162,6 +162,7 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
                             const isToday = dateKey === todayKey
                             const isOverloaded = isProof ? total >= 4 : total >= 6
                             const hijri = toHijri(date)
+                            const isFriday = date.getDay() === 5
 
                             return (
                                 <button
@@ -170,11 +171,14 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
                                     className={`
                     aspect-square flex flex-col items-center justify-center rounded-lg m-0.5 transition-all duration-200 gap-0.5
                     ${isToday ? (isProof ? 'ring-2 ring-green-500' : 'ring-2 ring-pink-500') : ''}
-                    ${isOverloaded ? 'bg-red-50 border border-red-200 hover:bg-red-100' : (isProof ? 'hover:bg-green-50' : 'hover:bg-pink-50')}
+                    ${isOverloaded ? 'bg-red-50 border border-red-200 hover:bg-red-100' : isFriday ? 'bg-gray-100 hover:bg-gray-200' : (isProof ? 'hover:bg-green-50' : 'hover:bg-pink-50')}
                     cursor-pointer
                   `}
                                 >
-                                    <span className={`text-xl font-bold leading-none ${isOverloaded ? 'text-red-700' : isToday ? (isProof ? 'text-[#10b981]' : 'text-pink-600') : 'text-gray-800'}`}>
+                                    {isFriday && (
+                                        <span className="text-[10px] text-black font-bold leading-none">✕</span>
+                                    )}
+                                    <span className={`text-xl font-bold leading-none ${isOverloaded ? 'text-red-700' : isFriday ? 'text-black' : isToday ? (isProof ? 'text-[#10b981]' : 'text-pink-600') : 'text-gray-800'}`}>
                                         {date.getDate()}
                                     </span>
                                     <span className="text-xs text-gray-400 leading-none">{hijri.day}</span>

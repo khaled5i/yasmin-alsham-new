@@ -1,27 +1,22 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import DatePicker from 'react-datepicker'
 import { shift } from '@floating-ui/dom'
 import 'react-datepicker/dist/react-datepicker.css'
 import moment from 'moment-hijri'
 import { extractDateKey, parseDateKeyForPicker, toLocalDateKey } from '@/lib/date-utils'
 import { useTranslation } from '@/hooks/useTranslation'
+import { orderService } from '@/lib/services/order-service'
 
 type DateFilterType = 'received' | 'delivery'
-
-interface DateFilterOrderLike {
-  order_received_date?: string
-  due_date?: string
-  created_at?: string
-}
 
 interface OrderDateFilterPickerProps {
   selectedDate: string
   onDateChange: (date: string) => void
   filterType: DateFilterType
   onFilterTypeChange: (type: DateFilterType) => void
-  orders?: DateFilterOrderLike[]
+  orders?: unknown[]
   className?: string
 }
 
@@ -43,37 +38,45 @@ const toHijri = (date: Date) => {
   }
 }
 
-const isDateKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
-
 export default function OrderDateFilterPicker({
   selectedDate,
   onDateChange,
   filterType,
   onFilterTypeChange,
-  orders = [],
   className = ''
 }: OrderDateFilterPickerProps) {
   const { t, isArabic } = useTranslation()
+  const [stats, setStats] = useState<Record<string, number>>({})
 
   const dateValue = parseDateKeyForPicker(selectedDate)
   const selectedDateKey = selectedDate ? extractDateKey(selectedDate) : ''
 
-  const stats = useMemo(() => {
-    const nextStats: Record<string, number> = {}
+  // Fetch stats from DB whenever filterType changes
+  useEffect(() => {
+    const fetchStats = async () => {
+      const now = new Date()
+      const past = new Date(now)
+      past.setFullYear(past.getFullYear() - 2)
+      const future = new Date(now)
+      future.setFullYear(future.getFullYear() + 1)
 
-    for (const order of orders) {
-      const rawDate = filterType === 'received'
-        ? (order.order_received_date || order.created_at || '')
-        : (order.due_date || '')
+      const startDate = toLocalDateKey(past)
+      const endDate = toLocalDateKey(future)
 
-      const key = extractDateKey(rawDate)
-      if (!isDateKey(key)) continue
+      let result
+      if (filterType === 'received') {
+        result = await orderService.getOrderReceivedStatsByDate(startDate, endDate)
+      } else {
+        result = await orderService.getOrderStatsByDate(startDate, endDate)
+      }
 
-      nextStats[key] = (nextStats[key] || 0) + 1
+      if (!result.error && result.data) {
+        setStats(result.data)
+      }
     }
 
-    return nextStats
-  }, [orders, filterType])
+    fetchStats()
+  }, [filterType])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -95,9 +98,13 @@ export default function OrderDateFilterPicker({
     const count = stats[dateStr] || 0
     const isOverloaded = count > 5
     const hijri = toHijri(date)
+    const isFriday = date.getDay() === 5
 
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
+        {isFriday && (
+          <span className="text-[10px] text-black font-bold leading-none">✕</span>
+        )}
         <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
         <span className="text-[12px] text-gray-500 leading-none mt-0.5">{hijri.day}</span>
         {count > 0 && (
@@ -113,7 +120,11 @@ export default function OrderDateFilterPicker({
 
   const getDayClassName = (date: Date) => {
     const dateStr = toLocalDateKey(date)
-    return (stats[dateStr] || 0) > 5 ? 'overloaded-date' : ''
+    const count = stats[dateStr] || 0
+    const classes: string[] = []
+    if (count > 5) classes.push('overloaded-date')
+    if (date.getDay() === 5) classes.push('friday-day')
+    return classes.join(' ')
   }
 
   const renderCustomHeader = ({
@@ -172,10 +183,10 @@ export default function OrderDateFilterPicker({
           </button>
           <div className="text-center">
             <div className="text-sm font-bold text-pink-900">
-              {hijri.monthName} {hijri.year}
+              {gregorianMonth}
             </div>
             <div className="text-xs text-pink-700">
-              {gregorianMonth}
+              {hijri.monthName} {hijri.year}
             </div>
           </div>
           <button
@@ -325,6 +336,14 @@ export default function OrderDateFilterPicker({
 
         .custom-calendar-hijri .react-datepicker__day.overloaded-date:hover {
           background-color: #fecaca;
+        }
+
+        .custom-calendar-hijri .react-datepicker__day.friday-day {
+          background-color: #f3f3f3;
+        }
+
+        .custom-calendar-hijri .react-datepicker__day.friday-day:hover {
+          background-color: #e5e5e5;
         }
 
         .custom-calendar-hijri .react-datepicker__day--selected {

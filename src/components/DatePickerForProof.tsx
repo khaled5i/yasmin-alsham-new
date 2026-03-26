@@ -105,8 +105,13 @@ export default function DatePickerForProof({
     const isOverloaded = proofCount >= 4
     const hijri = toHijri(date)
 
+    const isFriday = date.getDay() === 5
+
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
+        {isFriday && (
+          <span className="text-[10px] text-black font-bold leading-none">✕</span>
+        )}
         <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
         <span className="text-[12px] text-gray-500 leading-none mt-0.5">{hijri.day}</span>
         {proofCount > 0 && (
@@ -127,12 +132,10 @@ export default function DatePickerForProof({
   const getDayClassName = (date: Date) => {
     const dateStr = toLocalDateKey(date)
     const proofCount = proofStats[dateStr] || 0
-    const isOverloaded = proofCount >= 4
-
-    if (isOverloaded) {
-      return 'overloaded-proof-date'
-    }
-    return ''
+    const classes: string[] = []
+    if (proofCount >= 4) classes.push('overloaded-proof-date')
+    if (date.getDay() === 5) classes.push('friday-day-proof')
+    return classes.join(' ')
   }
 
   // دالة لتخصيص رأس التقويم مع التاريخ الهجري
@@ -166,10 +169,10 @@ export default function DatePickerForProof({
         </button>
         <div className="text-center">
           <div className="text-sm font-bold text-green-900">
-            {hijri.monthName} {hijri.year}
+            {gregorianMonth}
           </div>
           <div className="text-xs text-green-700">
-            {gregorianMonth}
+            {hijri.monthName} {hijri.year}
           </div>
         </div>
         <button
@@ -323,6 +326,14 @@ export default function DatePickerForProof({
 
         .custom-calendar-proof-hijri .react-datepicker__day.overloaded-proof-date:hover {
           background-color: #fecaca;
+        }
+
+        .custom-calendar-proof-hijri .react-datepicker__day.friday-day-proof {
+          background-color: #f3f3f3;
+        }
+
+        .custom-calendar-proof-hijri .react-datepicker__day.friday-day-proof:hover {
+          background-color: #e5e5e5;
         }
 
         .custom-calendar-proof-hijri .react-datepicker__day--selected {
