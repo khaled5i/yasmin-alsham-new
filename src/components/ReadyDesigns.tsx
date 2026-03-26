@@ -61,17 +61,16 @@ export default function ReadyDesigns() {
   useEffect(() => {
     if (products.length > 0) {
       const initialIndexes: { [key: string]: number } = {}
-      products.slice(0, 4).forEach(product => {
+      products.filter(p => p.is_available && p.is_featured).forEach(product => {
         initialIndexes[product.id] = 0
       })
       setCurrentImageIndexes(initialIndexes)
     }
   }, [products])
 
-  // أول 4 منتجات متاحة ومميزة
+  // الفساتين المميزة فقط
   const readyDesigns = products
-    .filter(p => p.is_available)
-    .slice(0, 4)
+    .filter(p => p.is_available && p.is_featured)
 
   // دوال التنقل بين صور البطاقة
   const nextCardImage = (productId: string, totalImages: number, e: React.MouseEvent) => {

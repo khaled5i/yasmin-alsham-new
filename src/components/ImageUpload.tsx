@@ -48,6 +48,8 @@ export default function ImageUpload({
   const [isClientMounted, setIsClientMounted] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editUploading, setEditUploading] = useState(false)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const uploadAbortControllerRef = useRef<AbortController | null>(null)
@@ -241,6 +243,41 @@ export default function ImageUpload({
   const removeImage = (index: number) => {
     const newImages = images.filter((_, i) => i !== index)
     onImagesChange(newImages)
+  }
+
+  const handleImageDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(index))
+  }
+
+  const handleImageDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (draggedIndex === null || draggedIndex === index) return
+    setDragOverIndex(index)
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleImageDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (draggedIndex === null || draggedIndex === index) {
+      setDraggedIndex(null)
+      setDragOverIndex(null)
+      return
+    }
+    const newImages = [...images]
+    const [removed] = newImages.splice(draggedIndex, 1)
+    newImages.splice(index, 0, removed)
+    onImagesChange(newImages)
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+  }
+
+  const handleImageDragEnd = () => {
+    setDraggedIndex(null)
+    setDragOverIndex(null)
   }
 
   const handleEditSave = useCallback(async (dataUrl: string) => {
@@ -684,12 +721,19 @@ export default function ImageUpload({
       {/* معرض الصور والفيديوهات */}
       {images.length > 0 && (
         <div className="space-y-4">
-          <h4 className="font-medium text-gray-700">الملفات المرفوعة:</h4>
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-gray-700">الملفات المرفوعة:</h4>
+            {images.length > 1 && (
+              <span className="text-xs text-gray-400">↔ اسحب الصور لتغيير ترتيبها</span>
+            )}
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             <AnimatePresence>
               {images.map((image, index) => {
                 // تحديد نوع الملف من الرابط
                 const isVideo = isVideoFile(image)
+                const isDragging = draggedIndex === index
+                const isDragTarget = dragOverIndex === index
 
                 return (
                   <motion.div
@@ -697,7 +741,14 @@ export default function ImageUpload({
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className="relative group"
+                    className={`relative group ${isDragging ? 'opacity-40' : ''} ${isDragTarget ? 'ring-2 ring-pink-400 ring-offset-2 rounded-lg scale-105' : ''} transition-transform`}
+                    draggable
+                    onDragStart={(e) => handleImageDragStart(e, index)}
+                    onDragOver={(e) => handleImageDragOver(e, index)}
+                    onDrop={(e) => handleImageDrop(e, index)}
+                    onDragEnd={handleImageDragEnd}
+                    onDragLeave={() => setDragOverIndex(null)}
+                    style={{ cursor: 'grab' }}
                   >
                     <div
                       className={`rounded-lg overflow-hidden border border-gray-200 cursor-pointer ${isVideo ? 'bg-black' : 'aspect-square bg-gray-100'}`}

@@ -46,7 +46,6 @@ export default function AddDressPage() {
   // Validate form
   const validate = () => {
     const errs: any = {}
-    if (!title.trim()) errs.title = "اسم الفستان مطلوب"
     if (!description.trim()) errs.description = "الوصف مطلوب"
     if (!price || isNaN(Number(price)) || Number(price) <= 0) errs.price = "يرجى إدخال سعر صحيح"
     if (images.length === 0) errs.images = "يرجى تحميل صورة واحدة على الأقل"

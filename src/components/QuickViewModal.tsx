@@ -199,9 +199,11 @@ export default function QuickViewModal({ product, isOpen, onClose }: QuickViewMo
                   </div>
 
                   {/* الاسم */}
+                  {product.name && (
                   <h2 id="quick-view-title" className="text-2xl md:text-3xl font-bold text-gray-800 mb-3">
                     {product.name}
                   </h2>
+                  )}
 
                   {/* التقييم */}
                   {product.rating && (

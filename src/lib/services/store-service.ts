@@ -134,9 +134,9 @@ export interface Product {
 }
 
 export interface CreateProductData {
-  title: string
+  title?: string
   title_en?: string
-  description: string
+  description?: string
   description_en?: string
   category_id?: string
   category_name?: string

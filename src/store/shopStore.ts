@@ -99,7 +99,7 @@ const convertSupabaseProduct = (sp: SupabaseProduct): Product => {
 
   return {
     id: sp.id,
-    name: sp.title || 'منتج بدون اسم',
+    name: sp.title || '',
     price: sp.is_on_sale && sp.sale_price ? sp.sale_price : sp.price,
     image: thumbnailImage,
     description: sp.description || '',

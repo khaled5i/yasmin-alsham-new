@@ -34,7 +34,7 @@ export default function ReadyDesignsAdmin() {
     care_instructions: [],
     is_available: true,
     is_featured: false,
-    category_name: 'فساتين زفاف'
+    category_name: 'فساتين سهرة'
   })
   const [newColorsInput, setNewColorsInput] = useState("")
   const [newFeaturesInput, setNewFeaturesInput] = useState("")
@@ -231,7 +231,7 @@ export default function ReadyDesignsAdmin() {
       care_instructions: [],
       is_available: true,
       is_featured: false,
-      category_name: 'فساتين زفاف'
+      category_name: 'فساتين سهرة'
     })
     setNewColorsInput("")
     setNewFeaturesInput("")
@@ -255,7 +255,7 @@ export default function ReadyDesignsAdmin() {
       care_instructions: [],
       is_available: true,
       is_featured: false,
-      category_name: 'فساتين زفاف'
+      category_name: 'فساتين سهرة'
     })
     setNewColorsInput("")
     setNewFeaturesInput("")
@@ -319,14 +319,6 @@ export default function ReadyDesignsAdmin() {
 
   const handleCreateProduct = async () => {
     // التحقق من صحة البيانات
-    if (!newProductData.title?.trim()) {
-      setError('يرجى إدخال عنوان الفستان')
-      return
-    }
-    if (!newProductData.description?.trim()) {
-      setError('يرجى إدخال وصف الفستان')
-      return
-    }
     // السعر اختياري - إذا تم إدخاله يجب أن يكون صحيح
     if (newProductData.price && newProductData.price <= 0) {
       setError('يرجى إدخال سعر صحيح أو اتركه فارغاً')
@@ -343,8 +335,8 @@ export default function ReadyDesignsAdmin() {
     try {
       // تحضير البيانات للإضافة
       const createData: CreateProductData = {
-        title: newProductData.title!,
-        description: newProductData.description!,
+        title: newProductData.title || '',
+        description: newProductData.description || '',
         price: newProductData.price && newProductData.price > 0 ? newProductData.price : undefined,
         images: newProductData.images!,
         thumbnail_image: newProductData.images![0],
@@ -404,7 +396,7 @@ export default function ReadyDesignsAdmin() {
             sizes: [],
             is_available: true,
             is_featured: false,
-            category_name: 'فساتين زفاف'
+            category_name: 'فساتين سهرة'
           })
           setSuccess(false)
         }, 1500)

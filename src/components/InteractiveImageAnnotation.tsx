@@ -135,6 +135,9 @@ const serializeDesignState = (annotations: ImageAnnotation[], drawings: DrawingP
 const MAX_CUSTOM_IMAGE_DIM = 1920
 
 async function resizeImageFile(file: File, maxDim: number): Promise<string> {
+  const MAX_UPLOAD_SIZE = 5 * 1024 * 1024       // 5 MB
+  const TARGET_UPLOAD_SIZE = 4.99 * 1024 * 1024 // 4.99 MB
+
   // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
   // بعد عودة WebView من camera intent. نقرأ الملف بالكامل إلى الذاكرة أولاً.
   let safeBlob: Blob = file
@@ -146,6 +149,33 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
     } catch {
       safeBlob = file
     }
+  }
+
+  const canvasToBlobAsync = (canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('Blob creation failed'))),
+        type,
+        quality
+      )
+    })
+
+  // ضغط ذكي: بحث ثنائي عن أدنى جودة تُبقي الحجم ≤ TARGET_UPLOAD_SIZE
+  const smartCompress = async (canvas: HTMLCanvasElement): Promise<Blob> => {
+    let low = 0.1, high = 0.99
+    let bestBlob = await canvasToBlobAsync(canvas, 'image/jpeg', high)
+    if (bestBlob.size <= TARGET_UPLOAD_SIZE) return bestBlob
+    for (let i = 0; i < 8; i++) {
+      const mid = (low + high) / 2
+      const testBlob = await canvasToBlobAsync(canvas, 'image/jpeg', mid)
+      if (testBlob.size <= TARGET_UPLOAD_SIZE) {
+        bestBlob = testBlob
+        low = mid
+      } else {
+        high = mid
+      }
+    }
+    return bestBlob
   }
 
   // استخدام createImageBitmap لتحميل الصورة بكفاءة أعلى (تجنب تجمد المتصفح مع صور الكاميرا الكبيرة)
@@ -170,6 +200,14 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
         }
       }
 
+      const needsResize = targetWidth !== originalWidth || targetHeight !== originalHeight
+      const needsCompression = file.size > MAX_UPLOAD_SIZE
+
+      // لا يلزم أي معالجة: الصورة صغيرة وأبعادها مناسبة
+      if (!needsResize && !needsCompression) {
+        return URL.createObjectURL(safeBlob)
+      }
+
       // تحميل الصورة بالحجم المطلوب مباشرة (أقل استهلاكاً للذاكرة)
       const resizedBitmap = await createImageBitmap(safeBlob, {
         resizeWidth: targetWidth,
@@ -189,19 +227,21 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
       ctx.drawImage(resizedBitmap, 0, 0)
       resizedBitmap.close()
 
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob(
-          (b) => {
-            canvas.width = 0
-            canvas.height = 0
-            b ? resolve(b) : reject(new Error('Blob creation failed'))
-          },
-          'image/jpeg',
-          0.85
-        )
-      })
-
-      return URL.createObjectURL(blob)
+      try {
+        let resultBlob: Blob
+        if (needsCompression) {
+          // الصورة كبيرة: ضغط ذكي للوصول إلى أقل من 5 ميجا
+          resultBlob = await smartCompress(canvas)
+        } else {
+          // فقط تغيير الأبعاد بدون ضغط - نستخدم PNG للحفاظ على الجودة
+          const pngBlob = await canvasToBlobAsync(canvas, 'image/png')
+          resultBlob = pngBlob.size <= MAX_UPLOAD_SIZE ? pngBlob : await smartCompress(canvas)
+        }
+        return URL.createObjectURL(resultBlob)
+      } finally {
+        canvas.width = 0
+        canvas.height = 0
+      }
     } catch {
       // fallback إلى الطريقة التقليدية
     }
@@ -212,7 +252,7 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
     const sourceUrl = URL.createObjectURL(safeBlob)
     const img = new window.Image()
 
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(sourceUrl)
       const { naturalWidth: originalWidth, naturalHeight: originalHeight } = img
 
@@ -229,6 +269,14 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
         }
       }
 
+      const needsResize = targetWidth !== originalWidth || targetHeight !== originalHeight
+      const needsCompression = file.size > MAX_UPLOAD_SIZE
+
+      if (!needsResize && !needsCompression) {
+        resolve(URL.createObjectURL(safeBlob))
+        return
+      }
+
       const canvas = document.createElement('canvas')
       canvas.width = targetWidth
       canvas.height = targetHeight
@@ -239,19 +287,44 @@ async function resizeImageFile(file: File, maxDim: number): Promise<string> {
       }
 
       ctx.drawImage(img, 0, 0, targetWidth, targetHeight)
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Blob creation failed'))
-            return
+
+      const canvasToBlobFallback = (type: string, quality?: number): Promise<Blob> =>
+        new Promise((res, rej) =>
+          canvas.toBlob((b) => (b ? res(b) : rej(new Error('Blob creation failed'))), type, quality)
+        )
+
+      const smartCompressFallback = async (): Promise<Blob> => {
+        let low = 0.1, high = 0.99
+        let bestBlob = await canvasToBlobFallback('image/jpeg', high)
+        if (bestBlob.size <= TARGET_UPLOAD_SIZE) return bestBlob
+        for (let i = 0; i < 8; i++) {
+          const mid = (low + high) / 2
+          const testBlob = await canvasToBlobFallback('image/jpeg', mid)
+          if (testBlob.size <= TARGET_UPLOAD_SIZE) {
+            bestBlob = testBlob
+            low = mid
+          } else {
+            high = mid
           }
-          resolve(URL.createObjectURL(blob))
-          canvas.width = 0
-          canvas.height = 0
-        },
-        'image/jpeg',
-        0.85
-      )
+        }
+        return bestBlob
+      }
+
+      try {
+        let resultBlob: Blob
+        if (needsCompression) {
+          resultBlob = await smartCompressFallback()
+        } else {
+          const pngBlob = await canvasToBlobFallback('image/png')
+          resultBlob = pngBlob.size <= MAX_UPLOAD_SIZE ? pngBlob : await smartCompressFallback()
+        }
+        resolve(URL.createObjectURL(resultBlob))
+      } catch (err) {
+        reject(err)
+      } finally {
+        canvas.width = 0
+        canvas.height = 0
+      }
     }
 
     img.onerror = () => {
@@ -1023,8 +1096,52 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           ctx.restore()
         })
 
-      // JPEG بجودة معقولة للحفاظ على وضوح الصورة المحفوظة
-      return canvas.toDataURL('image/jpeg', 0.82)
+      // تحديد نوع الضغط بناءً على وجود صورة مخصصة أم لا
+      const hasCustomImage = !effectiveImageSrc.startsWith('/')
+
+      if (!hasCustomImage) {
+        // رسم فقط بدون صورة مخصصة - لا ضغط على الإطلاق
+        return canvas.toDataURL('image/png')
+      }
+
+      // صورة مخصصة: ضغط ذكي إذا تجاوز الحجم 5 ميجا
+      const MAX_COMPOSITE_SIZE = 5 * 1024 * 1024
+
+      const blobToDataUrl = (blob: Blob): Promise<string> =>
+        new Promise((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(blob)
+        })
+
+      const canvasToBlobComposite = (quality?: number): Promise<Blob> =>
+        new Promise((resolve, reject) => {
+          canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error('Blob failed'))),
+            'image/jpeg',
+            quality
+          )
+        })
+
+      // محاولة بجودة عالية أولاً
+      const highBlob = await canvasToBlobComposite(0.95)
+      if (highBlob.size <= MAX_COMPOSITE_SIZE) {
+        return await blobToDataUrl(highBlob)
+      }
+
+      // بحث ثنائي لأدنى جودة تُبقي الحجم ≤ 5 ميجا
+      let low = 0.1, high = 0.95, bestBlob = highBlob
+      for (let i = 0; i < 8; i++) {
+        const mid = (low + high) / 2
+        const testBlob = await canvasToBlobComposite(mid)
+        if (testBlob.size <= MAX_COMPOSITE_SIZE) {
+          bestBlob = testBlob
+          low = mid
+        } else {
+          high = mid
+        }
+      }
+      return await blobToDataUrl(bestBlob)
     } catch (error) {
       console.error('Error generating composite image:', error)
       return null
