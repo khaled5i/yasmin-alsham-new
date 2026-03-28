@@ -1064,7 +1064,7 @@ const enTranslations: Translations = {
   'customer_information': 'Customer Information',
   'order_date': 'Order Date',
   'delivery_date': 'Delivery Date',
-  'assigned_worker': 'Assigned Worker',
+  'assigned_worker': 'Worker',
   'chest_bust': 'Chest/Bust',
   'advanced_tailoring_measurements': 'Advanced Tailoring Measurements',
   'additional_measurements': 'Additional Measurements',
