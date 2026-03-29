@@ -994,7 +994,7 @@ function OrdersPageInner() {
                   </div>
 
                   {/* Footer - Price (Full Width) */}
-                  {workerType !== 'workshop_manager' && (
+                  {workerType !== 'workshop_manager' && workerType !== 'tailor' && (
                     <div className="flex items-center justify-between pt-4 border-t border-gray-200 mt-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
                       <div>
                         <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
@@ -1086,7 +1086,7 @@ function OrdersPageInner() {
                           : 'text-yellow-800'
                           }`}>
                           {completedImages.length === 0
-                            ? 'تنبيه مهم - رفع الصور إلزامي'
+                            ? t('important_warning_upload_required')
                             : t('important_warning')}
                         </p>
                         <p className={`text-sm ${completedImages.length === 0
@@ -1094,7 +1094,7 @@ function OrdersPageInner() {
                           : 'text-yellow-700'
                           }`}>
                           {completedImages.length === 0
-                            ? 'يجب رفع صورة واحدة على الأقل للعمل المكتمل قبل إنهاء الطلب. الصور ضرورية لتوثيق جودة العمل.'
+                            ? t('must_upload_before_completing')
                             : t('complete_order_warning')}
                         </p>
                       </div>
@@ -1107,7 +1107,7 @@ function OrdersPageInner() {
                       <div className="flex items-center space-x-2 space-x-reverse">
                         <Camera className="w-5 h-5 text-red-600 flex-shrink-0" />
                         <p className="text-sm font-medium text-red-800">
-                          لا يمكن إنهاء الطلب بدون رفع صور للعمل المكتمل
+                          {t('cannot_complete_without_images')}
                         </p>
                       </div>
                     </div>

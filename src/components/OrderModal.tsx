@@ -1455,7 +1455,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   {/* أزرار الذكاء الاصطناعي */}
                   <div className="pt-4 border-t border-gray-100">
                     <div className="flex flex-wrap gap-3 items-start">
-                      <GenerateDesignButton
+                      {workerType !== 'tailor' && <GenerateDesignButton
                         images={order.images || []}
                         designComments={savedDesignComments}
                         fabric={order.fabric}
@@ -1498,7 +1498,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                             toast.error('فشل حذف التصميم')
                           }
                         }}
-                      />
+                      />}
                       {/* زر تحويل الصورة إلى كرتون */}
                       {showCartoonButton && (
                         <button
@@ -1527,7 +1527,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               {/* قسم التصاميم المولدة - يظهر حتى لو لا توجد صور (بدون صور) */}
               {(!order.images || order.images.length === 0) && (
                 <div className="flex flex-wrap gap-3 items-start">
-                  <GenerateDesignButton
+                  {workerType !== 'tailor' && <GenerateDesignButton
                     images={order.images || []}
                     designComments={savedDesignComments}
                     fabric={order.fabric}
@@ -1566,7 +1566,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         toast.error('فشل حذف التصميم')
                       }
                     }}
-                  />
+                  />}
                   {/* زر تحويل الصورة إلى كرتون */}
                   {showCartoonButton && (
                     <button

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Upload, X, Image as ImageIcon, Camera } from 'lucide-react'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface CompletedWorkUploadProps {
   onImagesChange: (images: string[]) => void
@@ -15,6 +16,7 @@ export default function CompletedWorkUpload({
   maxImages = 3,
   disabled = false
 }: CompletedWorkUploadProps) {
+  const { t } = useTranslation()
   const [images, setImages] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [showOptions, setShowOptions] = useState(false)
@@ -122,11 +124,11 @@ export default function CompletedWorkUpload({
       <div className="flex items-center justify-between">
         <label className={`block text-sm font-medium ${images.length === 0 ? 'text-red-700' : 'text-gray-700'
           }`}>
-          صور العمل المكتمل <span className="text-red-600">*</span>
+          {t('completed_work_images_label')} <span className="text-red-600">*</span>
         </label>
         <span className={`text-xs ${images.length === 0 ? 'text-red-600 font-medium' : 'text-gray-500'
           }`}>
-          {images.length}/{maxImages} صور
+          {images.length}/{maxImages} {t('images_text')}
         </span>
       </div>
 
@@ -178,18 +180,18 @@ export default function CompletedWorkUpload({
               <p className={`text-sm font-medium ${images.length === 0 ? 'text-red-700' : 'text-gray-700'
                 }`}>
                 {images.length >= maxImages
-                  ? 'تم الوصول للحد الأقصى من الصور'
+                  ? t('max_images_reached')
                   : images.length === 0
-                    ? 'اضغط لرفع صور العمل المكتمل (إلزامي)'
-                    : 'اضغط لرفع المزيد من الصور'
+                    ? t('click_to_upload_completed_work')
+                    : t('click_to_upload_more_images')
                 }
               </p>
               {images.length < maxImages && (
                 <p className={`text-xs mt-1 ${images.length === 0 ? 'text-red-600' : 'text-gray-500'
                   }`}>
                   {images.length === 0
-                    ? 'يجب رفع صورة واحدة على الأقل • التقط صورة أو اختر من المعرض'
-                    : 'التقط صورة أو اختر من المعرض أو اسحب الصور هنا'
+                    ? t('must_upload_at_least_one')
+                    : t('take_photo_or_choose_gallery')
                   }
                 </p>
               )}
@@ -214,8 +216,8 @@ export default function CompletedWorkUpload({
             >
               <Camera className="w-5 h-5 text-pink-600" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800">التقاط صورة</p>
-                <p className="text-xs text-gray-500">استخدم الكاميرا لالتقاط صورة جديدة</p>
+                <p className="text-sm font-medium text-gray-800">{t('capture_photo')}</p>
+                <p className="text-xs text-gray-500">{t('use_camera_to_capture')}</p>
               </div>
             </button>
 
@@ -228,8 +230,8 @@ export default function CompletedWorkUpload({
             >
               <ImageIcon className="w-5 h-5 text-pink-600" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800">اختيار من المعرض</p>
-                <p className="text-xs text-gray-500">اختر صور موجودة من جهازك</p>
+                <p className="text-sm font-medium text-gray-800">{t('choose_from_gallery')}</p>
+                <p className="text-xs text-gray-500">{t('choose_existing_photos')}</p>
               </div>
             </button>
           </motion.div>
@@ -250,7 +252,7 @@ export default function CompletedWorkUpload({
               <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
                 <img
                   src={image}
-                  alt={`صورة العمل ${index + 1}`}
+                  alt={`${t('work_image_label')} ${index + 1}`}
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -269,7 +271,7 @@ export default function CompletedWorkUpload({
 
               <div className="absolute bottom-2 left-2 right-2">
                 <div className="bg-black/50 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">
-                  صورة {index + 1}
+                  {t('work_image_label')} {index + 1}
                 </div>
               </div>
             </motion.div>
