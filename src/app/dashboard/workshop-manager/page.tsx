@@ -14,7 +14,8 @@ import {
   PackageCheck,
   Truck,
   Wrench,
-  Languages
+  Languages,
+  CalendarDays
 } from 'lucide-react'
 
 export default function WorkshopManagerDashboard() {
@@ -204,6 +205,26 @@ export default function WorkshopManagerDashboard() {
                   </h4>
                   <p className="text-xs sm:text-sm text-green-600">
                     {t('manage_deliver_orders') || 'إدارة الطلبات المنتهية وتسليمها'}
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            {/* بطاقة مواعيد الطلبات */}
+            <Link
+              href="/dashboard/order-schedule"
+              className="group p-4 sm:p-6 bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:shadow-lg transition-all duration-300"
+            >
+              <div className="flex flex-col items-center text-center space-y-3 sm:space-y-4">
+                <div className="p-3 sm:p-4 bg-gradient-to-br from-purple-400 to-violet-400 rounded-full group-hover:scale-110 transition-transform duration-300">
+                  <CalendarDays className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-base sm:text-lg font-bold text-purple-800 mb-1 sm:mb-2">
+                    {'مواعيد الطلبات'}
+                  </h4>
+                  <p className="text-xs sm:text-sm text-purple-600">
+                    {'عرض تقويم مواعيد التسليم والبروفات'}
                   </p>
                 </div>
               </div>

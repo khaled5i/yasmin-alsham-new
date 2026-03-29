@@ -8,6 +8,7 @@ import Link from 'next/link'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const moment = require('moment-hijri')
 import { useAuthStore } from '@/store/authStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService } from '@/lib/services/order-service'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { toLocalDateKey } from '@/lib/date-utils'
@@ -543,6 +544,7 @@ function ManageExtraSlotsModal({ slots, onDelete, onUpdate, onClose }: ManageExt
 export default function OrderSchedulePage() {
     const router = useRouter()
     const { user, isLoading: authLoading } = useAuthStore()
+    const { workerType, isLoading: workerLoading } = useWorkerPermissions()
 
     const now = new Date()
     const [anchorYear, setAnchorYear] = useState(now.getFullYear())
@@ -563,9 +565,9 @@ export default function OrderSchedulePage() {
     const secondMonth = anchorMonth === 11 ? 0 : anchorMonth + 1
 
     useEffect(() => {
-        if (!authLoading && user && user.role !== 'admin') router.push('/dashboard')
+        if (!authLoading && !workerLoading && user && user.role !== 'admin' && workerType !== 'workshop_manager') router.push('/dashboard')
         if (!authLoading && !user) router.push('/login')
-    }, [user, authLoading, router])
+    }, [user, authLoading, workerLoading, workerType, router])
 
     const fetchExtras = useCallback(async () => {
         setIsLoadingExtras(true)

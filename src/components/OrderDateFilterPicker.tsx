@@ -9,7 +9,7 @@ import { extractDateKey, parseDateKeyForPicker, toLocalDateKey } from '@/lib/dat
 import { useTranslation } from '@/hooks/useTranslation'
 import { orderService } from '@/lib/services/order-service'
 
-type DateFilterType = 'received' | 'delivery'
+type DateFilterType = 'received' | 'delivery' | 'proof'
 
 interface OrderDateFilterPickerProps {
   selectedDate: string
@@ -66,6 +66,8 @@ export default function OrderDateFilterPicker({
       let result
       if (filterType === 'received') {
         result = await orderService.getOrderReceivedStatsByDate(startDate, endDate)
+      } else if (filterType === 'proof') {
+        result = await orderService.getProofStatsByDate(startDate, endDate)
       } else {
         result = await orderService.getOrderStatsByDate(startDate, endDate)
       }
@@ -144,10 +146,11 @@ export default function OrderDateFilterPicker({
     const gregorianMonth = date.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })
     const receivedLabel = t('order_received_date') || (isArabic ? 'تاريخ الاستلام' : 'Received Date')
     const deliveryLabel = t('due_date') || (isArabic ? 'تاريخ التسليم' : 'Delivery Date')
+    const proofLabel = isArabic ? 'تاريخ البروفا' : 'Proof Date'
 
     return (
       <div className="px-2 pt-2 pb-1">
-        <div className="mb-2 rounded-full bg-pink-100 p-1 grid grid-cols-2 gap-1">
+        <div className="mb-2 rounded-full bg-pink-100 p-1 grid grid-cols-3 gap-1">
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -167,6 +170,16 @@ export default function OrderDateFilterPicker({
             }`}
           >
             {deliveryLabel}
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onFilterTypeChange('proof')}
+            className={`text-[11px] sm:text-xs font-semibold rounded-full px-2 py-1 transition-colors ${
+              filterType === 'proof' ? 'bg-pink-600 text-white' : 'text-pink-800 hover:bg-pink-200'
+            }`}
+          >
+            {proofLabel}
           </button>
         </div>
 
@@ -230,9 +243,12 @@ export default function OrderDateFilterPicker({
           const dayIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(nameOfDay)
           return dayIndex >= 0 ? arabicDayNames[dayIndex] : nameOfDay.slice(0, 3)
         }}
-        placeholderText={filterType === 'received'
-          ? (t('order_received_date') || (isArabic ? 'اختر تاريخ الاستلام' : 'Select received date'))
-          : (t('due_date') || (isArabic ? 'اختر تاريخ التسليم' : 'Select delivery date'))
+        placeholderText={
+          filterType === 'received'
+            ? (t('order_received_date') || (isArabic ? 'اختر تاريخ الاستلام' : 'Select received date'))
+            : filterType === 'proof'
+              ? (isArabic ? 'اختر تاريخ البروفا' : 'Select proof date')
+              : (t('due_date') || (isArabic ? 'اختر تاريخ التسليم' : 'Select delivery date'))
         }
         showPopperArrow={false}
         popperPlacement="bottom-start"

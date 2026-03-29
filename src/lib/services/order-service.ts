@@ -423,6 +423,8 @@ export const orderService = {
     lightweight?: boolean // if false, fetch all columns (default: true)
     search?: string     // server-side search: client_name, client_phone, order_number
     noPagination?: boolean // if true, fetch all records without page limit
+    dateFilter?: string  // 'YYYY-MM-DD' — filter by exact date
+    dateFilterType?: 'received' | 'delivery' | 'proof'  // which date field to filter on
   }): Promise<{ data: Order[]; error: string | null; total?: number }> {
     if (!isSupabaseConfigured()) {
       return { data: [], error: 'Supabase is not configured.' }
@@ -465,6 +467,19 @@ export const orderService = {
         query = query.or(
           `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,order_number.ilike.%${safeTerm}%`
         )
+      }
+
+      // Server-side date filter
+      if (filters?.dateFilter) {
+        const dateStart = filters.dateFilter  // 'YYYY-MM-DD'
+        const nextDay = new Date(dateStart)
+        nextDay.setDate(nextDay.getDate() + 1)
+        const dateEnd = nextDay.toISOString().split('T')[0]
+        const dateField =
+          filters.dateFilterType === 'received' ? 'order_received_date'
+          : filters.dateFilterType === 'proof' ? 'proof_delivery_date'
+          : 'due_date'
+        query = query.gte(dateField, dateStart).lt(dateField, dateEnd)
       }
 
       // Pagination (skip if noPagination is true)

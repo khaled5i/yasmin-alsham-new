@@ -109,8 +109,10 @@ function OrdersPageInner() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchResults, setSearchResults] = useState<any[] | null>(null) // null = not searching
   const [isSearching, setIsSearching] = useState(false)
+  const [dateFilterResults, setDateFilterResults] = useState<any[] | null>(null) // null = no date filter active
+  const [isDateFiltering, setIsDateFiltering] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
-  const [dateFilterType, setDateFilterType] = useState<'received' | 'delivery'>('received')
+  const [dateFilterType, setDateFilterType] = useState<'received' | 'delivery' | 'proof'>('received')
   const [dateFilter, setDateFilter] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
 
@@ -119,8 +121,10 @@ function OrdersPageInner() {
     const dateParam = searchParams?.get('date')
     const typeParam = searchParams?.get('type')
     if (dateParam) setDateFilter(dateParam)
-    if (typeParam === 'delivery' || typeParam === 'proof') {
+    if (typeParam === 'delivery') {
       setDateFilterType('delivery')
+    } else if (typeParam === 'proof') {
+      setDateFilterType('proof')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -149,6 +153,30 @@ function OrdersPageInner() {
     })
     return () => { cancelled = true }
   }, [debouncedSearch])
+
+  // Server-side date filter: when dateFilter or dateFilterType changes, fetch all matching orders
+  useEffect(() => {
+    if (!dateFilter) {
+      setDateFilterResults(null)
+      return
+    }
+    let cancelled = false
+    setIsDateFiltering(true)
+    orderService.getAll({
+      dateFilter,
+      dateFilterType,
+      status: ['pending', 'in_progress', 'cancelled'],
+      noPagination: true,
+    }).then(({ data }) => {
+      if (!cancelled) {
+        setDateFilterResults(data || [])
+        setIsDateFiltering(false)
+      }
+    }).catch(() => {
+      if (!cancelled) setIsDateFiltering(false)
+    })
+    return () => { cancelled = true }
+  }, [dateFilter, dateFilterType])
 
   useEffect(() => {
     if (totalOrders === null) return
@@ -608,8 +636,12 @@ function OrdersPageInner() {
 
   const currentWorkerId = getCurrentWorkerId()
 
-  // Use server-side search results when searching, otherwise use paginated store orders
-  const baseOrders = searchResults !== null ? searchResults : orders
+  // Priority: text search > date filter > paginated store orders
+  const baseOrders = searchResults !== null
+    ? searchResults
+    : dateFilterResults !== null
+      ? dateFilterResults
+      : orders
 
   const filteredOrders = baseOrders.filter(order => {
     // فلترة حسب الدور
@@ -624,11 +656,15 @@ function OrdersPageInner() {
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
 
-    const selectedOrderDate = dateFilterType === 'received'
-      ? (order.order_received_date || order.created_at)
-      : order.due_date
-
-    const matchesDate = !dateFilter || Boolean(selectedOrderDate?.startsWith(dateFilter))
+    // Date filter is server-side when dateFilterResults is active; apply client-side only for text search results
+    const matchesDate = !dateFilter || searchResults === null || (() => {
+      const selectedOrderDate = dateFilterType === 'received'
+        ? (order.order_received_date || order.created_at)
+        : dateFilterType === 'proof'
+          ? order.proof_delivery_date
+          : order.due_date
+      return Boolean(selectedOrderDate?.startsWith(dateFilter))
+    })()
 
     return matchesRole && matchesStatus && matchesDate
   })
@@ -734,7 +770,12 @@ function OrdersPageInner() {
             </div>
 
             {/* فلتر التاريخ */}
-            <div className="min-w-0">
+            <div className="min-w-0 relative">
+              {isDateFiltering && (
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-none">
+                  <Loader className="w-3 h-3 sm:w-4 sm:h-4 text-pink-400 animate-spin" />
+                </div>
+              )}
               <OrderDateFilterPicker
                 selectedDate={dateFilter}
                 onDateChange={setDateFilter}
@@ -1105,8 +1146,8 @@ function OrdersPageInner() {
         }
 
         {/* نافذة حذف الطلب */}
-        {/* إخفاء الترقيم عند البحث لأن النتائج كاملة من السيرفر */}
-        {searchResults === null && (
+        {/* إخفاء الترقيم عند البحث أو فلترة التاريخ لأن النتائج كاملة من السيرفر */}
+        {searchResults === null && dateFilterResults === null && (
           <PaginationControls
             currentPage={currentPage}
             pageSize={PAGE_SIZE}
