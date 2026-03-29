@@ -1,0 +1,22 @@
+# robots.txt - ياسمين الشام
+# الصفحات المسموح بفهرستها في جوجل
+
+User-agent: *
+
+# الصفحات المسموحة (تظهر في جوجل)
+Allow: /$
+Allow: /designs
+Allow: /designs/$
+Allow: /fabrics
+Allow: /services
+
+# الصفحات الممنوعة (لا تظهر في جوجل)
+Disallow: /testimonials
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /designs/*/
+
+# لإظهار صفحات تصاميم محددة فقط عبر الـ sitemap
+# Disallow: /designs/
+
+Sitemap: https://www.yasmin-alsham.fashion/sitemap.xml

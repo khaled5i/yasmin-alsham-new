@@ -19,9 +19,9 @@ const notoKufi = Noto_Kufi_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "ياسمين الشام - تفصيل فساتين حسب الطلب",
-  description: "محل ياسمين الشام لتفصيل الفساتين النسائية بأناقة دمشقية. حجز مواعيد، استعلام عن الطلبات، وأفضل الأقمشة.",
-  keywords: "تفصيل فساتين، خياطة نسائية، ياسمين الشام، فساتين دمشقية، حجز موعد",
+  title: "ياسمين الشام - خياطة وتفصيل فساتين نسائية في الخبر",
+  description: "ياسمين الشام - أفضل محل خياطة وتفصيل فساتين نسائية في الخبر والمنطقة الشرقية. تفصيل فساتين زفاف، سهرة، وخطوبة بأناقة دمشقية. تواصلي معنا الآن.",
+  keywords: "خياط ياسمين الشام، ياسمين الشام للخياطة، أفضل خياط في الخبر، تفصيل فساتين الخبر، خياطة نسائية الخبر، فساتين زفاف الخبر، تفصيل فساتين السعودية، خياطة المنطقة الشرقية، فساتين سهرة تفصيل، خياطة فساتين دمشقية",
   authors: [{ name: "ياسمين الشام" }],
   icons: {
     icon: [
@@ -39,7 +39,24 @@ export const metadata: Metadata = {
     description: "محل ياسمين الشام لتفصيل الفساتين النسائية بأناقة دمشقية",
     type: "website",
     locale: "ar_SA",
+    url: "https://www.yasmin-alsham.fashion",
+    siteName: "ياسمين الشام",
+    images: [
+      {
+        url: "https://www.yasmin-alsham.fashion/yasmin.jpg",
+        width: 1200,
+        height: 630,
+        alt: "ياسمين الشام - تفصيل فساتين حسب الطلب",
+      },
+    ],
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "ياسمين الشام - تفصيل فساتين حسب الطلب",
+    description: "محل ياسمين الشام لتفصيل الفساتين النسائية بأناقة دمشقية",
+    images: ["https://www.yasmin-alsham.fashion/yasmin.jpg"],
+  },
+  metadataBase: new URL("https://www.yasmin-alsham.fashion"),
 };
 
 export default function RootLayout({
@@ -50,6 +67,54 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <head>
+        {/* JSON-LD - LocalBusiness Schema for Google */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "ClothingStore",
+              "name": "ياسمين الشام",
+              "alternateName": ["ياسمين الشام للخياطة", "خياط ياسمين الشام", "ياسمين الشام للتفصيل"],
+              "url": "https://www.yasmin-alsham.fashion",
+              "logo": "https://www.yasmin-alsham.fashion/favicon/favicon-96x96.png",
+              "image": "https://www.yasmin-alsham.fashion/yasmin.jpg",
+              "description": "أفضل محل خياطة وتفصيل فساتين نسائية في الخبر والمنطقة الشرقية. تفصيل فساتين زفاف وسهرة وخطوبة بأناقة دمشقية.",
+              "address": {
+                "@type": "PostalAddress",
+                "addressLocality": "الخبر",
+                "addressRegion": "المنطقة الشرقية",
+                "addressCountry": "SA"
+              },
+              "geo": {
+                "@type": "GeoCoordinates",
+                "addressCountry": "SA",
+                "addressLocality": "الخبر"
+              },
+              "contactPoint": {
+                "@type": "ContactPoint",
+                "telephone": "+966598862609",
+                "contactType": "customer service",
+                "availableLanguage": "Arabic"
+              },
+              "priceRange": "$$",
+              "servesCuisine": null,
+              "hasOfferCatalog": {
+                "@type": "OfferCatalog",
+                "name": "خدمات التفصيل والخياطة",
+                "itemListElement": [
+                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تفصيل فساتين الزفاف" } },
+                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تفصيل فساتين السهرة" } },
+                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تفصيل فساتين الخطوبة" } },
+                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "خياطة فساتين يومية" } }
+                ]
+              },
+              "sameAs": [
+                "https://wa.me/966598862609"
+              ]
+            })
+          }}
+        />
         {/* Google tag (gtag.js) */}
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-8KCD0TSPCJ"></script>
         <script
