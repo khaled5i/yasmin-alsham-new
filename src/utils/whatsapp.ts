@@ -12,6 +12,7 @@ interface OrderDetails {
   proofDeliveryDate?: string
   dueDate: string
   totalPrice?: number
+  paidAmount?: number
   remainingAmount?: number
 }
 
@@ -84,6 +85,7 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
     proofDeliveryDate,
     dueDate,
     totalPrice,
+    paidAmount,
     remainingAmount
   } = orderDetails
 
@@ -106,9 +108,11 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
     message += `- السعر الكلي: ${totalPrice.toFixed(2)} ر.س\n`
   }
 
-  // إضافة الدفعة المتبقية إذا كانت موجودة
+  // إضافة الدفعة المتبقية أو المبلغ المدفوع كاملاً
   if (remainingAmount !== undefined && remainingAmount > 0) {
     message += `- الدفعة المتبقية: ${remainingAmount.toFixed(2)} ر.س\n`
+  } else if (remainingAmount === 0 && paidAmount !== undefined && paidAmount > 0) {
+    message += `- المبلغ المدفوع: ${paidAmount.toFixed(2)} ر.س (تم الدفع كاملاً)\n`
   }
 
   // إضافة موعد تسليم البروفا إذا كان موجوداً

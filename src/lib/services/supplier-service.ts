@@ -12,10 +12,13 @@ export interface Supplier {
   created_at: string
 }
 
+export type SupplierBranch = 'tailoring' | 'fabrics' | 'ready_designs'
+
 export interface CreateSupplierInput {
   name: string
   contact_info?: string
   notes?: string
+  branch?: SupplierBranch
 }
 
 export interface UpdateSupplierInput {
@@ -140,7 +143,7 @@ async function migrateLegacyLocalSuppliersToSupabase(): Promise<void> {
   }
 }
 
-export async function getSuppliers(): Promise<Supplier[]> {
+export async function getSuppliers(branch?: SupplierBranch): Promise<Supplier[]> {
   if (!isSupabaseConfigured()) {
     return sortByCreatedAtDesc(getStoredSuppliers())
   }
@@ -148,11 +151,16 @@ export async function getSuppliers(): Promise<Supplier[]> {
   await migrateLegacyLocalSuppliersToSupabase()
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('suppliers')
       .select('*')
       .eq('is_active', true)
-      .order('created_at', { ascending: false })
+
+    if (branch) {
+      query = query.eq('branch', branch)
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false })
 
     if (error) {
       // Table missing in environments where migration was not applied yet.
@@ -198,6 +206,7 @@ export async function createSupplier(input: CreateSupplierInput): Promise<Suppli
     name: trimmedName,
     contact_info: input.contact_info?.trim() || null,
     notes: input.notes?.trim() || null,
+    branch: input.branch ?? null,
     is_active: true
   }
 

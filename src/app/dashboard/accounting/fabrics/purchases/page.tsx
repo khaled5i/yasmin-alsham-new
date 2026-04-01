@@ -22,11 +22,18 @@ import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 import { getSuppliers, type Supplier } from '@/lib/services/supplier-service'
+import {
+  getInventoryItems,
+  createInventoryItem,
+  addMovement,
+  type FabricInventoryItem
+} from '@/lib/services/fabric-inventory-service'
 
 function FabricsPurchasesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState<Date | null>(null)
@@ -36,6 +43,11 @@ function FabricsPurchasesContent() {
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  // حقول ربط المخزون
+  const [addToInventory, setAddToInventory] = useState(false)
+  const [inventoryItemId, setInventoryItemId] = useState('')
+  const [inventoryNewName, setInventoryNewName] = useState('')
+  const [inventoryQuantity, setInventoryQuantity] = useState('')
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
     branch: 'fabrics',
     type: 'material',
@@ -51,6 +63,7 @@ function FabricsPurchasesContent() {
     loadExpenses()
     loadCategories()
     loadSuppliers()
+    loadInventoryItems()
   }, [])
 
   const loadExpenses = async () => {
@@ -76,16 +89,37 @@ function FabricsPurchasesContent() {
 
   const loadSuppliers = async () => {
     try {
-      const data = await getSuppliers()
+      const data = await getSuppliers('fabrics')
       setSuppliers(data)
     } catch (error) {
       console.error('Error loading suppliers:', error)
     }
   }
 
+  const loadInventoryItems = async () => {
+    try {
+      const data = await getInventoryItems()
+      setInventoryItems(data)
+    } catch (error) {
+      console.error('Error loading inventory:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.category || !formData.amount) return
+
+    // التحقق من حقول المخزون إذا كان الربط مفعلاً
+    if (!isEditing && addToInventory) {
+      if (!inventoryItemId && !inventoryNewName.trim()) {
+        alert('يرجى اختيار صنف من المخزون أو كتابة اسم صنف جديد')
+        return
+      }
+      if (!inventoryQuantity || parseFloat(inventoryQuantity) <= 0) {
+        alert('يرجى إدخال كمية صحيحة للمخزون')
+        return
+      }
+    }
 
     setSaving(true)
     try {
@@ -99,6 +133,49 @@ function FabricsPurchasesContent() {
         const result = await createExpense(formData as CreateExpenseInput)
         if (result) {
           setExpenses([result, ...expenses])
+
+          // ربط المخزون تلقائياً
+          if (addToInventory && result) {
+            let targetItemId = inventoryItemId
+            const qty = parseFloat(inventoryQuantity)
+            const costUnit = formData.amount && qty > 0
+              ? formData.amount / qty
+              : undefined
+
+            // إنشاء صنف جديد إذا لم يتم اختيار موجود
+            if (!targetItemId && inventoryNewName.trim()) {
+              const newItem = await createInventoryItem({
+                name: inventoryNewName.trim(),
+                unit: 'meter',
+                cost_per_unit: costUnit,
+                supplier_id: formData.supplier_id || undefined,
+                supplier_name: formData.supplier_name || undefined
+              })
+              setInventoryItems((prev) => [newItem, ...prev])
+              targetItemId = newItem.id
+            }
+
+            if (targetItemId) {
+              await addMovement({
+                inventory_item_id: targetItemId,
+                movement_type: 'in',
+                quantity: qty,
+                cost_per_unit: costUnit,
+                description: formData.description || 'شراء',
+                purchase_expense_id: result.id,
+                date: formData.date
+              })
+              // تحديث الكمية محلياً
+              setInventoryItems((prev) =>
+                prev.map((it) =>
+                  it.id === targetItemId
+                    ? { ...it, current_quantity: it.current_quantity + qty }
+                    : it
+                )
+              )
+            }
+          }
+
           alert('✅ تم إضافة المشترى بنجاح')
         }
       }
@@ -106,6 +183,10 @@ function FabricsPurchasesContent() {
       setShowModal(false)
       setIsEditing(false)
       setEditingId(null)
+      setAddToInventory(false)
+      setInventoryItemId('')
+      setInventoryNewName('')
+      setInventoryQuantity('')
       setFormData({
         branch: 'fabrics',
         type: 'material',
@@ -482,6 +563,77 @@ function FabricsPurchasesContent() {
                       required
                     />
                   </div>
+
+                  {/* ربط المخزون — يظهر فقط عند الإضافة */}
+                  {!isEditing && (
+                    <div className="border border-teal-200 rounded-xl p-3 bg-teal-50">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={addToInventory}
+                          onChange={(e) => {
+                            setAddToInventory(e.target.checked)
+                            if (!e.target.checked) {
+                              setInventoryItemId('')
+                              setInventoryNewName('')
+                              setInventoryQuantity('')
+                            }
+                          }}
+                          className="w-4 h-4 text-teal-600 rounded"
+                        />
+                        <span className="text-sm font-medium text-teal-800">إضافة للمخزون</span>
+                      </label>
+
+                      {addToInventory && (
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              اختر صنفاً موجوداً أو أضف جديداً
+                            </label>
+                            <select
+                              value={inventoryItemId}
+                              onChange={(e) => {
+                                setInventoryItemId(e.target.value)
+                                if (e.target.value) setInventoryNewName('')
+                              }}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 bg-white"
+                            >
+                              <option value="">— صنف جديد —</option>
+                              {inventoryItems.map((it) => (
+                                <option key={it.id} value={it.id}>{it.name}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {!inventoryItemId && (
+                            <div>
+                              <input
+                                type="text"
+                                value={inventoryNewName}
+                                onChange={(e) => setInventoryNewName(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
+                                placeholder="اسم الصنف الجديد..."
+                              />
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">الكمية</label>
+                            <input
+                              type="number"
+                              value={inventoryQuantity}
+                              onChange={(e) => setInventoryQuantity(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
+                              min="0.01"
+                              step="0.01"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={saving}

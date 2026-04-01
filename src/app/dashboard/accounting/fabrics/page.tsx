@@ -13,7 +13,8 @@ import {
   Home,
   Users,
   ChevronLeft,
-  Settings
+  Settings,
+  Boxes
 } from 'lucide-react'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
@@ -65,6 +66,14 @@ const sections = [
     icon: Settings,
     href: '/dashboard/accounting/fabrics/categories',
     color: 'from-pink-500 to-rose-600'
+  },
+  {
+    id: 'inventory',
+    name: 'المخزون',
+    description: 'إدارة مخزون الأقمشة والحركات',
+    icon: Boxes,
+    href: '/dashboard/accounting/fabrics/inventory',
+    color: 'from-teal-500 to-teal-600'
   }
 ]
 

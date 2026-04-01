@@ -598,6 +598,7 @@ function OrdersPageInner() {
         proofDeliveryDate: order.proof_delivery_date || undefined,
         dueDate: order.due_date,
         totalPrice,
+        paidAmount,
         remainingAmount: Math.max(0, totalPrice - paidAmount)
       })
 
