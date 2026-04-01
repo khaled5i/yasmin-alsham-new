@@ -368,7 +368,7 @@ export default function TailoringPayrollDashboard() {
       ])
 
       const tailoringWorkers = (workerResult.data || []).filter(
-        (worker) => worker.worker_type === 'tailor' && worker.user?.is_active !== false
+        (worker) => (worker.worker_type === 'tailor' || worker.worker_type === 'workshop_manager') && worker.user?.is_active !== false
       )
 
       const allWorkers = tailoringWorkers

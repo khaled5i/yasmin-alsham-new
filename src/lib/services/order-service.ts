@@ -694,6 +694,7 @@ export const orderService = {
         .gte('due_date', startDate)
         .lte('due_date', endDate)
         .not('status', 'eq', 'cancelled')
+        .not('status', 'eq', 'delivered')
 
       if (error) {
         console.error('❌ Supabase error fetching order stats:', error.message)
@@ -729,6 +730,7 @@ export const orderService = {
         .gte('order_received_date', startDate)
         .lte('order_received_date', endDate)
         .not('status', 'eq', 'cancelled')
+        .not('status', 'eq', 'delivered')
 
       if (error) {
         return { data: null, error: error.message }

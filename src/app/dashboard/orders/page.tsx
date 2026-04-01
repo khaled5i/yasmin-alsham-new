@@ -208,6 +208,14 @@ function OrdersPageInner() {
   const [measurementsSaveSuccess, setMeasurementsSaveSuccess] = useState(false)
   const [measurementsSaveError, setMeasurementsSaveError] = useState<string | null>(null)
 
+  // تتبع إرسال واتساب لكل طلب (محفوظ في localStorage)
+  const [whatsappSentOrders, setWhatsappSentOrders] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('whatsapp-sent-orders-v1')
+      return stored ? new Set(JSON.parse(stored)) : new Set<string>()
+    } catch { return new Set<string>() }
+  })
+
   const NON_MEASUREMENT_KEYS = new Set([
     'is_printed',
     'has_measurements',
@@ -250,6 +258,8 @@ function OrdersPageInner() {
     if (parseBooleanFlag(order?.is_printed)) return true
     return parseBooleanFlag(order?.measurements?.is_printed)
   }
+
+  const isWhatsAppSent = (order: any) => whatsappSentOrders.has(order?.id)
 
   const getStatusInfo = (status: string) => {
     const statusMap = {
@@ -545,6 +555,22 @@ function OrdersPageInner() {
     }
   }
 
+  const handleDeliverOrder = async (orderId: string) => {
+    setIsProcessing(true)
+    try {
+      const today = new Date()
+      const deliveryDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const result = await updateOrder(orderId, { status: 'delivered', delivery_date: deliveryDate })
+      if (result.success) {
+        toast.success(isArabic ? 'تم تسليم الطلب' : 'Order delivered', { icon: '✓' })
+      } else {
+        toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
+      }
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   // إرسال رسالة واتساب من بطاقة الطلب بدون حفظ
   const handleSendWhatsAppOnly = (order: any) => {
     if (!order?.client_phone || order.client_phone.trim() === '') {
@@ -573,6 +599,14 @@ function OrdersPageInner() {
         dueDate: order.due_date,
         totalPrice,
         remainingAmount: Math.max(0, totalPrice - paidAmount)
+      })
+
+      // حفظ حالة الإرسال في localStorage
+      setWhatsappSentOrders(prev => {
+        const updated = new Set(prev)
+        updated.add(order.id)
+        try { localStorage.setItem('whatsapp-sent-orders-v1', JSON.stringify([...updated])) } catch {}
+        return updated
       })
 
       toast.success(isArabic ? 'تم فتح واتساب لإرسال رسالة التأكيد' : 'WhatsApp opened with confirmation message', {
@@ -881,71 +915,94 @@ function OrdersPageInner() {
                         </span>
                       </div>
 
-                      {/* Action Buttons Stack */}
+                      {/* Action Buttons - Two Columns */}
                       <div className="flex flex-col gap-2 mt-1">
                         {/* Admin Buttons */}
                         {user.role === 'admin' && (
                           <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleOpenMeasurements(order)
-                              }}
-                              className="relative flex items-center justify-center p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors border border-transparent hover:border-purple-100"
-                              title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
-                            >
-                              <Ruler className="w-4 h-4" />
-                              {hasMeasurementsBadge(order) && (
-                                <CheckCircle className="w-[18px] h-[18px] text-green-500 bg-white rounded-full fill-white absolute -right-3 top-1/2 -translate-y-1/2" />
-                              )}
-                            </button>
+                            <div className="flex gap-1.5">
+                              {/* العمود الأيمن: مقاسات، طباعة، واتساب */}
+                              <div className="flex flex-col gap-1.5">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleOpenMeasurements(order)
+                                  }}
+                                  className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200"
+                                  title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
+                                >
+                                  <Ruler className="w-5 h-5" />
+                                  {hasMeasurementsBadge(order) && (
+                                    <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />
+                                  )}
+                                </button>
 
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleEditOrder(order)
-                              }}
-                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
-                              title={t('edit') || 'تعديل'}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handlePrintOrder(order)
+                                  }}
+                                  className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-xl transition-colors border border-gray-200 hover:border-pink-200"
+                                  title={t('print_order') || 'طباعة'}
+                                >
+                                  <Printer className="w-5 h-5" />
+                                  {isOrderPrinted(order) && (
+                                    <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />
+                                  )}
+                                </button>
 
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleSendWhatsAppOnly(order)
-                              }}
-                              className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-transparent hover:border-green-100"
-                              title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
-                            >
-                              <MessageCircle className="w-4 h-4" />
-                            </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleSendWhatsAppOnly(order)
+                                  }}
+                                  className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200"
+                                  title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
+                                >
+                                  <MessageCircle className="w-5 h-5" />
+                                  {isWhatsAppSent(order) && (
+                                    <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />
+                                  )}
+                                </button>
+                              </div>
 
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handlePrintOrder(order)
-                              }}
-                              className="relative flex items-center justify-center p-2 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors border border-transparent hover:border-pink-100"
-                              title={t('print_order') || 'طباعة'}
-                            >
-                              <Printer className="w-4 h-4" />
-                              {isOrderPrinted(order) && (
-                                <CheckCircle className="w-[18px] h-[18px] text-green-500 bg-white rounded-full fill-white absolute -right-3 top-1/2 -translate-y-1/2" />
-                              )}
-                            </button>
+                              {/* العمود الأيسر: تعديل، تسليم، حذف */}
+                              <div className="flex flex-col gap-1.5">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleEditOrder(order)
+                                  }}
+                                  className="flex items-center justify-center p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-gray-200 hover:border-blue-200"
+                                  title={t('edit') || 'تعديل'}
+                                >
+                                  <Edit className="w-5 h-5" />
+                                </button>
 
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDeleteOrder(order)
-                              }}
-                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
-                              title={t('delete') || 'حذف'}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (order.status === 'pending') handleDeliverOrder(order.id)
+                                  }}
+                                  disabled={isProcessing || order.status !== 'pending'}
+                                  className="flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title={isArabic ? 'تم التسليم' : 'Mark as Delivered'}
+                                >
+                                  <Truck className="w-5 h-5" />
+                                </button>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteOrder(order)
+                                  }}
+                                  className="flex items-center justify-center p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-gray-200 hover:border-red-200"
+                                  title={t('delete') || 'حذف'}
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </div>
                           </>
                         )}
 
@@ -992,6 +1049,28 @@ function OrdersPageInner() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Progress Bar - Print / Measurements / WhatsApp */}
+                  {user.role === 'admin' && (() => {
+                    const done = [isOrderPrinted(order), hasMeasurementsBadge(order), isWhatsAppSent(order)].filter(Boolean).length
+                    const pct = done === 0 ? 0 : done === 1 ? 33 : done === 2 ? 66 : 100
+                    const barColor = done === 1 ? 'bg-red-400' : done === 2 ? 'bg-orange-400' : done === 3 ? 'bg-green-400' : 'bg-gray-200'
+                    return (
+                      <div className="mt-3 mb-1 px-1">
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className={`absolute inset-y-0 right-0 rounded-full transition-all duration-500 ${barColor}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs font-semibold w-8 text-left transition-colors duration-500 ${done === 1 ? 'text-red-400' : done === 2 ? 'text-orange-400' : done === 3 ? 'text-green-500' : 'text-gray-300'}`}>
+                            {pct}%
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })()}
 
                   {/* Footer - Price (Full Width) */}
                   {workerType !== 'workshop_manager' && workerType !== 'tailor' && (

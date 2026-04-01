@@ -1087,26 +1087,6 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     )}
                   </button>
 
-                  {/* زر تحديث الطلب وإرسال واتساب */}
-                  <button
-                    type="button"
-                    onClick={handleSubmitAndSendWhatsApp}
-                    disabled={isSubmitting || !formData.clientPhone}
-                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse font-medium shadow-lg"
-                    title={!formData.clientPhone ? 'يجب إدخال رقم هاتف العميل أولاً' : ''}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>{t('saving')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <MessageCircle className="w-5 h-5" />
-                        <span>{isArabic ? 'حفظ وإرسال رسالة' : 'Save & Send Message'}</span>
-                      </>
-                    )}
-                  </button>
                 </div>
               </div>
             </motion.div>

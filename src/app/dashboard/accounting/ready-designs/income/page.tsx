@@ -149,8 +149,7 @@ function ReadyDesignsIncomeContent() {
     let matchesDate = true
     if (dateFilter) {
       const itemDate = new Date(item.date)
-      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
-        itemDate.getMonth() === dateFilter.getMonth() &&
+      matchesDate = itemDate.getMonth() === dateFilter.getMonth() &&
         itemDate.getFullYear() === dateFilter.getFullYear()
     }
 
@@ -242,8 +241,9 @@ function ReadyDesignsIncomeContent() {
                   <DatePicker
                     selected={dateFilter}
                     onChange={(date: Date | null) => setDateFilter(date)}
-                    dateFormat="yyyy/MM/dd"
-                    placeholderText="اختر التاريخ"
+                    dateFormat="yyyy/MM"
+                    showMonthYearPicker
+                    placeholderText="اختر الشهر"
                     className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-right"
                     isClearable
                   />

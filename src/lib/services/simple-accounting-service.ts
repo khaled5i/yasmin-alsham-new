@@ -399,47 +399,87 @@ export async function getDeliveredOrdersIncome(
   }
 
   try {
-    // جلب الطلبات المسلمة من جدول الطلبات
-    // استخدام الأعمدة الصحيحة: client_name بدلاً من customer_name، price بدلاً من total_price
-    let query = supabase
+    // جلب جميع الطلبات (مسلّمة وغير مسلّمة) التي لها دفعة أولى أو تمّ تسليمها
+    const { data, error } = await supabase
       .from('orders')
-      .select('id, order_number, client_name, price, paid_amount, delivery_date, created_at, branch')
-      .eq('status', 'delivered')
-      .eq('branch', branch)  // فلترة حسب الفرع
-
-    if (startDate) {
-      query = query.gte('delivery_date', startDate)
-    }
-
-    if (endDate) {
-      query = query.lte('delivery_date', endDate)
-    }
-
-    const { data, error } = await query.order('delivery_date', { ascending: false })
+      .select('id, order_number, client_name, price, paid_amount, delivery_date, order_received_date, updated_at, created_at, branch, status')
+      .eq('branch', branch)
+      .not('status', 'eq', 'cancelled')
+      .order('created_at', { ascending: false })
 
     if (error) {
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
         console.warn('⚠️ orders table does not exist')
         return []
       }
-      console.error('Error fetching delivered orders:', error.message || error)
+      console.error('Error fetching orders income:', error.message || error)
       return []
     }
 
-    // تحويل الطلبات إلى واردات
-    return (data || []).map(order => ({
-      id: order.id,
-      branch: branch,
-      order_id: order.id,
-      customer_name: order.client_name || 'عميل',
-      description: `طلب ${order.order_number || order.id.substring(0, 8)}`,
-      amount: order.paid_amount || order.price || 0,
-      date: order.delivery_date || order.created_at,
-      is_automatic: true,
-      created_at: order.created_at
-    }))
+    const entries: Income[] = []
+
+    for (const order of data || []) {
+      const price = order.price || 0
+      const paidAmount = order.paid_amount || 0
+      const remaining = Math.max(0, price - paidAmount)
+      const orderLabel = order.order_number || order.id.substring(0, 8)
+      const receivedDate = (order.order_received_date || order.created_at || '').substring(0, 10)
+      const deliveryDate = (order.delivery_date || order.updated_at || order.created_at || '').substring(0, 10)
+
+      // سجل الدفعة الأولى عند استلام الطلب (إذا وجدت)
+      if (paidAmount > 0) {
+        entries.push({
+          id: `${order.id}-deposit`,
+          branch,
+          order_id: order.id,
+          customer_name: order.client_name || 'عميل',
+          description: `دفعة أولى - طلب ${orderLabel}`,
+          amount: paidAmount,
+          date: receivedDate,
+          is_automatic: true,
+          created_at: order.created_at
+        })
+      }
+
+      // سجل المتبقي عند تسليم الطلب (إذا وجد وتمّ التسليم)
+      if (order.status === 'delivered' && remaining > 0) {
+        entries.push({
+          id: `${order.id}-remaining`,
+          branch,
+          order_id: order.id,
+          customer_name: order.client_name || 'عميل',
+          description: `المتبقي عند التسليم - طلب ${orderLabel}`,
+          amount: remaining,
+          date: deliveryDate,
+          is_automatic: true,
+          created_at: order.created_at
+        })
+      }
+
+      // طلب مسلّم بدون دفعة أولى: كامل المبلغ عند التسليم
+      if (order.status === 'delivered' && paidAmount === 0 && price > 0) {
+        entries.push({
+          id: `${order.id}-full`,
+          branch,
+          order_id: order.id,
+          customer_name: order.client_name || 'عميل',
+          description: `تسليم كامل - طلب ${orderLabel}`,
+          amount: price,
+          date: deliveryDate,
+          is_automatic: true,
+          created_at: order.created_at
+        })
+      }
+    }
+
+    // تطبيق فلتر التاريخ
+    return entries.filter(item => {
+      if (startDate && item.date < startDate) return false
+      if (endDate && item.date > endDate) return false
+      return true
+    })
   } catch (err) {
-    console.error('Error fetching delivered orders:', err)
+    console.error('Error fetching orders income:', err)
     return []
   }
 }
@@ -460,15 +500,17 @@ async function getPayrollSalariesForPeriod(
   if (!isSupabaseConfigured()) return 0
 
   try {
-    // تحديد الأشهر ضمن النطاق الزمني
-    const start = new Date(startDate)
-    const end = new Date(endDate)
+    // استخراج السنة والشهر مباشرة من النص لتجنب مشاكل المنطقة الزمنية
+    const [startYear, startMonth] = startDate.split('-').map(Number)
+    const [endYear, endMonth] = endDate.split('-').map(Number)
     const months: { year: number; month: number }[] = []
-    const current = new Date(start.getFullYear(), start.getMonth(), 1)
 
-    while (current <= end) {
-      months.push({ year: current.getFullYear(), month: current.getMonth() + 1 })
-      current.setMonth(current.getMonth() + 1)
+    let year = startYear
+    let month = startMonth
+    while (year < endYear || (year === endYear && month <= endMonth)) {
+      months.push({ year, month })
+      month++
+      if (month > 12) { month = 1; year++ }
     }
 
     if (months.length === 0) return 0
@@ -477,14 +519,14 @@ async function getPayrollSalariesForPeriod(
     for (const { year, month } of months) {
       const { data, error } = await supabase
         .from('worker_payroll_months')
-        .select('net_due')
+        .select('total_paid')
         .eq('branch', branch)
         .eq('payroll_year', year)
         .eq('payroll_month', month)
 
       if (!error && data) {
-        total += (data as { net_due: number }[]).reduce(
-          (sum, row) => sum + (row.net_due || 0),
+        total += (data as { total_paid: number }[]).reduce(
+          (sum, row) => sum + (row.total_paid || 0),
           0
         )
       }
@@ -550,8 +592,11 @@ export async function getFinancialSummary(
 
 export async function getQuickStats(branch: BranchType) {
   const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  const lastDay = new Date(year, month, 0).getDate()
+  const startOfMonth = `${year}-${String(month).padStart(2, '0')}-01`
+  const endOfMonth = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
   return getFinancialSummary(branch, startOfMonth, endOfMonth)
 }
