@@ -48,6 +48,7 @@ const ORDER_LIST_COLUMNS = [
   'measurements->fabric_type',
   'measurements->has_measurements',
   'measurements->is_printed',
+  'measurements->whatsapp_sent',
   'notes',
   'admin_notes',
   'images',
@@ -84,6 +85,7 @@ export interface Order {
   fabric_type?: string | null
   has_measurements?: boolean | string | null
   is_printed?: boolean | string | null
+  whatsapp_sent?: boolean | string | null
   price: number
   paid_amount: number
   remaining_amount: number

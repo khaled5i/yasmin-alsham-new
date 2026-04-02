@@ -219,6 +219,7 @@ function OrdersPageInner() {
   const NON_MEASUREMENT_KEYS = new Set([
     'is_printed',
     'has_measurements',
+    'whatsapp_sent',
     'saved_design_comments',
     'image_annotations',
     'image_drawings',
@@ -259,7 +260,11 @@ function OrdersPageInner() {
     return parseBooleanFlag(order?.measurements?.is_printed)
   }
 
-  const isWhatsAppSent = (order: any) => whatsappSentOrders.has(order?.id)
+  const isWhatsAppSent = (order: any) => {
+    if (parseBooleanFlag(order?.whatsapp_sent)) return true
+    if (parseBooleanFlag(order?.measurements?.whatsapp_sent)) return true
+    return whatsappSentOrders.has(order?.id)
+  }
 
   const getStatusInfo = (status: string) => {
     const statusMap = {
@@ -602,13 +607,22 @@ function OrdersPageInner() {
         remainingAmount: Math.max(0, totalPrice - paidAmount)
       })
 
-      // حفظ حالة الإرسال في localStorage
+      // حفظ حالة الإرسال في localStorage وقاعدة البيانات
       setWhatsappSentOrders(prev => {
         const updated = new Set(prev)
         updated.add(order.id)
         try { localStorage.setItem('whatsapp-sent-orders-v1', JSON.stringify([...updated])) } catch {}
         return updated
       })
+      // حفظ في قاعدة البيانات للتزامن بين الأجهزة
+      orderService.getMeasurements(order.id).then(result => {
+        const currentMeasurements = result.data || order.measurements || {}
+        if (!parseBooleanFlag(currentMeasurements.whatsapp_sent)) {
+          updateOrder(order.id, {
+            measurements: { ...currentMeasurements, whatsapp_sent: true }
+          }).catch(() => {})
+        }
+      }).catch(() => {})
 
       toast.success(isArabic ? 'تم فتح واتساب لإرسال رسالة التأكيد' : 'WhatsApp opened with confirmation message', {
         icon: '📱',
