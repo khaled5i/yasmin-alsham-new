@@ -58,7 +58,8 @@ const ORDER_LIST_COLUMNS = [
   'tax_amount',
   'created_at',
   'updated_at',
-  'admin_confirmed'
+  'admin_confirmed',
+  'worker_completed_at'
 ].join(',')
 
 /**
@@ -104,6 +105,7 @@ export interface Order {
   created_at: string
   updated_at: string
   admin_confirmed?: boolean
+  worker_completed_at?: string | null
 }
 
 export interface CreateOrderData {
@@ -218,6 +220,7 @@ export interface UpdateOrderData {
   images?: string[]
   voice_notes?: string[]
   completed_images?: string[]
+  worker_completed_at?: string | null
   // التسجيلات الصوتية مع البيانات الكاملة (النصوص المحولة والترجمات)
   voice_transcriptions?: Array<{
     id: string

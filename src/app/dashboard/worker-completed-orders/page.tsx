@@ -53,7 +53,7 @@ export default function WorkerCompletedOrdersPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [deliverySuccess, setDeliverySuccess] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateFilter, setDateFilter] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState('')
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
@@ -84,6 +84,21 @@ export default function WorkerCompletedOrdersPage() {
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
 
+  // الشهر الحالي كـ "YYYY-MM"
+  const currentMonthKey = new Date().toISOString().slice(0, 7)
+
+  // دالة لاستخراج مفتاح الشهر من الطلب (worker_completed_at أو الشهر الحالي للطلبات القديمة)
+  const getOrderMonthKey = (order: any): string => {
+    if (order.worker_completed_at) return order.worker_completed_at.slice(0, 7)
+    return currentMonthKey
+  }
+
+  // دالة لتنسيق اسم الشهر بالعربي
+  const formatMonthLabel = (monthKey: string): string => {
+    const [year, month] = monthKey.split('-')
+    return `${month}/${year}`
+  }
+
   // فلترة الطلبات المكتملة فقط والخاصة بهذا العامل
   const completedOrders = orders.filter(order => {
     if (order.status !== 'completed') return false
@@ -94,7 +109,7 @@ export default function WorkerCompletedOrdersPage() {
 
     // التأكد من أن الطلب يخص هذا العامل فقط (إذا لم يكن أدمن)
     if (user?.role !== 'admin') {
-      if (!currentWorkerId) return false // لم يتم العثور على سجل العامل
+      if (!currentWorkerId) return false
       if (order.worker_id !== currentWorkerId) return false
     }
 
@@ -104,10 +119,45 @@ export default function WorkerCompletedOrdersPage() {
       (order.client_phone || '').toLowerCase().includes(searchLower) ||
       (order.order_number || '').toLowerCase().includes(searchLower)
 
-    const matchesDate = !dateFilter || order.created_at.startsWith(dateFilter)
+    const matchesMonth = !selectedMonth || getOrderMonthKey(order) === selectedMonth
 
-    return matchesSearch && matchesDate
+    return matchesSearch && matchesMonth
   })
+
+  // الأشهر المتاحة مرتبة تنازلياً (من الأحدث للأقدم)
+  const availableMonths: string[] = Array.from(
+    new Set(
+      orders
+        .filter(order => {
+          if (order.status !== 'completed') return false
+          const currentWorker = workers.find(w => w.user_id === user?.id)
+          const currentWorkerId = currentWorker?.id
+          if (user?.role !== 'admin') {
+            if (!currentWorkerId) return false
+            if (order.worker_id !== currentWorkerId) return false
+          }
+          return true
+        })
+        .map(o => getOrderMonthKey(o))
+    )
+  ).sort((a, b) => b.localeCompare(a))
+
+  // تجميع الطلبات المفلترة حسب الشهر
+  const ordersByMonth: Record<string, typeof completedOrders> = {}
+  completedOrders.forEach(order => {
+    const key = getOrderMonthKey(order)
+    if (!ordersByMonth[key]) ordersByMonth[key] = []
+    ordersByMonth[key].push(order)
+  })
+  // رتّب كل شهر من الأقدم للأحدث بناءً على worker_completed_at أو created_at
+  Object.keys(ordersByMonth).forEach(key => {
+    ordersByMonth[key].sort((a, b) => {
+      const dateA = a.worker_completed_at || a.created_at
+      const dateB = b.worker_completed_at || b.created_at
+      return new Date(dateB).getTime() - new Date(dateA).getTime()
+    })
+  })
+  const sortedMonthKeys = Object.keys(ordersByMonth).sort((a, b) => b.localeCompare(a))
 
   const getWorkerName = (workerId?: string | null) => {
     if (!workerId) return t('not_specified') || 'غير محدد'
@@ -116,11 +166,23 @@ export default function WorkerCompletedOrdersPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return formatGregorianDate(dateString, 'ar-SA', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
+    if (!dateString) return ''
+    const d = new Date(dateString)
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const year = d.getFullYear()
+    return `${day}/${month}/${year}`
+  }
+
+  const formatDateTime = (dateString: string) => {
+    if (!dateString) return ''
+    const d = new Date(dateString)
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const year = d.getFullYear()
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    return `${day}/${month}/${year} ${hours}:${minutes}`
   }
 
   // دالة ترجمة أسماء المقاسات
@@ -351,8 +413,7 @@ export default function WorkerCompletedOrdersPage() {
           transition={{ duration: 0.6, delay: 0.1 }}
           className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6"
         >
-          {/* صف واحد: حقل البحث والفلاتر - عرض أفقي حتى في الجوال */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 overflow-x-auto">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {/* حقل البحث الشامل */}
             <div className="relative min-w-0">
               <Search className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
@@ -365,20 +426,27 @@ export default function WorkerCompletedOrdersPage() {
               />
             </div>
 
-            {/* فلتر التاريخ */}
+            {/* فلتر الشهر */}
             <div className="relative min-w-0">
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition-all"
-              />
-              <Calendar className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
+              <Filter className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full pr-7 sm:pr-10 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition-all bg-white appearance-none"
+              >
+                <option value="">{t('all_months')}</option>
+                {availableMonths.map(monthKey => (
+                  <option key={monthKey} value={monthKey}>
+                    {formatMonthLabel(monthKey)}
+                    {monthKey === currentMonthKey ? ` (${t('current_month_label')})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           {/* زر إعادة تعيين الفلاتر */}
-          {(searchTerm || dateFilter) && (
+          {(searchTerm || selectedMonth) && (
             <div className="mt-3 flex justify-between items-center">
               <div className="text-xs sm:text-sm text-gray-600">
                 {t('showing')} {completedOrders.length} {t('orders')}
@@ -386,7 +454,7 @@ export default function WorkerCompletedOrdersPage() {
               <button
                 onClick={() => {
                   setSearchTerm('')
-                  setDateFilter('')
+                  setSelectedMonth('')
                 }}
                 className="inline-flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
               >
@@ -409,7 +477,7 @@ export default function WorkerCompletedOrdersPage() {
               <div className="flex items-center gap-3">
                 <Package className="w-5 h-5 text-green-600" />
                 <span className="text-gray-700 font-medium">
-                  {t('total_completed_orders_label')}
+                  {selectedMonth ? `${t('orders_of_month')} ${formatMonthLabel(selectedMonth)}` : t('total_completed_orders_label')}
                 </span>
               </div>
               <span className="text-2xl font-bold text-green-600">
@@ -419,8 +487,8 @@ export default function WorkerCompletedOrdersPage() {
           </div>
         </motion.div>
 
-        {/* قائمة الطلبات */}
-        <div className="space-y-6">
+        {/* قائمة الطلبات مجمّعة حسب الشهر */}
+        <div className="space-y-8">
           {completedOrders.length === 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -437,12 +505,32 @@ export default function WorkerCompletedOrdersPage() {
               </p>
             </motion.div>
           ) : (
-            completedOrders.map((order, index) => (
+            sortedMonthKeys.map((monthKey) => (
+              <div key={monthKey}>
+                {/* رأس الشهر */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-2 rounded-xl shadow-sm">
+                    <Calendar className="w-4 h-4" />
+                    <span className="font-bold text-sm">
+                      {formatMonthLabel(monthKey)}
+                      {monthKey === currentMonthKey ? ` · ${t('current_month_label')}` : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-white border border-green-200 text-green-700 px-3 py-1.5 rounded-lg text-xs font-medium">
+                    <Package className="w-3.5 h-3.5" />
+                    <span>{ordersByMonth[monthKey].length} {t('month_orders_label')}</span>
+                  </div>
+                  <div className="flex-1 h-px bg-green-100" />
+                </div>
+
+                {/* طلبات الشهر */}
+                <div className="space-y-4">
+                {ordersByMonth[monthKey].map((order, index) => (
               <motion.div
                 key={order.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
+                transition={{ duration: 0.5, delay: index * 0.05 }}
                 onClick={() => handleViewOrder(order)}
                 className="bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
               >
@@ -452,6 +540,9 @@ export default function WorkerCompletedOrdersPage() {
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
+                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-xs font-bold shrink-0">
+                            {ordersByMonth[monthKey].length - index}
+                          </span>
                           <h3 className="text-lg font-semibold text-gray-800">
                             {order.client_name}
                           </h3>
@@ -468,10 +559,6 @@ export default function WorkerCompletedOrdersPage() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-600">
                       <div className="flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                        <span>{formatDate(order.created_at)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-gray-400" />
                         <span>{formatDate(order.due_date)}</span>
                       </div>
                       {order.worker_id && (
@@ -483,10 +570,23 @@ export default function WorkerCompletedOrdersPage() {
                       {order.client_phone && (
                         <div className="flex items-center gap-1.5">
                           <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="truncate">***</span>
+                          <span className="truncate">{order.client_phone}</span>
                         </div>
                       )}
                     </div>
+
+                    {/* تاريخ إنهاء العمل - للعمال فقط */}
+                    {user?.role !== 'admin' && order.worker_completed_at && (
+                      <div className="flex items-center gap-1.5 mt-2 text-xs text-green-700">
+                        <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                        <span>
+                          {t('completed_at_label')}:{' '}
+                          <span className="font-semibold">
+                            {formatDateTime(order.worker_completed_at!)}
+                          </span>
+                        </span>
+                      </div>
+                    )}
 
                     {/* السعر - مخفي للعمال */}
                   </div>
@@ -535,6 +635,9 @@ export default function WorkerCompletedOrdersPage() {
                   )}
                 </div>
               </motion.div>
+            ))}
+                </div>
+              </div>
             ))
           )}
         </div>

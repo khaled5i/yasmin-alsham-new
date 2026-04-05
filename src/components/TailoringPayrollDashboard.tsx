@@ -34,6 +34,7 @@ import { workerService, type WorkerWithUser } from '@/lib/services/worker-servic
 import {
   deleteWorkerPayrollOperation,
   getLastSalaryInfoBeforeMonth,
+  getWorkerAdvancesAllPeriods,
   getWorkerPayrollMonths,
   getWorkerPayrollOperations,
   getWorkerPayrollPeriodLock,
@@ -332,6 +333,8 @@ export default function TailoringPayrollDashboard() {
   const [showNewWorkerModal, setShowNewWorkerModal] = useState(false)
   const [selectedWorkerForSalary, setSelectedWorkerForSalary] = useState<WorkerWithUser | null>(null)
   const [selectedWorkerForAdvances, setSelectedWorkerForAdvances] = useState<WorkerWithUser | null>(null)
+  const [allAdvancesForWorker, setAllAdvancesForWorker] = useState<WorkerPayrollOperation[]>([])
+  const [allAdvancesLoading, setAllAdvancesLoading] = useState(false)
   const [advanceForms, setAdvanceForms] = useState<Record<string, AdvanceFormState>>({})
   const [newWorkerForm, setNewWorkerForm] = useState<NewWorkerFormState>({
     full_name: '',
@@ -351,6 +354,20 @@ export default function TailoringPayrollDashboard() {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
   const isReadOnly = isLocked || !isAdmin
+
+  const openAdvancesModal = useCallback(async (worker: WorkerWithUser) => {
+    setSelectedWorkerForAdvances(worker)
+    setAllAdvancesLoading(true)
+    setAllAdvancesForWorker([])
+    try {
+      const advances = await getWorkerAdvancesAllPeriods(BRANCH, worker.id)
+      setAllAdvancesForWorker(advances)
+    } catch {
+      setAllAdvancesForWorker([])
+    } finally {
+      setAllAdvancesLoading(false)
+    }
+  }, [])
 
   const loadData = useCallback(async (refresh = false) => {
     if (refresh) setIsRefreshing(true)
@@ -913,12 +930,37 @@ export default function TailoringPayrollDashboard() {
       await deleteWorkerPayrollOperation(operationId)
       alert('تم حذف العملية بنجاح')
       await loadData(true)
+      // تحديث السجل الكامل إذا كان المودال مفتوحاً لعامل
+      if (operationType === 'advance' && selectedWorkerForAdvances) {
+        const advances = await getWorkerAdvancesAllPeriods(BRANCH, selectedWorkerForAdvances.id)
+        setAllAdvancesForWorker(advances)
+      }
     } catch (error) {
       alert(toReadableError(error))
     } finally {
       setActionKey(null)
     }
-  }, [isAdmin, isLocked, loadData])
+  }, [isAdmin, isLocked, loadData, selectedWorkerForAdvances])
+
+  const handleDeleteAdvance = useCallback(async (operationId: string, worker: WorkerWithUser) => {
+    if (!isAdmin) {
+      alert('حذف السُّلَف مسموح للأدمن فقط.')
+      return
+    }
+    if (!confirm('هل أنت متأكد من حذف هذه السلفة؟')) return
+
+    setActionKey(`delete-operation-${operationId}`)
+    try {
+      await deleteWorkerPayrollOperation(operationId)
+      await loadData(true)
+      const advances = await getWorkerAdvancesAllPeriods(BRANCH, worker.id)
+      setAllAdvancesForWorker(advances)
+    } catch (error) {
+      alert(toReadableError(error))
+    } finally {
+      setActionKey(null)
+    }
+  }, [isAdmin, loadData])
 
   const handleRegisterAdvance = useCallback(async (worker: WorkerWithUser) => {
     if (isLocked) {
@@ -957,6 +999,9 @@ export default function TailoringPayrollDashboard() {
         [worker.id]: { ...prev[worker.id], amount: '', note: '' }
       }))
       await loadData(true)
+      // تحديث السجل الكامل
+      const advances = await getWorkerAdvancesAllPeriods(BRANCH, worker.id)
+      setAllAdvancesForWorker(advances)
     } catch (error) {
       alert(toReadableError(error))
     } finally {
@@ -1254,7 +1299,7 @@ export default function TailoringPayrollDashboard() {
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <button
-                                onClick={() => setSelectedWorkerForAdvances(worker)}
+                                onClick={() => openAdvancesModal(worker)}
                                 className="group inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-600 transition-all hover:bg-amber-100 hover:shadow-sm"
                                 title="إدارة السُّلَف"
                               >
@@ -1359,7 +1404,7 @@ export default function TailoringPayrollDashboard() {
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <button
-                                onClick={() => setSelectedWorkerForAdvances(worker)}
+                                onClick={() => openAdvancesModal(worker)}
                                 className="group inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-600 transition-all hover:bg-amber-100 hover:shadow-sm"
                                 title="إدارة السُّلَف"
                               >
@@ -1390,8 +1435,7 @@ export default function TailoringPayrollDashboard() {
           const row = getMonthRow(worker)
           const advanceForm = advanceForms[worker.id]
           const operations = operationsByWorker[worker.id] || []
-          const advanceOperations = operations.filter((op) => op.operation_type === 'advance')
-          const totalAdvances = advanceOperations.reduce((sum, op) => sum + op.amount, 0)
+          const totalAdvances = allAdvancesForWorker.reduce((sum, op) => sum + op.amount, 0)
 
           if (!advanceForm) return null
 
@@ -1488,53 +1532,60 @@ export default function TailoringPayrollDashboard() {
                     </div>
                   )}
 
-                  {/* سجل السُّلَف */}
+                  {/* سجل السُّلَف - جميع الفترات */}
                   <div className="rounded-xl border border-gray-200 p-4 space-y-3">
                     <h3 className="flex items-center gap-2 font-semibold text-gray-900">
                       <History className="h-4 w-4 text-gray-600" />
-                      سجل السُّلَف ({advanceOperations.length})
+                      سجل السُّلَف الكامل ({allAdvancesLoading ? '...' : allAdvancesForWorker.length})
                     </h3>
 
-                    {advanceOperations.length === 0 ? (
+                    {allAdvancesLoading ? (
                       <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
-                        لا توجد سُلَف مسجلة لهذا الشهر
+                        جاري التحميل...
+                      </div>
+                    ) : allAdvancesForWorker.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
+                        لا توجد سُلَف مسجلة
                       </div>
                     ) : (
                       <div className="max-h-[350px] space-y-2 overflow-y-auto">
-                        {advanceOperations.map((op) => (
-                          <div
-                            key={op.id}
-                            className="group flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 transition-all hover:border-amber-300 hover:shadow-sm"
-                          >
-                            <div className="flex items-start gap-2">
-                              <div className="rounded-lg bg-amber-100 p-1.5">
-                                <CreditCard className="h-4 w-4 text-amber-700" />
+                        {allAdvancesForWorker.map((op) => (
+                            <div
+                              key={op.id}
+                              className="group flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 transition-all hover:border-amber-300 hover:shadow-sm"
+                            >
+                              <div className="flex items-start gap-2">
+                                <div className="rounded-lg bg-amber-100 p-1.5">
+                                  <CreditCard className="h-4 w-4 text-amber-700" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-amber-900">{formatCurrency(op.amount)}</p>
+                                  <p className="text-xs text-amber-700">
+                                    {new Date(op.operation_date).toLocaleDateString('ar-SA-u-nu-latn', {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric'
+                                    })}
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    الفترة: {op.payroll_month}/{op.payroll_year}
+                                  </p>
+                                  {op.note && (
+                                    <p className="text-xs text-gray-600 mt-0.5">{op.note}</p>
+                                  )}
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-semibold text-amber-900">{formatCurrency(op.amount)}</p>
-                                <p className="text-xs text-amber-700">
-                                  {new Date(op.operation_date).toLocaleDateString('ar-SA-u-nu-latn', {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric'
-                                  })}
-                                </p>
-                                {op.note && (
-                                  <p className="text-xs text-gray-600 mt-0.5">{op.note}</p>
-                                )}
-                              </div>
+                              {isAdmin && (
+                                <button
+                                  onClick={() => handleDeleteAdvance(op.id, worker)}
+                                  disabled={!!actionKey}
+                                  className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                  title="حذف السلفة"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
                             </div>
-                            {isAdmin && !isLocked && (
-                              <button
-                                onClick={() => handleDeleteOperation(op.id, 'advance')}
-                                disabled={!!actionKey}
-                                className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
-                                title="حذف السلفة"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
                         ))}
                       </div>
                     )}

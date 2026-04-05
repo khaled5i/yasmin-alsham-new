@@ -377,7 +377,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   completeOrder: async (orderId, completedImages) => {
     return get().updateOrder(orderId, {
       status: 'completed',
-      completed_images: completedImages || []
+      completed_images: completedImages || [],
+      worker_completed_at: new Date().toISOString()
     })
   },
 

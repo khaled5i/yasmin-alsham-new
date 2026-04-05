@@ -1590,8 +1590,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 </div>
               )}
 
-              {/* صور العمل المكتمل - للمدراء فقط */}
-              {user?.role === 'admin' && order.completed_images && order.completed_images.length > 0 && (
+              {/* صور العمل المكتمل */}
+              {order.completed_images && order.completed_images.length > 0 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
                     <CheckCircle className="w-5 h-5 text-green-600" />
@@ -1632,6 +1632,25 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       ))}
                     </div>
                   </div>
+                  {order.worker_completed_at && (
+                    <div className="flex items-center gap-2 mt-3 text-sm text-green-700">
+                      <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                      <span>
+                        {t('worker_completed_at_label')}:{' '}
+                        <span className="font-semibold">
+                          {(() => {
+                            const d = new Date(order.worker_completed_at!)
+                            const day = String(d.getDate()).padStart(2, '0')
+                            const month = String(d.getMonth() + 1).padStart(2, '0')
+                            const year = d.getFullYear()
+                            const hours = String(d.getHours()).padStart(2, '0')
+                            const minutes = String(d.getMinutes()).padStart(2, '0')
+                            return `${day}/${month}/${year} ${hours}:${minutes}`
+                          })()}
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

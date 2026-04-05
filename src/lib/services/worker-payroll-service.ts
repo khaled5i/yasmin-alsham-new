@@ -191,6 +191,37 @@ export async function getWorkerPayrollOperations(
   }
 }
 
+export async function getWorkerAdvancesAllPeriods(
+  branch: BranchType,
+  workerId: string
+): Promise<WorkerPayrollOperation[]> {
+  if (!isSupabaseConfigured()) {
+    return []
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('worker_payroll_operations')
+      .select('*')
+      .eq('branch', branch)
+      .eq('worker_id', workerId)
+      .eq('operation_type', 'advance')
+      .order('payroll_year', { ascending: false })
+      .order('payroll_month', { ascending: false })
+      .order('operation_date', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching worker advances all periods:', error)
+      return []
+    }
+
+    return (data || []) as WorkerPayrollOperation[]
+  } catch (error) {
+    console.error('Error fetching worker advances all periods:', error)
+    return []
+  }
+}
+
 export async function getWorkerPayrollPeriodLock(
   branch: BranchType,
   monthValue: string
