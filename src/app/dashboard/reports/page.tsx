@@ -42,7 +42,8 @@ import {
   CalendarX,
   Phone,
   Mail,
-  Percent
+  Percent,
+  Receipt
 } from 'lucide-react'
 
 // ============================================================================
@@ -282,6 +283,13 @@ export default function ReportsPage() {
       ? Number(((totalPaid / currentRevenue) * 100).toFixed(1))
       : 0
 
+    // Total value of all orders regardless of status or payment
+    const totalAllOrdersValue = currentOrders.reduce((sum, o) => sum + Number(o.price || 0), 0)
+    const previousTotalAllOrdersValue = previousOrders.reduce((sum, o) => sum + Number(o.price || 0), 0)
+    const totalAllOrdersValueChange = previousTotalAllOrdersValue > 0
+      ? Number((((totalAllOrdersValue - previousTotalAllOrdersValue) / previousTotalAllOrdersValue) * 100).toFixed(1))
+      : 0
+
     return {
       // Revenue
       currentRevenue,
@@ -290,6 +298,8 @@ export default function ReportsPage() {
       totalPaid,
       totalDue,
       paymentCollectionRate,
+      totalAllOrdersValue,
+      totalAllOrdersValueChange,
 
       // Orders
       totalOrders: currentOrders.length,
@@ -726,6 +736,21 @@ export default function ReportsPage() {
             </div>
             <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalDue.toLocaleString()} ر.س</h3>
             <p className="text-xs sm:text-sm text-gray-600 leading-tight">المبالغ المستحقة</p>
+          </div>
+
+          {/* Total Orders Value (regardless of payment) */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-teal-400 to-cyan-400 rounded-lg flex items-center justify-center">
+                <Receipt className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
+              </div>
+              <div className={`text-xs sm:text-sm font-semibold ${comprehensiveStats.totalAllOrdersValueChange > 0 ? 'text-green-600' : comprehensiveStats.totalAllOrdersValueChange < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                {comprehensiveStats.totalAllOrdersValueChange > 0 ? '+' : ''}{comprehensiveStats.totalAllOrdersValueChange}%
+              </div>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalAllOrdersValue.toLocaleString()} ر.س</h3>
+            <p className="text-xs sm:text-sm text-gray-600 leading-tight">إجمالي قيمة الطلبات</p>
+            <p className="text-[10px] sm:text-xs text-teal-600 mt-0.5">بغض النظر عن الدفع</p>
           </div>
         </motion.div>
 

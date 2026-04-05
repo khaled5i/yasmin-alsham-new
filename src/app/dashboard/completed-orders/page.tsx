@@ -64,6 +64,7 @@ export default function CompletedOrdersPage() {
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
+  const [workerFilter, setWorkerFilter] = useState('')
 
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -133,7 +134,9 @@ export default function CompletedOrdersPage() {
       (reviewFilter === 'reviewed' && order.admin_confirmed === true) ||
       (reviewFilter === 'not_reviewed' && !order.admin_confirmed)
 
-    return matchesSearch && matchesDate && matchesReview
+    const matchesWorker = !workerFilter || order.worker_id === workerFilter
+
+    return matchesSearch && matchesDate && matchesReview && matchesWorker
   })
 
   const completedOnly = orders.filter(o => o.status === 'completed')
@@ -420,6 +423,25 @@ export default function CompletedOrdersPage() {
             </div>
           </div>
 
+          {/* فلتر العامل */}
+          <div className="mt-2 relative min-w-0">
+            <User className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
+            <select
+              value={workerFilter}
+              onChange={(e) => setWorkerFilter(e.target.value)}
+              className="w-full pr-7 sm:pr-10 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition-all bg-white appearance-none"
+            >
+              <option value="">جميع العمال</option>
+              {workers
+                .filter(w => w.is_available && w.worker_type === 'tailor')
+                .map(w => (
+                  <option key={w.id} value={w.id}>
+                    {w.user?.full_name || w.id} - {w.specialty}
+                  </option>
+                ))}
+            </select>
+          </div>
+
           {/* فلتر المراجعة */}
           <div className="mt-3 flex gap-2 flex-wrap">
             <button
@@ -455,7 +477,7 @@ export default function CompletedOrdersPage() {
           </div>
 
           {/* زر إعادة تعيين الفلاتر */}
-          {(searchTerm || dateFilter || reviewFilter !== 'all') && (
+          {(searchTerm || dateFilter || reviewFilter !== 'all' || workerFilter) && (
             <div className="mt-3 flex justify-between items-center">
               <div className="text-xs sm:text-sm text-gray-600">
                 {t('showing')} {completedOrders.length} {t('orders')}
@@ -465,6 +487,7 @@ export default function CompletedOrdersPage() {
                   setSearchTerm('')
                   setDateFilter('')
                   setReviewFilter('all')
+                  setWorkerFilter('')
                 }}
                 className="inline-flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-300"
               >
