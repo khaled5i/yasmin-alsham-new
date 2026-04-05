@@ -100,8 +100,12 @@ export default function WorkerCompletedOrdersPage() {
   }
 
   // فلترة الطلبات المكتملة فقط والخاصة بهذا العامل
+  // للعمال: تظهر الطلبات المكتملة والمسلمة معاً حتى لا تختفي بعد التسليم
+  // للأدمن: المكتملة فقط (لا تغيير)
+  const validStatuses = user?.role !== 'admin' ? ['completed', 'delivered'] : ['completed']
+
   const completedOrders = orders.filter(order => {
-    if (order.status !== 'completed') return false
+    if (!validStatuses.includes(order.status)) return false
 
     // الحصول على معرف العامل الحالي
     const currentWorker = workers.find(w => w.user_id === user?.id)
@@ -129,7 +133,7 @@ export default function WorkerCompletedOrdersPage() {
     new Set(
       orders
         .filter(order => {
-          if (order.status !== 'completed') return false
+          if (!validStatuses.includes(order.status)) return false
           const currentWorker = workers.find(w => w.user_id === user?.id)
           const currentWorkerId = currentWorker?.id
           if (user?.role !== 'admin') {

@@ -23,6 +23,54 @@ export default function CompletedWorkUpload({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
 
+  const compressImage = async (file: Blob): Promise<string> => {
+    const MAX_DIMENSION = 1920
+    const QUALITY = 0.82
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+
+    // استخدم createImageBitmap إذا كان متاحاً (أكفأ في الذاكرة)
+    if (typeof createImageBitmap !== 'undefined') {
+      const bitmap = await createImageBitmap(file)
+      const { width, height } = bitmap
+      const scale = Math.min(1, MAX_DIMENSION / Math.max(width, height))
+      canvas.width = Math.round(width * scale)
+      canvas.height = Math.round(height * scale)
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+      bitmap.close()
+    } else {
+      const url = URL.createObjectURL(file)
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width, img.height))
+          canvas.width = Math.round(img.width * scale)
+          canvas.height = Math.round(img.height * scale)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          URL.revokeObjectURL(url)
+          resolve()
+        }
+        img.onerror = reject
+        img.src = url
+      })
+    }
+
+    return new Promise<string>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { reject(new Error('compression failed')); return }
+          const reader = new FileReader()
+          reader.onload = (e) => resolve(e.target?.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        },
+        'image/jpeg',
+        QUALITY
+      )
+    })
+  }
+
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || disabled) return
 
@@ -31,10 +79,8 @@ export default function CompletedWorkUpload({
     const isAndroid = /android/i.test(navigator.userAgent)
 
     const imageFiles = Array.from(files).slice(0, remainingSlots).filter(f => f.type.startsWith('image/'))
-    const expectedCount = imageFiles.length
 
     for (const file of imageFiles) {
-      // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
       let safeBlob: Blob = file
       if (isAndroid) {
         try {
@@ -42,13 +88,19 @@ export default function CompletedWorkUpload({
           safeBlob = new Blob([buffer], { type: file.type || 'image/jpeg' })
         } catch { safeBlob = file }
       }
-      const reader = new FileReader()
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = (e) => resolve(e.target?.result as string)
-        reader.onerror = (e) => reject(e)
-        reader.readAsDataURL(safeBlob)
-      })
-      newImages.push(base64)
+      try {
+        const compressed = await compressImage(safeBlob)
+        newImages.push(compressed)
+      } catch {
+        // fallback: قراءة بدون ضغط
+        const reader = new FileReader()
+        const base64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = (e) => resolve(e.target?.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(safeBlob)
+        })
+        newImages.push(base64)
+      }
     }
 
     if (newImages.length > 0) {
