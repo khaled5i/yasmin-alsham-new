@@ -31,7 +31,8 @@ import {
   Search,
   Filter,
   AlertCircle,
-  Trash2
+  Trash2,
+  RotateCcw
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
@@ -69,6 +70,18 @@ export default function CompletedOrdersPage() {
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<any>(null)
+
+  // حالات تغيير حالة الطلب
+  const [statusChangeOrderId, setStatusChangeOrderId] = useState<string | null>(null)
+  const [isChangingStatus, setIsChangingStatus] = useState(false)
+
+  // إغلاق قائمة تغيير الحالة عند النقر خارجها
+  useEffect(() => {
+    if (!statusChangeOrderId) return
+    const handleClickOutside = () => setStatusChangeOrderId(null)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [statusChangeOrderId])
 
   // التحقق من الصلاحيات - المدراء ومدراء الورشة
   useEffect(() => {
@@ -326,6 +339,25 @@ export default function CompletedOrdersPage() {
   const closeDeleteModal = () => {
     setDeleteModalOpen(false)
     setOrderToDelete(null)
+  }
+
+  // تغيير حالة الطلب إلى حالة سابقة
+  const handleRevertStatus = async (orderId: string, newStatus: 'pending' | 'in_progress') => {
+    setIsChangingStatus(true)
+    try {
+      const result = await updateOrder(orderId, { status: newStatus })
+      if (result.success) {
+        const statusLabel = newStatus === 'pending' ? 'في الانتظار' : 'قيد التنفيذ'
+        toast.success(`تم تغيير حالة الطلب إلى "${statusLabel}" بنجاح`, { icon: '✓' })
+        setStatusChangeOrderId(null)
+        // إعادة تحميل الطلبات لتحديث القائمة
+        loadOrders({ status: 'completed', page: currentPage, pageSize: PAGE_SIZE })
+      } else {
+        toast.error('حدث خطأ أثناء تغيير حالة الطلب', { icon: '✗' })
+      }
+    } finally {
+      setIsChangingStatus(false)
+    }
   }
 
   // التحقق من الصلاحيات قبل العرض
@@ -665,6 +697,50 @@ export default function CompletedOrdersPage() {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+
+                          {/* زر تغيير الحالة */}
+                          <div className="relative">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setStatusChangeOrderId(statusChangeOrderId === order.id ? null : order.id)
+                              }}
+                              className={`p-2 rounded-lg transition-colors border ${
+                                statusChangeOrderId === order.id
+                                  ? 'text-amber-600 bg-amber-50 border-amber-200'
+                                  : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50 border-transparent hover:border-amber-100'
+                              }`}
+                              title="إعادة الطلب لحالة سابقة"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+
+                            {/* قائمة اختيار الحالة */}
+                            {statusChangeOrderId === order.id && (
+                              <div
+                                className="absolute left-0 top-full mt-1 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-2 min-w-[160px]"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <p className="text-xs text-gray-500 mb-2 px-1 font-medium">إعادة الطلب إلى:</p>
+                                <button
+                                  onClick={() => handleRevertStatus(order.id, 'in_progress')}
+                                  disabled={isChangingStatus}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                  <Package className="w-3.5 h-3.5" />
+                                  قيد التنفيذ
+                                </button>
+                                <button
+                                  onClick={() => handleRevertStatus(order.id, 'pending')}
+                                  disabled={isChangingStatus}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-yellow-700 hover:bg-yellow-50 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                  في الانتظار
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

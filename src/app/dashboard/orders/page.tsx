@@ -692,6 +692,16 @@ function OrdersPageInner() {
       ? dateFilterResults
       : orders
 
+  const isNeedsReview = (order: any) => {
+    if (parseBooleanFlag(order?.needs_review)) return true
+    return parseBooleanFlag(order?.measurements?.needs_review)
+  }
+
+  const isPreBooking = (order: any) => {
+    if (parseBooleanFlag(order?.is_pre_booking)) return true
+    return parseBooleanFlag(order?.measurements?.is_pre_booking)
+  }
+
   const filteredOrders = baseOrders.filter(order => {
     // فلترة حسب الدور
     let matchesRole = user?.role === 'admin' || workerType === 'workshop_manager'
@@ -703,7 +713,13 @@ function OrdersPageInner() {
       }
     }
 
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter
+    const matchesStatus = statusFilter === 'all'
+      ? true
+      : statusFilter === 'needs_review'
+        ? isNeedsReview(order)
+        : statusFilter === 'pre_booking'
+          ? isPreBooking(order)
+          : order.status === statusFilter
 
     // Date filter is server-side when dateFilterResults is active; apply client-side only for text search results
     const matchesDate = !dateFilter || searchResults === null || (() => {
@@ -814,6 +830,8 @@ function OrdersPageInner() {
                 <option value="all">{t('all_orders')}</option>
                 <option value="pending">{t('pending')}</option>
                 <option value="in_progress">{t('in_progress')}</option>
+                <option value="needs_review">{isArabic ? 'يحتاج مراجعة' : 'Needs Review'}</option>
+                <option value="pre_booking">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</option>
               </select>
               <Filter className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
             </div>
@@ -929,6 +947,22 @@ function OrdersPageInner() {
                           {statusInfo.label}
                         </span>
                       </div>
+                      {isNeedsReview(order) && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100">
+                          <AlertCircle className="w-3.5 h-3.5 text-orange-600" />
+                          <span className="text-xs font-medium text-orange-600">
+                            {isArabic ? 'يحتاج مراجعة' : 'Needs Review'}
+                          </span>
+                        </div>
+                      )}
+                      {isPreBooking(order) && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100">
+                          <PackageCheck className="w-3.5 h-3.5 text-blue-600" />
+                          <span className="text-xs font-medium text-blue-600">
+                            {isArabic ? 'حجز مسبق' : 'Pre-booking'}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Action Buttons - Two Columns */}
                       <div className="flex flex-col gap-2 mt-1">

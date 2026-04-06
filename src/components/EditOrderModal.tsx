@@ -14,7 +14,8 @@ import {
   Image as ImageIcon,
   Ruler,
   MessageCircle,
-  Download
+  Download,
+  BookMarked
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
 import ImageUpload from './ImageUpload'
@@ -391,8 +392,18 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     toast.success(`تم حفظ ${downloadable.length} ${downloadable.length === 1 ? 'تصميم' : 'تصميمين'}`)
   }, [formData.savedDesignComments, formData.clientName, formData.orderNumber])
 
+  const isOrderNeedsReview = (o: any) => {
+    if (o?.needs_review === true || o?.needs_review === 'true') return true
+    return o?.measurements?.needs_review === true || o?.measurements?.needs_review === 'true'
+  }
+
+  const isOrderPreBooking = (o: any) => {
+    if (o?.is_pre_booking === true || o?.is_pre_booking === 'true') return true
+    return o?.measurements?.is_pre_booking === true || o?.measurements?.is_pre_booking === 'true'
+  }
+
   // إرسال النموذج
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, clearReview = false, clearPreBooking = false) => {
     e.preventDefault()
 
     if (!order) return
@@ -477,7 +488,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
 
       // تحديث الطلب
       onSave(order.id, {
-        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType, ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
+        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType, ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined, ...(clearReview ? { needs_review: false } : {}), ...(clearPreBooking ? { is_pre_booking: false } : {}) },
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -1066,6 +1077,50 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                   >
                     {t('cancel')}
                   </button>
+
+                  {/* زر تحديث الطلب وإزالة تأشيرة المراجعة - يظهر فقط للطلبات التي تحتاج مراجعة */}
+                  {isOrderNeedsReview(order) && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleSubmit(e, true)}
+                      disabled={isSubmitting}
+                      className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse font-medium shadow-lg"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>{t('saving')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-5 h-5" />
+                          <span>{isArabic ? 'تحديث وإزالة المراجعة' : 'Update & Clear Review'}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* زر تحديث الطلب وإزالة تأشيرة الحجز المسبق - يظهر فقط للحجوزات المسبقة */}
+                  {isOrderPreBooking(order) && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleSubmit(e, false, true)}
+                      disabled={isSubmitting}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse font-medium shadow-lg"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>{t('saving')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <BookMarked className="w-5 h-5" />
+                          <span>{isArabic ? 'تحديث وإزالة الحجز المسبق' : 'Update & Clear Pre-booking'}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   {/* زر تحديث الطلب العادي */}
                   <button

@@ -34,7 +34,8 @@ import {
   RotateCcw,
   Info,
   Printer,
-  Download
+  Download,
+  BookMarked
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
@@ -899,6 +900,224 @@ function AddOrderContent() {
     }
   }
 
+  // حفظ الطلب مع تأشيرة "يحتاج مراجعة"
+  const handleSubmitWithReview = async (e: React.MouseEvent) => {
+    e.preventDefault()
+
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
+      return
+    }
+
+    setIsSubmitting(true)
+    setSaveError(null)
+
+    try {
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
+        id: vn.id, data: vn.data, timestamp: vn.timestamp, duration: vn.duration,
+        transcription: vn.transcription, translatedText: vn.translatedText, translationLanguage: vn.translationLanguage
+      }))
+
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        customDesignImageBase64 = formData.customDesignImage
+        if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
+          toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
+          return
+        }
+      } else if (customDesignImageFile) {
+        try {
+          const compressedBlob = await compressFileForStorage(customDesignImageFile, 1920)
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(compressedBlob)
+          })
+          if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
+            toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
+            return
+          }
+        } catch {
+          toast.error('خطأ في تحويل الصورة')
+          return
+        }
+      }
+
+      let allSavedComments = formData.savedDesignComments.map(comment => ({
+        ...comment, image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
+      }))
+
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        let compositeImage: string | null = null
+        if (annotationRef.current) {
+          compositeImage = await annotationRef.current.generateCompositeImage()
+        }
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
+      }
+
+      const result = await createOrder({
+        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
+        client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
+        fabric: formData.fabric || undefined,
+        measurements: {
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
+          needs_review: true
+        },
+        price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        order_received_date: formData.orderReceivedDate,
+        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        due_date: formData.dueDate,
+        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        notes: formData.notes || undefined,
+        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+        images: formData.images.length > 0 ? formData.images : undefined,
+        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
+      })
+
+      if (!result.success) {
+        setSaveError(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
+        return
+      }
+
+      clearSavedData()
+      localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
+
+      setSaveSuccess(true)
+      toast.success('تم حفظ الطلب - يحتاج مراجعة', { icon: '⚠️', duration: 3000 })
+      setTimeout(() => {
+        setSaveSuccess(false)
+        router.push('/dashboard/orders')
+      }, 1500)
+
+    } catch (error) {
+      console.error('❌ Error adding order:', error)
+      setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // حفظ الطلب كحجز مسبق
+  const handleSubmitAsPreBooking = async (e: React.MouseEvent) => {
+    e.preventDefault()
+
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
+      return
+    }
+
+    setIsSubmitting(true)
+    setSaveError(null)
+
+    try {
+      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
+      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
+        id: vn.id, data: vn.data, timestamp: vn.timestamp, duration: vn.duration,
+        transcription: vn.transcription, translatedText: vn.translatedText, translationLanguage: vn.translationLanguage
+      }))
+
+      const price = Number(formData.price)
+      const paidAmount = Number(formData.paidAmount) || 0
+
+      let customDesignImageBase64: string | undefined = undefined
+      if (formData.customDesignImage) {
+        customDesignImageBase64 = formData.customDesignImage
+        if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
+          toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
+          return
+        }
+      } else if (customDesignImageFile) {
+        try {
+          const compressedBlob = await compressFileForStorage(customDesignImageFile, 1920)
+          const reader = new FileReader()
+          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
+            reader.readAsDataURL(compressedBlob)
+          })
+          if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
+            toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
+            return
+          }
+        } catch {
+          toast.error('خطأ في تحويل الصورة')
+          return
+        }
+      }
+
+      let allSavedComments = formData.savedDesignComments.map(comment => ({
+        ...comment, image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
+      }))
+
+      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+        let compositeImage: string | null = null
+        if (annotationRef.current) {
+          compositeImage = await annotationRef.current.generateCompositeImage()
+        }
+        const currentView = annotationRef.current?.getCurrentView() || 'front'
+        allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
+      }
+
+      const result = await createOrder({
+        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
+        client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
+        fabric: formData.fabric || undefined,
+        measurements: {
+          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
+          is_pre_booking: true
+        },
+        price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        order_received_date: formData.orderReceivedDate,
+        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        due_date: formData.dueDate,
+        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        notes: formData.notes || undefined,
+        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
+        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+        images: formData.images.length > 0 ? formData.images : undefined,
+        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
+        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
+        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
+      })
+
+      if (!result.success) {
+        setSaveError(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
+        return
+      }
+
+      clearSavedData()
+      localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
+
+      setSaveSuccess(true)
+      toast.success('تم حفظ الطلب كحجز مسبق', { icon: '📅', duration: 3000 })
+      setTimeout(() => {
+        setSaveSuccess(false)
+        router.push('/dashboard/orders')
+      }, 1500)
+
+    } catch (error) {
+      console.error('❌ Error adding order:', error)
+      setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   // حفظ الطلب وفتح صفحة الطباعة
   const handleSubmitAndPrint = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -1431,40 +1650,13 @@ function AddOrderContent() {
               />
             </div>
 
-            {/* اختيار العامل المسؤول */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
-              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-                <Users className="w-5 h-5 text-pink-600" />
-                <span>{t('responsible_worker')}</span>
-              </h3>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {t('choose_worker')} ({t('optional')})
-                </label>
-                <select
-                  value={formData.assignedWorker}
-                  onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                  disabled={isSubmitting}
-                >
-                  <option value="">{t('choose_worker')}</option>
-                  {workers.filter(w => w.is_available && w.user?.is_active && (w.specialty === 'خياطة' || w.specialty === 'Tailor' || w.specialty.toLowerCase().includes('tailor') || w.specialty.toLowerCase().includes('خياط'))).map(worker => (
-                    <option key={worker.id} value={worker.id}>
-                      {worker.user?.full_name || worker.specialty} - {worker.specialty}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
             {/* Action buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {/* زر حفظ الطلب العادي */}
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="btn-primary py-4 px-8 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-gradient-to-r from-pink-400 to-rose-400 hover:from-pink-500 hover:to-rose-500 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
               >
                 {isSubmitting ? (
                   <div className="flex items-center justify-center space-x-2 space-x-reverse">
@@ -1479,13 +1671,12 @@ function AddOrderContent() {
                 )}
               </button>
 
-              {/* زر حفظ الطلب وإرسال واتساب */}
+              {/* زر حفظ الطلب مع تأشيرة المراجعة */}
               <button
                 type="button"
-                onClick={handleSubmitAndSendWhatsApp}
-                disabled={isSubmitting || !formData.clientPhone}
-                className="bg-green-600 hover:bg-green-700 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
-                title={!formData.clientPhone ? 'يجب إدخال رقم هاتف العميل أولاً' : ''}
+                onClick={handleSubmitWithReview}
+                disabled={isSubmitting}
+                className="bg-orange-500 hover:bg-orange-600 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
               >
                 {isSubmitting ? (
                   <div className="flex items-center justify-center space-x-2 space-x-reverse">
@@ -1494,18 +1685,18 @@ function AddOrderContent() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-center space-x-2 space-x-reverse">
-                    <MessageCircle className="w-5 h-5" />
-                    <span>{isArabic ? 'حفظ وإرسال رسالة تأكيد' : 'Save & Send Confirmation'}</span>
+                    <AlertCircle className="w-5 h-5" />
+                    <span>{isArabic ? 'حفظ ولكن يحتاج مراجعة' : 'Save - Needs Review'}</span>
                   </div>
                 )}
               </button>
 
-              {/* زر حفظ الطلب وطباعته */}
+              {/* زر حفظ الطلب كحجز مسبق */}
               <button
                 type="button"
-                onClick={handleSubmitAndPrint}
+                onClick={handleSubmitAsPreBooking}
                 disabled={isSubmitting}
-                className="bg-purple-600 hover:bg-purple-700 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
+                className="bg-blue-600 hover:bg-blue-700 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
               >
                 {isSubmitting ? (
                   <div className="flex items-center justify-center space-x-2 space-x-reverse">
@@ -1514,15 +1705,15 @@ function AddOrderContent() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-center space-x-2 space-x-reverse">
-                    <Printer className="w-5 h-5" />
-                    <span>{isArabic ? 'حفظ وطباعة' : 'Save & Print'}</span>
+                    <BookMarked className="w-5 h-5" />
+                    <span>{isArabic ? 'حفظ كحجز مسبق' : 'Save as Pre-booking'}</span>
                   </div>
                 )}
               </button>
 
               <Link
                 href="/dashboard"
-                className="btn-secondary py-4 px-8 text-lg inline-flex items-center justify-center"
+                className="bg-gradient-to-r from-purple-100 to-pink-100 hover:from-purple-200 hover:to-pink-200 text-purple-800 py-4 px-8 text-lg rounded-lg font-semibold border border-purple-200 hover:border-purple-300 transition-all duration-300 inline-flex items-center justify-center"
               >
                 {t('cancel')}
               </Link>
