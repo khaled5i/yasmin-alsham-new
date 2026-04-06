@@ -31,16 +31,28 @@ interface OrderState {
   orders: Order[]
   currentOrder: Order | null
   totalOrders: number | null  // total count from server for pagination
+  hasMore: boolean            // هل يوجد المزيد من الطلبات لتحميلها
 
   // حالة التحميل
   isLoading: boolean       // True only if we have NO cached orders AND are fetching
   isRefreshing: boolean    // True when fetching in background (already have cached orders)
+  isLoadingMore: boolean   // True when appending more orders (infinite scroll)
   lastFetchedAt: number | null  // Timestamp of last successful fetch
   lastFilters: string | null    // Serialized last-used filters for cache validation
   error: string | null
 
   // العمليات الأساسية
   loadOrders: (filters?: {
+    status?: string | string[]
+    worker_id?: string
+    user_id?: string
+    payment_status?: string
+    page?: number
+    pageSize?: number
+    lightweight?: boolean
+  }) => Promise<void>
+
+  loadMoreOrders: (filters?: {
     status?: string | string[]
     worker_id?: string
     user_id?: string
@@ -91,8 +103,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   orders: [],
   currentOrder: null,
   totalOrders: null,
+  hasMore: false,
   isLoading: false,
   isRefreshing: false,
+  isLoadingMore: false,
   lastFetchedAt: null,
   lastFilters: null,
   error: null,
@@ -134,9 +148,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         return
       }
 
+      const total = result.total ?? null
+      const loaded = result.data.length
+      const pageSize = filters?.pageSize ?? 50
+
       set({
         orders: result.data,
-        totalOrders: result.total ?? null,
+        totalOrders: total,
+        hasMore: total !== null ? loaded < total : false,
         isLoading: false,
         isRefreshing: false,
         lastFetchedAt: Date.now(),
@@ -144,7 +163,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         error: null
       })
 
-      if (isDev) console.log(`✅ Loaded ${result.data.length} orders (total: ${result.total})`)
+      if (isDev) console.log(`✅ Loaded ${loaded} orders (total: ${total})`)
     } catch (error: any) {
       console.error('❌ Error loading orders:', error.message)
       set({
@@ -153,6 +172,41 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         isRefreshing: false,
         lastFetchedAt: null
       })
+    }
+  },
+
+  // ============================================================================
+  // تحميل المزيد من الطلبات وإضافتها (infinite scroll)
+  // ============================================================================
+  loadMoreOrders: async (filters) => {
+    const state = get()
+    if (state.isLoadingMore || !state.hasMore) return
+
+    set({ isLoadingMore: true })
+
+    try {
+      const result = await orderService.getAll(filters)
+
+      if (result.error) {
+        set({ isLoadingMore: false })
+        return
+      }
+
+      const combined = [...state.orders, ...result.data]
+      const total = result.total ?? null
+
+      set({
+        orders: combined,
+        totalOrders: total,
+        hasMore: total !== null ? combined.length < total : false,
+        isLoadingMore: false,
+        lastFetchedAt: Date.now(),
+      })
+
+      if (isDev) console.log(`✅ Appended ${result.data.length} orders (total loaded: ${combined.length} / ${total})`)
+    } catch (error: any) {
+      console.error('❌ Error loading more orders:', error.message)
+      set({ isLoadingMore: false })
     }
   },
 

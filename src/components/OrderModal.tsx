@@ -1806,6 +1806,22 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           isOpen={showPrintModal}
           onClose={() => setShowPrintModal(false)}
           order={order}
+          onPrint={async () => {
+            try {
+              const measurementsResult = await orderService.getMeasurements(order.id)
+              const currentMeasurements = measurementsResult.data || order.measurements || {}
+              const isPrinted = currentMeasurements.is_printed === true || currentMeasurements.is_printed === 'true'
+              if (!isPrinted) {
+                const updatedMeasurements = {
+                  ...currentMeasurements,
+                  is_printed: true
+                }
+                await updateOrder(order.id, { measurements: updatedMeasurements })
+              }
+            } catch (error) {
+              console.error('Error marking order as printed:', error)
+            }
+          }}
         />
       )}
     </AnimatePresence>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -21,7 +21,6 @@ import DeleteOrderModal from '@/components/DeleteOrderModal'
 import MeasurementsModal from '@/components/MeasurementsModal'
 import NumericInput from '@/components/NumericInput'
 import OrderDateFilterPicker from '@/components/OrderDateFilterPicker'
-import PaginationControls from '@/components/PaginationControls'
 import {
   ArrowRight,
   Package,
@@ -55,11 +54,14 @@ function OrdersPageInner() {
   const {
     orders,
     loadOrders,
+    loadMoreOrders,
     updateOrder,
     deleteOrder,
     startOrderWork,
     completeOrder,
     isLoading: ordersLoading,
+    isLoadingMore,
+    hasMore,
     totalOrders
   } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
@@ -67,37 +69,63 @@ function OrdersPageInner() {
   const { getDashboardRoute, workerType } = useWorkerPermissions()
   const router = useRouter()
   const [currentPage, setCurrentPage] = useState(0)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   // التحقق من الصلاحيات وتحميل البيانات
   useEffect(() => {
-    // انتظار انتهاء التحقق من المصادقة
-    if (authLoading) {
-      return
-    }
+    if (authLoading) return
 
     if (!user) {
       router.push('/login')
       return
     }
 
-    // تحميل الطلبات والعمال - server-side status filtering
-    // Only load active orders (exclude delivered/completed to reduce payload)
+    // دائماً نبدأ من الصفحة الأولى عند التحميل الأولي
+    setCurrentPage(0)
     loadOrders({
+      status: ['pending', 'in_progress', 'cancelled'],
+      page: 0,
+      pageSize: PAGE_SIZE
+    })
+    loadWorkers()
+  }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // تحميل المزيد عند تغيير currentPage (يُفعَّل من IntersectionObserver)
+  useEffect(() => {
+    if (currentPage === 0) return
+    loadMoreOrders({
       status: ['pending', 'in_progress', 'cancelled'],
       page: currentPage,
       pageSize: PAGE_SIZE
     })
-    loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers, currentPage])
+  }, [currentPage, loadMoreOrders])
+
+  // IntersectionObserver: عند الوصول لآخر العناصر يتم تحميل الدفعة التالية
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !ordersLoading) {
+          setCurrentPage(prev => prev + 1)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, isLoadingMore, ordersLoading])
 
   // Re-fetch data when the app resumes from background (mobile).
-  // This ensures that data is refreshed after the session token is updated.
   useAppResume(() => {
     if (!user) return
     console.log('🔄 OrdersPage: re-fetching data after app resume')
+    setCurrentPage(0)
     loadOrders({
       status: ['pending', 'in_progress', 'cancelled'],
-      page: currentPage,
+      page: 0,
       pageSize: PAGE_SIZE
     })
     loadWorkers()
@@ -177,15 +205,6 @@ function OrdersPageInner() {
     })
     return () => { cancelled = true }
   }, [dateFilter, dateFilterType])
-
-  useEffect(() => {
-    if (totalOrders === null) return
-
-    const maxPage = Math.max(0, Math.ceil(totalOrders / PAGE_SIZE) - 1)
-    if (currentPage > maxPage) {
-      setCurrentPage(maxPage)
-    }
-  }, [currentPage, totalOrders])
 
   const [showViewModal, setShowViewModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -1273,17 +1292,21 @@ function OrdersPageInner() {
           )
         }
 
-        {/* نافذة حذف الطلب */}
-        {/* إخفاء الترقيم عند البحث أو فلترة التاريخ لأن النتائج كاملة من السيرفر */}
+        {/* عنصر نهاية القائمة - يُراقبه IntersectionObserver لتحميل المزيد */}
         {searchResults === null && dateFilterResults === null && (
-          <PaginationControls
-            currentPage={currentPage}
-            pageSize={PAGE_SIZE}
-            totalItems={totalOrders ?? filteredOrders.length}
-            currentCount={filteredOrders.length}
-            isLoading={ordersLoading}
-            onPageChange={setCurrentPage}
-          />
+          <div ref={sentinelRef} className="py-4 flex justify-center">
+            {isLoadingMore && (
+              <div className="flex items-center gap-2 text-gray-500 text-sm">
+                <Loader className="w-4 h-4 animate-spin" />
+                <span>{isArabic ? 'جارٍ تحميل المزيد...' : 'Loading more...'}</span>
+              </div>
+            )}
+            {!hasMore && orders.length > 0 && !ordersLoading && (
+              <p className="text-gray-400 text-sm">
+                {isArabic ? `تم عرض جميع الطلبات (${orders.length})` : `All orders shown (${orders.length})`}
+              </p>
+            )}
+          </div>
         )}
 
         <DeleteOrderModal

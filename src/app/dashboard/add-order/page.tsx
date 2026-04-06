@@ -386,6 +386,7 @@ function AddOrderContent() {
   }, [formData, isArabic])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const isSubmittingRef = useRef(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -573,12 +574,15 @@ function AddOrderContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (isSubmittingRef.current) return
+
     // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
+    isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -718,6 +722,7 @@ function AddOrderContent() {
       console.error('❌ Error adding order:', error)
       setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
@@ -725,6 +730,8 @@ function AddOrderContent() {
   // حفظ الطلب وإرسال رسالة واتساب
   const handleSubmitAndSendWhatsApp = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (isSubmittingRef.current) return
 
     // التحقق من وجود رقم الهاتف
     if (!formData.clientPhone || formData.clientPhone.trim() === '') {
@@ -740,6 +747,7 @@ function AddOrderContent() {
       return
     }
 
+    isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -896,6 +904,7 @@ function AddOrderContent() {
       console.error('❌ Error adding order:', error)
       setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
@@ -904,11 +913,14 @@ function AddOrderContent() {
   const handleSubmitWithReview = async (e: React.MouseEvent) => {
     e.preventDefault()
 
+    if (isSubmittingRef.current) return
+
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
+    isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -1005,6 +1017,7 @@ function AddOrderContent() {
       console.error('❌ Error adding order:', error)
       setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
@@ -1013,11 +1026,14 @@ function AddOrderContent() {
   const handleSubmitAsPreBooking = async (e: React.MouseEvent) => {
     e.preventDefault()
 
+    if (isSubmittingRef.current) return
+
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
+    isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -1114,6 +1130,7 @@ function AddOrderContent() {
       console.error('❌ Error adding order:', error)
       setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
@@ -1122,12 +1139,15 @@ function AddOrderContent() {
   const handleSubmitAndPrint = async (e: React.MouseEvent) => {
     e.preventDefault()
 
+    if (isSubmittingRef.current) return
+
     // التحقق من الحقول المطلوبة
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
       return
     }
 
+    isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -1226,6 +1246,7 @@ function AddOrderContent() {
       console.error('❌ Error adding order:', error)
       setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
