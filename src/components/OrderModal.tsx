@@ -425,7 +425,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
     // حفظ design_thumbnail إذا لم يكن موجوداً (يعمل لجميع الأدوار)
     // IMPORTANT: يجب أن تكون measurementsData محملة أولاً لتجنب الكتابة فوق بيانات measurements
-    if (!(initialOrder as any).design_thumbnail && measurementsData) {
+    if (initialOrder && !(initialOrder as any).design_thumbnail && measurementsData) {
       const frontComment = savedDesignComments.find(
         c => c.view === 'front' || c.title?.startsWith('أمام')
       ) || savedDesignComments[0]
