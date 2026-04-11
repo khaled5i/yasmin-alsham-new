@@ -51,6 +51,7 @@ const ORDER_LIST_COLUMNS = [
   'measurements->whatsapp_sent',
   'measurements->needs_review',
   'measurements->is_pre_booking',
+  'measurements->design_thumbnail',
   'notes',
   'admin_notes',
   'images',

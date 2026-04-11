@@ -407,13 +407,47 @@ function OrdersPageInner() {
         console.error('⚠️ Failed to fetch full order for measurements merge:', err)
       }
 
+      // استخراج صورة مصغرة من أول تعليق تصميم (واجهة أمام) لعرضها في بطاقة العامل
+      let designThumbnail: string | undefined = undefined
+      if (updates.saved_design_comments !== undefined && updates.saved_design_comments.length > 0) {
+        const frontComment = updates.saved_design_comments.find(
+          (c: any) => c.view === 'front' || c.title?.startsWith('أمام')
+        ) || updates.saved_design_comments[0]
+        if (frontComment?.compositeImage) {
+          try {
+            designThumbnail = await new Promise<string>((resolve) => {
+              const img = new Image()
+              img.onload = () => {
+                const TARGET_HEIGHT = 320
+                const ratio = TARGET_HEIGHT / img.height
+                const canvas = document.createElement('canvas')
+                canvas.width = Math.round(img.width * ratio)
+                canvas.height = TARGET_HEIGHT
+                const ctx = canvas.getContext('2d')
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+                  resolve(canvas.toDataURL('image/jpeg', 0.55))
+                } else {
+                  resolve(frontComment.compositeImage)
+                }
+              }
+              img.onerror = () => resolve(frontComment.compositeImage)
+              img.src = frontComment.compositeImage
+            })
+          } catch {
+            designThumbnail = frontComment.compositeImage
+          }
+        }
+      }
+
       supabaseUpdates.measurements = {
         ...currentMeasurements,
         ...(updates.measurements || {}),
         ...(updates.saved_design_comments !== undefined && { saved_design_comments: normalizedSavedDesignComments }),
         ...(updates.image_annotations !== undefined && { image_annotations: updates.image_annotations }),
         ...(updates.image_drawings !== undefined && { image_drawings: updates.image_drawings }),
-        ...(updates.custom_design_image !== undefined && { custom_design_image: updates.custom_design_image })
+        ...(updates.custom_design_image !== undefined && { custom_design_image: updates.custom_design_image }),
+        ...(designThumbnail !== undefined && { design_thumbnail: designThumbnail })
       }
     }
 
@@ -878,7 +912,7 @@ function OrdersPageInner() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
-          className={filteredOrders.length === 0 ? "space-y-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}
+          className={filteredOrders.length === 0 ? "space-y-6" : user.role === 'worker' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}
         >
           {filteredOrders.length === 0 ? (
             <div className="text-center py-12 bg-white/80 backdrop-blur-sm rounded-2xl border border-pink-100">
@@ -904,219 +938,225 @@ function OrdersPageInner() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
+                  className={`bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-all ${user.role === 'worker' ? 'p-5 shadow-md' : 'p-6 shadow-sm rounded-xl'}`}
                 >
-                  {/* Container for Main Content (Left) and Actions (Right) */}
-                  <div className="flex items-start justify-between mb-2">
-                    {/* Left Side: Info & Details */}
-                    <div className="flex-1 cursor-pointer" onClick={() => handleViewOrder(order)}>
-                      {/* Basic Info */}
-                      <h3 className="font-semibold text-gray-900 mb-1">
-                        {order.client_name}
-                      </h3>
-                      <p className="text-sm text-gray-500 mb-2">
-                        <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}
-                      </p>
+                  {user.role === 'worker' ? (
+                    /* ========= بطاقة العامل ========= */
+                    <>
+                      {/* صورة الأمام + المعلومات جنباً لجنب */}
+                      <div className="flex gap-5 mb-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                        {/* صورة الأمام من تعليقات التصميم */}
+                        <div className="flex-shrink-0 w-40">
+                          <img
+                            src={(order as any).design_thumbnail || '/front2.png'}
+                            alt="صورة التصميم"
+                            className="w-full rounded-xl border border-pink-100 object-contain shadow-sm"
+                          />
+                        </div>
 
-                      {/* Fabric Label */}
-                      {order.fabric && (
-                        <div className="mb-3">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
-                            {order.fabric}
-                          </span>
+                        {/* المعلومات */}
+                        <div className="flex-1 min-w-0">
+                          {/* الحالة والشارات */}
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full ${statusInfo.bgColor}`}>
+                              <StatusIcon className={`w-4 h-4 ${statusInfo.color}`} />
+                              <span className={`text-sm font-semibold ${statusInfo.color}`}>{statusInfo.label}</span>
+                            </div>
+                            {isNeedsReview(order) && (
+                              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100">
+                                <AlertCircle className="w-4 h-4 text-orange-600" />
+                                <span className="text-sm font-semibold text-orange-600">{isArabic ? 'مراجعة' : 'Review'}</span>
+                              </div>
+                            )}
+                            {isPreBooking(order) && (
+                              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100">
+                                <PackageCheck className="w-4 h-4 text-blue-600" />
+                                <span className="text-sm font-semibold text-blue-600">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <h3 className="font-bold text-gray-900 text-lg mb-1 truncate">{order.client_name}</h3>
+                          <p className="text-sm text-gray-500 mb-2">
+                            <span className="font-medium">{t('order_number') || 'رقم الطلب:'}</span> {order.order_number || order.id}
+                          </p>
+                          {order.fabric && (
+                            <span className="inline-block px-3 py-1 rounded-lg text-sm bg-gray-100 text-gray-700 mb-2 font-medium">{order.fabric}</span>
+                          )}
+                          {order.description && (
+                            <p className="text-sm text-gray-500 line-clamp-2 mb-2">{order.description}</p>
+                          )}
+                          <div className="space-y-1 text-sm text-gray-700">
+                            {order.client_phone && (
+                              <p><span className="font-semibold">{isArabic ? 'الهاتف:' : 'Phone:'}</span> <span dir="ltr">{order.client_phone}</span></p>
+                            )}
+                            <p><span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span> {formatDate(order.due_date)}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* أزرار العمل في الأسفل */}
+                      {currentWorkerId && order.worker_id === currentWorkerId && (
+                        <div className="pt-4 border-t border-gray-100">
+                          {order.status === 'pending' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleStartWork(order.id) }}
+                              disabled={isProcessing}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                            >
+                              {isProcessing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Package className="w-5 h-5" />}
+                              <span>{t('start_work') || 'بدء العمل'}</span>
+                            </button>
+                          )}
+                          {order.status === 'in_progress' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpenCompleteModal(order) }}
+                              disabled={isProcessing}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-green-600 hover:bg-green-700 text-white text-base font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                            >
+                              {isProcessing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <CheckCircle className="w-5 h-5" />}
+                              <span>{t('complete_order') || 'إنهاء الطلب'}</span>
+                            </button>
+                          )}
                         </div>
                       )}
-
-                      {/* Details - integrated here to avoid specific gap from right column height */}
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{order.client_phone}</span>
+                    </>
+                  ) : (
+                    /* ========= بطاقة المدير / مدير الورشة ========= */
+                    <div className="flex items-start justify-between mb-2">
+                      {/* Left Side: Info & Details */}
+                      <div className="flex-1 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                        {/* Basic Info */}
+                        <h3 className="font-semibold text-gray-900 mb-1">
+                          {order.client_name}
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-2">
+                          <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}
                         </p>
-                        {order.description && (
-                          <p className="text-sm text-gray-600 line-clamp-2">
-                            <span className="font-medium">{t('description') || (isArabic ? 'الوصف:' : 'Description:')}</span> {order.description}
-                          </p>
+
+                        {/* Fabric Label */}
+                        {order.fabric && (
+                          <div className="mb-3">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+                              {order.fabric}
+                            </span>
+                          </div>
                         )}
-                        <div className="flex flex-col gap-1">
-                          {order.proof_delivery_date && (
-                            <p className="text-sm text-gray-700">
-                              <span className="font-semibold">{isArabic ? 'البروفا:' : 'Proof:'}</span>{' '}
-                              {formatDate(order.proof_delivery_date)}
+
+                        {/* Details */}
+                        <div className="space-y-2">
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{order.client_phone}</span>
+                          </p>
+                          {order.description && (
+                            <p className="text-sm text-gray-600 line-clamp-2">
+                              <span className="font-medium">{t('description') || (isArabic ? 'الوصف:' : 'Description:')}</span> {order.description}
                             </p>
                           )}
-                          <p className="text-sm text-gray-700">
-                            <span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span>{' '}
-                            {formatDate(order.due_date)}
-                          </p>
+                          <div className="flex flex-col gap-1">
+                            {order.proof_delivery_date && (
+                              <p className="text-sm text-gray-700">
+                                <span className="font-semibold">{isArabic ? 'البروفا:' : 'Proof:'}</span>{' '}
+                                {formatDate(order.proof_delivery_date)}
+                              </p>
+                            )}
+                            <p className="text-sm text-gray-700">
+                              <span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span>{' '}
+                              {formatDate(order.due_date)}
+                            </p>
+                          </div>
+                          {order.worker_id && (
+                            <p className="text-sm text-gray-600">
+                              <span className="font-medium">{t('worker') || (isArabic ? 'العامل:' : 'Worker:')}</span>{' '}
+                              {getWorkerName(order.worker_id)}
+                            </p>
+                          )}
                         </div>
-                        {order.worker_id && (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">{t('worker') || (isArabic ? 'العامل:' : 'Worker:')}</span>{' '}
-                            {getWorkerName(order.worker_id)}
-                          </p>
+                      </div>
+
+                      {/* Right Side: Status & Buttons */}
+                      <div className="flex flex-col items-end gap-3 ml-4">
+                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.bgColor}`}>
+                          <StatusIcon className={`w-3.5 h-3.5 ${statusInfo.color}`} />
+                          <span className={`text-xs font-medium ${statusInfo.color}`}>
+                            {statusInfo.label}
+                          </span>
+                        </div>
+                        {isNeedsReview(order) && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100">
+                            <AlertCircle className="w-3.5 h-3.5 text-orange-600" />
+                            <span className="text-xs font-medium text-orange-600">
+                              {isArabic ? 'يحتاج مراجعة' : 'Needs Review'}
+                            </span>
+                          </div>
                         )}
-                      </div>
-                    </div>
+                        {isPreBooking(order) && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100">
+                            <PackageCheck className="w-3.5 h-3.5 text-blue-600" />
+                            <span className="text-xs font-medium text-blue-600">
+                              {isArabic ? 'حجز مسبق' : 'Pre-booking'}
+                            </span>
+                          </div>
+                        )}
 
-                    {/* Right Side: Status & Buttons */}
-                    <div className="flex flex-col items-end gap-3 ml-4">
-                      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.bgColor}`}>
-                        <StatusIcon className={`w-3.5 h-3.5 ${statusInfo.color}`} />
-                        <span className={`text-xs font-medium ${statusInfo.color}`}>
-                          {statusInfo.label}
-                        </span>
-                      </div>
-                      {isNeedsReview(order) && (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100">
-                          <AlertCircle className="w-3.5 h-3.5 text-orange-600" />
-                          <span className="text-xs font-medium text-orange-600">
-                            {isArabic ? 'يحتاج مراجعة' : 'Needs Review'}
-                          </span>
-                        </div>
-                      )}
-                      {isPreBooking(order) && (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100">
-                          <PackageCheck className="w-3.5 h-3.5 text-blue-600" />
-                          <span className="text-xs font-medium text-blue-600">
-                            {isArabic ? 'حجز مسبق' : 'Pre-booking'}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Action Buttons - Two Columns */}
-                      <div className="flex flex-col gap-2 mt-1">
-                        {/* Admin Buttons */}
+                        {/* Admin Action Buttons */}
                         {user.role === 'admin' && (
-                          <>
-                            <div className="flex gap-1.5">
-                              {/* العمود الأيمن: مقاسات، طباعة، واتساب */}
-                              <div className="flex flex-col gap-1.5">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleOpenMeasurements(order)
-                                  }}
-                                  className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200"
-                                  title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
-                                >
-                                  <Ruler className="w-5 h-5" />
-                                  {hasMeasurementsBadge(order) && (
-                                    <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />
-                                  )}
-                                </button>
-
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handlePrintOrder(order)
-                                  }}
-                                  className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-xl transition-colors border border-gray-200 hover:border-pink-200"
-                                  title={t('print_order') || 'طباعة'}
-                                >
-                                  <Printer className="w-5 h-5" />
-                                  {isOrderPrinted(order) && (
-                                    <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />
-                                  )}
-                                </button>
-
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleSendWhatsAppOnly(order)
-                                  }}
-                                  className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200"
-                                  title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
-                                >
-                                  <MessageCircle className="w-5 h-5" />
-                                  {isWhatsAppSent(order) && (
-                                    <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />
-                                  )}
-                                </button>
-                              </div>
-
-                              {/* العمود الأيسر: تعديل، تسليم، حذف */}
-                              <div className="flex flex-col gap-1.5">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleEditOrder(order)
-                                  }}
-                                  className="flex items-center justify-center p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-gray-200 hover:border-blue-200"
-                                  title={t('edit') || 'تعديل'}
-                                >
-                                  <Edit className="w-5 h-5" />
-                                </button>
-
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    if (order.status === 'pending') handleDeliverOrder(order.id)
-                                  }}
-                                  disabled={isProcessing || order.status !== 'pending'}
-                                  className="flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                                  title={isArabic ? 'تم التسليم' : 'Mark as Delivered'}
-                                >
-                                  <Truck className="w-5 h-5" />
-                                </button>
-
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDeleteOrder(order)
-                                  }}
-                                  className="flex items-center justify-center p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-gray-200 hover:border-red-200"
-                                  title={t('delete') || 'حذف'}
-                                >
-                                  <Trash2 className="w-5 h-5" />
-                                </button>
-                              </div>
+                          <div className="flex gap-1.5">
+                            <div className="flex flex-col gap-1.5">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleOpenMeasurements(order) }}
+                                className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200"
+                                title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
+                              >
+                                <Ruler className="w-5 h-5" />
+                                {hasMeasurementsBadge(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handlePrintOrder(order) }}
+                                className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-xl transition-colors border border-gray-200 hover:border-pink-200"
+                                title={t('print_order') || 'طباعة'}
+                              >
+                                <Printer className="w-5 h-5" />
+                                {isOrderPrinted(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSendWhatsAppOnly(order) }}
+                                className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200"
+                                title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
+                              >
+                                <MessageCircle className="w-5 h-5" />
+                                {isWhatsAppSent(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
+                              </button>
                             </div>
-                          </>
-                        )}
-
-                        {/* Worker Buttons */}
-                        {user.role === 'worker' && currentWorkerId && order.worker_id === currentWorkerId && (
-                          <>
-                            {order.status === 'pending' && (
+                            <div className="flex flex-col gap-1.5">
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleStartWork(order.id)
-                                }}
-                                disabled={isProcessing}
-                                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-blue-100"
-                                title={t('start_work') || 'بدء العمل'}
+                                onClick={(e) => { e.stopPropagation(); handleEditOrder(order) }}
+                                className="flex items-center justify-center p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-gray-200 hover:border-blue-200"
+                                title={t('edit') || 'تعديل'}
                               >
-                                {isProcessing ? (
-                                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                  <Package className="w-4 h-4" />
-                                )}
+                                <Edit className="w-5 h-5" />
                               </button>
-                            )}
-
-                            {order.status === 'in_progress' && (
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleOpenCompleteModal(order)
-                                }}
-                                disabled={isProcessing}
-                                className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-green-100"
-                                title={t('complete_order') || 'إنهاء الطلب'}
+                                onClick={(e) => { e.stopPropagation(); if (order.status === 'pending') handleDeliverOrder(order.id) }}
+                                disabled={isProcessing || order.status !== 'pending'}
+                                className="flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                                title={isArabic ? 'تم التسليم' : 'Mark as Delivered'}
                               >
-                                {isProcessing ? (
-                                  <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                  <CheckCircle className="w-4 h-4" />
-                                )}
+                                <Truck className="w-5 h-5" />
                               </button>
-                            )}
-                          </>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
+                                className="flex items-center justify-center p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-gray-200 hover:border-red-200"
+                                title={t('delete') || 'حذف'}
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Progress Bar - Print / Measurements / WhatsApp */}
                   {user.role === 'admin' && (() => {
@@ -1168,6 +1208,10 @@ function OrdersPageInner() {
           workers={workers}
           isOpen={showViewModal}
           onClose={handleCloseModals}
+          onStartWork={user.role === 'worker' ? handleStartWork : undefined}
+          onCompleteWork={user.role === 'worker' ? handleOpenCompleteModal : undefined}
+          isProcessing={isProcessing}
+          currentWorkerId={currentWorkerId || undefined}
         />
 
         <EditOrderModal

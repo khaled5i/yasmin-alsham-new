@@ -627,6 +627,14 @@ function DashboardContent() {
                     <BarChart3 className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-cyan-800">{t('reports')}</span>
                   </Link>
+
+                  <Link
+                    href="/dashboard/worker-monitoring"
+                    className="p-4 bg-gradient-to-r from-teal-50 to-teal-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <Users className="w-6 h-6 text-teal-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-teal-800">متابعة العمال</span>
+                  </Link>
                 </div>
               </motion.div>
             )}
@@ -746,6 +754,14 @@ function DashboardContent() {
                   >
                     <BarChart3 className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-cyan-800">{t('reports')}</span>
+                  </Link>
+
+                  <Link
+                    href="/dashboard/worker-monitoring"
+                    className="p-4 bg-gradient-to-r from-teal-50 to-teal-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <Users className="w-6 h-6 text-teal-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-teal-800">متابعة العمال</span>
                   </Link>
                 </div>
               </motion.div>

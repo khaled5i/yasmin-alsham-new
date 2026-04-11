@@ -55,9 +55,13 @@ interface OrderModalProps {
   isOpen: boolean
   onClose: () => void
   showCartoonButton?: boolean
+  onStartWork?: (orderId: string) => void
+  onCompleteWork?: (order: any) => void
+  isProcessing?: boolean
+  currentWorkerId?: string
 }
 
-export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, showCartoonButton = false }: OrderModalProps) {
+export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId }: OrderModalProps) {
   const { user } = useAuthStore()
   const { t } = useTranslation()
   // Lightbox state
@@ -407,6 +411,47 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     }
   }, [measurementsData])
 
+  // فتح تعليق الأمام تلقائياً للعامل + حفظ design_thumbnail تلقائياً إذا لم يكن موجوداً
+  useEffect(() => {
+    if (savedDesignComments.length === 0) return
+
+    // فتح تعليق الأمام للعامل
+    if (user?.role === 'worker') {
+      const frontComment = savedDesignComments.find(
+        c => c.view === 'front' || c.title?.startsWith('أمام')
+      )
+      setExpandedCommentId(frontComment ? frontComment.id : savedDesignComments[0].id)
+    }
+
+    // حفظ design_thumbnail إذا لم يكن موجوداً (يعمل لجميع الأدوار)
+    if (!(initialOrder as any).design_thumbnail) {
+      const frontComment = savedDesignComments.find(
+        c => c.view === 'front' || c.title?.startsWith('أمام')
+      ) || savedDesignComments[0]
+      if (frontComment?.compositeImage) {
+        const img = new window.Image()
+        img.onload = () => {
+          const TARGET_HEIGHT = 320
+          const ratio = TARGET_HEIGHT / img.height
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(img.width * ratio)
+          canvas.height = TARGET_HEIGHT
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          const thumbnail = canvas.toDataURL('image/jpeg', 0.55)
+          // حفظ الـ thumbnail في قاعدة البيانات بهدوء
+          if (order) {
+            updateOrder(order.id, {
+              measurements: { ...(order.measurements || {}), design_thumbnail: thumbnail }
+            }).catch(() => {/* تجاهل أخطاء الحفظ الصامت */})
+          }
+        }
+        img.src = frontComment.compositeImage
+      }
+    }
+  }, [savedDesignComments, user?.role])
+
   // Re-fetch data when the app resumes from background (mobile).
   // On mobile, going to home screen and back can leave the component with
   // stale/empty data if the Supabase token was expired when the original fetch ran.
@@ -752,7 +797,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
             {/* محتوى النافذة */}
             <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
-              {/* 1️⃣ القسم العلوي - معلومات الطلب الأساسية */}
+              {/* 1️⃣ القسم العلوي - معلومات الطلب الأساسية - مخفي للعامل (يظهر في الأسفل) */}
+              {user?.role !== 'worker' && (
               <div className="bg-gradient-to-r from-pink-50 to-purple-50 p-3 sm:p-6 rounded-xl border border-pink-200">
                 <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center space-x-2 space-x-reverse">
                   <Package className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
@@ -907,6 +953,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   )}
                 </div>
               </div>
+              )}
 
               {/* 2️⃣ قسم الملاحظات - تصميم مدمج واحترافي */}
               {(order.notes || voiceNotes.length > 0) && (
@@ -1706,11 +1753,127 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   </div>
                 </div>
               )}
+
+              {/* 1️⃣ قسم معلومات الطلب للعامل فقط - يظهر في الأسفل */}
+              {user?.role === 'worker' && (
+              <div className="bg-gradient-to-r from-pink-50 to-purple-50 p-3 sm:p-6 rounded-xl border border-pink-200">
+                <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center space-x-2 space-x-reverse">
+                  <Package className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
+                  <span>{t('order_info')}</span>
+                </h3>
+
+                <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
+                  {/* اسم العميل */}
+                  <div className="bg-white p-2 sm:p-3 rounded-lg">
+                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                      <User className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="text-xs sm:text-sm font-medium truncate">{t('name')}:</span>
+                    </div>
+                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.client_name}</p>
+                  </div>
+
+                  {/* رقم الطلب */}
+                  <div className="bg-white p-2 sm:p-3 rounded-lg">
+                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                      <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="text-xs sm:text-sm font-medium truncate">{t('order_number')}:</span>
+                    </div>
+                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.order_number || order.id}</p>
+                  </div>
+
+                  {/* نوع القماش */}
+                  {order.fabric && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('fabric_type')}:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.fabric}</p>
+                    </div>
+                  )}
+
+                  {/* موعد التسليم */}
+                  <div className="bg-white p-2 sm:p-3 rounded-lg">
+                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                      <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="text-xs sm:text-sm font-medium truncate">{t('due_date')}:</span>
+                    </div>
+                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{formatDate(order.due_date)}</p>
+                  </div>
+
+                  {/* موعد تسليم البروفا */}
+                  {order.proof_delivery_date && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('proof_delivery_date')}:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{formatDate(order.proof_delivery_date)}</p>
+                    </div>
+                  )}
+
+                  {/* رقم الهاتف */}
+                  {order.client_phone && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <Phone className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('phone')}:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate" dir="ltr">{order.client_phone}</p>
+                    </div>
+                  )}
+
+                  {/* الحالة */}
+                  <div className="bg-white p-2 sm:p-3 rounded-lg">
+                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                      <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="text-xs sm:text-sm font-medium truncate">{t('status')}:</span>
+                    </div>
+                    <span className={`inline-block px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color} truncate max-w-full`}>
+                      {getStatusInfo(order.status).label}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              )}
             </div>
 
             {/* تذييل النافذة */}
             <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 rounded-b-2xl">
-              <div className="flex justify-end">
+              <div className="flex justify-end items-center gap-3">
+                {/* أزرار العامل - بدء العمل وإنهاء الطلب */}
+                {user?.role === 'worker' && currentWorkerId && order.worker_id === currentWorkerId && (
+                  <>
+                    {order.status === 'pending' && onStartWork && (
+                      <button
+                        onClick={() => { onStartWork(order.id); onClose() }}
+                        disabled={isProcessing}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isProcessing ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <Package className="w-4 h-4" />
+                        )}
+                        <span>{t('start_work') || 'بدء العمل'}</span>
+                      </button>
+                    )}
+                    {order.status === 'in_progress' && onCompleteWork && (
+                      <button
+                        onClick={() => { onClose(); onCompleteWork(order) }}
+                        disabled={isProcessing}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isProcessing ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <CheckCircle className="w-4 h-4" />
+                        )}
+                        <span>{t('complete_order') || 'إنهاء الطلب'}</span>
+                      </button>
+                    )}
+                  </>
+                )}
                 <button
                   onClick={onClose}
                   className="btn-secondary px-6 py-2"

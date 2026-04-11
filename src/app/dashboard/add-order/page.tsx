@@ -664,6 +664,33 @@ function AddOrderContent() {
         allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
       }
 
+      // توليد صورة مصغرة من تعليق الأمام لعرضها في بطاقة العامل
+      let designThumbnail: string | undefined
+      if (allSavedComments.length > 0) {
+        const frontComment = allSavedComments.find(
+          (c: any) => c.view === 'front' || c.title?.startsWith('أمام')
+        ) || allSavedComments[0]
+        if (frontComment?.compositeImage) {
+          try {
+            designThumbnail = await new Promise<string>((resolve) => {
+              const img = new window.Image()
+              img.onload = () => {
+                const TARGET_HEIGHT = 320
+                const ratio = TARGET_HEIGHT / img.height
+                const canvas = document.createElement('canvas')
+                canvas.width = Math.round(img.width * ratio)
+                canvas.height = TARGET_HEIGHT
+                const ctx = canvas.getContext('2d')
+                if (ctx) { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); resolve(canvas.toDataURL('image/jpeg', 0.55)) }
+                else resolve(frontComment.compositeImage as string)
+              }
+              img.onerror = () => resolve(frontComment.compositeImage as string)
+              img.src = frontComment.compositeImage as string
+            })
+          } catch { /* تجاهل */ }
+        }
+      }
+
       // إنشاء الطلب باستخدام Supabase
       // رقم الطلب: إذا تم إدخاله يدوياً سيتم استخدامه، وإلا سيتم توليده تلقائياً من قاعدة البيانات
       const result = await createOrder({
@@ -674,7 +701,8 @@ function AddOrderContent() {
         fabric: formData.fabric || undefined,
         measurements: {
           ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
+          ...(designThumbnail ? { design_thumbnail: designThumbnail } : {})
         }, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',

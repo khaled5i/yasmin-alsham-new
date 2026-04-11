@@ -1,0 +1,720 @@
+'use client'
+
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { motion } from 'framer-motion'
+import { useRouter, useParams } from 'next/navigation'
+import Link from 'next/link'
+import { useAuthStore } from '@/store/authStore'
+import { useWorkerStore } from '@/store/workerStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { workerService, WorkerWithUser } from '@/lib/services/worker-service'
+import { orderService, Order } from '@/lib/services/order-service'
+import { formatGregorianDate } from '@/lib/date-utils'
+import OrderModal from '@/components/OrderModal'
+import PaginationControls from '@/components/PaginationControls'
+import {
+  ArrowRight,
+  Users,
+  Package,
+  CheckCircle,
+  Star,
+  BarChart3,
+  Loader2,
+  Clock,
+  TrendingUp,
+  DollarSign,
+  AlertCircle,
+  ChevronLeft,
+  LogOut,
+} from 'lucide-react'
+
+const PAGE_SIZE = 20
+
+type TabType = 'active' | 'completed' | 'reports'
+
+const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
+  pending: { label: 'قيد الانتظار', color: 'text-yellow-700', bg: 'bg-yellow-50 border-yellow-200' },
+  in_progress: { label: 'جارٍ التنفيذ', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
+  completed: { label: 'مكتمل', color: 'text-green-700', bg: 'bg-green-50 border-green-200' },
+  delivered: { label: 'تم التسليم', color: 'text-purple-700', bg: 'bg-purple-50 border-purple-200' },
+  cancelled: { label: 'ملغي', color: 'text-red-700', bg: 'bg-red-50 border-red-200' },
+}
+
+export default function WorkerDetailPage() {
+  const router = useRouter()
+  const params = useParams()
+  const workerId = params.workerId as string
+
+  const { user, signOut } = useAuthStore()
+  const { workers, loadWorkers } = useWorkerStore()
+  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+
+  const [worker, setWorker] = useState<WorkerWithUser | null>(null)
+  const [activeTab, setActiveTab] = useState<TabType>('active')
+
+  // Active orders tab
+  const [activeOrders, setActiveOrders] = useState<Order[]>([])
+  const [activeOrdersTotal, setActiveOrdersTotal] = useState(0)
+  const [activeOrdersPage, setActiveOrdersPage] = useState(0)
+  const [isLoadingActive, setIsLoadingActive] = useState(true)
+
+  // Completed orders tab
+  const [completedOrders, setCompletedOrders] = useState<Order[]>([])
+  const [completedOrdersTotal, setCompletedOrdersTotal] = useState(0)
+  const [completedOrdersPage, setCompletedOrdersPage] = useState(0)
+  const [isLoadingCompleted, setIsLoadingCompleted] = useState(false)
+
+  // Reports tab
+  const [allOrders, setAllOrders] = useState<Order[]>([])
+  const [isLoadingReports, setIsLoadingReports] = useState(false)
+
+  // Modal
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  const loadedTabs = useRef<Set<TabType>>(new Set())
+
+  // Access guard
+  useEffect(() => {
+    if (!user) { router.push('/login'); return }
+    if (permissionsLoading) return
+    const isAdmin = user.role === 'admin'
+    const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
+    if (!isAdmin && !isWorkshopManager) {
+      router.push('/dashboard')
+    }
+  }, [user, workerType, permissionsLoading, router])
+
+  // Fetch worker profile
+  useEffect(() => {
+    if (!workerId) return
+    workerService.getById(workerId).then(({ data }) => {
+      if (data) setWorker(data)
+    })
+  }, [workerId])
+
+  // Load workers for OrderModal prop
+  useEffect(() => {
+    if (workers.length === 0) loadWorkers()
+  }, [workers.length, loadWorkers])
+
+  // Fetch active orders (on mount)
+  const fetchActiveOrders = useCallback(async (page: number) => {
+    setIsLoadingActive(true)
+    try {
+      const { data, total } = await orderService.getAll({
+        worker_id: workerId,
+        status: ['pending', 'in_progress'],
+        page,
+        pageSize: PAGE_SIZE,
+      })
+      setActiveOrders(data || [])
+      setActiveOrdersTotal(total || 0)
+    } finally {
+      setIsLoadingActive(false)
+    }
+  }, [workerId])
+
+  useEffect(() => {
+    if (!workerId) return
+    fetchActiveOrders(activeOrdersPage)
+  }, [workerId, activeOrdersPage, fetchActiveOrders])
+
+  // Fetch completed orders (lazy)
+  const fetchCompletedOrders = useCallback(async (page: number) => {
+    setIsLoadingCompleted(true)
+    try {
+      const { data, total } = await orderService.getAll({
+        worker_id: workerId,
+        status: ['completed', 'delivered'],
+        page,
+        pageSize: PAGE_SIZE,
+      })
+      setCompletedOrders(data || [])
+      setCompletedOrdersTotal(total || 0)
+    } finally {
+      setIsLoadingCompleted(false)
+    }
+  }, [workerId])
+
+  // Fetch reports data (lazy)
+  const fetchReports = useCallback(async () => {
+    setIsLoadingReports(true)
+    try {
+      const { data } = await orderService.getAll({
+        worker_id: workerId,
+        noPagination: true,
+        lightweight: true,
+      })
+      setAllOrders(data || [])
+    } finally {
+      setIsLoadingReports(false)
+    }
+  }, [workerId])
+
+  // Tab switch handler
+  function handleTabSwitch(tab: TabType) {
+    setActiveTab(tab)
+    if (!loadedTabs.current.has(tab)) {
+      loadedTabs.current.add(tab)
+      if (tab === 'completed') fetchCompletedOrders(0)
+      if (tab === 'reports') fetchReports()
+    }
+  }
+
+  function openOrderModal(order: Order) {
+    setSelectedOrder(order)
+    setIsModalOpen(true)
+  }
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.push('/login')
+  }
+
+  if (permissionsLoading || (!worker && isLoadingActive)) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-teal-600 animate-spin mx-auto mb-3" />
+          <p className="text-gray-600 text-sm">جاري التحميل...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const name = worker?.user?.full_name || 'عاملة'
+  const firstLetter = name[0] || '؟'
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50" dir="rtl">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-teal-100 shadow-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-3 min-w-0">
+              <Link
+                href="/dashboard/worker-monitoring"
+                className="text-teal-600 hover:text-teal-700 transition-colors flex items-center gap-1 flex-shrink-0"
+              >
+                <ArrowRight className="w-5 h-5" />
+                <span className="text-sm font-medium hidden sm:inline">متابعة العمال</span>
+              </Link>
+              <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-base font-bold text-gray-800 truncate">{name}</h1>
+                {worker?.specialty && (
+                  <p className="text-xs text-gray-500 truncate">{worker.specialty}</p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="p-2 text-gray-500 hover:text-red-500 transition-colors flex-shrink-0"
+              title="تسجيل الخروج"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        {/* Worker Profile Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6"
+        >
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+            {/* Avatar */}
+            <div className="relative flex-shrink-0">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg">
+                {firstLetter}
+              </div>
+              <span
+                className={`absolute bottom-1 right-1 w-5 h-5 rounded-full border-2 border-white ${
+                  worker?.is_available ? 'bg-green-400' : 'bg-gray-300'
+                }`}
+              />
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 text-center sm:text-right">
+              <h2 className="text-xl font-bold text-gray-800">{name}</h2>
+              {worker?.specialty && (
+                <p className="text-sm text-teal-600 font-medium mt-0.5">{worker.specialty}</p>
+              )}
+              <div className="flex flex-wrap justify-center sm:justify-start gap-2 mt-3">
+                {worker?.experience_years ? (
+                  <span className="px-2.5 py-1 bg-slate-50 text-slate-600 rounded-full text-xs border border-slate-100">
+                    {worker.experience_years} سنوات خبرة
+                  </span>
+                ) : null}
+                <span
+                  className={`px-2.5 py-1 rounded-full text-xs border font-medium ${
+                    worker?.is_available
+                      ? 'bg-green-50 text-green-700 border-green-100'
+                      : 'bg-gray-50 text-gray-500 border-gray-100'
+                  }`}
+                >
+                  {worker?.is_available ? 'متاح' : 'غير متاح'}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick KPIs */}
+            <div className="flex gap-4 sm:gap-6 flex-shrink-0">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-blue-600">{activeOrdersTotal}</p>
+                <p className="text-xs text-gray-400 mt-0.5">نشطة</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-600">{worker?.total_completed_orders || 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">مكتملة</p>
+              </div>
+              <div className="text-center">
+                <div className="flex items-center gap-1 justify-center">
+                  <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+                  <p className="text-2xl font-bold text-yellow-600">
+                    {worker?.performance_rating ? worker.performance_rating.toFixed(1) : '—'}
+                  </p>
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">تقييم</p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+          className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+        >
+          {/* Tab nav */}
+          <div className="flex border-b border-slate-100">
+            {(
+              [
+                { key: 'active' as TabType, label: 'الطلبات النشطة', icon: Package, count: activeOrdersTotal },
+                { key: 'completed' as TabType, label: 'الطلبات المكتملة', icon: CheckCircle, count: completedOrdersTotal },
+                { key: 'reports' as TabType, label: 'التقارير', icon: BarChart3, count: null },
+              ] as const
+            ).map((tab) => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => handleTabSwitch(tab.key)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-4 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === tab.key
+                      ? 'border-teal-500 text-teal-600 bg-teal-50/50'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="sm:hidden">
+                    {tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : 'تقارير'}
+                  </span>
+                  {tab.count !== null && tab.count > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Tab content */}
+          <div className="p-4 sm:p-6">
+            {activeTab === 'active' && (
+              <OrdersTab
+                orders={activeOrders}
+                total={activeOrdersTotal}
+                page={activeOrdersPage}
+                isLoading={isLoadingActive}
+                onPageChange={(p) => setActiveOrdersPage(p)}
+                onOrderClick={openOrderModal}
+                emptyMessage="لا توجد طلبات نشطة لهذه الخياطة حالياً"
+              />
+            )}
+            {activeTab === 'completed' && (
+              <OrdersTab
+                orders={completedOrders}
+                total={completedOrdersTotal}
+                page={completedOrdersPage}
+                isLoading={isLoadingCompleted}
+                onPageChange={(p) => {
+                  setCompletedOrdersPage(p)
+                  fetchCompletedOrders(p)
+                }}
+                onOrderClick={openOrderModal}
+                emptyMessage="لا توجد طلبات مكتملة لهذه الخياطة حتى الآن"
+                showCompletedAt
+              />
+            )}
+            {activeTab === 'reports' && (
+              <ReportsTab orders={allOrders} isLoading={isLoadingReports} />
+            )}
+          </div>
+        </motion.div>
+      </main>
+
+      {/* Order Modal */}
+      <OrderModal
+        order={selectedOrder}
+        workers={workers}
+        isOpen={isModalOpen}
+        onClose={() => { setIsModalOpen(false); setSelectedOrder(null) }}
+      />
+    </div>
+  )
+}
+
+// ============================================================================
+// Orders Tab
+// ============================================================================
+
+function OrdersTab({
+  orders,
+  total,
+  page,
+  isLoading,
+  onPageChange,
+  onOrderClick,
+  emptyMessage,
+  showCompletedAt = false,
+}: {
+  orders: Order[]
+  total: number
+  page: number
+  isLoading: boolean
+  onPageChange: (page: number) => void
+  onOrderClick: (order: Order) => void
+  emptyMessage: string
+  showCompletedAt?: boolean
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+      </div>
+    )
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <Package className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+        <p className="text-gray-400 text-sm">{emptyMessage}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="space-y-3">
+        {orders.map((order) => (
+          <OrderRow key={order.id} order={order} onClick={() => onOrderClick(order)} showCompletedAt={showCompletedAt} />
+        ))}
+      </div>
+      {total > PAGE_SIZE && (
+        <div className="mt-6">
+          <PaginationControls
+            currentPage={page}
+            pageSize={PAGE_SIZE}
+            totalItems={total}
+            onPageChange={onPageChange}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; onClick: () => void; showCompletedAt?: boolean }) {
+  const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-right p-4 bg-white rounded-xl border border-slate-100 hover:border-teal-200 hover:shadow-md transition-all duration-200 group"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <p className="font-semibold text-gray-800 truncate">{order.client_name}</p>
+            {order.order_number && (
+              <span className="text-xs text-gray-400 flex-shrink-0">#{order.order_number}</span>
+            )}
+          </div>
+          {order.description && (
+            <p className="text-sm text-gray-500 truncate">{order.description}</p>
+          )}
+          {order.due_date && (
+            <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              موعد التسليم:{' '}
+              {formatGregorianDate(order.due_date, 'ar-SA', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </p>
+          )}
+          {showCompletedAt && order.worker_completed_at && (
+            <p className="text-xs text-green-600 mt-1 flex items-center gap-1 font-medium">
+              <CheckCircle className="w-3 h-3" />
+              أنهاه العامل:{' '}
+              {formatGregorianDate(order.worker_completed_at, 'ar-SA', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </p>
+          )}
+          {showCompletedAt && !order.worker_completed_at && (
+            <p className="text-xs text-gray-300 mt-1 flex items-center gap-1">
+              <CheckCircle className="w-3 h-3" />
+              تاريخ الإنهاء غير مسجّل
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${status.bg} ${status.color}`}>
+            {status.label}
+          </span>
+          {order.price ? (
+            <span className="text-sm font-medium text-gray-700">
+              {order.price.toLocaleString('ar-SA')} ريال
+            </span>
+          ) : null}
+        </div>
+        <ChevronLeft className="w-4 h-4 text-gray-300 group-hover:text-teal-400 transition-colors flex-shrink-0" />
+      </div>
+    </button>
+  )
+}
+
+// ============================================================================
+// Reports Tab
+// ============================================================================
+
+function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+      </div>
+    )
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <BarChart3 className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+        <p className="text-gray-400 text-sm">لا توجد بيانات كافية لعرض التقارير</p>
+      </div>
+    )
+  }
+
+  // ---- Computed metrics ----
+  const total = orders.length
+  const completedCount = orders.filter((o) => ['completed', 'delivered'].includes(o.status)).length
+  const cancelledCount = orders.filter((o) => o.status === 'cancelled').length
+  const activeCount = orders.filter((o) => ['pending', 'in_progress'].includes(o.status)).length
+  const completionRate = total > 0 ? Math.round((completedCount / total) * 100) : 0
+
+  // Financial
+  const totalRevenue = orders
+    .filter((o) => ['completed', 'delivered'].includes(o.status))
+    .reduce((s, o) => s + (o.price || 0), 0)
+  const avgOrderValue = completedCount > 0 ? Math.round(totalRevenue / completedCount) : 0
+  const totalOutstanding = orders
+    .filter((o) => !['cancelled', 'delivered'].includes(o.status))
+    .reduce((s, o) => s + Math.max(0, (o.price || 0) - (o.paid_amount || 0)), 0)
+
+  // Status counts
+  const statusGroups: Record<string, number> = {
+    pending: orders.filter((o) => o.status === 'pending').length,
+    in_progress: orders.filter((o) => o.status === 'in_progress').length,
+    completed: orders.filter((o) => o.status === 'completed').length,
+    delivered: orders.filter((o) => o.status === 'delivered').length,
+    cancelled: orders.filter((o) => o.status === 'cancelled').length,
+  }
+
+  // Monthly trend (last 6 months)
+  const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+  const monthBuckets: { label: string; key: string; count: number }[] = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date()
+    d.setMonth(d.getMonth() - i)
+    monthBuckets.push({
+      label: arabicMonths[d.getMonth()],
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      count: 0,
+    })
+  }
+  for (const order of orders) {
+    if (['completed', 'delivered'].includes(order.status) && order.created_at) {
+      const key = order.created_at.slice(0, 7)
+      const bucket = monthBuckets.find((m) => m.key === key)
+      if (bucket) bucket.count++
+    }
+  }
+  const maxMonthCount = Math.max(...monthBuckets.map((m) => m.count), 1)
+
+  // Status bar colors
+  const statusBarColors: Record<string, string> = {
+    pending: 'bg-yellow-400',
+    in_progress: 'bg-blue-400',
+    completed: 'bg-green-400',
+    delivered: 'bg-purple-400',
+    cancelled: 'bg-red-300',
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Section 1: Overview KPIs */}
+      <section>
+        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-teal-500" />
+          نظرة عامة
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <KpiCard
+            label="إجمالي الطلبات"
+            value={total}
+            icon={<Package className="w-4 h-4" />}
+            colorClass="text-slate-700 bg-slate-50 border-slate-200"
+          />
+          <KpiCard
+            label="نسبة الإنجاز"
+            value={`${completionRate}%`}
+            icon={<CheckCircle className="w-4 h-4" />}
+            colorClass="text-green-700 bg-green-50 border-green-200"
+          />
+          <KpiCard
+            label="طلبات نشطة"
+            value={activeCount}
+            icon={<Clock className="w-4 h-4" />}
+            colorClass="text-blue-700 bg-blue-50 border-blue-200"
+          />
+          <KpiCard
+            label="طلبات ملغاة"
+            value={cancelledCount}
+            icon={<AlertCircle className="w-4 h-4" />}
+            colorClass="text-red-700 bg-red-50 border-red-200"
+          />
+        </div>
+      </section>
+
+      {/* Section 2: Status Breakdown */}
+      <section>
+        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-teal-500" />
+          توزيع حالات الطلبات
+        </h3>
+        <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-3">
+          {Object.entries(statusGroups).map(([status, count]) => {
+            const pct = total > 0 ? Math.round((count / total) * 100) : 0
+            const info = STATUS_MAP[status]
+            return (
+              <div key={status} className="flex items-center gap-3">
+                <span className="text-xs text-gray-500 w-20 text-right flex-shrink-0">
+                  {info?.label || status}
+                </span>
+                <div className="flex-1 bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${statusBarColors[status] || 'bg-gray-400'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-gray-600 w-8 flex-shrink-0">{count}</span>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* Section 3: Monthly trend */}
+      <section>
+        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-teal-500" />
+          الطلبات المكتملة شهرياً (آخر 6 أشهر)
+        </h3>
+        <div className="bg-slate-50 rounded-xl border border-slate-100 p-4">
+          <div className="flex items-end justify-around gap-2 h-32">
+            {monthBuckets.map((m) => {
+              const heightPct = (m.count / maxMonthCount) * 100
+              return (
+                <div key={m.key} className="flex flex-col items-center gap-1 flex-1">
+                  <span className="text-xs font-medium text-gray-600">{m.count > 0 ? m.count : ''}</span>
+                  <div className="w-full flex items-end justify-center" style={{ height: '80px' }}>
+                    <div
+                      className="w-full max-w-[32px] bg-gradient-to-t from-teal-500 to-cyan-400 rounded-t-md transition-all duration-700"
+                      style={{ height: m.count > 0 ? `${heightPct}%` : '4px', opacity: m.count > 0 ? 1 : 0.2 }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400 text-center leading-tight">{m.label}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Section 4: Financial KPIs */}
+      <section>
+        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-teal-500" />
+          المؤشرات المالية
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <KpiCard
+            label="إجمالي الإيرادات"
+            value={`${totalRevenue.toLocaleString('ar-SA')} ريال`}
+            icon={<DollarSign className="w-4 h-4" />}
+            colorClass="text-green-700 bg-green-50 border-green-200"
+          />
+          <KpiCard
+            label="متوسط قيمة الطلب"
+            value={`${avgOrderValue.toLocaleString('ar-SA')} ريال`}
+            icon={<TrendingUp className="w-4 h-4" />}
+            colorClass="text-teal-700 bg-teal-50 border-teal-200"
+          />
+          <KpiCard
+            label="المبالغ المتبقية"
+            value={`${totalOutstanding.toLocaleString('ar-SA')} ريال`}
+            icon={<AlertCircle className="w-4 h-4" />}
+            colorClass="text-orange-700 bg-orange-50 border-orange-200"
+          />
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function KpiCard({
+  label,
+  value,
+  icon,
+  colorClass,
+}: {
+  label: string
+  value: string | number
+  icon: React.ReactNode
+  colorClass: string
+}) {
+  return (
+    <div className={`rounded-xl border p-4 ${colorClass}`}>
+      <div className="flex items-center gap-2 mb-2 opacity-70">{icon}<span className="text-xs font-medium">{label}</span></div>
+      <p className="text-xl font-bold">{value}</p>
+    </div>
+  )
+}
