@@ -10,7 +10,9 @@ import Header from '@/components/Header'
 
 const EXCLUDED_KEYS = [
   'image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments',
-  'cartoon_image', 'is_printed', 'has_measurements'
+  'cartoon_image', 'ai_generated_images', 'design_thumbnail',
+  // أعلام نُقلت لأعمدة مستقلة (migration 29) - تُبقى للتوافق مع البيانات القديمة
+  'is_printed', 'has_measurements', 'whatsapp_sent', 'needs_review', 'is_pre_booking', 'fabric_type'
 ]
 
 interface OrderInfo {

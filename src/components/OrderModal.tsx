@@ -1509,7 +1509,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         images={order.images || []}
                         designComments={savedDesignComments}
                         fabric={order.fabric}
-                        fabricType={(order.measurements as any)?.fabric_type || null}
+                        fabricType={(order as any).fabric_type || (order.measurements as any)?.fabric_type || null}
                         generatedImages={[
                           ...((order.measurements as any)?.ai_generated_images || []),
                           ...localAiImages
@@ -1581,7 +1581,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     images={order.images || []}
                     designComments={savedDesignComments}
                     fabric={order.fabric}
-                    fabricType={(order.measurements as any)?.fabric_type || null}
+                    fabricType={(order as any).fabric_type || (order.measurements as any)?.fabric_type || null}
                     generatedImages={[
                       ...((order.measurements as any)?.ai_generated_images || []),
                       ...localAiImages
@@ -1974,15 +1974,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           order={order}
           onPrint={async () => {
             try {
-              const measurementsResult = await orderService.getMeasurements(order.id)
-              const currentMeasurements = measurementsResult.data || order.measurements || {}
-              const isPrinted = currentMeasurements.is_printed === true || currentMeasurements.is_printed === 'true'
-              if (!isPrinted) {
-                const updatedMeasurements = {
-                  ...currentMeasurements,
-                  is_printed: true
-                }
-                await updateOrder(order.id, { measurements: updatedMeasurements })
+              // is_printed عمود مستقل (migration 29)
+              if (order.is_printed !== true) {
+                await updateOrder(order.id, { is_printed: true })
               }
             } catch (error) {
               console.error('Error marking order as printed:', error)

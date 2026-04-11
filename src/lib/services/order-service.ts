@@ -12,6 +12,7 @@
 
 import { extractDateKey } from '../date-utils'
 import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
+import { uploadOrderImages } from './storage-service'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -45,12 +46,13 @@ const ORDER_LIST_COLUMNS = [
   'due_date',
   'proof_delivery_date',
   'delivery_date',
-  'measurements->fabric_type',
-  'measurements->has_measurements',
-  'measurements->is_printed',
-  'measurements->whatsapp_sent',
-  'measurements->needs_review',
-  'measurements->is_pre_booking',
+  // أعمدة مستقلة (migration 29) - لا تحتاج JSONB extraction بعد الآن
+  'has_measurements',
+  'is_printed',
+  'whatsapp_sent',
+  'needs_review',
+  'is_pre_booking',
+  'fabric_type',
   'measurements->design_thumbnail',
   'notes',
   'admin_notes',
@@ -85,13 +87,17 @@ export interface Order {
   description: string
   fabric?: string | null
   measurements: Record<string, any>
-  // Lightweight list projection fields from measurements JSONB
+  // أعمدة مستقلة (migration 29) - قيم boolean حقيقية من DB
   fabric_type?: string | null
-  has_measurements?: boolean | string | null
-  is_printed?: boolean | string | null
-  whatsapp_sent?: boolean | string | null
-  needs_review?: boolean | string | null
-  is_pre_booking?: boolean | string | null
+  has_measurements: boolean
+  is_printed: boolean
+  whatsapp_sent: boolean
+  needs_review: boolean
+  is_pre_booking: boolean
+  // أعمدة JSONB مستقلة (migration 30) - بيانات التصميم
+  image_annotations?: any[]
+  image_drawings?: any[]
+  design_comments?: any[]
   price: number
   paid_amount: number
   remaining_amount: number
@@ -123,6 +129,10 @@ export interface CreateOrderData {
   description: string
   fabric?: string
   measurements?: Record<string, any>
+  // أعمدة مستقلة (migration 29)
+  fabric_type?: string | null
+  needs_review?: boolean
+  is_pre_booking?: boolean
   price: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -211,6 +221,13 @@ export interface UpdateOrderData {
   description?: string
   fabric?: string | null
   measurements?: Record<string, any>
+  // أعمدة مستقلة (migration 29)
+  has_measurements?: boolean
+  is_printed?: boolean
+  whatsapp_sent?: boolean
+  needs_review?: boolean
+  is_pre_booking?: boolean
+  fabric_type?: string | null
   price?: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -325,12 +342,10 @@ export const orderService = {
       }
 
       // تحضير البيانات للإدخال
-      // دمج التعليقات على الصورة والرسومات مع المقاسات
-      const measurementsWithAnnotations = {
+      // measurements تحتوي فقط على: المقاسات الفعلية + custom_design_image + ai/thumbnail
+      // بيانات التصميم (annotations/drawings/comments) تُكتب لأعمدة مستقلة (migration 30)
+      const measurementsOnly = {
         ...(orderData.measurements || {}),
-        saved_design_comments: orderData.saved_design_comments || [],
-        image_annotations: orderData.image_annotations || [],
-        image_drawings: orderData.image_drawings || [],
         custom_design_image: orderData.custom_design_image || null
       }
 
@@ -342,7 +357,15 @@ export const orderService = {
         client_email: orderData.client_email || null,
         description: orderData.description,
         fabric: orderData.fabric || null,
-        measurements: measurementsWithAnnotations,
+        measurements: measurementsOnly,
+        // أعمدة JSONB مستقلة (migration 30)
+        image_annotations: orderData.image_annotations || [],
+        image_drawings: orderData.image_drawings || [],
+        design_comments: orderData.saved_design_comments || [],
+        // أعمدة مستقلة (migration 29)
+        fabric_type: orderData.fabric_type || orderData.measurements?.fabric_type || null,
+        needs_review: orderData.needs_review ?? orderData.measurements?.needs_review ?? false,
+        is_pre_booking: orderData.is_pre_booking ?? orderData.measurements?.is_pre_booking ?? false,
         price: orderData.price,
         paid_amount: orderData.paid_amount || 0,
         payment_status: orderData.payment_status || 'unpaid',
@@ -402,6 +425,28 @@ export const orderService = {
       }
 
       if (isDev) console.log('✅ Order created successfully:', data.id)
+
+      // رفع الصور إلى Storage وتحديث السجل بالـ URLs (بدلاً من base64)
+      try {
+        const imageUpdates = await uploadOrderImages(data.id, {
+          measurements: insertData.measurements,
+          images: insertData.images,
+        })
+        if (imageUpdates) {
+          const { error: updateError } = await supabase
+            .from('orders')
+            .update(imageUpdates)
+            .eq('id', data.id)
+          if (updateError) {
+            console.error('⚠️ فشل تحديث URLs الصور بعد الإنشاء:', updateError.message)
+          } else {
+            if (isDev) console.log('✅ Images uploaded to Storage for order:', data.id)
+            return { data: { ...data, ...imageUpdates }, error: null }
+          }
+        }
+      } catch (uploadErr: any) {
+        console.error('⚠️ uploadOrderImages exception (create):', uploadErr.message)
+      }
 
       return { data, error: null }
     } catch (error: any) {
@@ -622,9 +667,22 @@ export const orderService = {
 
       if (isDev) console.log('🔄 Updating order:', id)
 
-      // PERF FIX: Removed redundant SELECT * read-before-write.
-      // The old code fetched the entire order (including multi-MB JSONB) before
-      // every update, but never used the result. This eliminates ~50% of update latency.
+      // رفع أي صور base64 في التحديث إلى Storage قبل الحفظ
+      try {
+        const imageUpdates = await uploadOrderImages(id, {
+          measurements: (updates as any).measurements,
+          images: (updates as any).images,
+          completed_images: (updates as any).completed_images,
+        })
+        if (imageUpdates) {
+          if (imageUpdates.measurements) (updates as any).measurements = imageUpdates.measurements
+          if (imageUpdates.images) (updates as any).images = imageUpdates.images
+          if (imageUpdates.completed_images) (updates as any).completed_images = imageUpdates.completed_images
+          if (isDev) console.log('✅ Images uploaded to Storage before update:', id)
+        }
+      } catch (uploadErr: any) {
+        console.error('⚠️ uploadOrderImages exception (update):', uploadErr.message)
+      }
 
       const { data, error } = await supabase
         .from('orders')
@@ -811,9 +869,10 @@ export const orderService = {
     try {
       if (isDev) console.log('📐 Fetching measurements for order:', id)
 
+      // نجلب measurements + الأعمدة الجديدة (migration 30) معاً لتوحيد نقطة الوصول
       const { data, error } = await supabase
         .from('orders')
-        .select('measurements')
+        .select('measurements, image_annotations, image_drawings, design_comments')
         .eq('id', id)
         .single()
 
@@ -822,8 +881,26 @@ export const orderService = {
         return { data: null, error: error.message }
       }
 
+      const row = data as any
+      // ندمج الأعمدة الجديدة في كائن واحد مع الحفاظ على التوافق مع الكود الموجود
+      // الكود الموجود يقرأ: measurementsData.saved_design_comments / image_annotations / image_drawings
+      const merged: Record<string, any> = {
+        ...(row?.measurements || {}),
+        // الأعمدة الجديدة تتفوق على البيانات القديمة داخل measurements (إن وُجدت)
+        image_annotations: row?.image_annotations?.length
+          ? row.image_annotations
+          : (row?.measurements?.image_annotations || []),
+        image_drawings: row?.image_drawings?.length
+          ? row.image_drawings
+          : (row?.measurements?.image_drawings || []),
+        // design_comments → saved_design_comments للتوافق مع الكود الموجود
+        saved_design_comments: row?.design_comments?.length
+          ? row.design_comments
+          : (row?.measurements?.saved_design_comments || []),
+      }
+
       if (isDev) console.log('✅ Measurements fetched successfully')
-      return { data: (data?.measurements as Record<string, any>) || {}, error: null }
+      return { data: merged, error: null }
     } catch (error: any) {
       console.error('❌ Error in getMeasurements:', error.message)
       return { data: null, error: error.message || 'خطأ في جلب المقاسات' }

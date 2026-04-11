@@ -350,9 +350,20 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
   // إنشاء snapshots لجميع التعليقات
   const generateAllSnapshots = useCallback(async () => {
     const measurements = order.measurements || {}
-    const savedComments: SavedDesignComment[] = measurements.saved_design_comments || []
-    const legacyAnnotations: ImageAnnotation[] = measurements.image_annotations || []
-    const legacyDrawings: DrawingPath[] = measurements.image_drawings || []
+    const orderAny = order as any
+    // migration 30: الأعمدة المستقلة تتفوق على البيانات القديمة داخل measurements
+    const savedComments: SavedDesignComment[] =
+      (orderAny.design_comments?.length ? orderAny.design_comments : null) ||
+      measurements.saved_design_comments ||
+      []
+    const legacyAnnotations: ImageAnnotation[] =
+      (orderAny.image_annotations?.length ? orderAny.image_annotations : null) ||
+      measurements.image_annotations ||
+      []
+    const legacyDrawings: DrawingPath[] =
+      (orderAny.image_drawings?.length ? orderAny.image_drawings : null) ||
+      measurements.image_drawings ||
+      []
     const legacyImage: string | null = measurements.custom_design_image || null
 
     setIsGeneratingSnapshot(true)

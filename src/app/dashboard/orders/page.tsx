@@ -237,20 +237,21 @@ function OrdersPageInner() {
   })
 
   const NON_MEASUREMENT_KEYS = new Set([
-    'is_printed',
-    'has_measurements',
-    'whatsapp_sent',
+    // بيانات التصميم التي لا تُحسب كمقاسات
+    // migration 30: image_annotations/image_drawings/saved_design_comments نُقلت لأعمدة مستقلة
+    // لكن نُبقيها هنا للتوافق مع البيانات القديمة التي ربما لم تُنظَّف بعد
     'saved_design_comments',
     'image_annotations',
     'image_drawings',
     'custom_design_image',
-    'fabric_type',
-    'ai_generated_images'
+    'ai_generated_images',
+    'design_thumbnail',
+    // أعلام نُقلت لأعمدة مستقلة (migration 29)
+    'is_printed',
+    'has_measurements',
+    'whatsapp_sent',
+    'fabric_type'
   ])
-
-  const parseBooleanFlag = (value: unknown) => {
-    return value === true || value === 'true' || value === 1 || value === '1'
-  }
 
   const hasMeaningfulValue = (value: unknown) => {
     if (value === null || value === undefined) return false
@@ -269,20 +270,16 @@ function OrdersPageInner() {
     ))
   }
 
+  // الأعلام الآن أعمدة boolean حقيقية في DB (migration 29)
   const hasMeasurementsBadge = (order: any) => {
-    if (parseBooleanFlag(order?.has_measurements)) return true
-    if (parseBooleanFlag(order?.measurements?.has_measurements)) return true
+    if (order?.has_measurements === true) return true
     return hasMeasurementsData(order?.measurements)
   }
 
-  const isOrderPrinted = (order: any) => {
-    if (parseBooleanFlag(order?.is_printed)) return true
-    return parseBooleanFlag(order?.measurements?.is_printed)
-  }
+  const isOrderPrinted = (order: any) => order?.is_printed === true
 
   const isWhatsAppSent = (order: any) => {
-    if (parseBooleanFlag(order?.whatsapp_sent)) return true
-    if (parseBooleanFlag(order?.measurements?.whatsapp_sent)) return true
+    if (order?.whatsapp_sent === true) return true
     return whatsappSentOrders.has(order?.id)
   }
 
@@ -337,6 +334,14 @@ function OrdersPageInner() {
     if (updates.description !== undefined) supabaseUpdates.description = updates.description
     if (updates.fabric !== undefined) supabaseUpdates.fabric = updates.fabric
     if (updates.price !== undefined) supabaseUpdates.price = updates.price
+
+    // أعمدة مستقلة (migration 29)
+    if (updates.fabric_type !== undefined) supabaseUpdates.fabric_type = updates.fabric_type
+    if (updates.needs_review !== undefined) supabaseUpdates.needs_review = updates.needs_review
+    if (updates.is_pre_booking !== undefined) supabaseUpdates.is_pre_booking = updates.is_pre_booking
+    if (updates.has_measurements !== undefined) supabaseUpdates.has_measurements = updates.has_measurements
+    if (updates.is_printed !== undefined) supabaseUpdates.is_printed = updates.is_printed
+    if (updates.whatsapp_sent !== undefined) supabaseUpdates.whatsapp_sent = updates.whatsapp_sent
     if (updates.paid_amount !== undefined) supabaseUpdates.paid_amount = updates.paid_amount
 
     if (updates.payment_method !== undefined) supabaseUpdates.payment_method = updates.payment_method
@@ -379,35 +384,38 @@ function OrdersPageInner() {
     // الصور
     if (updates.images !== undefined) supabaseUpdates.images = updates.images
 
-    // تعليقات التصميم - يجب تخزينها في measurements
-    const hasMeasurementsUpdates =
+    // تعليقات التصميم - migration 30: تُكتب لأعمدة JSONB مستقلة (ليس داخل measurements)
+    const hasDesignDataUpdates =
       updates.saved_design_comments !== undefined ||
       updates.image_annotations !== undefined ||
-      updates.image_drawings !== undefined ||
-      updates.custom_design_image !== undefined ||
+      updates.image_drawings !== undefined
+
+    // custom_design_image: null يعني "لم يُرفع صورة جديدة" وليس "احذف الصورة"
+    // لذلك نعتبرها تحديثاً للـ measurements فقط إذا كانت قيمة حقيقية (string)
+    const hasMeasurementsUpdates =
+      (typeof updates.custom_design_image === 'string') ||
       updates.measurements !== undefined
 
-    if (hasMeasurementsUpdates) {
-      const normalizedSavedDesignComments = updates.saved_design_comments !== undefined
-        ? updates.saved_design_comments.map((comment: any) => ({
+    // كتابة بيانات التصميم كأعمدة مستقلة مباشرة (migration 30)
+    if (hasDesignDataUpdates) {
+      if (updates.saved_design_comments !== undefined) {
+        supabaseUpdates.design_comments = updates.saved_design_comments.map((comment: any) => ({
           ...comment,
           image: typeof comment.image === 'string' && comment.image.startsWith('data:')
             ? 'custom'
             : (comment.image || null)
         }))
-        : undefined
-
-      // جلب البيانات الكاملة للطلب من قاعدة البيانات (القائمة تستخدم التحميل الخفيف بدون measurements)
-      let currentMeasurements: any = {}
-      try {
-        const fullOrderResult = await orderService.getById(orderId)
-        if (fullOrderResult.data) {
-          currentMeasurements = (fullOrderResult.data.measurements as any) || {}
-        }
-      } catch (err) {
-        console.error('⚠️ Failed to fetch full order for measurements merge:', err)
       }
+      if (updates.image_annotations !== undefined) {
+        supabaseUpdates.image_annotations = updates.image_annotations
+      }
+      if (updates.image_drawings !== undefined) {
+        supabaseUpdates.image_drawings = updates.image_drawings
+      }
+    }
 
+    // تحديث measurements فقط إذا تغيرت custom_design_image أو المقاسات الفعلية
+    if (hasDesignDataUpdates || hasMeasurementsUpdates) {
       // استخراج صورة مصغرة من أول تعليق تصميم (واجهة أمام) لعرضها في بطاقة العامل
       let designThumbnail: string | undefined = undefined
       if (updates.saved_design_comments !== undefined && updates.saved_design_comments.length > 0) {
@@ -441,15 +449,32 @@ function OrdersPageInner() {
         }
       }
 
-      supabaseUpdates.measurements = {
-        ...currentMeasurements,
-        ...(updates.measurements || {}),
-        ...(updates.saved_design_comments !== undefined && { saved_design_comments: normalizedSavedDesignComments }),
-        ...(updates.image_annotations !== undefined && { image_annotations: updates.image_annotations }),
-        ...(updates.image_drawings !== undefined && { image_drawings: updates.image_drawings }),
-        ...(updates.custom_design_image !== undefined && { custom_design_image: updates.custom_design_image }),
-        ...(designThumbnail !== undefined && { design_thumbnail: designThumbnail })
+      // نحدث measurements فقط إذا كان هناك تغيير في custom_design_image أو المقاسات أو thumbnail
+      if (hasMeasurementsUpdates || designThumbnail !== undefined) {
+        // جلب measurements الحالية من DB (القائمة تستخدم التحميل الخفيف بدون measurements)
+        let currentMeasurements: any = {}
+        try {
+          const fullOrderResult = await orderService.getById(orderId)
+          if (fullOrderResult.data) {
+            const raw = (fullOrderResult.data.measurements as any) || {}
+            // نحذف الحقول المنقولة (migration 30) لمنع إعادتها لـ measurements
+            const { saved_design_comments: _sdc, image_annotations: _ia, image_drawings: _id, ...cleanMeasurements } = raw
+            currentMeasurements = cleanMeasurements
+          }
+        } catch (err) {
+          console.error('⚠️ Failed to fetch full order for measurements merge:', err)
+        }
+
+        supabaseUpdates.measurements = {
+          ...currentMeasurements,
+          ...(updates.measurements || {}),
+          // لا نُدرج custom_design_image إذا كانت null (لا نمحو الصورة الموجودة)
+          ...(typeof updates.custom_design_image === 'string' && { custom_design_image: updates.custom_design_image }),
+          ...(designThumbnail !== undefined && { design_thumbnail: designThumbnail })
+        }
       }
+      // إذا لم يكن هناك designThumbnail ولا custom_design_image ولا measurements
+      // → فقط نحدث design_comments كعمود مستقل (تم بالفعل في hasDesignDataUpdates)
     }
 
     console.log('📤 Sending to Supabase:', JSON.stringify(supabaseUpdates, null, 2))
@@ -559,23 +584,22 @@ function OrdersPageInner() {
     if (!measurementsOrder) return
 
     try {
-      // الحفاظ على بيانات التعليقات والرسومات عند حفظ المقاسات
+      // الحفاظ على custom_design_image عند حفظ المقاسات
+      // ملاحظة: image_annotations/image_drawings/saved_design_comments نُقلت لأعمدة مستقلة (migration 30)
       const existingMeasurements = measurementsOrder.measurements || {}
-      const shouldMarkHasMeasurements =
-        hasMeasurementsData(measurements) ||
-        parseBooleanFlag(existingMeasurements.has_measurements)
+      const shouldMarkHasMeasurements = hasMeasurementsData(measurements) || measurementsOrder.has_measurements === true
       const updatedMeasurements = {
         ...measurements,
-        is_printed: parseBooleanFlag(existingMeasurements.is_printed),
-        has_measurements: shouldMarkHasMeasurements,
-        // الاحتفاظ بالتعليقات والرسومات والصورة المخصصة
-        saved_design_comments: existingMeasurements.saved_design_comments || [],
-        image_annotations: existingMeasurements.image_annotations || [],
-        image_drawings: existingMeasurements.image_drawings || [],
-        custom_design_image: existingMeasurements.custom_design_image || null
+        // الاحتفاظ بالصورة المخصصة وبيانات AI والصورة المصغرة
+        custom_design_image: existingMeasurements.custom_design_image || null,
+        ...(existingMeasurements.ai_generated_images && { ai_generated_images: existingMeasurements.ai_generated_images }),
+        ...(existingMeasurements.design_thumbnail && { design_thumbnail: existingMeasurements.design_thumbnail })
       }
 
-      const result = await updateOrder(measurementsOrder.id, { measurements: updatedMeasurements })
+      const result = await updateOrder(measurementsOrder.id, {
+        measurements: updatedMeasurements,
+        has_measurements: shouldMarkHasMeasurements
+      })
 
       if (result.success) {
         setMeasurementsSaveSuccess(true)
@@ -668,15 +692,10 @@ function OrdersPageInner() {
         try { localStorage.setItem('whatsapp-sent-orders-v1', JSON.stringify([...updated])) } catch {}
         return updated
       })
-      // حفظ في قاعدة البيانات للتزامن بين الأجهزة
-      orderService.getMeasurements(order.id).then(result => {
-        const currentMeasurements = result.data || order.measurements || {}
-        if (!parseBooleanFlag(currentMeasurements.whatsapp_sent)) {
-          updateOrder(order.id, {
-            measurements: { ...currentMeasurements, whatsapp_sent: true }
-          }).catch(() => {})
-        }
-      }).catch(() => {})
+      // حفظ في قاعدة البيانات للتزامن بين الأجهزة (عمود مستقل - migration 29)
+      if (order.whatsapp_sent !== true) {
+        updateOrder(order.id, { whatsapp_sent: true }).catch(() => {})
+      }
 
       toast.success(isArabic ? 'تم فتح واتساب لإرسال رسالة التأكيد' : 'WhatsApp opened with confirmation message', {
         icon: '📱',
@@ -746,15 +765,9 @@ function OrdersPageInner() {
       ? dateFilterResults
       : orders
 
-  const isNeedsReview = (order: any) => {
-    if (parseBooleanFlag(order?.needs_review)) return true
-    return parseBooleanFlag(order?.measurements?.needs_review)
-  }
+  const isNeedsReview = (order: any) => order?.needs_review === true
 
-  const isPreBooking = (order: any) => {
-    if (parseBooleanFlag(order?.is_pre_booking)) return true
-    return parseBooleanFlag(order?.measurements?.is_pre_booking)
-  }
+  const isPreBooking = (order: any) => order?.is_pre_booking === true
 
   const filteredOrders = baseOrders.filter(order => {
     // فلترة حسب الدور
@@ -1399,18 +1412,18 @@ function OrdersPageInner() {
               order={printOrder}
               onPrint={async () => {
                 try {
-                  const measurementsResult = await orderService.getMeasurements(printOrder.id)
-                  const currentMeasurements = measurementsResult.data || printOrder.measurements || {}
-                  if (!parseBooleanFlag(currentMeasurements.is_printed)) {
-                    const shouldMarkHasMeasurements =
-                      hasMeasurementsData(currentMeasurements) ||
-                      parseBooleanFlag(currentMeasurements.has_measurements)
-                    const updatedMeasurements = {
-                      ...currentMeasurements,
-                      is_printed: true,
-                      has_measurements: shouldMarkHasMeasurements
+                  // is_printed عمود مستقل الآن (migration 29)
+                  if (printOrder.is_printed !== true) {
+                    const updates: any = { is_printed: true }
+                    // has_measurements: إذا لم يكن محدداً بعد، تحقق من وجود مقاسات
+                    if (printOrder.has_measurements !== true) {
+                      const measurementsResult = await orderService.getMeasurements(printOrder.id)
+                      const currentMeasurements = measurementsResult.data || {}
+                      if (hasMeasurementsData(currentMeasurements)) {
+                        updates.has_measurements = true
+                      }
                     }
-                    await updateOrder(printOrder.id, { measurements: updatedMeasurements })
+                    await updateOrder(printOrder.id, updates)
                   }
                 } catch (error) {
                   console.error('Error marking order as printed:', error)

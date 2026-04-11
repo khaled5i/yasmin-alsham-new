@@ -59,9 +59,11 @@ interface EditOrderModalProps {
 export default function EditOrderModal({ order: initialOrder, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
   const { t, isArabic } = useTranslation()
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
-  const initialDesignStateRef = useRef<{ annotations: string; drawings: string }>({
+  const initialDesignStateRef = useRef<{ annotations: string; drawings: string; comments: string; hasCustomImage: boolean }>({
     annotations: '[]',
-    drawings: '[]'
+    drawings: '[]',
+    comments: '[]',
+    hasCustomImage: false
   })
   const latestSavedCommentIdRef = useRef<string | null>(null)
   // Full order data (fetched when lightweight order is missing measurements)
@@ -146,9 +148,13 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }))
       }
 
-      // استرجاع تعليقات التصميم من measurements
+      // استرجاع تعليقات التصميم: أولاً من الأعمدة المستقلة (migration 30)، ثم fallback لـ measurements
       const measurements = order.measurements as any
-      const savedComments = measurements?.saved_design_comments || []
+      const orderAny = order as any
+      const savedComments =
+        (orderAny.design_comments?.length ? orderAny.design_comments : null) ||
+        measurements?.saved_design_comments ||
+        []
       const customImage = measurements?.custom_design_image || null
 
       // تحميل slot الأمام بشكل افتراضي، أو أول slot موجود
@@ -157,8 +163,16 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         return view === 'front'
       })
       const initialSlot = frontSlot || (savedComments.length > 0 ? savedComments[0] : null)
-      const annotations = initialSlot?.annotations || measurements?.image_annotations || []
-      const drawings = initialSlot?.drawings || measurements?.image_drawings || []
+      const annotations =
+        initialSlot?.annotations ||
+        (orderAny.image_annotations?.length ? orderAny.image_annotations : null) ||
+        measurements?.image_annotations ||
+        []
+      const drawings =
+        initialSlot?.drawings ||
+        (orderAny.image_drawings?.length ? orderAny.image_drawings : null) ||
+        measurements?.image_drawings ||
+        []
 
       latestSavedCommentIdRef.current = initialSlot?.id || null
       if (initialSlot?.view) {
@@ -188,13 +202,20 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         imageDrawings: drawings,
         customDesignImage: null as File | null, // File objects are set via handleDesignImageChange
         savedDesignComments: savedComments,
-        fabricType: measurements?.fabric_type || null,
+        fabricType: (order as any).fabric_type || measurements?.fabric_type || null,
         aiGeneratedImages: measurements?.ai_generated_images || []
       })
 
+      // نحفظ نسخة من التعليقات بدون compositeImage لأنها كبيرة ولا تفيد في المقارنة
+      const commentsForComparison = savedComments.map((c: any) => {
+        const { compositeImage: _ci, ...rest } = c
+        return rest
+      })
       initialDesignStateRef.current = {
         annotations: JSON.stringify(annotations),
-        drawings: JSON.stringify(drawings)
+        drawings: JSON.stringify(drawings),
+        comments: JSON.stringify(commentsForComparison),
+        hasCustomImage: !!customImage
       }
 
       // تحميل صورة التصميم المخصصة الموجودة كـ base64 لتمريرها إلى InteractiveImageAnnotation
@@ -296,6 +317,26 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     }))
   }, [])
 
+  /**
+   * هل تغيّر قسم تعليقات التصميم منذ تحميل الطلب؟
+   * إذا لم يتغير → لا نُرسل هذه الحقول في التحديث.
+   */
+  const hasDesignChanged = useCallback((): boolean => {
+    const init = initialDesignStateRef.current
+    // صورة مخصصة جديدة رُفعت
+    if (formData.customDesignImage) return true
+    // تغيّر annotations أو drawings
+    if (JSON.stringify(formData.imageAnnotations) !== init.annotations) return true
+    if (JSON.stringify(formData.imageDrawings) !== init.drawings) return true
+    // تغيّر عدد التعليقات المحفوظة
+    const currentComments = formData.savedDesignComments.map((c) => {
+      const { compositeImage: _ci, ...rest } = c as any
+      return rest
+    })
+    if (JSON.stringify(currentComments) !== init.comments) return true
+    return false
+  }, [formData.customDesignImage, formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
+
   const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string, compositeImage?: string | null) => {
     const allSavedComments = formData.savedDesignComments.map(comment => ({
       ...comment,
@@ -392,15 +433,10 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     toast.success(`تم حفظ ${downloadable.length} ${downloadable.length === 1 ? 'تصميم' : 'تصميمين'}`)
   }, [formData.savedDesignComments, formData.clientName, formData.orderNumber])
 
-  const isOrderNeedsReview = (o: any) => {
-    if (o?.needs_review === true || o?.needs_review === 'true') return true
-    return o?.measurements?.needs_review === true || o?.measurements?.needs_review === 'true'
-  }
+  // الأعلام الآن أعمدة boolean مستقلة (migration 29)
+  const isOrderNeedsReview = (o: any) => o?.needs_review === true
 
-  const isOrderPreBooking = (o: any) => {
-    if (o?.is_pre_booking === true || o?.is_pre_booking === 'true') return true
-    return o?.measurements?.is_pre_booking === true || o?.measurements?.is_pre_booking === 'true'
-  }
+  const isOrderPreBooking = (o: any) => o?.is_pre_booking === true
 
   // إرسال النموذج
   const handleSubmit = async (e: React.FormEvent, clearReview = false, clearPreBooking = false) => {
@@ -474,9 +510,10 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      // توليد صورة مركّبة (compositeImage) لضمان العرض الصحيح في صفحة العرض والطباعة
+      // توليد صورة مركّبة (compositeImage) فقط إذا تغيّر قسم التصميم
+      const designChanged = hasDesignChanged()
       let compositeImage: string | null = null
-      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+      if (designChanged && (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0)) {
         try {
           compositeImage = await annotationRef.current?.generateCompositeImage() || null
         } catch (err) {
@@ -484,11 +521,17 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
+      const allSavedComments = designChanged
+        ? buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
+        : undefined
 
-      // تحديث الطلب
+      // تحديث الطلب - الأعلام وfabric_type كأعمدة مستقلة (migration 29)
       onSave(order.id, {
-        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType, ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined, ...(clearReview ? { needs_review: false } : {}), ...(clearPreBooking ? { is_pre_booking: false } : {}) },
+        // أعمدة مستقلة
+        fabric_type: formData.fabricType || null,
+        ...(clearReview ? { needs_review: false } : {}),
+        ...(clearPreBooking ? { is_pre_booking: false } : {}),
+        measurements: { ...(order.measurements || {}), ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -507,10 +550,13 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         voice_notes: voiceNotesData,
         voice_transcriptions: voiceTranscriptions,
         images: formData.images,
-        saved_design_comments: allSavedComments,
-        image_annotations: formData.imageAnnotations,
-        image_drawings: formData.imageDrawings,
-        custom_design_image: customDesignImageBase64,
+        // قسم التصميم: لا نُرسله إلا إذا تغيّر فعلاً
+        ...(designChanged && {
+          saved_design_comments: allSavedComments,
+          image_annotations: formData.imageAnnotations,
+          image_drawings: formData.imageDrawings,
+          custom_design_image: customDesignImageBase64,
+        }),
         paid_amount: paidAmount,
         updated_at: new Date().toISOString()
       })
@@ -609,9 +655,10 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      // توليد صورة مركّبة (compositeImage) لضمان العرض الصحيح في صفحة العرض والطباعة
+      // توليد صورة مركّبة (compositeImage) فقط إذا تغيّر قسم التصميم
+      const designChanged = hasDesignChanged()
       let compositeImage: string | null = null
-      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
+      if (designChanged && (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0)) {
         try {
           compositeImage = await annotationRef.current?.generateCompositeImage() || null
         } catch (err) {
@@ -619,11 +666,14 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         }
       }
 
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
+      const allSavedComments = designChanged
+        ? buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
+        : undefined
 
-      // تحديث الطلب
+      // تحديث الطلب - fabric_type كعمود مستقل (migration 29)
       onSave(order.id, {
-        measurements: { ...(order.measurements || {}), fabric_type: formData.fabricType, ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
+        fabric_type: formData.fabricType || null,
+        measurements: { ...(order.measurements || {}), ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -642,10 +692,13 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         voice_notes: voiceNotesData,
         voice_transcriptions: voiceTranscriptions,
         images: formData.images,
-        saved_design_comments: allSavedComments,
-        image_annotations: formData.imageAnnotations,
-        image_drawings: formData.imageDrawings,
-        custom_design_image: customDesignImageBase64,
+        // قسم التصميم: لا نُرسله إلا إذا تغيّر فعلاً
+        ...(designChanged && {
+          saved_design_comments: allSavedComments,
+          image_annotations: formData.imageAnnotations,
+          image_drawings: formData.imageDrawings,
+          custom_design_image: customDesignImageBase64,
+        }),
         paid_amount: paidAmount,
         updated_at: new Date().toISOString()
       })

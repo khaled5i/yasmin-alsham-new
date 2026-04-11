@@ -699,8 +699,9 @@ function AddOrderContent() {
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
+        // أعمدة مستقلة (migration 29)
+        fabric_type: formData.fabricType || null,
         measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
           ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
           ...(designThumbnail ? { design_thumbnail: designThumbnail } : {})
         }, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
@@ -1005,10 +1006,11 @@ function AddOrderContent() {
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined,
+        // أعمدة مستقلة (migration 29)
+        fabric_type: formData.fabricType || null,
+        needs_review: true,
         measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
-          needs_review: true
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
         },
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -1118,10 +1120,11 @@ function AddOrderContent() {
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined,
+        // أعمدة مستقلة (migration 29)
+        fabric_type: formData.fabricType || null,
+        is_pre_booking: true,
         measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
-          is_pre_booking: true
+          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
         },
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -1233,8 +1236,10 @@ function AddOrderContent() {
       const result = await createOrder({
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
-        fabric: formData.fabric || undefined, measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
+        fabric: formData.fabric || undefined,
+        // أعمدة مستقلة (migration 29)
+        fabric_type: formData.fabricType || null,
+        measurements: {
           ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
         },
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
