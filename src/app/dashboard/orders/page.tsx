@@ -43,7 +43,8 @@ import {
   Camera,
   Ruler,
   Printer,
-  MessageCircle
+  MessageCircle,
+  CalendarDays
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 
@@ -1033,6 +1034,16 @@ function OrdersPageInner() {
                         <p className="text-sm text-gray-500 mb-2">
                           <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}
                         </p>
+
+                        {/* شارة موعد البروفا - لمدير الورشة فقط */}
+                        {workerType === 'workshop_manager' && order.proof_delivery_date && (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 mb-2 rounded-lg bg-violet-50 border border-violet-200 w-fit">
+                            <CalendarDays className="w-3.5 h-3.5 text-violet-600 flex-shrink-0" />
+                            <span className="text-xs font-semibold text-violet-700">
+                              {isArabic ? 'البروفا:' : 'Proof:'}{' '}{formatDate(order.proof_delivery_date)}
+                            </span>
+                          </div>
+                        )}
 
                         {/* Fabric Label */}
                         {order.fabric && (

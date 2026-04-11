@@ -424,12 +424,15 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     }
 
     // حفظ design_thumbnail إذا لم يكن موجوداً (يعمل لجميع الأدوار)
-    if (!(initialOrder as any).design_thumbnail) {
+    // IMPORTANT: يجب أن تكون measurementsData محملة أولاً لتجنب الكتابة فوق بيانات measurements
+    if (!(initialOrder as any).design_thumbnail && measurementsData) {
       const frontComment = savedDesignComments.find(
         c => c.view === 'front' || c.title?.startsWith('أمام')
       ) || savedDesignComments[0]
       if (frontComment?.compositeImage) {
         const img = new window.Image()
+        // نحفظ مرجع لـ measurementsData في لحظة تشغيل الأثر لتجنب closure stale
+        const snapshotMeasurements = measurementsData
         img.onload = () => {
           const TARGET_HEIGHT = 320
           const ratio = TARGET_HEIGHT / img.height
@@ -440,17 +443,17 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           if (!ctx) return
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
           const thumbnail = canvas.toDataURL('image/jpeg', 0.55)
-          // حفظ الـ thumbnail في قاعدة البيانات بهدوء
+          // حفظ الـ thumbnail مع الدمج الصحيح مع كامل بيانات measurements من DB
           if (order) {
             updateOrder(order.id, {
-              measurements: { ...(order.measurements || {}), design_thumbnail: thumbnail }
+              measurements: { ...snapshotMeasurements, design_thumbnail: thumbnail }
             }).catch(() => {/* تجاهل أخطاء الحفظ الصامت */})
           }
         }
         img.src = frontComment.compositeImage
       }
     }
-  }, [savedDesignComments, user?.role])
+  }, [savedDesignComments, user?.role, measurementsData])
 
   // Re-fetch data when the app resumes from background (mobile).
   // On mobile, going to home screen and back can leave the component with
