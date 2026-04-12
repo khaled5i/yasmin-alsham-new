@@ -102,12 +102,14 @@ export async function uploadImageToStorage(
 
 export interface OrderImageFields {
   measurements?: Record<string, any>
+  design_thumbnail?: string        // عمود مستقل (migration 32)
   images?: string[]
   completed_images?: string[]
 }
 
 export interface UploadedOrderImages {
   measurements?: Record<string, any>
+  design_thumbnail?: string        // عمود مستقل (migration 32)
   images?: string[]
   completed_images?: string[]
 }
@@ -135,16 +137,7 @@ export async function uploadOrderImages(
     }
   }
 
-  // 2. design_thumbnail داخل measurements
-  if (isBase64Image(measurements.design_thumbnail)) {
-    const url = await uploadImageToStorage(measurements.design_thumbnail, orderId, 'thumbnail')
-    if (url !== measurements.design_thumbnail) {
-      updatedMeasurements.design_thumbnail = url
-      hasChanges = true
-    }
-  }
-
-  // 3. ai_generated_images (مصفوفة) داخل measurements
+  // 2. ai_generated_images (مصفوفة) داخل measurements
   const aiImages: string[] = measurements.ai_generated_images ?? []
   if (aiImages.some(isBase64Image)) {
     updatedMeasurements.ai_generated_images = await Promise.all(
@@ -159,6 +152,17 @@ export async function uploadOrderImages(
 
   if (hasChanges) {
     result.measurements = updatedMeasurements
+  }
+
+  // 3. design_thumbnail — عمود مستقل (migration 32)، يُرفع لـ Storage إذا كان base64
+  if (isBase64Image(fields.design_thumbnail)) {
+    const url = await uploadImageToStorage(fields.design_thumbnail!, orderId, 'thumbnail')
+    result.design_thumbnail = url
+    hasChanges = true
+  } else if (fields.design_thumbnail && fields.design_thumbnail !== result.design_thumbnail) {
+    // URL بالفعل — نمرره كما هو
+    result.design_thumbnail = fields.design_thumbnail
+    hasChanges = true
   }
 
   // 4. images[] (عمود مستقل — غالباً URLs بالفعل لكن نعالج الحالات القديمة)

@@ -703,8 +703,8 @@ function AddOrderContent() {
         fabric_type: formData.fabricType || null,
         measurements: {
           ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
-          ...(designThumbnail ? { design_thumbnail: designThumbnail } : {})
         }, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
+        design_thumbnail: designThumbnail || undefined, // عمود مستقل (migration 32)
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,

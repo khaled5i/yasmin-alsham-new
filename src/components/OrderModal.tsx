@@ -439,16 +439,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       setExpandedCommentId(frontComment ? frontComment.id : savedDesignComments[0].id)
     }
 
-    // حفظ design_thumbnail إذا لم يكن موجوداً (يعمل لجميع الأدوار)
-    // IMPORTANT: يجب أن تكون measurementsData محملة أولاً لتجنب الكتابة فوق بيانات measurements
-    if (initialOrder && !(initialOrder as any).design_thumbnail && measurementsData) {
+    // حفظ design_thumbnail إذا لم يكن موجوداً — عمود مستقل (migration 32)
+    if (initialOrder && !initialOrder.design_thumbnail) {
       const frontComment = savedDesignComments.find(
         c => c.view === 'front' || c.title?.startsWith('أمام')
       ) || savedDesignComments[0]
       if (frontComment?.compositeImage) {
         const img = new window.Image()
-        // نحفظ مرجع لـ measurementsData في لحظة تشغيل الأثر لتجنب closure stale
-        const snapshotMeasurements = measurementsData
         img.onload = () => {
           const TARGET_HEIGHT = 320
           const ratio = TARGET_HEIGHT / img.height
@@ -459,17 +456,17 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           if (!ctx) return
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
           const thumbnail = canvas.toDataURL('image/jpeg', 0.55)
-          // حفظ الـ thumbnail مع الدمج الصحيح مع كامل بيانات measurements من DB
+          // حفظ الـ thumbnail في عموده المستقل — لا يمس measurements
           if (order) {
             updateOrder(order.id, {
-              measurements: { ...snapshotMeasurements, design_thumbnail: thumbnail }
+              design_thumbnail: thumbnail
             }).catch(() => {/* تجاهل أخطاء الحفظ الصامت */})
           }
         }
         img.src = frontComment.compositeImage
       }
     }
-  }, [savedDesignComments, user?.role, measurementsData])
+  }, [savedDesignComments, user?.role])
 
   // Re-fetch data when the app resumes from background (mobile).
   // On mobile, going to home screen and back can leave the component with

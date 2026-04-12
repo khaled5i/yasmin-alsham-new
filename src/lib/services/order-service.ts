@@ -53,7 +53,7 @@ const ORDER_LIST_COLUMNS = [
   'needs_review',
   'is_pre_booking',
   'fabric_type',
-  'measurements->design_thumbnail',
+  'design_thumbnail',           // عمود مستقل (migration 32)
   'notes',
   'admin_notes',
   'images',
@@ -98,6 +98,8 @@ export interface Order {
   image_annotations?: any[]
   image_drawings?: any[]
   design_comments?: any[]
+  // عمود مستقل (migration 32)
+  design_thumbnail?: string | null
   price: number
   paid_amount: number
   remaining_amount: number
@@ -176,6 +178,7 @@ export interface CreateOrderData {
     timestamp: number
   }>
   custom_design_image?: string // base64 صورة التصميم المخصصة
+  design_thumbnail?: string    // صورة مصغرة للعمود المستقل (migration 32)
   // التعليقات المتعددة على التصميم (البنية الجديدة)
   saved_design_comments?: Array<{
     id: string
@@ -224,6 +227,7 @@ export interface UpdateOrderData {
   // أعمدة مستقلة (migration 29)
   has_measurements?: boolean
   is_printed?: boolean
+  design_thumbnail?: string | null  // عمود مستقل (migration 32)
   whatsapp_sent?: boolean
   needs_review?: boolean
   is_pre_booking?: boolean
@@ -342,12 +346,15 @@ export const orderService = {
       }
 
       // تحضير البيانات للإدخال
-      // measurements تحتوي فقط على: المقاسات الفعلية + custom_design_image + ai/thumbnail
+      // measurements تحتوي فقط على: المقاسات الفعلية + custom_design_image + ai_generated_images
+      // design_thumbnail نُقل لعمود مستقل (migration 32)
       // بيانات التصميم (annotations/drawings/comments) تُكتب لأعمدة مستقلة (migration 30)
       const measurementsOnly = {
         ...(orderData.measurements || {}),
         custom_design_image: orderData.custom_design_image || null
       }
+      // إزالة design_thumbnail من measurements إن وُجد هناك (بيانات قديمة)
+      delete (measurementsOnly as any).design_thumbnail
 
       const insertData: any = {
         user_id: orderData.user_id || null,
@@ -362,6 +369,8 @@ export const orderService = {
         image_annotations: orderData.image_annotations || [],
         image_drawings: orderData.image_drawings || [],
         design_comments: orderData.saved_design_comments || [],
+        // عمود مستقل (migration 32)
+        design_thumbnail: orderData.design_thumbnail || null,
         // أعمدة مستقلة (migration 29)
         fabric_type: orderData.fabric_type || orderData.measurements?.fabric_type || null,
         needs_review: orderData.needs_review ?? orderData.measurements?.needs_review ?? false,
@@ -430,6 +439,7 @@ export const orderService = {
       try {
         const imageUpdates = await uploadOrderImages(data.id, {
           measurements: insertData.measurements,
+          design_thumbnail: insertData.design_thumbnail,
           images: insertData.images,
         })
         if (imageUpdates) {
@@ -671,11 +681,13 @@ export const orderService = {
       try {
         const imageUpdates = await uploadOrderImages(id, {
           measurements: (updates as any).measurements,
+          design_thumbnail: (updates as any).design_thumbnail,
           images: (updates as any).images,
           completed_images: (updates as any).completed_images,
         })
         if (imageUpdates) {
           if (imageUpdates.measurements) (updates as any).measurements = imageUpdates.measurements
+          if (imageUpdates.design_thumbnail) (updates as any).design_thumbnail = imageUpdates.design_thumbnail
           if (imageUpdates.images) (updates as any).images = imageUpdates.images
           if (imageUpdates.completed_images) (updates as any).completed_images = imageUpdates.completed_images
           if (isDev) console.log('✅ Images uploaded to Storage before update:', id)

@@ -245,7 +245,6 @@ function OrdersPageInner() {
     'image_drawings',
     'custom_design_image',
     'ai_generated_images',
-    'design_thumbnail',
     // أعلام نُقلت لأعمدة مستقلة (migration 29)
     'is_printed',
     'has_measurements',
@@ -415,66 +414,60 @@ function OrdersPageInner() {
     }
 
     // تحديث measurements فقط إذا تغيرت custom_design_image أو المقاسات الفعلية
-    if (hasDesignDataUpdates || hasMeasurementsUpdates) {
-      // استخراج صورة مصغرة من أول تعليق تصميم (واجهة أمام) لعرضها في بطاقة العامل
-      let designThumbnail: string | undefined = undefined
-      if (updates.saved_design_comments !== undefined && updates.saved_design_comments.length > 0) {
-        const frontComment = updates.saved_design_comments.find(
-          (c: any) => c.view === 'front' || c.title?.startsWith('أمام')
-        ) || updates.saved_design_comments[0]
-        if (frontComment?.compositeImage) {
-          try {
-            designThumbnail = await new Promise<string>((resolve) => {
-              const img = new Image()
-              img.onload = () => {
-                const TARGET_HEIGHT = 320
-                const ratio = TARGET_HEIGHT / img.height
-                const canvas = document.createElement('canvas')
-                canvas.width = Math.round(img.width * ratio)
-                canvas.height = TARGET_HEIGHT
-                const ctx = canvas.getContext('2d')
-                if (ctx) {
-                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-                  resolve(canvas.toDataURL('image/jpeg', 0.55))
-                } else {
-                  resolve(frontComment.compositeImage)
-                }
-              }
-              img.onerror = () => resolve(frontComment.compositeImage)
-              img.src = frontComment.compositeImage
-            })
-          } catch {
-            designThumbnail = frontComment.compositeImage
-          }
-        }
-      }
-
-      // نحدث measurements فقط إذا كان هناك تغيير في custom_design_image أو المقاسات أو thumbnail
-      if (hasMeasurementsUpdates || designThumbnail !== undefined) {
-        // جلب measurements الحالية من DB (القائمة تستخدم التحميل الخفيف بدون measurements)
-        let currentMeasurements: any = {}
+    // استخراج design_thumbnail من أول تعليق تصميم — يُحفظ في عموده المستقل (migration 32)
+    if (updates.saved_design_comments !== undefined && updates.saved_design_comments.length > 0) {
+      const frontComment = updates.saved_design_comments.find(
+        (c: any) => c.view === 'front' || c.title?.startsWith('أمام')
+      ) || updates.saved_design_comments[0]
+      if (frontComment?.compositeImage) {
         try {
-          const fullOrderResult = await orderService.getById(orderId)
-          if (fullOrderResult.data) {
-            const raw = (fullOrderResult.data.measurements as any) || {}
-            // نحذف الحقول المنقولة (migration 30) لمنع إعادتها لـ measurements
-            const { saved_design_comments: _sdc, image_annotations: _ia, image_drawings: _id, ...cleanMeasurements } = raw
-            currentMeasurements = cleanMeasurements
-          }
-        } catch (err) {
-          console.error('⚠️ Failed to fetch full order for measurements merge:', err)
-        }
-
-        supabaseUpdates.measurements = {
-          ...currentMeasurements,
-          ...(updates.measurements || {}),
-          // لا نُدرج custom_design_image إذا كانت null (لا نمحو الصورة الموجودة)
-          ...(typeof updates.custom_design_image === 'string' && { custom_design_image: updates.custom_design_image }),
-          ...(designThumbnail !== undefined && { design_thumbnail: designThumbnail })
+          supabaseUpdates.design_thumbnail = await new Promise<string>((resolve) => {
+            const img = new Image()
+            img.onload = () => {
+              const TARGET_HEIGHT = 320
+              const ratio = TARGET_HEIGHT / img.height
+              const canvas = document.createElement('canvas')
+              canvas.width = Math.round(img.width * ratio)
+              canvas.height = TARGET_HEIGHT
+              const ctx = canvas.getContext('2d')
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+                resolve(canvas.toDataURL('image/jpeg', 0.55))
+              } else {
+                resolve(frontComment.compositeImage)
+              }
+            }
+            img.onerror = () => resolve(frontComment.compositeImage)
+            img.src = frontComment.compositeImage
+          })
+        } catch {
+          supabaseUpdates.design_thumbnail = frontComment.compositeImage
         }
       }
-      // إذا لم يكن هناك designThumbnail ولا custom_design_image ولا measurements
-      // → فقط نحدث design_comments كعمود مستقل (تم بالفعل في hasDesignDataUpdates)
+    }
+
+    // تحديث measurements فقط إذا كان هناك تغيير في custom_design_image أو المقاسات
+    if (hasMeasurementsUpdates) {
+      // جلب measurements الحالية من DB (القائمة تستخدم التحميل الخفيف بدون measurements)
+      let currentMeasurements: any = {}
+      try {
+        const fullOrderResult = await orderService.getById(orderId)
+        if (fullOrderResult.data) {
+          const raw = (fullOrderResult.data.measurements as any) || {}
+          // نحذف الحقول المنقولة (migration 30/32) لمنع إعادتها لـ measurements
+          const { saved_design_comments: _sdc, image_annotations: _ia, image_drawings: _id, design_thumbnail: _dt, ...cleanMeasurements } = raw
+          currentMeasurements = cleanMeasurements
+        }
+      } catch (err) {
+        console.error('⚠️ Failed to fetch full order for measurements merge:', err)
+      }
+
+      supabaseUpdates.measurements = {
+        ...currentMeasurements,
+        ...(updates.measurements || {}),
+        // لا نُدرج custom_design_image إذا كانت null (لا نمحو الصورة الموجودة)
+        ...(typeof updates.custom_design_image === 'string' && { custom_design_image: updates.custom_design_image }),
+      }
     }
 
     console.log('📤 Sending to Supabase:', JSON.stringify(supabaseUpdates, null, 2))
