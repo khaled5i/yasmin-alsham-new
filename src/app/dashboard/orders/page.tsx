@@ -584,16 +584,28 @@ function OrdersPageInner() {
     if (!measurementsOrder) return
 
     try {
-      // الحفاظ على custom_design_image عند حفظ المقاسات
-      // ملاحظة: image_annotations/image_drawings/saved_design_comments نُقلت لأعمدة مستقلة (migration 30)
-      const existingMeasurements = measurementsOrder.measurements || {}
       const shouldMarkHasMeasurements = hasMeasurementsData(measurements) || measurementsOrder.has_measurements === true
+
+      // جلب أحدث نسخة من measurements من DB لضمان عدم فقدان أي بيانات
+      // (custom_design_image, design_thumbnail, ai_generated_images, إلخ)
+      let currentDbMeasurements: Record<string, any> = measurementsOrder.measurements || {}
+      try {
+        const { orderService: svc } = await import('@/lib/services/order-service')
+        const freshResult = await svc.getMeasurements(measurementsOrder.id)
+        if (freshResult.data && !freshResult.error) {
+          currentDbMeasurements = freshResult.data
+        }
+      } catch {
+        // fallback إلى بيانات measurementsOrder المحفوظة
+      }
+
+      // إزالة الحقول المنقولة لـ migration 30 لمنع إعادتها لعمود measurements
+      const { saved_design_comments: _sdc, image_annotations: _ia, image_drawings: _id, ...cleanExisting } = currentDbMeasurements
+
+      // دمج المقاسات الجديدة مع الحقول المحفوظة — المقاسات الجديدة تتفوق على القديمة
       const updatedMeasurements = {
+        ...cleanExisting,
         ...measurements,
-        // الاحتفاظ بالصورة المخصصة وبيانات AI والصورة المصغرة
-        custom_design_image: existingMeasurements.custom_design_image || null,
-        ...(existingMeasurements.ai_generated_images && { ai_generated_images: existingMeasurements.ai_generated_images }),
-        ...(existingMeasurements.design_thumbnail && { design_thumbnail: existingMeasurements.design_thumbnail })
       }
 
       const result = await updateOrder(measurementsOrder.id, {
