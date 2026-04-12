@@ -25,10 +25,54 @@ import {
   DollarSign,
   AlertCircle,
   ChevronLeft,
+  ChevronRight,
   LogOut,
+  Tag,
+  Save,
+  X,
 } from 'lucide-react'
 
 const PAGE_SIZE = 20
+
+// ============================================================================
+// بيانات التسعير والتقييم — مشتركة مع قسم المحاسبة (نفس مفتاح localStorage)
+// ============================================================================
+
+interface OrderPricingData {
+  orderId: string
+  price: string
+  notes: string
+  bonus: string
+  rating: number
+}
+
+const PRICING_STORAGE_KEY = 'tailoring-payroll-order-pricing-v1'
+
+function getAllPricingData(): Record<string, OrderPricingData> {
+  try {
+    const stored = localStorage.getItem(PRICING_STORAGE_KEY)
+    if (!stored) return {}
+    return JSON.parse(stored)
+  } catch { return {} }
+}
+
+function savePricingEntry(orderId: string, data: OrderPricingData): void {
+  try {
+    const all = getAllPricingData()
+    all[orderId] = data
+    localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(all))
+  } catch { /* ignore */ }
+}
+
+function getPricingEntry(orderId: string): OrderPricingData {
+  return getAllPricingData()[orderId] || { orderId, price: '', notes: '', bonus: '', rating: 0 }
+}
+
+function sanitizeNum(val: string): string {
+  const cleaned = val.replace(/[^\d.]/g, '')
+  const parts = cleaned.split('.')
+  return parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned
+}
 
 type TabType = 'active' | 'completed' | 'reports'
 
@@ -71,6 +115,13 @@ export default function WorkerDetailPage() {
   // Modal
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // حالة التسعير والتقييم (للمدير فقط — مشتركة مع قسم المحاسبة)
+  const isAdmin = user?.role === 'admin'
+  const [pricingForms, setPricingForms] = useState<Record<string, OrderPricingData>>({})
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
+  const [orderFullDetails, setOrderFullDetails] = useState<Record<string, Order>>({})
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
   const loadedTabs = useRef<Set<TabType>>(new Set())
 
@@ -132,6 +183,12 @@ export default function WorkerDetailPage() {
       })
       setCompletedOrders(data || [])
       setCompletedOrdersTotal(total || 0)
+      // تحميل بيانات التسعير المحفوظة لهذه الطلبات
+      const forms: Record<string, OrderPricingData> = {}
+      ;(data || []).forEach((order) => {
+        forms[order.id] = getPricingEntry(order.id)
+      })
+      setPricingForms((prev) => ({ ...prev, ...forms }))
     } finally {
       setIsLoadingCompleted(false)
     }
@@ -166,6 +223,28 @@ export default function WorkerDetailPage() {
     setSelectedOrder(order)
     setIsModalOpen(true)
   }
+
+  // معالجات التسعير
+  const handleTogglePricing = useCallback(async (order: Order) => {
+    if (expandedOrderId === order.id) {
+      setExpandedOrderId(null)
+      return
+    }
+    setExpandedOrderId(order.id)
+    if (!orderFullDetails[order.id]) {
+      try {
+        const result = await orderService.getById(order.id)
+        if (result.data) {
+          setOrderFullDetails((prev) => ({ ...prev, [order.id]: result.data! }))
+        }
+      } catch { /* تجاهل — الصور ستكون غير متاحة */ }
+    }
+  }, [expandedOrderId, orderFullDetails])
+
+  const handleSavePricing = useCallback((orderId: string, data: OrderPricingData) => {
+    savePricingEntry(orderId, data)
+    setPricingForms((prev) => ({ ...prev, [orderId]: data }))
+  }, [])
 
   const handleSignOut = async () => {
     await signOut()
@@ -344,18 +423,23 @@ export default function WorkerDetailPage() {
               />
             )}
             {activeTab === 'completed' && (
-              <OrdersTab
+              <CompletedOrdersTab
                 orders={completedOrders}
                 total={completedOrdersTotal}
                 page={completedOrdersPage}
                 isLoading={isLoadingCompleted}
+                isAdmin={isAdmin}
+                pricingForms={pricingForms}
+                expandedOrderId={expandedOrderId}
+                orderFullDetails={orderFullDetails}
                 onPageChange={(p) => {
                   setCompletedOrdersPage(p)
                   fetchCompletedOrders(p)
                 }}
-                onOrderClick={openOrderModal}
-                emptyMessage="لا توجد طلبات مكتملة لهذه الخياطة حتى الآن"
-                showCompletedAt
+                onTogglePricing={handleTogglePricing}
+                onSavePricing={handleSavePricing}
+                onOpenModal={openOrderModal}
+                onLightbox={setLightboxImage}
               />
             )}
             {activeTab === 'reports' && (
@@ -372,6 +456,28 @@ export default function WorkerDetailPage() {
         isOpen={isModalOpen}
         onClose={() => { setIsModalOpen(false); setSelectedOrder(null) }}
       />
+
+      {/* Lightbox — عرض صورة بالشاشة الكاملة */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 left-4 p-2 text-white/70 hover:text-white transition-colors"
+          >
+            <X className="w-7 h-7" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxImage}
+            alt="صورة العمل"
+            className="max-w-full max-h-full rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -498,6 +604,370 @@ function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; o
         <ChevronLeft className="w-4 h-4 text-gray-300 group-hover:text-teal-400 transition-colors flex-shrink-0" />
       </div>
     </button>
+  )
+}
+
+// ============================================================================
+// Completed Orders Tab — يستخدم CompletedOrderRow للمدير
+// ============================================================================
+
+function CompletedOrdersTab({
+  orders,
+  total,
+  page,
+  isLoading,
+  isAdmin,
+  pricingForms,
+  expandedOrderId,
+  orderFullDetails,
+  onPageChange,
+  onTogglePricing,
+  onSavePricing,
+  onOpenModal,
+  onLightbox,
+}: {
+  orders: Order[]
+  total: number
+  page: number
+  isLoading: boolean
+  isAdmin: boolean
+  pricingForms: Record<string, OrderPricingData>
+  expandedOrderId: string | null
+  orderFullDetails: Record<string, Order>
+  onPageChange: (page: number) => void
+  onTogglePricing: (order: Order) => void
+  onSavePricing: (orderId: string, data: OrderPricingData) => void
+  onOpenModal: (order: Order) => void
+  onLightbox: (src: string) => void
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+      </div>
+    )
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <Package className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+        <p className="text-gray-400 text-sm">لا توجد طلبات مكتملة لهذه الخياطة حتى الآن</p>
+      </div>
+    )
+  }
+
+  const evaluatedCount = orders.filter(
+    (o) => (pricingForms[o.id]?.price && parseFloat(pricingForms[o.id].price) > 0) || (pricingForms[o.id]?.rating ?? 0) > 0
+  ).length
+
+  return (
+    <div>
+      {/* شريط ملخص التقييم — للمدير */}
+      {isAdmin && evaluatedCount > 0 && (
+        <div className="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+          <p className="text-sm text-green-800">
+            <span className="font-bold">{evaluatedCount}</span> طلب مقيَّم من أصل{' '}
+            <span className="font-bold">{orders.length}</span>
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {orders.map((order) => (
+          <CompletedOrderRow
+            key={order.id}
+            order={order}
+            isAdmin={isAdmin}
+            pricingData={pricingForms[order.id] || { orderId: order.id, price: '', notes: '', bonus: '', rating: 0 }}
+            isExpanded={expandedOrderId === order.id}
+            orderFullDetail={orderFullDetails[order.id] || null}
+            onToggle={onTogglePricing}
+            onSavePricing={onSavePricing}
+            onOpenModal={onOpenModal}
+            onLightbox={onLightbox}
+          />
+        ))}
+      </div>
+      {total > PAGE_SIZE && (
+        <div className="mt-6">
+          <PaginationControls
+            currentPage={page}
+            pageSize={PAGE_SIZE}
+            totalItems={total}
+            onPageChange={onPageChange}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Completed Order Row — مع التسعير والتقييم (للمدير فقط)
+// ============================================================================
+
+function CompletedOrderRow({
+  order,
+  isAdmin,
+  pricingData,
+  isExpanded,
+  orderFullDetail,
+  onToggle,
+  onSavePricing,
+  onOpenModal,
+  onLightbox,
+}: {
+  order: Order
+  isAdmin: boolean
+  pricingData: OrderPricingData
+  isExpanded: boolean
+  orderFullDetail: Order | null
+  onToggle: (order: Order) => void
+  onSavePricing: (orderId: string, data: OrderPricingData) => void
+  onOpenModal: (order: Order) => void
+  onLightbox: (src: string) => void
+}) {
+  const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
+  const hasPricing = parseFloat(pricingData.price) > 0
+  const isEvaluated = hasPricing || pricingData.rating > 0
+
+  // حفظ ثم طي البطاقة
+  function handleSaveAndCollapse() {
+    onSavePricing(order.id, pricingData)
+    onToggle(order) // ينغلق لأنه مفتوح حالياً
+  }
+
+  const completedImages = orderFullDetail?.completed_images || []
+
+  return (
+    <div
+      className={`rounded-xl border transition-all duration-200 ${
+        isExpanded
+          ? 'border-pink-300 shadow-md'
+          : isEvaluated
+          ? 'border-green-300 bg-green-50/20 hover:border-green-400'
+          : 'border-slate-100 bg-white hover:border-pink-200 hover:shadow-sm'
+      }`}
+    >
+      {/* ===== وجه البطاقة ===== */}
+      <div className="p-4">
+        <div className="flex items-center gap-3">
+          {/* معلومات الطلب (قابل للنقر لفتح المودال) */}
+          <button
+            onClick={() => onOpenModal(order)}
+            className="flex-1 min-w-0 text-right"
+          >
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <p className="font-semibold text-gray-800 truncate">{order.client_name}</p>
+              {order.order_number && (
+                <span className="text-xs text-gray-400 flex-shrink-0">#{order.order_number}</span>
+              )}
+              {isEvaluated && !isExpanded && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200 flex-shrink-0">
+                  <CheckCircle className="w-3 h-3" />
+                  تم التقييم
+                </span>
+              )}
+            </div>
+            {order.description && (
+              <p className="text-sm text-gray-500 truncate">{order.description}</p>
+            )}
+            <div className="flex flex-wrap items-center gap-3 mt-1">
+              {order.worker_completed_at && (
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" />
+                  {formatGregorianDate(order.worker_completed_at, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                </p>
+              )}
+              {hasPricing && !isExpanded && (
+                <span className="text-xs font-semibold text-pink-700 flex items-center gap-1">
+                  <Tag className="w-3 h-3" />
+                  {parseFloat(pricingData.price).toLocaleString('ar-SA')} ريال
+                </span>
+              )}
+              {pricingData.rating > 0 && !isExpanded && (
+                <span className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`w-3 h-3 ${i < pricingData.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'}`} />
+                  ))}
+                </span>
+              )}
+            </div>
+          </button>
+
+          {/* يمين: الحالة + زر التسعير */}
+          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${status.bg} ${status.color}`}>
+              {status.label}
+            </span>
+            {order.price ? (
+              <span className="text-xs text-gray-500">{order.price.toLocaleString('ar-SA')} ريال</span>
+            ) : null}
+            {isAdmin && (
+              <button
+                onClick={() => onToggle(order)}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  isExpanded
+                    ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
+                    : isEvaluated
+                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                    : 'bg-slate-100 text-slate-600 hover:bg-pink-50 hover:text-pink-700'
+                }`}
+                title="تسعير وتقييم"
+              >
+                <Tag className="w-3 h-3" />
+                {isExpanded ? 'إغلاق' : isEvaluated ? 'تعديل' : 'تقييم'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ===== قسم التسعير والتقييم — يظهر عند الفتح ===== */}
+      {isAdmin && isExpanded && (
+        <div className="border-t border-pink-100 p-4 bg-gradient-to-br from-pink-50/50 to-purple-50/30">
+
+          {/* صور العمل + فورم التسعير جنباً لجنب */}
+          <div className="flex flex-col sm:flex-row gap-4">
+
+            {/* الصور (يمين في RTL) */}
+            <div className="sm:w-2/5">
+              {!orderFullDetail ? (
+                <div className="flex items-center gap-2 text-xs text-gray-400 py-4">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  جاري تحميل صور العمل...
+                </div>
+              ) : completedImages.length === 0 ? (
+                <div className="text-xs text-gray-400 py-4 flex items-center gap-1.5">
+                  <Package className="w-4 h-4" />
+                  لا توجد صور للعمل المكتمل
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                    <Package className="w-3.5 h-3.5 text-pink-500" />
+                    صور العمل ({completedImages.length})
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {completedImages.map((src, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => onLightbox(src)}
+                        className="relative aspect-square overflow-hidden rounded-lg border-2 border-pink-200 hover:border-pink-400 transition-all group"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={src}
+                          alt={`صورة ${i + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                          <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+                          </svg>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* فورم التسعير (يسار في RTL = start في RTL يعني اليمين، لكن بالعرض يبدو على اليسار في layout LTR) */}
+            <div className="sm:w-3/5 space-y-3">
+              <h4 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                <Tag className="w-4 h-4 text-pink-600" />
+                التسعير والتقييم
+              </h4>
+
+              {/* السعر */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">السعر (ر.س)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="أدخل السعر"
+                  value={pricingData.price}
+                  onChange={(e) => onSavePricing(order.id, { ...pricingData, price: sanitizeNum(e.target.value) })}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+              </div>
+
+              {/* المكافأة */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">المكافأة (ر.س)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="أدخل المكافأة"
+                  value={pricingData.bonus}
+                  onChange={(e) => onSavePricing(order.id, { ...pricingData, bonus: sanitizeNum(e.target.value) })}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+              </div>
+
+              {/* الملاحظات */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">الملاحظات</label>
+                <textarea
+                  rows={2}
+                  placeholder="ملاحظات اختيارية..."
+                  value={pricingData.notes}
+                  onChange={(e) => onSavePricing(order.id, { ...pricingData, notes: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 resize-none"
+                />
+              </div>
+
+              {/* التقييم بالنجوم */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">التقييم</label>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        const newRating = pricingData.rating === i + 1 ? 0 : i + 1
+                        onSavePricing(order.id, { ...pricingData, rating: newRating })
+                      }}
+                      className="transition-transform hover:scale-110 focus:outline-none"
+                    >
+                      <Star
+                        className={`w-6 h-6 transition-colors ${
+                          i < pricingData.rating
+                            ? 'text-yellow-400 fill-yellow-400'
+                            : 'text-gray-300 hover:text-yellow-300'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                  {pricingData.rating > 0 && (
+                    <span className="text-xs text-gray-500 mr-1">{pricingData.rating}/5</span>
+                  )}
+                </div>
+              </div>
+
+              {/* زر الحفظ */}
+              <div className="flex justify-end pt-1">
+                <button
+                  onClick={handleSaveAndCollapse}
+                  className="inline-flex items-center gap-2 rounded-lg bg-pink-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pink-700 transition-colors shadow-sm"
+                >
+                  <Save className="w-4 h-4" />
+                  حفظ وطي
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
