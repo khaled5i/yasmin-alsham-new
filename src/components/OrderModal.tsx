@@ -358,8 +358,24 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     }
 
     // If measurements is already present in the order, use it directly
+    // but merge in design_comments/image_annotations/image_drawings from their
+    // independent columns (migration 30) — raw measurements column lacks them.
     if (initialOrder.measurements !== undefined) {
-      setMeasurementsData((initialOrder.measurements as any) || {})
+      const rawMeasurements = (initialOrder.measurements as any) || {}
+      const orderAny = initialOrder as any
+      const designComments = orderAny.design_comments
+      setMeasurementsData({
+        ...rawMeasurements,
+        saved_design_comments: designComments?.length
+          ? designComments
+          : (rawMeasurements.saved_design_comments || []),
+        image_annotations: orderAny.image_annotations?.length
+          ? orderAny.image_annotations
+          : (rawMeasurements.image_annotations || []),
+        image_drawings: orderAny.image_drawings?.length
+          ? orderAny.image_drawings
+          : (rawMeasurements.image_drawings || []),
+      })
       setIsMeasurementsLoading(false)
       return
     }
