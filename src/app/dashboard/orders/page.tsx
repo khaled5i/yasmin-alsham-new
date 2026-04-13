@@ -13,7 +13,7 @@ import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService } from '@/lib/services/order-service'
 import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
-import { openWhatsApp } from '@/utils/whatsapp'
+import { openWhatsApp, sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
 import CompletedWorkUpload from '@/components/CompletedWorkUpload'
@@ -44,9 +44,12 @@ import {
   Ruler,
   Printer,
   MessageCircle,
-  CalendarDays
+  CalendarDays,
+  Wrench,
+  RotateCcw
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
+import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
 
 const PAGE_SIZE = 50
 
@@ -227,6 +230,21 @@ function OrdersPageInner() {
   const [printOrder, setPrintOrder] = useState<any>(null)
   const [measurementsSaveSuccess, setMeasurementsSaveSuccess] = useState(false)
   const [measurementsSaveError, setMeasurementsSaveError] = useState<string | null>(null)
+
+  // حالات خاصة بالطلبات المكتملة (عند ظهورها في نتائج البحث)
+  const [confirmingOrderId, setConfirmingOrderId] = useState<string | null>(null)
+  const [statusChangeOrderId, setStatusChangeOrderId] = useState<string | null>(null)
+  const [isChangingStatus, setIsChangingStatus] = useState(false)
+  const [showPaymentWarning, setShowPaymentWarning] = useState(false)
+  const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
+
+  // إغلاق قائمة تغيير الحالة عند النقر خارجها
+  useEffect(() => {
+    if (!statusChangeOrderId) return
+    const handleClickOutside = () => setStatusChangeOrderId(null)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [statusChangeOrderId])
 
   // تتبع إرسال واتساب لكل طلب (محفوظ في localStorage)
   const [whatsappSentOrders, setWhatsappSentOrders] = useState<Set<string>>(() => {
@@ -656,6 +674,91 @@ function OrdersPageInner() {
       }
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  // تسليم الطلب مع التحقق من الدفعة المتبقية (للطلبات المكتملة في نتائج البحث)
+  const handleMarkAsDeliveredWithCheck = async (order: any) => {
+    const remainingAmount = order.remaining_amount || 0
+    if (remainingAmount > 0) {
+      setOrderToDeliver(order)
+      setShowPaymentWarning(true)
+      return
+    }
+    await handleDeliverOrder(order.id)
+  }
+
+  const deliverOrderWithPaidStatus = async (orderId: string, markAsPaid: boolean) => {
+    setIsProcessing(true)
+    try {
+      const order = orderToDeliver
+      const updates: any = { status: 'delivered', delivery_date: new Date().toISOString() }
+      if (markAsPaid && order) {
+        updates.paid_amount = order.price
+        updates.payment_status = 'paid'
+      }
+      const result = await updateOrder(orderId, updates)
+      if (result.success) {
+        setShowPaymentWarning(false)
+        setOrderToDeliver(null)
+        if (order && order.client_phone) {
+          sendDeliveredWhatsApp(order.client_name, order.client_phone)
+        }
+      } else {
+        toast.error(result.error || 'حدث خطأ', { icon: '✗' })
+      }
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // تأكيد مراجعة الطلب المكتمل وإرسال رسالة "جاهز للاستلام" (للطلبات المكتملة في نتائج البحث)
+  const handleSendReadyForPickup = async (order: any) => {
+    if (!order.client_phone || order.client_phone.trim() === '') {
+      toast.error('لا يوجد رقم هاتف للعميل', { icon: '⚠️' })
+      return
+    }
+    setConfirmingOrderId(order.id)
+    try {
+      const result = await updateOrder(order.id, { admin_confirmed: true } as any)
+      if (!result.success) {
+        toast.error('حدث خطأ أثناء تأكيد المراجعة', { icon: '⚠️' })
+        return
+      }
+      sendReadyForPickupWhatsApp(order.client_name, order.client_phone)
+      toast.success('تم تأكيد المراجعة وفتح واتساب لإرسال رسالة الاستلام', { icon: '✅', duration: 3000 })
+    } catch {
+      toast.error('حدث خطأ أثناء تأكيد المراجعة', { icon: '⚠️' })
+    } finally {
+      setConfirmingOrderId(null)
+    }
+  }
+
+  // إرسال رسالة شكر للعميل بعد التسليم (للطلبات المستلمة في نتائج البحث)
+  const handleSendThankYouMessage = (order: any) => {
+    if (!order.client_phone) {
+      toast.error('لا يوجد رقم هاتف للعميل', { icon: '⚠️' })
+      return
+    }
+    const message = `مرحباً ${order.client_name}\n\nلقد تم تسليم فستانك بنجاح!\n\nنأمل أن ينال إعجابك.\n\nيمكنك ترك تعليق لطيف لنا عبر الرابط التالي:\nhttps://maps.app.goo.gl/oor8FHoTwaGS8GMb9\n\nننتظر زيارتكم مرة أخرى\n\nياسمين الشام للأزياء`
+    const encodedMessage = encodeURIComponent(message)
+    window.open(`https://wa.me/${order.client_phone}?text=${encodedMessage}`, '_blank')
+  }
+
+  // إعادة الطلب المكتمل لحالة سابقة (للطلبات المكتملة في نتائج البحث)
+  const handleRevertStatusInSearch = async (orderId: string, newStatus: 'pending' | 'in_progress') => {
+    setIsChangingStatus(true)
+    try {
+      const result = await updateOrder(orderId, { status: newStatus })
+      if (result.success) {
+        const statusLabel = newStatus === 'pending' ? 'في الانتظار' : 'قيد التنفيذ'
+        toast.success(`تم تغيير حالة الطلب إلى "${statusLabel}" بنجاح`, { icon: '✓' })
+        setStatusChangeOrderId(null)
+      } else {
+        toast.error('حدث خطأ أثناء تغيير حالة الطلب', { icon: '✗' })
+      }
+    } finally {
+      setIsChangingStatus(false)
     }
   }
 
@@ -1130,65 +1233,196 @@ function OrdersPageInner() {
 
                         {/* Admin Action Buttons */}
                         {user.role === 'admin' && (
-                          <div className="flex gap-1.5">
-                            <div className="flex flex-col gap-1.5">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleOpenMeasurements(order) }}
-                                className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200"
-                                title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
-                              >
-                                <Ruler className="w-5 h-5" />
-                                {hasMeasurementsBadge(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handlePrintOrder(order) }}
-                                className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-xl transition-colors border border-gray-200 hover:border-pink-200"
-                                title={t('print_order') || 'طباعة'}
-                              >
-                                <Printer className="w-5 h-5" />
-                                {isOrderPrinted(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleSendWhatsAppOnly(order) }}
-                                className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200"
-                                title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
-                              >
-                                <MessageCircle className="w-5 h-5" />
-                                {isWhatsAppSent(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
-                              </button>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleEditOrder(order) }}
-                                className="flex items-center justify-center p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-gray-200 hover:border-blue-200"
-                                title={t('edit') || 'تعديل'}
-                              >
-                                <Edit className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); if (order.status === 'pending') handleDeliverOrder(order.id) }}
-                                disabled={isProcessing || order.status !== 'pending'}
-                                className="flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                                title={isArabic ? 'تم التسليم' : 'Mark as Delivered'}
-                              >
-                                <Truck className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
-                                className="flex items-center justify-center p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-gray-200 hover:border-red-200"
-                                title={t('delete') || 'حذف'}
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </div>
+                          <>
+                            {order.status === 'completed' ? (
+                              /* أزرار الطلبات المكتملة - مطابقة لصفحة الطلبات المكتملة */
+                              <div className="flex flex-col gap-2 mt-1">
+                                <Link
+                                  href={`/dashboard/alterations/add?orderId=${order.id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
+                                  title="طلب تعديل"
+                                >
+                                  <Wrench className="w-4 h-4" />
+                                </Link>
+
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleSendReadyForPickup(order) }}
+                                  disabled={!order.client_phone || order.client_phone.trim() === '' || confirmingOrderId === order.id}
+                                  className={`p-2 rounded-lg transition-colors border ${
+                                    order.admin_confirmed
+                                      ? 'text-green-600 bg-green-50 border-green-200 hover:bg-green-100'
+                                      : 'text-gray-500 hover:text-green-600 hover:bg-green-50 border-transparent hover:border-green-100'
+                                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                  title={
+                                    !order.client_phone
+                                      ? 'لا يوجد رقم هاتف للعميل'
+                                      : order.admin_confirmed
+                                        ? 'تمت المراجعة - إعادة إرسال رسالة الاستلام'
+                                        : 'تأكيد المراجعة وإرسال رسالة الاستلام'
+                                  }
+                                >
+                                  {confirmingOrderId === order.id ? (
+                                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                                  ) : order.admin_confirmed ? (
+                                    <CheckCircle className="w-4 h-4" />
+                                  ) : (
+                                    <MessageCircle className="w-4 h-4" />
+                                  )}
+                                </button>
+
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleMarkAsDeliveredWithCheck(order) }}
+                                  disabled={isProcessing}
+                                  className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-purple-100"
+                                  title="تم التسليم"
+                                >
+                                  {isProcessing ? (
+                                    <div className="w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                                  ) : (
+                                    <Truck className="w-4 h-4" />
+                                  )}
+                                </button>
+
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
+                                  className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                  title="حذف الطلب"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+
+                                {/* زر إعادة الحالة */}
+                                <div className="relative">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setStatusChangeOrderId(statusChangeOrderId === order.id ? null : order.id) }}
+                                    className={`p-2 rounded-lg transition-colors border ${
+                                      statusChangeOrderId === order.id
+                                        ? 'text-amber-600 bg-amber-50 border-amber-200'
+                                        : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50 border-transparent hover:border-amber-100'
+                                    }`}
+                                    title="إعادة الطلب لحالة سابقة"
+                                  >
+                                    <RotateCcw className="w-4 h-4" />
+                                  </button>
+                                  {statusChangeOrderId === order.id && (
+                                    <div
+                                      className="absolute left-0 top-full mt-1 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-2 min-w-[160px]"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <p className="text-xs text-gray-500 mb-2 px-1 font-medium">إعادة الطلب إلى:</p>
+                                      <button
+                                        onClick={() => handleRevertStatusInSearch(order.id, 'in_progress')}
+                                        disabled={isChangingStatus}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                                      >
+                                        <Package className="w-3.5 h-3.5" />
+                                        قيد التنفيذ
+                                      </button>
+                                      <button
+                                        onClick={() => handleRevertStatusInSearch(order.id, 'pending')}
+                                        disabled={isChangingStatus}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-yellow-700 hover:bg-yellow-50 rounded-lg transition-colors disabled:opacity-50"
+                                      >
+                                        <Clock className="w-3.5 h-3.5" />
+                                        في الانتظار
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : order.status === 'delivered' ? (
+                              /* أزرار الطلبات المستلمة - مطابقة لصفحة الطلبات المستلمة */
+                              <div className="flex flex-col gap-2 mt-1">
+                                <Link
+                                  href={`/dashboard/alterations/add?orderId=${order.id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
+                                  title="طلب تعديل"
+                                >
+                                  <Wrench className="w-4 h-4" />
+                                </Link>
+
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleSendThankYouMessage(order) }}
+                                  disabled={!order.client_phone}
+                                  className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-green-100"
+                                  title="إرسال رسالة شكر"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
+                                  className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                  title="حذف الطلب"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              /* أزرار الطلبات العادية (قيد الانتظار / قيد التنفيذ / ملغي) */
+                              <div className="flex gap-1.5">
+                                <div className="flex flex-col gap-1.5">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleOpenMeasurements(order) }}
+                                    className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200"
+                                    title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
+                                  >
+                                    <Ruler className="w-5 h-5" />
+                                    {hasMeasurementsBadge(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handlePrintOrder(order) }}
+                                    className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-xl transition-colors border border-gray-200 hover:border-pink-200"
+                                    title={t('print_order') || 'طباعة'}
+                                  >
+                                    <Printer className="w-5 h-5" />
+                                    {isOrderPrinted(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleSendWhatsAppOnly(order) }}
+                                    className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200"
+                                    title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
+                                  >
+                                    <MessageCircle className="w-5 h-5" />
+                                    {isWhatsAppSent(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
+                                  </button>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleEditOrder(order) }}
+                                    className="flex items-center justify-center p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-gray-200 hover:border-blue-200"
+                                    title={t('edit') || 'تعديل'}
+                                  >
+                                    <Edit className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); if (order.status === 'pending') handleDeliverOrder(order.id) }}
+                                    disabled={isProcessing || order.status !== 'pending'}
+                                    className="flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    title={isArabic ? 'تم التسليم' : 'Mark as Delivered'}
+                                  >
+                                    <Truck className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
+                                    className="flex items-center justify-center p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-gray-200 hover:border-red-200"
+                                    title={t('delete') || 'حذف'}
+                                  >
+                                    <Trash2 className="w-5 h-5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {/* Progress Bar - Print / Measurements / WhatsApp */}
-                  {user.role === 'admin' && (() => {
+                  {/* Progress Bar - Print / Measurements / WhatsApp (للطلبات العادية فقط) */}
+                  {user.role === 'admin' && order.status !== 'completed' && order.status !== 'delivered' && (() => {
                     const done = [isOrderPrinted(order), hasMeasurementsBadge(order), isWhatsAppSent(order)].filter(Boolean).length
                     const pct = done === 0 ? 0 : done === 1 ? 33 : done === 2 ? 66 : 100
                     const barColor = done === 1 ? 'bg-red-400' : done === 2 ? 'bg-orange-400' : done === 3 ? 'bg-green-400' : 'bg-gray-200'
@@ -1387,6 +1621,15 @@ function OrdersPageInner() {
           onClose={closeDeleteModal}
           onConfirm={confirmDeleteOrder}
           orderInfo={orderToDelete}
+        />
+
+        {/* تحذير الدفعة المتبقية عند تسليم الطلبات المكتملة من نتائج البحث */}
+        <RemainingPaymentWarningModal
+          isOpen={showPaymentWarning}
+          remainingAmount={orderToDeliver?.remaining_amount || 0}
+          onCancel={() => { setShowPaymentWarning(false); setOrderToDeliver(null) }}
+          onMarkAsPaid={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, true) }}
+          onIgnore={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, false) }}
         />
 
         {/* نافذة المقاسات */}
