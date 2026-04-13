@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
@@ -14,7 +14,8 @@ import {
   Package,
   Trash2,
   Wrench,
-  MessageCircle // Import MessageCircle
+  MessageCircle, // Import MessageCircle
+  Loader
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast' // Import toast
@@ -27,7 +28,6 @@ import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
-import PaginationControls from '@/components/PaginationControls'
 
 const PAGE_SIZE = 50
 
@@ -35,7 +35,7 @@ export default function DeliveredOrdersPage() {
   const router = useRouter()
   const { t, isArabic } = useTranslation() // Add translation hook
   const { user, isLoading: authLoading } = useAuthStore()
-  const { orders, loadOrders, deleteOrder, totalOrders, isLoading: ordersLoading } = useOrderStore()
+  const { orders, loadOrders, loadMoreOrders, deleteOrder, hasMore, isLoadingMore, isLoading: ordersLoading } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { workerType, isLoading: permissionsLoading, getDashboardRoute } = useWorkerPermissions()
   const [showViewModal, setShowViewModal] = useState(false)
@@ -49,6 +49,7 @@ export default function DeliveredOrdersPage() {
   const [dateFilter, setDateFilter] = useState('')
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   // OPTIMIZATION: Load data immediately, don't wait for permissions
   useEffect(() => {
@@ -57,26 +58,43 @@ export default function DeliveredOrdersPage() {
       router.push('/login')
       return
     }
-    // Load data immediately - don't wait for permission check
-    loadOrders({ status: 'delivered', page: currentPage, pageSize: PAGE_SIZE })
+    // دائماً نبدأ من الصفحة الأولى عند التحميل الأولي
+    setCurrentPage(0)
+    loadOrders({ status: 'delivered', page: 0, pageSize: PAGE_SIZE })
     loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers, currentPage])
+  }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // تحميل المزيد عند تغيير currentPage (يُفعَّل من IntersectionObserver)
+  useEffect(() => {
+    if (currentPage === 0) return
+    loadMoreOrders({ status: 'delivered', page: currentPage, pageSize: PAGE_SIZE })
+  }, [currentPage, loadMoreOrders])
+
+  // IntersectionObserver: عند الوصول لآخر العناصر يتم تحميل الدفعة التالية
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !ordersLoading) {
+          setCurrentPage(prev => prev + 1)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, isLoadingMore, ordersLoading])
 
   // Re-fetch data when the app resumes from background (mobile)
   useAppResume(() => {
     if (!user) return
-    loadOrders({ status: 'delivered', page: currentPage, pageSize: PAGE_SIZE })
+    setCurrentPage(0)
+    loadOrders({ status: 'delivered', page: 0, pageSize: PAGE_SIZE })
     loadWorkers()
   })
-
-  useEffect(() => {
-    if (totalOrders === null) return
-
-    const maxPage = Math.max(0, Math.ceil(totalOrders / PAGE_SIZE) - 1)
-    if (currentPage > maxPage) {
-      setCurrentPage(maxPage)
-    }
-  }, [currentPage, totalOrders])
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {
@@ -417,15 +435,15 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
         )}
       </div>
 
-      {/* مودال عرض التفاصيل الموحد */}
-      <PaginationControls
-        currentPage={currentPage}
-        pageSize={PAGE_SIZE}
-        totalItems={totalOrders ?? deliveredOrders.length}
-        currentCount={deliveredOrders.length}
-        isLoading={ordersLoading}
-        onPageChange={setCurrentPage}
-      />
+      {/* عنصر نهاية القائمة - يُراقبه IntersectionObserver لتحميل المزيد */}
+      <div ref={sentinelRef} className="py-4 flex justify-center">
+        {isLoadingMore && (
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Loader className="w-4 h-4 animate-spin" />
+            <span>جارٍ تحميل المزيد...</span>
+          </div>
+        )}
+      </div>
 
       <OrderModal
         order={selectedOrder}

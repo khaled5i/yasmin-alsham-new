@@ -132,10 +132,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     // OPTIMISTIC LOADING: If we have cached orders, don't show loading spinner
     const hasCachedOrders = state.orders.length > 0
 
-    if (hasCachedOrders) {
-      set({ isRefreshing: true, error: null })
+    const filtersChanged = state.lastFilters !== filtersKey
+
+    if (hasCachedOrders && !filtersChanged) {
+      // Refreshing same page — keep showing cached orders while fetching in background
+      set({ isRefreshing: true, hasMore: false, error: null })
     } else {
-      set({ isLoading: true, error: null })
+      // Navigating to a different status/page — clear stale orders immediately
+      // so IntersectionObserver doesn't fire loadMoreOrders with wrong state
+      set({ isLoading: true, hasMore: false, orders: [], error: null })
     }
 
     try {

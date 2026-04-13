@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -32,12 +32,13 @@ import {
   Filter,
   AlertCircle,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  Loader
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
+import { orderService } from '@/lib/services/order-service'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
-import PaginationControls from '@/components/PaginationControls'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import { formatGregorianDate } from '@/lib/date-utils'
@@ -47,7 +48,7 @@ const PAGE_SIZE = 50
 
 export default function CompletedOrdersPage() {
   const { user, isLoading: authLoading } = useAuthStore()
-  const { orders, loadOrders, updateOrder, deleteOrder, totalOrders, isLoading: ordersLoading } = useOrderStore()
+  const { orders, loadOrders, loadMoreOrders, updateOrder, deleteOrder, hasMore, isLoadingMore, isLoading: ordersLoading } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
@@ -66,6 +67,7 @@ export default function CompletedOrdersPage() {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [workerFilter, setWorkerFilter] = useState('')
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -74,6 +76,9 @@ export default function CompletedOrdersPage() {
   // حالات تغيير حالة الطلب
   const [statusChangeOrderId, setStatusChangeOrderId] = useState<string | null>(null)
   const [isChangingStatus, setIsChangingStatus] = useState(false)
+
+  // حالة تحويل الطلبات المتأخرة
+  const [isAutoConverting, setIsAutoConverting] = useState(false)
 
   // إغلاق قائمة تغيير الحالة عند النقر خارجها
   useEffect(() => {
@@ -85,36 +90,50 @@ export default function CompletedOrdersPage() {
 
   // التحقق من الصلاحيات - المدراء ومدراء الورشة
   useEffect(() => {
-    // انتظار انتهاء التحقق من المصادقة
-    if (authLoading) {
-      return
-    }
+    if (authLoading) return
 
     if (!user) {
       router.push('/login')
       return
     }
 
-    // OPTIMIZATION: Load only completed orders from the server
-    loadOrders({ status: 'completed', page: currentPage, pageSize: PAGE_SIZE })
+    // دائماً نبدأ من الصفحة الأولى عند التحميل الأولي
+    setCurrentPage(0)
+    loadOrders({ status: 'completed', page: 0, pageSize: PAGE_SIZE })
     loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers, currentPage])
+  }, [user, authLoading, router, loadOrders, loadWorkers])
+
+  // تحميل المزيد عند تغيير currentPage (يُفعَّل من IntersectionObserver)
+  useEffect(() => {
+    if (currentPage === 0) return
+    loadMoreOrders({ status: 'completed', page: currentPage, pageSize: PAGE_SIZE })
+  }, [currentPage, loadMoreOrders])
+
+  // IntersectionObserver: عند الوصول لآخر العناصر يتم تحميل الدفعة التالية
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !ordersLoading) {
+          setCurrentPage(prev => prev + 1)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, isLoadingMore, ordersLoading])
 
   // Re-fetch data when the app resumes from background (mobile)
   useAppResume(() => {
     if (!user) return
-    loadOrders({ status: 'completed', page: currentPage, pageSize: PAGE_SIZE })
+    setCurrentPage(0)
+    loadOrders({ status: 'completed', page: 0, pageSize: PAGE_SIZE })
     loadWorkers()
   })
-
-  useEffect(() => {
-    if (totalOrders === null) return
-
-    const maxPage = Math.max(0, Math.ceil(totalOrders / PAGE_SIZE) - 1)
-    if (currentPage > maxPage) {
-      setCurrentPage(maxPage)
-    }
-  }, [currentPage, totalOrders])
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {
@@ -306,6 +325,28 @@ export default function CompletedOrdersPage() {
   const handleCloseModal = () => {
     setShowViewModal(false)
     setSelectedOrder(null)
+  }
+
+  // تحويل الطلبات المكتملة المتأخرة إلى "تم التسليم"
+  const handleAutoConvertOverdue = async () => {
+    setIsAutoConverting(true)
+    try {
+      const result = await orderService.bulkDeliverOverdue(2)
+      if (result.error) {
+        toast.error(result.error, { icon: '⚠️' })
+        return
+      }
+      if (result.count === 0) {
+        toast('لا توجد طلبات متأخرة تستوفي الشرط', { icon: 'ℹ️' })
+        return
+      }
+      toast.success(`تم تحويل ${result.count} طلب إلى "تم التسليم"`, { icon: '✅', duration: 4000 })
+      // إعادة تحميل القائمة لعكس التغييرات
+      setCurrentPage(0)
+      loadOrders({ status: 'completed', page: 0, pageSize: PAGE_SIZE })
+    } finally {
+      setIsAutoConverting(false)
+    }
   }
 
   // فتح modal حذف الطلب
@@ -505,6 +546,21 @@ export default function CompletedOrdersPage() {
               }`}
             >
               تمت المراجعة ({reviewedCount})
+            </button>
+          </div>
+
+          {/* زر تحويل الطلبات المتأخرة */}
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={handleAutoConvertOverdue}
+              disabled={isAutoConverting}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs sm:text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all duration-200 shadow-sm"
+            >
+              {isAutoConverting
+                ? <Loader className="w-3.5 h-3.5 animate-spin" />
+                : <Truck className="w-3.5 h-3.5" />
+              }
+              <span>{isAutoConverting ? 'جارٍ التحويل...' : 'تحويل المتأخرة (أكثر من يومين)'}</span>
             </button>
           </div>
 
@@ -770,15 +826,15 @@ export default function CompletedOrdersPage() {
         </div>
       </div>
 
-      {/* نوافذ منبثقة */}
-      <PaginationControls
-        currentPage={currentPage}
-        pageSize={PAGE_SIZE}
-        totalItems={totalOrders ?? completedOrders.length}
-        currentCount={completedOrders.length}
-        isLoading={ordersLoading}
-        onPageChange={setCurrentPage}
-      />
+      {/* عنصر نهاية القائمة - يُراقبه IntersectionObserver لتحميل المزيد */}
+      <div ref={sentinelRef} className="py-4 flex justify-center">
+        {isLoadingMore && (
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Loader className="w-4 h-4 animate-spin" />
+            <span>جارٍ تحميل المزيد...</span>
+          </div>
+        )}
+      </div>
 
       <OrderModal
         order={selectedOrder}

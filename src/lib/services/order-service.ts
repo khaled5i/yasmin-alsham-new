@@ -583,6 +583,38 @@ export const orderService = {
   },
 
   /**
+   * تحويل الطلبات المكتملة المتأخرة إلى "تم التسليم"
+   * يشمل كل طلب مكتمل تجاوز موعد تسليمه بأكثر من يومين
+   */
+  async bulkDeliverOverdue(daysOverdue: number = 2): Promise<{ count: number; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { count: 0, error: 'Supabase is not configured.' }
+    }
+
+    try {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - daysOverdue)
+      const cutoffDate = cutoff.toISOString().split('T')[0] // YYYY-MM-DD
+
+      const deliveryDate = new Date().toISOString()
+
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ status: 'delivered', delivery_date: deliveryDate })
+        .eq('status', 'completed')
+        .lt('due_date', cutoffDate)
+        .select('id')
+
+      if (error) throw error
+
+      return { count: data?.length ?? 0, error: null }
+    } catch (error: any) {
+      console.error('❌ Error in bulkDeliverOverdue:', error.message)
+      return { count: 0, error: error.message || 'خطأ في تحويل الطلبات' }
+    }
+  },
+
+  /**
    * الحصول على طلب واحد بواسطة ID
    */
   async getById(id: string): Promise<{ data: Order | null; error: string | null }> {

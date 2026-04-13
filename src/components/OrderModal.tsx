@@ -813,8 +813,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
             {/* محتوى النافذة */}
             <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
-              {/* 1️⃣ القسم العلوي - معلومات الطلب الأساسية - مخفي للعامل (يظهر في الأسفل) */}
-              {user?.role !== 'worker' && (
+              {/* 1️⃣ القسم العلوي - معلومات الطلب الأساسية */}
               <div className="bg-gradient-to-r from-pink-50 to-purple-50 p-3 sm:p-6 rounded-xl border border-pink-200">
                 <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center space-x-2 space-x-reverse">
                   <Package className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
@@ -943,33 +942,29 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     </span>
                   </div>
 
-                  {/* معلومات إضافية للمدراء فقط */}
-                  {user?.role === 'admin' && (
-                    <>
-                      {/* رقم الهاتف */}
-                      {order.client_phone && (
-                        <div className="bg-white p-2 sm:p-3 rounded-lg">
-                          <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                            <Phone className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                            <span className="text-xs sm:text-sm font-medium truncate">{t('phone')}:</span>
-                          </div>
-                          <p className="text-xs sm:text-base font-semibold text-gray-800 truncate" dir="ltr">{order.client_phone}</p>
-                        </div>
-                      )}
-
-                      {/* السعر */}
-                      <div className="bg-white p-2 sm:p-3 rounded-lg">
-                        <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                          <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                          <span className="text-xs sm:text-sm font-medium truncate">{t('price')}:</span>
-                        </div>
-                        <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{order.price} {t('sar')}</p>
+                  {/* رقم الهاتف - للجميع */}
+                  {order.client_phone && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <Phone className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('phone')}:</span>
                       </div>
-                    </>
+                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate" dir="ltr">{order.client_phone}</p>
+                    </div>
+                  )}
+
+                  {/* السعر - للمدراء فقط */}
+                  {user?.role === 'admin' && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('price')}:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{order.price} {t('sar')}</p>
+                    </div>
                   )}
                 </div>
               </div>
-              )}
 
               {/* 2️⃣ قسم الملاحظات - تصميم مدمج واحترافي */}
               {(order.notes || voiceNotes.length > 0) && (
@@ -1765,88 +1760,6 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 </div>
               )}
 
-              {/* 1️⃣ قسم معلومات الطلب للعامل فقط - يظهر في الأسفل */}
-              {user?.role === 'worker' && (
-              <div className="bg-gradient-to-r from-pink-50 to-purple-50 p-3 sm:p-6 rounded-xl border border-pink-200">
-                <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center space-x-2 space-x-reverse">
-                  <Package className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
-                  <span>{t('order_info')}</span>
-                </h3>
-
-                <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
-                  {/* اسم العميل */}
-                  <div className="bg-white p-2 sm:p-3 rounded-lg">
-                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                      <User className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="text-xs sm:text-sm font-medium truncate">{t('name')}:</span>
-                    </div>
-                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.client_name}</p>
-                  </div>
-
-                  {/* رقم الطلب */}
-                  <div className="bg-white p-2 sm:p-3 rounded-lg">
-                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                      <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="text-xs sm:text-sm font-medium truncate">{t('order_number')}:</span>
-                    </div>
-                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.order_number || order.id}</p>
-                  </div>
-
-                  {/* نوع القماش */}
-                  {order.fabric && (
-                    <div className="bg-white p-2 sm:p-3 rounded-lg">
-                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                        <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium truncate">{t('fabric_type')}:</span>
-                      </div>
-                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{order.fabric}</p>
-                    </div>
-                  )}
-
-                  {/* موعد التسليم */}
-                  <div className="bg-white p-2 sm:p-3 rounded-lg">
-                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                      <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="text-xs sm:text-sm font-medium truncate">{t('due_date')}:</span>
-                    </div>
-                    <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{formatDate(order.due_date)}</p>
-                  </div>
-
-                  {/* موعد تسليم البروفا */}
-                  {order.proof_delivery_date && (
-                    <div className="bg-white p-2 sm:p-3 rounded-lg">
-                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                        <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium truncate">{t('proof_delivery_date')}:</span>
-                      </div>
-                      <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{formatDate(order.proof_delivery_date)}</p>
-                    </div>
-                  )}
-
-                  {/* رقم الهاتف */}
-                  {order.client_phone && (
-                    <div className="bg-white p-2 sm:p-3 rounded-lg">
-                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                        <Phone className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium truncate">{t('phone')}:</span>
-                      </div>
-                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate" dir="ltr">{order.client_phone}</p>
-                    </div>
-                  )}
-
-                  {/* الحالة */}
-                  <div className="bg-white p-2 sm:p-3 rounded-lg">
-                    <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
-                      <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="text-xs sm:text-sm font-medium truncate">{t('status')}:</span>
-                    </div>
-                    <span className={`inline-block px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color} truncate max-w-full`}>
-                      {getStatusInfo(order.status).label}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              )}
             </div>
 
             {/* تذييل النافذة */}
