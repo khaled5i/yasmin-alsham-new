@@ -188,6 +188,43 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
 
+  // حالات تعديل الحالة (للمدير فقط)
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const statusDropdownRef = useRef<HTMLDivElement>(null)
+
+  const handleStatusChange = async (updates: { status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'; is_pre_booking?: boolean; needs_review?: boolean }) => {
+    if (!order) return
+    setIsUpdatingStatus(true)
+    try {
+      await orderService.update(order.id, updates)
+      await updateOrder(order.id, updates)
+      // تحديث الـ local state مباشرة لتعكس التغيير في الواجهة فوراً
+      const base = fullOrder || initialOrder
+      if (base) {
+        setFullOrder({ ...base, ...updates } as Order)
+      }
+      toast.success('تم تحديث الحالة')
+      setShowStatusDropdown(false)
+    } catch {
+      toast.error('فشل تحديث الحالة')
+    } finally {
+      setIsUpdatingStatus(false)
+    }
+  }
+
+  // إغلاق dropdown عند النقر خارجه
+  useEffect(() => {
+    if (!showStatusDropdown) return
+    const handler = (e: MouseEvent) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target as Node)) {
+        setShowStatusDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showStatusDropdown])
+
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map())
@@ -937,9 +974,94 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
                       <span className="text-xs sm:text-sm font-medium truncate">{t('status')}:</span>
                     </div>
-                    <span className={`inline-block px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color} truncate max-w-full`}>
-                      {getStatusInfo(order.status).label}
-                    </span>
+
+                    {user?.role === 'admin' ? (
+                      <div className="relative" ref={statusDropdownRef}>
+                        {/* Badge قابل للنقر */}
+                        <button
+                          onClick={() => setShowStatusDropdown(v => !v)}
+                          disabled={isUpdatingStatus}
+                          className={`inline-flex items-center gap-1 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium transition-all ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color} hover:opacity-80 cursor-pointer`}
+                        >
+                          {isUpdatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                          {getStatusInfo(order.status).label}
+                          <ChevronDown className="w-3 h-3 opacity-60" />
+                        </button>
+
+                        {/* Dropdown */}
+                        {showStatusDropdown && (
+                          <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl min-w-[180px] overflow-hidden">
+                            {/* الحالات الأساسية */}
+                            <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                              الحالة الأساسية
+                            </div>
+                            {([
+                              { value: 'pending'     as const, label: 'في الانتظار', color: 'text-yellow-700', bg: 'hover:bg-yellow-50' },
+                              { value: 'in_progress' as const, label: 'قيد التنفيذ', color: 'text-blue-700',   bg: 'hover:bg-blue-50'   },
+                              { value: 'completed'   as const, label: 'مكتمل',        color: 'text-green-700',  bg: 'hover:bg-green-50'  },
+                              { value: 'delivered'   as const, label: 'تم التسليم',   color: 'text-purple-700', bg: 'hover:bg-purple-50' },
+                            ] as const).map(s => (
+                              <button
+                                key={s.value}
+                                onClick={() => handleStatusChange({ status: s.value })}
+                                className={`w-full text-right px-3 py-2 text-sm ${s.color} ${s.bg} flex items-center gap-2 transition-colors`}
+                              >
+                                {order.status === s.value && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                                <span className={order.status === s.value ? 'font-bold' : ''}>{s.label}</span>
+                              </button>
+                            ))}
+
+                            {/* الحالات الإضافية */}
+                            <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-t border-b border-gray-100 mt-1">
+                              حالات إضافية
+                            </div>
+                            <button
+                              onClick={() => handleStatusChange({ is_pre_booking: !(order as any).is_pre_booking })}
+                              className="w-full text-right px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2 transition-colors"
+                            >
+                              {(order as any).is_pre_booking && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                              <span className={(order as any).is_pre_booking ? 'font-bold' : ''}>
+                                حجز مسبق {(order as any).is_pre_booking ? '✓' : ''}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange({ needs_review: !(order as any).needs_review })}
+                              className="w-full text-right px-3 py-2 text-sm text-orange-700 hover:bg-orange-50 flex items-center gap-2 transition-colors"
+                            >
+                              {(order as any).needs_review && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                              <span className={(order as any).needs_review ? 'font-bold' : ''}>
+                                يحتاج مراجعة {(order as any).needs_review ? '✓' : ''}
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* badges الحالات الإضافية الفعّالة */}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(order as any).is_pre_booking && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-700">حجز مسبق</span>
+                          )}
+                          {(order as any).needs_review && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* عرض فقط للغير مدراء */
+                      <div>
+                        <span className={`inline-block px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color} truncate max-w-full`}>
+                          {getStatusInfo(order.status).label}
+                        </span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(order as any).is_pre_booking && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-700">حجز مسبق</span>
+                          )}
+                          {(order as any).needs_review && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* رقم الهاتف - للجميع */}

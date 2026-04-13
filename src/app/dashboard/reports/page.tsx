@@ -68,7 +68,7 @@ const formatDateInArabic = (date: Date): string => {
 // Types
 // ============================================================================
 
-type DateRange = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom'
+type DateRange = 'today' | 'last7days' | 'last14days' | 'last21days' | 'week' | 'last30days' | 'month' | 'specific_month' | 'last60days' | 'quarter' | 'year' | 'specific_day' | 'custom'
 
 interface DateFilter {
   startDate: Date
@@ -95,6 +95,14 @@ export default function ReportsPage() {
   const [customDateRange, setCustomDateRange] = useState<DateFilter>({
     startDate: new Date(),
     endDate: new Date()
+  })
+  const [specificDay, setSpecificDay] = useState<string>(() => {
+    const today = new Date()
+    return today.toISOString().split('T')[0]
+  })
+  const [specificMonth, setSpecificMonth] = useState<string>(() => {
+    const today = new Date()
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   })
   const [expandedSection, setExpandedSection] = useState<string | null>(null)
 
@@ -126,36 +134,64 @@ export default function ReportsPage() {
   const getDateRange = (): DateFilter => {
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const daysAgo = (n: number) => new Date(today.getTime() - n * 24 * 60 * 60 * 1000)
 
     switch (selectedPeriod) {
       case 'today':
         return {
           startDate: today,
-          endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+          endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1)
         }
-      case 'week':
+      case 'last7days':
+        return { startDate: daysAgo(6), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
+      case 'last14days':
+        return { startDate: daysAgo(13), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
+      case 'last21days':
+        return { startDate: daysAgo(20), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
+      case 'week': {
         const weekStart = new Date(today)
         weekStart.setDate(today.getDate() - today.getDay())
         return {
           startDate: weekStart,
-          endDate: new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
+          endDate: new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000 - 1)
         }
+      }
+      case 'last30days':
+        return { startDate: daysAgo(29), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
       case 'month':
         return {
           startDate: new Date(now.getFullYear(), now.getMonth(), 1),
           endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
         }
-      case 'quarter':
+      case 'specific_month': {
+        const [y, m] = specificMonth.split('-').map(Number)
+        return {
+          startDate: new Date(y, m - 1, 1),
+          endDate: new Date(y, m, 0, 23, 59, 59)
+        }
+      }
+      case 'last60days':
+        return { startDate: daysAgo(59), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
+      case 'quarter': {
         const quarterMonth = Math.floor(now.getMonth() / 3) * 3
         return {
           startDate: new Date(now.getFullYear(), quarterMonth, 1),
           endDate: new Date(now.getFullYear(), quarterMonth + 3, 0, 23, 59, 59)
         }
+      }
       case 'year':
         return {
           startDate: new Date(now.getFullYear(), 0, 1),
           endDate: new Date(now.getFullYear(), 11, 31, 23, 59, 59)
         }
+      case 'specific_day': {
+        const day = specificDay ? new Date(specificDay) : today
+        const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+        return {
+          startDate: dayStart,
+          endDate: new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1)
+        }
+      }
       case 'custom':
         return customDateRange
       default:
@@ -203,7 +239,7 @@ export default function ReportsPage() {
       dateRange,
       previousRange
     }
-  }, [orders, selectedPeriod, customDateRange])
+  }, [orders, selectedPeriod, customDateRange, specificDay, specificMonth])
 
   // ============================================================================
   // Comprehensive Statistics Calculations
@@ -234,8 +270,19 @@ export default function ReportsPage() {
       ? Number(((completedOrders / currentOrders.length) * 100).toFixed(1))
       : 0
 
-    const averageOrderValue = currentOrders.length > 0
-      ? Math.round(currentRevenue / currentOrders.length)
+    // حجز مسبق
+    const preBookingOrders = currentOrders.filter(o => (o as any).is_pre_booking === true)
+    const preBookingCount = preBookingOrders.length
+
+    // متوسط قيمة الطلب: يستثني الحجز المسبق والطلبات أقل من 100 ريال
+    // البسط: مجموع قيمة الطلبات (بغض النظر عن حالة الدفع)
+    // المقام: عدد الطلبات المستوفية للشرط
+    const avgEligibleOrders = currentOrders.filter(
+      o => !(o as any).is_pre_booking && Number(o.price || 0) >= 100
+    )
+    const avgEligibleTotal = avgEligibleOrders.reduce((sum, o) => sum + Number(o.price || 0), 0)
+    const averageOrderValue = avgEligibleOrders.length > 0
+      ? Math.round(avgEligibleTotal / avgEligibleOrders.length)
       : 0
 
     // Calculate average completion time
@@ -276,11 +323,13 @@ export default function ReportsPage() {
       ? Number((((uniqueCustomers - previousUniqueCustomers) / previousUniqueCustomers) * 100).toFixed(1))
       : 0
 
-    // Payment Statistics
+    // Payment Statistics — يشمل الدفعات المسبقة من طلبات الحجز + باقي الطلبات
     const totalPaid = currentOrders.reduce((sum, o) => sum + Number(o.paid_amount || 0), 0)
     const totalDue = currentRevenue - totalPaid
-    const paymentCollectionRate = currentRevenue > 0
-      ? Number(((totalPaid / currentRevenue) * 100).toFixed(1))
+    // نسبة التحصيل من إجمالي قيمة جميع الطلبات (ليس فقط المكتملة)
+    const totalAllOrdersValueForRate = currentOrders.reduce((sum, o) => sum + Number(o.price || 0), 0)
+    const paymentCollectionRate = totalAllOrdersValueForRate > 0
+      ? Number(((totalPaid / totalAllOrdersValueForRate) * 100).toFixed(1))
       : 0
 
     // Total value of all orders regardless of status or payment
@@ -310,6 +359,9 @@ export default function ReportsPage() {
       avgCompletionTime,
       ordersByStatus,
       fabricStats,
+
+      // Pre-booking
+      preBookingCount,
 
       // Customers
       uniqueCustomers,
@@ -488,19 +540,59 @@ export default function ReportsPage() {
             {/* Filters and Export Buttons */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               {/* Date Range Selector */}
-              <div className="relative">
-                <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
-                <select
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value as DateRange)}
-                  className="w-full sm:w-auto pr-9 sm:pr-10 pl-3 sm:pl-4 py-2 sm:py-2.5 border-2 border-gray-200 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300 bg-white hover:border-pink-300 cursor-pointer text-xs sm:text-sm font-medium"
-                >
-                  <option value="today">اليوم</option>
-                  <option value="week">هذا الأسبوع</option>
-                  <option value="month">هذا الشهر</option>
-                  <option value="quarter">هذا الربع</option>
-                  <option value="year">هذا العام</option>
-                </select>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
+                  <select
+                    value={selectedPeriod}
+                    onChange={(e) => setSelectedPeriod(e.target.value as DateRange)}
+                    className="w-full sm:w-auto pr-9 sm:pr-10 pl-3 sm:pl-4 py-2 sm:py-2.5 border-2 border-gray-200 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300 bg-white hover:border-pink-300 cursor-pointer text-xs sm:text-sm font-medium"
+                  >
+                    <option value="today">اليوم</option>
+                    <option value="specific_day">يوم محدد</option>
+                    <option disabled>──────────</option>
+                    <option value="last7days">آخر أسبوع</option>
+                    <option value="last14days">آخر أسبوعين</option>
+                    <option value="last21days">آخر 3 أسابيع</option>
+                    <option value="week">هذا الأسبوع</option>
+                    <option disabled>──────────</option>
+                    <option value="last30days">آخر شهر</option>
+                    <option value="month">هذا الشهر</option>
+                    <option value="specific_month">شهر محدد</option>
+                    <option value="last60days">آخر شهرين</option>
+                    <option disabled>──────────</option>
+                    <option value="quarter">هذا الربع</option>
+                    <option value="year">هذا العام</option>
+                  </select>
+                </div>
+
+                {/* Specific Day Picker */}
+                {selectedPeriod === 'specific_day' && (
+                  <div className="relative flex items-center">
+                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-500 pointer-events-none" />
+                    <input
+                      type="date"
+                      value={specificDay}
+                      onChange={(e) => setSpecificDay(e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
+                      className="pr-9 pl-3 py-2 sm:py-2.5 border-2 border-pink-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300 bg-white cursor-pointer text-xs sm:text-sm font-medium"
+                    />
+                  </div>
+                )}
+
+                {/* Specific Month Picker */}
+                {selectedPeriod === 'specific_month' && (
+                  <div className="relative flex items-center">
+                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-500 pointer-events-none" />
+                    <input
+                      type="month"
+                      value={specificMonth}
+                      onChange={(e) => setSpecificMonth(e.target.value)}
+                      max={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`}
+                      className="pr-9 pl-3 py-2 sm:py-2.5 border-2 border-purple-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 bg-white cursor-pointer text-xs sm:text-sm font-medium"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Export Buttons */}
@@ -540,10 +632,22 @@ export default function ReportsPage() {
                 <span className="font-semibold">الفترة المحددة:</span>
                 <span className="font-bold">
                   {selectedPeriod === 'today' && 'اليوم'}
+                  {selectedPeriod === 'specific_day' && (specificDay ? formatDateInArabic(new Date(specificDay + 'T12:00:00')) : 'يوم محدد')}
+                  {selectedPeriod === 'last7days' && 'آخر أسبوع'}
+                  {selectedPeriod === 'last14days' && 'آخر أسبوعين'}
+                  {selectedPeriod === 'last21days' && 'آخر 3 أسابيع'}
                   {selectedPeriod === 'week' && 'هذا الأسبوع'}
+                  {selectedPeriod === 'last30days' && 'آخر شهر'}
                   {selectedPeriod === 'month' && 'هذا الشهر'}
+                  {selectedPeriod === 'specific_month' && (() => {
+                    const arabicMonths = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+                    const [y, m] = specificMonth.split('-').map(Number)
+                    return `${arabicMonths[m - 1]} ${y}`
+                  })()}
+                  {selectedPeriod === 'last60days' && 'آخر شهرين'}
                   {selectedPeriod === 'quarter' && 'هذا الربع'}
                   {selectedPeriod === 'year' && 'هذا العام'}
+                  {selectedPeriod === 'custom' && 'مخصص'}
                 </span>
               </div>
               <div className="text-xs sm:text-sm text-blue-600">
@@ -565,39 +669,7 @@ export default function ReportsPage() {
             <span>مؤشرات الأداء الرئيسية (KPIs)</span>
           </h2>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
-            {/* Total Revenue */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-              whileHover={{ scale: 1.02, y: -2 }}
-              className="relative overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-green-200 shadow-md sm:shadow-lg hover:shadow-lg sm:hover:shadow-xl transition-all duration-300 cursor-pointer group"
-            >
-              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 bg-green-200/30 rounded-full -mr-8 sm:-mr-10 lg:-mr-12 -mt-8 sm:-mt-10 lg:-mt-12 group-hover:scale-150 transition-transform duration-500"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-green-400 to-emerald-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
-                    <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
-                  </div>
-                  <div className={`flex items-center space-x-1 space-x-reverse text-xs sm:text-sm font-semibold ${comprehensiveStats.revenueChange > 0 ? 'text-green-600' : comprehensiveStats.revenueChange < 0 ? 'text-red-600' : 'text-gray-600'
-                    }`}>
-                    {comprehensiveStats.revenueChange > 0 ? (
-                      <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
-                    ) : comprehensiveStats.revenueChange < 0 ? (
-                      <TrendingDown className="w-3 h-3 sm:w-4 sm:h-4" />
-                    ) : null}
-                    <span>{Math.abs(comprehensiveStats.revenueChange)}%</span>
-                  </div>
-                </div>
-                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-green-700 mb-0.5 sm:mb-1 leading-tight">
-                  {comprehensiveStats.currentRevenue.toLocaleString()} ر.س
-                </h3>
-                <p className="text-xs sm:text-sm font-semibold text-green-800 leading-tight">إجمالي الإيرادات</p>
-                <p className="text-[10px] sm:text-xs text-green-600 mt-0.5 sm:mt-1">من الطلبات المكتملة</p>
-              </div>
-            </motion.div>
-
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
             {/* Total Orders */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
@@ -692,20 +764,22 @@ export default function ReportsPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.7 }}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6 mb-8"
+          className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 mb-8"
         >
-          {/* Unique Customers */}
+          {/* Pre-booking Orders */}
           <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
             <div className="flex items-center justify-between mb-2 sm:mb-3">
               <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-indigo-400 to-purple-400 rounded-lg flex items-center justify-center">
-                <Users className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
+                <CalendarCheck className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
               </div>
-              <div className={`text-xs sm:text-sm font-semibold ${comprehensiveStats.customerGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {comprehensiveStats.customerGrowth >= 0 ? '+' : ''}{comprehensiveStats.customerGrowth}%
+              <div className="text-xs sm:text-sm font-semibold text-indigo-600">
+                {comprehensiveStats.totalOrders > 0
+                  ? Number(((comprehensiveStats.preBookingCount / comprehensiveStats.totalOrders) * 100).toFixed(1))
+                  : 0}%
               </div>
             </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.uniqueCustomers}</h3>
-            <p className="text-xs sm:text-sm text-gray-600 leading-tight">عملاء فريدون</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.preBookingCount}</h3>
+            <p className="text-xs sm:text-sm text-gray-600 leading-tight">طلبات الحجز المسبق</p>
           </div>
 
 
@@ -722,20 +796,6 @@ export default function ReportsPage() {
             </div>
             <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalPaid.toLocaleString()} ر.س</h3>
             <p className="text-xs sm:text-sm text-gray-600 leading-tight">المبالغ المحصلة</p>
-          </div>
-
-          {/* Outstanding Balance */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
-            <div className="flex items-center justify-between mb-2 sm:mb-3">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-orange-400 to-red-400 rounded-lg flex items-center justify-center">
-                <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
-              </div>
-              <div className="text-xs sm:text-sm font-semibold text-orange-600">
-                متبقي
-              </div>
-            </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalDue.toLocaleString()} ر.س</h3>
-            <p className="text-xs sm:text-sm text-gray-600 leading-tight">المبالغ المستحقة</p>
           </div>
 
           {/* Total Orders Value (regardless of payment) */}
@@ -766,7 +826,7 @@ export default function ReportsPage() {
             <span>حالة الطلبات</span>
           </h2>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Pending */}
             <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-yellow-200 hover:shadow-lg transition-all duration-300">
               <div className="flex items-center justify-between mb-2 sm:mb-3">
@@ -815,17 +875,6 @@ export default function ReportsPage() {
               <p className="text-xs sm:text-sm font-semibold text-purple-800 leading-tight">تم التسليم</p>
             </div>
 
-            {/* Cancelled */}
-            <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-red-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <XCircle className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-red-600" />
-                <span className="text-[10px] sm:text-xs font-semibold text-red-700 bg-red-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
-                  {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.ordersByStatus.cancelled / comprehensiveStats.totalOrders) * 100) : 0}%
-                </span>
-              </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-red-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.ordersByStatus.cancelled}</h3>
-              <p className="text-xs sm:text-sm font-semibold text-red-800 leading-tight">ملغاة</p>
-            </div>
           </div>
         </motion.div>
 
