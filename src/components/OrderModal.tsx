@@ -1524,18 +1524,17 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         fabric={order.fabric}
                         fabricType={(order as any).fabric_type || (order.measurements as any)?.fabric_type || null}
                         generatedImages={[
-                          ...((order.measurements as any)?.ai_generated_images || []),
+                          // عمود مستقل (migration 33) مع fallback للبيانات القديمة
+                          ...((order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []),
                           ...localAiImages
                         ]}
                         onGenerated={async (imageDataUrl) => {
-                          const newImages = [...((order.measurements as any)?.ai_generated_images || []), ...localAiImages, imageDataUrl]
+                          const dbImages = (order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []
+                          const newImages = [...dbImages, ...localAiImages, imageDataUrl]
                           setLocalAiImages(prev => [...prev, imageDataUrl])
                           try {
                             await orderService.update(order.id, {
-                              measurements: {
-                                ...(order.measurements || {}),
-                                ai_generated_images: newImages
-                              }
+                              ai_generated_images: newImages  // عمود مستقل (migration 33)
                             })
                             toast.success('تم حفظ التصميم المولد في الطلب')
                           } catch (err) {
@@ -1544,15 +1543,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                           }
                         }}
                         onDeleteGeneratedImage={async (index) => {
-                          const currentDbImages = Array.isArray((order.measurements as any)?.ai_generated_images) ? (order.measurements as any).ai_generated_images : []
-                          const allImages = [...currentDbImages, ...localAiImages]
+                          const dbImages = Array.isArray((order as any).ai_generated_images) ? (order as any).ai_generated_images : ((order.measurements as any)?.ai_generated_images || [])
+                          const allImages = [...dbImages, ...localAiImages]
                           const newImages = allImages.filter((_, i) => i !== index)
                           try {
                             await updateOrder(order.id, {
-                              measurements: {
-                                ...(order.measurements || {}),
-                                ai_generated_images: newImages
-                              }
+                              ai_generated_images: newImages  // عمود مستقل (migration 33)
                             })
                             setLocalAiImages([])
                             toast.success('تم حذف التصميم')
@@ -1596,15 +1592,17 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     fabric={order.fabric}
                     fabricType={(order as any).fabric_type || (order.measurements as any)?.fabric_type || null}
                     generatedImages={[
-                      ...((order.measurements as any)?.ai_generated_images || []),
+                      // عمود مستقل (migration 33) مع fallback للبيانات القديمة
+                      ...((order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []),
                       ...localAiImages
                     ]}
                     onGenerated={async (imageDataUrl) => {
-                      const newImages = [...((order.measurements as any)?.ai_generated_images || []), ...localAiImages, imageDataUrl]
+                      const dbImages = (order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []
+                      const newImages = [...dbImages, ...localAiImages, imageDataUrl]
                       setLocalAiImages(prev => [...prev, imageDataUrl])
                       try {
                         await orderService.update(order.id, {
-                          measurements: { ...(order.measurements || {}), ai_generated_images: newImages }
+                          ai_generated_images: newImages  // عمود مستقل (migration 33)
                         })
                         toast.success('تم حفظ التصميم المولد في الطلب')
                       } catch {
@@ -1612,15 +1610,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       }
                     }}
                     onDeleteGeneratedImage={async (index) => {
-                      const currentDbImages = Array.isArray((order.measurements as any)?.ai_generated_images) ? (order.measurements as any).ai_generated_images : []
-                      const allImages = [...currentDbImages, ...localAiImages]
+                      const dbImages = Array.isArray((order as any).ai_generated_images) ? (order as any).ai_generated_images : ((order.measurements as any)?.ai_generated_images || [])
+                      const allImages = [...dbImages, ...localAiImages]
                       const newImages = allImages.filter((_, i) => i !== index)
                       try {
                         await updateOrder(order.id, {
-                          measurements: {
-                            ...(order.measurements || {}),
-                            ai_generated_images: newImages
-                          }
+                          ai_generated_images: newImages  // عمود مستقل (migration 33)
                         })
                         setLocalAiImages([])
                         toast.success('تم حذف التصميم')

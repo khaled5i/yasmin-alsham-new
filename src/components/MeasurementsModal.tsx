@@ -109,8 +109,10 @@ export default function MeasurementsModal({
     setIsSaving(true)
     try {
       // تحويل القيم النصية إلى أرقام (ما عدا additional_notes)
+      // نتجاهل أي مفاتيح غير معروفة (صور التصميم وغيرها) لمنع تحويلها إلى NaN
       const processedMeasurements: Measurements = {}
       Object.entries(measurements).forEach(([key, value]) => {
+        if (!MEASUREMENT_ORDER.includes(key as keyof Measurements)) return
         if (key === 'additional_notes') {
           if (value && value !== '') {
             processedMeasurements[key as keyof Measurements] = value as any

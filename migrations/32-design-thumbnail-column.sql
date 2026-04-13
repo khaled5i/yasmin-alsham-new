@@ -30,11 +30,6 @@ UPDATE orders
 SET measurements = measurements - 'design_thumbnail'
 WHERE measurements ? 'design_thumbnail';
 
--- 4. فهرس جزئي لتسريع الاستعلام على الطلبات التي لها thumbnail
-CREATE INDEX IF NOT EXISTS idx_orders_has_thumbnail
-  ON orders (design_thumbnail)
-  WHERE design_thumbnail IS NOT NULL;
-
 -- للتحقق بعد التنفيذ:
 -- SELECT COUNT(*) FROM orders WHERE design_thumbnail IS NOT NULL;
 -- SELECT COUNT(*) FROM orders WHERE measurements ? 'design_thumbnail';  -- يجب أن يُرجع 0

@@ -155,7 +155,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         (orderAny.design_comments?.length ? orderAny.design_comments : null) ||
         measurements?.saved_design_comments ||
         []
-      const customImage = measurements?.custom_design_image || null
+      // custom_design_image: أولاً من العمود المستقل (migration 33)، ثم fallback لـ measurements
+      const customImage = orderAny.custom_design_image || measurements?.custom_design_image || null
 
       // تحميل slot الأمام بشكل افتراضي، أو أول slot موجود
       const frontSlot = savedComments.find((c: SavedDesignComment) => {
@@ -203,7 +204,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         customDesignImage: null as File | null, // File objects are set via handleDesignImageChange
         savedDesignComments: savedComments,
         fabricType: (order as any).fabric_type || measurements?.fabric_type || null,
-        aiGeneratedImages: measurements?.ai_generated_images || []
+        // ai_generated_images: أولاً من العمود المستقل (migration 33)، ثم fallback لـ measurements
+        aiGeneratedImages: (orderAny.ai_generated_images?.length ? orderAny.ai_generated_images : null) || measurements?.ai_generated_images || []
       })
 
       // نحفظ نسخة من التعليقات بدون compositeImage لأنها كبيرة ولا تفيد في المقارنة
@@ -531,7 +533,9 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         fabric_type: formData.fabricType || null,
         ...(clearReview ? { needs_review: false } : {}),
         ...(clearPreBooking ? { is_pre_booking: false } : {}),
-        measurements: { ...(order.measurements || {}), ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
+        measurements: order.measurements || {},
+        // عمود مستقل (migration 33)
+        ai_generated_images: formData.aiGeneratedImages,
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -555,7 +559,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
           saved_design_comments: allSavedComments,
           image_annotations: formData.imageAnnotations,
           image_drawings: formData.imageDrawings,
-          custom_design_image: customDesignImageBase64,
+          custom_design_image: customDesignImageBase64,  // عمود مستقل (migration 33)
         }),
         paid_amount: paidAmount,
         updated_at: new Date().toISOString()
@@ -673,7 +677,9 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
       // تحديث الطلب - fabric_type كعمود مستقل (migration 29)
       onSave(order.id, {
         fabric_type: formData.fabricType || null,
-        measurements: { ...(order.measurements || {}), ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined },
+        measurements: order.measurements || {},
+        // عمود مستقل (migration 33)
+        ai_generated_images: formData.aiGeneratedImages,
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
@@ -697,7 +703,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
           saved_design_comments: allSavedComments,
           image_annotations: formData.imageAnnotations,
           image_drawings: formData.imageDrawings,
-          custom_design_image: customDesignImageBase64,
+          custom_design_image: customDesignImageBase64,  // عمود مستقل (migration 33)
         }),
         paid_amount: paidAmount,
         updated_at: new Date().toISOString()

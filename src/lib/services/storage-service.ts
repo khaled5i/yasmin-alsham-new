@@ -103,6 +103,8 @@ export async function uploadImageToStorage(
 export interface OrderImageFields {
   measurements?: Record<string, any>
   design_thumbnail?: string        // عمود مستقل (migration 32)
+  custom_design_image?: string | null  // عمود مستقل (migration 33)
+  ai_generated_images?: string[]       // عمود مستقل (migration 33)
   images?: string[]
   completed_images?: string[]
 }
@@ -110,6 +112,8 @@ export interface OrderImageFields {
 export interface UploadedOrderImages {
   measurements?: Record<string, any>
   design_thumbnail?: string        // عمود مستقل (migration 32)
+  custom_design_image?: string     // عمود مستقل (migration 33)
+  ai_generated_images?: string[]   // عمود مستقل (migration 33)
   images?: string[]
   completed_images?: string[]
 }
@@ -125,22 +129,21 @@ export async function uploadOrderImages(
   const result: UploadedOrderImages = {}
   let hasChanges = false
 
-  const measurements = fields.measurements ?? {}
-  const updatedMeasurements = { ...measurements }
-
-  // 1. custom_design_image داخل measurements
-  if (isBase64Image(measurements.custom_design_image)) {
-    const url = await uploadImageToStorage(measurements.custom_design_image, orderId, 'custom_design')
-    if (url !== measurements.custom_design_image) {
-      updatedMeasurements.custom_design_image = url
-      hasChanges = true
-    }
+  // 1. custom_design_image — عمود مستقل (migration 33)
+  if (isBase64Image(fields.custom_design_image)) {
+    const url = await uploadImageToStorage(fields.custom_design_image!, orderId, 'custom_design')
+    result.custom_design_image = url
+    hasChanges = true
+  } else if (fields.custom_design_image) {
+    // URL بالفعل — نمرره ليُكتب في العمود المستقل
+    result.custom_design_image = fields.custom_design_image
+    hasChanges = true
   }
 
-  // 2. ai_generated_images (مصفوفة) داخل measurements
-  const aiImages: string[] = measurements.ai_generated_images ?? []
+  // 2. ai_generated_images — عمود مستقل (migration 33)
+  const aiImages: string[] = fields.ai_generated_images ?? []
   if (aiImages.some(isBase64Image)) {
-    updatedMeasurements.ai_generated_images = await Promise.all(
+    result.ai_generated_images = await Promise.all(
       aiImages.map((img, i) =>
         isBase64Image(img)
           ? uploadImageToStorage(img, orderId, 'ai_generated', i)
@@ -150,7 +153,44 @@ export async function uploadOrderImages(
     hasChanges = true
   }
 
-  if (hasChanges) {
+  // توافق عكسي: إذا كانت هذه الحقول لا تزال داخل measurements (بيانات قديمة قبل migration 33)
+  // نرفعها ونُزيلها من measurements
+  const measurements = fields.measurements ?? {}
+  const updatedMeasurements = { ...measurements }
+  let measurementsChanged = false
+
+  if (isBase64Image(measurements.custom_design_image)) {
+    const url = await uploadImageToStorage(measurements.custom_design_image, orderId, 'custom_design')
+    result.custom_design_image = url
+    delete updatedMeasurements.custom_design_image
+    measurementsChanged = true
+    hasChanges = true
+  } else if (measurements.custom_design_image) {
+    result.custom_design_image = measurements.custom_design_image
+    delete updatedMeasurements.custom_design_image
+    measurementsChanged = true
+    hasChanges = true
+  }
+
+  const legacyAiImages: string[] = measurements.ai_generated_images ?? []
+  if (legacyAiImages.length > 0 && !result.ai_generated_images) {
+    if (legacyAiImages.some(isBase64Image)) {
+      result.ai_generated_images = await Promise.all(
+        legacyAiImages.map((img, i) =>
+          isBase64Image(img)
+            ? uploadImageToStorage(img, orderId, 'ai_generated', i)
+            : Promise.resolve(img)
+        )
+      )
+    } else {
+      result.ai_generated_images = legacyAiImages
+    }
+    delete updatedMeasurements.ai_generated_images
+    measurementsChanged = true
+    hasChanges = true
+  }
+
+  if (measurementsChanged) {
     result.measurements = updatedMeasurements
   }
 

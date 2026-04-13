@@ -100,6 +100,9 @@ export interface Order {
   design_comments?: any[]
   // عمود مستقل (migration 32)
   design_thumbnail?: string | null
+  // أعمدة مستقلة (migration 33) - صور التصميم
+  custom_design_image?: string | null
+  ai_generated_images?: string[]
   price: number
   paid_amount: number
   remaining_amount: number
@@ -177,7 +180,8 @@ export interface CreateOrderData {
     isEraser?: boolean
     timestamp: number
   }>
-  custom_design_image?: string // base64 صورة التصميم المخصصة
+  custom_design_image?: string // base64 أو URL صورة التصميم المخصصة (عمود مستقل - migration 33)
+  ai_generated_images?: string[] // مصفوفة URLs لصور AI (عمود مستقل - migration 33)
   design_thumbnail?: string    // صورة مصغرة للعمود المستقل (migration 32)
   // التعليقات المتعددة على التصميم (البنية الجديدة)
   saved_design_comments?: Array<{
@@ -228,6 +232,8 @@ export interface UpdateOrderData {
   has_measurements?: boolean
   is_printed?: boolean
   design_thumbnail?: string | null  // عمود مستقل (migration 32)
+  custom_design_image?: string | null  // عمود مستقل (migration 33)
+  ai_generated_images?: string[]       // عمود مستقل (migration 33)
   whatsapp_sent?: boolean
   needs_review?: boolean
   is_pre_booking?: boolean
@@ -346,15 +352,15 @@ export const orderService = {
       }
 
       // تحضير البيانات للإدخال
-      // measurements تحتوي فقط على: المقاسات الفعلية + custom_design_image + ai_generated_images
+      // measurements تحتوي فقط على: المقاسات الفعلية الرقمية + additional_notes
       // design_thumbnail نُقل لعمود مستقل (migration 32)
+      // custom_design_image و ai_generated_images نُقلا لأعمدة مستقلة (migration 33)
       // بيانات التصميم (annotations/drawings/comments) تُكتب لأعمدة مستقلة (migration 30)
-      const measurementsOnly = {
-        ...(orderData.measurements || {}),
-        custom_design_image: orderData.custom_design_image || null
-      }
-      // إزالة design_thumbnail من measurements إن وُجد هناك (بيانات قديمة)
+      const measurementsOnly = { ...(orderData.measurements || {}) }
+      // إزالة الحقول المنقولة لأعمدة مستقلة (بيانات قديمة قد تكون داخل measurements)
       delete (measurementsOnly as any).design_thumbnail
+      delete (measurementsOnly as any).custom_design_image
+      delete (measurementsOnly as any).ai_generated_images
 
       const insertData: any = {
         user_id: orderData.user_id || null,
@@ -371,6 +377,9 @@ export const orderService = {
         design_comments: orderData.saved_design_comments || [],
         // عمود مستقل (migration 32)
         design_thumbnail: orderData.design_thumbnail || null,
+        // أعمدة مستقلة (migration 33) - صور التصميم
+        custom_design_image: orderData.custom_design_image || null,
+        ai_generated_images: orderData.ai_generated_images || [],
         // أعمدة مستقلة (migration 29)
         fabric_type: orderData.fabric_type || orderData.measurements?.fabric_type || null,
         needs_review: orderData.needs_review ?? orderData.measurements?.needs_review ?? false,
@@ -440,6 +449,8 @@ export const orderService = {
         const imageUpdates = await uploadOrderImages(data.id, {
           measurements: insertData.measurements,
           design_thumbnail: insertData.design_thumbnail,
+          custom_design_image: insertData.custom_design_image,
+          ai_generated_images: insertData.ai_generated_images,
           images: insertData.images,
         })
         if (imageUpdates) {
@@ -682,12 +693,16 @@ export const orderService = {
         const imageUpdates = await uploadOrderImages(id, {
           measurements: (updates as any).measurements,
           design_thumbnail: (updates as any).design_thumbnail,
+          custom_design_image: (updates as any).custom_design_image,
+          ai_generated_images: (updates as any).ai_generated_images,
           images: (updates as any).images,
           completed_images: (updates as any).completed_images,
         })
         if (imageUpdates) {
           if (imageUpdates.measurements) (updates as any).measurements = imageUpdates.measurements
           if (imageUpdates.design_thumbnail) (updates as any).design_thumbnail = imageUpdates.design_thumbnail
+          if (imageUpdates.custom_design_image !== undefined) (updates as any).custom_design_image = imageUpdates.custom_design_image
+          if (imageUpdates.ai_generated_images) (updates as any).ai_generated_images = imageUpdates.ai_generated_images
           if (imageUpdates.images) (updates as any).images = imageUpdates.images
           if (imageUpdates.completed_images) (updates as any).completed_images = imageUpdates.completed_images
           if (isDev) console.log('✅ Images uploaded to Storage before update:', id)
@@ -881,10 +896,10 @@ export const orderService = {
     try {
       if (isDev) console.log('📐 Fetching measurements for order:', id)
 
-      // نجلب measurements + الأعمدة الجديدة (migration 30) معاً لتوحيد نقطة الوصول
+      // نجلب measurements + الأعمدة المستقلة (migrations 30, 33) معاً لتوحيد نقطة الوصول
       const { data, error } = await supabase
         .from('orders')
-        .select('measurements, image_annotations, image_drawings, design_comments')
+        .select('measurements, image_annotations, image_drawings, design_comments, custom_design_image, ai_generated_images')
         .eq('id', id)
         .single()
 
@@ -895,7 +910,7 @@ export const orderService = {
 
       const row = data as any
       // ندمج الأعمدة الجديدة في كائن واحد مع الحفاظ على التوافق مع الكود الموجود
-      // الكود الموجود يقرأ: measurementsData.saved_design_comments / image_annotations / image_drawings
+      // الكود الموجود يقرأ: measurementsData.saved_design_comments / image_annotations / image_drawings / custom_design_image / ai_generated_images
       const merged: Record<string, any> = {
         ...(row?.measurements || {}),
         // الأعمدة الجديدة تتفوق على البيانات القديمة داخل measurements (إن وُجدت)
@@ -909,6 +924,11 @@ export const orderService = {
         saved_design_comments: row?.design_comments?.length
           ? row.design_comments
           : (row?.measurements?.saved_design_comments || []),
+        // أعمدة migration 33 - تتفوق على ما قد يكون داخل measurements (بيانات قديمة)
+        custom_design_image: row?.custom_design_image ?? row?.measurements?.custom_design_image ?? null,
+        ai_generated_images: row?.ai_generated_images?.length
+          ? row.ai_generated_images
+          : (row?.measurements?.ai_generated_images || []),
       }
 
       if (isDev) console.log('✅ Measurements fetched successfully')

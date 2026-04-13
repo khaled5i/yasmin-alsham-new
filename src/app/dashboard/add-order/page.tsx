@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -222,6 +223,7 @@ function AddOrderContent() {
   const { user } = useAuthStore()
   const { createOrder } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
+  const { workerType } = useWorkerPermissions()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
 
@@ -701,10 +703,10 @@ function AddOrderContent() {
         fabric: formData.fabric || undefined,
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
-        measurements: {
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {}),
-        }, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
+        measurements: {}, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
         design_thumbnail: designThumbnail || undefined, // عمود مستقل (migration 32)
+        // عمود مستقل (migration 33)
+        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -865,8 +867,9 @@ function AddOrderContent() {
         fabric: formData.fabric || undefined,
         measurements: {
           ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
         },
+        // عمود مستقل (migration 33)
+        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -1009,9 +1012,9 @@ function AddOrderContent() {
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
         needs_review: true,
-        measurements: {
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
-        },
+        measurements: {},
+        // عمود مستقل (migration 33)
+        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1123,9 +1126,9 @@ function AddOrderContent() {
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
         is_pre_booking: true,
-        measurements: {
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
-        },
+        measurements: {},
+        // عمود مستقل (migration 33)
+        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1239,9 +1242,9 @@ function AddOrderContent() {
         fabric: formData.fabric || undefined,
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
-        measurements: {
-          ...(formData.aiGeneratedImages.length > 0 ? { ai_generated_images: formData.aiGeneratedImages } : {})
-        },
+        measurements: {},
+        // عمود مستقل (migration 33)
+        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1595,6 +1598,27 @@ function AddOrderContent() {
                     </label>
                   </div>
                 </div>
+                {/* 12. تحديد العامل المسؤول - يظهر فقط لمدير الورشة */}
+                {workerType === 'workshop_manager' && (
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {isArabic ? 'العامل المسؤول' : 'Assigned Worker'}
+                    </label>
+                    <select
+                      value={formData.assignedWorker}
+                      onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 bg-white"
+                      disabled={isSubmitting}
+                    >
+                      <option value="">{isArabic ? 'اختر العامل المسؤول...' : 'Select worker...'}</option>
+                      {workers.map((worker) => (
+                        <option key={worker.id} value={worker.user_id}>
+                          {worker.user.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
