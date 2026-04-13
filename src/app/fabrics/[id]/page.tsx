@@ -103,7 +103,7 @@ export default function FabricDetailPage() {
 
   // رابط واتساب للاستفسار
   const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabric.name}`
-  const whatsappLink = `https://wa.me/966500000000?text=${encodeURIComponent(whatsappMessage)}`
+  const whatsappLink = `https://wa.me/966502901534?text=${encodeURIComponent(whatsappMessage)}`
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-16 lg:pt-20">

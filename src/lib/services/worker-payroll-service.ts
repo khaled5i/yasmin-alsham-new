@@ -67,6 +67,55 @@ function monthToYearMonth(monthValue: string): { year: number; month: number } {
   return { year, month }
 }
 
+export async function getWorkerPayrollMonthsInRange(
+  branch: BranchType,
+  startDate: Date,
+  endDate: Date
+): Promise<WorkerPayrollMonth[]> {
+  if (!isSupabaseConfigured()) {
+    return []
+  }
+
+  try {
+    const startYear = startDate.getFullYear()
+    const startMonth = startDate.getMonth() + 1
+    const endYear = endDate.getFullYear()
+    const endMonth = endDate.getMonth() + 1
+
+    const { data, error } = await supabase
+      .from('worker_payroll_months')
+      .select('*')
+      .eq('branch', branch)
+      .or(
+        `and(payroll_year.gt.${startYear},payroll_year.lt.${endYear}),` +
+        `and(payroll_year.eq.${startYear},payroll_month.gte.${startMonth},payroll_year.eq.${endYear},payroll_month.lte.${endMonth}),` +
+        `and(payroll_year.eq.${startYear},payroll_year.eq.${endYear},payroll_month.gte.${startMonth},payroll_month.lte.${endMonth}),` +
+        `and(payroll_year.eq.${startYear},payroll_year.lt.${endYear},payroll_month.gte.${startMonth}),` +
+        `and(payroll_year.gt.${startYear},payroll_year.eq.${endYear},payroll_month.lte.${endMonth})`
+      )
+      .order('payroll_year', { ascending: false })
+      .order('payroll_month', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching worker payroll months range:', error)
+      return []
+    }
+
+    // تصفية يدوية دقيقة لضمان الدقة
+    const result = (data || []).filter((row: WorkerPayrollMonth) => {
+      const rowDate = new Date(row.payroll_year, row.payroll_month - 1, 1)
+      const startOfMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
+      const endOfMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
+      return rowDate >= startOfMonth && rowDate <= endOfMonth
+    })
+
+    return result as WorkerPayrollMonth[]
+  } catch (error) {
+    console.error('Error fetching worker payroll months range:', error)
+    return []
+  }
+}
+
 export async function getWorkerPayrollMonths(
   branch: BranchType,
   monthValue: string

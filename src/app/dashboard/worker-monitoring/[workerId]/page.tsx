@@ -545,65 +545,81 @@ function OrdersTab({
 
 function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; onClick: () => void; showCompletedAt?: boolean }) {
   const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
+  const thumbnail = (order as any).design_thumbnail || '/front2.png'
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className="w-full text-right p-4 bg-white rounded-xl border border-slate-100 hover:border-teal-200 hover:shadow-md transition-all duration-200 group"
+      className="w-full text-right bg-white rounded-2xl border border-gray-200 hover:shadow-lg hover:border-teal-200 transition-all duration-200 cursor-pointer p-4 shadow-sm"
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex gap-4">
+        {/* صورة التصميم المصغرة */}
+        <div className="flex-shrink-0 w-20 sm:w-24">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={thumbnail}
+            alt="صورة التصميم"
+            className="w-full rounded-xl border border-pink-100 object-contain shadow-sm bg-gray-50"
+            style={{ aspectRatio: '3/4' }}
+          />
+        </div>
+
+        {/* المعلومات */}
         <div className="flex-1 min-w-0">
+          {/* الحالة */}
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.bg} ${status.color}`}>
+              {status.label}
+            </span>
+            {(order as any).is_pre_booking && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">حجز مسبق</span>
+            )}
+            {(order as any).needs_review && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
+            )}
+          </div>
+
+          {/* الاسم ورقم الطلب */}
           <div className="flex items-center gap-2 mb-1">
-            <p className="font-semibold text-gray-800 truncate">{order.client_name}</p>
+            <p className="font-bold text-gray-900 truncate">{order.client_name}</p>
             {order.order_number && (
               <span className="text-xs text-gray-400 flex-shrink-0">#{order.order_number}</span>
             )}
           </div>
+
           {order.description && (
-            <p className="text-sm text-gray-500 truncate">{order.description}</p>
+            <p className="text-sm text-gray-500 line-clamp-2 mb-2">{order.description}</p>
           )}
-          {order.due_date && (
-            <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              موعد التسليم:{' '}
-              {formatGregorianDate(order.due_date, 'ar-SA', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              })}
-            </p>
-          )}
-          {showCompletedAt && order.worker_completed_at && (
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1 font-medium">
-              <CheckCircle className="w-3 h-3" />
-              أنهاه العامل:{' '}
-              {formatGregorianDate(order.worker_completed_at, 'ar-SA', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              })}
-            </p>
-          )}
-          {showCompletedAt && !order.worker_completed_at && (
-            <p className="text-xs text-gray-300 mt-1 flex items-center gap-1">
-              <CheckCircle className="w-3 h-3" />
-              تاريخ الإنهاء غير مسجّل
-            </p>
-          )}
+
+          <div className="space-y-1">
+            {order.due_date && (
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <Clock className="w-3 h-3 flex-shrink-0" />
+                موعد التسليم:{' '}
+                {formatGregorianDate(order.due_date, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+              </p>
+            )}
+            {showCompletedAt && order.worker_completed_at && (
+              <p className="text-xs text-green-600 flex items-center gap-1 font-medium">
+                <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                أنهاه العامل:{' '}
+                {formatGregorianDate(order.worker_completed_at, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${status.bg} ${status.color}`}>
-            {status.label}
-          </span>
+
+        {/* السعر + سهم */}
+        <div className="flex flex-col items-end justify-between flex-shrink-0">
           {order.price ? (
-            <span className="text-sm font-medium text-gray-700">
-              {order.price.toLocaleString('ar-SA')} ريال
+            <span className="text-sm font-bold text-gray-800">
+              {order.price.toLocaleString('ar-SA')} ر.س
             </span>
-          ) : null}
+          ) : <span />}
+          <ChevronLeft className="w-4 h-4 text-gray-300 group-hover:text-teal-400" />
         </div>
-        <ChevronLeft className="w-4 h-4 text-gray-300 group-hover:text-teal-400 transition-colors flex-shrink-0" />
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -732,6 +748,7 @@ function CompletedOrderRow({
   const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
   const hasPricing = parseFloat(pricingData.price) > 0
   const isEvaluated = hasPricing || pricingData.rating > 0
+  const thumbnail = (order as any).design_thumbnail || '/front2.png'
 
   // حفظ ثم طي البطاقة
   function handleSaveAndCollapse() {
@@ -743,81 +760,107 @@ function CompletedOrderRow({
 
   return (
     <div
-      className={`rounded-xl border transition-all duration-200 ${
+      className={`rounded-2xl border transition-all duration-200 shadow-sm ${
         isExpanded
           ? 'border-pink-300 shadow-md'
           : isEvaluated
-          ? 'border-green-300 bg-green-50/20 hover:border-green-400'
-          : 'border-slate-100 bg-white hover:border-pink-200 hover:shadow-sm'
+          ? 'border-green-300 bg-green-50/20 hover:border-green-400 hover:shadow-md'
+          : 'border-gray-200 bg-white hover:border-pink-200 hover:shadow-md'
       }`}
     >
       {/* ===== وجه البطاقة ===== */}
       <div className="p-4">
-        <div className="flex items-center gap-3">
-          {/* معلومات الطلب (قابل للنقر لفتح المودال) */}
+        <div className="flex gap-4">
+          {/* صورة التصميم المصغرة */}
           <button
             onClick={() => onOpenModal(order)}
-            className="flex-1 min-w-0 text-right"
+            className="flex-shrink-0 w-20 sm:w-24 self-start"
           >
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <p className="font-semibold text-gray-800 truncate">{order.client_name}</p>
-              {order.order_number && (
-                <span className="text-xs text-gray-400 flex-shrink-0">#{order.order_number}</span>
-              )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={thumbnail}
+              alt="صورة التصميم"
+              className="w-full rounded-xl border border-pink-100 object-contain shadow-sm bg-gray-50 hover:opacity-90 transition-opacity"
+              style={{ aspectRatio: '3/4' }}
+            />
+          </button>
+
+          {/* المعلومات */}
+          <div className="flex-1 min-w-0">
+            {/* الحالة + شارة التقييم */}
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.bg} ${status.color}`}>
+                {status.label}
+              </span>
               {isEvaluated && !isExpanded && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200 flex-shrink-0">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
                   <CheckCircle className="w-3 h-3" />
                   تم التقييم
                 </span>
               )}
             </div>
-            {order.description && (
-              <p className="text-sm text-gray-500 truncate">{order.description}</p>
-            )}
-            <div className="flex flex-wrap items-center gap-3 mt-1">
+
+            {/* الاسم ورقم الطلب */}
+            <button onClick={() => onOpenModal(order)} className="text-right w-full">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="font-bold text-gray-900 truncate">{order.client_name}</p>
+                {order.order_number && (
+                  <span className="text-xs text-gray-400 flex-shrink-0">#{order.order_number}</span>
+                )}
+              </div>
+              {order.description && (
+                <p className="text-sm text-gray-500 line-clamp-2 mb-2">{order.description}</p>
+              )}
+            </button>
+
+            <div className="space-y-1 mt-1">
               {order.worker_completed_at && (
-                <p className="text-xs text-green-600 flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" />
+                <p className="text-xs text-green-600 flex items-center gap-1 font-medium">
+                  <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                  أنهاه العامل:{' '}
                   {formatGregorianDate(order.worker_completed_at, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
                 </p>
               )}
+              {order.due_date && (
+                <p className="text-xs text-gray-500 flex items-center gap-1">
+                  <Clock className="w-3 h-3 flex-shrink-0" />
+                  موعد التسليم:{' '}
+                  {formatGregorianDate(order.due_date, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                </p>
+              )}
               {hasPricing && !isExpanded && (
-                <span className="text-xs font-semibold text-pink-700 flex items-center gap-1">
+                <p className="text-xs font-semibold text-pink-700 flex items-center gap-1">
                   <Tag className="w-3 h-3" />
-                  {parseFloat(pricingData.price).toLocaleString('ar-SA')} ريال
-                </span>
+                  {parseFloat(pricingData.price).toLocaleString('ar-SA')} ر.س
+                </p>
               )}
               {pricingData.rating > 0 && !isExpanded && (
-                <span className="flex items-center gap-0.5">
+                <div className="flex items-center gap-0.5 mt-1">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className={`w-3 h-3 ${i < pricingData.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'}`} />
+                    <Star key={i} className={`w-3.5 h-3.5 ${i < pricingData.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'}`} />
                   ))}
-                </span>
+                </div>
               )}
             </div>
-          </button>
+          </div>
 
-          {/* يمين: الحالة + زر التسعير */}
-          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${status.bg} ${status.color}`}>
-              {status.label}
-            </span>
+          {/* يمين: السعر + زر التقييم */}
+          <div className="flex flex-col items-end justify-between flex-shrink-0 gap-2">
             {order.price ? (
-              <span className="text-xs text-gray-500">{order.price.toLocaleString('ar-SA')} ريال</span>
-            ) : null}
+              <span className="text-sm font-bold text-gray-800">{order.price.toLocaleString('ar-SA')} ر.س</span>
+            ) : <span />}
             {isAdmin && (
               <button
                 onClick={() => onToggle(order)}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                   isExpanded
                     ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
                     : isEvaluated
                     ? 'bg-green-100 text-green-700 hover:bg-green-200'
                     : 'bg-slate-100 text-slate-600 hover:bg-pink-50 hover:text-pink-700'
                 }`}
-                title="تسعير وتقييم"
               >
-                <Tag className="w-3 h-3" />
+                <Star className="w-3.5 h-3.5" />
                 {isExpanded ? 'إغلاق' : isEvaluated ? 'تعديل' : 'تقييم'}
               </button>
             )}

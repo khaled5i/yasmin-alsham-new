@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { Metadata } from 'next'
-import { storeService } from '@/lib/services/store-service'
+import { productService } from '@/lib/services/store-service'
 import DesignDetailClient from './DesignDetailClient'
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
-  const { data: product } = await storeService.getById(id)
+  const { data: product } = await productService.getById(id)
 
   if (!product) {
     return {
@@ -19,10 +19,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   return {
-    title: `${product.name} - ياسمين الشام`,
+    title: `${product.title} - ياسمين الشام`,
     description: product.description || 'فستان من ياسمين الشام للتفصيل حسب الطلب',
     openGraph: {
-      title: `${product.name} - ياسمين الشام`,
+      title: `${product.title} - ياسمين الشام`,
       description: product.description || '',
       images: product.images?.[0] ? [{ url: product.images[0] }] : [],
     },
@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function DesignDetailPage({ params }: Props) {
   const { id } = await params
-  const { data: product } = await storeService.getById(id)
+  const { data: product } = await productService.getById(id)
 
   if (!product) {
     notFound()

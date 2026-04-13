@@ -80,7 +80,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
 
   const finalPrice = getFinalPrice(fabric)
   const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabric.name}`
-  const whatsappLink = `https://wa.me/966500000000?text=${encodeURIComponent(whatsappMessage)}`
+  const whatsappLink = `https://wa.me/966502901534?text=${encodeURIComponent(whatsappMessage)}`
 
   return (
     <AnimatePresence>

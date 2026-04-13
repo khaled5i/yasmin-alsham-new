@@ -28,7 +28,7 @@ function ProductSkeleton() {
     <div className="group">
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg">
         {/* Skeleton للصورة */}
-        <div className="aspect-[9/16] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
+        <div className="aspect-[4/5] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
 
         {/* Skeleton للمعلومات */}
         <div className="p-3 space-y-2">
@@ -374,7 +374,7 @@ export default function DesignsPage() {
                         {/* الصورة */}
                         <Link href={`/designs/${product.id}`}>
                           <div
-                            className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
+                            className="aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer"
                           >
                             {/* الصورة/الفيديو الحالي */}
                             {isVideoFile(currentImage) ? (

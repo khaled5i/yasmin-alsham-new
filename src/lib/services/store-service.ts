@@ -4,8 +4,6 @@
  * مع تحسينات للأداء والاستقرار
  */
 
-'use client'
-
 import { supabase, isSupabaseConfigured, ensureValidSession } from '@/lib/supabase'
 
 // ============================================================================

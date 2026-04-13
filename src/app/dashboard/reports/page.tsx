@@ -7,6 +7,10 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { orderService, Order } from '@/lib/services/order-service'
+import { getExpenses } from '@/lib/services/simple-accounting-service'
+import { getWorkerPayrollMonthsInRange } from '@/lib/services/worker-payroll-service'
+import type { Expense } from '@/types/simple-accounting'
+import type { WorkerPayrollMonth } from '@/types/worker-payroll'
 
 import { useTranslation } from '@/hooks/useTranslation'
 import {
@@ -43,7 +47,11 @@ import {
   Phone,
   Mail,
   Percent,
-  Receipt
+  Receipt,
+  Scissors,
+  Wrench,
+  UserCog,
+  ShoppingBag
 } from 'lucide-react'
 
 // ============================================================================
@@ -83,6 +91,9 @@ export default function ReportsPage() {
   const { user } = useAuthStore()
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoadingOrders, setIsLoadingOrders] = useState(true)
+  const [materialExpenses, setMaterialExpenses] = useState<Expense[]>([])
+  const [fixedExpenses, setFixedExpenses] = useState<Expense[]>([])
+  const [workerSalaries, setWorkerSalaries] = useState<WorkerPayrollMonth[]>([])
   const { workers, loadWorkers } = useWorkerStore()
   const { t } = useTranslation()
   const router = useRouter()
@@ -118,6 +129,9 @@ export default function ReportsPage() {
       setIsLoadingOrders(false)
     })
     loadWorkers()
+    // تحميل بيانات المحاسبة (التفصيل)
+    getExpenses('tailoring', 'material').then(setMaterialExpenses).catch(() => {})
+    getExpenses('tailoring', 'fixed').then(setFixedExpenses).catch(() => {})
   }, [loadWorkers])
 
   // التحقق من الصلاحيات
@@ -368,6 +382,59 @@ export default function ReportsPage() {
       customerGrowth
     }
   }, [filteredData])
+
+  // حسابات مصروفات التفصيل المفلترة بالتاريخ
+  const tailoringExpensesStats = useMemo(() => {
+    const { dateRange } = filteredData
+
+    const filteredMaterial = materialExpenses.filter(e =>
+      isInDateRange(e.date, dateRange)
+    )
+    const filteredFixed = fixedExpenses.filter(e =>
+      isInDateRange(e.date, dateRange)
+    )
+
+    // رواتب العمال: تصفية بالأشهر التي تقع ضمن نطاق التاريخ
+    const filteredSalaries = workerSalaries.filter(s => {
+      const salaryDate = new Date(s.payroll_year, s.payroll_month - 1, 1)
+      const startOfMonth = new Date(dateRange.startDate.getFullYear(), dateRange.startDate.getMonth(), 1)
+      const endOfMonth = new Date(dateRange.endDate.getFullYear(), dateRange.endDate.getMonth(), 1)
+      return salaryDate >= startOfMonth && salaryDate <= endOfMonth
+    })
+
+    const totalMaterialExpenses = filteredMaterial.reduce((sum, e) => sum + Number(e.amount || 0), 0)
+    const totalFixedExpenses = filteredFixed.reduce((sum, e) => sum + Number(e.amount || 0), 0)
+    const totalWorkerSalaries = filteredSalaries.reduce((sum, s) => sum + Number(s.net_due || 0), 0)
+    const totalExpenses = totalMaterialExpenses + totalFixedExpenses + totalWorkerSalaries
+
+    const completedOrdersCount = filteredData.currentOrders.filter(
+      o => o.status === 'completed' || o.status === 'delivered'
+    ).length
+    const avgDressCost = completedOrdersCount > 0
+      ? Math.round(totalExpenses / completedOrdersCount)
+      : 0
+
+    return {
+      totalMaterialExpenses,
+      totalFixedExpenses,
+      totalWorkerSalaries,
+      totalExpenses,
+      avgDressCost,
+      completedOrdersCount,
+      materialCount: filteredMaterial.length,
+      fixedCount: filteredFixed.length,
+      workerCount: new Set(filteredSalaries.map(s => s.worker_id)).size
+    }
+  }, [filteredData, materialExpenses, fixedExpenses, workerSalaries])
+
+  // تحميل رواتب العمال عند تغيير نطاق التاريخ
+  useEffect(() => {
+    const range = getDateRange()
+    getWorkerPayrollMonthsInRange('tailoring', range.startDate, range.endDate)
+      .then(setWorkerSalaries)
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeriod, customDateRange, specificDay, specificMonth])
 
   // Worker Performance
   const workerPerformance = useMemo(() => {
@@ -811,6 +878,138 @@ export default function ReportsPage() {
             <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalAllOrdersValue.toLocaleString()} ر.س</h3>
             <p className="text-xs sm:text-sm text-gray-600 leading-tight">إجمالي قيمة الطلبات</p>
             <p className="text-[10px] sm:text-xs text-teal-600 mt-0.5">بغض النظر عن الدفع</p>
+          </div>
+        </motion.div>
+
+        {/* Tailoring Expenses KPIs */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.75 }}
+          className="mb-8"
+        >
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <Scissors className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
+            <span>مصروفات قسم التفصيل</span>
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+            {/* مصروفات المواد */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.8 }}
+              whileHover={{ scale: 1.02, y: -2 }}
+              className="relative overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-amber-200 shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer group"
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-amber-200/30 rounded-full -mr-8 sm:-mr-10 -mt-8 sm:-mt-10 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-amber-400 to-orange-400 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
+                    <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
+                  </div>
+                  <div className="text-xs sm:text-sm font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
+                    {tailoringExpensesStats.materialCount} سجل
+                  </div>
+                </div>
+                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-amber-700 mb-0.5 sm:mb-1 leading-tight">
+                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalMaterialExpenses.toLocaleString()} ر.س
+                </h3>
+                <p className="text-xs sm:text-sm font-semibold text-amber-800 leading-tight">مصروفات المواد</p>
+                <p className="text-[10px] sm:text-xs text-amber-600 mt-0.5 sm:mt-1">خيوط، أقمشة، مستلزمات</p>
+              </div>
+            </motion.div>
+
+            {/* المصاريف الثابتة */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.85 }}
+              whileHover={{ scale: 1.02, y: -2 }}
+              className="relative overflow-hidden bg-gradient-to-br from-slate-50 to-gray-100 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-slate-200 shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer group"
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-slate-200/30 rounded-full -mr-8 sm:-mr-10 -mt-8 sm:-mt-10 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-slate-400 to-gray-500 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
+                    <Wrench className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
+                  </div>
+                  <div className="text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded-full">
+                    {tailoringExpensesStats.fixedCount} سجل
+                  </div>
+                </div>
+                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-slate-700 mb-0.5 sm:mb-1 leading-tight">
+                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalFixedExpenses.toLocaleString()} ر.س
+                </h3>
+                <p className="text-xs sm:text-sm font-semibold text-slate-800 leading-tight">المصاريف الثابتة</p>
+                <p className="text-[10px] sm:text-xs text-slate-600 mt-0.5 sm:mt-1">إيجار، كهرباء، صيانة</p>
+              </div>
+            </motion.div>
+
+            {/* رواتب العمال */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.9 }}
+              whileHover={{ scale: 1.02, y: -2 }}
+              className="relative overflow-hidden bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 lg:p-6 border-2 border-violet-200 shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer group"
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-violet-200/30 rounded-full -mr-8 sm:-mr-10 -mt-8 sm:-mt-10 group-hover:scale-150 transition-transform duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-2 sm:mb-3 lg:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-violet-400 to-purple-500 rounded-lg sm:rounded-xl flex items-center justify-center shadow-md">
+                    <UserCog className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-white" />
+                  </div>
+                  <div className="text-xs sm:text-sm font-semibold text-violet-700 bg-violet-100 px-2 py-1 rounded-full">
+                    {tailoringExpensesStats.workerCount} عامل
+                  </div>
+                </div>
+                <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-violet-700 mb-0.5 sm:mb-1 leading-tight">
+                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalWorkerSalaries.toLocaleString()} ر.س
+                </h3>
+                <p className="text-xs sm:text-sm font-semibold text-violet-800 leading-tight">رواتب العمال</p>
+                <p className="text-[10px] sm:text-xs text-violet-600 mt-0.5 sm:mt-1">صافي المستحق للعمال</p>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* إجمالي المصروفات */}
+          <div className="mt-4 bg-gradient-to-r from-red-50 to-rose-50 border-2 border-red-200 rounded-xl p-3 sm:p-4 lg:p-5 flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-red-400 to-rose-500 rounded-lg flex items-center justify-center shadow-md">
+                <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-semibold text-red-800">إجمالي مصروفات التفصيل</p>
+                <p className="text-[10px] sm:text-xs text-red-600">مواد + ثابتة + رواتب</p>
+              </div>
+            </div>
+            <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-red-700">
+              {tailoringExpensesStats.totalExpenses.toLocaleString()} ر.س
+            </h3>
+          </div>
+
+          {/* متوسط تكلفة الفستان */}
+          <div className="mt-3 bg-gradient-to-r from-pink-50 to-rose-50 border-2 border-pink-300 rounded-xl p-3 sm:p-4 lg:p-5 flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center shadow-md">
+                <Scissors className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-semibold text-pink-800">متوسط تكلفة الفستان</p>
+                <p className="text-[10px] sm:text-xs text-pink-600">
+                  {tailoringExpensesStats.totalExpenses.toLocaleString()} ÷ {tailoringExpensesStats.completedOrdersCount} طلب مكتمل
+                </p>
+              </div>
+            </div>
+            <div className="text-left">
+              <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-pink-700">
+                {tailoringExpensesStats.avgDressCost.toLocaleString()} ر.س
+              </h3>
+              {tailoringExpensesStats.completedOrdersCount === 0 && (
+                <p className="text-[10px] text-pink-500 text-left">لا توجد طلبات مكتملة</p>
+              )}
+            </div>
           </div>
         </motion.div>
 
