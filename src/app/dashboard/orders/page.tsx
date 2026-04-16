@@ -991,7 +991,7 @@ function OrdersPageInner() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pr-7 sm:pr-10 pl-2 sm:pl-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all"
-                placeholder={isArabic ? 'بحث...' : 'Search...'}
+                placeholder={isArabic ? 'بحث (اسم، هاتف، رقم طلب، قماش...)' : 'Search (name, phone, order#, fabric...)'}
               />
             </div>
 

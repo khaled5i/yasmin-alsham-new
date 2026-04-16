@@ -537,11 +537,11 @@ export const orderService = {
         query = query.eq('payment_status', filters.payment_status)
       }
 
-      // Server-side search: client_name, client_phone, order_number
+      // Server-side search: client_name, client_phone, order_number, fabric
       if (filters?.search?.trim()) {
         const safeTerm = filters.search.trim()
         query = query.or(
-          `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,order_number.ilike.%${safeTerm}%`
+          `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,order_number.ilike.%${safeTerm}%,fabric.ilike.%${safeTerm}%`
         )
       }
 

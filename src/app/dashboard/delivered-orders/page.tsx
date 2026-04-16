@@ -450,6 +450,7 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
         workers={workers}
         isOpen={showViewModal}
         onClose={handleCloseViewModal}
+        showCartoonButton={true}
       />
 
       {/* مودال الحذف الموحد */}

@@ -30,7 +30,9 @@ import {
   Upload,
   AlertTriangle,
   PrinterIcon,
-  Trash2
+  Trash2,
+  Download,
+  Camera
 } from 'lucide-react'
 import { Order, orderService } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
@@ -244,51 +246,50 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return lang ? lang.nameAr : code
   }
 
-  // دالة تحويل الصورة إلى كرتون
+  // دالة تحويل الصورة إلى كرتون - تفتح modal الاختيار دائماً
   const handleConvertToCartoon = useCallback(async (imageToConvert?: string) => {
-    const completedImages = order?.completed_images
-    const sourceImage = imageToConvert || (completedImages && completedImages.length > 0 ? completedImages[0] : null)
+    if (imageToConvert) {
+      // استدعاء مباشر من modal الاختيار بعد تحديد الصورة
+      setIsConvertingToCartoon(true)
+      try {
+        const response = await fetch('/api/convert-to-cartoon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completedImage: imageToConvert })
+        })
 
-    if (!sourceImage) {
-      setShowCartoonUploadModal(true)
-      return
-    }
-
-    setIsConvertingToCartoon(true)
-    try {
-      const response = await fetch('/api/convert-to-cartoon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completedImage: sourceImage, clientName: order?.client_name || '' })
-      })
-
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.error || 'فشل تحويل الصورة')
-      }
-
-      const generatedUrl: string = data.imageUrl
-      setCartoonImage(generatedUrl)
-
-      // حفظ الصورة في قاعدة البيانات
-      if (order) {
-        try {
-          await orderService.update(order.id, {
-            measurements: {
-              ...(order.measurements || {}),
-              cartoon_image: generatedUrl
-            }
-          })
-          toast.success('تم تحويل الصورة وحفظها بنجاح')
-        } catch {
-          toast.success('تم تحويل الصورة بنجاح')
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'فشل تحويل الصورة')
         }
+
+        const generatedUrl: string = data.imageUrl
+        setCartoonImage(generatedUrl)
+
+        // حفظ الصورة في قاعدة البيانات
+        if (order) {
+          try {
+            await orderService.update(order.id, {
+              measurements: {
+                ...(order.measurements || {}),
+                cartoon_image: generatedUrl
+              }
+            })
+            toast.success('تم تحويل الصورة وحفظها بنجاح')
+          } catch {
+            toast.success('تم تحويل الصورة بنجاح')
+          }
+        }
+      } catch (err) {
+        console.error('Cartoon conversion error:', err)
+        toast.error(err instanceof Error ? err.message : 'فشل تحويل الصورة إلى كرتون')
+      } finally {
+        setIsConvertingToCartoon(false)
       }
-    } catch (err) {
-      console.error('Cartoon conversion error:', err)
-      toast.error(err instanceof Error ? err.message : 'فشل تحويل الصورة إلى كرتون')
-    } finally {
-      setIsConvertingToCartoon(false)
+    } else {
+      // فتح modal الاختيار دائماً
+      setCartoonUploadImage(null)
+      setShowCartoonUploadModal(true)
     }
   }, [order])
 
@@ -1864,6 +1865,18 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         <span>{t('regenerate')}</span>
                       </button>
                       <button
+                        onClick={() => {
+                          const a = document.createElement('a')
+                          a.href = cartoonImage
+                          a.download = `cartoon-${order?.client_name || 'design'}-${Date.now()}.png`
+                          a.click()
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-sm font-medium border border-green-200 transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>تحميل</span>
+                      </button>
+                      <button
                         onClick={() => handlePrintCartoonImage(cartoonImage)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 transition-colors"
                       >
@@ -1930,79 +1943,139 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
             </div>
           </motion.div>
 
-          {/* مودال رفع صورة للتحويل إلى كرتون - داخل الحاوية الرئيسية لضمان الظهور */}
+          {/* مودال اختيار صورة للتحويل إلى كرتون */}
           {showCartoonUploadModal && (
             <div
               className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-              onClick={() => setShowCartoonUploadModal(false)}
+              onClick={() => { setShowCartoonUploadModal(false); setCartoonUploadImage(null) }}
             >
               <div
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5"
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
                 dir="rtl"
               >
+                {/* العنوان */}
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-500" />
-                    <span>{t('no_completed_image_title')}</span>
+                    <Wand2 className="w-5 h-5 text-purple-600" />
+                    <span>اختر صورة للتحويل</span>
                   </h3>
                   <button
-                    onClick={() => setShowCartoonUploadModal(false)}
+                    onClick={() => { setShowCartoonUploadModal(false); setCartoonUploadImage(null) }}
                     className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
                   >
                     <X className="w-4 h-4 text-gray-500" />
                   </button>
                 </div>
-                <p className="text-sm text-gray-600">
-                  {t('no_completed_image_desc')}
-                </p>
-                {cartoonUploadImage ? (
-                  <div className="space-y-3">
-                    <div className="rounded-lg overflow-hidden border border-purple-200 max-h-64">
-                      <img src={cartoonUploadImage} alt={t('uploaded_image_alt')} className="w-full object-contain max-h-64" />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          const img = cartoonUploadImage
-                          setShowCartoonUploadModal(false)
-                          setCartoonUploadImage(null)
-                          handleConvertToCartoon(img)
-                        }}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-medium hover:from-purple-600 hover:to-indigo-700 transition-all"
-                      >
-                        <Wand2 className="w-4 h-4" />
-                        <span>{t('convert_to_cartoon_btn')}</span>
-                      </button>
+
+                {/* معاينة الصورة المختارة */}
+                {cartoonUploadImage && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-gray-500">الصورة المختارة:</p>
+                    <div className="relative rounded-xl overflow-hidden border-2 border-purple-400 max-h-56">
+                      <img src={cartoonUploadImage} alt="الصورة المختارة" className="w-full object-contain max-h-56" />
                       <button
                         onClick={() => setCartoonUploadImage(null)}
-                        className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+                        className="absolute top-2 left-2 w-7 h-7 flex items-center justify-center bg-white/90 hover:bg-white rounded-full shadow-md transition-colors"
                       >
-                        {t('change')}
+                        <X className="w-3.5 h-3.5 text-gray-600" />
                       </button>
                     </div>
                   </div>
-                ) : (
-                  <label className="flex flex-col items-center justify-center gap-3 p-6 border-2 border-dashed border-purple-300 rounded-xl cursor-pointer hover:bg-purple-50 transition-colors">
-                    <Upload className="w-8 h-8 text-purple-400" />
-                    <span className="text-sm font-medium text-purple-600">{t('click_to_upload_dress')}</span>
-                    <span className="text-xs text-gray-400">JPG, PNG, WEBP</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        const reader = new FileReader()
-                        reader.onload = (ev) => {
-                          setCartoonUploadImage(ev.target?.result as string)
-                        }
-                        reader.readAsDataURL(file)
-                      }}
-                    />
-                  </label>
                 )}
+
+                {/* صور العمل المكتمل الموجودة */}
+                {(() => {
+                  const completedImgs = (order?.completed_images || []).filter((img: string) => img && !isVideoFile(img))
+                  if (completedImgs.length === 0) return null
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-gray-700">صور العمل المكتمل:</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {completedImgs.map((img: string, idx: number) => (
+                          <button
+                            key={idx}
+                            onClick={() => setCartoonUploadImage(img)}
+                            className={`relative rounded-xl overflow-hidden border-2 transition-all aspect-square ${cartoonUploadImage === img ? 'border-purple-500 ring-2 ring-purple-300' : 'border-gray-200 hover:border-purple-300'}`}
+                          >
+                            <img src={img} alt={`صورة ${idx + 1}`} className="w-full h-full object-cover" />
+                            {cartoonUploadImage === img && (
+                              <div className="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
+                                <CheckCircle className="w-6 h-6 text-purple-600" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* رفع صورة مختلفة */}
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-700">أو ارفع صورة مختلفة:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* من المعرض */}
+                    <label className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-colors">
+                      <Upload className="w-6 h-6 text-gray-400" />
+                      <span className="text-sm font-medium text-gray-600">من المعرض</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const reader = new FileReader()
+                          reader.onload = (ev) => setCartoonUploadImage(ev.target?.result as string)
+                          reader.readAsDataURL(file)
+                        }}
+                      />
+                    </label>
+                    {/* من الكاميرا */}
+                    <label className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-teal-400 hover:bg-teal-50 transition-colors">
+                      <Camera className="w-6 h-6 text-gray-400" />
+                      <span className="text-sm font-medium text-gray-600">الكاميرا</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const reader = new FileReader()
+                          reader.onload = (ev) => setCartoonUploadImage(ev.target?.result as string)
+                          reader.readAsDataURL(file)
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* أزرار التأكيد */}
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => {
+                      if (!cartoonUploadImage) return
+                      const img = cartoonUploadImage
+                      setShowCartoonUploadModal(false)
+                      setCartoonUploadImage(null)
+                      handleConvertToCartoon(img)
+                    }}
+                    disabled={!cartoonUploadImage}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-l from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-xl font-bold shadow-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    <span>تحويل إلى كرتون</span>
+                  </button>
+                  <button
+                    onClick={() => { setShowCartoonUploadModal(false); setCartoonUploadImage(null) }}
+                    className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
               </div>
             </div>
           )}

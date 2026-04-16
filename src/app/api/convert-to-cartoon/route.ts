@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { completedImage, clientName } = body as { completedImage: string; clientName?: string }
+    const { completedImage } = body as { completedImage: string; clientName?: string }
 
     if (!completedImage) {
       return NextResponse.json({ error: 'No completed image provided' }, { status: 400 })
@@ -34,10 +34,6 @@ export async function POST(request: NextRequest) {
       ? completedImage
       : `data:image/jpeg;base64,${completedImage}`
 
-    const clientNameInstruction = clientName
-      ? `\n\nText addition (mandatory):\n- At the bottom-right of the image write the text "ياسمين الشام للخياطة" in Arabic diwani (ديواني) script.\n- At the bottom-left of the image write the client's name "${clientName}" in the same Arabic diwani (ديواني) script.\n- Both texts must be exactly the same font style (diwani), the same color, and the same font size.\n- The texts should be subtle and integrated into the background — not overlapping the model or dress.\n- Choose a color that complements the illustration (e.g. soft gold, muted rose, or dark navy).`
-      : ''
-
     const prompt = `You will receive two images:
 
 Image 1: A hand-drawn fashion illustration of a model (cartoon / sketch style).
@@ -49,7 +45,8 @@ Place the exact dress from Image 2 onto the illustrated model in Image 1.
 Strict requirements:
 
 - Preserve the original illustration completely: do NOT change the model, pose, proportions, line style, colors, shading, or the background.
-- The only modification allowed is replacing the model's clothing with the dress from Image 2, and adding the client name text described below.
+- The ONLY modification allowed is replacing the model's clothing with the dress from Image 2.
+- DO NOT add any text, labels, watermarks, signatures, names, or written words anywhere in the image — not on the background, not on the dress, not in any corner. The final image must be completely free of any text or writing.
 
 Dress accuracy (extremely important):
 
@@ -63,10 +60,10 @@ Style constraints:
 
 - The final result must look like the dress was originally drawn in the same hand-drawn illustration style as Image 1.
 - Do not change the drawing technique, line quality, or artistic style of the model.
-- Keep the background identical to the original illustration.
+- Keep the background identical to the original illustration — no additions, no text, no decorations.
 
 Goal:
-Create a seamless fashion illustration where the photographed dress is accurately translated into the exact drawing style of the model illustration while preserving every design detail of the dress.${clientNameInstruction}`
+Create a seamless, text-free fashion illustration where the photographed dress is accurately translated into the exact drawing style of the model illustration while preserving every design detail of the dress.`
 
     const contentParts: any[] = [
       { type: 'text', text: prompt },
