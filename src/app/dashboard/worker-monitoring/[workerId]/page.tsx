@@ -577,6 +577,11 @@ function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; o
             {(order as any).needs_review && (
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
             )}
+            {(order as any).has_alterations && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                تعديل{(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}
+              </span>
+            )}
           </div>
 
           {/* الاسم ورقم الطلب */}

@@ -877,6 +877,8 @@ function OrdersPageInner() {
 
   const isPreBooking = (order: any) => order?.is_pre_booking === true
 
+  const hasAlterations = (order: any) => order?.has_alterations === true
+
   const filteredOrders = baseOrders.filter(order => {
     // فلترة حسب الدور
     let matchesRole = user?.role === 'admin' || workerType === 'workshop_manager'
@@ -894,7 +896,9 @@ function OrdersPageInner() {
         ? isNeedsReview(order)
         : statusFilter === 'pre_booking'
           ? isPreBooking(order)
-          : order.status === statusFilter
+          : statusFilter === 'has_alterations'
+            ? hasAlterations(order)
+            : order.status === statusFilter
 
     // Date filter is server-side when dateFilterResults is active; apply client-side only for text search results
     const matchesDate = !dateFilter || searchResults === null || (() => {
@@ -1007,6 +1011,7 @@ function OrdersPageInner() {
                 <option value="in_progress">{t('in_progress')}</option>
                 <option value="needs_review">{isArabic ? 'يحتاج مراجعة' : 'Needs Review'}</option>
                 <option value="pre_booking">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</option>
+                <option value="has_alterations">{isArabic ? 'يوجد تعديل' : 'Has Alteration'}</option>
               </select>
               <Filter className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
             </div>
@@ -1094,6 +1099,14 @@ function OrdersPageInner() {
                               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100">
                                 <PackageCheck className="w-4 h-4 text-blue-600" />
                                 <span className="text-sm font-semibold text-blue-600">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</span>
+                              </div>
+                            )}
+                            {hasAlterations(order) && (
+                              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100">
+                                <Wrench className="w-4 h-4 text-purple-600" />
+                                <span className="text-sm font-semibold text-purple-600">
+                                  {isArabic ? `تعديل${(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}` : `Alteration${(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}`}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -1227,6 +1240,16 @@ function OrdersPageInner() {
                             <PackageCheck className="w-3.5 h-3.5 text-blue-600" />
                             <span className="text-xs font-medium text-blue-600">
                               {isArabic ? 'حجز مسبق' : 'Pre-booking'}
+                            </span>
+                          </div>
+                        )}
+                        {hasAlterations(order) && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100">
+                            <Wrench className="w-3.5 h-3.5 text-purple-600" />
+                            <span className="text-xs font-medium text-purple-600">
+                              {isArabic
+                                ? `تعديل${(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}`
+                                : `Alteration${(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}`}
                             </span>
                           </div>
                         )}

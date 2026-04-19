@@ -51,12 +51,12 @@ export default function AlterationTypeModal({
             >
               <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between mb-5">
                   <Dialog.Title
                     as="h3"
                     className="text-lg font-semibold text-gray-900"
                   >
-                    {isArabic ? 'اختر نوع طلب التعديل' : 'Select Alteration Type'}
+                    {isArabic ? 'إضافة طلب تعديل' : 'Add Alteration'}
                   </Dialog.Title>
                   <button
                     onClick={onClose}
@@ -66,51 +66,54 @@ export default function AlterationTypeModal({
                   </button>
                 </div>
 
-                {/* Options */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* فستان داخلي (موجود في النظام) */}
-                  <button
-                    onClick={() => handleSelectType('existing')}
-                    className="flex flex-col items-center text-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-pink-500 hover:bg-pink-50 transition-all group h-full"
-                  >
-                    <div className="flex-shrink-0 w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center group-hover:bg-pink-200 transition-colors">
-                      <Package className="w-6 h-6 text-pink-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">
-                        {isArabic ? 'فستان داخلي' : 'Existing Dress'}
-                      </h4>
-                      <p className="text-xs text-gray-500 leading-snug">
-                        {isArabic
-                          ? 'فستان موجود في النظام'
-                          : 'Dress already in the system'}
-                      </p>
-                    </div>
-                  </button>
-
-                  {/* فستان خارجي (جديد) */}
+                {/* طلب تعديل خارجي - في الأعلى كزر ثانوي */}
+                <div className="mb-4">
                   <button
                     onClick={() => handleSelectType('new')}
-                    className="flex flex-col items-center text-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all group h-full"
+                    className="w-full flex items-center gap-3 px-4 py-3 border border-gray-200 rounded-xl hover:border-green-400 hover:bg-green-50 transition-all group text-right"
+                    dir="rtl"
                   >
-                    <div className="flex-shrink-0 w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
-                      <PackagePlus className="w-6 h-6 text-green-600" />
+                    <div className="flex-shrink-0 w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                      <PackagePlus className="w-5 h-5 text-green-600" />
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">
-                        {isArabic ? 'فستان خارجي' : 'New Dress'}
+                    <div className="flex-1 text-right">
+                      <h4 className="font-medium text-gray-700 text-sm">
+                        {isArabic ? 'طلب تعديل خارجي' : 'External Alteration'}
                       </h4>
-                      <p className="text-xs text-gray-500 leading-snug">
-                        {isArabic
-                          ? 'فستان غير موجود في النظام'
-                          : 'Dress not in the system'}
+                      <p className="text-xs text-gray-400">
+                        {isArabic ? 'فستان غير موجود في النظام' : 'Dress not in the system'}
                       </p>
                     </div>
                   </button>
                 </div>
 
+                {/* فاصل */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex-1 h-px bg-gray-200" />
+                  <span className="text-xs text-gray-400">{isArabic ? 'أو' : 'or'}</span>
+                  <div className="flex-1 h-px bg-gray-200" />
+                </div>
+
+                {/* طلب داخلي - الزر الرئيسي الافتراضي */}
+                <button
+                  onClick={() => handleSelectType('existing')}
+                  className="w-full flex flex-col items-center gap-3 p-5 border-2 border-pink-400 rounded-xl bg-pink-50 hover:bg-pink-100 hover:border-pink-500 transition-all group"
+                >
+                  <div className="w-14 h-14 bg-pink-100 rounded-xl flex items-center justify-center group-hover:bg-pink-200 transition-colors">
+                    <Package className="w-7 h-7 text-pink-600" />
+                  </div>
+                  <div className="text-center">
+                    <h4 className="font-bold text-gray-900 text-base mb-1">
+                      {isArabic ? 'طلب تعديل داخلي' : 'Internal Alteration'}
+                    </h4>
+                    <p className="text-sm text-gray-500">
+                      {isArabic ? 'فستان موجود في النظام' : 'Dress already in the system'}
+                    </p>
+                  </div>
+                </button>
+
                 {/* Footer */}
-                <div className="mt-6 pt-4 border-t border-gray-200">
+                <div className="mt-5 pt-4 border-t border-gray-200">
                   <button
                     onClick={onClose}
                     className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"

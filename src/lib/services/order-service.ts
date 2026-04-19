@@ -53,6 +53,8 @@ const ORDER_LIST_COLUMNS = [
   'needs_review',
   'is_pre_booking',
   'fabric_type',
+  'has_alterations',   // migration 34
+  'alteration_count',  // migration 34
   'design_thumbnail',           // عمود مستقل (migration 32)
   'notes',
   'admin_notes',
@@ -94,6 +96,10 @@ export interface Order {
   whatsapp_sent: boolean
   needs_review: boolean
   is_pre_booking: boolean
+  // تتبع التعديلات (migration 34)
+  has_alterations: boolean
+  alteration_count: number
+  last_alteration_at?: string | null
   // أعمدة JSONB مستقلة (migration 30) - بيانات التصميم
   image_annotations?: any[]
   image_drawings?: any[]
@@ -231,6 +237,10 @@ export interface UpdateOrderData {
   // أعمدة مستقلة (migration 29)
   has_measurements?: boolean
   is_printed?: boolean
+  // تتبع التعديلات (migration 34)
+  alteration_count?: number
+  has_alterations?: boolean
+  last_alteration_at?: string | null
   design_thumbnail?: string | null  // عمود مستقل (migration 32)
   custom_design_image?: string | null  // عمود مستقل (migration 33)
   ai_generated_images?: string[]       // عمود مستقل (migration 33)

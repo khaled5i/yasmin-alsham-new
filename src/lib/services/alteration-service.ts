@@ -35,6 +35,14 @@ const DEFAULT_PAGE_SIZE = 30
 // أنواع البيانات (Types)
 // ============================================================================
 
+export type AlterationErrorType =
+  | 'tailor_error'
+  | 'cutter_error'
+  | 'measurement_error'
+  | 'customer_error'
+  | 'reception_error'
+  | 'other_error'
+
 export interface Alteration {
   id: string
   alteration_number: string
@@ -44,6 +52,8 @@ export interface Alteration {
   client_phone: string
   client_email?: string | null
   description?: string | null
+  error_type?: AlterationErrorType | null
+  error_notes?: string | null
   price: number
   paid_amount: number
   remaining_amount: number
@@ -56,6 +66,7 @@ export interface Alteration {
   notes?: string | null
   admin_notes?: string | null
   images?: string[]
+  alteration_photos?: string[]
   completed_images?: string[]
   voice_notes?: string[]
   voice_transcriptions?: any[]
@@ -75,6 +86,8 @@ export interface CreateAlterationData {
   client_phone: string
   client_email?: string
   description?: string
+  error_type?: AlterationErrorType
+  error_notes?: string
   price: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -86,6 +99,7 @@ export interface CreateAlterationData {
   notes?: string
   admin_notes?: string
   images?: string[]
+  alteration_photos?: string[]
   voice_notes?: string[]
   voice_transcriptions?: Array<{
     id: string
@@ -153,6 +167,8 @@ export interface UpdateAlterationData {
   client_phone?: string
   client_email?: string | null
   description?: string | null
+  error_type?: AlterationErrorType | null
+  error_notes?: string | null
   price?: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -164,8 +180,14 @@ export interface UpdateAlterationData {
   notes?: string | null
   admin_notes?: string | null
   images?: string[]
+  alteration_photos?: string[]
   voice_notes?: string[]
+  voice_transcriptions?: any[]
   completed_images?: string[]
+  saved_design_comments?: any[]
+  image_annotations?: any[]
+  image_drawings?: any[]
+  custom_design_image?: string
 }
 
 // ============================================================================
@@ -215,6 +237,8 @@ export const alterationService = {
         client_phone: alterationData.client_phone,
         client_email: alterationData.client_email || null,
         description: alterationData.description || null,
+        error_type: alterationData.error_type || null,
+        error_notes: alterationData.error_notes || null,
         price: alterationData.price,
         paid_amount: alterationData.paid_amount || 0,
         payment_status: alterationData.payment_status || 'unpaid',
@@ -226,6 +250,7 @@ export const alterationService = {
         notes: alterationData.notes || null,
         admin_notes: alterationData.admin_notes || null,
         images: alterationData.images || [],
+        alteration_photos: alterationData.alteration_photos || [],
         voice_notes: alterationData.voice_notes || [],
         voice_transcriptions: alterationData.voice_transcriptions || [],
         saved_design_comments: alterationData.saved_design_comments || [],
@@ -427,6 +452,52 @@ export const alterationService = {
       return { error: null }
     } catch (error: any) {
       console.error('❌ Exception in delete alteration:', error)
+      return { error: error.message }
+    }
+  },
+
+  /**
+   * تحديث عداد التعديلات في الطلب الأصلي
+   * يُستدعى بعد إنشاء أو حذف أي طلب تعديل مرتبط بطلب أصلي
+   */
+  async syncOrderAlterationCount(originalOrderId: string): Promise<{ error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { error: 'Supabase is not configured.' }
+    }
+
+    try {
+      // حساب عدد التعديلات غير الملغاة المرتبطة بهذا الطلب
+      const { count, error: countError } = await supabase
+        .from('alterations')
+        .select('id', { count: 'exact', head: true })
+        .eq('original_order_id', originalOrderId)
+        .neq('status', 'cancelled')
+
+      if (countError) {
+        console.error('❌ Error counting alterations:', countError)
+        return { error: countError.message }
+      }
+
+      const alterationCount = count ?? 0
+
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({
+          alteration_count: alterationCount,
+          has_alterations: alterationCount > 0,
+          last_alteration_at: alterationCount > 0 ? new Date().toISOString() : null
+        })
+        .eq('id', originalOrderId)
+
+      if (updateError) {
+        console.error('❌ Error updating order alteration count:', updateError)
+        return { error: updateError.message }
+      }
+
+      console.log(`✅ Order ${originalOrderId} alteration count updated: ${alterationCount}`)
+      return { error: null }
+    } catch (error: any) {
+      console.error('❌ Exception in syncOrderAlterationCount:', error)
       return { error: error.message }
     }
   },

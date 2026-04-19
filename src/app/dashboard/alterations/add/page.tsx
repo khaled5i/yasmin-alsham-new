@@ -6,13 +6,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useTranslation } from '@/hooks/useTranslation'
-import { alterationService } from '@/lib/services/alteration-service'
+import { alterationService, AlterationErrorType } from '@/lib/services/alteration-service'
 import { orderService, Order } from '@/lib/services/order-service'
 import ImageUpload from '@/components/ImageUpload'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
+import { imageService } from '@/lib/services/image-service'
 import {
   ArrowRight,
   Upload,
@@ -21,7 +22,10 @@ import {
   MessageSquare,
   AlertCircle,
   Loader2,
-  MessageCircle
+  MessageCircle,
+  ChevronDown,
+  ChevronUp,
+  Camera
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
 
@@ -96,9 +100,12 @@ function AddAlterationContent() {
         paymentMethod: alteration.payment_method || 'cash',
         orderReceivedDate: alteration.order_received_date || new Date().toISOString().split('T')[0],
         alterationDueDate: alteration.alteration_due_date,
+        errorType: (alteration.error_type as AlterationErrorType) || '',
+        errorNotes: alteration.error_notes || '',
         notes: alteration.notes || '',
         voiceNotes: (alteration as any).voice_transcriptions || [],
         images: alteration.images || [],
+        alterationPhotos: alteration.alteration_photos || [],
         imageAnnotations: initialAnnotations,
         imageDrawings: initialDrawings,
         customDesignImage: null,
@@ -150,6 +157,8 @@ function AddAlterationContent() {
     paymentMethod: 'cash' as 'cash' | 'card' | 'bank_transfer' | 'check',
     orderReceivedDate: new Date().toISOString().split('T')[0],
     alterationDueDate: '',
+    errorType: '' as AlterationErrorType | '',
+    errorNotes: '',
     notes: '',
     voiceNotes: [] as Array<{
       id: string
@@ -161,6 +170,7 @@ function AddAlterationContent() {
       translationLanguage?: string
     }>,
     images: [] as string[],
+    alterationPhotos: [] as string[],
     imageAnnotations: [] as ImageAnnotation[],
     imageDrawings: [] as DrawingPath[],
     customDesignImage: null as File | null,
@@ -168,6 +178,9 @@ function AddAlterationContent() {
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showDressDetails, setShowDressDetails] = useState(false)
+  const [isCameraUploading, setIsCameraUploading] = useState(false)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const initialDesignStateRef = useRef<{ annotations: string; drawings: string }>({
     annotations: '[]',
     drawings: '[]'
@@ -258,6 +271,34 @@ function AddAlterationContent() {
     }))
   }
 
+  // معالجة التقاط صورة من كاميرا الجوال وإضافتها لصور التعديل
+  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    // إعادة تعيين قيمة الإدخال لإتاحة التقاط صورة جديدة لاحقاً
+    e.target.value = ''
+
+    setIsCameraUploading(true)
+    try {
+      const result = await imageService.uploadImage(file)
+      if (result.error) {
+        toast.error(result.error)
+        return
+      }
+      if (result.data?.url) {
+        setFormData(prev => ({
+          ...prev,
+          alterationPhotos: [...prev.alterationPhotos, result.data!.url]
+        }))
+        toast.success(isArabic ? 'تمت إضافة الصورة بنجاح' : 'Photo added successfully')
+      }
+    } catch (err: any) {
+      toast.error(isArabic ? 'فشل في رفع الصورة' : 'Failed to upload photo')
+    } finally {
+      setIsCameraUploading(false)
+    }
+  }
+
   const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string) => {
     let allSavedComments = [...formData.savedDesignComments]
     const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
@@ -307,6 +348,11 @@ function AddAlterationContent() {
     // السعر مطلوب فقط للفساتين الخارجية (عدم وجود orderId)
     if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!orderId && !formData.price)) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
+      return
+    }
+
+    if (!formData.errorType) {
+      toast.error(isArabic ? 'يرجى تحديد سبب التعديل' : 'Please select the reason for alteration')
       return
     }
 
@@ -381,10 +427,13 @@ function AddAlterationContent() {
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate,
+          error_type: formData.errorType as AlterationErrorType || null,
+          error_notes: formData.errorNotes || null,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
+          alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
           image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
@@ -396,6 +445,11 @@ function AddAlterationContent() {
           toast.error(result.error)
           setIsSubmitting(false)
           return
+        }
+
+        // تحديث عداد التعديلات في الطلب الأصلي
+        if (orderId) {
+          await alterationService.syncOrderAlterationCount(orderId)
         }
 
         toast.success(isArabic ? 'تم تحديث طلب التعديل بنجاح!' : 'Alteration updated successfully!')
@@ -411,10 +465,13 @@ function AddAlterationContent() {
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate,
+          error_type: formData.errorType as AlterationErrorType || undefined,
+          error_notes: formData.errorNotes || undefined,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
+          alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
           image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
@@ -427,6 +484,11 @@ function AddAlterationContent() {
           toast.error(result.error)
           setIsSubmitting(false)
           return
+        }
+
+        // تحديث عداد التعديلات في الطلب الأصلي
+        if (orderId) {
+          await alterationService.syncOrderAlterationCount(orderId)
         }
 
         toast.success(isArabic ? 'تم إضافة طلب التعديل بنجاح!' : 'Alteration added successfully!')
@@ -454,6 +516,11 @@ function AddAlterationContent() {
     // التحقق من الحقول المطلوبة
     if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!orderId && !formData.price)) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
+      return
+    }
+
+    if (!formData.errorType) {
+      toast.error(isArabic ? 'يرجى تحديد سبب التعديل' : 'Please select the reason for alteration')
       return
     }
 
@@ -530,10 +597,13 @@ function AddAlterationContent() {
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate,
+          error_type: formData.errorType as AlterationErrorType || null,
+          error_notes: formData.errorNotes || null,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
+          alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
           image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
@@ -547,6 +617,7 @@ function AddAlterationContent() {
           return
         }
 
+        if (orderId) await alterationService.syncOrderAlterationCount(orderId)
         toast.success(isArabic ? 'تم تحديث طلب التعديل بنجاح!' : 'Alteration updated successfully!')
       } else {
         // وضع الإضافة
@@ -559,10 +630,13 @@ function AddAlterationContent() {
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate,
+          error_type: formData.errorType as AlterationErrorType || undefined,
+          error_notes: formData.errorNotes || undefined,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
+          alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
           image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
@@ -581,6 +655,7 @@ function AddAlterationContent() {
           alterationNumber = result.data.alteration_number
         }
 
+        if (orderId) await alterationService.syncOrderAlterationCount(orderId)
         toast.success(isArabic ? 'تم إضافة طلب التعديل بنجاح!' : 'Alteration added successfully!')
       }
 
@@ -679,22 +754,6 @@ function AddAlterationContent() {
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 1.1. رقم طلب التعديل (اختياري) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isArabic ? 'رقم طلب التعديل' : 'Alteration Number'} {!isEditMode && `(${isArabic ? 'اختياري' : 'Optional'})`}
-                </label>
-                <input
-                  type="text"
-                  value={formData.alterationNumber}
-                  onChange={(e) => handleInputChange('alterationNumber', e.target.value)}
-                  placeholder={isArabic ? 'سيتم توليده تلقائياً إذا ترك فارغاً' : 'Auto-generated if left empty'}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  dir={isArabic ? 'rtl' : 'ltr'}
-                  disabled={isEditMode}
-                />
-              </div>
-
               {/* 1.2. اسم الزبونة */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -804,9 +863,173 @@ function AddAlterationContent() {
               onNotesChange={(notes) => handleInputChange('notes', notes)}
               onVoiceNotesChange={handleVoiceNotesChange}
             />
+
+            {/* زر الكاميرا - إضافة صورة التعديل */}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={isSubmitting || isCameraUploading}
+                className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-300 text-green-700 rounded-lg hover:bg-green-100 hover:border-green-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCameraUploading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-sm font-medium">{isArabic ? 'جاري رفع الصورة...' : 'Uploading...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-5 h-5" />
+                    <span className="text-sm font-medium">{isArabic ? 'إضافة صورة من الكاميرا' : 'Add Photo from Camera'}</span>
+                  </>
+                )}
+              </button>
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleCameraCapture}
+              />
+            </div>
+
+            {/* معرض صور التعديل */}
+            {formData.alterationPhotos.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  {isArabic ? 'صور التعديل' : 'Alteration Photos'} ({formData.alterationPhotos.length})
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {formData.alterationPhotos.map((url, idx) => (
+                    <div key={idx} className="relative group">
+                      <img
+                        src={url}
+                        alt={`alteration-photo-${idx + 1}`}
+                        className="w-24 h-24 object-cover rounded-lg border border-gray-200 shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          alterationPhotos: prev.alterationPhotos.filter((_, i) => i !== idx)
+                        }))}
+                        className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
 
+          {/* 3. سبب التعديل */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+          >
+            <h2 className="text-xl font-semibold text-gray-900 mb-5 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-pink-500" />
+              {isArabic ? 'سبب التعديل' : 'Reason for Alteration'}
+              <span className="text-red-500 text-sm font-normal mr-1">*</span>
+            </h2>
+
+            {/* خيارات سبب الخطأ */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5" dir="rtl">
+              {(
+                [
+                  { value: 'tailor_error',      label: 'خطأ الخياط',      color: 'red' },
+                  { value: 'cutter_error',       label: 'خطأ القصاص',     color: 'orange' },
+                  { value: 'measurement_error',  label: 'خطأ قياس',       color: 'yellow' },
+                  { value: 'customer_error',     label: 'خطأ زبونة',      color: 'blue' },
+                  { value: 'reception_error',    label: 'خطأ الاستقبال',  color: 'purple' },
+                  { value: 'other_error',        label: 'خطأ آخر',        color: 'gray' },
+                ] as const
+              ).map(({ value, label, color }) => {
+                const isSelected = formData.errorType === value
+                const colorMap: Record<string, string> = {
+                  red:    isSelected ? 'border-red-500 bg-red-50 text-red-700'       : 'border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700',
+                  orange: isSelected ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50 text-gray-700',
+                  yellow: isSelected ? 'border-yellow-500 bg-yellow-50 text-yellow-700' : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50 text-gray-700',
+                  blue:   isSelected ? 'border-blue-500 bg-blue-50 text-blue-700'    : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-700',
+                  purple: isSelected ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50 text-gray-700',
+                  gray:   isSelected ? 'border-gray-500 bg-gray-100 text-gray-700'   : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700',
+                }
+                const dotMap: Record<string, string> = {
+                  red: 'bg-red-500', orange: 'bg-orange-500', yellow: 'bg-yellow-500',
+                  blue: 'bg-blue-500', purple: 'bg-purple-500', gray: 'bg-gray-500'
+                }
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, errorType: value }))}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 font-medium text-sm transition-all ${colorMap[color]}`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isSelected ? dotMap[color] : 'bg-gray-300'}`} />
+                    {label}
+                    {isSelected && (
+                      <span className="mr-auto text-xs font-bold">✓</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* ملاحظات عن الخطأ - اختيارية */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {isArabic ? 'ملاحظات عن الخطأ' : 'Error Notes'}
+                <span className="text-gray-400 font-normal mr-2 text-xs">({isArabic ? 'اختياري' : 'Optional'})</span>
+              </label>
+              <textarea
+                value={formData.errorNotes}
+                onChange={(e) => setFormData(prev => ({ ...prev, errorNotes: e.target.value }))}
+                placeholder={isArabic ? 'أضف ملاحظات إضافية حول سبب التعديل...' : 'Add additional notes about the error...'}
+                rows={3}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
+                dir="rtl"
+              />
+            </div>
+          </motion.div>
+
+          {/* زر عرض تفاصيل الفستان - للتعديلات الداخلية فقط */}
+          {orderId && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowDressDetails(prev => !prev)}
+                className="w-full flex items-center justify-between px-6 py-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-pink-300 hover:bg-pink-50 transition-all group"
+              >
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-pink-500" />
+                  <span className="font-semibold text-gray-800">
+                    {isArabic ? 'عرض تفاصيل الفستان' : 'Show Dress Details'}
+                  </span>
+                  {(formData.savedDesignComments.length > 0 || formData.imageAnnotations.length > 0 || formData.images.length > 0) && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-700">
+                      {isArabic ? 'يحتوي بيانات' : 'Has data'}
+                    </span>
+                  )}
+                </div>
+                {showDressDetails
+                  ? <ChevronUp className="w-5 h-5 text-gray-400 group-hover:text-pink-500 transition-colors" />
+                  : <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-pink-500 transition-colors" />
+                }
+              </button>
+            </motion.div>
+          )}
+
           {/* 4. تعليقات التصميم */}
+          {(!orderId || showDressDetails) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -832,8 +1055,10 @@ function AddAlterationContent() {
               onSavedCommentsChange={handleSavedCommentsChange}
             />
           </motion.div>
+          )}
 
           {/* 5. صور التصميم */}
+          {(!orderId || showDressDetails) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -851,6 +1076,7 @@ function AddAlterationContent() {
               maxImages={10}
             />
           </motion.div>
+          )}
 
           {/* 6. أزرار الإجراءات */}
           <motion.div

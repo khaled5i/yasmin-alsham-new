@@ -109,7 +109,7 @@ export default function AlterationsPage() {
     router.push(`/dashboard/alterations/add?orderId=${order.id}`)
   }
 
-  const handleDeleteAlteration = async (id: string) => {
+  const handleDeleteAlteration = async (id: string, originalOrderId?: string | null) => {
     if (!confirm(isArabic ? 'هل أنت متأكد من حذف طلب التعديل؟' : 'Are you sure you want to delete this alteration?')) {
       return
     }
@@ -119,6 +119,10 @@ export default function AlterationsPage() {
       if (error) {
         toast.error(error)
         return
+      }
+      // تحديث عداد التعديلات في الطلب الأصلي بعد الحذف
+      if (originalOrderId) {
+        await alterationService.syncOrderAlterationCount(originalOrderId)
       }
       toast.success(isArabic ? 'تم حذف طلب التعديل بنجاح' : 'Alteration deleted successfully')
       loadAlterations(currentPage, debouncedSearchTerm)
@@ -293,7 +297,7 @@ export default function AlterationsPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            handleDeleteAlteration(alteration.id)
+                            handleDeleteAlteration(alteration.id, alteration.original_order_id)
                           }}
                           className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           title={isArabic ? 'حذف' : 'Delete'}

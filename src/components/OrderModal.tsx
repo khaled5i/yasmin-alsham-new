@@ -195,7 +195,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
-  const handleStatusChange = async (updates: { status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'; is_pre_booking?: boolean; needs_review?: boolean }) => {
+  const handleStatusChange = async (updates: { status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'; is_pre_booking?: boolean; needs_review?: boolean; has_alterations?: boolean }) => {
     if (!order) return
     setIsUpdatingStatus(true)
     try {
@@ -1034,6 +1034,15 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                 يحتاج مراجعة {(order as any).needs_review ? '✓' : ''}
                               </span>
                             </button>
+                            <button
+                              onClick={() => handleStatusChange({ has_alterations: !(order as any).has_alterations })}
+                              className="w-full text-right px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-2 transition-colors"
+                            >
+                              {(order as any).has_alterations && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                              <span className={(order as any).has_alterations ? 'font-bold' : ''}>
+                                تعديل {(order as any).has_alterations ? '✓' : ''}
+                              </span>
+                            </button>
                           </div>
                         )}
 
@@ -1044,6 +1053,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                           )}
                           {(order as any).needs_review && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
+                          )}
+                          {(order as any).has_alterations && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700">
+                              تعديل{(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1059,6 +1073,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                           )}
                           {(order as any).needs_review && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
+                          )}
+                          {(order as any).has_alterations && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700">
+                              تعديل{(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}
+                            </span>
                           )}
                         </div>
                       </div>
