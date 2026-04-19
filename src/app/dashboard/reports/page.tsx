@@ -239,7 +239,7 @@ export default function ReportsPage() {
     const dateRange = getDateRange()
     const previousRange = getPreviousDateRange()
 
-    // Filter orders
+    // Filter orders by creation date
     const currentOrders = orders.filter(order =>
       isInDateRange(order.created_at, dateRange)
     )
@@ -247,9 +247,18 @@ export default function ReportsPage() {
       isInDateRange(order.created_at, previousRange)
     )
 
+    // الطلبات التي اكتملت (completed/delivered) خلال الفترة المحددة
+    // بغض النظر عن تاريخ إنشاء الطلب — يعتمد على delivery_date أو updated_at
+    const completedOrdersInPeriod = orders.filter(order => {
+      if (order.status !== 'completed' && order.status !== 'delivered') return false
+      const completionDate = order.delivery_date || order.updated_at
+      return isInDateRange(completionDate, dateRange)
+    })
+
     return {
       currentOrders,
       previousOrders,
+      completedOrdersInPeriod,
       dateRange,
       previousRange
     }
@@ -260,7 +269,7 @@ export default function ReportsPage() {
   // ============================================================================
 
   const comprehensiveStats = useMemo(() => {
-    const { currentOrders, previousOrders } = filteredData
+    const { currentOrders, previousOrders, completedOrdersInPeriod } = filteredData
 
     // Orders Statistics
     const currentRevenue = currentOrders

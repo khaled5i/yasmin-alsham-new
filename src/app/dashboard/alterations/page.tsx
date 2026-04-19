@@ -20,8 +20,10 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  MessageCircle
 } from 'lucide-react'
+import { openAlterationWhatsApp } from '@/utils/whatsapp'
 
 const PAGE_SIZE = 30
 
@@ -293,6 +295,25 @@ export default function AlterationsPage() {
                           title={isArabic ? 'طباعة' : 'Print'}
                         >
                           <Printer className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (!alteration.client_phone) {
+                              toast.error(isArabic ? 'لا يوجد رقم هاتف لهذا العميل' : 'No phone number for this client')
+                              return
+                            }
+                            openAlterationWhatsApp({
+                              clientName: alteration.client_name,
+                              clientPhone: alteration.client_phone,
+                              alterationNumber: alteration.alteration_number || undefined,
+                              dueDate: alteration.alteration_due_date
+                            })
+                          }}
+                          className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          title={isArabic ? 'إرسال رسالة واتساب' : 'Send WhatsApp Message'}
+                        >
+                          <MessageCircle className="w-4 h-4" />
                         </button>
                         <button
                           onClick={(e) => {

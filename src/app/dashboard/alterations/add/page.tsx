@@ -25,9 +25,20 @@ import {
   MessageCircle,
   ChevronDown,
   ChevronUp,
-  Camera
+  Camera,
+  Ruler,
+  Image as ImageIcon,
+  Play,
+  Pause,
+  Package,
+  Phone,
+  Clock,
+  CheckCircle,
+  Pencil
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
+import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
+import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
 
@@ -117,6 +128,15 @@ function AddAlterationContent() {
         drawings: JSON.stringify(initialDrawings)
       }
 
+      // إذا كان التعديل داخلياً، نحمّل الطلب الأصلي لعرض تفاصيل الفستان
+      const origId = (alteration as any).original_order_id
+      if (origId) {
+        setEditModeOriginalOrderId(origId)
+        orderService.getById(origId).then(({ data, error }) => {
+          if (!error && data) setOriginalOrder(data)
+        }).catch(console.error)
+      }
+
       toast.success(isArabic ? 'تم تحميل بيانات طلب التعديل' : 'Alteration data loaded')
     } catch (error: any) {
       console.error('Error loading alteration:', error)
@@ -177,6 +197,11 @@ function AddAlterationContent() {
     savedDesignComments: [] as SavedDesignComment[]
   })
 
+  // معرف الطلب الأصلي المستخرج من بيانات التعديل عند التعديل على تعديل داخلي
+  const [editModeOriginalOrderId, setEditModeOriginalOrderId] = useState<string | null>(null)
+  // المعرف الفعلي للطلب الأصلي: من URL أو من بيانات التعديل المحملة
+  const effectiveOrderId = orderId || editModeOriginalOrderId
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showDressDetails, setShowDressDetails] = useState(false)
   const [isCameraUploading, setIsCameraUploading] = useState(false)
@@ -185,6 +210,13 @@ function AddAlterationContent() {
     annotations: '[]',
     drawings: '[]'
   })
+
+  // حالات العرض للقراءة فقط (تفاصيل الفستان للتعديلات الداخلية)
+  const [expandedROCommentId, setExpandedROCommentId] = useState<string | null>(null)
+  const [playingROAudioId, setPlayingROAudioId] = useState<string | null>(null)
+  const roAudioRef = useRef<HTMLAudioElement | null>(null)
+  const roCanvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map())
+  const roCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
   // تعبئة البيانات من الطلب الأصلي
   const prefillFormData = (order: Order) => {
@@ -299,6 +331,79 @@ function AddAlterationContent() {
     }
   }
 
+  // بيانات الطلب الأصلي للعرض للقراءة فقط
+  const roCustomDesignImage = originalOrder ? ((originalOrder as any).custom_design_image || null) : null
+  const roSavedDesignComments: SavedDesignComment[] = originalOrder
+    ? ((originalOrder as any).design_comments || (originalOrder.measurements as any)?.saved_design_comments || [])
+    : []
+  const roImageAnnotations: ImageAnnotation[] = originalOrder
+    ? ((originalOrder as any).image_annotations || (originalOrder.measurements as any)?.image_annotations || [])
+    : []
+  const roImageDrawings: DrawingPath[] = originalOrder
+    ? ((originalOrder as any).image_drawings || (originalOrder.measurements as any)?.image_drawings || [])
+    : []
+
+  const resolveROCommentImageSrc = (comment: SavedDesignComment): string => {
+    if (comment.image && comment.image.startsWith('data:')) return comment.image
+    if (comment.image && comment.image !== 'custom') return comment.image
+    if (roCustomDesignImage) return roCustomDesignImage
+    return '/front2.png'
+  }
+
+  const drawROPathsOnCanvas = async (
+    canvas: HTMLCanvasElement,
+    drawings: DrawingPath[],
+    retryCount: number = 0
+  ) => {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const displayWidth = Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 0)
+    const displayHeight = Math.round(canvas.clientHeight || canvas.parentElement?.clientHeight || 0)
+    if (displayWidth <= 0 || displayHeight <= 0) {
+      if (retryCount < 12) {
+        setTimeout(() => { void drawROPathsOnCanvas(canvas, drawings, retryCount + 1) }, 50)
+      }
+      return
+    }
+    canvas.width = displayWidth
+    canvas.height = displayHeight
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    renderDrawingsOnCanvas(ctx, drawings, canvas.width, canvas.height)
+  }
+
+  const toggleROAudio = (annotation: ImageAnnotation) => {
+    if (!annotation.audioData) return
+    if (playingROAudioId === annotation.id) {
+      if (roAudioRef.current) { roAudioRef.current.pause(); roAudioRef.current = null }
+      setPlayingROAudioId(null)
+    } else {
+      if (roAudioRef.current) { roAudioRef.current.pause() }
+      const audio = new Audio(annotation.audioData)
+      audio.onended = () => setPlayingROAudioId(null)
+      audio.play()
+      roAudioRef.current = audio
+      setPlayingROAudioId(annotation.id)
+    }
+  }
+
+  const formatOrderDate = (dateString: string) => {
+    if (!dateString) return ''
+    try {
+      const d = new Date(dateString)
+      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+    } catch { return dateString }
+  }
+
+  const statusLabels: Record<string, string> = {
+    pending: 'في الانتظار', in_progress: 'قيد التنفيذ', completed: 'مكتمل',
+    delivered: 'تم التسليم', cancelled: 'ملغى'
+  }
+  const statusColors: Record<string, string> = {
+    pending: 'bg-yellow-100 text-yellow-700', in_progress: 'bg-blue-100 text-blue-700',
+    completed: 'bg-green-100 text-green-700', delivered: 'bg-purple-100 text-purple-700',
+    cancelled: 'bg-red-100 text-red-700'
+  }
+
   const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string) => {
     let allSavedComments = [...formData.savedDesignComments]
     const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
@@ -345,8 +450,8 @@ function AddAlterationContent() {
     e.preventDefault()
 
     // التحقق من الحقول المطلوبة
-    // السعر مطلوب فقط للفساتين الخارجية (عدم وجود orderId)
-    if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!orderId && !formData.price)) {
+    // السعر مطلوب فقط للفساتين الخارجية (عدم وجود effectiveOrderId)
+    if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!effectiveOrderId && !formData.price)) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
@@ -376,8 +481,8 @@ function AddAlterationContent() {
       }))
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
-      // للفساتين الداخلية (orderId موجود)، السعر يكون 0
-      const price = orderId ? 0 : Number(formData.price)
+      // للفساتين الداخلية (effectiveOrderId موجود)، السعر يكون 0
+      const price = effectiveOrderId ? 0 : Number(formData.price)
       const paidAmount = Number(formData.paidAmount) || 0
 
       // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
@@ -448,8 +553,8 @@ function AddAlterationContent() {
         }
 
         // تحديث عداد التعديلات في الطلب الأصلي
-        if (orderId) {
-          await alterationService.syncOrderAlterationCount(orderId)
+        if (effectiveOrderId) {
+          await alterationService.syncOrderAlterationCount(effectiveOrderId)
         }
 
         toast.success(isArabic ? 'تم تحديث طلب التعديل بنجاح!' : 'Alteration updated successfully!')
@@ -458,7 +563,7 @@ function AddAlterationContent() {
         // وضع الإضافة
         const result = await alterationService.create({
           alteration_number: formData.alterationNumber && formData.alterationNumber.trim() !== '' ? formData.alterationNumber.trim() : undefined,
-          original_order_id: orderId || undefined,
+          original_order_id: effectiveOrderId || undefined,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
           price: price,
@@ -487,8 +592,8 @@ function AddAlterationContent() {
         }
 
         // تحديث عداد التعديلات في الطلب الأصلي
-        if (orderId) {
-          await alterationService.syncOrderAlterationCount(orderId)
+        if (effectiveOrderId) {
+          await alterationService.syncOrderAlterationCount(effectiveOrderId)
         }
 
         toast.success(isArabic ? 'تم إضافة طلب التعديل بنجاح!' : 'Alteration added successfully!')
@@ -514,7 +619,7 @@ function AddAlterationContent() {
     }
 
     // التحقق من الحقول المطلوبة
-    if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!orderId && !formData.price)) {
+    if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!effectiveOrderId && !formData.price)) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
@@ -544,7 +649,7 @@ function AddAlterationContent() {
       }))
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
-      const price = orderId ? 0 : Number(formData.price)
+      const price = effectiveOrderId ? 0 : Number(formData.price)
       const paidAmount = Number(formData.paidAmount) || 0
 
       // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
@@ -617,13 +722,13 @@ function AddAlterationContent() {
           return
         }
 
-        if (orderId) await alterationService.syncOrderAlterationCount(orderId)
+        if (effectiveOrderId) await alterationService.syncOrderAlterationCount(effectiveOrderId)
         toast.success(isArabic ? 'تم تحديث طلب التعديل بنجاح!' : 'Alteration updated successfully!')
       } else {
         // وضع الإضافة
         result = await alterationService.create({
           alteration_number: formData.alterationNumber && formData.alterationNumber.trim() !== '' ? formData.alterationNumber.trim() : undefined,
-          original_order_id: orderId || undefined,
+          original_order_id: effectiveOrderId || undefined,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
           price: price,
@@ -655,7 +760,7 @@ function AddAlterationContent() {
           alterationNumber = result.data.alteration_number
         }
 
-        if (orderId) await alterationService.syncOrderAlterationCount(orderId)
+        if (effectiveOrderId) await alterationService.syncOrderAlterationCount(effectiveOrderId)
         toast.success(isArabic ? 'تم إضافة طلب التعديل بنجاح!' : 'Alteration added successfully!')
       }
 
@@ -690,6 +795,18 @@ function AddAlterationContent() {
       setIsSubmitting(false)
     }
   }
+
+  // رسم الخطوط على canvas عند توسيع تعليق في العرض للقراءة فقط
+  useEffect(() => {
+    if (!expandedROCommentId) return
+    const comment = roSavedDesignComments.find(c => c.id === expandedROCommentId)
+    if (!comment || !comment.drawings || comment.drawings.length === 0) return
+    const timer = setTimeout(() => {
+      const canvas = roCanvasRefs.current.get(expandedROCommentId)
+      if (canvas) { void drawROPathsOnCanvas(canvas, comment.drawings || []) }
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [expandedROCommentId, roSavedDesignComments])
 
   if (!user) {
     return null
@@ -801,7 +918,7 @@ function AddAlterationContent() {
               </div>
 
               {/* 1.5. السعر - يظهر فقط للتعديلات الخارجية */}
-              {!orderId && (
+              {!effectiveOrderId && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {isArabic ? 'سعر التعديل (ر.س)' : 'Alteration Price (SAR)'} <span className="text-red-500">*</span>
@@ -817,7 +934,7 @@ function AddAlterationContent() {
               )}
 
               {/* 1.6. المبلغ المدفوع - يظهر فقط للتعديلات الخارجية */}
-              {!orderId && (
+              {!effectiveOrderId && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {isArabic ? 'المبلغ المدفوع (ر.س)' : 'Paid Amount (SAR)'}
@@ -833,7 +950,7 @@ function AddAlterationContent() {
             </div>
 
             {/* 1.7. المبلغ المتبقي - يظهر فقط للتعديلات الخارجية */}
-            {!orderId && (
+            {!effectiveOrderId && (
               <div className="mt-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   {isArabic ? 'المبلغ المتبقي (ر.س)' : 'Remaining Amount (SAR)'}
@@ -998,7 +1115,7 @@ function AddAlterationContent() {
           </motion.div>
 
           {/* زر عرض تفاصيل الفستان - للتعديلات الداخلية فقط */}
-          {orderId && (
+          {effectiveOrderId && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1014,7 +1131,7 @@ function AddAlterationContent() {
                   <span className="font-semibold text-gray-800">
                     {isArabic ? 'عرض تفاصيل الفستان' : 'Show Dress Details'}
                   </span>
-                  {(formData.savedDesignComments.length > 0 || formData.imageAnnotations.length > 0 || formData.images.length > 0) && (
+                  {(roSavedDesignComments.length > 0 || roImageAnnotations.length > 0 || (originalOrder?.images?.length ?? 0) > 0 || (originalOrder?.measurements && Object.values(originalOrder.measurements).some(v => v !== undefined && v !== null && v !== ''))) && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-700">
                       {isArabic ? 'يحتوي بيانات' : 'Has data'}
                     </span>
@@ -1028,54 +1145,334 @@ function AddAlterationContent() {
             </motion.div>
           )}
 
-          {/* 4. تعليقات التصميم */}
-          {(!orderId || showDressDetails) && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-          >
-            <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-pink-500" />
-              {isArabic ? 'تعليقات التصميم' : 'Design Comments'}
-            </h2>
+          {/* 4 & 5. للتعديلات الخارجية: تعليقات التصميم وصور التصميم قابلة للتعديل */}
+          {!effectiveOrderId && (
+            <>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+              >
+                <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-pink-500" />
+                  {isArabic ? 'تعليقات التصميم' : 'Design Comments'}
+                </h2>
+                <InteractiveImageAnnotation
+                  ref={annotationRef}
+                  imageSrc="/front2.png"
+                  annotations={formData.imageAnnotations}
+                  onAnnotationsChange={handleImageAnnotationsChange}
+                  drawings={formData.imageDrawings}
+                  onDrawingsChange={handleImageDrawingsChange}
+                  customImage={formData.customDesignImage}
+                  onImageChange={handleDesignImageChange}
+                  disabled={isSubmitting}
+                  savedComments={formData.savedDesignComments}
+                  onSavedCommentsChange={handleSavedCommentsChange}
+                />
+              </motion.div>
 
-            <InteractiveImageAnnotation
-              ref={annotationRef}
-              imageSrc="/front2.png"
-              annotations={formData.imageAnnotations}
-              onAnnotationsChange={handleImageAnnotationsChange}
-              drawings={formData.imageDrawings}
-              onDrawingsChange={handleImageDrawingsChange}
-              customImage={formData.customDesignImage}
-              onImageChange={handleDesignImageChange}
-              disabled={isSubmitting}
-              savedComments={formData.savedDesignComments}
-              onSavedCommentsChange={handleSavedCommentsChange}
-            />
-          </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+              >
+                <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                  <Upload className="w-5 h-5 text-pink-500" />
+                  {isArabic ? 'صور التصميم' : 'Design Images'}
+                </h2>
+                <ImageUpload
+                  images={formData.images}
+                  onImagesChange={(images) => handleInputChange('images', images)}
+                  maxImages={10}
+                />
+              </motion.div>
+            </>
           )}
 
-          {/* 5. صور التصميم */}
-          {(!orderId || showDressDetails) && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-          >
-            <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-              <Upload className="w-5 h-5 text-pink-500" />
-              {isArabic ? 'صور التصميم' : 'Design Images'}
-            </h2>
+          {/* للتعديلات الداخلية: عرض تفاصيل الفستان للقراءة فقط */}
+          {effectiveOrderId && showDressDetails && originalOrder && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="space-y-6"
+            >
+              {/* أ. المعلومات الأساسية للطلب */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-pink-500" />
+                  معلومات الطلب الأصلي
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {originalOrder.order_number && (
+                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
+                      <p className="text-xs text-gray-500 mb-1">رقم الطلب</p>
+                      <p className="font-semibold text-gray-800 text-sm">{originalOrder.order_number}</p>
+                    </div>
+                  )}
+                  <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
+                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><User className="w-3 h-3" /> اسم الزبونة</p>
+                    <p className="font-semibold text-gray-800 text-sm">{originalOrder.client_name}</p>
+                  </div>
+                  {originalOrder.client_phone && (
+                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
+                      <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Phone className="w-3 h-3" /> رقم الهاتف</p>
+                      <p className="font-semibold text-gray-800 text-sm" dir="ltr">{originalOrder.client_phone}</p>
+                    </div>
+                  )}
+                  {originalOrder.due_date && (
+                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
+                      <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> موعد التسليم</p>
+                      <p className="font-semibold text-gray-800 text-sm">{formatOrderDate(originalOrder.due_date)}</p>
+                    </div>
+                  )}
+                  {originalOrder.fabric && (
+                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
+                      <p className="text-xs text-gray-500 mb-1">القماش</p>
+                      <p className="font-semibold text-gray-800 text-sm">{originalOrder.fabric}</p>
+                    </div>
+                  )}
+                  <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
+                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> الحالة</p>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[originalOrder.status] || 'bg-gray-100 text-gray-700'}`}>
+                      {statusLabels[originalOrder.status] || originalOrder.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-            <ImageUpload
-              images={formData.images}
-              onImagesChange={(images) => handleInputChange('images', images)}
-              maxImages={10}
-            />
-          </motion.div>
+              {/* ب. تعليقات التصميم (قراءة فقط) */}
+              {(roSavedDesignComments.length > 0 || roImageAnnotations.length > 0 || roImageDrawings.length > 0 || roCustomDesignImage) && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <Pencil className="w-5 h-5 text-pink-500" />
+                    تعليقات التصميم
+                    {roSavedDesignComments.length > 0 && (
+                      <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded-full">
+                        {roSavedDesignComments.length} تعليق
+                      </span>
+                    )}
+                  </h2>
+
+                  {/* التعليقات المتعددة */}
+                  {roSavedDesignComments.length > 0 && (
+                    <div className="space-y-4">
+                      {roSavedDesignComments.map((comment, commentIndex) => (
+                        <div key={comment.id} className="bg-white rounded-xl border-2 border-pink-100 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedROCommentId(expandedROCommentId === comment.id ? null : comment.id)}
+                            className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 transition-colors"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                {commentIndex + 1}
+                              </div>
+                              <span className="font-medium text-gray-800">
+                                {comment.title
+                                  ? comment.title.replace(/^أمام/, 'الأمام').replace(/^خلف/, 'الخلف')
+                                  : `تعليق ${commentIndex + 1}`}
+                              </span>
+                            </div>
+                            <motion.div
+                              animate={{ rotate: expandedROCommentId === comment.id ? 180 : 0 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <ChevronDown className="w-5 h-5 text-gray-500" />
+                            </motion.div>
+                          </button>
+
+                          {expandedROCommentId === comment.id && (
+                            <div className="p-4 space-y-4">
+                              {/* صورة التعليق */}
+                              <div className="relative rounded-xl overflow-hidden border border-pink-200">
+                                {comment.compositeImage ? (
+                                  <img
+                                    src={comment.compositeImage}
+                                    alt={`تصميم ${comment.title || commentIndex + 1}`}
+                                    className="w-full h-auto"
+                                  />
+                                ) : (
+                                  <>
+                                    <img
+                                      src={resolveROCommentImageSrc(comment)}
+                                      alt={`تصميم ${comment.title || commentIndex + 1}`}
+                                      className="w-full h-auto"
+                                      onLoad={() => {
+                                        const canvas = roCanvasRefs.current.get(comment.id)
+                                        if (canvas && comment.drawings && comment.drawings.length > 0) {
+                                          void drawROPathsOnCanvas(canvas, comment.drawings)
+                                        }
+                                      }}
+                                    />
+                                    {comment.drawings && comment.drawings.length > 0 && (
+                                      <canvas
+                                        ref={(el) => {
+                                          if (el) {
+                                            roCanvasRefs.current.set(comment.id, el)
+                                            void drawROPathsOnCanvas(el, comment.drawings || [])
+                                          }
+                                        }}
+                                        className="absolute inset-0 w-full h-full pointer-events-none"
+                                      />
+                                    )}
+                                    {comment.annotations?.map((annotation, idx) => (
+                                      <div
+                                        key={annotation.id}
+                                        className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                                        style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                                      >
+                                        <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
+                                          {idx + 1}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </>
+                                )}
+                              </div>
+
+                              {/* تعليقات الصوت */}
+                              {comment.annotations && comment.annotations.length > 0 && (
+                                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                                    {comment.annotations.length} تعليق صوتي
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {comment.annotations.map((annotation, idx) => (
+                                      <div key={annotation.id} className="bg-white rounded-lg p-2 border border-gray-100">
+                                        <div className="flex items-start gap-2">
+                                          <div className="w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                            {idx + 1}
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            {annotation.transcription && (
+                                              <p className="text-sm text-gray-700">{annotation.transcription}</p>
+                                            )}
+                                            {annotation.translatedText && (
+                                              <div className="mt-1.5 bg-purple-50 border border-purple-200 rounded-lg p-2">
+                                                <p className="text-xs text-purple-600 font-medium mb-0.5">الترجمة</p>
+                                                <p className="text-sm text-gray-600" dir="auto">{annotation.translatedText}</p>
+                                              </div>
+                                            )}
+                                          </div>
+                                          {annotation.audioData && (
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleROAudio(annotation)}
+                                              className={`p-1.5 rounded transition-colors flex-shrink-0 ${playingROAudioId === annotation.id ? 'bg-green-500 text-white' : 'text-green-600 hover:bg-green-50'}`}
+                                            >
+                                              {playingROAudioId === annotation.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* التعليق القديم (توافق مع البيانات القديمة) */}
+                  {roSavedDesignComments.length === 0 && (roImageAnnotations.length > 0 || roImageDrawings.length > 0 || roCustomDesignImage) && (
+                    <div className="relative rounded-xl overflow-hidden border-2 border-pink-200 bg-white">
+                      <div className="relative">
+                        <img
+                          src={roCustomDesignImage || '/front2.png'}
+                          alt="تصميم الفستان"
+                          className="w-full h-auto"
+                          onLoad={() => {
+                            if (roCanvasRef.current && roImageDrawings.length > 0) {
+                              void drawROPathsOnCanvas(roCanvasRef.current, roImageDrawings)
+                            }
+                          }}
+                        />
+                        {roImageDrawings.length > 0 && (
+                          <canvas ref={roCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+                        )}
+                        {roImageAnnotations.map((annotation, index) => (
+                          <div
+                            key={annotation.id}
+                            className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                            style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                          >
+                            <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
+                              {index + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ج. صور التصميم (قراءة فقط) */}
+              {originalOrder.images && originalOrder.images.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <ImageIcon className="w-5 h-5 text-pink-500" />
+                    صور التصميم
+                    <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded-full">
+                      {originalOrder.images.length}
+                    </span>
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {originalOrder.images.map((image, index) => (
+                      <div key={index} className="relative group">
+                        <div className="rounded-lg overflow-hidden border border-pink-200 aspect-square">
+                          <img
+                            src={image}
+                            alt={`صورة التصميم ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="absolute bottom-2 left-2 bg-pink-600/80 text-white text-xs px-2 py-1 rounded">
+                          {index + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* د. المقاسات (قراءة فقط) */}
+              {originalOrder.measurements && Object.values(originalOrder.measurements).some(v => v !== undefined && v !== null && v !== '') && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <Ruler className="w-5 h-5 text-pink-500" />
+                    المقاسات (سم)
+                  </h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => {
+                      const value = (originalOrder.measurements as any)?.[key]
+                      if (!value) return null
+                      return (
+                        <div key={key} className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                          <p className="text-xs text-gray-600 mb-1">{getMeasurementLabelWithSymbol(key as any)}</p>
+                          <p className="text-lg font-bold text-gray-800">{value}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {(originalOrder.measurements as any)?.additional_notes && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2 border-b border-pink-200 pb-2">ملاحظات المقاسات</h4>
+                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{(originalOrder.measurements as any)?.additional_notes}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
           )}
 
           {/* 6. أزرار الإجراءات */}

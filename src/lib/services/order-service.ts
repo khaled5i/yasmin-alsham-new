@@ -56,6 +56,7 @@ const ORDER_LIST_COLUMNS = [
   'has_alterations',   // migration 34
   'alteration_count',  // migration 34
   'design_thumbnail',           // عمود مستقل (migration 32)
+  'design_links',               // عمود مستقل (migration 36)
   'notes',
   'admin_notes',
   'images',
@@ -109,6 +110,8 @@ export interface Order {
   // أعمدة مستقلة (migration 33) - صور التصميم
   custom_design_image?: string | null
   ai_generated_images?: string[]
+  // عمود مستقل (migration 36) - روابط التصميم
+  design_links?: string | null
   price: number
   paid_amount: number
   remaining_amount: number
@@ -189,6 +192,7 @@ export interface CreateOrderData {
   custom_design_image?: string // base64 أو URL صورة التصميم المخصصة (عمود مستقل - migration 33)
   ai_generated_images?: string[] // مصفوفة URLs لصور AI (عمود مستقل - migration 33)
   design_thumbnail?: string    // صورة مصغرة للعمود المستقل (migration 32)
+  design_links?: string        // روابط التصاميم المرجعية (عمود مستقل - migration 36)
   // التعليقات المتعددة على التصميم (البنية الجديدة)
   saved_design_comments?: Array<{
     id: string
@@ -244,6 +248,7 @@ export interface UpdateOrderData {
   design_thumbnail?: string | null  // عمود مستقل (migration 32)
   custom_design_image?: string | null  // عمود مستقل (migration 33)
   ai_generated_images?: string[]       // عمود مستقل (migration 33)
+  design_links?: string | null         // عمود مستقل (migration 36)
   whatsapp_sent?: boolean
   needs_review?: boolean
   is_pre_booking?: boolean
@@ -390,6 +395,8 @@ export const orderService = {
         // أعمدة مستقلة (migration 33) - صور التصميم
         custom_design_image: orderData.custom_design_image || null,
         ai_generated_images: orderData.ai_generated_images || [],
+        // عمود مستقل (migration 36) - روابط التصميم
+        design_links: orderData.design_links || null,
         // أعمدة مستقلة (migration 29)
         fabric_type: orderData.fabric_type || orderData.measurements?.fabric_type || null,
         needs_review: orderData.needs_review ?? orderData.measurements?.needs_review ?? false,

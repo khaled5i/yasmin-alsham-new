@@ -32,7 +32,8 @@ import {
   PrinterIcon,
   Trash2,
   Download,
-  Camera
+  Camera,
+  Link2
 } from 'lucide-react'
 import { Order, orderService } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
@@ -1782,6 +1783,36 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       )}
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* روابط التصميم */}
+              {(order as any).design_links && (order as any).design_links.trim() && (
+                <div className="space-y-3">
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                    <Link2 className="w-5 h-5 text-pink-600" />
+                    <span>{t('design_links')}</span>
+                  </h3>
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 space-y-2">
+                    {(order as any).design_links.split('\n').filter((l: string) => l.trim()).map((line: string, i: number) => {
+                      const trimmed = line.trim()
+                      const isUrl = /^https?:\/\//i.test(trimmed)
+                      return isUrl ? (
+                        <a
+                          key={i}
+                          href={trimmed}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 text-sm text-pink-600 hover:text-pink-700 hover:underline break-all"
+                        >
+                          <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
+                          {trimmed}
+                        </a>
+                      ) : (
+                        <p key={i} className="text-sm text-gray-700 break-all">{trimmed}</p>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 

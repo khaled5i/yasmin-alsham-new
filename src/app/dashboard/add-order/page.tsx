@@ -101,6 +101,7 @@ interface FormDataType {
   savedDesignComments: SavedDesignComment[]
   fabricType: 'external' | 'internal' | null
   aiGeneratedImages: string[]
+  designLinks: string
 }
 
 // القيم الأولية للنموذج
@@ -125,7 +126,8 @@ const getInitialFormData = (): FormDataType => ({
   customDesignImage: null,
   savedDesignComments: [],
   fabricType: null,
-  aiGeneratedImages: []
+  aiGeneratedImages: [],
+  designLinks: ''
 })
 
 // دالة للتحقق من أن البيانات فارغة
@@ -707,6 +709,8 @@ function AddOrderContent() {
         design_thumbnail: designThumbnail || undefined, // عمود مستقل (migration 32)
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
+        // عمود مستقل (migration 36)
+        design_links: formData.designLinks.trim() || undefined,
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -870,6 +874,8 @@ function AddOrderContent() {
         },
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
+        // عمود مستقل (migration 36)
+        design_links: formData.designLinks.trim() || undefined,
         price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
@@ -1015,6 +1021,8 @@ function AddOrderContent() {
         measurements: {},
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
+        // عمود مستقل (migration 36)
+        design_links: formData.designLinks.trim() || undefined,
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1129,6 +1137,8 @@ function AddOrderContent() {
         measurements: {},
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
+        // عمود مستقل (migration 36)
+        design_links: formData.designLinks.trim() || undefined,
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1245,6 +1255,8 @@ function AddOrderContent() {
         measurements: {},
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
+        // عمود مستقل (migration 36)
+        design_links: formData.designLinks.trim() || undefined,
         price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1675,8 +1687,24 @@ function AddOrderContent() {
                 alwaysShowDeleteOnMobileAndTablet={true}
               />
 
-              {/* زر توليد التصميم بالذكاء الاصطناعي */}
+              {/* روابط التصميم */}
               <div className="mt-6 pt-6 border-t border-pink-100">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {t('design_links_label')}
+                </label>
+                <textarea
+                  value={formData.designLinks}
+                  onChange={(e) => handleInputChange('designLinks', e.target.value)}
+                  placeholder={t('design_links_placeholder')}
+                  rows={3}
+                  disabled={isSubmitting}
+                  className="w-full px-4 py-3 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  dir="ltr"
+                />
+              </div>
+
+              {/* زر توليد التصميم بالذكاء الاصطناعي */}
+              <div className="mt-4">
                 <GenerateDesignButton
                   images={formData.images}
                   designComments={formData.savedDesignComments}

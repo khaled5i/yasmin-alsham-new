@@ -898,7 +898,9 @@ function OrdersPageInner() {
           ? isPreBooking(order)
           : statusFilter === 'has_alterations'
             ? hasAlterations(order)
-            : order.status === statusFilter
+            : statusFilter === 'incomplete_progress'
+              ? !(isOrderPrinted(order) && hasMeasurementsBadge(order) && isWhatsAppSent(order))
+              : order.status === statusFilter
 
     // Date filter is server-side when dateFilterResults is active; apply client-side only for text search results
     const matchesDate = !dateFilter || searchResults === null || (() => {
@@ -1012,6 +1014,7 @@ function OrdersPageInner() {
                 <option value="needs_review">{isArabic ? 'يحتاج مراجعة' : 'Needs Review'}</option>
                 <option value="pre_booking">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</option>
                 <option value="has_alterations">{isArabic ? 'يوجد تعديل' : 'Has Alteration'}</option>
+                <option value="incomplete_progress">{isArabic ? 'غير مكتملة (أقل من 100%)' : 'Incomplete (< 100%)'}</option>
               </select>
               <Filter className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
             </div>
