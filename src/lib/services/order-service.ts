@@ -67,7 +67,8 @@ const ORDER_LIST_COLUMNS = [
   'created_at',
   'updated_at',
   'admin_confirmed',
-  'worker_completed_at'
+  'worker_completed_at',
+  'admin_completed_at'   // migration 37
 ].join(',')
 
 /**
@@ -131,6 +132,7 @@ export interface Order {
   updated_at: string
   admin_confirmed?: boolean
   worker_completed_at?: string | null
+  admin_completed_at?: string | null
 }
 
 export interface CreateOrderData {
@@ -760,9 +762,18 @@ export const orderService = {
         console.error('⚠️ uploadOrderImages exception (update):', uploadErr.message)
       }
 
+      // إذا غيّر المدير الحالة إلى completed أو delivered → سجّل وقت الإنهاء
+      const finalUpdates: any = { ...updates }
+      if (
+        (updates.status === 'completed' || updates.status === 'delivered') &&
+        !finalUpdates.admin_completed_at
+      ) {
+        finalUpdates.admin_completed_at = new Date().toISOString()
+      }
+
       const { data, error } = await supabase
         .from('orders')
-        .update(updates)
+        .update(finalUpdates)
         .eq('id', id)
         .select()
         .single()

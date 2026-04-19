@@ -248,10 +248,13 @@ export default function ReportsPage() {
     )
 
     // الطلبات التي اكتملت (completed/delivered) خلال الفترة المحددة
-    // بغض النظر عن تاريخ إنشاء الطلب — يعتمد على delivery_date أو updated_at
+    // بغض النظر عن تاريخ إنشاء الطلب
+    // الأولوية: worker_completed_at (العامل) → admin_completed_at (المدير) → delivery_date
+    // الطلبات القديمة التي لا تحتوي على أي من هذه الحقول لن تُحسب (مقصود)
     const completedOrdersInPeriod = orders.filter(order => {
       if (order.status !== 'completed' && order.status !== 'delivered') return false
-      const completionDate = order.delivery_date || order.updated_at
+      const completionDate = order.worker_completed_at || order.admin_completed_at || order.delivery_date
+      if (!completionDate) return false
       return isInDateRange(completionDate, dateRange)
     })
 
@@ -288,7 +291,8 @@ export default function ReportsPage() {
       ? Number((((currentOrders.length - previousOrders.length) / previousOrders.length) * 100).toFixed(1))
       : 0
 
-    const completedOrders = currentOrders.filter(o => o.status === 'completed' || o.status === 'delivered').length
+    // الطلبات المكتملة خلال الفترة (بغض النظر عن تاريخ الإنشاء)
+    const completedOrders = completedOrdersInPeriod.length
     const completionRate = currentOrders.length > 0
       ? Number(((completedOrders / currentOrders.length) * 100).toFixed(1))
       : 0
@@ -416,9 +420,7 @@ export default function ReportsPage() {
     const totalWorkerSalaries = filteredSalaries.reduce((sum, s) => sum + Number(s.net_due || 0), 0)
     const totalExpenses = totalMaterialExpenses + totalFixedExpenses + totalWorkerSalaries
 
-    const completedOrdersCount = filteredData.currentOrders.filter(
-      o => o.status === 'completed' || o.status === 'delivered'
-    ).length
+    const completedOrdersCount = filteredData.completedOrdersInPeriod.length
     const avgDressCost = completedOrdersCount > 0
       ? Math.round(totalExpenses / completedOrdersCount)
       : 0
