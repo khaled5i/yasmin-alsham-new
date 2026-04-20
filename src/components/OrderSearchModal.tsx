@@ -41,7 +41,15 @@ export default function OrderSearchModal({
       }
 
       // استبعاد الطلبات الملغاة فقط
-      const filteredOrders = data?.filter(order => order.status !== 'cancelled') || []
+      const today = new Date().toISOString().split('T')[0]
+      const filteredOrders = (data?.filter(order => order.status !== 'cancelled') || [])
+        .sort((a, b) => {
+          const aIsToday = a.due_date?.startsWith(today) ? 0 : 1
+          const bIsToday = b.due_date?.startsWith(today) ? 0 : 1
+          if (aIsToday !== bIsToday) return aIsToday - bIsToday
+          // ثم الأحدث أولاً
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        })
       setAllOrders(filteredOrders)
       setSearchResults(filteredOrders)
     } catch (error: any) {
@@ -200,9 +208,18 @@ export default function OrderSearchModal({
                             <p className="text-sm font-medium text-gray-900">
                               {order.price.toFixed(2)} {isArabic ? 'ر.س' : 'SAR'}
                             </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {new Date(order.created_at).toLocaleDateString(isArabic ? 'ar-SA' : 'en-US')}
-                            </p>
+                            {order.due_date && (() => {
+                              const today = new Date().toISOString().split('T')[0]
+                              const isToday = order.due_date.startsWith(today)
+                              return (
+                                <p className={`text-xs mt-1 font-medium ${isToday ? 'text-pink-600' : 'text-gray-500'}`}>
+                                  {isArabic ? 'التسليم:' : 'Due:'}{' '}
+                                  {isToday
+                                    ? (isArabic ? 'اليوم' : 'Today')
+                                    : new Date(order.due_date).toLocaleDateString(isArabic ? 'ar-SA' : 'en-US')}
+                                </p>
+                              )
+                            })()}
                           </div>
                         </div>
                       </button>

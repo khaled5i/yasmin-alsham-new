@@ -87,7 +87,8 @@ function DashboardContent() {
 
   // Handlers for Alteration Modals
   const handleAddNewAlteration = () => {
-    setShowTypeModal(true)
+    // فتح البحث عن طلب مباشرة (تعديل داخلي)
+    setShowOrderSearchModal(true)
   }
 
   const handleSelectType = (type: 'existing' | 'new') => {

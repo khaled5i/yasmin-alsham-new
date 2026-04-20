@@ -113,6 +113,7 @@ function AddAlterationContent() {
         alterationDueDate: alteration.alteration_due_date,
         errorType: (alteration.error_type as AlterationErrorType) || '',
         errorNotes: alteration.error_notes || '',
+        errorVoiceNotes: (alteration as any).error_voice_transcriptions || [],
         notes: alteration.notes || '',
         voiceNotes: (alteration as any).voice_transcriptions || [],
         images: alteration.images || [],
@@ -179,6 +180,15 @@ function AddAlterationContent() {
     alterationDueDate: '',
     errorType: '' as AlterationErrorType | '',
     errorNotes: '',
+    errorVoiceNotes: [] as Array<{
+      id: string
+      data: string
+      timestamp: number
+      duration?: number
+      transcription?: string
+      translatedText?: string
+      translationLanguage?: string
+    }>,
     notes: '',
     voiceNotes: [] as Array<{
       id: string
@@ -252,6 +262,22 @@ function AddAlterationContent() {
     setFormData(prev => ({
       ...prev,
       [field]: value
+    }))
+  }
+
+  // معالجة تغيير التسجيلات الصوتية لملاحظات الخطأ
+  const handleErrorVoiceNotesChange = (errorVoiceNotes: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
+    translatedText?: string
+    translationLanguage?: string
+  }>) => {
+    setFormData(prev => ({
+      ...prev,
+      errorVoiceNotes
     }))
   }
 
@@ -480,6 +506,17 @@ function AddAlterationContent() {
         translationLanguage: vn.translationLanguage
       }))
 
+      // حفظ تسجيلات ملاحظات الخطأ الصوتية
+      const errorVoiceTranscriptions = formData.errorVoiceNotes.map(vn => ({
+        id: vn.id,
+        data: vn.data,
+        timestamp: vn.timestamp,
+        duration: vn.duration,
+        transcription: vn.transcription,
+        translatedText: vn.translatedText,
+        translationLanguage: vn.translationLanguage
+      }))
+
       // تحويل السعر والدفعة المستلمة إلى أرقام
       // للفساتين الداخلية (effectiveOrderId موجود)، السعر يكون 0
       const price = effectiveOrderId ? 0 : Number(formData.price)
@@ -537,6 +574,7 @@ function AddAlterationContent() {
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+          error_voice_transcriptions: errorVoiceTranscriptions.length > 0 ? errorVoiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
           alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
@@ -575,6 +613,7 @@ function AddAlterationContent() {
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+          error_voice_transcriptions: errorVoiceTranscriptions.length > 0 ? errorVoiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
           alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
@@ -648,6 +687,17 @@ function AddAlterationContent() {
         translationLanguage: vn.translationLanguage
       }))
 
+      // حفظ تسجيلات ملاحظات الخطأ الصوتية
+      const errorVoiceTranscriptions = formData.errorVoiceNotes.map(vn => ({
+        id: vn.id,
+        data: vn.data,
+        timestamp: vn.timestamp,
+        duration: vn.duration,
+        transcription: vn.transcription,
+        translatedText: vn.translatedText,
+        translationLanguage: vn.translationLanguage
+      }))
+
       // تحويل السعر والدفعة المستلمة إلى أرقام
       const price = effectiveOrderId ? 0 : Number(formData.price)
       const paidAmount = Number(formData.paidAmount) || 0
@@ -707,6 +757,7 @@ function AddAlterationContent() {
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+          error_voice_transcriptions: errorVoiceTranscriptions.length > 0 ? errorVoiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
           alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
@@ -740,6 +791,7 @@ function AddAlterationContent() {
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
+          error_voice_transcriptions: errorVoiceTranscriptions.length > 0 ? errorVoiceTranscriptions : undefined,
           images: formData.images.length > 0 ? formData.images : undefined,
           alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
@@ -1103,13 +1155,13 @@ function AddAlterationContent() {
                 {isArabic ? 'ملاحظات عن الخطأ' : 'Error Notes'}
                 <span className="text-gray-400 font-normal mr-2 text-xs">({isArabic ? 'اختياري' : 'Optional'})</span>
               </label>
-              <textarea
-                value={formData.errorNotes}
-                onChange={(e) => setFormData(prev => ({ ...prev, errorNotes: e.target.value }))}
-                placeholder={isArabic ? 'أضف ملاحظات إضافية حول سبب التعديل...' : 'Add additional notes about the error...'}
-                rows={3}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
-                dir="rtl"
+              <UnifiedNotesInput
+                notes={formData.errorNotes}
+                voiceNotes={formData.errorVoiceNotes}
+                onNotesChange={(notes) => setFormData(prev => ({ ...prev, errorNotes: notes }))}
+                onVoiceNotesChange={handleErrorVoiceNotesChange}
+                disabled={isSubmitting}
+                placeholder={isArabic ? 'أضف ملاحظات إضافية حول سبب التعديل أو اضغط على المايكروفون...' : 'Add additional notes about the error or press the mic...'}
               />
             </div>
           </motion.div>

@@ -70,6 +70,7 @@ export interface Alteration {
   completed_images?: string[]
   voice_notes?: string[]
   voice_transcriptions?: any[]
+  error_voice_transcriptions?: any[]
   saved_design_comments?: any[]
   image_annotations?: any[]
   image_drawings?: any[]
@@ -102,6 +103,15 @@ export interface CreateAlterationData {
   alteration_photos?: string[]
   voice_notes?: string[]
   voice_transcriptions?: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
+    translatedText?: string
+    translationLanguage?: string
+  }>
+  error_voice_transcriptions?: Array<{
     id: string
     data: string
     timestamp: number
@@ -183,6 +193,7 @@ export interface UpdateAlterationData {
   alteration_photos?: string[]
   voice_notes?: string[]
   voice_transcriptions?: any[]
+  error_voice_transcriptions?: any[]
   completed_images?: string[]
   saved_design_comments?: any[]
   image_annotations?: any[]
@@ -253,6 +264,7 @@ export const alterationService = {
         alteration_photos: alterationData.alteration_photos || [],
         voice_notes: alterationData.voice_notes || [],
         voice_transcriptions: alterationData.voice_transcriptions || [],
+        error_voice_transcriptions: alterationData.error_voice_transcriptions || [],
         saved_design_comments: alterationData.saved_design_comments || [],
         image_annotations: alterationData.image_annotations || [],
         image_drawings: alterationData.image_drawings || [],
