@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { completedImage } = body as { completedImage: string; clientName?: string }
+    const { completedImage, notes } = body as { completedImage: string; clientName?: string; notes?: string }
 
     if (!completedImage) {
       return NextResponse.json({ error: 'No completed image provided' }, { status: 400 })
@@ -63,7 +63,10 @@ Style constraints:
 - Keep the background identical to the original illustration — no additions, no text, no decorations.
 
 Goal:
-Create a seamless, text-free fashion illustration where the photographed dress is accurately translated into the exact drawing style of the model illustration while preserving every design detail of the dress.`
+Create a seamless, text-free fashion illustration where the photographed dress is accurately translated into the exact drawing style of the model illustration while preserving every design detail of the dress.${notes?.trim() ? `
+
+Additional instructions (pay close attention to these):
+${notes.trim()}` : ''}`
 
     const contentParts: any[] = [
       { type: 'text', text: prompt },

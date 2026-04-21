@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DatePicker from 'react-datepicker'
 import { shift } from '@floating-ui/dom'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -28,6 +28,11 @@ const hijriMonths = [
 
 const arabicDayNames = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمي', 'جمع', 'سبت']
 
+const HIJRI_MONTH_COLORS = {
+  first: { text: '#7c3aed' },
+  second: { text: '#0d9488' },
+}
+
 const toHijri = (date: Date) => {
   const m = moment(date)
   return {
@@ -36,6 +41,21 @@ const toHijri = (date: Date) => {
     year: m.iYear(),
     monthName: hijriMonths[m.iMonth()]
   }
+}
+
+const getHijriMonthsInView = (date: Date) => {
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1)
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+  const firstHijri = toHijri(firstDay)
+  const lastHijri = toHijri(lastDay)
+
+  if (firstHijri.month === lastHijri.month && firstHijri.year === lastHijri.year) {
+    return [{ month: firstHijri.month, year: firstHijri.year, name: firstHijri.monthName, colorKey: 'first' as const }]
+  }
+  return [
+    { month: firstHijri.month, year: firstHijri.year, name: firstHijri.monthName, colorKey: 'first' as const },
+    { month: lastHijri.month, year: lastHijri.year, name: lastHijri.monthName, colorKey: 'second' as const },
+  ]
 }
 
 export default function OrderDateFilterPicker({
@@ -47,6 +67,7 @@ export default function OrderDateFilterPicker({
 }: OrderDateFilterPickerProps) {
   const { t, isArabic } = useTranslation()
   const [stats, setStats] = useState<Record<string, number>>({})
+  const viewedDateRef = useRef(new Date())
 
   const dateValue = parseDateKeyForPicker(selectedDate)
   const selectedDateKey = selectedDate ? extractDateKey(selectedDate) : ''
@@ -102,13 +123,21 @@ export default function OrderDateFilterPicker({
     const hijri = toHijri(date)
     const isFriday = date.getDay() === 5
 
+    const hijriMonthsInView = getHijriMonthsInView(viewedDateRef.current)
+    let hijriDayColor = '#6b7280'
+    if (hijriMonthsInView.length > 1) {
+      const matchedMonth = hijriMonthsInView.find(m => m.month === hijri.month && m.year === hijri.year)
+      const colorKey = matchedMonth ? matchedMonth.colorKey : hijriMonthsInView[0].colorKey
+      hijriDayColor = HIJRI_MONTH_COLORS[colorKey].text
+    }
+
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
         {isFriday && (
           <span className="text-[10px] text-black font-bold leading-none">✕</span>
         )}
         <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
-        <span className="text-[12px] text-gray-500 leading-none mt-0.5">{hijri.day}</span>
+        <span className="text-[12px] leading-none mt-0.5 font-medium" style={{ color: hijriDayColor }}>{hijri.day}</span>
         {count > 0 && (
           <span
             className={`text-[12px] font-semibold leading-none ${isOverloaded ? 'text-red-600' : 'text-pink-600'}`}
@@ -142,8 +171,9 @@ export default function OrderDateFilterPicker({
     prevMonthButtonDisabled: boolean
     nextMonthButtonDisabled: boolean
   }) => {
-    const hijri = toHijri(date)
+    viewedDateRef.current = date
     const gregorianMonth = date.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })
+    const hijriMonthsInView = getHijriMonthsInView(date)
     const receivedLabel = t('order_received_date') || (isArabic ? 'تاريخ الاستلام' : 'Received Date')
     const deliveryLabel = t('due_date') || (isArabic ? 'تاريخ التسليم' : 'Delivery Date')
     const proofLabel = isArabic ? 'تاريخ البروفا' : 'Proof Date'
@@ -198,8 +228,23 @@ export default function OrderDateFilterPicker({
             <div className="text-sm font-bold text-pink-900">
               {gregorianMonth}
             </div>
-            <div className="text-xs text-pink-700">
-              {hijri.monthName} {hijri.year}
+            <div className="text-xs font-semibold leading-relaxed">
+              {hijriMonthsInView.length === 1 ? (
+                <span style={{ color: HIJRI_MONTH_COLORS.first.text }}>
+                  {hijriMonthsInView[0].name} {hijriMonthsInView[0].year}
+                </span>
+              ) : (
+                <>
+                  <span style={{ color: HIJRI_MONTH_COLORS.second.text }}>
+                    {hijriMonthsInView[1].name} {hijriMonthsInView[1].year}
+                  </span>
+                  <span className="text-gray-400 mx-1">/</span>
+                  <span style={{ color: HIJRI_MONTH_COLORS.first.text }}>
+                    {hijriMonthsInView[0].name}
+                    {hijriMonthsInView[0].year !== hijriMonthsInView[1].year ? ` ${hijriMonthsInView[0].year}` : ''}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <button

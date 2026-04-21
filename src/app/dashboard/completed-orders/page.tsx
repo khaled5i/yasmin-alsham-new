@@ -10,6 +10,7 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
+import CartoonGridModal from '@/components/CartoonGridModal'
 import {
   ArrowRight,
   Package,
@@ -33,7 +34,8 @@ import {
   AlertCircle,
   Trash2,
   RotateCcw,
-  Loader
+  Loader,
+  Wand2
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { orderService } from '@/lib/services/order-service'
@@ -79,6 +81,9 @@ export default function CompletedOrdersPage() {
 
   // حالة تحويل الطلبات المتأخرة
   const [isAutoConverting, setIsAutoConverting] = useState(false)
+
+  // حالة نافذة شبكة الكرتون
+  const [showCartoonGridModal, setShowCartoonGridModal] = useState(false)
 
   // إغلاق قائمة تغيير الحالة عند النقر خارجها
   useEffect(() => {
@@ -549,8 +554,15 @@ export default function CompletedOrdersPage() {
             </button>
           </div>
 
-          {/* زر تحويل الطلبات المتأخرة */}
-          <div className="mt-3 flex justify-end">
+          {/* زر تحويل الطلبات المتأخرة + زر شبكة الكرتون */}
+          <div className="mt-3 flex justify-end gap-2 flex-wrap">
+            <button
+              onClick={() => setShowCartoonGridModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs sm:text-sm bg-pink-600 hover:bg-pink-700 text-white rounded-lg font-medium transition-all duration-200 shadow-sm"
+            >
+              <Wand2 className="w-3.5 h-3.5" />
+              <span>تحويل الفستان إلى كرتون</span>
+            </button>
             <button
               onClick={handleAutoConvertOverdue}
               disabled={isAutoConverting}
@@ -842,6 +854,12 @@ export default function CompletedOrdersPage() {
         isOpen={showViewModal}
         onClose={handleCloseModal}
         showCartoonButton={true}
+      />
+
+      <CartoonGridModal
+        isOpen={showCartoonGridModal}
+        onClose={() => setShowCartoonGridModal(false)}
+        workers={workers}
       />
 
       <RemainingPaymentWarningModal

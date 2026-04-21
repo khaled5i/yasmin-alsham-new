@@ -3248,17 +3248,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       )}
 
       {/* شريط الخيارات العلوي */}
-      <div className="flex flex-wrap items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        {/* حالة وضع الرسم */}
-        {isDrawingMode && (
-          <span className="text-xs text-pink-600 bg-pink-100 px-2 py-1 rounded-full flex items-center gap-1">
-            <Pencil className="w-3 h-3" />
-            وضع الرسم مفعل
-          </span>
-        )}
+      <div className="grid grid-cols-3 items-center p-3 bg-gray-50 rounded-lg border border-gray-200 gap-2">
 
         {/* أزرار الأمام والخلف - على اليسار */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-start">
           <button
             type="button"
             onClick={() => handleViewSwitch('front')}
@@ -3281,12 +3274,29 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           </button>
         </div>
 
-        {/* فاصل مرن */}
-        <div className="flex-1" />
+        {/* زر بدء الرسم في المنتصف تماماً */}
+        <div className="flex justify-center">
+          {isDrawingMode ? (
+            <span className="text-xs text-pink-600 bg-pink-100 px-2 py-1 rounded-full flex items-center gap-1">
+              <Pencil className="w-3 h-3" />
+              وضع الرسم مفعل
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleDrawingMode}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors"
+            >
+              <Pencil className="w-4 h-4" />
+              بدء الرسم
+            </button>
+          )}
+        </div>
 
-        {/* زر تبديل الصورة */}
-        {onImageChange && (
-          <div className="flex items-center gap-2">
+        {/* أزرار الصورة - على اليمين */}
+        {onImageChange ? (
+          <div className="flex flex-wrap items-center gap-2 justify-end">
             <div className="relative">
               <button
                 type="button"
@@ -3397,6 +3407,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               </button>
             )}
           </div>
+        ) : (
+          <div />
         )}
       </div>
 
@@ -4180,9 +4192,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 className="fixed inset-0 z-[9999] bg-gray-900/90 flex flex-col items-center justify-center p-4 tablet:p-8 gap-3"
                 style={{ touchAction: 'none' }} // لمنع التمرير في الخلفية
               >
-                {/* زر التبديل بين الأمام والخلف - يظهر فوق الصورة مباشرة */}
-                {(
-                  <div className="flex items-center bg-gray-800/80 backdrop-blur-sm rounded-full p-1 shadow-lg border border-gray-700 shrink-0">
+                {/* شريط الأدوات العلوي في وضع الرسم */}
+                <div className="flex items-center gap-3 shrink-0">
+                  {/* أزرار الأمام والخلف */}
+                  <div className="flex items-center bg-gray-800/80 backdrop-blur-sm rounded-full p-1 shadow-lg border border-gray-700">
                     <button
                       type="button"
                       onClick={() => handleViewSwitch('front')}
@@ -4204,7 +4217,62 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       الخلف
                     </button>
                   </div>
-                )}
+
+                  {/* زر تبديل الصورة */}
+                  {onImageChange && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowImageOptions(prev => !prev)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold shadow-lg border transition-all duration-200 ${imagePreview
+                          ? 'bg-green-600/80 border-green-500 text-white hover:bg-green-600'
+                          : 'bg-gray-800/80 border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700/80'
+                          } backdrop-blur-sm`}
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                        <span>{imagePreview ? 'صورة مخصصة' : 'تبديل الصورة'}</span>
+                      </button>
+
+                      <AnimatePresence>
+                        {showImageOptions && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            className="absolute top-full mt-2 left-0 bg-gray-900 rounded-xl shadow-xl border border-gray-700 p-2 z-[99999] min-w-44"
+                          >
+                            <button
+                              type="button"
+                              onClick={openGallery}
+                              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-gray-700 text-gray-200"
+                            >
+                              <Upload className="w-4 h-4 text-blue-400" />
+                              <span className="text-sm">اختيار من المعرض</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={openCamera}
+                              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-gray-700 text-gray-200"
+                            >
+                              <Camera className="w-4 h-4 text-green-400" />
+                              <span className="text-sm">التقاط صورة</span>
+                            </button>
+                            {imagePreview && (
+                              <button
+                                type="button"
+                                onClick={handleResetImage}
+                                className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-gray-700 text-red-400"
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                                <span className="text-sm">إعادة الافتراضية</span>
+                              </button>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </div>
                 {/* حاوية تحدد النسبة وتوسط المحتوى */}
                 {/* maxWidth يضمن أن العرض لا يتجاوز نسبة 3:4 بالنسبة للارتفاع المتاح - يمنع تمدد الصورة على الشاشات العريضة */}
                 <div

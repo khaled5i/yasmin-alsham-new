@@ -30,6 +30,26 @@ function toHijri(date: Date) {
     return { day: m.iDate(), month: m.iMonth(), year: m.iYear(), monthName: hijriMonths[m.iMonth()] }
 }
 
+const HIJRI_MONTH_COLORS = {
+    first: '#7c3aed',
+    second: '#0d9488',
+}
+
+function getHijriMonthsInView(year: number, month: number) {
+    const firstDay = new Date(year, month, 1, 12)
+    const lastDay = new Date(year, month + 1, 0, 12)
+    const firstHijri = toHijri(firstDay)
+    const lastHijri = toHijri(lastDay)
+
+    if (firstHijri.month === lastHijri.month && firstHijri.year === lastHijri.year) {
+        return [{ month: firstHijri.month, year: firstHijri.year, name: firstHijri.monthName, colorKey: 'first' as const }]
+    }
+    return [
+        { month: firstHijri.month, year: firstHijri.year, name: firstHijri.monthName, colorKey: 'first' as const },
+        { month: lastHijri.month, year: lastHijri.year, name: lastHijri.monthName, colorKey: 'second' as const },
+    ]
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type CalendarMode = 'delivery' | 'proof'
 
@@ -119,9 +139,9 @@ interface MonthCalendarProps {
 
 function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: MonthCalendarProps) {
     const todayKey = toLocalDateKey(new Date())
-    const hijriFirstDay = toHijri(new Date(year, month, 1, 12))
     const gregorianMonth = arabicMonths[month]
     const rows = buildMonthGrid(year, month)
+    const hijriMonthsInView = getHijriMonthsInView(year, month)
 
     // Build extra count map — filtered by current mode
     const extraMap: Record<string, number> = {}
@@ -138,7 +158,24 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
             {/* Month Header */}
             <div className={`px-4 py-3 border-b text-center ${isProof ? 'bg-[#d1fae5] border-[#6ee7b7]' : 'bg-gradient-to-r from-pink-50 to-rose-50 border-pink-100'}`}>
                 <div className={`text-lg font-bold ${isProof ? 'text-green-900' : 'text-pink-900'}`}>{gregorianMonth} {year}</div>
-                <div className={`text-sm font-medium ${isProof ? 'text-green-700' : 'text-pink-700'}`}>{hijriFirstDay.monthName} {hijriFirstDay.year}</div>
+                <div className="text-sm font-semibold leading-relaxed">
+                    {hijriMonthsInView.length === 1 ? (
+                        <span style={{ color: HIJRI_MONTH_COLORS.first }}>
+                            {hijriMonthsInView[0].name} {hijriMonthsInView[0].year}
+                        </span>
+                    ) : (
+                        <>
+                            <span style={{ color: HIJRI_MONTH_COLORS.second }}>
+                                {hijriMonthsInView[1].name} {hijriMonthsInView[1].year}
+                            </span>
+                            <span className="text-gray-400 mx-1">/</span>
+                            <span style={{ color: HIJRI_MONTH_COLORS.first }}>
+                                {hijriMonthsInView[0].name}
+                                {hijriMonthsInView[0].year !== hijriMonthsInView[1].year ? ` ${hijriMonthsInView[0].year}` : ''}
+                            </span>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Day names row - full names, LTR order */}
@@ -182,7 +219,13 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
                                     <span className={`text-xl font-bold leading-none ${isOverloaded ? 'text-red-700' : isFriday ? 'text-black' : isToday ? (isProof ? 'text-[#10b981]' : 'text-pink-600') : 'text-gray-800'}`}>
                                         {date.getDate()}
                                     </span>
-                                    <span className="text-xs text-gray-400 leading-none">{hijri.day}</span>
+                                    <span className="text-xs leading-none font-medium" style={{
+                                        color: hijriMonthsInView.length > 1
+                                            ? HIJRI_MONTH_COLORS[
+                                                (hijriMonthsInView.find(m => m.month === hijri.month && m.year === hijri.year) || hijriMonthsInView[0]).colorKey
+                                              ]
+                                            : '#9ca3af'
+                                    }}>{hijri.day}</span>
                                     {total > 0 && (
                                         <span className={`text-sm font-extrabold leading-none px-1.5 py-0.5 rounded-full ${isOverloaded ? 'text-red-700 bg-red-100' : (isProof ? 'text-green-900 bg-[#d1fae5]' : 'text-pink-700 bg-pink-100')}`}>
                                             {total}

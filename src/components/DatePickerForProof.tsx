@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DatePicker from 'react-datepicker'
 import { shift } from '@floating-ui/dom'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -27,6 +27,12 @@ const hijriMonths = [
 // أسماء الأيام بالعربية
 const arabicDayNames = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمي', 'جمع', 'سبت']
 
+// ألوان الشهرين الهجريين عند التداخل
+const HIJRI_MONTH_COLORS = {
+  first: { text: '#7c3aed' },  // بنفسجي للشهر الأول
+  second: { text: '#0d9488' }, // زمردي للشهر الثاني
+}
+
 // دالة تحويل التاريخ الميلادي إلى هجري
 const toHijri = (date: Date) => {
   const m = moment(date)
@@ -36,6 +42,22 @@ const toHijri = (date: Date) => {
     year: m.iYear(),
     monthName: hijriMonths[m.iMonth()]
   }
+}
+
+// دالة لحساب الأشهر الهجرية الموجودة في شهر ميلادي معين
+const getHijriMonthsInView = (date: Date) => {
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1)
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+  const firstHijri = toHijri(firstDay)
+  const lastHijri = toHijri(lastDay)
+
+  if (firstHijri.month === lastHijri.month && firstHijri.year === lastHijri.year) {
+    return [{ month: firstHijri.month, year: firstHijri.year, name: firstHijri.monthName, colorKey: 'first' as const }]
+  }
+  return [
+    { month: firstHijri.month, year: firstHijri.year, name: firstHijri.monthName, colorKey: 'first' as const },
+    { month: lastHijri.month, year: lastHijri.year, name: lastHijri.monthName, colorKey: 'second' as const },
+  ]
 }
 
 export default function DatePickerForProof({
@@ -48,6 +70,7 @@ export default function DatePickerForProof({
   const { t, isArabic } = useTranslation()
   const [proofStats, setProofStats] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
+  const viewedDateRef = useRef(new Date())
 
   // تحويل التاريخ من string إلى Date
   const dateValue = parseDateKeyForPicker(selectedDate)
@@ -107,13 +130,22 @@ export default function DatePickerForProof({
 
     const isFriday = date.getDay() === 5
 
+    // تحديد لون الرقم الهجري بناءً على الشهر الهجري
+    const hijriMonthsInView = getHijriMonthsInView(viewedDateRef.current)
+    let hijriDayColor = '#6b7280'
+    if (hijriMonthsInView.length > 1) {
+      const matchedMonth = hijriMonthsInView.find(m => m.month === hijri.month && m.year === hijri.year)
+      const colorKey = matchedMonth ? matchedMonth.colorKey : hijriMonthsInView[0].colorKey
+      hijriDayColor = HIJRI_MONTH_COLORS[colorKey].text
+    }
+
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
         {isFriday && (
           <span className="text-[10px] text-black font-bold leading-none">✕</span>
         )}
         <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
-        <span className="text-[12px] text-gray-500 leading-none mt-0.5">{hijri.day}</span>
+        <span className="text-[12px] leading-none mt-0.5 font-medium" style={{ color: hijriDayColor }}>{hijri.day}</span>
         {proofCount > 0 && (
           <span
             className={`text-[12px] font-semibold leading-none ${isOverloaded
@@ -152,8 +184,9 @@ export default function DatePickerForProof({
     prevMonthButtonDisabled: boolean
     nextMonthButtonDisabled: boolean
   }) => {
-    const hijri = toHijri(date)
+    viewedDateRef.current = date
     const gregorianMonth = date.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })
+    const hijriMonthsInView = getHijriMonthsInView(date)
 
     return (
       <div className="flex items-center justify-between px-2 py-2">
@@ -171,8 +204,23 @@ export default function DatePickerForProof({
           <div className="text-sm font-bold text-green-900">
             {gregorianMonth}
           </div>
-          <div className="text-xs text-green-700">
-            {hijri.monthName} {hijri.year}
+          <div className="text-xs font-semibold leading-relaxed">
+            {hijriMonthsInView.length === 1 ? (
+              <span style={{ color: HIJRI_MONTH_COLORS.first.text }}>
+                {hijriMonthsInView[0].name} {hijriMonthsInView[0].year}
+              </span>
+            ) : (
+              <>
+                <span style={{ color: HIJRI_MONTH_COLORS.second.text }}>
+                  {hijriMonthsInView[1].name} {hijriMonthsInView[1].year}
+                </span>
+                <span className="text-gray-400 mx-1">/</span>
+                <span style={{ color: HIJRI_MONTH_COLORS.first.text }}>
+                  {hijriMonthsInView[0].name}
+                  {hijriMonthsInView[0].year !== hijriMonthsInView[1].year ? ` ${hijriMonthsInView[0].year}` : ''}
+                </span>
+              </>
+            )}
           </div>
         </div>
         <button

@@ -163,6 +163,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const { updateOrder } = useOrderStore()
   const { workerType } = useWorkerPermissions() // للتحقق من صلاجيات مدير الورشة
 
+  // زر تحويل الصورة إلى كرتون: يظهر لأي طلب مكتمل للمدراء ومدراء الورشة فقط
+  const canShowCartoonButton =
+    (order?.status === 'completed' || order?.status === 'delivered') &&
+    (user?.role === 'admin' || workerType === 'workshop_manager')
+
   // حالات تعليقات التصميم
   const [imageAnnotations, setImageAnnotations] = useState<ImageAnnotation[]>([])
   const [imageDrawings, setImageDrawings] = useState<DrawingPath[]>([])
@@ -184,6 +189,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [cartoonImage, setCartoonImage] = useState<string | null>(null)
   const [showCartoonUploadModal, setShowCartoonUploadModal] = useState(false)
   const [cartoonUploadImage, setCartoonUploadImage] = useState<string | null>(null)
+  const [cartoonNotes, setCartoonNotes] = useState('')
   const cartoonImageRef = useRef<HTMLDivElement | null>(null)
 
   // حالات تعديل العامل
@@ -256,7 +262,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
         const response = await fetch('/api/convert-to-cartoon', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ completedImage: imageToConvert })
+          body: JSON.stringify({
+            completedImage: imageToConvert,
+            ...(cartoonNotes.trim() ? { notes: cartoonNotes.trim() } : {})
+          })
         })
 
         const data = await response.json()
@@ -361,6 +370,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       setLocalAiImages([])
       setCartoonImage(null)
       setCartoonUploadImage(null)
+      setCartoonNotes('')
     }
   }, [initialOrder?.id])
 
@@ -1697,7 +1707,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         }}
                       />}
                       {/* زر تحويل الصورة إلى كرتون */}
-                      {showCartoonButton && (
+                      {canShowCartoonButton && (
                         <button
                           onClick={() => handleConvertToCartoon()}
                           disabled={isConvertingToCartoon}
@@ -1764,7 +1774,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     }}
                   />}
                   {/* زر تحويل الصورة إلى كرتون */}
-                  {showCartoonButton && (
+                  {canShowCartoonButton && (
                     <button
                       onClick={() => handleConvertToCartoon()}
                       disabled={isConvertingToCartoon}
@@ -1904,6 +1914,21 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         <PrinterIcon className="w-4 h-4" />
                         <span>{t('print')}</span>
                       </button>
+                    </div>
+                    {/* ملاحظات للإعادة */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" />
+                        ملاحظات للذكاء الاصطناعي
+                        <span className="font-normal text-gray-400">(اختياري)</span>
+                      </label>
+                      <textarea
+                        value={cartoonNotes}
+                        onChange={e => setCartoonNotes(e.target.value)}
+                        placeholder="مثال: ركّز على تفاصيل التطريز، الفستان باللون الأزرق..."
+                        rows={2}
+                        className="w-full px-3 py-2 text-sm border border-purple-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent placeholder-gray-400 bg-white"
+                      />
                     </div>
                     <div className="flex gap-2 flex-wrap">
                       <button
@@ -2101,6 +2126,22 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       />
                     </label>
                   </div>
+                </div>
+
+                {/* ملاحظات اختيارية للذكاء الاصطناعي */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+                    ملاحظات للذكاء الاصطناعي
+                    <span className="text-xs font-normal text-gray-400">(اختياري)</span>
+                  </label>
+                  <textarea
+                    value={cartoonNotes}
+                    onChange={e => setCartoonNotes(e.target.value)}
+                    placeholder="مثال: ركّز على تفاصيل التطريز، الفستان باللون الأزرق..."
+                    rows={2}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent placeholder-gray-400"
+                  />
                 </div>
 
                 {/* أزرار التأكيد */}
