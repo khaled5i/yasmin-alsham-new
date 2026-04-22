@@ -25,7 +25,9 @@ import {
   Phone,
   Package,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  PauseCircle,
+  PlayCircle
 } from 'lucide-react'
 import { orderService, type Order } from '@/lib/services/order-service'
 import { formatGregorianDate } from '@/lib/date-utils'
@@ -34,6 +36,9 @@ import { workerService, type WorkerWithUser } from '@/lib/services/worker-servic
 import {
   deleteWorkerPayrollOperation,
   getLastSalaryInfoBeforeMonth,
+  getSuspendedWorkerIds,
+  suspendWorkerPayroll,
+  unsuspendWorkerPayroll,
   getWorkerAdvancesAllPeriods,
   getWorkerPayrollMonths,
   getWorkerPayrollOperations,
@@ -342,6 +347,9 @@ export default function TailoringPayrollDashboard() {
     specialty: ''
   })
 
+  // حالة تعليق الرواتب (مخزنة في localStorage لكل شهر)
+  const [suspendedWorkers, setSuspendedWorkers] = useState<Set<string>>(() => new Set())
+
   // حالة نافذة التسعير والتقييم
   const [selectedWorkerForPricing, setSelectedWorkerForPricing] = useState<WorkerWithUser | null>(null)
   const [pricingOrders, setPricingOrders] = useState<Order[]>([])
@@ -375,13 +383,14 @@ export default function TailoringPayrollDashboard() {
 
     try {
       const prevMonth = previousMonthValue(selectedMonth)
-      const [workerResult, months, operations, lockRow, previousMonths, lastSalaryInfo] = await Promise.all([
+      const [workerResult, months, operations, lockRow, previousMonths, lastSalaryInfo, suspendedIds] = await Promise.all([
         workerService.getAll(),
         getWorkerPayrollMonths(BRANCH, selectedMonth),
         getWorkerPayrollOperations(BRANCH, selectedMonth),
         getWorkerPayrollPeriodLock(BRANCH, selectedMonth),
         getWorkerPayrollMonths(BRANCH, prevMonth),
-        getLastSalaryInfoBeforeMonth(BRANCH, selectedMonth)
+        getLastSalaryInfoBeforeMonth(BRANCH, selectedMonth),
+        getSuspendedWorkerIds(BRANCH, selectedMonth)
       ])
 
       const tailoringWorkers = (workerResult.data || []).filter(
@@ -468,6 +477,7 @@ export default function TailoringPayrollDashboard() {
       setPreviousNegativeByWorker(previousNegativeMap)
       setIsLocked(isPeriodLocked)
       setLockReason(lockRow?.lock_reason || '')
+      setSuspendedWorkers(suspendedIds)
 
       setSalaryForms(() => {
         const next: Record<string, SalaryFormState> = {}
@@ -555,9 +565,45 @@ export default function TailoringPayrollDashboard() {
     loadData()
   }, [loadData])
 
-  const getMonthRow = useCallback((worker: WorkerWithUser) => {
+const getMonthRow = useCallback((worker: WorkerWithUser) => {
     return monthRowsByWorker[worker.id] || buildEmptyMonth(worker, selectedMonth)
   }, [monthRowsByWorker, selectedMonth])
+
+  const toggleSuspendWorker = useCallback(async (worker: WorkerWithUser) => {
+    const workerId = worker.id
+    const isSuspended = suspendedWorkers.has(workerId)
+
+    // تحديث فوري في الواجهة
+    setSuspendedWorkers((prev) => {
+      const next = new Set(prev)
+      if (isSuspended) {
+        next.delete(workerId)
+      } else {
+        next.add(workerId)
+      }
+      return next
+    })
+
+    try {
+      if (isSuspended) {
+        await unsuspendWorkerPayroll(BRANCH, workerId, selectedMonth)
+      } else {
+        await suspendWorkerPayroll(BRANCH, workerId, getWorkerName(worker), selectedMonth)
+      }
+    } catch (err) {
+      // تراجع عند الخطأ
+      setSuspendedWorkers((prev) => {
+        const next = new Set(prev)
+        if (isSuspended) {
+          next.add(workerId)
+        } else {
+          next.delete(workerId)
+        }
+        return next
+      })
+      alert('فشل تحديث حالة التعليق: ' + (err instanceof Error ? err.message : 'خطأ غير متوقع'))
+    }
+  }, [suspendedWorkers, selectedMonth])
 
   const filteredWorkers = useMemo(() => {
     const needle = searchTerm.trim().toLowerCase()
@@ -594,6 +640,8 @@ export default function TailoringPayrollDashboard() {
   const totals = useMemo(() => {
     return filteredWorkers.reduce(
       (acc, worker) => {
+        // العمال المعلقون لا يُحتسبون في الإجماليات
+        if (suspendedWorkers.has(worker.id)) return acc
         const row = getMonthRow(worker)
         acc.salary += row.basic_salary + row.works_total
         acc.deductions += row.deductions_total + row.advances_total
@@ -603,7 +651,7 @@ export default function TailoringPayrollDashboard() {
       },
       { salary: 0, deductions: 0, paid: 0, remaining: 0 }
     )
-  }, [filteredWorkers, getMonthRow])
+  }, [filteredWorkers, getMonthRow, suspendedWorkers])
 
   const handleSaveSnapshot = useCallback(async (worker: WorkerWithUser) => {
     if (isLocked) {
@@ -1226,6 +1274,17 @@ export default function TailoringPayrollDashboard() {
           </div>
         </div>
 
+        {/* إشعار العمال المعلقين */}
+        {suspendedWorkers.size > 0 && (
+          <div className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+            <PauseCircle className="h-4 w-4 shrink-0 text-orange-500" />
+            <p className="text-sm text-orange-700">
+              <span className="font-semibold">{suspendedWorkers.size}</span>{' '}
+              {suspendedWorkers.size === 1 ? 'عامل معلَّق' : 'عمال معلَّقون'} — رواتبهم مستثناة من الإجماليات أعلاه
+            </p>
+          </div>
+        )}
+
         {/* جدول عمال نظام القطعة */}
         {pieceworkWorkers.length > 0 && (
           <div className="space-y-3">
@@ -1257,11 +1316,17 @@ export default function TailoringPayrollDashboard() {
                       const prevCarryover = previousNegativeByWorker[worker.id] || 0
                       const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
                       const displayedRemaining = row.remaining_due - prevCarryover
+                      const isSuspended = suspendedWorkers.has(worker.id)
                       return (
-                        <tr key={worker.id} className="hover:bg-gray-50">
+                        <tr key={worker.id} className={isSuspended ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-900">{getWorkerName(worker)}</span>
+                              <span className={`font-medium ${isSuspended ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{getWorkerName(worker)}</span>
+                              {isSuspended && (
+                                <span className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-600">
+                                  معلّق
+                                </span>
+                              )}
                               {isPayrollWorker && isAdmin && (
                                 <button
                                   onClick={(e) => {
@@ -1319,6 +1384,19 @@ export default function TailoringPayrollDashboard() {
                               >
                                 <Tag className="h-4 w-4" />
                               </button>
+                              {isAdmin && (
+                                <button
+                                  onClick={() => toggleSuspendWorker(worker)}
+                                  className={`group inline-flex items-center justify-center rounded-lg border p-2 transition-all hover:shadow-sm ${
+                                    isSuspended
+                                      ? 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100'
+                                      : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                                  }`}
+                                  title={isSuspended ? 'استئناف الراتب' : 'تعليق الراتب'}
+                                >
+                                  {isSuspended ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1362,11 +1440,17 @@ export default function TailoringPayrollDashboard() {
                       const prevCarryover = previousNegativeByWorker[worker.id] || 0
                       const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
                       const displayedRemaining = row.remaining_due - prevCarryover
+                      const isSuspended = suspendedWorkers.has(worker.id)
                       return (
-                        <tr key={worker.id} className="hover:bg-gray-50">
+                        <tr key={worker.id} className={isSuspended ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-900">{getWorkerName(worker)}</span>
+                              <span className={`font-medium ${isSuspended ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{getWorkerName(worker)}</span>
+                              {isSuspended && (
+                                <span className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-600">
+                                  معلّق
+                                </span>
+                              )}
                               {isPayrollWorker && isAdmin && (
                                 <button
                                   onClick={(e) => {
@@ -1417,6 +1501,19 @@ export default function TailoringPayrollDashboard() {
                               >
                                 <DollarSign className="h-4 w-4" />
                               </button>
+                              {isAdmin && (
+                                <button
+                                  onClick={() => toggleSuspendWorker(worker)}
+                                  className={`group inline-flex items-center justify-center rounded-lg border p-2 transition-all hover:shadow-sm ${
+                                    isSuspended
+                                      ? 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100'
+                                      : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                                  }`}
+                                  title={isSuspended ? 'استئناف الراتب' : 'تعليق الراتب'}
+                                >
+                                  {isSuspended ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

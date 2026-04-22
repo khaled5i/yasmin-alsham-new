@@ -52,6 +52,8 @@ const ORDER_LIST_COLUMNS = [
   'whatsapp_sent',
   'needs_review',
   'is_pre_booking',
+  'is_urgent',         // migration 39
+  'is_flagged',        // migration 40
   'fabric_type',
   'has_alterations',   // migration 34
   'alteration_count',  // migration 34
@@ -98,6 +100,8 @@ export interface Order {
   whatsapp_sent: boolean
   needs_review: boolean
   is_pre_booking: boolean
+  is_urgent: boolean    // migration 39
+  is_flagged: boolean   // migration 40
   // تتبع التعديلات (migration 34)
   has_alterations: boolean
   alteration_count: number
@@ -149,6 +153,8 @@ export interface CreateOrderData {
   fabric_type?: string | null
   needs_review?: boolean
   is_pre_booking?: boolean
+  is_urgent?: boolean   // migration 39
+  is_flagged?: boolean  // migration 40
   price: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -254,6 +260,7 @@ export interface UpdateOrderData {
   whatsapp_sent?: boolean
   needs_review?: boolean
   is_pre_booking?: boolean
+  is_flagged?: boolean  // migration 40
   fabric_type?: string | null
   price?: number
   paid_amount?: number
@@ -403,6 +410,8 @@ export const orderService = {
         fabric_type: orderData.fabric_type || orderData.measurements?.fabric_type || null,
         needs_review: orderData.needs_review ?? orderData.measurements?.needs_review ?? false,
         is_pre_booking: orderData.is_pre_booking ?? orderData.measurements?.is_pre_booking ?? false,
+        is_urgent: orderData.is_urgent ?? false,  // migration 39
+        is_flagged: orderData.is_flagged ?? false, // migration 40
         price: orderData.price,
         paid_amount: orderData.paid_amount || 0,
         payment_status: orderData.payment_status || 'unpaid',

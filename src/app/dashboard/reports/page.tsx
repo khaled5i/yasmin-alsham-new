@@ -301,6 +301,10 @@ export default function ReportsPage() {
     const preBookingOrders = currentOrders.filter(o => (o as any).is_pre_booking === true)
     const preBookingCount = preBookingOrders.length
 
+    // طلبات مستعجلة
+    const urgentOrders = currentOrders.filter(o => (o as any).is_urgent === true)
+    const urgentOrdersCount = urgentOrders.length
+
     // متوسط قيمة الطلب: يستثني الحجز المسبق والطلبات أقل من 100 ريال
     // البسط: مجموع قيمة الطلبات (بغض النظر عن حالة الدفع)
     // المقام: عدد الطلبات المستوفية للشرط
@@ -389,6 +393,9 @@ export default function ReportsPage() {
 
       // Pre-booking
       preBookingCount,
+
+      // Urgent orders
+      urgentOrdersCount,
 
       // Customers
       uniqueCustomers,
@@ -861,6 +868,22 @@ export default function ReportsPage() {
           </div>
 
 
+
+          {/* Urgent Orders */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-orange-300 transition-all duration-300 hover:shadow-lg">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-orange-400 to-red-400 rounded-lg flex items-center justify-center">
+                <Zap className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
+              </div>
+              <div className="text-xs sm:text-sm font-semibold text-orange-600">
+                {comprehensiveStats.totalOrders > 0
+                  ? Number(((comprehensiveStats.urgentOrdersCount / comprehensiveStats.totalOrders) * 100).toFixed(1))
+                  : 0}%
+              </div>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.urgentOrdersCount}</h3>
+            <p className="text-xs sm:text-sm text-gray-600 leading-tight">طلبات مستعجلة</p>
+          </div>
 
           {/* Payment Collection Rate */}
           <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">

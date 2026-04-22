@@ -632,6 +632,7 @@ export default function OrderSchedulePage() {
                         ? (order.due_date || '').slice(0, 10)
                         : (order.proof_delivery_date || '').slice(0, 10)
                     if (!key) return
+                    if (mode === 'delivery' && (order.status === 'delivered' || order.status === 'completed')) return
                     if (mode === 'proof' && (order.status === 'delivered')) return
                     newStats[key] = (newStats[key] || 0) + 1
                     if (!newOrdersMap[key]) newOrdersMap[key] = []

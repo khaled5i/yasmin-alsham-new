@@ -605,6 +605,7 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-blue-800">{t('worker_management')}</span>
                   </Link>
 
+                  {/* إدارة المواعيد - مخفي مؤقتاً
                   <Link
                     href="/dashboard/appointments"
                     className="p-4 bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-lg border border-indigo-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -612,6 +613,7 @@ function DashboardContent() {
                     <Calendar className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-indigo-800">{t('appointments_management')}</span>
                   </Link>
+                  */}
 
                   <Link
                     href="/dashboard/accounting"
@@ -733,6 +735,7 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-blue-800">{t('worker_management')}</span>
                   </Link>
 
+                  {/* إدارة المواعيد - مخفي مؤقتاً
                   <Link
                     href="/dashboard/appointments"
                     className="p-4 bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-lg border border-indigo-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -740,6 +743,7 @@ function DashboardContent() {
                     <Calendar className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-indigo-800">{t('appointments_management')}</span>
                   </Link>
+                  */}
 
                   <Link
                     href="/dashboard/accounting"

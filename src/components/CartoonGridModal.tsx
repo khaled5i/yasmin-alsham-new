@@ -19,6 +19,7 @@ import {
   Check
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
+import { supabase } from '@/lib/supabase'
 import OrderModal from '@/components/OrderModal'
 import toast from 'react-hot-toast'
 
@@ -36,6 +37,11 @@ interface CartoonGridModalProps {
   isOpen: boolean
   onClose: () => void
   workers: any[]
+}
+
+interface ImageFlags {
+  has_cartoon: boolean
+  has_completed: boolean
 }
 
 // ─────────────────────────────────────────────
@@ -152,6 +158,7 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
   const [gridImage, setGridImage]             = useState<string | null>(null)
   const [isGenerating, setIsGenerating]       = useState(false)
   const [showPreview, setShowPreview]         = useState(false)
+  const [imageFlags, setImageFlags]           = useState<Record<string, ImageFlags>>({})
   // detail modal
   const [detailOrder, setDetailOrder]         = useState<any>(null)
   const [showDetail, setShowDetail]           = useState(false)
@@ -168,6 +175,7 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
       setShowPreview(false)
       setShowDetail(false)
       setDetailOrder(null)
+      setImageFlags({})
     }
   }, [isOpen])
 
@@ -180,9 +188,24 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
         pageSize: 30,
         page: 0,
       })
-      setOrders(data || [])
+      const results = data || []
+      setOrders(results)
+
+      // جلب إشارات الصور دفعة واحدة عبر RPC خفيفة
+      if (results.length > 0) {
+        const ids = results.map((o: any) => o.id)
+        const { data: flags } = await supabase.rpc('get_order_image_flags', { order_ids: ids })
+        if (flags) {
+          const map: Record<string, ImageFlags> = {}
+          for (const row of flags) map[row.id] = { has_cartoon: row.has_cartoon, has_completed: row.has_completed }
+          setImageFlags(map)
+        }
+      } else {
+        setImageFlags({})
+      }
     } catch {
       setOrders([])
+      setImageFlags({})
     } finally {
       setIsSearching(false)
     }
@@ -274,13 +297,15 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
   <title>طباعة الكرتون</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    html,body { width:210mm; height:297mm; }
     @page { size:A4 portrait; margin:0; }
-    img { width:210mm; height:297mm; display:block; }
+    .page { width:210mm; height:297mm; page-break-after:always; overflow:hidden; }
+    .page:last-child { page-break-after:auto; }
+    .page img { width:210mm; height:297mm; display:block; object-fit:contain; }
   </style>
 </head>
 <body>
-  <img src="${gridImage}" />
+  <div class="page"><img src="${gridImage}" /></div>
+  <div class="page"><img src="/4 LOGO.png" /></div>
   <script>window.onload=function(){window.print();window.close();}<\/script>
 </body>
 </html>`)
@@ -409,6 +434,7 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
                       const selected   = isSelected(order.id)
                       const isLoading  = loadingIds.has(order.id)
                       const maxReached = selectedItems.length >= 4 && !selected
+                      const flags      = imageFlags[order.id]
 
                       return (
                         <div
@@ -443,6 +469,24 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
                                 {label}
                               </span>
                             </div>
+
+                            {/* شارات الصور */}
+                            {flags && (flags.has_cartoon || flags.has_completed) && (
+                              <div className="flex flex-wrap gap-1.5 mb-2">
+                                {flags.has_cartoon && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                                    <Wand2 className="w-3 h-3" />
+                                    يوجد صورة كرتون
+                                  </span>
+                                )}
+                                {!flags.has_cartoon && flags.has_completed && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                    <CheckCircle className="w-3 h-3" />
+                                    يحتوي صورة عمل مكتمل
+                                  </span>
+                                )}
+                              </div>
+                            )}
 
                             {order.fabric && (
                               <span className="inline-block px-2 py-0.5 rounded-md text-xs bg-gray-100 text-gray-700 mb-2">

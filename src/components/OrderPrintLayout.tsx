@@ -177,7 +177,18 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
               <div className="info-grid-single-row" style={{ fontSize: '1.3em' }}>
                 <div className="info-item-inline">
                   <span className="info-label">الاسم:</span>
-                  <span className="info-value">{order.client_name}</span>
+                  <span
+                    className="info-value"
+                    style={
+                      order.is_flagged
+                        ? { color: '#dc2626', fontWeight: 'bold' }
+                        : order.price > 1000
+                        ? { color: '#b8860b', fontWeight: 'bold' }
+                        : undefined
+                    }
+                  >
+                    {order.client_name}
+                  </span>
                 </div>
                 <div className="info-item-inline">
                   <span className="info-label">رقم الهاتف:</span>

@@ -36,7 +36,9 @@ import {
   Info,
   Printer,
   Download,
-  BookMarked
+  BookMarked,
+  Zap,
+  Flag
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
@@ -389,6 +391,10 @@ function AddOrderContent() {
     }
   }, [formData, isArabic])
 
+  const [isUrgent, setIsUrgent] = useState(false)
+  const [urgentPriceOverride, setUrgentPriceOverride] = useState('')
+  const [isFlagged, setIsFlagged] = useState(false)
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isSubmittingRef = useRef(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -400,6 +406,15 @@ function AddOrderContent() {
     const paidAmount = Number(formData.paidAmount) || 0
     return Math.max(0, price - paidAmount)
   }, [formData.price, formData.paidAmount])
+
+  // السعر المحسوب بزيادة 30%
+  const urgentPriceComputed = useMemo(() => {
+    const price = Number(formData.price) || 0
+    return price > 0 ? Math.ceil(price * 1.3) : 0
+  }, [formData.price])
+
+  // السعر الفعلي المستعجل (قابل للتعديل اليدوي)
+  const urgentPrice = urgentPriceOverride !== '' ? Number(urgentPriceOverride) || 0 : urgentPriceComputed
 
   // معالجة تغيير الحقول
   const handleInputChange = useCallback((field: string, value: string | string[] | null) => {
@@ -501,8 +516,7 @@ function AddOrderContent() {
       const view = comment.view ?? (comment.title?.trim().startsWith('أمام') ? 'front' : 'back')
       const viewLabel = view === 'front' ? 'أمام' : 'خلف'
       const clientName = formData.clientName || 'تصميم'
-      const prefix = formData.orderNumber ? `${formData.orderNumber}_${clientName}` : clientName
-      const fileName = `${prefix}_${viewLabel}.jpg`
+      const fileName = `${clientName}_${viewLabel}.jpg`
 
       const link = document.createElement('a')
       link.href = comment.compositeImage!
@@ -517,12 +531,14 @@ function AddOrderContent() {
     }
 
     toast.success(`تم حفظ ${downloadable.length} ${downloadable.length === 1 ? 'تصميم' : 'تصميمين'}`)
-  }, [formData.savedDesignComments, formData.clientName, formData.orderNumber])
+  }, [formData.savedDesignComments, formData.clientName])
 
   // مسح جميع الحقول
   const handleClearAllFields = useCallback(() => {
     resetToInitial()
     setCustomDesignImageFile(null)
+    setIsUrgent(false)
+    setUrgentPriceOverride('')
     // حذف تعليقات التصميم والعرض النشط من localStorage
     localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
     localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
@@ -696,22 +712,23 @@ function AddOrderContent() {
       }
 
       // إنشاء الطلب باستخدام Supabase
-      // رقم الطلب: إذا تم إدخاله يدوياً سيتم استخدامه، وإلا سيتم توليده تلقائياً من قاعدة البيانات
+      // رقم الطلب سيتم توليده تلقائياً من قاعدة البيانات
       const result = await createOrder({
-        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
+        is_urgent: isUrgent,  // migration 39
+        is_flagged: isFlagged, // migration 40
         measurements: {}, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
         design_thumbnail: designThumbnail || undefined, // عمود مستقل (migration 32)
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: price,
+        price: isUrgent ? urgentPrice : price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -864,19 +881,19 @@ function AddOrderContent() {
 
       // إنشاء الطلب باستخدام Supabase
       const result = await createOrder({
-        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
-        measurements: {
-          ...(formData.fabricType ? { fabric_type: formData.fabricType } : {}),
-        },
+        fabric_type: formData.fabricType || null,
+        is_urgent: isUrgent,  // migration 39
+        is_flagged: isFlagged, // migration 40
+        measurements: {},
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: price,
+        price: isUrgent ? urgentPrice : price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -915,7 +932,7 @@ function AddOrderContent() {
         openWhatsApp({
           clientName: formData.clientName,
           clientPhone: formData.clientPhone,
-          orderNumber: formData.orderNumber || result.data?.order_number || undefined,
+          orderNumber: result.data?.order_number || undefined,
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
           dueDate: formData.dueDate,
           totalPrice: price,
@@ -1012,18 +1029,19 @@ function AddOrderContent() {
       }
 
       const result = await createOrder({
-        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined,
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
         needs_review: true,
+        is_urgent: isUrgent,  // migration 39
+        is_flagged: isFlagged, // migration 40
         measurements: {},
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: isUrgent ? urgentPrice : price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
@@ -1128,18 +1146,19 @@ function AddOrderContent() {
       }
 
       const result = await createOrder({
-        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined,
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
         is_pre_booking: true,
+        is_urgent: isUrgent,  // migration 39
+        is_flagged: isFlagged, // migration 40
         measurements: {},
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: isUrgent ? urgentPrice : price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
@@ -1247,17 +1266,18 @@ function AddOrderContent() {
       }
 
       const result = await createOrder({
-        order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined,
         // أعمدة مستقلة (migration 29)
         fabric_type: formData.fabricType || null,
+        is_urgent: isUrgent,  // migration 39
+        is_flagged: isFlagged, // migration 40
         measurements: {},
         // عمود مستقل (migration 33)
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: isUrgent ? urgentPrice : price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
@@ -1519,26 +1539,76 @@ function AddOrderContent() {
 
                 {/* 7. السعر */}
                 <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      {t('price_sar')} <span className="text-red-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUrgent(prev => {
+                          if (!prev) {
+                            // تفعيل: احسب السعر الجديد تلقائياً
+                            const base = Number(formData.price) || 0
+                            setUrgentPriceOverride(base > 0 ? String(Math.ceil(base * 1.3)) : '')
+                          } else {
+                            // إلغاء: أعد تعيين
+                            setUrgentPriceOverride('')
+                          }
+                          return !prev
+                        })
+                      }}
+                      disabled={isSubmitting}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 ${
+                        isUrgent
+                          ? 'bg-orange-500 text-white shadow-md shadow-orange-200'
+                          : 'bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100'
+                      }`}
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>طلب مستعجل</span>
+                    </button>
+                  </div>
                   <NumericInput
                     value={formData.price}
                     onChange={(value) => handleInputChange('price', value)}
                     type="price"
-                    label={t('price_sar')}
                     placeholder="0"
                     required
                     disabled={isSubmitting}
                   />
                 </div>
 
+                {/* 7b. السعر بعد زيادة 30% - يظهر فقط عند تفعيل الطلب المستعجل */}
+                {isUrgent && (
+                  <div>
+                    <label className="block text-sm font-medium text-orange-700 mb-2">
+                      السعر بعد زيادة 30%
+                    </label>
+                    <NumericInput
+                      value={urgentPriceOverride}
+                      onChange={(value) => setUrgentPriceOverride(value)}
+                      type="price"
+                      placeholder="0"
+                      disabled={isSubmitting}
+                    />
+                    {formData.price && (
+                      <p className="text-xs text-orange-500 mt-1">
+                        السعر الأصلي: {Number(formData.price).toFixed(2)} + 30% = {urgentPriceComputed} ر.س
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* 8. الدفعة المستلمة */}
                 <div>
                   <NumericInput
                     value={formData.paidAmount}
                     onChange={(value) => {
-                      const price = Number(formData.price) || 0
+                      const effectivePrice = isUrgent ? urgentPrice : (Number(formData.price) || 0)
                       const paid = Number(value) || 0
                       // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
-                      if (paid > price) {
+                      if (paid > effectivePrice) {
                         toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
                           icon: '⚠️',
                         })
@@ -1559,30 +1629,30 @@ function AddOrderContent() {
                     {t('remaining_amount')}
                   </label>
                   <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
-                    {remainingAmount.toFixed(2)} {t('sar')}
+                    {(Math.max(0, (isUrgent ? urgentPrice : (Number(formData.price) || 0)) - (Number(formData.paidAmount) || 0))).toFixed(2)} {t('sar')}
                   </div>
                 </div>
 
-                {/* 10. رقم الطلب */}
+                {/* 11. مصدر القماش + إشارة */}
                 <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.orderNumber}
-                    onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
-                    disabled={isSubmitting}
-                  />
-                </div>
-
-                {/* 11. مصدر القماش */}
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    مصدر القماش (داخلي للمشغل)
-                  </label>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      مصدر القماش (داخلي للمشغل)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsFlagged(prev => !prev)}
+                      disabled={isSubmitting}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 ${
+                        isFlagged
+                          ? 'bg-red-500 text-white shadow-md shadow-red-200'
+                          : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+                      }`}
+                    >
+                      <Flag className="w-3.5 h-3.5" />
+                      <span>إشارة</span>
+                    </button>
+                  </div>
                   <div className="flex gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input

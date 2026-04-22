@@ -477,7 +477,7 @@ function AddAlterationContent() {
 
     // التحقق من الحقول المطلوبة
     // السعر مطلوب فقط للفساتين الخارجية (عدم وجود effectiveOrderId)
-    if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!effectiveOrderId && !formData.price)) {
+    if (!formData.clientName || !formData.clientPhone || (!effectiveOrderId && !formData.price)) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
@@ -658,7 +658,7 @@ function AddAlterationContent() {
     }
 
     // التحقق من الحقول المطلوبة
-    if (!formData.clientName || !formData.clientPhone || !formData.alterationDueDate || (!effectiveOrderId && !formData.price)) {
+    if (!formData.clientName || !formData.clientPhone || (!effectiveOrderId && !formData.price)) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
@@ -958,13 +958,13 @@ function AddAlterationContent() {
               {/* 1.4. موعد تسليم التعديل */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isArabic ? 'موعد تسليم التعديل' : 'Alteration Due Date'} <span className="text-red-500">*</span>
+                  {isArabic ? 'موعد تسليم التعديل' : 'Alteration Due Date'}
                 </label>
                 <DatePickerWithStats
                   selectedDate={formData.alterationDueDate}
                   onChange={(date) => handleInputChange('alterationDueDate', date)}
                   minDate={new Date()}
-                  required={true}
+                  required={false}
                   statsType="alterations"
                 />
               </div>

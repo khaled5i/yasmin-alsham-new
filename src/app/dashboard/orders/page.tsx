@@ -46,7 +46,8 @@ import {
   MessageCircle,
   CalendarDays,
   Wrench,
-  RotateCcw
+  RotateCcw,
+  Zap
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
@@ -877,6 +878,8 @@ function OrdersPageInner() {
 
   const isPreBooking = (order: any) => order?.is_pre_booking === true
 
+  const isUrgentOrder = (order: any) => order?.is_urgent === true
+
   const hasAlterations = (order: any) => order?.has_alterations === true
 
   const filteredOrders = baseOrders.filter(order => {
@@ -896,7 +899,9 @@ function OrdersPageInner() {
         ? isNeedsReview(order)
         : statusFilter === 'pre_booking'
           ? isPreBooking(order)
-          : statusFilter === 'has_alterations'
+          : statusFilter === 'urgent'
+            ? isUrgentOrder(order)
+            : statusFilter === 'has_alterations'
             ? hasAlterations(order)
             : statusFilter === 'incomplete_progress'
               ? !(isOrderPrinted(order) && hasMeasurementsBadge(order) && isWhatsAppSent(order))
@@ -1013,6 +1018,7 @@ function OrdersPageInner() {
                 <option value="in_progress">{t('in_progress')}</option>
                 <option value="needs_review">{isArabic ? 'يحتاج مراجعة' : 'Needs Review'}</option>
                 <option value="pre_booking">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</option>
+                <option value="urgent">{isArabic ? 'مستعجل' : 'Urgent'}</option>
                 <option value="has_alterations">{isArabic ? 'يوجد تعديل' : 'Has Alteration'}</option>
                 <option value="incomplete_progress">{isArabic ? 'غير مكتملة (أقل من 100%)' : 'Incomplete (< 100%)'}</option>
               </select>
@@ -1102,6 +1108,12 @@ function OrdersPageInner() {
                               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100">
                                 <PackageCheck className="w-4 h-4 text-blue-600" />
                                 <span className="text-sm font-semibold text-blue-600">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</span>
+                              </div>
+                            )}
+                            {(order as any).is_urgent === true && (
+                              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100">
+                                <Zap className="w-4 h-4 text-orange-600" />
+                                <span className="text-sm font-semibold text-orange-600">مستعجل</span>
                               </div>
                             )}
                             {hasAlterations(order) && (

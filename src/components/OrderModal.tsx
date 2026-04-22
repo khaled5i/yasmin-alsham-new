@@ -1065,6 +1065,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                           {(order as any).needs_review && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
                           )}
+                          {(order as any).is_urgent && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">⚡ مستعجل</span>
+                          )}
                           {(order as any).has_alterations && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700">
                               تعديل{(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}
@@ -1084,6 +1087,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                           )}
                           {(order as any).needs_review && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">يحتاج مراجعة</span>
+                          )}
+                          {(order as any).is_urgent && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">⚡ مستعجل</span>
                           )}
                           {(order as any).has_alterations && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700">

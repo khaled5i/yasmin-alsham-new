@@ -668,3 +668,97 @@ export async function propagateFixedSalaryToFutureMonths(
 ): Promise<void> {
   return propagateSalaryToFutureMonths(branch, workerId, workerName, fromMonthValue, 'fixed', fixedSalaryValue, 0)
 }
+
+// ============================================================================
+// تعليق رواتب العمال
+// ============================================================================
+
+/**
+ * جلب IDs العمال المعلقين لشهر معين
+ */
+export async function getSuspendedWorkerIds(
+  branch: BranchType,
+  monthValue: string
+): Promise<Set<string>> {
+  if (!isSupabaseConfigured()) return new Set()
+
+  try {
+    const { year, month } = monthToYearMonth(monthValue)
+    const { data, error } = await supabase
+      .from('worker_payroll_suspensions')
+      .select('worker_id')
+      .eq('branch', branch)
+      .eq('payroll_year', year)
+      .eq('payroll_month', month)
+
+    if (error) {
+      if (isMissingSupabaseResourceError(error)) return new Set()
+      console.error('Error fetching suspended workers:', error)
+      return new Set()
+    }
+
+    return new Set((data || []).map((row: { worker_id: string }) => row.worker_id))
+  } catch (err) {
+    console.error('Error fetching suspended workers:', err)
+    return new Set()
+  }
+}
+
+/**
+ * تعليق راتب عامل لشهر معين
+ */
+export async function suspendWorkerPayroll(
+  branch: BranchType,
+  workerId: string,
+  workerName: string,
+  monthValue: string,
+  reason?: string
+): Promise<void> {
+  if (!isSupabaseConfigured()) return
+
+  const { year, month } = monthToYearMonth(monthValue)
+  const { error } = await supabase
+    .from('worker_payroll_suspensions')
+    .upsert(
+      {
+        branch,
+        worker_id: workerId,
+        worker_name: workerName,
+        payroll_year: year,
+        payroll_month: month,
+        reason: reason ?? null,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: 'branch,worker_id,payroll_year,payroll_month' }
+    )
+
+  if (error) {
+    console.error('Error suspending worker payroll:', error)
+    throw new Error(toErrorMessage(error))
+  }
+}
+
+/**
+ * إلغاء تعليق راتب عامل لشهر معين
+ */
+export async function unsuspendWorkerPayroll(
+  branch: BranchType,
+  workerId: string,
+  monthValue: string
+): Promise<void> {
+  if (!isSupabaseConfigured()) return
+
+  const { year, month } = monthToYearMonth(monthValue)
+  const { error } = await supabase
+    .from('worker_payroll_suspensions')
+    .delete()
+    .eq('branch', branch)
+    .eq('worker_id', workerId)
+    .eq('payroll_year', year)
+    .eq('payroll_month', month)
+
+  if (error) {
+    console.error('Error unsuspending worker payroll:', error)
+    throw new Error(toErrorMessage(error))
+  }
+}
