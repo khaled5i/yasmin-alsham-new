@@ -53,7 +53,6 @@ const A4_W = 1240
 const A4_H = 1754
 const CELL_W = A4_W / 2
 const CELL_H = A4_H / 2
-const CELL_PAD = 12 // inner padding per cell
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -79,7 +78,7 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-/** Draw one cartoon image into an A6 cell on the canvas */
+/** Draw one cartoon image into an A6 cell on the canvas — no padding, no border */
 async function drawCell(
   ctx: CanvasRenderingContext2D,
   src: string,
@@ -93,34 +92,28 @@ async function drawCell(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(x, y, CELL_W, CELL_H)
 
-  // thin border
-  ctx.strokeStyle = '#e5e7eb'
-  ctx.lineWidth = 1
-  ctx.strokeRect(x + 0.5, y + 0.5, CELL_W - 1, CELL_H - 1)
-
-  // draw image (full cell, no label area)
-  const imgX = x + CELL_PAD
-  const imgY = y + CELL_PAD
-  const imgW = CELL_W - CELL_PAD * 2
-  const imgH = CELL_H - CELL_PAD * 2
-
   try {
     const img = await loadImage(src)
-    // object-fit: contain
-    const scale = Math.min(imgW / img.width, imgH / img.height)
+    // object-fit: cover — يملأ الخلية كاملةً دون فراغات
+    const scale = Math.max(CELL_W / img.width, CELL_H / img.height)
     const dw = img.width * scale
     const dh = img.height * scale
-    const dx = imgX + (imgW - dw) / 2
-    const dy = imgY + (imgH - dh) / 2
+    const dx = x + (CELL_W - dw) / 2
+    const dy = y + (CELL_H - dh) / 2
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(x, y, CELL_W, CELL_H)
+    ctx.clip()
     ctx.drawImage(img, dx, dy, dw, dh)
+    ctx.restore()
   } catch {
     // placeholder if image fails
     ctx.fillStyle = '#f3f4f6'
-    ctx.fillRect(imgX, imgY, imgW, imgH)
+    ctx.fillRect(x, y, CELL_W, CELL_H)
     ctx.fillStyle = '#9ca3af'
     ctx.font = '14px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('تعذّر تحميل الصورة', imgX + imgW / 2, imgY + imgH / 2)
+    ctx.fillText('تعذّر تحميل الصورة', x + CELL_W / 2, y + CELL_H / 2)
   }
 }
 
