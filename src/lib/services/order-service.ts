@@ -954,6 +954,29 @@ export const orderService = {
   },
 
   /**
+   * جلب الطلبات التي تحتوي على صورة كرتون، مرتبة من الأحدث إلى الأقدم
+   */
+  async getOrdersWithCartoonImage(): Promise<{ data: Order[]; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: [], error: 'Supabase is not configured.' }
+    }
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_LIST_COLUMNS)
+        .not('measurements->cartoon_image', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(100)
+
+      if (error) throw error
+      return { data: (data || []) as unknown as Order[], error: null }
+    } catch (error: any) {
+      console.error('❌ Error in getOrdersWithCartoonImage:', error.message)
+      return { data: [], error: error.message || 'خطأ في جلب الطلبات' }
+    }
+  },
+
+  /**
    * جلب المقاسات فقط لطلب معين (أخف بكثير من getById)
    * يُستخدم لتحميل تعليقات التصميم والمقاسات عند الحاجة فقط
    */

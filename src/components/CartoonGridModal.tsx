@@ -16,11 +16,13 @@ import {
   Wand2,
   Trash2,
   Eye,
-  Check
+  Check,
+  MessageCircle
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 import { supabase } from '@/lib/supabase'
 import OrderModal from '@/components/OrderModal'
+import { sendReadyForPickupWhatsApp } from '@/utils/whatsapp'
 import toast from 'react-hot-toast'
 
 // ─────────────────────────────────────────────
@@ -146,6 +148,7 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
   const [searchTerm, setSearchTerm]           = useState('')
   const [orders, setOrders]                   = useState<any[]>([])
   const [isSearching, setIsSearching]         = useState(false)
+  const [isLoadingInitial, setIsLoadingInitial] = useState(false)
   const [selectedItems, setSelectedItems]     = useState<SelectedOrderItem[]>([])
   const [loadingIds, setLoadingIds]           = useState<Set<string>>(new Set())
   const [gridImage, setGridImage]             = useState<string | null>(null)
@@ -157,6 +160,17 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
   const [showDetail, setShowDetail]           = useState(false)
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const fetchImageFlags = useCallback(async (results: any[]) => {
+    if (results.length === 0) { setImageFlags({}); return }
+    const ids = results.map((o: any) => o.id)
+    const { data: flags } = await supabase.rpc('get_order_image_flags', { order_ids: ids })
+    if (flags) {
+      const map: Record<string, ImageFlags> = {}
+      for (const row of flags) map[row.id] = { has_cartoon: row.has_cartoon, has_completed: row.has_completed }
+      setImageFlags(map)
+    }
+  }, [])
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -172,44 +186,43 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
     }
   }, [isOpen])
 
-  // Debounced search
+  // Debounced search — يُفعَّل فقط عند وجود نص في حقل البحث
   const runSearch = useCallback(async (term: string) => {
+    if (!term.trim()) return
     setIsSearching(true)
     try {
       const { data } = await orderService.getAll({
-        search: term || undefined,
+        search: term,
         pageSize: 30,
         page: 0,
       })
       const results = data || []
       setOrders(results)
-
-      // جلب إشارات الصور دفعة واحدة عبر RPC خفيفة
-      if (results.length > 0) {
-        const ids = results.map((o: any) => o.id)
-        const { data: flags } = await supabase.rpc('get_order_image_flags', { order_ids: ids })
-        if (flags) {
-          const map: Record<string, ImageFlags> = {}
-          for (const row of flags) map[row.id] = { has_cartoon: row.has_cartoon, has_completed: row.has_completed }
-          setImageFlags(map)
-        }
-      } else {
-        setImageFlags({})
-      }
+      await fetchImageFlags(results)
     } catch {
       setOrders([])
       setImageFlags({})
     } finally {
       setIsSearching(false)
     }
-  }, [])
+  }, [fetchImageFlags])
 
+  // عند مسح حقل البحث نعود لعرض الطلبات الكرتونية
   useEffect(() => {
     if (!isOpen) return
+    if (!searchTerm.trim()) {
+      setIsLoadingInitial(true)
+      orderService.getOrdersWithCartoonImage().then(({ data }) => {
+        const results = data || []
+        setOrders(results)
+        fetchImageFlags(results)
+      }).finally(() => setIsLoadingInitial(false))
+      return
+    }
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(() => runSearch(searchTerm), 400)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
-  }, [searchTerm, isOpen, runSearch])
+  }, [searchTerm, isOpen, runSearch, fetchImageFlags])
 
   // ─── Select / Deselect ───────────────────────
   const isSelected = (id: string) => selectedItems.some(s => s.id === id)
@@ -410,15 +423,15 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
 
               {/* Orders list */}
               <div className="flex-1 overflow-y-auto px-6 py-4">
-                {isSearching && orders.length === 0 ? (
+                {(isSearching || isLoadingInitial) && orders.length === 0 ? (
                   <div className="flex items-center justify-center py-16 text-gray-400">
                     <Loader2 className="w-6 h-6 animate-spin ml-2" />
-                    <span className="text-sm">جارٍ البحث...</span>
+                    <span className="text-sm">{isSearching ? 'جارٍ البحث...' : 'جارٍ تحميل الطلبات الكرتونية...'}</span>
                   </div>
                 ) : orders.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                    <Search className="w-10 h-10 mb-3 opacity-40" />
-                    <p className="text-sm">ابدأ بكتابة اسم العميل أو رقم الطلب للبحث</p>
+                    <Wand2 className="w-10 h-10 mb-3 opacity-40" />
+                    <p className="text-sm">لا توجد طلبات تحتوي على صورة كرتونية</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -507,6 +520,20 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
                               عرض
                             </button>
 
+                            {order.client_phone && order.client_phone.trim() !== '' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  sendReadyForPickupWhatsApp(order.client_name, order.client_phone)
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs text-green-600 hover:bg-green-50 transition-colors"
+                                title="إرسال رسالة جاهز للاستلام عبر واتساب"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                واتساب
+                              </button>
+                            )}
+
                             <button
                               onClick={() => handleToggleSelect(order)}
                               disabled={isLoading || (maxReached && !selected)}
@@ -534,7 +561,11 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
               {/* Footer */}
               <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
                 <p className="text-xs text-gray-400">
-                  {orders.length > 0 && !isSearching ? `${orders.length} نتيجة` : ''}
+                  {orders.length > 0 && !isSearching && !isLoadingInitial
+                    ? searchTerm.trim()
+                      ? `${orders.length} نتيجة بحث`
+                      : `${orders.length} طلب يحتوي على صورة كرتون (من الأحدث)`
+                    : ''}
                 </p>
                 <button
                   onClick={handleGenerate}
