@@ -294,28 +294,55 @@ export default function CartoonGridModal({ isOpen, onClose, workers }: CartoonGr
 
   const handlePrint = () => {
     if (!gridImage) return
-    const win = window.open('', '_blank')
-    if (!win) return
-    win.document.write(`<!DOCTYPE html>
-<html dir="rtl">
-<head>
-  <meta charset="utf-8"/>
-  <title>طباعة الكرتون</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    @page { size:A4 portrait; margin:0; }
-    .page { width:210mm; height:297mm; page-break-after:always; overflow:hidden; }
-    .page:last-child { page-break-after:auto; }
-    .page img { width:210mm; height:297mm; display:block; object-fit:contain; }
-  </style>
-</head>
-<body>
-  <div class="page"><img src="${gridImage}" /></div>
-  <div class="page"><img src="/4 LOGO.png" /></div>
-  <script>window.onload=function(){window.print();window.close();}<\/script>
-</body>
-</html>`)
-    win.document.close()
+
+    // تحويل data URL إلى Blob URL (أخف وأموثوق على Android)
+    const [header, b64] = gridImage.split(',')
+    const mime = header.match(/:(.*?);/)![1]
+    const binary = atob(b64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const gridBlobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }))
+
+    const logoSrc = `${window.location.origin}/4 LOGO.png`
+
+    // صفحة HTML كاملة داخل blob — تُفتح كـ tab جديد (ليس popup) فلا يُحجب
+    const html = `<!DOCTYPE html><html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  @page{size:A4 portrait;margin:0;}
+  .p{width:210mm;height:297mm;break-after:page;overflow:hidden;}
+  .p:last-child{break-after:auto;}
+  .p img{width:100%;height:100%;display:block;object-fit:contain;}
+</style>
+</head><body>
+<div class="p"><img id="g" src="${gridBlobUrl}"/></div>
+<div class="p"><img id="l" src="${logoSrc}"/></div>
+<script>
+var done=0,need=2;
+function doPrint(){setTimeout(function(){window.print();},400);}
+function check(){if(++done>=need){doPrint();}}
+var g=document.getElementById('g'),l=document.getElementById('l');
+function load(img){
+  if(img.complete && img.naturalWidth>0){check();}
+  else if(img.complete){check();}
+  else{img.onload=function(){check();};img.onerror=check;}
+}
+load(g);load(l);
+<\/script>
+</body></html>`
+
+    const htmlBlob = new Blob([html], { type: 'text/html' })
+    const htmlBlobUrl = URL.createObjectURL(htmlBlob)
+
+    window.open(htmlBlobUrl, '_blank')
+
+    // تنظيف الـ Blob URLs بعد دقيقتين
+    setTimeout(() => {
+      URL.revokeObjectURL(gridBlobUrl)
+      URL.revokeObjectURL(htmlBlobUrl)
+    }, 120_000)
   }
 
   // ─── View order detail ────────────────────────
