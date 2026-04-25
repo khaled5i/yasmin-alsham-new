@@ -412,6 +412,8 @@ function DraggableText({
   annotationIndex,
   styles,
   containerRef,
+  onDragStart,
+  onDrag,
   onDragEnd,
   onScaleChange,
   onTextChange
@@ -420,6 +422,8 @@ function DraggableText({
   annotationIndex: number
   styles: React.CSSProperties
   containerRef: React.RefObject<HTMLDivElement | null>
+  onDragStart?: () => void
+  onDrag?: (info: any, element: HTMLElement | null) => void
   onDragEnd: (annotationId: string, info: any, element: HTMLElement | null) => void
   onScaleChange: (annotationId: string, delta: number) => void
   onTextChange: (annotationId: string, newText: string) => void
@@ -559,10 +563,12 @@ function DraggableText({
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
       style={{ ...styles, x, y, touchAction: isEditing ? 'manipulation' : 'none' }}
-      drag
+      drag={!isEditing}
       dragMomentum={false}
       dragElastic={0}
       dragConstraints={containerRef}
+      onDragStart={() => onDragStart?.()}
+      onDrag={(e, info) => onDrag?.(info, elementRef.current)}
       onDragEnd={handleDragEnd}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -570,7 +576,6 @@ function DraggableText({
       onPointerDown={(e) => e.stopPropagation()}
       data-annotation-interactive="true"
       className={`${isEditing ? 'cursor-text' : 'cursor-move touch-none'}`}
-      drag={!isEditing} // تعطيل السحب عند التعديل
     >
       {/* نص بسيط بدون خلفية - رقم ونص فقط */}
       <div
@@ -748,6 +753,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const suppressTranslateClickRef = useRef(false)
   const translateAllClickTimerRef = useRef<NodeJS.Timeout | null>(null)
   const skipDrawingOnceRef = useRef(false)
+  const lastClickDrawingsRef = useRef<DrawingPath[]>([])
+  const lastPointerDownTimeRef = useRef(0)
+  const lastTapTimeRef = useRef(0)
+  const lastTapPositionRef = useRef({ x: 0, y: 0 })
+  const touchStartPositionRef = useRef({ x: 0, y: 0, time: 0 })
+  const autoRecordAnnotationIdRef = useRef<string | null>(null)
 
 
   // حالات كتابة النص اليدوي
@@ -785,7 +796,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [isRecognizingText, setIsRecognizingText] = useState(false) // حالة التعرف على النص
   const [showAllTextsOnImage, setShowAllTextsOnImage] = useState(true) // حالة إظهار/إخفاء كل النصوص على الصورة
   const [isDraggingMarker, setIsDraggingMarker] = useState(false) // هل يتم سحب علامة حالياً؟
-  const [isOverDeleteZone, setIsOverDeleteZone] = useState(false) // هل العلامة فوق منطقة الحذف؟
+  const [isDraggingText, setIsDraggingText] = useState(false) // هل يتم سحب نص حالياً؟
+  const [isOverDeleteZone, setIsOverDeleteZone] = useState(false) // هل العنصر فوق منطقة الحذف؟
   const [redoStack, setRedoStack] = useState<DrawingPath[]>([])
   const skipRedoResetRef = useRef(false)
 
@@ -1811,8 +1823,38 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setDraggingId(null)
   }, [annotations, onAnnotationsChange])
 
+  // معالج بدء سحب مربع النص
+  const handleTextBoxDragStart = useCallback(() => {
+    setIsDraggingText(true)
+    setIsOverDeleteZone(false)
+  }, [])
+
+  // معالج حركة سحب مربع النص - لتحديث حالة منطقة الحذف
+  const handleTextBoxDrag = useCallback((info: any, element: HTMLElement | null) => {
+    if (!containerRef.current || !element) return
+    const containerRect = containerRef.current.getBoundingClientRect()
+    const elementRect = element.getBoundingClientRect()
+    const centerX = elementRect.left + elementRect.width / 2
+    const centerY = elementRect.top + elementRect.height / 2
+    const deleteZoneCenterX = containerRect.left + containerRect.width / 2
+    const deleteZoneCenterY = containerRect.bottom - 52
+    const distance = Math.sqrt(
+      Math.pow(centerX - deleteZoneCenterX, 2) +
+      Math.pow(centerY - deleteZoneCenterY, 2)
+    )
+    setIsOverDeleteZone(distance < 50)
+  }, [])
+
   // معالج نهاية سحب النص
   const handleTextDragEnd = useCallback((annotationId: string, info: any, element: HTMLElement | null) => {
+    setIsDraggingText(false)
+
+    if (isOverDeleteZone) {
+      deleteAnnotation(annotationId)
+      setIsOverDeleteZone(false)
+      return
+    }
+
     if (!containerRef.current || !element) return
 
     const containerRect = containerRef.current.getBoundingClientRect()
@@ -1830,7 +1872,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       a.id === annotationId ? { ...a, boxX: clampedX, boxY: clampedY } : a
     )
     onAnnotationsChange(updatedAnnotations)
-  }, [annotations, onAnnotationsChange])
+  }, [annotations, onAnnotationsChange, isOverDeleteZone])
 
   // حذف تعليق
   const deleteAnnotation = (id: string) => {
@@ -2638,17 +2680,19 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setActiveTranscriptionId(annotationId)
   }, [])
 
-  // معالجة النقر المزدوج على الصورة لإضافة تعليق جديد
-  const handleImageDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // منع إضافة تعليق جديد أثناء التسجيل أو التعطيل أو التعديل أو وضع الرسم
-    if (disabled || isRecordingActive || editingTranscriptionId || isDrawingMode) return
+  // إنشاء تعليق جديد في موضع محدد (مشترك بين النقر المزدوج على الحاسوب واللمس المزدوج على الهاتف)
+  const createAnnotationAt = useCallback((x: number, y: number) => {
+    if (isDrawingMode) {
+      // إلغاء أي رسمة جارية وحذف النقاط العرضية من النقر المزدوج
+      isDrawingRef.current = false
+      currentPathRef.current = []
+      lastPointRef.current = null
+      setIsDrawing(false)
+      setCurrentPath([])
+      onDrawingsChange(lastClickDrawingsRef.current)
+    }
 
-    // إعادة تعيين المربع النشط عند النقر على مكان فارغ
     setActiveTranscriptionId(null)
-
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * 100
-    const y = ((e.clientY - rect.top) / rect.height) * 100
 
     const newAnnotation: ImageAnnotation = {
       id: Date.now().toString(),
@@ -2657,10 +2701,23 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       timestamp: Date.now()
     }
 
+    autoRecordAnnotationIdRef.current = newAnnotation.id
     onAnnotationsChange([...annotations, newAnnotation])
     setActiveAnnotationId(newAnnotation.id)
     setShowInstructions(false)
-  }, [disabled, isRecordingActive, editingTranscriptionId, isDrawingMode, annotations, onAnnotationsChange])
+  }, [isDrawingMode, annotations, onAnnotationsChange, onDrawingsChange])
+
+  // معالجة النقر المزدوج على الصورة لإضافة تعليق جديد (الحاسوب)
+  const handleImageDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // منع إضافة تعليق جديد أثناء التسجيل أو التعطيل أو التعديل
+    if (disabled || isRecordingActive || editingTranscriptionId) return
+    // في وضع الرسم على الحاسوب: dblclick يعمل لأن لا يوجد preventDefault
+    // على الهاتف: يُعالج عبر كشف اللمس المزدوج في onTouchEnd
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) / rect.width) * 100
+    const y = ((e.clientY - rect.top) / rect.height) * 100
+    createAnnotationAt(x, y)
+  }, [disabled, isRecordingActive, editingTranscriptionId, createAnnotationAt])
 
   // معالجة النقر المفرد على الصورة لإعادة تعيين المربع النشط
   const handleImageClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -2700,6 +2757,17 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
   // مزامنة annotationsRef
   useEffect(() => { annotationsRef.current = annotations }, [annotations])
+
+  // بدء التسجيل تلقائياً بعد إضافة التعليق عبر النقر المزدوج
+  useEffect(() => {
+    const id = autoRecordAnnotationIdRef.current
+    if (!id) return
+    if (annotations.some(a => a.id === id)) {
+      autoRecordAnnotationIdRef.current = null
+      startRecording(id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotations])
 
   // إنشاء التعليق بالنص عندما يكون الصوت والتحويل جاهزين
   const tryFinalizeAnnotation = () => {
@@ -3551,7 +3619,15 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               if (isAnnotationInteractiveTarget(e.target)) return
               // السماح بالتفاعل مع عناصر واجهة المستخدم (الأزرار)
               if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
-              if (isDrawingMode) handleDrawingStart(e)
+              if (isDrawingMode) {
+                // حفظ لقطة الرسومات قبل أول نقرة في تسلسل محتمل للنقر المزدوج
+                const now = Date.now()
+                if (now - lastPointerDownTimeRef.current > 400) {
+                  lastClickDrawingsRef.current = drawings
+                }
+                lastPointerDownTimeRef.current = now
+                handleDrawingStart(e)
+              }
             }}
             onPointerMove={handleDrawingMove}
             onPointerUp={handleDrawingEnd}
@@ -3586,6 +3662,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 return
               }
 
+              // تسجيل موضع وتوقيت بداية اللمس للكشف عن النقر المزدوج
+              const touch = e.changedTouches[0]
+              if (touch) {
+                touchStartPositionRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
+              }
+
               preventFormValidation(e)
               if (isDrawingMode) {
                 e.preventDefault()
@@ -3604,6 +3686,40 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               if (isAnnotationInteractiveTarget(e.target)) return
               if (isDrawingMode) {
                 e.preventDefault()
+
+                // كشف النقر المزدوج على الهاتف (dblclick لا يُطلَق بسبب preventDefault في touchStart)
+                if (!disabled && !isRecordingActive && !editingTranscriptionId) {
+                  const touch = e.changedTouches[0]
+                  if (touch) {
+                    const start = touchStartPositionRef.current
+                    const dx = touch.clientX - start.x
+                    const dy = touch.clientY - start.y
+                    const moved = Math.sqrt(dx * dx + dy * dy)
+                    const duration = Date.now() - start.time
+
+                    // التحقق من أن هذه كانت نقرة (لم يتحرك الإصبع ولم يمكث طويلاً)
+                    if (moved < 15 && duration < 300) {
+                      const now = Date.now()
+                      const lastTap = lastTapPositionRef.current
+                      const tapDx = touch.clientX - lastTap.x
+                      const tapDy = touch.clientY - lastTap.y
+                      const tapDist = Math.sqrt(tapDx * tapDx + tapDy * tapDy)
+
+                      if (now - lastTapTimeRef.current < 400 && tapDist < 50) {
+                        // نقر مزدوج مكتشَف - إنشاء تعليق صوتي
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const x = ((touch.clientX - rect.left) / rect.width) * 100
+                        const y = ((touch.clientY - rect.top) / rect.height) * 100
+                        createAnnotationAt(x, y)
+                        lastTapTimeRef.current = 0 // إعادة تعيين لمنع النقر الثلاثي
+                      } else {
+                        // نقرة مفردة - تسجيلها كبداية تسلسل نقر مزدوج محتمل
+                        lastTapTimeRef.current = now
+                        lastTapPositionRef.current = { x: touch.clientX, y: touch.clientY }
+                      }
+                    }
+                  }
+                }
               }
             }}
           >
@@ -4142,13 +4258,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                                   : '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                               }}
                               transition={{ duration: 0.2 }}
-                              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg ${isDrawingMode
-                                ? 'cursor-not-allowed opacity-50 bg-gray-400 border-gray-300 border-2'
-                                : annotation.isRecording
-                                  ? 'bg-red-500 border-red-300 animate-pulse border-2 cursor-pointer'
-                                  : isActiveMarker
-                                    ? 'bg-pink-400 border-pink-200 border-2 ring-2 ring-pink-300 cursor-pointer'
-                                    : 'bg-pink-500 border-pink-300 border-2 cursor-pointer'
+                              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg ${annotation.isRecording
+                                ? 'bg-red-500 border-red-300 animate-pulse border-2 cursor-pointer'
+                                : isActiveMarker
+                                  ? 'bg-pink-400 border-pink-200 border-2 ring-2 ring-pink-300 cursor-pointer'
+                                  : 'bg-pink-500 border-pink-300 border-2 cursor-pointer'
                                 }`}
                             >
                               {annotation.isRecording ? (
@@ -4156,7 +4270,6 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                                   type="button"
                                   onClick={stopRecording}
                                   className="w-full h-full flex items-center justify-center"
-                                  disabled={isDrawingMode}
                                 >
                                   <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                                 </button>
@@ -4165,30 +4278,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                                   type="button"
                                   onClick={() => startRecording(annotation.id)}
                                   className="w-full h-full flex items-center justify-center"
-                                  disabled={isDrawingMode}
-                                  title={isDrawingMode ? 'التسجيل الصوتي معطل أثناء وضع الرسم' : 'بدء التسجيل الصوتي'}
+                                  title="بدء التسجيل الصوتي"
                                 >
                                   <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                                 </button>
                               )}
                             </motion.div>
 
-                            {/* زر كتابة النص اليدوي */}
-                            {!annotation.isRecording && (
-                              <motion.button
-                                type="button"
-                                onClick={() => openManualTextInput(annotation.id)}
-                                whileTap={{ scale: 0.95 }}
-                                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg border-2 transition-colors ${isDrawingMode
-                                  ? 'bg-gray-400 border-gray-300 opacity-50 cursor-not-allowed'
-                                  : 'bg-blue-500 border-blue-300 hover:bg-blue-600 cursor-pointer'
-                                  }`}
-                                title={isDrawingMode ? 'إضافة النص معطلة أثناء وضع الرسم' : 'كتابة نص يدوي'}
-                                disabled={isDrawingMode}
-                              >
-                                <Type className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                              </motion.button>
-                            )}
                           </div>
 
                           {/* زر الحذف للعلامات بدون نص */}
@@ -4251,6 +4347,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       annotationIndex={annotationIndex}
                       styles={styles}
                       containerRef={containerRef}
+                      onDragStart={handleTextBoxDragStart}
+                      onDrag={handleTextBoxDrag}
                       onDragEnd={handleTextDragEnd}
                       onScaleChange={changeTextScale}
                       onTextChange={handleTextChange}
@@ -4261,7 +4359,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
             {/* منطقة الحذف */}
             <AnimatePresence>
-              {isDraggingMarker && (
+              {(isDraggingMarker || isDraggingText) && (
                 <motion.div
                   initial={{ y: 50, opacity: 0, scale: 0.8 }}
                   animate={{
