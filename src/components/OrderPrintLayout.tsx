@@ -20,6 +20,7 @@ interface OrderPrintLayoutProps {
   printableImages: string[]
   designComments?: string
   designCommentsSnapshots?: DesignCommentSnapshot[] // قائمة التعليقات المتعددة
+  hindiDesignCommentsSnapshots?: DesignCommentSnapshot[] // النسخة الهندية
 }
 
 /**
@@ -28,10 +29,11 @@ interface OrderPrintLayoutProps {
  * - الصفحة 1: معلومات الطلب + المقاسات + صورة الخلف (أو الأمام أو أول صورة تصميم)
  * - الصفحة 2: صورة الأمام (إن وجدت)
  * - الصفحة 3+: كل تعليق تصميم في صفحة منفصلة
+ * - صفحات هندية: إذا وجدت hindiDesignCommentsSnapshots
  * - الصفحة الأخيرة: باقي صور التصميم
  */
 const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
-  ({ order, printableImages, designComments, designCommentsSnapshots = [] }, ref) => {
+  ({ order, printableImages, designComments, designCommentsSnapshots = [], hindiDesignCommentsSnapshots }, ref) => {
 
     // الحصول على اسم المقاس بالعربية
     const getMeasurementLabel = (key: string): string => {
@@ -343,6 +345,31 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
             </div>
           </div>
         ))}
+
+        {/* ========== صفحات النسخة الهندية ========== */}
+        {hindiDesignCommentsSnapshots && hindiDesignCommentsSnapshots.length > 0 && (
+          <>
+            {/* صفحة فاصلة تعلن بداية النسخة الهندية */}
+            <div className="print-page" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '16px' }}>
+              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#f97316', textAlign: 'center' }}>हिंदी प्रति</div>
+              <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center' }}>النسخة الهندية</div>
+              <div style={{ fontSize: '14px', color: '#9ca3af', textAlign: 'center' }}>{order.client_name} - #{order.order_number || order.id.slice(0, 8)}</div>
+            </div>
+            {hindiDesignCommentsSnapshots.map((snapshot) => (
+              <div key={snapshot.id} className="print-page design-comment-page">
+                <div className="design-comment-full">
+                  <div className="design-comment-image-wrapper">
+                    <img
+                      src={snapshot.imageDataUrl}
+                      alt={snapshot.title}
+                      className="design-comment-full-image"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
 
         {/* ========== صفحة الصور المتبقية ========== */}
         {getRemainingDesignImages().length > 0 && (

@@ -10,7 +10,8 @@ const languageNames: Record<string, string> = {
   'en': 'English',
   'ur': 'Urdu',
   'bn': 'Bengali',
-  'ar': 'Arabic'
+  'ar': 'Arabic',
+  'hi': 'Hindi'
 }
 
 export async function POST(request: NextRequest) {

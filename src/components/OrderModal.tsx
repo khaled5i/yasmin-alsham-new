@@ -177,6 +177,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null)
   const [translatingAnnotationId, setTranslatingAnnotationId] = useState<string | null>(null)
   const [showAnnotationLanguageDropdown, setShowAnnotationLanguageDropdown] = useState<string | null>(null)
+  const [showHindiComments, setShowHindiComments] = useState(false)
   const resolveCommentImageSrc = useCallback((comment: SavedDesignComment): string => {
     if (comment.image && comment.image.startsWith('data:')) return comment.image
     if (comment.image && comment.image !== 'custom') return comment.image
@@ -1178,13 +1179,27 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               {/* 3️⃣ قسم تعليقات التصميم */}
               {(savedDesignComments.length > 0 || imageAnnotations.length > 0 || imageDrawings.length > 0 || customDesignImage) && (
                 <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center flex-wrap gap-2">
                     <Pencil className="w-5 h-5 text-pink-600" />
                     <span>{t('design_comments')}</span>
                     {savedDesignComments.length > 0 && (
                       <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded-full">
                         {t('comment_badge', { count: savedDesignComments.length })}
                       </span>
+                    )}
+                    {/* زر التبديل للهندية - يظهر إذا وجدت ترجمة هندية */}
+                    {savedDesignComments.some(c => c.annotations?.some((a: any) => a.hindiText)) && (
+                      <button
+                        onClick={() => setShowHindiComments(!showHindiComments)}
+                        className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${
+                          showHindiComments
+                            ? 'bg-orange-500 text-white border-orange-500'
+                            : 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100'
+                        }`}
+                        title={showHindiComments ? 'عرض النسخة العربية' : 'عرض النسخة الهندية'}
+                      >
+                        {showHindiComments ? 'العربية' : 'हिंदी में'}
+                      </button>
                     )}
                   </h3>
 
@@ -1235,7 +1250,15 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                   {/* الصورة مع العلامات والرسومات */}
                                   <div className="relative rounded-xl overflow-hidden border border-pink-200">
                                     {/* إذا وجدت صورة مركّبة محفوظة، نعرضها مباشرة */}
-                                    {comment.compositeImage ? (
+                                    {/* في وضع الهندية: نعرض compositeImageHi إذا وجدت */}
+                                    {(showHindiComments && (comment as any).compositeImageHi) ? (
+                                      <img
+                                        src={(comment as any).compositeImageHi}
+                                        alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`} (हिंदी)`}
+                                        className="w-full h-auto cursor-pointer"
+                                        onClick={() => openLightbox(0, [(comment as any).compositeImageHi])}
+                                      />
+                                    ) : comment.compositeImage ? (
                                       <img
                                         src={comment.compositeImage}
                                         alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`}`}
@@ -1305,9 +1328,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                                 {idx + 1}
                                               </div>
                                               <div className="flex-1 min-w-0">
-                                                {annotation.transcription && (
+                                                {showHindiComments && (annotation as any).hindiText ? (
+                                                  <p className="text-sm text-gray-700 mb-1" dir="ltr">{(annotation as any).hindiText}</p>
+                                                ) : annotation.transcription ? (
                                                   <p className="text-sm text-gray-700 mb-1">{annotation.transcription}</p>
-                                                )}
+                                                ) : null}
                                               </div>
                                               {/* أزرار التحكم */}
                                               <div className="flex items-center gap-1 flex-shrink-0">

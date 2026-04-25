@@ -213,6 +213,7 @@ export interface CreateOrderData {
       boxY?: number
       audioData?: string
       transcription?: string
+      hindiText?: string
       duration?: number
       timestamp: number
     }>
@@ -323,6 +324,7 @@ export interface UpdateOrderData {
       boxY?: number
       audioData?: string
       transcription?: string
+      hindiText?: string
       duration?: number
       timestamp: number
     }>

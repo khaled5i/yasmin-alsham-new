@@ -210,6 +210,189 @@ export function renderDrawingsOnCanvas(
   }
 }
 
+const BOX_WIDTH_PERCENT = 25
+const BOX_HEIGHT_PERCENT = 12
+const SAFE_MARGIN = 2
+
+/**
+ * Generates a composite image (base64 JPEG) from raw annotation data.
+ * Replicates InteractiveImageAnnotation.generateCompositeImage but works outside React.
+ *
+ * @param annotations - Array of annotations with position + text data
+ * @param drawings - Array of drawing paths
+ * @param baseImageSrc - URL or base64 of the base image
+ * @param getText - Returns the text to display for each annotation (return undefined to skip)
+ * @param containerWidth - Width of the virtual container (default 400)
+ * @param containerHeight - Height of the virtual container (default 533, aspect 3:4)
+ */
+export async function generateAnnotationCompositeImage(
+  annotations: Array<{
+    id: string; x: number; y: number; boxX?: number; boxY?: number;
+    transcription?: string; isHidden?: boolean; isRecording?: boolean;
+    textScale?: number; timestamp: number
+  }>,
+  drawings: DrawingPath[],
+  baseImageSrc: string,
+  getText: (annotation: { id: string; transcription?: string; isHidden?: boolean; isRecording?: boolean; [key: string]: any }) => string | undefined,
+  containerWidth = 800,
+  containerHeight = 1067
+): Promise<string | null> {
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = containerWidth
+    canvas.height = containerHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, containerWidth, containerHeight)
+
+    const baseImage = await loadImage(baseImageSrc)
+    const { offsetX, offsetY, drawWidth, drawHeight } = calculateObjectContainDimensions(
+      baseImage.width, baseImage.height, containerWidth, containerHeight
+    )
+    ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
+
+    renderDrawingsOnCanvas(ctx, drawings, containerWidth, containerHeight, baseImage, { offsetX, offsetY, drawWidth, drawHeight })
+
+    const scale = containerWidth / 400
+    const markerRadius = 10 * scale
+    annotations.forEach((annotation, index) => {
+      const markerX = (annotation.x / 100) * containerWidth
+      const markerY = (annotation.y / 100) * containerHeight
+      const text = getText(annotation)
+      const hasText = !!text && !annotation.isRecording
+
+      ctx.save()
+      ctx.beginPath()
+      ctx.arc(markerX, markerY, markerRadius, 0, Math.PI * 2)
+      ctx.fillStyle = annotation.isHidden ? '#9ca3af' : '#ec4899'
+      ctx.fill()
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2 * scale
+      ctx.stroke()
+      if (hasText) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `bold ${Math.round(10 * scale)}px Cairo, Arial, sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText((index + 1).toString(), markerX, markerY)
+      }
+      ctx.restore()
+    })
+
+    const TEXT_OFFSET = 2
+    const getBoxPos = (mx: number, my: number, pos: string) => {
+      switch (pos) {
+        case 'bottom': return { x: mx, y: my + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'top': return { x: mx, y: my - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'right': return { x: mx + TEXT_OFFSET, y: my, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'left': return { x: mx - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: my, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'bottom-right': return { x: mx + TEXT_OFFSET, y: my + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'bottom-left': return { x: mx - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: my + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'top-right': return { x: mx + TEXT_OFFSET, y: my - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'top-left': return { x: mx - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: my - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        default: return { x: mx, y: my + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+      }
+    }
+    const boxesOverlap = (b1: { x: number; y: number; width: number; height: number }, b2: { x: number; y: number; width: number; height: number }) =>
+      !(b1.x + b1.width + SAFE_MARGIN < b2.x || b2.x + b2.width + SAFE_MARGIN < b1.x ||
+        b1.y + b1.height + SAFE_MARGIN < b2.y || b2.y + b2.height + SAFE_MARGIN < b1.y)
+    const boxInBounds = (b: { x: number; y: number; width: number; height: number }) =>
+      b.x >= 0 && b.y >= 0 && b.x + b.width <= 100 && b.y + b.height <= 100
+
+    const positionOrder = ['bottom', 'top', 'right', 'left', 'bottom-right', 'bottom-left', 'top-right', 'top-left']
+    const textPositions = new Map<string, { x: number; y: number }>()
+    const placedBoxes: { x: number; y: number; width: number; height: number }[] = []
+
+    const sortedAnnotations = [...annotations]
+      .filter(a => getText(a) && !a.isRecording)
+      .sort((a, b) => a.timestamp - b.timestamp)
+
+    sortedAnnotations.forEach((annotation) => {
+      const markerX = annotation.x
+      const markerY = annotation.y
+      if (annotation.boxX !== undefined && annotation.boxY !== undefined) {
+        textPositions.set(annotation.id, { x: annotation.boxX, y: annotation.boxY })
+        placedBoxes.push({ x: annotation.boxX, y: annotation.boxY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT })
+        return
+      }
+      let best = getBoxPos(markerX, markerY, 'bottom')
+      for (const pos of positionOrder) {
+        const candidate = getBoxPos(markerX, markerY, pos)
+        if (!boxInBounds(candidate)) continue
+        if (!placedBoxes.some(pb => boxesOverlap(candidate, pb))) { best = candidate; break }
+      }
+      placedBoxes.push(best)
+      textPositions.set(annotation.id, { x: best.x, y: best.y })
+    })
+
+    annotations
+      .filter(a => getText(a) && !a.isRecording && !a.isHidden)
+      .forEach((annotation, _i) => {
+        const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
+        const textPos = textPositions.get(annotation.id)
+        if (!textPos) return
+        const textScale = (annotation as any).textScale ?? 1
+        const fontSize = Math.round(14 * textScale * scale)
+        const textX = (textPos.x / 100) * containerWidth
+        const textY = (textPos.y / 100) * containerHeight
+        const displayText = getText(annotation)
+        if (!displayText) return
+        const fullText = `${annotationIndex}. ${displayText}`
+
+        ctx.save()
+        ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'top'
+        const maxTextWidth = containerWidth * 0.5
+        const lineHeight = fontSize * 1.3
+        const words = fullText.split(' ')
+        const lines: string[] = []
+        let currentLine = ''
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word
+          if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
+            lines.push(currentLine)
+            currentLine = word
+          } else {
+            currentLine = testLine
+          }
+        }
+        if (currentLine) lines.push(currentLine)
+
+        lines.forEach((line, lineIndex) => {
+          const lineY = textY + lineIndex * lineHeight
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              if (dx !== 0 || dy !== 0) ctx.fillText(line, textX + dx, lineY + dy)
+            }
+          }
+          ctx.fillStyle = '#000000'
+          ctx.fillText(line, textX, lineY)
+        })
+        ctx.restore()
+      })
+
+    return new Promise<string | null>((resolve) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { resolve(null); return }
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => resolve(null)
+          reader.readAsDataURL(blob)
+        },
+        'image/jpeg',
+        0.92
+      )
+    })
+  } catch {
+    return null
+  }
+}
+
 /**
  * Loads an image from a URL and returns the HTMLImageElement.
  * Sets crossOrigin to 'anonymous' for canvas operations.

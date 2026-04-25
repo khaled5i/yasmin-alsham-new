@@ -43,6 +43,7 @@ export interface ImageAnnotation {
   transcription?: string
   translatedText?: string // النص المترجم
   translationLanguage?: string // لغة الترجمة
+  hindiText?: string // الترجمة الهندية التلقائية
   duration?: number
   timestamp: number
   isRecording?: boolean
@@ -377,6 +378,7 @@ export interface SavedDesignComment {
   title?: string
   view?: 'front' | 'back'
   compositeImage?: string | null // الصورة المركّبة (الصورة + الرسومات + التعليقات)
+  compositeImageHi?: string | null // نسخة هندية من الصورة المركّبة (النص بالهندية)
 }
 
 interface InteractiveImageAnnotationProps {

@@ -45,6 +45,7 @@ import { openWhatsApp } from '@/utils/whatsapp'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import GenerateDesignButton from '@/components/GenerateDesignButton'
 import { Order } from '@/lib/services/order-service'
+import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
 
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
@@ -709,6 +710,54 @@ function AddOrderContent() {
             })
           } catch { /* تجاهل */ }
         }
+      }
+
+      // ترجمة تعليقات التصميم إلى الهندية تلقائياً وتوليد compositeImageHi
+      const hasAnyTranscription = allSavedComments.some(
+        (c: any) => c.annotations?.some((a: any) => a.transcription)
+      )
+      if (hasAnyTranscription) {
+        try {
+          const commentPromises = allSavedComments.map(async (comment: any) => {
+            // ترجمة كل annotation يحتوي على نص
+            const annotationPromises = (comment.annotations || []).map(async (ann: any) => {
+              if (!ann.transcription) return ann
+              try {
+                const resp = await fetch('/api/translate-text', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ text: ann.transcription, targetLanguage: 'hi' })
+                })
+                if (resp.ok) {
+                  const data = await resp.json()
+                  return { ...ann, hindiText: data.translatedText }
+                }
+              } catch { /* تجاهل */ }
+              return ann
+            })
+            const translatedAnnotations = await Promise.all(annotationPromises)
+            const commentWithHindi = { ...comment, annotations: translatedAnnotations }
+
+            // توليد compositeImageHi إذا كانت هناك ترجمة هندية
+            const hasHindi = translatedAnnotations.some((a: any) => a.hindiText)
+            if (hasHindi && comment.compositeImage) {
+              try {
+                const baseImgSrc = comment.image && comment.image !== 'custom' && comment.image.startsWith('data:')
+                  ? comment.image
+                  : (customDesignImageBase64 || '/front2.png')
+                const compositeImageHi = await generateAnnotationCompositeImage(
+                  translatedAnnotations,
+                  comment.drawings || [],
+                  baseImgSrc,
+                  (ann: any) => ann.hindiText || undefined
+                )
+                return { ...commentWithHindi, compositeImageHi }
+              } catch { /* تجاهل */ }
+            }
+            return commentWithHindi
+          })
+          allSavedComments = await Promise.all(commentPromises)
+        } catch { /* تجاهل أخطاء الترجمة الكاملة */ }
       }
 
       // إنشاء الطلب باستخدام Supabase

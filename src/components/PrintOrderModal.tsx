@@ -35,6 +35,8 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
   const [designComments, setDesignComments] = useState<string>(order.notes || '')
   const [designCommentsSnapshots, setDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
   const [selectedCommentsIds, setSelectedCommentsIds] = useState<string[]>([]) // التعليقات المحددة للطباعة
+  const [hindiDesignCommentsSnapshots, setHindiDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
+  const [includeHindiPrint, setIncludeHindiPrint] = useState(false)
   const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
 
@@ -411,6 +413,24 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
       if (firstBack) defaultSelectedIds.push(firstBack.id)
 
       setSelectedCommentsIds(defaultSelectedIds)
+
+      // بناء snapshots الهندية من compositeImageHi المحفوظ في كل تعليق
+      const hindiSnapshots: DesignCommentSnapshot[] = []
+      for (let i = 0; i < savedComments.length; i++) {
+        const comment = savedComments[i] as any
+        if (!comment.compositeImageHi) continue
+        const title = comment.title || `التعليق ${i + 1}`
+        hindiSnapshots.push({
+          id: comment.id + '_hi',
+          title: title + ' (हिंदी)',
+          imageDataUrl: comment.compositeImageHi,
+          transcriptions: [],
+          hiddenTranscriptions: [],
+          translatedTexts: []
+        })
+      }
+      setHindiDesignCommentsSnapshots(hindiSnapshots)
+      if (hindiSnapshots.length > 0) setIncludeHindiPrint(true)
     } catch (error) {
       console.error('Error generating snapshots:', error)
     } finally {
@@ -963,6 +983,24 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
             )}
           </div>
 
+          {/* خيار الطباعة بالهندية */}
+          {hindiDesignCommentsSnapshots.length > 0 && (
+            <div className="px-6 pb-4">
+              <label className="flex items-center gap-3 cursor-pointer bg-orange-50 border border-orange-200 rounded-lg p-3 hover:bg-orange-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={includeHindiPrint}
+                  onChange={(e) => setIncludeHindiPrint(e.target.checked)}
+                  className="w-4 h-4 accent-orange-500"
+                />
+                <div>
+                  <span className="font-medium text-orange-800">طباعة نسخة هندية (हिंदी)</span>
+                  <p className="text-xs text-orange-600 mt-0.5">سيتم طباعة الطلب مرتين: الأولى بالعربية والثانية بالهندية</p>
+                </div>
+              </label>
+            </div>
+          )}
+
           {/* أزرار الإجراءات */}
           <div className="border-t border-gray-200 p-4 bg-gray-50 flex justify-between items-center">
             <button
@@ -989,6 +1027,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
               printableImages={printableImages}
               designComments={designComments}
               designCommentsSnapshots={selectedCommentsSnapshots}
+              hindiDesignCommentsSnapshots={includeHindiPrint ? hindiDesignCommentsSnapshots : undefined}
             />
           </div>
         </div>
