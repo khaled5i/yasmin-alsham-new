@@ -49,6 +49,7 @@ export interface ImageAnnotation {
   isRecording?: boolean
   isHidden?: boolean // إخفاء النص من على الصورة
   textScale?: number // حجم النص (1 = الحجم الافتراضي)
+  textColor?: string // لون النص (افتراضي: أسود)
 }
 
 // ثوابت الألوان المتاحة للرسم
@@ -418,7 +419,9 @@ function DraggableText({
   onDrag,
   onDragEnd,
   onScaleChange,
-  onTextChange
+  onTextChange,
+  onEditStart,
+  onEditEnd
 }: {
   annotation: ImageAnnotation
   annotationIndex: number
@@ -429,6 +432,8 @@ function DraggableText({
   onDragEnd: (annotationId: string, info: any, element: HTMLElement | null) => void
   onScaleChange: (annotationId: string, delta: number) => void
   onTextChange: (annotationId: string, newText: string) => void
+  onEditStart?: (annotationId: string) => void
+  onEditEnd?: () => void
 }) {
   const elementRef = useRef<HTMLDivElement>(null)
   const x = useMotionValue(0)
@@ -500,6 +505,7 @@ function DraggableText({
       onTextChange(annotation.id, trimmed)
     }
     setIsEditing(false)
+    // لا نستدعي onEditEnd هنا - يبقى الـ annotation محدداً حتى يبدأ المستخدم الرسم
   }, [annotation.id, annotation.transcription, editText, onTextChange])
 
   // معالجة الضغط المزدوج لبدء التعديل
@@ -507,7 +513,8 @@ function DraggableText({
     e.stopPropagation()
     setIsEditing(true)
     setEditText(annotation.transcription || '')
-  }, [annotation.transcription])
+    onEditStart?.(annotation.id)
+  }, [annotation.id, annotation.transcription, onEditStart])
 
   // حفظ التعديل عند الضغط خارج النص
   const handleBlur = useCallback(() => {
@@ -581,8 +588,8 @@ function DraggableText({
     >
       {/* نص بسيط بدون خلفية - رقم ونص فقط */}
       <div
-        className="flex items-start gap-1 text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]"
-        style={{ fontSize }}
+        className="flex items-start gap-1 drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]"
+        style={{ fontSize, color: annotation.textColor || '#000000' }}
         onDoubleClick={handleDoubleClick}
       >
         <span className="font-bold flex-shrink-0">
@@ -735,6 +742,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // حالات التعليقات الصوتية
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [activeTranscriptionId, setActiveTranscriptionId] = useState<string | null>(null)
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null)
+  const editingAnnotationIdRef = useRef<string | null>(null)
   const [editingTranscriptionId, setEditingTranscriptionId] = useState<string | null>(null)
   const [editedText, setEditedText] = useState<string>('')
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -1105,10 +1114,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           }
           if (currentLine) lines.push(currentLine)
 
-          // رسم النص مع ظل أبيض (drop-shadow)
+          // رسم النص مع ظل (drop-shadow)
+          const textColor = annotation.textColor || '#000000'
           lines.forEach((line, lineIndex) => {
             const lineY = textY + (lineIndex * lineHeight)
-            // ظل أبيض
+            // ظل أبيض للوضوح
             ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
             for (let dx = -1; dx <= 1; dx++) {
               for (let dy = -1; dy <= 1; dy++) {
@@ -1117,8 +1127,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 }
               }
             }
-            // النص الأسود
-            ctx.fillStyle = '#000000'
+            // النص بالون المحدد
+            ctx.fillStyle = textColor
             ctx.fillText(line, textX, lineY)
           })
 
@@ -1983,6 +1993,14 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
   }, [annotations, onAnnotationsChange, annotationPositions])
 
+  // معالج تغيير لون النص
+  const handleTextColorChange = useCallback((annotationId: string, color: string) => {
+    const updatedAnnotations = annotations.map(a =>
+      a.id === annotationId ? { ...a, textColor: color } : a
+    )
+    onAnnotationsChange(updatedAnnotations)
+  }, [annotations, onAnnotationsChange])
+
 
   // دوال تعديل النص
   const handleSaveEdit = useCallback((e: React.MouseEvent, annotationId: string) => {
@@ -2133,6 +2151,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       } catch (err) {
         // ignore error if capture fails
       }
+    }
+
+    // مسح تحديد النص عند بدء الرسم
+    if (editingAnnotationIdRef.current) {
+      setEditingAnnotationId(null)
+      editingAnnotationIdRef.current = null
     }
 
     const point = getDrawingCoordinates(e)
@@ -3778,6 +3802,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               }}
               onMouseDown={(e) => {
                 e.stopPropagation()
+                e.preventDefault()
               }}
               onTouchStart={(e) => {
                 e.stopPropagation()
@@ -4153,6 +4178,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                     <div className="relative color-picker-container">
                       <motion.button
                         type="button"
+                        onMouseDown={(e) => { if (editingAnnotationIdRef.current) e.preventDefault() }}
                         onClick={() => {
                           setShowColorPicker(!showColorPicker)
                           setShowStrokePicker(false)
@@ -4160,14 +4186,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                           setShowEraserSizePicker(false)
                           setShowEraserMenu(false)
                         }}
-                        className="w-11 h-11 rounded-full flex items-center justify-center shadow-lg bg-white border border-gray-300 hover:bg-gray-100 transition-all"
-                        title="اختيار اللون"
+                        className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg bg-white border transition-all ${editingAnnotationId ? 'border-purple-400 ring-2 ring-purple-200' : 'border-gray-300 hover:bg-gray-100'}`}
+                        title={editingAnnotationId ? 'تغيير لون النص' : 'اختيار لون الرسم'}
                         whileTap={{ scale: 0.95 }}
                       >
                         <div
-                          className="w-6 h-6 rounded-full border-2 border-gray-400"
-                          style={{ backgroundColor: drawingColor }}
-                        />
+                          className="w-6 h-6 rounded-full border-2 border-gray-400 flex items-center justify-center"
+                          style={{ backgroundColor: editingAnnotationId ? (annotations.find(a => a.id === editingAnnotationId)?.textColor || '#000000') : drawingColor }}
+                        >
+                          {editingAnnotationId && <span className="text-[8px] font-bold" style={{ color: (annotations.find(a => a.id === editingAnnotationId)?.textColor || '#000000') === '#ffffff' ? '#000' : '#fff' }}>ن</span>}
+                        </div>
                       </motion.button>
                       {/* قائمة الألوان - أفقية */}
                       <AnimatePresence>
@@ -4176,29 +4204,43 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             initial={{ opacity: 0, x: -10, scale: 0.9 }}
                             animate={{ opacity: 1, x: 0, scale: 1 }}
                             exit={{ opacity: 0, x: -10, scale: 0.9 }}
+                            onMouseDown={(e) => { if (editingAnnotationIdRef.current) e.preventDefault() }}
                             className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-gray-200 p-4 color-picker-container"
                             style={{ zIndex: 200, pointerEvents: 'auto', minWidth: '280px' }}
                           >
-                            <p className="text-xs text-gray-500 mb-2 text-center">اختر اللون</p>
+                            <p className="text-xs text-gray-500 mb-2 text-center">
+                              {editingAnnotationId ? 'اختر لون النص' : 'اختر لون الرسم'}
+                            </p>
                             <div className="grid grid-cols-4 gap-2.5">
-                              {DRAWING_COLORS.map(color => (
-                                <button
-                                  type="button"
-                                  key={color.value}
-                                  onClick={() => {
-                                    setDrawingColor(color.value)
-                                    setShowColorPicker(false)
-                                  }}
-                                  className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 ${drawingColor === color.value
-                                    ? 'border-gray-800 scale-110 ring-2 ring-pink-300'
-                                    : 'border-gray-300'
-                                    }`}
-                                  style={{
-                                    backgroundColor: color.value
-                                  }}
-                                  title={color.name}
-                                />
-                              ))}
+                              {DRAWING_COLORS.map(color => {
+                                const activeColor = editingAnnotationId
+                                  ? (annotations.find(a => a.id === editingAnnotationId)?.textColor || '#000000')
+                                  : drawingColor
+                                return (
+                                  <button
+                                    type="button"
+                                    key={color.value}
+                                    onMouseDown={(e) => { if (editingAnnotationIdRef.current) e.preventDefault() }}
+                                    onClick={() => {
+                                      const currentEditId = editingAnnotationIdRef.current
+                                      if (currentEditId) {
+                                        handleTextColorChange(currentEditId, color.value)
+                                      } else {
+                                        setDrawingColor(color.value)
+                                      }
+                                      setShowColorPicker(false)
+                                    }}
+                                    className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 ${activeColor === color.value
+                                      ? 'border-gray-800 scale-110 ring-2 ring-pink-300'
+                                      : 'border-gray-300'
+                                      }`}
+                                    style={{
+                                      backgroundColor: color.value
+                                    }}
+                                    title={color.name}
+                                  />
+                                )
+                              })}
                             </div>
                           </motion.div>
                         )}
@@ -4354,6 +4396,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       onDragEnd={handleTextDragEnd}
                       onScaleChange={changeTextScale}
                       onTextChange={handleTextChange}
+                      onEditStart={(id) => { setEditingAnnotationId(id); editingAnnotationIdRef.current = id }}
+                      onEditEnd={() => { setEditingAnnotationId(null); editingAnnotationIdRef.current = null }}
                     />
                   )
                 })}
