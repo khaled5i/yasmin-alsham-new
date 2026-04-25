@@ -35,12 +35,38 @@ export default function UnifiedNotesInput({
   const { t } = useTranslation()
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
-  const [transcribingId, setTranscribingId] = useState<string | null>(null)
   const [translatingId, setTranslatingId] = useState<string | null>(null)
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [targetLanguage, setTargetLanguage] = useState<string>('en') // اللغة المستهدفة للترجمة
+  const [targetLanguage, setTargetLanguage] = useState<string>('en')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
+
+  // Soniox real-time STT
+  const [liveTranscription, setLiveTranscription] = useState('')
+  const [sonioxConnected, setSonioxConnected] = useState(false)
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Soniox refs
+  const sonioxWsRef = useRef<WebSocket | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
+  const finalTokensRef = useRef<string[]>([])
+  const currentBlobRef = useRef<Blob | null>(null)
+  const sonioxFinishedRef = useRef<boolean>(false)
+  const hasSonioxRef = useRef<boolean>(false)
+  const audioQueueRef = useRef<ArrayBuffer[]>([])
+  const recordingIdRef = useRef<string>('')
+  const recordingDurationRef = useRef<number>(0)
+  const voiceNotesRef = useRef<VoiceNote[]>(voiceNotes)
+  const notesRef = useRef<string>(notes)
+
+  useEffect(() => { voiceNotesRef.current = voiceNotes }, [voiceNotes])
+  useEffect(() => { notesRef.current = notes }, [notes])
 
   // قائمة اللغات المتاحة للترجمة
   const availableLanguages = [
@@ -51,19 +77,11 @@ export default function UnifiedNotesInput({
     { code: 'ar', name: 'Arabic', nameAr: 'العربية' }
   ]
 
-  // الحصول على اسم اللغة
   const getLanguageName = (code: string) => {
     const lang = availableLanguages.find(l => l.code === code)
     return lang ? lang.nameAr : code
   }
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // تحويل base64 إلى Blob
   const base64ToBlob = (base64: string): Blob => {
     const byteCharacters = atob(base64.split(',')[1])
     const byteNumbers = new Array(byteCharacters.length)
@@ -74,79 +92,207 @@ export default function UnifiedNotesInput({
     return new Blob([byteArray], { type: 'audio/webm' })
   }
 
-  // تنسيق الوقت
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  // بدء التسجيل
+  // إنشاء الملاحظة الصوتية عندما يكون الصوت والنص جاهزين
+  const tryFinalizeNote = () => {
+    const blob = currentBlobRef.current
+    if (!blob) return
+    if (!sonioxFinishedRef.current) return
+
+    const finalText = finalTokensRef.current.join('')
+    const noteId = recordingIdRef.current
+    const duration = recordingDurationRef.current
+
+    currentBlobRef.current = null
+    finalTokensRef.current = []
+    sonioxFinishedRef.current = false
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result as string
+      const newNote: VoiceNote = {
+        id: noteId,
+        data: base64,
+        timestamp: Date.now(),
+        duration,
+        transcription: finalText || undefined
+      }
+      const updated = [...voiceNotesRef.current, newNote]
+      onVoiceNotesChange(updated)
+
+      // إضافة النص إلى حقل الملاحظات تلقائياً
+      if (finalText) {
+        const current = notesRef.current
+        onNotesChange(current ? `${current}\n\n${finalText}` : finalText)
+      }
+
+      setLiveTranscription('')
+    }
+    reader.readAsDataURL(blob)
+  }
+
+  // بدء التسجيل مع Soniox real-time STT
   const startRecording = async () => {
     try {
       setError(null)
+      setLiveTranscription('')
+      setSonioxConnected(false)
+      finalTokensRef.current = []
+      audioQueueRef.current = []
+      sonioxFinishedRef.current = false
+      hasSonioxRef.current = false
+      currentBlobRef.current = null
+      recordingIdRef.current = Date.now().toString()
 
-      // طلب الأذونات
       if (typeof window !== 'undefined' && (window as any).Capacitor) {
         try {
           await navigator.mediaDevices.getUserMedia({ audio: true })
-        } catch (permError) {
-          console.error('Permission error:', permError)
+        } catch {
           setError('يرجى السماح بالوصول إلى الميكروفون من إعدادات التطبيق')
           return
         }
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       })
 
+      // --- إعداد Soniox WebSocket للتحويل الفوري ---
+      if (typeof window !== 'undefined' && !(window as any).Capacitor) {
+        try {
+          const tokenRes = await fetch('/api/soniox-token')
+          if (tokenRes.ok) {
+            const { apiKey } = await tokenRes.json()
+
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+            const audioCtx = new AudioContextClass()
+            audioContextRef.current = audioCtx
+            const sampleRate = audioCtx.sampleRate
+
+            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket')
+            sonioxWsRef.current = ws
+
+            ws.onopen = () => {
+              ws.send(JSON.stringify({
+                api_key: apiKey,
+                model: 'stt-rt-v4',
+                language_hints: ['ar'],
+                audio_format: 'pcm_s16le',
+                sample_rate: sampleRate,
+                num_channels: 1,
+                enable_endpoint_detection: true
+              }))
+              hasSonioxRef.current = true
+              setSonioxConnected(true)
+              // إرسال الصوت المخزن أثناء الاتصال
+              const queued = audioQueueRef.current.splice(0)
+              queued.forEach(chunk => ws.send(chunk))
+            }
+
+            ws.onmessage = (event) => {
+              try {
+                const res = JSON.parse(event.data as string)
+                if (res.error_code) {
+                  console.error('Soniox error:', res.error_code, res.error_message)
+                  return
+                }
+                const nonFinalTexts: string[] = []
+                for (const token of (res.tokens || [])) {
+                  if (token.is_final) {
+                    finalTokensRef.current.push(token.text)
+                  } else {
+                    nonFinalTexts.push(token.text)
+                  }
+                }
+                setLiveTranscription(
+                  finalTokensRef.current.join('') + nonFinalTexts.join('')
+                )
+                if (res.finished) {
+                  sonioxFinishedRef.current = true
+                  setSonioxConnected(false)
+                  ws.close()
+                  sonioxWsRef.current = null
+                  tryFinalizeNote()
+                }
+              } catch (e) {
+                console.error('Soniox parse error:', e)
+              }
+            }
+
+            ws.onerror = () => {
+              console.error('Soniox WebSocket error')
+              setSonioxConnected(false)
+              sonioxFinishedRef.current = true
+              sonioxWsRef.current = null
+              tryFinalizeNote()
+            }
+
+            ws.onclose = () => {
+              setSonioxConnected(false)
+              if (!sonioxFinishedRef.current) {
+                sonioxFinishedRef.current = true
+                sonioxWsRef.current = null
+                tryFinalizeNote()
+              }
+            }
+
+            // التقاط PCM - buffer صغير (1024) لزمن استجابة منخفض
+            const source = audioCtx.createMediaStreamSource(stream)
+            // eslint-disable-next-line @typescript-eslint/no-deprecated
+            const processor = audioCtx.createScriptProcessor(1024, 1, 1)
+            scriptProcessorRef.current = processor
+            source.connect(processor)
+            processor.connect(audioCtx.destination)
+
+            processor.onaudioprocess = (e) => {
+              if (!sonioxWsRef.current) return
+              const float32 = e.inputBuffer.getChannelData(0)
+              const int16 = new Int16Array(float32.length)
+              for (let i = 0; i < float32.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32[i]))
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+              }
+              const buffer = int16.buffer.slice(0)
+              if (sonioxWsRef.current.readyState === WebSocket.OPEN) {
+                sonioxWsRef.current.send(buffer)
+              } else if (sonioxWsRef.current.readyState === WebSocket.CONNECTING) {
+                audioQueueRef.current.push(buffer)
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Soniox setup failed:', e)
+          sonioxFinishedRef.current = true
+        }
+      } else {
+        sonioxFinishedRef.current = true
+      }
+
+      // --- MediaRecorder لحفظ الصوت ---
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
-        }
+        if (event.data.size > 0) chunksRef.current.push(event.data)
       }
 
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-
-        // تحويل إلى base64
-        const reader = new FileReader()
-        reader.onloadend = async () => {
-          const base64 = reader.result as string
-          const noteId = Date.now().toString()
-          const newVoiceNote: VoiceNote = {
-            id: noteId,
-            data: base64,
-            timestamp: Date.now(),
-            duration: recordingTime
-          }
-
-          const updatedNotes = [...voiceNotes, newVoiceNote]
-          onVoiceNotesChange(updatedNotes)
-
-          // تحويل تلقائي للصوت إلى نص
-          await transcribeAudioAutomatically(noteId, blob, updatedNotes)
-        }
-        reader.readAsDataURL(blob)
-
-        // إيقاف جميع المسارات
+        currentBlobRef.current = blob
         stream.getTracks().forEach(track => track.stop())
+        tryFinalizeNote()
       }
 
       mediaRecorder.start()
       setIsRecording(true)
       setRecordingTime(0)
 
-      // بدء العداد
       timerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1)
       }, 1000)
@@ -157,9 +303,10 @@ export default function UnifiedNotesInput({
     }
   }
 
-  // إيقاف التسجيل
+  // إيقاف التسجيل وإشارة نهاية الصوت لـ Soniox
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
+      recordingDurationRef.current = recordingTime
       mediaRecorderRef.current.stop()
       setIsRecording(false)
 
@@ -168,55 +315,29 @@ export default function UnifiedNotesInput({
         timerRef.current = null
       }
     }
-  }
 
-  // تحويل تلقائي للصوت إلى نص
-  const transcribeAudioAutomatically = async (noteId: string, audioBlob: Blob, currentNotes: VoiceNote[]) => {
-    try {
-      setTranscribingId(noteId)
+    scriptProcessorRef.current?.disconnect()
+    scriptProcessorRef.current = null
+    audioContextRef.current?.close()
+    audioContextRef.current = null
 
-      // التحقق من أننا لسنا في Capacitor
-      if (typeof window !== 'undefined' && (window as any).Capacitor) {
-        console.warn('Voice transcription not available in Capacitor build.')
-        setTranscribingId(null)
-        return
-      }
+    if (hasSonioxRef.current && sonioxWsRef.current?.readyState === WebSocket.OPEN) {
+      hasSonioxRef.current = false
+      sonioxWsRef.current.send('')
 
-      // إنشاء FormData لإرسال الملف الصوتي
-      const formData = new FormData()
-      formData.append('audio', audioBlob, 'audio.webm')
-      formData.append('language', 'ar')
-
-      // إرسال الطلب إلى API
-      const response = await fetch('/api/transcribe-audio', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!response.ok) {
-        console.error('Auto-transcription failed')
-        setTranscribingId(null)
-        return
-      }
-
-      const data = await response.json()
-
-      if (data.text) {
-        // تحديث الملاحظة بالنص المحول
-        const updatedNotes = currentNotes.map(n =>
-          n.id === noteId ? { ...n, transcription: data.text } : n
-        )
-        onVoiceNotesChange(updatedNotes)
-
-        // إضافة النص المحول إلى حقل الملاحظات النصية
-        const newNotesText = notes ? `${notes}\n\n${data.text}` : data.text
-        onNotesChange(newNotesText)
-      }
-
-      setTranscribingId(null)
-    } catch (error) {
-      console.error('Transcription error:', error)
-      setTranscribingId(null)
+      // Timeout احتياطي
+      setTimeout(() => {
+        if (!sonioxFinishedRef.current) {
+          sonioxFinishedRef.current = true
+          sonioxWsRef.current?.close()
+          sonioxWsRef.current = null
+          tryFinalizeNote()
+        }
+      }, 15000)
+    } else if (sonioxWsRef.current) {
+      sonioxWsRef.current.close()
+      sonioxWsRef.current = null
+      sonioxFinishedRef.current = true
     }
   }
 
@@ -224,12 +345,8 @@ export default function UnifiedNotesInput({
   const togglePlayback = (voiceNote: VoiceNote) => {
     const audioRefs = audioRefsRef.current
 
-    // إيقاف أي تشغيل حالي
     if (playingId && playingId !== voiceNote.id) {
-      const currentAudio = audioRefs.get(playingId)
-      if (currentAudio) {
-        currentAudio.pause()
-      }
+      audioRefs.get(playingId)?.pause()
     }
 
     let audio = audioRefs.get(voiceNote.id)
@@ -253,27 +370,20 @@ export default function UnifiedNotesInput({
   const deleteVoiceNote = (noteId: string) => {
     const audioRefs = audioRefsRef.current
     const audio = audioRefs.get(noteId)
-
     if (audio) {
       audio.pause()
       audioRefs.delete(noteId)
     }
-
-    if (playingId === noteId) {
-      setPlayingId(null)
-    }
-
-    const updatedNotes = voiceNotes.filter(note => note.id !== noteId)
-    onVoiceNotesChange(updatedNotes)
+    if (playingId === noteId) setPlayingId(null)
+    onVoiceNotesChange(voiceNotes.filter(note => note.id !== noteId))
   }
 
   // ترجمة النص باستخدام OpenRouter API
-  const translateText = async (noteId: string, targetLanguage: string) => {
+  const translateText = async (noteId: string, lang: string) => {
     try {
       setTranslatingId(noteId)
       setError(null)
 
-      // التحقق من أننا لسنا في Capacitor
       if (typeof window !== 'undefined' && (window as any).Capacitor) {
         setError('ميزة الترجمة غير متاحة في التطبيق المحمول حالياً')
         setTranslatingId(null)
@@ -281,7 +391,7 @@ export default function UnifiedNotesInput({
       }
 
       const note = voiceNotes.find(n => n.id === noteId)
-      if (!note || !note.transcription) {
+      if (!note?.transcription) {
         setError('لا يوجد نص لترجمته')
         setTranslatingId(null)
         return
@@ -290,121 +400,77 @@ export default function UnifiedNotesInput({
       const response = await fetch('/api/translate-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: note.transcription,
-          targetLanguage: targetLanguage
-        })
+        body: JSON.stringify({ text: note.transcription, targetLanguage: lang })
       })
 
-      if (!response.ok) {
-        throw new Error('Translation failed')
-      }
-
+      if (!response.ok) throw new Error('Translation failed')
       const data = await response.json()
 
-      // تحديث الملاحظة بالنص المترجم
-      const updatedNotes = voiceNotes.map(n =>
-        n.id === noteId
-          ? {
-            ...n,
-            translatedText: data.translatedText,
-            translationLanguage: targetLanguage
-          }
-          : n
-      )
-      onVoiceNotesChange(updatedNotes)
+      onVoiceNotesChange(voiceNotes.map(n =>
+        n.id === noteId ? { ...n, translatedText: data.translatedText, translationLanguage: lang } : n
+      ))
       setTranslatingId(null)
-
-    } catch (error) {
-      console.error('Translation error:', error)
+    } catch {
       setError('فشلت عملية الترجمة')
       setTranslatingId(null)
     }
   }
 
-  // ترجمة جميع النصوص (الملاحظات النصية + التسجيلات الصوتية)
+  // ترجمة جميع النصوص
   const translateAllTexts = async () => {
     try {
       setError(null)
 
-      // التحقق من أننا لسنا في Capacitor
       if (typeof window !== 'undefined' && (window as any).Capacitor) {
         setError('ميزة الترجمة غير متاحة في التطبيق المحمول حالياً')
         return
       }
 
-      // ترجمة الملاحظات النصية إذا كانت موجودة
-      if (notes && notes.trim()) {
+      if (notes?.trim()) {
         setTranslatingId('main-notes')
-
         const response = await fetch('/api/translate-text', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: notes,
-            targetLanguage: targetLanguage
-          })
+          body: JSON.stringify({ text: notes, targetLanguage })
         })
-
         if (response.ok) {
           const data = await response.json()
-          // إضافة الترجمة تحت النص الأصلي
           const langName = getLanguageName(targetLanguage)
-          const translatedNotes = `${notes}\n\n--- الترجمة (${langName}) ---\n${data.translatedText}`
-          onNotesChange(translatedNotes)
+          onNotesChange(`${notes}\n\n--- الترجمة (${langName}) ---\n${data.translatedText}`)
         }
-
         setTranslatingId(null)
       }
 
-      // ترجمة جميع التسجيلات الصوتية التي لها نص محول
-      const notesToTranslate = voiceNotes.filter(note => note.transcription && !note.translatedText)
-
-      for (const note of notesToTranslate) {
+      for (const note of voiceNotes.filter(n => n.transcription && !n.translatedText)) {
         await translateText(note.id, targetLanguage)
-        // انتظار قصير بين كل طلب
         await new Promise(resolve => setTimeout(resolve, 500))
       }
-
-    } catch (error) {
-      console.error('Translation error:', error)
+    } catch {
       setError('فشلت عملية الترجمة')
       setTranslatingId(null)
     }
   }
 
-  // إغلاق القائمة المنسدلة عند النقر خارجها
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showLanguageDropdown) {
-        const target = event.target as HTMLElement
-        if (!target.closest('.language-dropdown-container')) {
-          setShowLanguageDropdown(false)
-        }
+      if (showLanguageDropdown && !(event.target as HTMLElement).closest('.language-dropdown-container')) {
+        setShowLanguageDropdown(false)
       }
     }
-
     document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showLanguageDropdown])
 
-  // تنظيف عند إلغاء التحميل
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
-      const audioRefs = audioRefsRef.current
-      audioRefs.forEach(audio => audio.pause())
-      audioRefs.clear()
+      if (timerRef.current) clearInterval(timerRef.current)
+      audioRefsRef.current.forEach(audio => audio.pause())
+      audioRefsRef.current.clear()
     }
   }, [])
 
   return (
     <div className="space-y-4">
-      {/* رسالة الخطأ */}
       <AnimatePresence>
         {error && (
           <motion.div
@@ -418,7 +484,7 @@ export default function UnifiedNotesInput({
         )}
       </AnimatePresence>
 
-      {/* حقل الملاحظات النصية مع أيقونة المايكروفون وزر الترجمة */}
+      {/* حقل الملاحظات النصية */}
       <div className="relative">
         <textarea
           ref={textareaRef}
@@ -431,9 +497,8 @@ export default function UnifiedNotesInput({
           dir="rtl"
         />
 
-        {/* أيقونات المايكروفون والترجمة داخل الحقل النصي */}
+        {/* أيقونات المايكروفون والترجمة */}
         <div className="absolute left-3 top-3 flex flex-col gap-2">
-          {/* أيقونة المايكروفون */}
           {!isRecording ? (
             <button
               type="button"
@@ -455,7 +520,6 @@ export default function UnifiedNotesInput({
             </button>
           )}
 
-          {/* زر الترجمة مع القائمة المنسدلة */}
           <div className="relative language-dropdown-container">
             <button
               type="button"
@@ -463,19 +527,11 @@ export default function UnifiedNotesInput({
               disabled={disabled || translatingId !== null || (!(notes || '').trim() && voiceNotes.filter(n => n.transcription).length === 0)}
               className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
               title={`ترجمة جميع النصوص إلى ${getLanguageName(targetLanguage)}`}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setShowLanguageDropdown(!showLanguageDropdown)
-              }}
+              onContextMenu={(e) => { e.preventDefault(); setShowLanguageDropdown(!showLanguageDropdown) }}
             >
-              {translatingId ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Languages className="w-5 h-5" />
-              )}
+              {translatingId ? <Loader2 className="w-5 h-5 animate-spin" /> : <Languages className="w-5 h-5" />}
             </button>
 
-            {/* أيقونة صغيرة لفتح القائمة المنسدلة */}
             <button
               type="button"
               onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
@@ -486,7 +542,6 @@ export default function UnifiedNotesInput({
               ▼
             </button>
 
-            {/* القائمة المنسدلة لاختيار اللغة */}
             <AnimatePresence>
               {showLanguageDropdown && (
                 <motion.div
@@ -500,14 +555,8 @@ export default function UnifiedNotesInput({
                       <button
                         key={lang.code}
                         type="button"
-                        onClick={() => {
-                          setTargetLanguage(lang.code)
-                          setShowLanguageDropdown(false)
-                        }}
-                        className={`w-full px-4 py-2 text-right text-sm hover:bg-blue-50 transition-colors ${targetLanguage === lang.code
-                          ? 'bg-blue-100 text-blue-700 font-semibold'
-                          : 'text-gray-700'
-                          }`}
+                        onClick={() => { setTargetLanguage(lang.code); setShowLanguageDropdown(false) }}
+                        className={`w-full px-4 py-2 text-right text-sm hover:bg-blue-50 transition-colors ${targetLanguage === lang.code ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs text-gray-500">{lang.name}</span>
@@ -532,30 +581,33 @@ export default function UnifiedNotesInput({
               className="absolute left-3 bottom-3 flex items-center gap-2 bg-red-100 px-3 py-1.5 rounded-full border border-red-300"
             >
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-red-700">
-                {formatTime(recordingTime)}
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* مؤشر التحويل */}
-        <AnimatePresence>
-          {transcribingId && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="absolute left-3 bottom-3 flex items-center gap-2 bg-blue-100 px-3 py-1.5 rounded-full border border-blue-300"
-            >
-              <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-              <span className="text-sm font-medium text-blue-700">
-                جاري تحويل الصوت إلى نص...
-              </span>
+              <span className="text-sm font-medium text-red-700">{formatTime(recordingTime)}</span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* النص الفوري من Soniox أثناء التسجيل */}
+      <AnimatePresence>
+        {sonioxConnected && (
+          <motion.div
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -5 }}
+            className="p-3 bg-green-50 border border-green-200 rounded-lg text-right"
+          >
+            <p className="text-xs text-green-600 font-medium mb-1 flex items-center gap-1 justify-end">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse inline-block"></span>
+              نص فوري
+            </p>
+            {liveTranscription ? (
+              <p className="text-sm text-gray-700 leading-relaxed">{liveTranscription}</p>
+            ) : (
+              <p className="text-sm text-gray-400 italic">جاري الاستماع...</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* قائمة التسجيلات الصوتية المحفوظة */}
       <AnimatePresence>
@@ -572,13 +624,8 @@ export default function UnifiedNotesInput({
             </h4>
             <div className="space-y-3 max-h-[500px] overflow-y-auto overflow-x-visible">
               {voiceNotes.map((note, index) => (
-                <div
-                  key={note.id}
-                  className="bg-white rounded-lg p-3 border border-gray-200 transition-all"
-                >
-                  {/* رأس التسجيل - الرقم والنص على نفس السطر */}
+                <div key={note.id} className="bg-white rounded-lg p-3 border border-gray-200 transition-all">
                   <div className="flex items-start justify-between gap-2 mb-2 relative">
-                    {/* الرقم والنص على نفس السطر */}
                     <div className="flex items-start gap-1.5 flex-1 min-w-0">
                       <span className="text-base text-pink-600 font-bold flex-shrink-0 mt-0.5">
                         {index + 1}.
@@ -590,26 +637,16 @@ export default function UnifiedNotesInput({
                       )}
                     </div>
 
-                    {/* أزرار التحكم */}
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {/* زر تشغيل الصوت */}
                       <button
                         type="button"
                         onClick={() => togglePlayback(note)}
-                        className={`p-1.5 rounded transition-colors ${playingId === note.id
-                          ? 'bg-green-500 text-white'
-                          : 'text-green-600 hover:bg-green-50'
-                          }`}
+                        className={`p-1.5 rounded transition-colors ${playingId === note.id ? 'bg-green-500 text-white' : 'text-green-600 hover:bg-green-50'}`}
                         title={playingId === note.id ? 'إيقاف' : 'تشغيل الصوت'}
                       >
-                        {playingId === note.id ? (
-                          <Pause className="w-4 h-4" />
-                        ) : (
-                          <Play className="w-4 h-4" />
-                        )}
+                        {playingId === note.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                       </button>
 
-                      {/* زر الترجمة */}
                       {note.transcription && !note.translatedText && (
                         <button
                           type="button"
@@ -618,15 +655,12 @@ export default function UnifiedNotesInput({
                           className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50"
                           title={`ترجمة إلى ${getLanguageName(targetLanguage)}`}
                         >
-                          {translatingId === note.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Languages className="w-4 h-4" />
-                          )}
+                          {translatingId === note.id
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <Languages className="w-4 h-4" />}
                         </button>
                       )}
 
-                      {/* زر الحذف */}
                       <button
                         type="button"
                         onClick={() => deleteVoiceNote(note.id)}
@@ -639,22 +673,16 @@ export default function UnifiedNotesInput({
                     </div>
                   </div>
 
-                  {/* محتوى التسجيل */}
                   {note.transcription ? (
-                    <div className="space-y-2">
-                      {/* النص المترجم - زر لعرضه */}
-                      {note.translatedText && (
-                        <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2">
-                          <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
-                            <Languages className="w-3 h-3" />
-                            الترجمة ({getLanguageName(note.translationLanguage || 'en')})
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            {note.translatedText}
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                    note.translatedText && (
+                      <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2">
+                        <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                          <Languages className="w-3 h-3" />
+                          الترجمة ({getLanguageName(note.translationLanguage || 'en')})
+                        </p>
+                        <p className="text-sm text-gray-600">{note.translatedText}</p>
+                      </div>
+                    )
                   ) : (
                     <p className="text-sm text-gray-500 mr-6">تسجيل صوتي - في انتظار التحويل إلى نص...</p>
                   )}
@@ -667,4 +695,3 @@ export default function UnifiedNotesInput({
     </div>
   )
 }
-

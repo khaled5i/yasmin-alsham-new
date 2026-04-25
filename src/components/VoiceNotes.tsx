@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Play, Pause, Trash2, Download, FileText, Languages, Loader2, ChevronDown } from 'lucide-react'
+import { Mic, MicOff, Play, Pause, Trash2, Languages, Loader2, ChevronDown } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useAuthStore } from '@/store/authStore'
 
@@ -52,12 +52,8 @@ export default function VoiceNotes({
   const [playingId, setPlayingId] = useState<string | null>(null)
   const { t } = useTranslation()
   const [recordingTime, setRecordingTime] = useState(0)
-  const [currentAudioBlob, setCurrentAudioBlob] = useState<Blob | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [transcribingId, setTranscribingId] = useState<string | null>(null)
   const [translatingId, setTranslatingId] = useState<string | null>(null)
-  const [selectedLanguage, setSelectedLanguage] = useState<Record<string, string>>({})
-  const [targetLanguage, setTargetLanguage] = useState<string>('en')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState<string | null>(null)
   const { user } = useAuthStore()
 
@@ -65,6 +61,27 @@ export default function VoiceNotes({
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
   const timerRef = useRef<any>(null)
   const chunksRef = useRef<Blob[]>([])
+
+  // Soniox real-time STT refs
+  const [liveTranscription, setLiveTranscription] = useState('')
+  const [sonioxConnected, setSonioxConnected] = useState(false)
+  const sonioxWsRef = useRef<WebSocket | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
+  const finalTokensRef = useRef<string[]>([])
+  const currentBlobRef = useRef<Blob | null>(null)
+  const sonioxFinishedRef = useRef<boolean>(false)
+  const hasSonioxRef = useRef<boolean>(false)
+  const recordingIdRef = useRef<string>('')
+  const recordingDurationRef = useRef<number>(0)
+  const voiceNotesRef = useRef<VoiceNote[]>(voiceNotes)
+  // قائمة انتظار للصوت أثناء اتصال WebSocket
+  const audioQueueRef = useRef<ArrayBuffer[]>([])
+
+  // مزامنة voiceNotesRef مع آخر قيمة
+  useEffect(() => {
+    voiceNotesRef.current = voiceNotes
+  }, [voiceNotes])
 
   // تحميل الترجمات المحفوظة محلياً عند فتح الصفحة
   useEffect(() => {
@@ -121,15 +138,51 @@ export default function VoiceNotes({
     return new Blob([byteArray], { type: 'audio/webm' })
   }
 
-  // بدء التسجيل
+  // إنشاء الملاحظة الصوتية عندما يكون الصوت والنص جاهزين
+  const tryFinalizeNote = () => {
+    const blob = currentBlobRef.current
+    if (!blob) return
+    if (!sonioxFinishedRef.current) return
+
+    const finalText = finalTokensRef.current.join('')
+    const noteId = recordingIdRef.current
+    const duration = recordingDurationRef.current
+
+    currentBlobRef.current = null
+    finalTokensRef.current = []
+    sonioxFinishedRef.current = false
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result as string
+      const newNote: VoiceNote = {
+        id: noteId,
+        data: base64,
+        timestamp: Date.now(),
+        duration,
+        transcription: finalText || undefined
+      }
+      onVoiceNotesChange([...voiceNotesRef.current, newNote])
+      setLiveTranscription('')
+    }
+    reader.readAsDataURL(blob)
+  }
+
+  // بدء التسجيل مع Soniox real-time STT
   const startRecording = async () => {
     try {
       setError(null)
+      setLiveTranscription('')
+      setSonioxConnected(false)
+      finalTokensRef.current = []
+      audioQueueRef.current = []
+      sonioxFinishedRef.current = false
+      hasSonioxRef.current = false
+      currentBlobRef.current = null
+      recordingIdRef.current = Date.now().toString()
 
-      // طلب الأذونات بشكل صريح على Capacitor
       if (typeof window !== 'undefined' && (window as any).Capacitor) {
         try {
-          // محاولة طلب الأذونات بشكل صريح
           await navigator.mediaDevices.getUserMedia({ audio: true })
         } catch (permError) {
           console.error('Permission error:', permError)
@@ -146,49 +199,140 @@ export default function VoiceNotes({
         }
       })
 
+      // --- إعداد Soniox WebSocket للتحويل الفوري ---
+      if (typeof window !== 'undefined' && !(window as any).Capacitor) {
+        try {
+          const tokenRes = await fetch('/api/soniox-token')
+          if (tokenRes.ok) {
+            const { apiKey } = await tokenRes.json()
+
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+            const audioCtx = new AudioContextClass()
+            audioContextRef.current = audioCtx
+            const sampleRate = audioCtx.sampleRate
+
+            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket')
+            sonioxWsRef.current = ws
+
+            ws.onopen = () => {
+              ws.send(JSON.stringify({
+                api_key: apiKey,
+                model: 'stt-rt-v4',
+                language_hints: ['ar'],
+                audio_format: 'pcm_s16le',
+                sample_rate: sampleRate,
+                num_channels: 1,
+                enable_endpoint_detection: true
+              }))
+              hasSonioxRef.current = true
+              setSonioxConnected(true)
+              // إرسال الصوت المخزن أثناء الاتصال
+              const queued = audioQueueRef.current.splice(0)
+              queued.forEach(chunk => ws.send(chunk))
+            }
+
+            ws.onmessage = (event) => {
+              try {
+                const res = JSON.parse(event.data as string)
+                if (res.error_code) {
+                  console.error('Soniox error:', res.error_code, res.error_message)
+                  return
+                }
+                const nonFinalTexts: string[] = []
+                for (const token of (res.tokens || [])) {
+                  if (token.is_final) {
+                    finalTokensRef.current.push(token.text)
+                  } else {
+                    nonFinalTexts.push(token.text)
+                  }
+                }
+                setLiveTranscription(
+                  finalTokensRef.current.join('') + nonFinalTexts.join('')
+                )
+                if (res.finished) {
+                  sonioxFinishedRef.current = true
+                  setSonioxConnected(false)
+                  ws.close()
+                  sonioxWsRef.current = null
+                  tryFinalizeNote()
+                }
+              } catch (e) {
+                console.error('Soniox parse error:', e)
+              }
+            }
+
+            ws.onerror = () => {
+              console.error('Soniox WebSocket error')
+              setSonioxConnected(false)
+              sonioxFinishedRef.current = true
+              sonioxWsRef.current = null
+              tryFinalizeNote()
+            }
+
+            ws.onclose = () => {
+              setSonioxConnected(false)
+              if (!sonioxFinishedRef.current) {
+                sonioxFinishedRef.current = true
+                sonioxWsRef.current = null
+                tryFinalizeNote()
+              }
+            }
+
+            // التقاط PCM وإرساله لـ Soniox - buffer صغير (1024) لزمن استجابة منخفض
+            const source = audioCtx.createMediaStreamSource(stream)
+            // eslint-disable-next-line @typescript-eslint/no-deprecated
+            const processor = audioCtx.createScriptProcessor(1024, 1, 1)
+            scriptProcessorRef.current = processor
+            source.connect(processor)
+            processor.connect(audioCtx.destination)
+
+            processor.onaudioprocess = (e) => {
+              if (!sonioxWsRef.current) return
+              const float32 = e.inputBuffer.getChannelData(0)
+              const int16 = new Int16Array(float32.length)
+              for (let i = 0; i < float32.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32[i]))
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+              }
+              const buffer = int16.buffer.slice(0)
+              if (sonioxWsRef.current.readyState === WebSocket.OPEN) {
+                sonioxWsRef.current.send(buffer)
+              } else if (sonioxWsRef.current.readyState === WebSocket.CONNECTING) {
+                // خزّن الصوت أثناء انتظار الاتصال
+                audioQueueRef.current.push(buffer)
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Soniox setup failed:', e)
+          // التسجيل يستمر بدون تحويل فوري
+          sonioxFinishedRef.current = true
+        }
+      } else {
+        // Capacitor: لا يوجد Soniox
+        sonioxFinishedRef.current = true
+      }
+
+      // --- MediaRecorder لحفظ الصوت ---
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
-        }
+        if (event.data.size > 0) chunksRef.current.push(event.data)
       }
 
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        setCurrentAudioBlob(blob)
-
-        // تحويل إلى base64 وإضافة إلى القائمة
-        const reader = new FileReader()
-        reader.onloadend = async () => {
-          const base64 = reader.result as string
-          const noteId = Date.now().toString()
-          const newVoiceNote: VoiceNote = {
-            id: noteId,
-            data: base64,
-            timestamp: Date.now(),
-            duration: recordingTime
-          }
-
-          const updatedNotes = [...voiceNotes, newVoiceNote]
-          onVoiceNotesChange(updatedNotes)
-
-          // تحويل تلقائي للصوت إلى نص - تمرير الملاحظات المحدثة
-          await transcribeAudioAutomatically(noteId, blob, updatedNotes)
-        }
-        reader.readAsDataURL(blob)
-
-        // إيقاف جميع المسارات
+        currentBlobRef.current = blob
         stream.getTracks().forEach(track => track.stop())
+        tryFinalizeNote()
       }
 
       mediaRecorder.start()
       setIsRecording(true)
       setRecordingTime(0)
 
-      // بدء العداد
       timerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1)
       }, 1000)
@@ -199,9 +343,10 @@ export default function VoiceNotes({
     }
   }
 
-  // إيقاف التسجيل
+  // إيقاف التسجيل وإشارة نهاية الصوت لـ Soniox
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
+      recordingDurationRef.current = recordingTime
       mediaRecorderRef.current.stop()
       setIsRecording(false)
 
@@ -209,6 +354,33 @@ export default function VoiceNotes({
         clearInterval(timerRef.current)
         timerRef.current = null
       }
+    }
+
+    // تنظيف AudioContext
+    scriptProcessorRef.current?.disconnect()
+    scriptProcessorRef.current = null
+    audioContextRef.current?.close()
+    audioContextRef.current = null
+
+    // إشارة نهاية الصوت لـ Soniox
+    if (hasSonioxRef.current && sonioxWsRef.current?.readyState === WebSocket.OPEN) {
+      hasSonioxRef.current = false
+      sonioxWsRef.current.send('') // Empty string = نهاية الصوت
+
+      // Timeout احتياطي: 15 ثانية
+      setTimeout(() => {
+        if (!sonioxFinishedRef.current) {
+          console.warn('Soniox timeout - finalizing without full transcription')
+          sonioxFinishedRef.current = true
+          sonioxWsRef.current?.close()
+          sonioxWsRef.current = null
+          tryFinalizeNote()
+        }
+      }, 15000)
+    } else if (sonioxWsRef.current) {
+      sonioxWsRef.current.close()
+      sonioxWsRef.current = null
+      sonioxFinishedRef.current = true
     }
   }
 
@@ -276,132 +448,6 @@ export default function VoiceNotes({
       hour: '2-digit',
       minute: '2-digit'
     })
-  }
-
-  // تحويل الصوت إلى نص باستخدام OpenAI Whisper API
-  const transcribeAudio = async (noteId: string) => {
-    try {
-      setTranscribingId(noteId)
-      setError(null)
-
-      // التحقق من أننا لسنا في Capacitor
-      if (typeof window !== 'undefined' && (window as any).Capacitor) {
-        setError('ميزة تحويل الصوت إلى نص غير متاحة في التطبيق المحمول حالياً')
-        setTranscribingId(null)
-        return
-      }
-
-      const note = voiceNotes.find(n => n.id === noteId)
-      if (!note) return
-
-      // تحويل base64 إلى Blob
-      const blob = base64ToBlob(note.data)
-
-      // إنشاء FormData لإرسال الملف الصوتي
-      const formData = new FormData()
-      formData.append('audio', blob, 'audio.webm')
-      formData.append('language', 'ar') // اللغة العربية
-
-      // إرسال الطلب إلى API
-      const response = await fetch('/api/transcribe-audio', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || 'Failed to transcribe audio')
-      }
-
-      const data = await response.json()
-
-      if (!data.text) {
-        throw new Error('No transcription returned')
-      }
-
-      // تحديث الملاحظة بالنص المحول
-      const updatedNotes = voiceNotes.map(n =>
-        n.id === noteId ? { ...n, transcription: data.text } : n
-      )
-      onVoiceNotesChange(updatedNotes)
-      setTranscribingId(null)
-
-    } catch (error) {
-      console.error('Transcription error:', error)
-      setError(t('transcription_error') + ': ' + (error instanceof Error ? error.message : 'Unknown error'))
-      setTranscribingId(null)
-    }
-  }
-
-  // تحويل تلقائي للصوت إلى نص (يتم استدعاؤه بعد التسجيل مباشرة)
-  const transcribeAudioAutomatically = async (noteId: string, audioBlob: Blob, currentNotes: VoiceNote[]) => {
-    try {
-      setTranscribingId(noteId)
-
-      // ملاحظة: API Routes لا تعمل في Static Export (Capacitor)
-      // يجب استخدام Supabase Edge Function أو external API endpoint
-      // للتطبيق المحمول، يجب نشر API على server منفصل
-
-      // التحقق من أننا لسنا في Capacitor
-      if (typeof window !== 'undefined' && (window as any).Capacitor) {
-        console.warn('Voice transcription not available in Capacitor build. API Routes require server-side execution.')
-        setTranscribingId(null)
-        return
-      }
-
-      // إنشاء FormData لإرسال الملف الصوتي
-      const formData = new FormData()
-      formData.append('audio', audioBlob, 'audio.webm')
-      formData.append('language', 'ar') // اللغة العربية
-
-      // إرسال الطلب إلى API
-      const response = await fetch('/api/transcribe-audio', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('Auto-transcription failed:', errorData)
-        setTranscribingId(null)
-        return // فشل التحويل التلقائي لا يجب أن يوقف العملية
-      }
-
-      const data = await response.json()
-
-      if (data.text) {
-        // تحديث الملاحظة بالنص المحول - استخدام الملاحظات المحدثة المُمررة
-        const updatedNotes = currentNotes.map(n =>
-          n.id === noteId ? { ...n, transcription: data.text } : n
-        )
-        onVoiceNotesChange(updatedNotes)
-      }
-
-      setTranscribingId(null)
-
-    } catch (error) {
-      console.error('Auto-transcription error:', error)
-      setTranscribingId(null)
-      // لا نعرض رسالة خطأ للمستخدم في التحويل التلقائي
-    }
-  }
-
-  // تحويل جميع التسجيلات القديمة دفعة واحدة
-  const transcribeAllNotes = async () => {
-    const notesToTranscribe = voiceNotes.filter(note => !note.transcription)
-
-    if (notesToTranscribe.length === 0) {
-      setError(t('no_notes_to_transcribe'))
-      return
-    }
-
-    setError(null)
-
-    for (const note of notesToTranscribe) {
-      await transcribeAudio(note.id)
-      // انتظار قصير بين كل طلب لتجنب تجاوز حدود API
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
   }
 
   // ترجمة النص باستخدام OpenRouter API
@@ -550,15 +596,30 @@ export default function VoiceNotes({
               <motion.div
                 animate={{ scale: [1, 1.1, 1] }}
                 transition={{ duration: 1, repeat: Infinity }}
-                className="inline-flex items-center space-x-2 space-x-reverse mb-4"
+                className="inline-flex items-center space-x-2 space-x-reverse mb-3"
               >
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
                 <span className="text-red-600 font-medium">جاري التسجيل...</span>
               </motion.div>
 
-              <div className="text-2xl font-bold text-gray-800 mb-4">
+              <div className="text-2xl font-bold text-gray-800 mb-3">
                 {formatTime(recordingTime)}
               </div>
+
+              {/* النص الفوري من Soniox */}
+              {sonioxConnected && (
+                <div className="mb-3 mx-2 p-2 bg-green-50 border border-green-200 rounded-lg text-right min-h-[52px]">
+                  <p className="text-xs text-green-600 font-medium mb-1 flex items-center gap-1 justify-end">
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse inline-block"></span>
+                    نص فوري
+                  </p>
+                  {liveTranscription ? (
+                    <p className="text-sm text-gray-700 leading-relaxed">{liveTranscription}</p>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">جاري الاستماع...</p>
+                  )}
+                </div>
+              )}
 
               <button
                 type="button"
@@ -585,22 +646,6 @@ export default function VoiceNotes({
             <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
               <Mic className="w-4 h-4 text-pink-600" />
               التسجيلات الصوتية ({voiceNotes.length})
-              {/* زر تحويل الكل - مدمج وصغير */}
-              {!readOnly && voiceNotes.some(note => !note.transcription) && (
-                <button
-                  type="button"
-                  onClick={transcribeAllNotes}
-                  disabled={disabled || transcribingId !== null}
-                  className="mr-auto inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
-                >
-                  {transcribingId ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <FileText className="w-3 h-3" />
-                  )}
-                  <span>{t('transcribe_all')}</span>
-                </button>
-              )}
             </h4>
             <div className="space-y-3 max-h-[500px] overflow-y-auto" style={{ overflow: 'visible' }}>
               {voiceNotes.map((note, index) => (
@@ -695,22 +740,6 @@ export default function VoiceNotes({
                             )}
                           </AnimatePresence>
                         </div>
-                      )}
-
-                      {/* زر تحويل الصوت إلى نص */}
-                      {!note.transcription && transcribingId === note.id && (
-                        <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                      )}
-                      {!readOnly && !note.transcription && transcribingId !== note.id && (
-                        <button
-                          type="button"
-                          onClick={() => transcribeAudio(note.id)}
-                          disabled={disabled || transcribingId !== null}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
-                          title={t('transcribe_to_text')}
-                        >
-                          <FileText className="w-4 h-4" />
-                        </button>
                       )}
 
                       {/* زر الحذف */}

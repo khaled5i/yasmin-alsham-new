@@ -712,6 +712,19 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // تتبع الصور المخصصة لكل واجهة (أمام/خلف) منفصلة
   const viewCustomImagesRef = useRef<{ front: string | null; back: string | null }>({ front: null, back: null })
 
+  // Soniox real-time STT refs
+  const sonioxWsRef = useRef<WebSocket | null>(null)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const scriptProcRef = useRef<ScriptProcessorNode | null>(null)
+  const soxFinalTokensRef = useRef<string[]>([])
+  const soxAudioQueueRef = useRef<ArrayBuffer[]>([])
+  const soxCurrentBlobRef = useRef<Blob | null>(null)
+  const soxFinishedRef = useRef<boolean>(false)
+  const soxHasOpenRef = useRef<boolean>(false)
+  const soxAnnotationIdRef = useRef<string>('')
+  const soxMimeTypeRef = useRef<string>('audio/webm')
+  const annotationsRef = useRef(annotations)
+
   // حالات التعليقات الصوتية
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [activeTranscriptionId, setActiveTranscriptionId] = useState<string | null>(null)
@@ -723,6 +736,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [transcribingId, setTranscribingId] = useState<string | null>(null)
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [liveTranscription, setLiveTranscription] = useState('')
+  const [sonioxConnected, setSonioxConnected] = useState(false)
   const [showInstructions, setShowInstructions] = useState(true)
   const [translatingId, setTranslatingId] = useState<string | null>(null)
   const [targetLanguage, setTargetLanguage] = useState<string>('en')
@@ -2683,6 +2698,38 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     setManualTextInput({ isOpen: false, annotationId: null, text: '' })
   }, [])
 
+  // مزامنة annotationsRef
+  useEffect(() => { annotationsRef.current = annotations }, [annotations])
+
+  // إنشاء التعليق بالنص عندما يكون الصوت والتحويل جاهزين
+  const tryFinalizeAnnotation = () => {
+    const blob = soxCurrentBlobRef.current
+    if (!blob) return
+    if (!soxFinishedRef.current) return
+
+    const finalText = soxFinalTokensRef.current.join('')
+    const annotationId = soxAnnotationIdRef.current
+    const mimeType = soxMimeTypeRef.current
+
+    soxCurrentBlobRef.current = null
+    soxFinalTokensRef.current = []
+    soxFinishedRef.current = false
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result as string
+      const updated = annotationsRef.current.map(a =>
+        a.id === annotationId
+          ? { ...a, audioData: base64, isRecording: false, transcription: finalText || a.transcription }
+          : a
+      )
+      onAnnotationsChange(updated)
+      setTranscribingId(null)
+      setLiveTranscription('')
+    }
+    reader.readAsDataURL(new Blob([blob], { type: mimeType }))
+  }
+
   // تحويل base64 إلى Blob
   const base64ToBlob = (base64: string): Blob => {
     const byteCharacters = atob(base64.split(',')[1])
@@ -2694,65 +2741,46 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     return new Blob([byteArray], { type: 'audio/webm' })
   }
 
-  // بدء التسجيل لتعليق معين
+  // بدء التسجيل مع Soniox real-time STT
   const startRecording = async (annotationId: string) => {
     try {
       setError(null)
+      setLiveTranscription('')
+      setSonioxConnected(false)
+      soxFinalTokensRef.current = []
+      soxAudioQueueRef.current = []
+      soxFinishedRef.current = false
+      soxHasOpenRef.current = false
+      soxCurrentBlobRef.current = null
+      soxAnnotationIdRef.current = annotationId
 
-      // التحقق من دعم المتصفح
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        // محاولة استخدام الـ fallback للمتصفحات القديمة
-        const getUserMedia = (navigator as any).getUserMedia ||
-          (navigator as any).webkitGetUserMedia ||
-          (navigator as any).mozGetUserMedia ||
-          (navigator as any).msGetUserMedia
-
-        if (!getUserMedia) {
-          setError('المتصفح لا يدعم تسجيل الصوت. يرجى استخدام متصفح حديث مثل Chrome أو Safari')
-          return
-        }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError('المتصفح لا يدعم تسجيل الصوت. يرجى استخدام متصفح حديث مثل Chrome أو Safari')
+        return
       }
 
-      // التحقق من بروتوكول HTTPS (مطلوب للمايكروفون)
       const isSecureContext = window.isSecureContext ||
         window.location.protocol === 'https:' ||
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1'
 
       if (!isSecureContext) {
-        setError('تسجيل الصوت يتطلب اتصالاً آمناً (HTTPS). يرجى استخدام موقع آمن')
+        setError('تسجيل الصوت يتطلب اتصالاً آمناً (HTTPS)')
         return
       }
 
-      // طلب إذن المايكروفون
       let stream: MediaStream
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: 44100
-          }
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         })
       } catch (permissionError: any) {
-        console.error('Permission error:', permissionError)
-
-        // معالجة أنواع الأخطاء المختلفة
         if (permissionError.name === 'NotAllowedError' || permissionError.name === 'PermissionDeniedError') {
           setError('تم رفض إذن الوصول إلى المايكروفون. يرجى السماح بالوصول من إعدادات المتصفح')
-        } else if (permissionError.name === 'NotFoundError' || permissionError.name === 'DevicesNotFoundError') {
-          setError('لم يتم العثور على مايكروفون. يرجى التأكد من توصيل مايكروفون')
-        } else if (permissionError.name === 'NotReadableError' || permissionError.name === 'TrackStartError') {
+        } else if (permissionError.name === 'NotFoundError') {
+          setError('لم يتم العثور على مايكروفون')
+        } else if (permissionError.name === 'NotReadableError') {
           setError('المايكروفون قيد الاستخدام من تطبيق آخر')
-        } else if (permissionError.name === 'OverconstrainedError') {
-          // محاولة مع إعدادات أبسط
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-          } catch {
-            setError('فشل في تهيئة المايكروفون. يرجى المحاولة مرة أخرى')
-            return
-          }
         } else {
           setError(`فشل الوصول إلى المايكروفون: ${permissionError.message || 'خطأ غير معروف'}`)
         }
@@ -2760,22 +2788,113 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         return
       }
 
-      // التحقق من دعم MediaRecorder
       const mimeTypes = ['audio/webm', 'audio/webm;codecs=opus', 'audio/ogg', 'audio/mp4', 'audio/wav']
       let supportedMimeType = ''
       for (const mimeType of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(mimeType)) {
-          supportedMimeType = mimeType
-          break
+        if (MediaRecorder.isTypeSupported(mimeType)) { supportedMimeType = mimeType; break }
+      }
+      soxMimeTypeRef.current = supportedMimeType || 'audio/webm'
+
+      // --- إعداد Soniox WebSocket للتحويل الفوري ---
+      if (!(window as any).Capacitor) {
+        try {
+          const tokenRes = await fetch('/api/soniox-token')
+          if (tokenRes.ok) {
+            const { apiKey } = await tokenRes.json()
+
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+            const audioCtx = new AudioContextClass()
+            audioCtxRef.current = audioCtx
+            const sampleRate = audioCtx.sampleRate
+
+            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket')
+            sonioxWsRef.current = ws
+
+            ws.onopen = () => {
+              ws.send(JSON.stringify({
+                api_key: apiKey,
+                model: 'stt-rt-v4',
+                language_hints: ['ar'],
+                audio_format: 'pcm_s16le',
+                sample_rate: sampleRate,
+                num_channels: 1,
+                enable_endpoint_detection: true
+              }))
+              soxHasOpenRef.current = true
+              setSonioxConnected(true)
+              const queued = soxAudioQueueRef.current.splice(0)
+              queued.forEach(chunk => ws.send(chunk))
+            }
+
+            ws.onmessage = (event) => {
+              try {
+                const res = JSON.parse(event.data as string)
+                if (res.error_code) { console.error('Soniox error:', res.error_code, res.error_message); return }
+                const nonFinal: string[] = []
+                for (const token of (res.tokens || [])) {
+                  if (token.is_final) soxFinalTokensRef.current.push(token.text)
+                  else nonFinal.push(token.text)
+                }
+                setLiveTranscription(soxFinalTokensRef.current.join('') + nonFinal.join(''))
+                if (res.finished) {
+                  soxFinishedRef.current = true
+                  setSonioxConnected(false)
+                  ws.close()
+                  sonioxWsRef.current = null
+                  tryFinalizeAnnotation()
+                }
+              } catch (e) { console.error('Soniox parse error:', e) }
+            }
+
+            ws.onerror = () => {
+              setSonioxConnected(false)
+              soxFinishedRef.current = true
+              sonioxWsRef.current = null
+              tryFinalizeAnnotation()
+            }
+
+            ws.onclose = () => {
+              setSonioxConnected(false)
+              if (!soxFinishedRef.current) {
+                soxFinishedRef.current = true
+                sonioxWsRef.current = null
+                tryFinalizeAnnotation()
+              }
+            }
+
+            const source = audioCtx.createMediaStreamSource(stream)
+            // eslint-disable-next-line @typescript-eslint/no-deprecated
+            const processor = audioCtx.createScriptProcessor(1024, 1, 1)
+            scriptProcRef.current = processor
+            source.connect(processor)
+            processor.connect(audioCtx.destination)
+
+            processor.onaudioprocess = (e) => {
+              if (!sonioxWsRef.current) return
+              const float32 = e.inputBuffer.getChannelData(0)
+              const int16 = new Int16Array(float32.length)
+              for (let i = 0; i < float32.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32[i]))
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+              }
+              const buffer = int16.buffer.slice(0)
+              if (sonioxWsRef.current.readyState === WebSocket.OPEN) {
+                sonioxWsRef.current.send(buffer)
+              } else if (sonioxWsRef.current.readyState === WebSocket.CONNECTING) {
+                soxAudioQueueRef.current.push(buffer)
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Soniox setup failed:', e)
+          soxFinishedRef.current = true
         }
+      } else {
+        soxFinishedRef.current = true
       }
 
-      const mediaRecorderOptions: MediaRecorderOptions = {}
-      if (supportedMimeType) {
-        mediaRecorderOptions.mimeType = supportedMimeType
-      }
-
-      const mediaRecorder = new MediaRecorder(stream, mediaRecorderOptions)
+      // --- MediaRecorder لحفظ الصوت ---
+      const mediaRecorder = new MediaRecorder(stream, supportedMimeType ? { mimeType: supportedMimeType } : {})
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
 
@@ -2783,24 +2902,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         if (event.data.size > 0) chunksRef.current.push(event.data)
       }
 
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: supportedMimeType || 'audio/webm' })
-        const reader = new FileReader()
-
-        reader.onloadend = async () => {
-          const base64 = reader.result as string
-          const updatedAnnotations = annotations.map(a =>
-            a.id === annotationId
-              ? { ...a, audioData: base64, duration: recordingTime, isRecording: false }
-              : a
-          )
-          onAnnotationsChange(updatedAnnotations)
-
-          // تحويل الصوت إلى نص تلقائياً
-          await transcribeAudio(annotationId, blob, updatedAnnotations)
-        }
-        reader.readAsDataURL(blob)
+        soxCurrentBlobRef.current = blob
         stream.getTracks().forEach(track => track.stop())
+        tryFinalizeAnnotation()
       }
 
       mediaRecorder.onerror = (event: Event) => {
@@ -2810,16 +2916,15 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         setIsRecordingActive(false)
       }
 
-      mediaRecorder.start(100) // جمع البيانات كل 100ms
+      mediaRecorder.start(100)
       setRecordingTime(0)
       setIsRecordingActive(true)
       setActiveAnnotationId(annotationId)
+      setTranscribingId(annotationId)
 
-      // تحديث حالة التسجيل
-      const updated = annotations.map(a =>
+      onAnnotationsChange(annotations.map(a =>
         a.id === annotationId ? { ...a, isRecording: true } : a
-      )
-      onAnnotationsChange(updated)
+      ))
 
       timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000) as unknown as NodeJS.Timeout
     } catch (err: any) {
@@ -2829,55 +2934,35 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
   }
 
-  // إيقاف التسجيل
+  // إيقاف التسجيل وإشارة نهاية الصوت لـ Soniox
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop()
       setIsRecordingActive(false)
       setActiveAnnotationId(null)
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
     }
-  }
 
-  // تحويل الصوت إلى نص
-  const transcribeAudio = async (
-    annotationId: string,
-    audioBlob: Blob,
-    currentAnnotations: ImageAnnotation[]
-  ) => {
-    try {
-      setTranscribingId(annotationId)
+    scriptProcRef.current?.disconnect()
+    scriptProcRef.current = null
+    audioCtxRef.current?.close()
+    audioCtxRef.current = null
 
-      if (typeof window !== 'undefined' && (window as any).Capacitor) {
-        setTranscribingId(null)
-        return
-      }
-
-      const formData = new FormData()
-      formData.append('audio', audioBlob, 'audio.webm')
-      formData.append('language', 'ar')
-
-      const response = await fetch('/api/transcribe-audio', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.text) {
-          const updatedAnnotations = currentAnnotations.map(a =>
-            a.id === annotationId ? { ...a, transcription: data.text } : a
-          )
-          onAnnotationsChange(updatedAnnotations)
+    if (soxHasOpenRef.current && sonioxWsRef.current?.readyState === WebSocket.OPEN) {
+      soxHasOpenRef.current = false
+      sonioxWsRef.current.send('')
+      setTimeout(() => {
+        if (!soxFinishedRef.current) {
+          soxFinishedRef.current = true
+          sonioxWsRef.current?.close()
+          sonioxWsRef.current = null
+          tryFinalizeAnnotation()
         }
-      }
-      setTranscribingId(null)
-    } catch (err) {
-      console.error('Transcription error:', err)
-      setTranscribingId(null)
+      }, 15000)
+    } else if (sonioxWsRef.current) {
+      sonioxWsRef.current.close()
+      sonioxWsRef.current = null
+      soxFinishedRef.current = true
     }
   }
 
@@ -4124,8 +4209,21 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                         </div>
                       )}
 
-                      {/* مؤشر التحويل */}
-                      {transcribingId === annotation.id && (
+                      {/* النص الفوري من Soniox */}
+                      {annotation.isRecording && sonioxConnected && (
+                        <div className="absolute top-full mt-7 left-1/2 -translate-x-1/2 w-48 bg-green-50 border border-green-300 rounded-lg p-2 shadow-lg z-50 text-right">
+                          <p className="text-xs text-green-600 font-medium mb-0.5 flex items-center gap-1 justify-end">
+                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse inline-block"></span>
+                            نص فوري
+                          </p>
+                          <p className="text-xs text-gray-700 leading-relaxed">
+                            {liveTranscription || 'جاري الاستماع...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* مؤشر التحويل بعد انتهاء التسجيل */}
+                      {!annotation.isRecording && transcribingId === annotation.id && (
                         <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap">
                           <Loader2 className="w-3 h-3 animate-spin" />
                           <span>تحويل...</span>
