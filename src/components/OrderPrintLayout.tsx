@@ -146,195 +146,251 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       )
     }
 
+    // للتشخيص - عناوين الـ snapshots المتاحة
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Hindi Debug] designCommentsSnapshots titles:', designCommentsSnapshots.map(s => s.title))
+      console.log('[Hindi Debug] hindiDesignCommentsSnapshots titles:', hindiDesignCommentsSnapshots?.map(s => s.title))
+    }
+
+    // الحصول على صورة الخلف الهندية مباشرةً من hindiDesignCommentsSnapshots
+    const getHindiBackUrl = (): string | null => {
+      if (!hindiDesignCommentsSnapshots?.length) return null
+      // محاولة 1: البحث بالعنوان
+      const byTitle = hindiDesignCommentsSnapshots.find(h =>
+        h.title.includes('الخلف') || h.title.includes('خلف') || h.title.toLowerCase().includes('back')
+      )
+      if (byTitle) return byTitle.imageDataUrl
+      // محاولة 2: البحث بمطابقة ID مع الـ snapshot الأصلي
+      const backSnap = designCommentsSnapshots.find(s =>
+        s.title.includes('الخلف') || s.title.includes('خلف') || s.title.toLowerCase().includes('back')
+      )
+      if (backSnap) {
+        const byId = hindiDesignCommentsSnapshots.find(h => h.id === backSnap.id + '_hi')
+        if (byId) return byId.imageDataUrl
+      }
+      // لم يوجد نسخة هندية للخلف → null (سيُستخدم الخلف العربي)
+      return null
+    }
+
+    // الحصول على صورة الأمام الهندية مباشرةً من hindiDesignCommentsSnapshots
+    const getHindiFrontUrl = (): string | null => {
+      if (!hindiDesignCommentsSnapshots?.length) return null
+      // محاولة 1: البحث بالعنوان
+      const byTitle = hindiDesignCommentsSnapshots.find(h =>
+        h.title.includes('الأمام') || h.title.includes('أمام') || h.title.toLowerCase().includes('front')
+      )
+      if (byTitle) return byTitle.imageDataUrl
+      // محاولة 2: البحث بمطابقة ID مع الـ snapshot الأصلي
+      const frontSnap = designCommentsSnapshots.find(s =>
+        s.title.includes('الأمام') || s.title.includes('أمام') || s.title.toLowerCase().includes('front')
+      )
+      if (frontSnap) {
+        const byId = hindiDesignCommentsSnapshots.find(h => h.id === frontSnap.id + '_hi')
+        if (byId) return byId.imageDataUrl
+      }
+      // لم يوجد نسخة هندية للأمام → null (سيُستخدم الأمام العربي)
+      return null
+    }
+
     const allNotes = getAllNotes()
 
-    return (
-      <div ref={ref} className="print-layout" dir="rtl">
-        {/* ========== الصفحة الأولى - الوجه الأمامي ========== */}
-        <div className="print-page page-front">
-          {/* القسم العلوي - المعلومات الأساسية */}
-          <div className="print-header">
-            {/* السطر الأول: اسم المحل + التواريخ */}
-            <div className="print-header-top">
-              <div className="header-item header-right header-dates">
-                {order.proof_delivery_date && (
-                  <div className="date-row" style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '1.2em' }}>
-                    <span>موعد تسليم البروفا: </span>
-                    <span>{formatDate(order.proof_delivery_date)}</span>
-                  </div>
-                )}
-                <div className="date-row" style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '1.2em' }}>
-                  <span>موعد التسليم النهائي: </span>
-                  <span>{formatDate(order.due_date)}</span>
-                </div>
-              </div>
-              <div className="header-item" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '40px', paddingLeft: '25%' }}>
-                <h1 className="print-brand" style={{ margin: 0 }}>ياسمين الشام</h1>
-              </div>
-            </div>
-
-
-            {/* معلومات العميل في صف أفقي واحد */}
-            <div className="print-order-info">
-              <div className="info-grid-single-row" style={{ fontSize: '1.3em' }}>
-                <div className="info-item-inline">
-                  <span className="info-label">الاسم:</span>
-                  <span
-                    className="info-value"
-                    style={
-                      order.is_flagged
-                        ? { color: '#dc2626', fontWeight: 'bold' }
-                        : order.price > 1000
-                        ? { color: '#b8860b', fontWeight: 'bold' }
-                        : undefined
-                    }
-                  >
-                    {order.client_name}
-                  </span>
-                </div>
-                <div className="info-item-inline">
-                  <span className="info-label">رقم الهاتف:</span>
-                  <span className="info-value" dir="ltr">{order.client_phone}</span>
-                </div>
-                <div className="info-item-inline">
-                  <span className="info-label">رقم الطلب:</span>
-                  <span className="info-value">#{order.order_number || order.id.slice(0, 8)}</span>
-                </div>
-                <div className="info-item-inline">
-                  <span className="info-label">تاريخ الطلب:</span>
-                  <span className="info-value">{formatDate(order.order_received_date || order.created_at)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* القسم السفلي - مقسم إلى جزئين */}
-          <div className="print-content">
-            {/* الجزء الأيمن - المقاسات + ملاحظات إضافية (30%) */}
-            <div className="print-measurements-section">
-              {/* قسم المقاسات - مختصر بنسبة 40% */}
-              <div className="print-measurements print-measurements-compact">
-                <h2 className="section-title section-title-compact">المقاسات</h2>
-                <div className="measurements-list measurements-list-compact">
-                  {getMeasurementsForPrint().map((key) => {
-                    const value = (order.measurements as any)?.[key]
-                    return (
-                      <div key={key} className="measurement-item measurement-item-compact">
-                        <span className="measurement-label">{getMeasurementLabel(key)}</span>
-                        <span className="measurement-value">
-                          {value ? `${value} إنش` : '______'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                  {/* المقاسات الإضافية */}
-                  {(order.measurements as any)?.additional_notes && (
-                    <div className="measurement-item measurement-item-compact measurement-additional">
-                      <span className="measurement-label">مقاسات إضافية:</span>
-                      <span className="measurement-value measurement-additional-text">
-                        {(order.measurements as any).additional_notes}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* قسم نوع القماش */}
-              {order.fabric && (
-                <div className="print-fabric-type print-additional-notes" style={{ marginBottom: '15px' }}>
-                  <h2 className="section-title section-title-compact">نوع القماش</h2>
-                  <div className="additional-notes-list">
-                    <div className="additional-note-item">
-                      <span className="note-number">1.</span>
-                      <div className="note-content">
-                        <span className="note-text font-bold text-gray-800">{order.fabric}</span>
-                      </div>
-                    </div>
-                  </div>
+    // دالة لرسم الصفحة الأولى (مع إمكانية تمرير صورة خلف بديلة)
+    const renderMainPage = (backImageUrl: string | null) => (
+      <div className="print-page page-front">
+        {/* القسم العلوي - المعلومات الأساسية */}
+        <div className="print-header">
+          {/* السطر الأول: اسم المحل + التواريخ */}
+          <div className="print-header-top">
+            <div className="header-item header-right header-dates">
+              {order.proof_delivery_date && (
+                <div className="date-row" style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '1.2em' }}>
+                  <span>موعد تسليم البروفا: </span>
+                  <span>{formatDate(order.proof_delivery_date)}</span>
                 </div>
               )}
-
-              {/* قسم ملاحظات إضافية - جميع أنواع الملاحظات مع الترجمات */}
-              <div className="print-additional-notes">
-                <h2 className="section-title section-title-compact">ملاحظات إضافية</h2>
-                <div className="additional-notes-list">
-                  {allNotes.length > 0 ? (
-                    allNotes.map((note, idx) => (
-                      <div key={idx} className="additional-note-item">
-                        <span className="note-number">{idx + 1}.</span>
-                        <div className="note-content">
-                          <span className="note-text">{note.text}</span>
-                          {note.translation && (
-                            <span className="note-translation">({note.translation})</span>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="additional-note-item additional-note-empty">
-                      <span className="note-text">لا توجد ملاحظات</span>
-                    </div>
-                  )}
-                </div>
+              <div className="date-row" style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '1.2em' }}>
+                <span>موعد التسليم النهائي: </span>
+                <span>{formatDate(order.due_date)}</span>
               </div>
             </div>
-
-            {/* الجزء الأيسر - صورة الخلف أو الأمام أو أول صورة تصميم */}
-            <div className="print-comments">
-              <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Back</h3>
-              <div className="comments-box">
-                {getFirstPageImage() ? (
-                  <div className="first-images-grid first-images-single">
-                    <div className="first-image-container first-image-single">
-                      <img
-                        src={getFirstPageImage()!}
-                        alt="صورة التصميم"
-                        className="first-design-image"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="empty-comments">
-                    {/* مساحة فارغة */}
-                  </div>
-                )}
-              </div>
+            <div className="header-item" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '40px', paddingLeft: '25%' }}>
+              <h1 className="print-brand" style={{ margin: 0 }}>ياسمين الشام</h1>
             </div>
           </div>
 
-          {/* تذييل الصفحة الأولى - الموقع ورقم الهاتف */}
-          <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '6px', marginTop: '6px', display: 'flex', alignItems: 'center', position: 'relative' }}>
-            <div style={{ position: 'absolute', left: 0, right: 0, textAlign: 'center', fontSize: '11px', color: '#6b7280' }}>
-              <span dir="ltr">www.yasmin-alsham.fashion</span>
-            </div>
-            <div style={{ marginRight: 'auto', fontSize: '11px', color: '#6b7280' }}>
-              <span>رقم الهاتف: </span>
-              <span dir="ltr">0598862609</span>
+          {/* معلومات العميل في صف أفقي واحد */}
+          <div className="print-order-info">
+            <div className="info-grid-single-row" style={{ fontSize: '1.3em' }}>
+              <div className="info-item-inline">
+                <span className="info-label">الاسم:</span>
+                <span
+                  className="info-value"
+                  style={
+                    order.is_flagged
+                      ? { color: '#dc2626', fontWeight: 'bold' }
+                      : order.price > 1000
+                      ? { color: '#b8860b', fontWeight: 'bold' }
+                      : undefined
+                  }
+                >
+                  {order.client_name}
+                </span>
+              </div>
+              <div className="info-item-inline">
+                <span className="info-label">رقم الهاتف:</span>
+                <span className="info-value" dir="ltr">{order.client_phone}</span>
+              </div>
+              <div className="info-item-inline">
+                <span className="info-label">رقم الطلب:</span>
+                <span className="info-value">#{order.order_number || order.id.slice(0, 8)}</span>
+              </div>
+              <div className="info-item-inline">
+                <span className="info-label">تاريخ الطلب:</span>
+                <span className="info-value">{formatDate(order.order_received_date || order.created_at)}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* ========== الصفحة الثانية - صورة الأمام (إن وجدت) ========== */}
-        {getFrontPageImage() && (
-          <div className="print-page page-front-image">
-            <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Front</h3>
-            <div className="design-comment-full">
-              <div className="design-comment-image-wrapper">
-                <img
-                  src={getFrontPageImage()!}
-                  alt="صورة الأمام"
-                  className="design-comment-full-image"
-                />
+        {/* القسم السفلي - مقسم إلى جزئين */}
+        <div className="print-content">
+          {/* الجزء الأيمن - المقاسات + ملاحظات إضافية (30%) */}
+          <div className="print-measurements-section">
+            {/* قسم المقاسات - مختصر بنسبة 40% */}
+            <div className="print-measurements print-measurements-compact">
+              <h2 className="section-title section-title-compact">المقاسات</h2>
+              <div className="measurements-list measurements-list-compact">
+                {getMeasurementsForPrint().map((key) => {
+                  const value = (order.measurements as any)?.[key]
+                  return (
+                    <div key={key} className="measurement-item measurement-item-compact">
+                      <span className="measurement-label">{getMeasurementLabel(key)}</span>
+                      <span className="measurement-value">
+                        {value ? `${value} إنش` : '______'}
+                      </span>
+                    </div>
+                  )
+                })}
+                {/* المقاسات الإضافية */}
+                {(order.measurements as any)?.additional_notes && (
+                  <div className="measurement-item measurement-item-compact measurement-additional">
+                    <span className="measurement-label">مقاسات إضافية:</span>
+                    <span className="measurement-value measurement-additional-text">
+                      {(order.measurements as any).additional_notes}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* قسم نوع القماش */}
+            {order.fabric && (
+              <div className="print-fabric-type print-additional-notes" style={{ marginBottom: '15px' }}>
+                <h2 className="section-title section-title-compact">نوع القماش</h2>
+                <div className="additional-notes-list">
+                  <div className="additional-note-item">
+                    <span className="note-number">1.</span>
+                    <div className="note-content">
+                      <span className="note-text font-bold text-gray-800">{order.fabric}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* قسم ملاحظات إضافية - جميع أنواع الملاحظات مع الترجمات */}
+            <div className="print-additional-notes">
+              <h2 className="section-title section-title-compact">ملاحظات إضافية</h2>
+              <div className="additional-notes-list">
+                {allNotes.length > 0 ? (
+                  allNotes.map((note, idx) => (
+                    <div key={idx} className="additional-note-item">
+                      <span className="note-number">{idx + 1}.</span>
+                      <div className="note-content">
+                        <span className="note-text">{note.text}</span>
+                        {note.translation && (
+                          <span className="note-translation">({note.translation})</span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="additional-note-item additional-note-empty">
+                    <span className="note-text">لا توجد ملاحظات</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
-        )}
 
-        {/* ========== صفحات تعليقات التصميم (كل تعليق في صفحة منفصلة - بدون الترجمات) ========== */}
+          {/* الجزء الأيسر - صورة الخلف */}
+          <div className="print-comments">
+            <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Back</h3>
+            <div className="comments-box">
+              {backImageUrl ? (
+                <div className="first-images-grid first-images-single">
+                  <div className="first-image-container first-image-single">
+                    <img
+                      src={backImageUrl}
+                      alt="صورة التصميم"
+                      className="first-design-image"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-comments" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* تذييل الصفحة - الموقع ورقم الهاتف */}
+        <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '6px', marginTop: '6px', display: 'flex', alignItems: 'center', position: 'relative' }}>
+          <div style={{ position: 'absolute', left: 0, right: 0, textAlign: 'center', fontSize: '11px', color: '#6b7280' }}>
+            <span dir="ltr">www.yasmin-alsham.fashion</span>
+          </div>
+          <div style={{ marginRight: 'auto', fontSize: '11px', color: '#6b7280' }}>
+            <span>رقم الهاتف: </span>
+            <span dir="ltr">0598862609</span>
+          </div>
+        </div>
+      </div>
+    )
+
+    // دالة لرسم صفحة الأمام (مع إمكانية تمرير صورة أمام بديلة)
+    const renderFrontPage = (frontImageUrl: string | null) => {
+      if (!frontImageUrl) return null
+      return (
+        <div className="print-page page-front-image">
+          <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Front</h3>
+          <div className="design-comment-full">
+            <div className="design-comment-image-wrapper">
+              <img
+                src={frontImageUrl}
+                alt="صورة الأمام"
+                className="design-comment-full-image"
+              />
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    const hindiBackUrl = getHindiBackUrl() || getFirstPageImage()
+    const hindiFrontUrl = getHindiFrontUrl() || getFrontPageImage()
+
+    return (
+      <div ref={ref} className="print-layout" dir="rtl">
+        {/* ========== الصفحة الأولى - معلومات + مقاسات + صورة الخلف ========== */}
+        {renderMainPage(getFirstPageImage())}
+
+        {/* ========== الصفحة الثانية - صورة الأمام (إن وجدت) ========== */}
+        {renderFrontPage(getFrontPageImage())}
+
+        {/* ========== صفحات تعليقات التصميم (كل تعليق في صفحة منفصلة) ========== */}
         {getFilteredDesignComments().map((snapshot) => (
           <div key={snapshot.id} className="print-page design-comment-page">
             <div className="design-comment-full">
-              {/* الصورة مع الرسومات والعلامات والنصوص المرئية */}
               <div className="design-comment-image-wrapper">
                 <img
                   src={snapshot.imageDataUrl}
@@ -346,28 +402,11 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
           </div>
         ))}
 
-        {/* ========== صفحات النسخة الهندية ========== */}
+        {/* ========== النسخة الهندية - تكرار كامل للطلب مع صور التصميم الهندية فقط ========== */}
         {hindiDesignCommentsSnapshots && hindiDesignCommentsSnapshots.length > 0 && (
           <>
-            {/* صفحة فاصلة تعلن بداية النسخة الهندية */}
-            <div className="print-page" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '16px' }}>
-              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#f97316', textAlign: 'center' }}>हिंदी प्रति</div>
-              <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center' }}>النسخة الهندية</div>
-              <div style={{ fontSize: '14px', color: '#9ca3af', textAlign: 'center' }}>{order.client_name} - #{order.order_number || order.id.slice(0, 8)}</div>
-            </div>
-            {hindiDesignCommentsSnapshots.map((snapshot) => (
-              <div key={snapshot.id} className="print-page design-comment-page">
-                <div className="design-comment-full">
-                  <div className="design-comment-image-wrapper">
-                    <img
-                      src={snapshot.imageDataUrl}
-                      alt={snapshot.title}
-                      className="design-comment-full-image"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
+            {renderMainPage(hindiBackUrl)}
+            {renderFrontPage(hindiFrontUrl)}
           </>
         )}
 
