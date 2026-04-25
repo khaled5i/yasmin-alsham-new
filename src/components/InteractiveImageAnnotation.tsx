@@ -3028,6 +3028,36 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     }
   }
 
+  // إلغاء التسجيل وتنظيف الموارد بدون حفظ الصوت
+  const cancelRecording = () => {
+    // منع tryFinalizeAnnotation من الحفظ
+    soxCurrentBlobRef.current = null
+    soxAnnotationIdRef.current = ''
+    soxFinalTokensRef.current = []
+    soxFinishedRef.current = true
+
+    if (mediaRecorderRef.current) {
+      try { mediaRecorderRef.current.stop() } catch { /* ignore */ }
+      mediaRecorderRef.current = null
+      setIsRecordingActive(false)
+      setActiveAnnotationId(null)
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    }
+
+    scriptProcRef.current?.disconnect()
+    scriptProcRef.current = null
+    audioCtxRef.current?.close()
+    audioCtxRef.current = null
+
+    if (sonioxWsRef.current) {
+      try { sonioxWsRef.current.close() } catch { /* ignore */ }
+      sonioxWsRef.current = null
+    }
+    soxHasOpenRef.current = false
+    setLiveTranscription('')
+    setSonioxConnected(false)
+  }
+
   // إيقاف التسجيل وإشارة نهاية الصوت لـ Soniox
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
@@ -3800,6 +3830,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 e.stopPropagation()
                 e.preventDefault()
               }}
+              onDoubleClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+              }}
               onMouseDown={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
@@ -3969,7 +4003,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             }
                             setShowBrushPicker(prev => !prev)
                           }}
-                          onDoubleClick={() => setShowBrushPicker(true)}
+                          onDoubleClick={(e) => { e.stopPropagation(); setShowBrushPicker(true) }}
                           onContextMenu={(e) => {
                             e.preventDefault()
                             setShowBrushPicker(true)
@@ -4052,7 +4086,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                           // تفعيل الممحاة فقط (Toggle)
                           toggleEraserMode()
                         }}
-                        onDoubleClick={() => {
+                        onDoubleClick={(e) => {
+                          e.stopPropagation()
                           setShowEraserMenu(true)
                           closeAllPickers() // Close others
                           setShowEraserMenu(true) // Re-open ours
@@ -4334,7 +4369,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                           {/* زر الحذف للعلامات بدون نص */}
                           <button
                             type="button"
-                            onClick={() => deleteAnnotation(annotation.id)}
+                            onClick={() => {
+                              if (annotation.isRecording) cancelRecording()
+                              deleteAnnotation(annotation.id)
+                            }}
                             className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-red-700 transition-colors"
                           >
                             <X className="w-3 h-3" />
