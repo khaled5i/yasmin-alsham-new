@@ -307,9 +307,9 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                     <div key={idx} className="additional-note-item">
                       <span className="note-number">{idx + 1}.</span>
                       <div className="note-content">
-                        <span className="note-text">{note.text}</span>
+                        <span className="note-text">{note.text.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</span>
                         {note.translation && (
-                          <span className="note-translation">({note.translation})</span>
+                          <span className="note-translation">({note.translation.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && ' '}{line.trim()}</span>))})</span>
                         )}
                       </div>
                     </div>

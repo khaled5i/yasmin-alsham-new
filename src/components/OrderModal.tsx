@@ -1158,7 +1158,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     {/* الملاحظة النصية - تصميم مضغوط */}
                     {order.notes && (
                       <div className="bg-white rounded-lg p-3 border border-pink-100/80 shadow-sm">
-                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{order.notes}</p>
+                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{order.notes.replace(/<end>/gi, '\n')}</p>
                       </div>
                     )}
 
@@ -1417,7 +1417,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                                   {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
                                                 </p>
                                                 <p className="text-sm text-gray-600" dir="auto">
-                                                  {annotation.translatedText}
+                                                  {annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
                                                 </p>
                                               </div>
                                             )}
@@ -1602,7 +1602,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                       {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
                                     </p>
                                     <p className="text-sm text-gray-600" dir="auto">
-                                      {annotation.translatedText}
+                                      {annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
                                     </p>
                                   </div>
                                 )}

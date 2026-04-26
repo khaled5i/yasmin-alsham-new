@@ -104,7 +104,8 @@ export default function UnifiedNotesInput({
     if (!blob) return
     if (!sonioxFinishedRef.current) return
 
-    const finalText = finalTokensRef.current.join('')
+    const rawFinalText = finalTokensRef.current.join('')
+    const finalText = rawFinalText.replace(/<end>/gi, '\n').replace(/\n{2,}/g, '\n').trim()
     const noteId = recordingIdRef.current
     const duration = recordingDurationRef.current
 
@@ -601,7 +602,7 @@ export default function UnifiedNotesInput({
               نص فوري
             </p>
             {liveTranscription ? (
-              <p className="text-sm text-gray-700 leading-relaxed">{liveTranscription}</p>
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{liveTranscription.replace(/<end>/gi, '\n')}</p>
             ) : (
               <p className="text-sm text-gray-400 italic">جاري الاستماع...</p>
             )}
@@ -632,7 +633,7 @@ export default function UnifiedNotesInput({
                       </span>
                       {note.transcription && (
                         <p className="text-sm text-gray-700 leading-relaxed break-words">
-                          {note.transcription}
+                          {note.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
                         </p>
                       )}
                     </div>
@@ -680,7 +681,7 @@ export default function UnifiedNotesInput({
                           <Languages className="w-3 h-3" />
                           الترجمة ({getLanguageName(note.translationLanguage || 'en')})
                         </p>
-                        <p className="text-sm text-gray-600">{note.translatedText}</p>
+                        <p className="text-sm text-gray-600">{note.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                       </div>
                     )
                   ) : (

@@ -1401,12 +1401,12 @@ function AddAlterationContent() {
                                           </div>
                                           <div className="flex-1 min-w-0">
                                             {annotation.transcription && (
-                                              <p className="text-sm text-gray-700">{annotation.transcription}</p>
+                                              <p className="text-sm text-gray-700">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                                             )}
                                             {annotation.translatedText && (
                                               <div className="mt-1.5 bg-purple-50 border border-purple-200 rounded-lg p-2">
                                                 <p className="text-xs text-purple-600 font-medium mb-0.5">الترجمة</p>
-                                                <p className="text-sm text-gray-600" dir="auto">{annotation.translatedText}</p>
+                                                <p className="text-sm text-gray-600" dir="auto">{annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                                               </div>
                                             )}
                                           </div>

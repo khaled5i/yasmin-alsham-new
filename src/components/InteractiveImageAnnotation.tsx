@@ -4906,7 +4906,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                               الترجمة ({getLanguageName(annotation.translationLanguage || 'en')})
                             </p>
                             <p className="text-sm text-gray-700 leading-relaxed break-words" dir="auto">
-                              {annotation.translatedText}
+                              {annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
                             </p>
                           </div>
                         )}
@@ -4959,7 +4959,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       <span className="text-xs bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full flex-shrink-0">{viewLabel}</span>
                       <div className="flex-1 min-w-0">
                         {a.transcription && (
-                          <p className="text-sm text-gray-700 break-words">{a.transcription}</p>
+                          <p className="text-sm text-gray-700 break-words">{a.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                         )}
                         {!a.transcription && a.audioData && (
                           <p className="text-sm text-gray-500">تسجيل صوتي</p>
@@ -4969,7 +4969,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             <p className="text-xs text-purple-600 font-medium mb-0.5">
                               الترجمة ({getLanguageName(a.translationLanguage || 'en')})
                             </p>
-                            <p className="text-sm text-gray-700 break-words" dir="auto">{a.translatedText}</p>
+                            <p className="text-sm text-gray-700 break-words" dir="auto">{a.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                           </div>
                         )}
                         {a.audioData && (
