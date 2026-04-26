@@ -50,6 +50,21 @@ export interface ImageAnnotation {
   isHidden?: boolean // إخفاء النص من على الصورة
   textScale?: number // حجم النص (1 = الحجم الافتراضي)
   textColor?: string // لون النص (افتراضي: أسود)
+  textBackground?: boolean // إضافة خلفية خلف النص (أبيض، أو أسود إذا كان النص فاتحاً)
+}
+
+// تحديد ما إذا كان اللون فاتحاً (لاختيار لون الخلفية المعاكس)
+function isLightTextColor(hex: string): boolean {
+  if (!hex || hex[0] !== '#') return false
+  const value = hex.length === 4
+    ? hex.slice(1).split('').map(c => c + c).join('')
+    : hex.slice(1)
+  if (value.length !== 6) return false
+  const r = parseInt(value.slice(0, 2), 16)
+  const g = parseInt(value.slice(2, 4), 16)
+  const b = parseInt(value.slice(4, 6), 16)
+  // luminance perception (0-255). 170+ يعتبر فاتحاً
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 170
 }
 
 // ثوابت الألوان المتاحة للرسم
@@ -586,10 +601,16 @@ function DraggableText({
       data-annotation-interactive="true"
       className={`${isEditing ? 'cursor-text' : 'cursor-move touch-none'}`}
     >
-      {/* نص بسيط بدون خلفية - رقم ونص فقط */}
+      {/* نص بسيط - رقم ونص فقط، مع خلفية اختيارية */}
       <div
-        className="flex items-start gap-1 drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]"
-        style={{ fontSize, color: annotation.textColor || '#000000' }}
+        className={`flex items-start gap-1 ${annotation.textBackground ? 'rounded px-1.5 py-0.5' : 'drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)]'}`}
+        style={{
+          fontSize,
+          color: annotation.textColor || '#000000',
+          backgroundColor: annotation.textBackground
+            ? (isLightTextColor(annotation.textColor || '#000000') ? '#000000' : '#ffffff')
+            : undefined
+        }}
         onDoubleClick={handleDoubleClick}
       >
         <span className="font-bold flex-shrink-0">
@@ -1131,21 +1152,57 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             if (currentLine) lines.push(currentLine)
           }
 
+          // رسم خلفية النص إذا كانت مفعلة (مطابق لـ HTML: rounded px-1.5 py-0.5)
+          if (annotation.textBackground && lines.length > 0) {
+            ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+            let maxLineWidth = 0
+            lines.forEach((line, lineIndex) => {
+              const lineWidth = (lineIndex === 0 ? textOffsetX : 0) + ctx.measureText(line).width
+              if (lineWidth > maxLineWidth) maxLineWidth = lineWidth
+            })
+            // px-1.5 = 6px، py-0.5 = 2px
+            const padX = 6
+            const padY = 2
+            const bgWidth = maxLineWidth + padX * 2
+            const bgHeight = lineHeight * lines.length + padY * 2
+            const radius = Math.min(4, bgHeight / 2)
+            const bgX = textX - padX
+            const bgY = textY - padY
+
+            ctx.save()
+            ctx.fillStyle = isLightTextColor(textColor) ? '#000000' : '#ffffff'
+            ctx.beginPath()
+            ctx.moveTo(bgX + radius, bgY)
+            ctx.lineTo(bgX + bgWidth - radius, bgY)
+            ctx.quadraticCurveTo(bgX + bgWidth, bgY, bgX + bgWidth, bgY + radius)
+            ctx.lineTo(bgX + bgWidth, bgY + bgHeight - radius)
+            ctx.quadraticCurveTo(bgX + bgWidth, bgY + bgHeight, bgX + bgWidth - radius, bgY + bgHeight)
+            ctx.lineTo(bgX + radius, bgY + bgHeight)
+            ctx.quadraticCurveTo(bgX, bgY + bgHeight, bgX, bgY + bgHeight - radius)
+            ctx.lineTo(bgX, bgY + radius)
+            ctx.quadraticCurveTo(bgX, bgY, bgX + radius, bgY)
+            ctx.closePath()
+            ctx.fill()
+            ctx.restore()
+          }
+
           // رسم كل سطر
           lines.forEach((line, lineIndex) => {
             const lineY = textY + (lineIndex * lineHeight)
 
-            // ظل أبيض (drop-shadow مثل HTML)
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-            for (let dx = -1; dx <= 1; dx++) {
-              for (let dy = -1; dy <= 1; dy++) {
-                if (dx === 0 && dy === 0) continue
-                if (lineIndex === 0) {
-                  ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-                  ctx.fillText(numberText, textX + dx, lineY + dy)
-                  ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+            // ظل أبيض (drop-shadow مثل HTML) - يُعطّل عند وجود خلفية لأنها تحلّ محله
+            if (!annotation.textBackground) {
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+              for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                  if (dx === 0 && dy === 0) continue
+                  if (lineIndex === 0) {
+                    ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+                    ctx.fillText(numberText, textX + dx, lineY + dy)
+                    ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+                  }
+                  ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
                 }
-                ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
               }
             }
 
@@ -2025,6 +2082,14 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const handleTextColorChange = useCallback((annotationId: string, color: string) => {
     const updatedAnnotations = annotations.map(a =>
       a.id === annotationId ? { ...a, textColor: color } : a
+    )
+    onAnnotationsChange(updatedAnnotations)
+  }, [annotations, onAnnotationsChange])
+
+  // معالج تبديل خلفية النص (أبيض / أسود حسب لون الخط)
+  const handleToggleTextBackground = useCallback((annotationId: string) => {
+    const updatedAnnotations = annotations.map(a =>
+      a.id === annotationId ? { ...a, textBackground: !a.textBackground } : a
     )
     onAnnotationsChange(updatedAnnotations)
   }, [annotations, onAnnotationsChange])
@@ -4267,6 +4332,67 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                             <p className="text-xs text-gray-500 mb-2 text-center">
                               {editingAnnotationId ? 'اختر لون النص' : 'اختر لون الرسم'}
                             </p>
+                            {editingAnnotationId && (() => {
+                              const editingAnnotation = annotations.find(a => a.id === editingAnnotationId)
+                              if (!editingAnnotation) return null
+                              const currentScale = editingAnnotation.textScale ?? 1
+                              const hasBackground = !!editingAnnotation.textBackground
+                              return (
+                                <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-gray-200">
+                                  {/* أزرار تكبير/تصغير حجم النص */}
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onMouseDown={(e) => e.preventDefault()}
+                                      onClick={() => changeTextScale(editingAnnotationId, -0.1)}
+                                      disabled={currentScale <= 0.5}
+                                      className="w-9 h-9 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                                      title="تصغير حجم النص"
+                                    >
+                                      <ZoomOut className="w-4 h-4" />
+                                    </button>
+                                    <span className="text-xs font-medium text-gray-700 min-w-[36px] text-center select-none">
+                                      {Math.round(currentScale * 100)}%
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onMouseDown={(e) => e.preventDefault()}
+                                      onClick={() => changeTextScale(editingAnnotationId, 0.1)}
+                                      disabled={currentScale >= 2}
+                                      className="w-9 h-9 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                                      title="تكبير حجم النص"
+                                    >
+                                      <ZoomIn className="w-4 h-4" />
+                                    </button>
+                                  </div>
+
+                                  {/* زر تبديل خلفية النص */}
+                                  <button
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => handleToggleTextBackground(editingAnnotationId)}
+                                    className={`h-9 px-3 rounded-lg border flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                                      hasBackground
+                                        ? 'border-purple-400 bg-purple-50 text-purple-700'
+                                        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                    title={hasBackground ? 'إزالة الخلفية' : 'إضافة خلفية خلف النص'}
+                                  >
+                                    <span
+                                      className="inline-flex items-center justify-center w-5 h-5 rounded text-[11px] font-bold border"
+                                      style={{
+                                        backgroundColor: isLightTextColor(editingAnnotation.textColor || '#000000') ? '#000000' : '#ffffff',
+                                        color: editingAnnotation.textColor || '#000000',
+                                        borderColor: '#d1d5db'
+                                      }}
+                                    >
+                                      ن
+                                    </span>
+                                    <span>خلفية</span>
+                                  </button>
+                                </div>
+                              )
+                            })()}
                             <div className="grid grid-cols-4 gap-2.5">
                               {DRAWING_COLORS.map(color => {
                                 const activeColor = editingAnnotationId

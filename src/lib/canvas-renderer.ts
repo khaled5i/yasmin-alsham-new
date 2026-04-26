@@ -6,6 +6,19 @@
 
 import type { DrawingPath, BrushType } from '@/components/InteractiveImageAnnotation'
 
+// تحديد ما إذا كان اللون فاتحاً (لاختيار خلفية معاكسة)
+function isLightHex(hex: string): boolean {
+  if (!hex || hex[0] !== '#') return false
+  const value = hex.length === 4
+    ? hex.slice(1).split('').map(c => c + c).join('')
+    : hex.slice(1)
+  if (value.length !== 6) return false
+  const r = parseInt(value.slice(0, 2), 16)
+  const g = parseInt(value.slice(2, 4), 16)
+  const b = parseInt(value.slice(4, 6), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 170
+}
+
 /**
  * Renders drawing paths on a canvas with proper eraser support,
  * brush type styles, and dynamic coordinate mapping.
@@ -229,7 +242,7 @@ export async function generateAnnotationCompositeImage(
   annotations: Array<{
     id: string; x: number; y: number; boxX?: number; boxY?: number;
     transcription?: string; isHidden?: boolean; isRecording?: boolean;
-    textScale?: number; timestamp: number
+    textScale?: number; textColor?: string; textBackground?: boolean; timestamp: number
   }>,
   drawings: DrawingPath[],
   baseImageSrc: string,
@@ -383,18 +396,54 @@ export async function generateAnnotationCompositeImage(
           if (currentLine) lines.push(currentLine)
         }
 
+        const hasBackground = !!(annotation as any).textBackground
+        if (hasBackground && lines.length > 0) {
+          ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+          let maxLineWidth = 0
+          lines.forEach((line, lineIndex) => {
+            const lineWidth = (lineIndex === 0 ? textOffsetX : 0) + ctx.measureText(line).width
+            if (lineWidth > maxLineWidth) maxLineWidth = lineWidth
+          })
+          // px-1.5 = 6px، py-0.5 = 2px مضروب بالـ scale
+          const padX = Math.round(6 * scale)
+          const padY = Math.round(2 * scale)
+          const bgWidth = maxLineWidth + padX * 2
+          const bgHeight = lineHeight * lines.length + padY * 2
+          const radius = Math.min(Math.round(4 * scale), bgHeight / 2)
+          const bgX = textX - padX
+          const bgY = textY - padY
+
+          ctx.save()
+          ctx.fillStyle = isLightHex(textColor) ? '#000000' : '#ffffff'
+          ctx.beginPath()
+          ctx.moveTo(bgX + radius, bgY)
+          ctx.lineTo(bgX + bgWidth - radius, bgY)
+          ctx.quadraticCurveTo(bgX + bgWidth, bgY, bgX + bgWidth, bgY + radius)
+          ctx.lineTo(bgX + bgWidth, bgY + bgHeight - radius)
+          ctx.quadraticCurveTo(bgX + bgWidth, bgY + bgHeight, bgX + bgWidth - radius, bgY + bgHeight)
+          ctx.lineTo(bgX + radius, bgY + bgHeight)
+          ctx.quadraticCurveTo(bgX, bgY + bgHeight, bgX, bgY + bgHeight - radius)
+          ctx.lineTo(bgX, bgY + radius)
+          ctx.quadraticCurveTo(bgX, bgY, bgX + radius, bgY)
+          ctx.closePath()
+          ctx.fill()
+          ctx.restore()
+        }
+
         lines.forEach((line, lineIndex) => {
           const lineY = textY + lineIndex * lineHeight
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-          for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-              if (dx === 0 && dy === 0) continue
-              if (lineIndex === 0) {
-                ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-                ctx.fillText(numberText, textX + dx, lineY + dy)
-                ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+          if (!hasBackground) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+            for (let dx = -1; dx <= 1; dx++) {
+              for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue
+                if (lineIndex === 0) {
+                  ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+                  ctx.fillText(numberText, textX + dx, lineY + dy)
+                  ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+                }
+                ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
               }
-              ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
             }
           }
           ctx.fillStyle = textColor

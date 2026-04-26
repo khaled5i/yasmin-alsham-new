@@ -658,6 +658,16 @@ function AddOrderContent() {
 
       // ملاحظة: payment_status و remaining_amount سيتم حسابهما تلقائياً بواسطة trigger في قاعدة البيانات
 
+      // الاحتفاظ بـ base64 الأصلي لكل تعليق (لكل واجهة) قبل تحويله إلى 'custom'
+      // ضروري لتوليد compositeImageHi بالصورة الصحيحة لكل عرض (أمام/خلف)
+      // وإلا فإن النسخة الهندية تستخدم صورة العرض الحالي فقط لكلا الواجهتين أو تعود للصورة الافتراضية
+      const commentImageMap = new Map<string, string>()
+      formData.savedDesignComments.forEach(comment => {
+        if (comment.image && comment.image.startsWith('data:')) {
+          commentImageMap.set(comment.id, comment.image)
+        }
+      })
+
       // تجميع جميع التعليقات المحفوظة
       let allSavedComments = formData.savedDesignComments.map(comment => ({
         ...comment,
@@ -672,6 +682,15 @@ function AddOrderContent() {
         }
         const currentView = annotationRef.current?.getCurrentView() || 'front'
         allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
+
+        // ربط صورة العرض الحالي (base64) بالـ slot الذي تم upsert-ه لاستخدامها في توليد النسخة الهندية
+        if (customDesignImageBase64) {
+          const upsertedSlot = allSavedComments.find(c => {
+            const v = (c as any).view ?? (c.title?.trim().startsWith('أمام') ? 'front' : c.title?.trim().startsWith('خلف') ? 'back' : null)
+            return v === currentView
+          })
+          if (upsertedSlot) commentImageMap.set(upsertedSlot.id, customDesignImageBase64)
+        }
       }
 
       // توليد صورة مصغرة من تعليق الأمام لعرضها في بطاقة العامل
@@ -731,9 +750,18 @@ function AddOrderContent() {
             const hasHindi = translatedAnnotations.some((a: any) => a.hindiText)
             if (hasHindi && comment.compositeImage) {
               try {
-                const baseImgSrc = comment.image && comment.image !== 'custom' && comment.image.startsWith('data:')
-                  ? comment.image
-                  : (customDesignImageBase64 || '/front2.png')
+                // تحديد العرض (أمام/خلف) للحصول على الصورة الصحيحة
+                const commentView: 'front' | 'back' =
+                  (comment as any).view ??
+                  (comment.title?.trim().startsWith('أمام') ? 'front' :
+                   comment.title?.trim().startsWith('خلف') ? 'back' : 'front')
+                const defaultImage = commentView === 'back' ? '/back2.png' : '/front2.png'
+
+                // الأولوية: 1) صورة base64 الفعلية المحفوظة لهذا التعليق
+                //          2) الصورة الافتراضية المطابقة للعرض (front2.png أو back2.png)
+                // لا نستخدم customDesignImageBase64 كاحتياطي لأنه صورة عرض واحد فقط وقد لا تطابق هذا التعليق
+                const baseImgSrc = commentImageMap.get(comment.id) || defaultImage
+
                 const compositeImageHi = await generateAnnotationCompositeImage(
                   translatedAnnotations,
                   comment.drawings || [],
