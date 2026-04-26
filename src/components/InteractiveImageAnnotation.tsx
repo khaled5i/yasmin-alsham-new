@@ -611,7 +611,7 @@ function DraggableText({
           />
         ) : (
           <p className="leading-snug break-words max-w-[200px]" dir={annotation.translatedText ? "auto" : "rtl"}>
-            {annotation.translatedText || annotation.transcription}
+            {(annotation.translatedText || annotation.transcription || '').split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
           </p>
         )}
       </div>
@@ -1096,7 +1096,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           // مطابق لـ leading-snug في Tailwind = 1.375
           const lineHeight = Math.round(fontSize * 1.375)
           const textColor = annotation.textColor || '#000000'
-          const textToDisplay = annotation.translatedText || annotation.transcription || ''
+          // مطابق لعرض HTML: التقسيم إلى مقاطع عند <end> أو \n، ثم لف الكلمات داخل كل مقطع
+          const rawText = (annotation.translatedText || annotation.transcription || '')
+          const segments = rawText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
 
           ctx.save()
           ctx.textAlign = 'left'
@@ -1113,19 +1115,21 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           // تقسيم النص إلى أسطر - مطابق لـ max-w-[200px] في HTML
           const maxTextWidth = 200
           ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
-          const words = textToDisplay.split(' ')
           const lines: string[] = []
-          let currentLine = ''
-          for (const word of words) {
-            const testLine = currentLine ? `${currentLine} ${word}` : word
-            if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
-              lines.push(currentLine)
-              currentLine = word
-            } else {
-              currentLine = testLine
+          for (const segment of segments) {
+            const words = segment.split(/\s+/).filter(Boolean)
+            let currentLine = ''
+            for (const word of words) {
+              const testLine = currentLine ? `${currentLine} ${word}` : word
+              if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
+                lines.push(currentLine)
+                currentLine = word
+              } else {
+                currentLine = testLine
+              }
             }
+            if (currentLine) lines.push(currentLine)
           }
-          if (currentLine) lines.push(currentLine)
 
           // رسم كل سطر
           lines.forEach((line, lineIndex) => {
@@ -2836,9 +2840,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     const reader = new FileReader()
     reader.onloadend = () => {
       const base64 = reader.result as string
+      const cleanText = (t: string) => t.replace(/<end>/gi, '\n').replace(/\n{2,}/g, '\n').trim()
       const updated = annotationsRef.current.map(a =>
         a.id === annotationId
-          ? { ...a, audioData: base64, isRecording: false, transcription: finalText || a.transcription }
+          ? { ...a, audioData: base64, isRecording: false, transcription: cleanText(finalText) || a.transcription }
           : a
       )
       onAnnotationsChange(updated)
@@ -4685,8 +4690,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                           {index + 1}.
                         </span>
                         {annotation.transcription && editingTranscriptionId !== annotation.id && (
-                          <p className="text-sm text-gray-700 leading-relaxed break-words">
-                            {annotation.transcription}
+                          <p className="text-sm text-gray-700 leading-relaxed break-words" dir="rtl">
+                            {annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
                           </p>
                         )}
                       </div>

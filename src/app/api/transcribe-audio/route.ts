@@ -65,8 +65,14 @@ export async function POST(request: NextRequest) {
       response_format: 'json'
     })
 
+    // تنظيف نص التحويل من علامات <end> والأرقام التي يضيفها النموذج
+    const cleanedText = transcription.text
+      .replace(/<end>/gi, '\n')
+      .replace(/\n{2,}/g, '\n')
+      .trim()
+
     return NextResponse.json({
-      text: transcription.text,
+      text: cleanedText,
       language: language,
       success: true
     })

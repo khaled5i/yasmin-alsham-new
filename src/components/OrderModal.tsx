@@ -1331,7 +1331,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                                 {showHindiComments && (annotation as any).hindiText ? (
                                                   <p className="text-sm text-gray-700 mb-1" dir="ltr">{(annotation as any).hindiText}</p>
                                                 ) : annotation.transcription ? (
-                                                  <p className="text-sm text-gray-700 mb-1">{annotation.transcription}</p>
+                                                  <p className="text-sm text-gray-700 mb-1 break-words" dir="rtl">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                                                 ) : null}
                                               </div>
                                               {/* أزرار التحكم */}
@@ -1491,7 +1491,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     {annotation.transcription && (
-                                      <p className="text-sm text-gray-700 mb-2">{annotation.transcription}</p>
+                                      <p className="text-sm text-gray-700 mb-2 break-words" dir="rtl">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                                     )}
                                     {!annotation.transcription && !annotation.audioData && (
                                       <p className="text-sm text-gray-400 italic">{t('marker_without_comment')}</p>

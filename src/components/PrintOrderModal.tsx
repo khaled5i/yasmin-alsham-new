@@ -276,23 +276,28 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
 
           const maxTextWidth = containerWidth * 0.5
           const lineHeight = fontSize * 1.3
-          const textToDisplay = annotation.translatedText || annotation.transcription
-          const fullText = `${annotationIndex}. ${textToDisplay}`
+          // تقسيم بحسب <end> أو \n مطابقاً لعرض HTML، مع لف الكلمات داخل كل مقطع
+          const rawText = annotation.translatedText || annotation.transcription || ''
+          const segments = rawText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
+          if (segments.length === 0) segments.push('')
+          segments[0] = `${annotationIndex}. ${segments[0]}`.trim()
 
-          const words = fullText.split(' ')
           const lines: string[] = []
-          let currentLine = ''
-          for (const word of words) {
-            const testLine = currentLine ? `${currentLine} ${word}` : word
-            const metrics = ctx.measureText(testLine)
-            if (metrics.width > maxTextWidth && currentLine) {
-              lines.push(currentLine)
-              currentLine = word
-            } else {
-              currentLine = testLine
+          for (const segment of segments) {
+            const words = segment.split(/\s+/).filter(Boolean)
+            let currentLine = ''
+            for (const word of words) {
+              const testLine = currentLine ? `${currentLine} ${word}` : word
+              const metrics = ctx.measureText(testLine)
+              if (metrics.width > maxTextWidth && currentLine) {
+                lines.push(currentLine)
+                currentLine = word
+              } else {
+                currentLine = testLine
+              }
             }
+            if (currentLine) lines.push(currentLine)
           }
-          if (currentLine) lines.push(currentLine)
 
           lines.forEach((line, lineIndex) => {
             const lineY = textY + (lineIndex * lineHeight)

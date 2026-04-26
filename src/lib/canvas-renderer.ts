@@ -355,21 +355,25 @@ export async function generateAnnotationCompositeImage(
         const textOffsetX = numberWidth + gap
 
         // تقسيم النص بدون الرقم - max-w-[200px] مضروب بالـ scale
+        // مطابق لعرض HTML: التقسيم عند <end> أو \n أولاً، ثم لف الكلمات داخل كل مقطع
         const maxTextWidth = Math.round(200 * scale)
         ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
-        const words = displayText.split(' ')
+        const segments = displayText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
         const lines: string[] = []
-        let currentLine = ''
-        for (const word of words) {
-          const testLine = currentLine ? `${currentLine} ${word}` : word
-          if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
-            lines.push(currentLine)
-            currentLine = word
-          } else {
-            currentLine = testLine
+        for (const segment of segments) {
+          const words = segment.split(/\s+/).filter(Boolean)
+          let currentLine = ''
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word
+            if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
+              lines.push(currentLine)
+              currentLine = word
+            } else {
+              currentLine = testLine
+            }
           }
+          if (currentLine) lines.push(currentLine)
         }
-        if (currentLine) lines.push(currentLine)
 
         lines.forEach((line, lineIndex) => {
           const lineY = textY + lineIndex * lineHeight
