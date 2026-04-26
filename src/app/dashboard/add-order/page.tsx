@@ -393,7 +393,6 @@ function AddOrderContent() {
   }, [formData, isArabic])
 
   const [isUrgent, setIsUrgent] = useState(false)
-  const [urgentPriceOverride, setUrgentPriceOverride] = useState('')
   const [isFlagged, setIsFlagged] = useState(false)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -407,15 +406,6 @@ function AddOrderContent() {
     const paidAmount = Number(formData.paidAmount) || 0
     return Math.max(0, price - paidAmount)
   }, [formData.price, formData.paidAmount])
-
-  // السعر المحسوب بزيادة 30%
-  const urgentPriceComputed = useMemo(() => {
-    const price = Number(formData.price) || 0
-    return price > 0 ? Math.ceil(price * 1.3) : 0
-  }, [formData.price])
-
-  // السعر الفعلي المستعجل (قابل للتعديل اليدوي)
-  const urgentPrice = urgentPriceOverride !== '' ? Number(urgentPriceOverride) || 0 : urgentPriceComputed
 
   // معالجة تغيير الحقول
   const handleInputChange = useCallback((field: string, value: string | string[] | null) => {
@@ -539,7 +529,6 @@ function AddOrderContent() {
     resetToInitial()
     setCustomDesignImageFile(null)
     setIsUrgent(false)
-    setUrgentPriceOverride('')
     // حذف تعليقات التصميم والعرض النشط من localStorage
     localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
     localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
@@ -777,7 +766,7 @@ function AddOrderContent() {
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: isUrgent ? urgentPrice : price,
+        price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -942,7 +931,7 @@ function AddOrderContent() {
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: isUrgent ? urgentPrice : price,
+        price: price,
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
@@ -1090,7 +1079,7 @@ function AddOrderContent() {
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: isUrgent ? urgentPrice : price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
@@ -1207,7 +1196,7 @@ function AddOrderContent() {
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: isUrgent ? urgentPrice : price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
@@ -1326,7 +1315,7 @@ function AddOrderContent() {
         ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: isUrgent ? urgentPrice : price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: formData.dueDate,
@@ -1596,14 +1585,6 @@ function AddOrderContent() {
                       type="button"
                       onClick={() => {
                         setIsUrgent(prev => {
-                          if (!prev) {
-                            // تفعيل: احسب السعر الجديد تلقائياً
-                            const base = Number(formData.price) || 0
-                            setUrgentPriceOverride(base > 0 ? String(Math.ceil(base * 1.3)) : '')
-                          } else {
-                            // إلغاء: أعد تعيين
-                            setUrgentPriceOverride('')
-                          }
                           return !prev
                         })
                       }}
@@ -1628,33 +1609,13 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 7b. السعر بعد زيادة 30% - يظهر فقط عند تفعيل الطلب المستعجل */}
-                {isUrgent && (
-                  <div>
-                    <label className="block text-sm font-medium text-orange-700 mb-2">
-                      السعر بعد زيادة 30%
-                    </label>
-                    <NumericInput
-                      value={urgentPriceOverride}
-                      onChange={(value) => setUrgentPriceOverride(value)}
-                      type="price"
-                      placeholder="0"
-                      disabled={isSubmitting}
-                    />
-                    {formData.price && (
-                      <p className="text-xs text-orange-500 mt-1">
-                        السعر الأصلي: {Number(formData.price).toFixed(2)} + 30% = {urgentPriceComputed} ر.س
-                      </p>
-                    )}
-                  </div>
-                )}
 
                 {/* 8. الدفعة المستلمة */}
                 <div>
                   <NumericInput
                     value={formData.paidAmount}
                     onChange={(value) => {
-                      const effectivePrice = isUrgent ? urgentPrice : (Number(formData.price) || 0)
+                      const effectivePrice = Number(formData.price) || 0
                       const paid = Number(value) || 0
                       // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
                       if (paid > effectivePrice) {
@@ -1678,7 +1639,7 @@ function AddOrderContent() {
                     {t('remaining_amount')}
                   </label>
                   <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
-                    {(Math.max(0, (isUrgent ? urgentPrice : (Number(formData.price) || 0)) - (Number(formData.paidAmount) || 0))).toFixed(2)} {t('sar')}
+                    {(Math.max(0, (Number(formData.price) || 0) - (Number(formData.paidAmount) || 0))).toFixed(2)} {t('sar')}
                   </div>
                 </div>
 

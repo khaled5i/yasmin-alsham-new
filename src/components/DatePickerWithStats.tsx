@@ -143,6 +143,7 @@ export default function DatePickerWithStats({
     const hijri = toHijri(date)
 
     const isFriday = date.getDay() === 5
+    const isSaturday = date.getDay() === 6
 
     // تحديد لون الرقم الهجري بناءً على الشهر الهجري
     const hijriMonthsInView = getHijriMonthsInView(viewedDateRef.current)
@@ -156,7 +157,7 @@ export default function DatePickerWithStats({
 
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
-        {isFriday && (
+        {(isFriday || isSaturday) && (
           <span className="text-[10px] text-black font-bold leading-none">✕</span>
         )}
         <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
@@ -182,6 +183,7 @@ export default function DatePickerWithStats({
     const classes: string[] = []
     if (count > 5) classes.push('overloaded-date')
     if (date.getDay() === 5) classes.push('friday-day')
+    if (date.getDay() === 6) classes.push('saturday-day')
     return classes.join(' ')
   }
 
@@ -386,11 +388,23 @@ export default function DatePickerWithStats({
         }
 
         .custom-calendar-hijri .react-datepicker__day.friday-day {
-          background-color: #f3f3f3;
+          background-color: #888888;
+          color: white;
         }
 
         .custom-calendar-hijri .react-datepicker__day.friday-day:hover {
-          background-color: #e5e5e5;
+          background-color: #666666;
+          color: white;
+        }
+
+        .custom-calendar-hijri .react-datepicker__day.saturday-day {
+          background-color: #888888;
+          color: white;
+        }
+
+        .custom-calendar-hijri .react-datepicker__day.saturday-day:hover {
+          background-color: #666666;
+          color: white;
         }
 
         .custom-calendar-hijri .react-datepicker__day--selected {
