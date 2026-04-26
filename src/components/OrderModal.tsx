@@ -1329,7 +1329,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                                               </div>
                                               <div className="flex-1 min-w-0">
                                                 {showHindiComments && (annotation as any).hindiText ? (
-                                                  <p className="text-sm text-gray-700 mb-1" dir="ltr">{(annotation as any).hindiText}</p>
+                                                  <p className="text-gray-700 mb-1" dir="ltr" style={{ fontSize: '0.74rem', lineHeight: 1.5 }}>{(annotation as any).hindiText}</p>
                                                 ) : annotation.transcription ? (
                                                   <p className="text-sm text-gray-700 mb-1 break-words" dir="rtl">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                                                 ) : null}

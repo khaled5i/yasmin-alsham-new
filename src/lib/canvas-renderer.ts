@@ -334,7 +334,12 @@ export async function generateAnnotationCompositeImage(
         const textPos = textPositions.get(annotation.id)
         if (!textPos) return
         const textScale = (annotation as any).textScale ?? 1
-        const fontSize = Math.round(14 * textScale * scale)
+        const displayTextForScale = getText(annotation) || ''
+        // الديفاناغاري (الهندية) يُرسم أكبر بصرياً من العربي/اللاتيني عند نفس font-size
+        // بسبب فقدان دعم Cairo للديفاناغاري ووجود الـ shirorekha. نعوّض بتصغير الخط.
+        const isDevanagari = /[ऀ-ॿ]/.test(displayTextForScale)
+        const scriptScale = isDevanagari ? 0.82 : 1
+        const fontSize = Math.round(14 * textScale * scale * scriptScale)
         const textX = (textPos.x / 100) * containerWidth
         const textY = (textPos.y / 100) * containerHeight
         const displayText = getText(annotation)
