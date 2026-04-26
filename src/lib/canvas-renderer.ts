@@ -256,7 +256,10 @@ export async function generateAnnotationCompositeImage(
     renderDrawingsOnCanvas(ctx, drawings, containerWidth, containerHeight, baseImage, { offsetX, offsetY, drawWidth, drawHeight })
 
     const scale = containerWidth / 400
-    const markerRadius = 10 * scale
+    // الماركر يُرسم بحجم ثابت (غير مضروب بالـ scale) ليطابق سلوك
+    // InteractiveImageAnnotation.generateCompositeImage الذي يستخدم markerRadius=10
+    // و lineWidth=2 و font=10px مهما كان عرض الـ container.
+    const markerRadius = 10
     annotations.forEach((annotation, index) => {
       const markerX = (annotation.x / 100) * containerWidth
       const markerY = (annotation.y / 100) * containerHeight
@@ -269,11 +272,11 @@ export async function generateAnnotationCompositeImage(
       ctx.fillStyle = annotation.isHidden ? '#9ca3af' : '#ec4899'
       ctx.fill()
       ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 2 * scale
+      ctx.lineWidth = 2
       ctx.stroke()
       if (hasText) {
         ctx.fillStyle = '#ffffff'
-        ctx.font = `bold ${Math.round(10 * scale)}px Cairo, Arial, sans-serif`
+        ctx.font = 'bold 10px Cairo, Arial, sans-serif'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText((index + 1).toString(), markerX, markerY)
