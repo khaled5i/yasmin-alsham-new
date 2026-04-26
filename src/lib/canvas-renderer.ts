@@ -430,21 +430,16 @@ export async function generateAnnotationCompositeImage(
           ctx.restore()
         }
 
+        // مطابقة CSS: drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)] - ظل ناعم وليس outline
+        // نستخدم ctx.shadow* لمطابقة 100% للعرض الحي (HTML drop-shadow filter)
         lines.forEach((line, lineIndex) => {
           const lineY = textY + lineIndex * lineHeight
+          ctx.save()
           if (!hasBackground) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-            for (let dx = -1; dx <= 1; dx++) {
-              for (let dy = -1; dy <= 1; dy++) {
-                if (dx === 0 && dy === 0) continue
-                if (lineIndex === 0) {
-                  ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-                  ctx.fillText(numberText, textX + dx, lineY + dy)
-                  ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
-                }
-                ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
-              }
-            }
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
+            ctx.shadowOffsetX = 0
+            ctx.shadowOffsetY = 1 * scale
+            ctx.shadowBlur = 2 * scale
           }
           ctx.fillStyle = textColor
           if (lineIndex === 0) {
@@ -453,6 +448,7 @@ export async function generateAnnotationCompositeImage(
             ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
           }
           ctx.fillText(line, textX + textOffsetX, lineY)
+          ctx.restore()
         })
         ctx.restore()
       })

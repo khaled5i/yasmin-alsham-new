@@ -1187,26 +1187,21 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           }
 
           // رسم كل سطر
+          // مطابقة CSS: drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)] - ظل ناعم وليس outline
+          // نستخدم ctx.shadow* لمطابقة 100% للعرض الحي (HTML drop-shadow filter)
           lines.forEach((line, lineIndex) => {
             const lineY = textY + (lineIndex * lineHeight)
 
-            // ظل أبيض (drop-shadow مثل HTML) - يُعطّل عند وجود خلفية لأنها تحلّ محله
+            ctx.save()
+            // تطبيق الظل الناعم فقط عند عدم وجود خلفية (مطابق للـ HTML)
             if (!annotation.textBackground) {
-              ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-              for (let dx = -1; dx <= 1; dx++) {
-                for (let dy = -1; dy <= 1; dy++) {
-                  if (dx === 0 && dy === 0) continue
-                  if (lineIndex === 0) {
-                    ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-                    ctx.fillText(numberText, textX + dx, lineY + dy)
-                    ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
-                  }
-                  ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
-                }
-              }
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
+              ctx.shadowOffsetX = 0
+              ctx.shadowOffsetY = 1
+              ctx.shadowBlur = 2
             }
 
-            // النص الفعلي
+            // النص الفعلي - رسمة واحدة فقط مع الظل الطبيعي
             ctx.fillStyle = textColor
             if (lineIndex === 0) {
               // الرقم بـ bold مثل HTML
@@ -1215,6 +1210,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
             }
             ctx.fillText(line, textX + textOffsetX, lineY)
+            ctx.restore()
           })
 
           ctx.restore()

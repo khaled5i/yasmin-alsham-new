@@ -299,18 +299,17 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
             if (currentLine) lines.push(currentLine)
           }
 
+          // مطابقة CSS: drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)] - ظل ناعم وليس outline
           lines.forEach((line, lineIndex) => {
             const lineY = textY + (lineIndex * lineHeight)
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-            for (let dx = -1; dx <= 1; dx++) {
-              for (let dy = -1; dy <= 1; dy++) {
-                if (dx !== 0 || dy !== 0) {
-                  ctx.fillText(line, textX + dx, lineY + dy)
-                }
-              }
-            }
+            ctx.save()
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
+            ctx.shadowOffsetX = 0
+            ctx.shadowOffsetY = 1
+            ctx.shadowBlur = 2
             ctx.fillStyle = '#000000'
             ctx.fillText(line, textX, lineY)
+            ctx.restore()
           })
 
           ctx.restore()
