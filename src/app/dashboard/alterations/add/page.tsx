@@ -110,7 +110,7 @@ function AddAlterationContent() {
         paidAmount: alteration.paid_amount.toString(),
         paymentMethod: alteration.payment_method || 'cash',
         orderReceivedDate: alteration.order_received_date || new Date().toISOString().split('T')[0],
-        alterationDueDate: alteration.alteration_due_date,
+        alterationDueDate: alteration.alteration_due_date || '',
         errorType: (alteration.error_type as AlterationErrorType) || '',
         errorNotes: alteration.error_notes || '',
         errorVoiceNotes: (alteration as any).error_voice_transcriptions || [],
@@ -568,7 +568,7 @@ function AddAlterationContent() {
           price: price,
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
-          alteration_due_date: formData.alterationDueDate,
+          alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || null,
           error_notes: formData.errorNotes || null,
           notes: formData.notes || undefined,
@@ -607,7 +607,7 @@ function AddAlterationContent() {
           price: price,
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
-          alteration_due_date: formData.alterationDueDate,
+          alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || undefined,
           error_notes: formData.errorNotes || undefined,
           notes: formData.notes || undefined,
@@ -751,7 +751,7 @@ function AddAlterationContent() {
           price: price,
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
-          alteration_due_date: formData.alterationDueDate,
+          alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || null,
           error_notes: formData.errorNotes || null,
           notes: formData.notes || undefined,
@@ -785,7 +785,7 @@ function AddAlterationContent() {
           price: price,
           payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
-          alteration_due_date: formData.alterationDueDate,
+          alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || undefined,
           error_notes: formData.errorNotes || undefined,
           notes: formData.notes || undefined,
@@ -910,7 +910,7 @@ function AddAlterationContent() {
         </motion.div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           {/* 1. المعلومات الأساسية */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}

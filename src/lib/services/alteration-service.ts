@@ -60,7 +60,7 @@ export interface Alteration {
   payment_status: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | null
   status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
-  alteration_due_date: string
+  alteration_due_date?: string | null
   delivery_date?: string | null
   order_received_date?: string
   notes?: string | null
@@ -94,7 +94,7 @@ export interface CreateAlterationData {
   payment_status?: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
-  alteration_due_date: string
+  alteration_due_date?: string | null
   delivery_date?: string
   order_received_date?: string
   notes?: string
@@ -185,7 +185,7 @@ export interface UpdateAlterationData {
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
-  alteration_due_date?: string
+  alteration_due_date?: string | null
   delivery_date?: string | null
   notes?: string | null
   admin_notes?: string | null
@@ -256,7 +256,7 @@ export const alterationService = {
         payment_method: alterationData.payment_method || 'cash',
         order_received_date: alterationData.order_received_date || new Date().toISOString().split('T')[0],
         status: alterationData.status || 'pending',
-        alteration_due_date: alterationData.alteration_due_date,
+        alteration_due_date: alterationData.alteration_due_date || null,
         delivery_date: alterationData.delivery_date || null,
         notes: alterationData.notes || null,
         admin_notes: alterationData.admin_notes || null,
