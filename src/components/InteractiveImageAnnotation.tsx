@@ -1075,7 +1075,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         textPositions.set(annotation.id, { x: bestBox.x, y: bestBox.y })
       })
 
-      // رسم النصوص
+      // انتظار تحميل الخطوط لضمان مطابقة العرض مع HTML
+      if (typeof document !== 'undefined' && document.fonts?.ready) {
+        await document.fonts.ready
+      }
+
+      // رسم النصوص - مطابق لعرض HTML في DraggableText
       annotations
         .filter(a => a.transcription && !a.isRecording && !a.isHidden)
         .forEach((annotation) => {
@@ -1084,28 +1089,36 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           if (!textPos) return
 
           const textScale = annotation.textScale ?? 1
+          // مطابق لـ HTML: fontSize = 0.875rem * scale = 14px * scale
           const fontSize = Math.round(14 * textScale)
           const textX = (textPos.x / 100) * containerWidth
           const textY = (textPos.y / 100) * containerHeight
+          // مطابق لـ leading-snug في Tailwind = 1.375
+          const lineHeight = Math.round(fontSize * 1.375)
+          const textColor = annotation.textColor || '#000000'
+          const textToDisplay = annotation.translatedText || annotation.transcription || ''
 
           ctx.save()
-          ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
           ctx.textAlign = 'left'
           ctx.textBaseline = 'top'
 
-          const maxTextWidth = containerWidth * 0.5
-          const lineHeight = fontSize * 1.3
-          const textToDisplay = annotation.translatedText || annotation.transcription
-          const fullText = `${annotationIndex}. ${textToDisplay}`
+          // قياس عرض الرقم (bold مثل HTML)
+          const numberText = `${annotationIndex}.`
+          ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+          const numberWidth = ctx.measureText(numberText).width
+          // gap-1 في Tailwind = 4px
+          const gap = 4
+          const textOffsetX = numberWidth + gap
 
-          // تقسيم النص إلى أسطر
-          const words = fullText.split(' ')
+          // تقسيم النص إلى أسطر - مطابق لـ max-w-[200px] في HTML
+          const maxTextWidth = 200
+          ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+          const words = textToDisplay.split(' ')
           const lines: string[] = []
           let currentLine = ''
           for (const word of words) {
             const testLine = currentLine ? `${currentLine} ${word}` : word
-            const metrics = ctx.measureText(testLine)
-            if (metrics.width > maxTextWidth && currentLine) {
+            if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
               lines.push(currentLine)
               currentLine = word
             } else {
@@ -1114,22 +1127,33 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           }
           if (currentLine) lines.push(currentLine)
 
-          // رسم النص مع ظل (drop-shadow)
-          const textColor = annotation.textColor || '#000000'
+          // رسم كل سطر
           lines.forEach((line, lineIndex) => {
             const lineY = textY + (lineIndex * lineHeight)
-            // ظل أبيض للوضوح
+
+            // ظل أبيض (drop-shadow مثل HTML)
             ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
             for (let dx = -1; dx <= 1; dx++) {
               for (let dy = -1; dy <= 1; dy++) {
-                if (dx !== 0 || dy !== 0) {
-                  ctx.fillText(line, textX + dx, lineY + dy)
+                if (dx === 0 && dy === 0) continue
+                if (lineIndex === 0) {
+                  ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+                  ctx.fillText(numberText, textX + dx, lineY + dy)
+                  ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
                 }
+                ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
               }
             }
-            // النص بالون المحدد
+
+            // النص الفعلي
             ctx.fillStyle = textColor
-            ctx.fillText(line, textX, lineY)
+            if (lineIndex === 0) {
+              // الرقم بـ bold مثل HTML
+              ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+              ctx.fillText(numberText, textX, lineY)
+              ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+            }
+            ctx.fillText(line, textX + textOffsetX, lineY)
           })
 
           ctx.restore()
@@ -3651,14 +3675,6 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               userSelect: isDrawingMode ? 'none' : 'auto',
               WebkitUserSelect: isDrawingMode ? 'none' : 'auto',
               WebkitTouchCallout: isDrawingMode ? 'none' : 'default',
-              // Force styles for Portal to ensure visibility and layering
-              ...(isDrawingMode ? {
-                // نلغي الأنماط السابقة التي كانت تجبره على ملء الشاشة
-                // سيتم التحكم بالأبعاد عبر الحاوية الأب في الـ Portal
-                display: 'flex',
-                placeContent: 'center',
-                backgroundColor: '#ffffff',
-              } : {})
             }}
             onClick={handleImageClick}
             onDoubleClick={handleImageDoubleClick}

@@ -339,15 +339,25 @@ export async function generateAnnotationCompositeImage(
         const textY = (textPos.y / 100) * containerHeight
         const displayText = getText(annotation)
         if (!displayText) return
-        const fullText = `${annotationIndex}. ${displayText}`
+        const textColor = (annotation as any).textColor || '#000000'
 
         ctx.save()
-        ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
-        const maxTextWidth = containerWidth * 0.5
-        const lineHeight = fontSize * 1.3
-        const words = fullText.split(' ')
+        // leading-snug = 1.375
+        const lineHeight = Math.round(fontSize * 1.375)
+
+        // قياس عرض الرقم (bold) + gap-1 (4px مضروب بالـ scale)
+        const numberText = `${annotationIndex}.`
+        ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+        const numberWidth = ctx.measureText(numberText).width
+        const gap = Math.round(4 * scale)
+        const textOffsetX = numberWidth + gap
+
+        // تقسيم النص بدون الرقم - max-w-[200px] مضروب بالـ scale
+        const maxTextWidth = Math.round(200 * scale)
+        ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+        const words = displayText.split(' ')
         const lines: string[] = []
         let currentLine = ''
         for (const word of words) {
@@ -366,11 +376,22 @@ export async function generateAnnotationCompositeImage(
           ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
           for (let dx = -1; dx <= 1; dx++) {
             for (let dy = -1; dy <= 1; dy++) {
-              if (dx !== 0 || dy !== 0) ctx.fillText(line, textX + dx, lineY + dy)
+              if (dx === 0 && dy === 0) continue
+              if (lineIndex === 0) {
+                ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+                ctx.fillText(numberText, textX + dx, lineY + dy)
+                ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+              }
+              ctx.fillText(line, textX + textOffsetX + dx, lineY + dy)
             }
           }
-          ctx.fillStyle = '#000000'
-          ctx.fillText(line, textX, lineY)
+          ctx.fillStyle = textColor
+          if (lineIndex === 0) {
+            ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+            ctx.fillText(numberText, textX, lineY)
+            ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+          }
+          ctx.fillText(line, textX + textOffsetX, lineY)
         })
         ctx.restore()
       })
