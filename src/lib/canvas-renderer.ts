@@ -6,17 +6,10 @@
 
 import type { DrawingPath, BrushType } from '@/components/InteractiveImageAnnotation'
 
-// كشف اتجاه النص (RTL/LTR) - يطابق سلوك dir="auto" في المتصفح
-// نبحث عن أول حرف ذو اتجاه قوي: عربي/عبري → RTL، لاتيني → LTR
+// كشف اتجاه النص: RTL فقط للنص العربي/العبري، أي شيء آخر (لاتيني، هندي/ديفاناغاري، إلخ) → LTR
 function isRtlText(text: string | undefined | null): boolean {
-  if (!text) return true
-  const rtlRange = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/
-  const ltrRange = /[A-Za-z]/
-  for (const ch of text) {
-    if (rtlRange.test(ch)) return true
-    if (ltrRange.test(ch)) return false
-  }
-  return true
+  if (!text) return false
+  return /[֐-ࣿיִ-﷿ﹰ-ﻼ]/.test(text)
 }
 
 // تحديد ما إذا كان اللون فاتحاً (لاختيار خلفية معاكسة)
@@ -469,14 +462,18 @@ export async function generateAnnotationCompositeImage(
           if (lineIndex === 0) {
             ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
             ctx.textAlign = 'left'
+            // فرض اتجاه LTR للرقم لمنع bidi من قلب "1." إلى ".1"
+            ctx.direction = 'ltr'
             ctx.fillText(numberText, numberX, lineY)
             ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
           }
           // أسطر النص: محاذاة لليمين في RTL، لليسار في LTR
           if (isRtl) {
+            ctx.direction = 'rtl'
             ctx.textAlign = 'right'
             ctx.fillText(line, textBlockRight, lineY)
           } else {
+            ctx.direction = 'ltr'
             ctx.textAlign = 'left'
             ctx.fillText(line, textBlockLeft, lineY)
           }

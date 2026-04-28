@@ -53,16 +53,10 @@ export interface ImageAnnotation {
   textBackground?: boolean // إضافة خلفية خلف النص (أبيض، أو أسود إذا كان النص فاتحاً)
 }
 
-// كشف اتجاه النص (RTL/LTR) - يطابق سلوك dir="auto" في المتصفح
+// كشف اتجاه النص: RTL فقط للنص العربي/العبري، أي شيء آخر (لاتيني، هندي/ديفاناغاري، إلخ) → LTR
 function isRtlText(text: string | undefined | null): boolean {
-  if (!text) return true
-  const rtlRange = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/
-  const ltrRange = /[A-Za-z]/
-  for (const ch of text) {
-    if (rtlRange.test(ch)) return true
-    if (ltrRange.test(ch)) return false
-  }
-  return true
+  if (!text) return false
+  return /[֐-ࣿיִ-﷿ﹰ-ﻼ]/.test(text)
 }
 
 // تحديد ما إذا كان اللون فاتحاً (لاختيار لون الخلفية المعاكس)
@@ -1229,14 +1223,18 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               // الرقم بـ bold مثل HTML
               ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
               ctx.textAlign = 'left'
+              // فرض اتجاه LTR للرقم لمنع bidi من قلب "1." إلى ".1"
+              ctx.direction = 'ltr'
               ctx.fillText(numberText, numberX, lineY)
               ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
             }
             // أسطر النص: محاذاة لليمين في RTL، لليسار في LTR
             if (isRtl) {
+              ctx.direction = 'rtl'
               ctx.textAlign = 'right'
               ctx.fillText(line, textBlockRight, lineY)
             } else {
+              ctx.direction = 'ltr'
               ctx.textAlign = 'left'
               ctx.fillText(line, textBlockLeft, lineY)
             }
