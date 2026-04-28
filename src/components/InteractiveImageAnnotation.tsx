@@ -53,6 +53,18 @@ export interface ImageAnnotation {
   textBackground?: boolean // إضافة خلفية خلف النص (أبيض، أو أسود إذا كان النص فاتحاً)
 }
 
+// كشف اتجاه النص (RTL/LTR) - يطابق سلوك dir="auto" في المتصفح
+function isRtlText(text: string | undefined | null): boolean {
+  if (!text) return true
+  const rtlRange = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/
+  const ltrRange = /[A-Za-z]/
+  for (const ch of text) {
+    if (rtlRange.test(ch)) return true
+    if (ltrRange.test(ch)) return false
+  }
+  return true
+}
+
 // تحديد ما إذا كان اللون فاتحاً (لاختيار لون الخلفية المعاكس)
 function isLightTextColor(hex: string): boolean {
   if (!hex || hex[0] !== '#') return false
@@ -1122,8 +1134,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           const segments = rawText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
 
           ctx.save()
-          ctx.textAlign = 'left'
           ctx.textBaseline = 'top'
+
+          // اتجاه النص (يطابق dir="auto" في HTML للترجمة، أو dir="rtl" للعربي)
+          const isRtl = isRtlText(rawText)
 
           // قياس عرض الرقم (bold مثل HTML)
           const numberText = `${annotationIndex}.`
@@ -1131,7 +1145,6 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           const numberWidth = ctx.measureText(numberText).width
           // gap-1 في Tailwind = 4px
           const gap = 4
-          const textOffsetX = numberWidth + gap
 
           // تقسيم النص إلى أسطر - مطابق لـ max-w-[200px] في HTML
           const maxTextWidth = 200
@@ -1152,18 +1165,27 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             if (currentLine) lines.push(currentLine)
           }
 
+          // قياس أعرض سطر (مطابق لـ <p> shrunk-to-content مع max-w-[200px])
+          ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+          let maxLineWidth = 0
+          lines.forEach(line => {
+            const w = ctx.measureText(line).width
+            if (w > maxLineWidth) maxLineWidth = w
+          })
+
+          // تخطيط مطابق لـ HTML flex مع dir=rtl/ltr:
+          // RTL (عربي): textX هو الحافة اليسرى → [النص يمين-محاذاة][gap][الرقم على اليمين]
+          // LTR (لاتيني): textX هو الحافة اليسرى → [الرقم][gap][النص يسار-محاذاة]
+          const textBlockLeft = isRtl ? textX : textX + numberWidth + gap
+          const textBlockRight = textBlockLeft + maxLineWidth
+          const numberX = isRtl ? textBlockRight + gap : textX
+
           // رسم خلفية النص إذا كانت مفعلة (مطابق لـ HTML: rounded px-1.5 py-0.5)
           if (annotation.textBackground && lines.length > 0) {
-            ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
-            let maxLineWidth = 0
-            lines.forEach((line, lineIndex) => {
-              const lineWidth = (lineIndex === 0 ? textOffsetX : 0) + ctx.measureText(line).width
-              if (lineWidth > maxLineWidth) maxLineWidth = lineWidth
-            })
             // px-1.5 = 6px، py-0.5 = 2px
             const padX = 6
             const padY = 2
-            const bgWidth = maxLineWidth + padX * 2
+            const bgWidth = maxLineWidth + gap + numberWidth + padX * 2
             const bgHeight = lineHeight * lines.length + padY * 2
             const radius = Math.min(4, bgHeight / 2)
             const bgX = textX - padX
@@ -1206,10 +1228,18 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             if (lineIndex === 0) {
               // الرقم بـ bold مثل HTML
               ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-              ctx.fillText(numberText, textX, lineY)
+              ctx.textAlign = 'left'
+              ctx.fillText(numberText, numberX, lineY)
               ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
             }
-            ctx.fillText(line, textX + textOffsetX, lineY)
+            // أسطر النص: محاذاة لليمين في RTL، لليسار في LTR
+            if (isRtl) {
+              ctx.textAlign = 'right'
+              ctx.fillText(line, textBlockRight, lineY)
+            } else {
+              ctx.textAlign = 'left'
+              ctx.fillText(line, textBlockLeft, lineY)
+            }
             ctx.restore()
           })
 

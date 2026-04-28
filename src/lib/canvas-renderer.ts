@@ -6,6 +6,19 @@
 
 import type { DrawingPath, BrushType } from '@/components/InteractiveImageAnnotation'
 
+// كشف اتجاه النص (RTL/LTR) - يطابق سلوك dir="auto" في المتصفح
+// نبحث عن أول حرف ذو اتجاه قوي: عربي/عبري → RTL، لاتيني → LTR
+function isRtlText(text: string | undefined | null): boolean {
+  if (!text) return true
+  const rtlRange = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/
+  const ltrRange = /[A-Za-z]/
+  for (const ch of text) {
+    if (rtlRange.test(ch)) return true
+    if (ltrRange.test(ch)) return false
+  }
+  return true
+}
+
 // تحديد ما إذا كان اللون فاتحاً (لاختيار خلفية معاكسة)
 function isLightHex(hex: string): boolean {
   if (!hex || hex[0] !== '#') return false
@@ -363,17 +376,18 @@ export async function generateAnnotationCompositeImage(
         const textColor = (annotation as any).textColor || '#000000'
 
         ctx.save()
-        ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
         // leading-snug = 1.375
         const lineHeight = Math.round(fontSize * 1.375)
+
+        // اتجاه النص (يطابق dir="auto" في HTML)
+        const isRtl = isRtlText(displayText)
 
         // قياس عرض الرقم (bold) + gap-1 (4px مضروب بالـ scale)
         const numberText = `${annotationIndex}.`
         ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
         const numberWidth = ctx.measureText(numberText).width
         const gap = Math.round(4 * scale)
-        const textOffsetX = numberWidth + gap
 
         // تقسيم النص بدون الرقم - max-w-[200px] مضروب بالـ scale
         // مطابق لعرض HTML: التقسيم عند <end> أو \n أولاً، ثم لف الكلمات داخل كل مقطع
@@ -396,18 +410,28 @@ export async function generateAnnotationCompositeImage(
           if (currentLine) lines.push(currentLine)
         }
 
+        // قياس أعرض سطر لتحديد عرض صندوق النص (مطابق لـ <p> shrunk-to-content)
+        ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
+        let maxLineWidth = 0
+        lines.forEach(line => {
+          const w = ctx.measureText(line).width
+          if (w > maxLineWidth) maxLineWidth = w
+        })
+
+        // تخطيط مطابق لـ HTML flex مع dir=rtl/ltr:
+        // RTL: [النص يمين-محاذاة][gap][الرقم] - الرقم على اليمين
+        // LTR: [الرقم][gap][النص يسار-محاذاة] - الرقم على اليسار
+        // textX يمثل الحافة اليسرى للحاوية الكاملة في كلتا الحالتين
+        const textBlockLeft = isRtl ? textX : textX + numberWidth + gap
+        const textBlockRight = textBlockLeft + maxLineWidth
+        const numberX = isRtl ? textBlockRight + gap : textX
+
         const hasBackground = !!(annotation as any).textBackground
         if (hasBackground && lines.length > 0) {
-          ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
-          let maxLineWidth = 0
-          lines.forEach((line, lineIndex) => {
-            const lineWidth = (lineIndex === 0 ? textOffsetX : 0) + ctx.measureText(line).width
-            if (lineWidth > maxLineWidth) maxLineWidth = lineWidth
-          })
           // px-1.5 = 6px، py-0.5 = 2px مضروب بالـ scale
           const padX = Math.round(6 * scale)
           const padY = Math.round(2 * scale)
-          const bgWidth = maxLineWidth + padX * 2
+          const bgWidth = maxLineWidth + gap + numberWidth + padX * 2
           const bgHeight = lineHeight * lines.length + padY * 2
           const radius = Math.min(Math.round(4 * scale), bgHeight / 2)
           const bgX = textX - padX
@@ -444,10 +468,18 @@ export async function generateAnnotationCompositeImage(
           ctx.fillStyle = textColor
           if (lineIndex === 0) {
             ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-            ctx.fillText(numberText, textX, lineY)
+            ctx.textAlign = 'left'
+            ctx.fillText(numberText, numberX, lineY)
             ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
           }
-          ctx.fillText(line, textX + textOffsetX, lineY)
+          // أسطر النص: محاذاة لليمين في RTL، لليسار في LTR
+          if (isRtl) {
+            ctx.textAlign = 'right'
+            ctx.fillText(line, textBlockRight, lineY)
+          } else {
+            ctx.textAlign = 'left'
+            ctx.fillText(line, textBlockLeft, lineY)
+          }
           ctx.restore()
         })
         ctx.restore()

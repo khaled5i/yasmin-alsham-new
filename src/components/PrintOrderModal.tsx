@@ -271,15 +271,24 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
 
           ctx.save()
           ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-          ctx.textAlign = 'left'
           ctx.textBaseline = 'top'
 
           const maxTextWidth = containerWidth * 0.5
           const lineHeight = fontSize * 1.3
           // تقسيم بحسب <end> أو \n مطابقاً لعرض HTML، مع لف الكلمات داخل كل مقطع
           const rawText = annotation.translatedText || annotation.transcription || ''
+          // كشف اتجاه النص (مطابق dir="auto" في HTML)
+          const rtlRange = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/
+          const ltrRange = /[A-Za-z]/
+          let isRtl = true
+          for (const ch of rawText) {
+            if (rtlRange.test(ch)) { isRtl = true; break }
+            if (ltrRange.test(ch)) { isRtl = false; break }
+          }
           const segments = rawText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
           if (segments.length === 0) segments.push('')
+          // الرقم يبقى في بداية السلسلة المنطقية - bidi يضعه بصرياً
+          // على اليمين في RTL وعلى اليسار في LTR
           segments[0] = `${annotationIndex}. ${segments[0]}`.trim()
 
           const lines: string[] = []
@@ -299,7 +308,18 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
             if (currentLine) lines.push(currentLine)
           }
 
+          // قياس أعرض سطر (مطابق لـ <p> shrunk-to-content)
+          let maxLineWidth = 0
+          lines.forEach(line => {
+            const w = ctx.measureText(line).width
+            if (w > maxLineWidth) maxLineWidth = w
+          })
+
           // مطابقة CSS: drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)] - ظل ناعم وليس outline
+          // RTL: محاذاة لليمين عند الحافة اليمنى لأطول سطر (كحجم <p> shrunk-to-content)
+          // LTR: محاذاة لليسار عند textX (السلوك السابق)
+          ctx.textAlign = isRtl ? 'right' : 'left'
+          const anchorX = isRtl ? textX + maxLineWidth : textX
           lines.forEach((line, lineIndex) => {
             const lineY = textY + (lineIndex * lineHeight)
             ctx.save()
@@ -308,7 +328,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
             ctx.shadowOffsetY = 1
             ctx.shadowBlur = 2
             ctx.fillStyle = '#000000'
-            ctx.fillText(line, textX, lineY)
+            ctx.fillText(line, anchorX, lineY)
             ctx.restore()
           })
 
