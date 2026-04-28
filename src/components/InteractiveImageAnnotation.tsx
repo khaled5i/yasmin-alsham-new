@@ -797,6 +797,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const lastTapPositionRef = useRef({ x: 0, y: 0 })
   const touchStartPositionRef = useRef({ x: 0, y: 0, time: 0 })
   const autoRecordAnnotationIdRef = useRef<string | null>(null)
+  const lastPointerTypeRef = useRef<string>('touch')
 
 
   // حالات كتابة النص اليدوي
@@ -2854,6 +2855,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const handleImageDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // منع إضافة تعليق جديد أثناء التسجيل أو التعطيل أو التعديل
     if (disabled || isRecordingActive || editingTranscriptionId) return
+    // القلم لا يفتح تسجيل الصوت - فقط الإصبع أو الماوس
+    if (lastPointerTypeRef.current === 'pen') return
     // في وضع الرسم على الحاسوب: dblclick يعمل لأن لا يوجد preventDefault
     // على الهاتف: يُعالج عبر كشف اللمس المزدوج في onTouchEnd
     const rect = e.currentTarget.getBoundingClientRect()
@@ -3773,6 +3776,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             onClick={handleImageClick}
             onDoubleClick={handleImageDoubleClick}
             onPointerDown={(e) => {
+              lastPointerTypeRef.current = e.pointerType
               if (skipDrawingOnceRef.current) {
                 skipDrawingOnceRef.current = false
                 if ((e.target as HTMLElement).closest('button, .ui-interactive')) return
@@ -3872,11 +3876,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       const tapDist = Math.sqrt(tapDx * tapDx + tapDy * tapDy)
 
                       if (now - lastTapTimeRef.current < 400 && tapDist < 50) {
-                        // نقر مزدوج مكتشَف - إنشاء تعليق صوتي
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const x = ((touch.clientX - rect.left) / rect.width) * 100
-                        const y = ((touch.clientY - rect.top) / rect.height) * 100
-                        createAnnotationAt(x, y)
+                        // نقر مزدوج مكتشَف - إنشاء تعليق صوتي (الإصبع فقط، ليس القلم)
+                        if (lastPointerTypeRef.current !== 'pen') {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const x = ((touch.clientX - rect.left) / rect.width) * 100
+                          const y = ((touch.clientY - rect.top) / rect.height) * 100
+                          createAnnotationAt(x, y)
+                        }
                         lastTapTimeRef.current = 0 // إعادة تعيين لمنع النقر الثلاثي
                       } else {
                         // نقرة مفردة - تسجيلها كبداية تسلسل نقر مزدوج محتمل
