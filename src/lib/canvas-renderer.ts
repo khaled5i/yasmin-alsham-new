@@ -252,7 +252,7 @@ export async function generateAnnotationCompositeImage(
   }>,
   drawings: DrawingPath[],
   baseImageSrc: string,
-  getText: (annotation: { id: string; transcription?: string; isHidden?: boolean; isRecording?: boolean; [key: string]: any }) => string | undefined,
+  getText: (annotation: { id: string; transcription?: string; isHidden?: boolean; isRecording?: boolean;[key: string]: any }) => string | undefined,
   containerWidth = 800,
   containerHeight = 1067
 ): Promise<string | null> {
@@ -360,7 +360,7 @@ export async function generateAnnotationCompositeImage(
         // الديفاناغاري (الهندية) يُرسم أكبر بصرياً من العربي/اللاتيني عند نفس font-size
         // بسبب فقدان دعم Cairo للديفاناغاري ووجود الـ shirorekha. نعوّض بتصغير الخط.
         const isDevanagari = /[ऀ-ॿ]/.test(displayTextForScale)
-        const scriptScale = isDevanagari ? 0.75 : 1
+        const scriptScale = isDevanagari ? 0.70 : 1
         const fontSize = Math.round(14 * textScale * scale * scriptScale)
         const textX = (textPos.x / 100) * containerWidth
         const textY = (textPos.y / 100) * containerHeight
@@ -384,9 +384,9 @@ export async function generateAnnotationCompositeImage(
 
         // تقسيم النص بدون الرقم - max-w-[200px] مضروب بالـ scale
         // مطابق لعرض HTML: التقسيم عند <end> أو \n أولاً، ثم لف الكلمات داخل كل مقطع
-        // الديفاناغاري: مقيّد بعرض الصندوق المخصص (BOX_WIDTH_PERCENT) حتى يلتف للأسفل بدلاً من التمدد أفقياً
+        // الديفاناغاري: نفس عرض العربي (200*scale) لكن مقيّد بالحافة اليمنى للصورة حتى لا يتجاوزها
         const maxTextWidth = isDevanagari
-          ? Math.round(Math.min(200 * scale, (BOX_WIDTH_PERCENT / 100) * containerWidth - numberWidth - gap))
+          ? Math.round(Math.min(200 * scale, containerWidth - textX - numberWidth - gap))
           : Math.round(200 * scale)
         ctx.font = `${fontSize}px Cairo, Arial, sans-serif`
         const segments = displayText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
