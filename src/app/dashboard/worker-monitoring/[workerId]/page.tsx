@@ -76,6 +76,7 @@ function sanitizeNum(val: string): string {
 
 type TabType = 'active' | 'completed' | 'reports'
 
+
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: 'قيد الانتظار', color: 'text-yellow-700', bg: 'bg-yellow-50 border-yellow-200' },
   in_progress: { label: 'جارٍ التنفيذ', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
@@ -119,9 +120,10 @@ export default function WorkerDetailPage() {
   // حالة التسعير والتقييم (للمدير فقط — مشتركة مع قسم المحاسبة)
   const isAdmin = user?.role === 'admin'
   const [pricingForms, setPricingForms] = useState<Record<string, OrderPricingData>>({})
-  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set())
   const [orderFullDetails, setOrderFullDetails] = useState<Record<string, Order>>({})
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  const [isExpandingAll, setIsExpandingAll] = useState(false)
 
   const loadedTabs = useRef<Set<TabType>>(new Set())
 
@@ -226,11 +228,11 @@ export default function WorkerDetailPage() {
 
   // معالجات التسعير
   const handleTogglePricing = useCallback(async (order: Order) => {
-    if (expandedOrderId === order.id) {
-      setExpandedOrderId(null)
-      return
-    }
-    setExpandedOrderId(order.id)
+    setExpandedOrderIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(order.id)) { next.delete(order.id) } else { next.add(order.id) }
+      return next
+    })
     if (!orderFullDetails[order.id]) {
       try {
         const result = await orderService.getById(order.id)
@@ -239,7 +241,30 @@ export default function WorkerDetailPage() {
         }
       } catch { /* تجاهل — الصور ستكون غير متاحة */ }
     }
-  }, [expandedOrderId, orderFullDetails])
+  }, [orderFullDetails])
+
+  const handleExpandAll = useCallback(async () => {
+    if (isExpandingAll) return
+    setIsExpandingAll(true)
+    // افتح جميع البطاقات فوراً
+    setExpandedOrderIds(new Set(completedOrders.map((o) => o.id)))
+    // جلب التفاصيل الكاملة بالتوازي لكل طلب لم يُحمَّل بعد
+    try {
+      const missing = completedOrders.filter((o) => !orderFullDetails[o.id])
+      await Promise.all(
+        missing.map(async (order) => {
+          try {
+            const result = await orderService.getById(order.id)
+            if (result.data) {
+              setOrderFullDetails((prev) => ({ ...prev, [order.id]: result.data! }))
+            }
+          } catch { /* تجاهل */ }
+        })
+      )
+    } finally {
+      setIsExpandingAll(false)
+    }
+  }, [completedOrders, orderFullDetails, isExpandingAll])
 
   const handleSavePricing = useCallback((orderId: string, data: OrderPricingData) => {
     savePricingEntry(orderId, data)
@@ -430,8 +455,9 @@ export default function WorkerDetailPage() {
                 isLoading={isLoadingCompleted}
                 isAdmin={isAdmin}
                 pricingForms={pricingForms}
-                expandedOrderId={expandedOrderId}
+                expandedOrderIds={expandedOrderIds}
                 orderFullDetails={orderFullDetails}
+                isExpandingAll={isExpandingAll}
                 onPageChange={(p) => {
                   setCompletedOrdersPage(p)
                   fetchCompletedOrders(p)
@@ -440,6 +466,7 @@ export default function WorkerDetailPage() {
                 onSavePricing={handleSavePricing}
                 onOpenModal={openOrderModal}
                 onLightbox={setLightboxImage}
+                onExpandAll={handleExpandAll}
               />
             )}
             {activeTab === 'reports' && (
@@ -639,13 +666,15 @@ function CompletedOrdersTab({
   isLoading,
   isAdmin,
   pricingForms,
-  expandedOrderId,
+  expandedOrderIds,
   orderFullDetails,
+  isExpandingAll,
   onPageChange,
   onTogglePricing,
   onSavePricing,
   onOpenModal,
   onLightbox,
+  onExpandAll,
 }: {
   orders: Order[]
   total: number
@@ -653,13 +682,15 @@ function CompletedOrdersTab({
   isLoading: boolean
   isAdmin: boolean
   pricingForms: Record<string, OrderPricingData>
-  expandedOrderId: string | null
+  expandedOrderIds: Set<string>
   orderFullDetails: Record<string, Order>
+  isExpandingAll: boolean
   onPageChange: (page: number) => void
   onTogglePricing: (order: Order) => void
   onSavePricing: (orderId: string, data: OrderPricingData) => void
   onOpenModal: (order: Order) => void
   onLightbox: (src: string) => void
+  onExpandAll: () => void
 }) {
   if (isLoading) {
     return (
@@ -684,16 +715,32 @@ function CompletedOrdersTab({
 
   return (
     <div>
-      {/* شريط ملخص التقييم — للمدير */}
-      {isAdmin && evaluatedCount > 0 && (
-        <div className="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-          <p className="text-sm text-green-800">
-            <span className="font-bold">{evaluatedCount}</span> طلب مقيَّم من أصل{' '}
-            <span className="font-bold">{orders.length}</span>
-          </p>
-        </div>
-      )}
+      {/* زر فتح جميع البطاقات */}
+      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+        <button
+          onClick={onExpandAll}
+          disabled={isExpandingAll}
+          className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {isExpandingAll ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Package className="w-4 h-4" />
+          )}
+          {isExpandingAll ? 'جاري تحميل الصور...' : 'تحميل جميع صور العمل المكتمل'}
+        </button>
+
+        {/* شريط ملخص التقييم — للمدير */}
+        {isAdmin && evaluatedCount > 0 && (
+          <div className="flex-1 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+            <p className="text-sm text-green-800">
+              <span className="font-bold">{evaluatedCount}</span> طلب مقيَّم من أصل{' '}
+              <span className="font-bold">{orders.length}</span>
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="space-y-3">
         {orders.map((order) => (
@@ -702,7 +749,7 @@ function CompletedOrdersTab({
             order={order}
             isAdmin={isAdmin}
             pricingData={pricingForms[order.id] || { orderId: order.id, price: '', notes: '', bonus: '', rating: 0 }}
-            isExpanded={expandedOrderId === order.id}
+            isExpanded={expandedOrderIds.has(order.id)}
             orderFullDetail={orderFullDetails[order.id] || null}
             onToggle={onTogglePricing}
             onSavePricing={onSavePricing}
