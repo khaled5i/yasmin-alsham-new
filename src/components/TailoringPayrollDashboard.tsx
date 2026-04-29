@@ -489,17 +489,24 @@ export default function TailoringPayrollDashboard() {
             if (lastInfo) {
               salaryType = lastInfo.salary_type
               fixedSalaryValue = lastInfo.fixed_salary_value
-              // لعمال القطعة: نُبقي عدد القطع وسعرها من آخر شهر كمرجع
               pieceCountValue = lastInfo.piece_count
               pieceRateValue = lastInfo.piece_rate
             }
           }
 
+          // لعمال القطعة: نطبّع القيم دائماً كـ (إجمالي الراتب × 1) حتى يتمكن المستخدم من تعديل المبلغ مباشرة
+          const normalizedPieceCount = salaryType === 'piecework' && pieceCountValue > 0 && pieceRateValue > 0
+            ? roundMoney(pieceCountValue * pieceRateValue)
+            : pieceCountValue
+          const normalizedPieceRate = salaryType === 'piecework' && pieceCountValue > 0 && pieceRateValue > 0
+            ? 1
+            : pieceRateValue
+
           next[worker.id] = {
             salaryType,
             fixedSalary: fixedSalaryValue > 0 ? fixedSalaryValue.toString() : '',
-            pieceCount: pieceCountValue > 0 ? pieceCountValue.toString() : '',
-            pieceRate: pieceRateValue > 0 ? pieceRateValue.toString() : '',
+            pieceCount: normalizedPieceCount > 0 ? normalizedPieceCount.toString() : '',
+            pieceRate: normalizedPieceRate > 0 ? normalizedPieceRate.toString() : '',
             overtimeHours: overtimeHoursValue > 0 ? overtimeHoursValue.toString() : '',
             advancesTotal: advancesTotalValue > 0 ? advancesTotalValue.toString() : '',
             operationDate: defaultDate,
@@ -1115,7 +1122,6 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
     const pricedOrders = Object.values(pricingForms).filter(
       (f) => f.price && toNumber(f.price) > 0
     )
-    const pieceCount = pricedOrders.length
     const totalPrice = pricedOrders.reduce((sum, f) => sum + toNumber(f.price), 0)
 
     setSalaryForms((prev) => ({
@@ -1123,8 +1129,8 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
       [worker.id]: {
         ...prev[worker.id],
         salaryType: 'piecework',
-        pieceCount: pieceCount > 0 ? pieceCount.toString() : '',
-        pieceRate: pieceCount > 0 ? (totalPrice / pieceCount).toFixed(2) : ''
+        pieceCount: totalPrice > 0 ? totalPrice.toFixed(2) : '',
+        pieceRate: totalPrice > 0 ? '1' : ''
       }
     }))
 
@@ -1783,12 +1789,15 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                         type="number"
                         min="0"
                         step="0.01"
-                        placeholder="عدد القطع"
+                        placeholder="إجمالي الراتب بالقطعة"
                         value={salaryForm.pieceCount}
-                        onChange={(e) => setSalaryForms((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...prev[worker.id], pieceCount: sanitizeNonNegativeInput(e.target.value) }
-                        }))}
+                        onChange={(e) => {
+                          const val = sanitizeNonNegativeInput(e.target.value)
+                          setSalaryForms((prev) => ({
+                            ...prev,
+                            [worker.id]: { ...prev[worker.id], pieceCount: val, pieceRate: val ? '1' : '' }
+                          }))
+                        }}
                         className={'w-full ' + NUMBER_INPUT_CLASS}
                       />
                     )}
