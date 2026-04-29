@@ -762,6 +762,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const soxCurrentBlobRef = useRef<Blob | null>(null)
   const soxFinishedRef = useRef<boolean>(false)
   const soxHasOpenRef = useRef<boolean>(false)
+  const soxCancelledRef = useRef<boolean>(false)
   const soxAnnotationIdRef = useRef<string>('')
   const soxMimeTypeRef = useRef<string>('audio/webm')
   const annotationsRef = useRef(annotations)
@@ -777,6 +778,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const [isRecordingActive, setIsRecordingActive] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [transcribingId, setTranscribingId] = useState<string | null>(null)
+  const [asyncTranscribingId, setAsyncTranscribingId] = useState<string | null>(null)
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [liveTranscription, setLiveTranscription] = useState('')
@@ -2929,18 +2931,55 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     soxFinalTokensRef.current = []
     soxFinishedRef.current = false
 
+    const cleanText = (t: string) => t.replace(/<end>/gi, '\n').replace(/\n{2,}/g, '\n').trim()
+
     const reader = new FileReader()
     reader.onloadend = () => {
       const base64 = reader.result as string
-      const cleanText = (t: string) => t.replace(/<end>/gi, '\n').replace(/\n{2,}/g, '\n').trim()
-      const updated = annotationsRef.current.map(a =>
-        a.id === annotationId
-          ? { ...a, audioData: base64, isRecording: false, transcription: cleanText(finalText) || a.transcription }
-          : a
-      )
-      onAnnotationsChange(updated)
-      setTranscribingId(null)
-      setLiveTranscription('')
+      const cleaned = cleanText(finalText)
+
+      if (cleaned) {
+        // التحويل الفوري نجح — حفظ النص مباشرة
+        const updated = annotationsRef.current.map(a =>
+          a.id === annotationId
+            ? { ...a, audioData: base64, isRecording: false, transcription: cleaned }
+            : a
+        )
+        onAnnotationsChange(updated)
+        setTranscribingId(null)
+        setLiveTranscription('')
+      } else {
+        // التحويل الفوري فشل — حفظ الصوت أولاً ثم إرسال الملف لـ Soniox async
+        const withAudio = annotationsRef.current.map(a =>
+          a.id === annotationId
+            ? { ...a, audioData: base64, isRecording: false }
+            : a
+        )
+        onAnnotationsChange(withAudio)
+        setTranscribingId(null)
+        setLiveTranscription('')
+
+        setAsyncTranscribingId(annotationId)
+        const audioBlob = new Blob([blob], { type: mimeType })
+        const ext = mimeType.split('/')[1]?.split(';')[0] || 'webm'
+        const form = new FormData()
+        form.append('audio', audioBlob, `recording.${ext}`)
+
+        fetch('/api/soniox-async-transcribe', { method: 'POST', body: form })
+          .then(res => res.ok ? res.json() : Promise.reject(res.statusText))
+          .then(({ text }: { text: string }) => {
+            if (text) {
+              const updated = annotationsRef.current.map(a =>
+                a.id === annotationId
+                  ? { ...a, transcription: cleanText(text) }
+                  : a
+              )
+              onAnnotationsChange(updated)
+            }
+          })
+          .catch(err => console.error('Soniox async fallback failed:', err))
+          .finally(() => setAsyncTranscribingId(null))
+      }
     }
     reader.readAsDataURL(new Blob([blob], { type: mimeType }))
   }
@@ -2966,6 +3005,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       soxAudioQueueRef.current = []
       soxFinishedRef.current = false
       soxHasOpenRef.current = false
+      soxCancelledRef.current = false
       soxCurrentBlobRef.current = null
       soxAnnotationIdRef.current = annotationId
 
@@ -3026,6 +3066,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             sonioxWsRef.current = ws
 
             ws.onopen = () => {
+              // إذا تم إلغاء التسجيل قبل فتح الاتصال، نغلق فوراً بدون إرسال أي بيانات
+              if (soxCancelledRef.current) {
+                ws.close()
+                sonioxWsRef.current = null
+                return
+              }
               ws.send(JSON.stringify({
                 api_key: apiKey,
                 model: 'stt-rt-v4',
@@ -3037,8 +3083,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               }))
               soxHasOpenRef.current = true
               setSonioxConnected(true)
+              // إرسال الصوت المتراكم على دفعات صغيرة لتجنب timeout فك التشفير
               const queued = soxAudioQueueRef.current.splice(0)
-              queued.forEach(chunk => ws.send(chunk))
+              let i = 0
+              const sendNext = () => {
+                if (i < queued.length && ws.readyState === WebSocket.OPEN) {
+                  ws.send(queued[i++])
+                  setTimeout(sendNext, 0)
+                }
+              }
+              sendNext()
             }
 
             ws.onmessage = (event) => {
@@ -3170,9 +3224,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     audioCtxRef.current?.close()
     audioCtxRef.current = null
 
+    soxCancelledRef.current = true
     if (sonioxWsRef.current) {
-      try { sonioxWsRef.current.close() } catch { /* ignore */ }
-      sonioxWsRef.current = null
+      // إذا كان الاتصال لا يزال يُنشأ، نضع علامة الإلغاء ونتركه يُغلق نفسه في onopen
+      if (sonioxWsRef.current.readyState !== WebSocket.CONNECTING) {
+        try { sonioxWsRef.current.close() } catch { /* ignore */ }
+        sonioxWsRef.current = null
+      }
     }
     soxHasOpenRef.current = false
     setLiveTranscription('')
@@ -3205,8 +3263,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         }
       }, 15000)
     } else if (sonioxWsRef.current) {
-      sonioxWsRef.current.close()
-      sonioxWsRef.current = null
+      // إذا لا يزال في طور الاتصال، نضع علامة الإلغاء ليُغلق في onopen بدون إرسال بيانات
+      if (sonioxWsRef.current.readyState === WebSocket.CONNECTING) {
+        soxCancelledRef.current = true
+      } else {
+        sonioxWsRef.current.close()
+        sonioxWsRef.current = null
+      }
       soxFinishedRef.current = true
     }
   }
@@ -4577,11 +4640,19 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                         </div>
                       )}
 
-                      {/* مؤشر التحويل بعد انتهاء التسجيل */}
+                      {/* مؤشر التحويل الفوري بعد انتهاء التسجيل */}
                       {!annotation.isRecording && transcribingId === annotation.id && (
                         <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap">
                           <Loader2 className="w-3 h-3 animate-spin" />
                           <span>تحويل...</span>
+                        </div>
+                      )}
+
+                      {/* مؤشر التحويل غير المباشر (fallback) */}
+                      {!annotation.isRecording && asyncTranscribingId === annotation.id && (
+                        <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>جاري معالجة الملف...</span>
                         </div>
                       )}
 
@@ -4594,7 +4665,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             {/* النصوص على الصورة - قابلة للسحب والإفلات */}
             <AnimatePresence>
               {annotations
-                .filter(a => a.transcription && !a.isRecording && transcribingId !== a.id && !a.isHidden && showAllTextsOnImage)
+                .filter(a => a.transcription && !a.isRecording && transcribingId !== a.id && asyncTranscribingId !== a.id && !a.isHidden && showAllTextsOnImage)
                 .map((annotation) => {
                   const styles = getBoxStyles(annotation.id)
                   const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
