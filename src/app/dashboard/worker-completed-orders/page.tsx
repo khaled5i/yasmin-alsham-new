@@ -31,7 +31,9 @@ import {
   Search,
   Filter,
   AlertCircle,
-  Trash2
+  Trash2,
+  Star,
+  Tag,
 } from 'lucide-react'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
@@ -591,6 +593,56 @@ export default function WorkerCompletedOrdersPage() {
                         </span>
                       </div>
                     )}
+
+                    {/* تقييم الإدارة — يظهر فقط عندما يقرر المدير إظهاره */}
+                    {(() => {
+                      if (!order.worker_rating_visible) return null
+                      const hasRating = order.worker_rating != null && order.worker_rating > 0
+                      const hasPrice  = order.worker_price  != null && order.worker_price  > 0
+                      const hasNotes  = typeof order.worker_notes === 'string' && order.worker_notes.trim() !== ''
+                      if (!hasRating && !hasPrice && !hasNotes) return null
+                      return (
+                        <div
+                          className="mt-3 pt-3 border-t border-teal-100 space-y-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <p className="text-xs font-bold text-teal-700 flex items-center gap-1">
+                            <Star className="w-3.5 h-3.5 fill-teal-400 text-teal-400" />
+                            {t('management_rating_title')}
+                          </p>
+
+                          {hasRating && (
+                            <div className="flex items-center gap-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-4 h-4 ${i < order.worker_rating! ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200 fill-gray-200'}`}
+                                />
+                              ))}
+                              <span className="text-xs text-gray-500 mr-1">
+                                {t('rating_out_of', { rating: order.worker_rating })}
+                              </span>
+                            </div>
+                          )}
+
+                          {hasPrice && (
+                            <p className="text-xs text-teal-800 flex items-center gap-1 font-semibold">
+                              <Tag className="w-3 h-3" />
+                              {t('piece_wage_label')}: {Number(order.worker_price).toLocaleString('en-US')} {t('sar_unit')}
+                              {order.worker_bonus != null && order.worker_bonus > 0 && (
+                                <span className="text-green-600 mr-1">
+                                  + {t('bonus_label')} {Number(order.worker_bonus).toLocaleString('en-US')} {t('sar_unit')}
+                                </span>
+                              )}
+                            </p>
+                          )}
+
+                          {hasNotes && (
+                            <p className="text-xs text-gray-600 bg-gray-50 rounded-lg px-2 py-1">{order.worker_notes}</p>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* السعر - مخفي للعمال */}
                   </div>

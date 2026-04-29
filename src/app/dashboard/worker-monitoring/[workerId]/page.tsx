@@ -30,6 +30,9 @@ import {
   Tag,
   Save,
   X,
+  Eye,
+  Calendar,
+  Filter,
 } from 'lucide-react'
 
 const PAGE_SIZE = 20
@@ -97,6 +100,10 @@ export default function WorkerDetailPage() {
   const [completedOrdersPage, setCompletedOrdersPage] = useState(0)
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false)
 
+  // Completed orders filters
+  const [completedMonthFilter, setCompletedMonthFilter] = useState('')
+  const [completedUnratedOnly, setCompletedUnratedOnly] = useState(false)
+
   // Reports tab
   const [allOrders, setAllOrders] = useState<Order[]>([])
   const [isLoadingReports, setIsLoadingReports] = useState(false)
@@ -162,7 +169,7 @@ export default function WorkerDetailPage() {
   }, [workerId, activeOrdersPage, fetchActiveOrders])
 
   // Fetch completed orders (lazy)
-  const fetchCompletedOrders = useCallback(async (page: number) => {
+  const fetchCompletedOrders = useCallback(async (page: number, monthFilter?: string, unratedOnly?: boolean) => {
     setIsLoadingCompleted(true)
     try {
       const { data, total } = await orderService.getAll({
@@ -170,6 +177,10 @@ export default function WorkerDetailPage() {
         status: ['completed', 'delivered'],
         page,
         pageSize: PAGE_SIZE,
+        monthFilter: monthFilter || undefined,
+        unratedOnly: unratedOnly || undefined,
+        orderBy: 'worker_completed_at',
+        orderAscending: false,
       })
       setCompletedOrders(data || [])
       setCompletedOrdersTotal(total || 0)
@@ -204,10 +215,17 @@ export default function WorkerDetailPage() {
     setActiveTab(tab)
     if (!loadedTabs.current.has(tab)) {
       loadedTabs.current.add(tab)
-      if (tab === 'completed') fetchCompletedOrders(0)
+      if (tab === 'completed') fetchCompletedOrders(0, completedMonthFilter, completedUnratedOnly)
       if (tab === 'reports') fetchReports()
     }
   }
+
+  const handleCompletedFilterChange = useCallback((monthFilter: string, unratedOnly: boolean) => {
+    setCompletedMonthFilter(monthFilter)
+    setCompletedUnratedOnly(unratedOnly)
+    setCompletedOrdersPage(0)
+    fetchCompletedOrders(0, monthFilter, unratedOnly)
+  }, [fetchCompletedOrders])
 
   function openOrderModal(order: Order) {
     setSelectedOrder(order)
@@ -263,6 +281,38 @@ export default function WorkerDetailPage() {
       worker_notes:  data.notes  || null,
     }).catch(() => { /* تجاهل — الحالة المحلية لا تزال محدَّثة */ })
   }, [])
+
+  const handleToggleRatingVisibility = useCallback(async (order: Order) => {
+    const newVal = !order.worker_rating_visible
+    setCompletedOrders((prev) =>
+      prev.map((o) => o.id === order.id ? { ...o, worker_rating_visible: newVal } : o)
+    )
+    await orderService.update(order.id, { worker_rating_visible: newVal })
+  }, [])
+
+  const [isShowingAllRatings, setIsShowingAllRatings] = useState(false)
+
+  const handleShowAllRatings = useCallback(async () => {
+    if (isShowingAllRatings) return
+    // الطلبات التي تحتوي على تقييم أو سعر ولم تُرسَل للعامل بعد
+    const targets = completedOrders.filter((o) => {
+      const form = pricingForms[o.id]
+      const hasData = (form?.price && parseFloat(form.price) > 0) || (form?.rating ?? 0) > 0 || form?.notes?.trim()
+      return hasData && !o.worker_rating_visible
+    })
+    if (targets.length === 0) return
+    setIsShowingAllRatings(true)
+    try {
+      await Promise.all(
+        targets.map((o) => orderService.update(o.id, { worker_rating_visible: true }))
+      )
+      setCompletedOrders((prev) =>
+        prev.map((o) => targets.some((t) => t.id === o.id) ? { ...o, worker_rating_visible: true } : o)
+      )
+    } finally {
+      setIsShowingAllRatings(false)
+    }
+  }, [completedOrders, pricingForms, isShowingAllRatings])
 
   const handleSignOut = async () => {
     await signOut()
@@ -451,15 +501,21 @@ export default function WorkerDetailPage() {
                 expandedOrderIds={expandedOrderIds}
                 orderFullDetails={orderFullDetails}
                 isExpandingAll={isExpandingAll}
+                monthFilter={completedMonthFilter}
+                unratedOnly={completedUnratedOnly}
+                onFilterChange={handleCompletedFilterChange}
                 onPageChange={(p) => {
                   setCompletedOrdersPage(p)
-                  fetchCompletedOrders(p)
+                  fetchCompletedOrders(p, completedMonthFilter, completedUnratedOnly)
                 }}
                 onTogglePricing={handleTogglePricing}
                 onSavePricing={handleSavePricing}
                 onOpenModal={openOrderModal}
                 onLightbox={setLightboxImage}
                 onExpandAll={handleExpandAll}
+                onToggleRatingVisibility={handleToggleRatingVisibility}
+                onShowAllRatings={handleShowAllRatings}
+                isShowingAllRatings={isShowingAllRatings}
               />
             )}
             {activeTab === 'reports' && (
@@ -652,6 +708,18 @@ function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; o
 // Completed Orders Tab — يستخدم CompletedOrderRow للمدير
 // ============================================================================
 
+function getRecentMonths(count: number): { key: string; label: string }[] {
+  const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+  const months = []
+  const now = new Date()
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    months.push({ key, label: `${arabicMonths[d.getMonth()]} ${d.getFullYear()}` })
+  }
+  return months
+}
+
 function CompletedOrdersTab({
   orders,
   total,
@@ -662,12 +730,18 @@ function CompletedOrdersTab({
   expandedOrderIds,
   orderFullDetails,
   isExpandingAll,
+  monthFilter,
+  unratedOnly,
+  onFilterChange,
   onPageChange,
   onTogglePricing,
   onSavePricing,
   onOpenModal,
   onLightbox,
   onExpandAll,
+  onToggleRatingVisibility,
+  onShowAllRatings,
+  isShowingAllRatings,
 }: {
   orders: Order[]
   total: number
@@ -678,12 +752,18 @@ function CompletedOrdersTab({
   expandedOrderIds: Set<string>
   orderFullDetails: Record<string, Order>
   isExpandingAll: boolean
+  monthFilter: string
+  unratedOnly: boolean
+  onFilterChange: (monthFilter: string, unratedOnly: boolean) => void
   onPageChange: (page: number) => void
   onTogglePricing: (order: Order) => void
   onSavePricing: (orderId: string, data: OrderPricingData) => void
   onOpenModal: (order: Order) => void
   onLightbox: (src: string) => void
   onExpandAll: () => void
+  onToggleRatingVisibility: (order: Order) => void
+  onShowAllRatings: () => void
+  isShowingAllRatings: boolean
 }) {
   if (isLoading) {
     return (
@@ -693,23 +773,76 @@ function CompletedOrdersTab({
     )
   }
 
-  if (orders.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <Package className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-        <p className="text-gray-400 text-sm">لا توجد طلبات مكتملة لهذه الخياطة حتى الآن</p>
-      </div>
-    )
-  }
+  const recentMonths = getRecentMonths(18)
+  const hasActiveFilters = !!monthFilter || unratedOnly
 
   const evaluatedCount = orders.filter(
     (o) => (pricingForms[o.id]?.price && parseFloat(pricingForms[o.id].price) > 0) || (pricingForms[o.id]?.rating ?? 0) > 0
   ).length
 
+  const pendingVisibilityCount = orders.filter((o) => {
+    const form = pricingForms[o.id]
+    const hasData = (form?.price && parseFloat(form.price) > 0) || (form?.rating ?? 0) > 0 || form?.notes?.trim()
+    return hasData && !o.worker_rating_visible
+  }).length
+
   return (
     <div>
-      {/* زر فتح جميع البطاقات */}
-      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+      {/* شريط الفلاتر */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {/* فلتر الشهر */}
+        <div className="relative">
+          <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          <select
+            value={monthFilter}
+            onChange={(e) => onFilterChange(e.target.value, unratedOnly)}
+            className="pr-8 pl-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100 appearance-none cursor-pointer"
+          >
+            <option value="">كل الأشهر</option>
+            {recentMonths.map((m) => (
+              <option key={m.key} value={m.key}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* فلتر غير مقيّمة */}
+        <button
+          onClick={() => onFilterChange(monthFilter, !unratedOnly)}
+          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+            unratedOnly
+              ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:text-orange-600'
+          }`}
+        >
+          <Filter className="w-3.5 h-3.5" />
+          غير مقيّمة فقط
+        </button>
+
+        {/* مسح الفلاتر */}
+        {hasActiveFilters && (
+          <button
+            onClick={() => onFilterChange('', false)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-gray-500 border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            مسح الفلاتر
+          </button>
+        )}
+      </div>
+
+      {orders.length === 0 && (
+        <div className="text-center py-16">
+          <Package className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+          <p className="text-gray-400 text-sm">
+            {hasActiveFilters ? 'لا توجد طلبات تطابق الفلاتر المحددة' : 'لا توجد طلبات مكتملة لهذه الخياطة حتى الآن'}
+          </p>
+        </div>
+      )}
+
+      {orders.length > 0 && (
+      <>
+      {/* أزرار الأعلى */}
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
         <button
           onClick={onExpandAll}
           disabled={isExpandingAll}
@@ -722,6 +855,23 @@ function CompletedOrdersTab({
           )}
           {isExpandingAll ? 'جاري تحميل الصور...' : 'تحميل جميع صور العمل المكتمل'}
         </button>
+
+        {isAdmin && pendingVisibilityCount > 0 && (
+          <button
+            onClick={onShowAllRatings}
+            disabled={isShowingAllRatings}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isShowingAllRatings ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Eye className="w-4 h-4" />
+            )}
+            {isShowingAllRatings
+              ? 'جاري الإرسال...'
+              : `عرض جميع التقييمات للعامل (${pendingVisibilityCount})`}
+          </button>
+        )}
 
         {/* شريط ملخص التقييم — للمدير */}
         {isAdmin && evaluatedCount > 0 && (
@@ -748,6 +898,7 @@ function CompletedOrdersTab({
             onSavePricing={onSavePricing}
             onOpenModal={onOpenModal}
             onLightbox={onLightbox}
+            onToggleRatingVisibility={onToggleRatingVisibility}
           />
         ))}
       </div>
@@ -760,6 +911,8 @@ function CompletedOrdersTab({
             onPageChange={onPageChange}
           />
         </div>
+      )}
+      </>
       )}
     </div>
   )
@@ -779,6 +932,7 @@ function CompletedOrderRow({
   onSavePricing,
   onOpenModal,
   onLightbox,
+  onToggleRatingVisibility,
 }: {
   order: Order
   isAdmin: boolean
@@ -789,6 +943,7 @@ function CompletedOrderRow({
   onSavePricing: (orderId: string, data: OrderPricingData) => void
   onOpenModal: (order: Order) => void
   onLightbox: (src: string) => void
+  onToggleRatingVisibility: (order: Order) => void
 }) {
   const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
   const hasPricing = parseFloat(pricingData.price) > 0
@@ -889,25 +1044,41 @@ function CompletedOrderRow({
             </div>
           </div>
 
-          {/* يمين: السعر + زر التقييم */}
+          {/* يمين: السعر + أزرار التقييم */}
           <div className="flex flex-col items-end justify-between flex-shrink-0 gap-2">
             {order.price ? (
               <span className="text-sm font-bold text-gray-800">{order.price.toLocaleString('ar-SA')} ر.س</span>
             ) : <span />}
             {isAdmin && (
-              <button
-                onClick={() => onToggle(order)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                  isExpanded
-                    ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
-                    : isEvaluated
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                    : 'bg-slate-100 text-slate-600 hover:bg-pink-50 hover:text-pink-700'
-                }`}
-              >
-                <Star className="w-3.5 h-3.5" />
-                {isExpanded ? 'إغلاق' : isEvaluated ? 'تعديل' : 'تقييم'}
-              </button>
+              <>
+                <button
+                  onClick={() => onToggle(order)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                    isExpanded
+                      ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
+                      : isEvaluated
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                      : 'bg-slate-100 text-slate-600 hover:bg-pink-50 hover:text-pink-700'
+                  }`}
+                >
+                  <Star className="w-3.5 h-3.5" />
+                  {isExpanded ? 'إغلاق' : isEvaluated ? 'تعديل' : 'تقييم'}
+                </button>
+                {isEvaluated && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onToggleRatingVisibility(order) }}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                      order.worker_rating_visible
+                        ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+                        : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                    }`}
+                    title={order.worker_rating_visible ? 'إخفاء التقييم عن العامل' : 'عرض التقييم للعامل'}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    {order.worker_rating_visible ? 'مرئي للعامل' : 'عرض للعامل'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

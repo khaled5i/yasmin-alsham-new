@@ -625,6 +625,13 @@ const arTranslations: Translations = {
   'change': 'تغيير',
   'click_to_upload_dress': 'اضغط لرفع صورة الفستان',
 
+  // تقييم الإدارة في صفحة الطلبات المكتملة للعامل
+  'management_rating_title': 'تقييم الإدارة',
+  'piece_wage_label': 'أجر القطعة',
+  'sar_unit': 'ر.س',
+  'bonus_label': 'مكافأة',
+  'rating_out_of': '{rating}/5',
+
   'language': 'ar'
 }
 
@@ -1240,6 +1247,13 @@ const enTranslations: Translations = {
   'convert_to_cartoon_btn': 'Convert to Cartoon',
   'change': 'Change',
   'click_to_upload_dress': 'Click to upload dress image',
+
+  // Management rating section in worker completed orders page
+  'management_rating_title': 'Management Rating',
+  'piece_wage_label': 'Piece Wage',
+  'sar_unit': 'SAR',
+  'bonus_label': 'Bonus',
+  'rating_out_of': '{rating}/5',
 
   'language': 'en'
 }

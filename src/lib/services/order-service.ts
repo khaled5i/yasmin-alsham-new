@@ -75,7 +75,9 @@ const ORDER_LIST_COLUMNS = [
   'worker_price',
   'worker_bonus',
   'worker_rating',
-  'worker_notes'
+  'worker_notes',
+  // إظهار التقييم للعامل (migration 44)
+  'worker_rating_visible'
 ].join(',')
 
 /**
@@ -147,6 +149,8 @@ export interface Order {
   worker_bonus?: number | null
   worker_rating?: number | null
   worker_notes?: string | null
+  // إظهار التقييم للعامل (migration 44)
+  worker_rating_visible?: boolean
 }
 
 export interface CreateOrderData {
@@ -293,6 +297,8 @@ export interface UpdateOrderData {
   worker_bonus?: number | null
   worker_rating?: number | null
   worker_notes?: string | null
+  // إظهار التقييم للعامل (migration 44)
+  worker_rating_visible?: boolean
   // التسجيلات الصوتية مع البيانات الكاملة (النصوص المحولة والترجمات)
   voice_transcriptions?: Array<{
     id: string
@@ -546,6 +552,10 @@ export const orderService = {
     noPagination?: boolean // if true, fetch all records without page limit
     dateFilter?: string  // 'YYYY-MM-DD' — filter by exact date
     dateFilterType?: 'received' | 'delivery' | 'proof'  // which date field to filter on
+    monthFilter?: string  // 'YYYY-MM' — filter by worker_completed_at month
+    unratedOnly?: boolean  // only orders with no worker_rating and no worker_price
+    orderBy?: string       // column to order by (default: 'created_at')
+    orderAscending?: boolean  // sort direction (default: false = descending)
   }): Promise<{ data: Order[]; error: string | null; total?: number }> {
     if (!isSupabaseConfigured()) {
       return { data: [], error: 'Supabase is not configured.' }
@@ -561,7 +571,7 @@ export const orderService = {
       let query = supabase
         .from('orders')
         .select(selectColumns, { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .order(filters?.orderBy || 'created_at', { ascending: filters?.orderAscending ?? false, nullsFirst: false })
 
       // تطبيق الفلاتر
       if (filters?.status) {
@@ -601,6 +611,22 @@ export const orderService = {
           : filters.dateFilterType === 'proof' ? 'proof_delivery_date'
           : 'due_date'
         query = query.gte(dateField, dateStart).lt(dateField, dateEnd)
+      }
+
+      // Month filter on worker_completed_at
+      if (filters?.monthFilter) {
+        const [year, month] = filters.monthFilter.split('-').map(Number)
+        const startDate = `${filters.monthFilter}-01`
+        const nextMonth = new Date(year, month, 1) // first day of next month (month is already 1-indexed so this works)
+        const endDate = nextMonth.toISOString().split('T')[0]
+        query = query.gte('worker_completed_at', startDate).lt('worker_completed_at', endDate)
+      }
+
+      // Unrated filter: no worker_rating (null or 0) AND no worker_price (null or 0)
+      if (filters?.unratedOnly) {
+        query = query
+          .or('worker_rating.is.null,worker_rating.eq.0')
+          .or('worker_price.is.null,worker_price.eq.0')
       }
 
       // Pagination (skip if noPagination is true)
