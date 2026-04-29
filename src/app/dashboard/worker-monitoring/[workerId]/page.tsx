@@ -35,7 +35,7 @@ import {
 const PAGE_SIZE = 20
 
 // ============================================================================
-// بيانات التسعير والتقييم — مشتركة مع قسم المحاسبة (نفس مفتاح localStorage)
+// بيانات التسعير والتقييم — مخزَّنة في أعمدة الطلب في قاعدة البيانات (migration 43)
 // ============================================================================
 
 interface OrderPricingData {
@@ -46,26 +46,14 @@ interface OrderPricingData {
   rating: number
 }
 
-const PRICING_STORAGE_KEY = 'tailoring-payroll-order-pricing-v1'
-
-function getAllPricingData(): Record<string, OrderPricingData> {
-  try {
-    const stored = localStorage.getItem(PRICING_STORAGE_KEY)
-    if (!stored) return {}
-    return JSON.parse(stored)
-  } catch { return {} }
-}
-
-function savePricingEntry(orderId: string, data: OrderPricingData): void {
-  try {
-    const all = getAllPricingData()
-    all[orderId] = data
-    localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(all))
-  } catch { /* ignore */ }
-}
-
-function getPricingEntry(orderId: string): OrderPricingData {
-  return getAllPricingData()[orderId] || { orderId, price: '', notes: '', bonus: '', rating: 0 }
+function orderToPricingData(order: Order): OrderPricingData {
+  return {
+    orderId: order.id,
+    price:  order.worker_price  != null ? String(order.worker_price)  : '',
+    bonus:  order.worker_bonus  != null ? String(order.worker_bonus)  : '',
+    rating: order.worker_rating ?? 0,
+    notes:  order.worker_notes  ?? '',
+  }
 }
 
 function sanitizeNum(val: string): string {
@@ -185,10 +173,10 @@ export default function WorkerDetailPage() {
       })
       setCompletedOrders(data || [])
       setCompletedOrdersTotal(total || 0)
-      // تحميل بيانات التسعير المحفوظة لهذه الطلبات
+      // قراءة بيانات التسعير من أعمدة الطلب مباشرةً
       const forms: Record<string, OrderPricingData> = {}
       ;(data || []).forEach((order) => {
-        forms[order.id] = getPricingEntry(order.id)
+        forms[order.id] = orderToPricingData(order)
       })
       setPricingForms((prev) => ({ ...prev, ...forms }))
     } finally {
@@ -267,8 +255,13 @@ export default function WorkerDetailPage() {
   }, [completedOrders, orderFullDetails, isExpandingAll])
 
   const handleSavePricing = useCallback((orderId: string, data: OrderPricingData) => {
-    savePricingEntry(orderId, data)
     setPricingForms((prev) => ({ ...prev, [orderId]: data }))
+    orderService.update(orderId, {
+      worker_price:  data.price  ? parseFloat(data.price)  : null,
+      worker_bonus:  data.bonus  ? parseFloat(data.bonus)  : null,
+      worker_rating: data.rating || null,
+      worker_notes:  data.notes  || null,
+    }).catch(() => { /* تجاهل — الحالة المحلية لا تزال محدَّثة */ })
   }, [])
 
   const handleSignOut = async () => {

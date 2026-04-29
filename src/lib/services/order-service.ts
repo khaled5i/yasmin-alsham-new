@@ -70,7 +70,12 @@ const ORDER_LIST_COLUMNS = [
   'updated_at',
   'admin_confirmed',
   'worker_completed_at',
-  'admin_completed_at'   // migration 37
+  'admin_completed_at',   // migration 37
+  // تسعير وتقييم العمال (migration 43)
+  'worker_price',
+  'worker_bonus',
+  'worker_rating',
+  'worker_notes'
 ].join(',')
 
 /**
@@ -137,6 +142,11 @@ export interface Order {
   admin_confirmed?: boolean
   worker_completed_at?: string | null
   admin_completed_at?: string | null
+  // تسعير وتقييم العمال (migration 43)
+  worker_price?: number | null
+  worker_bonus?: number | null
+  worker_rating?: number | null
+  worker_notes?: string | null
 }
 
 export interface CreateOrderData {
@@ -278,6 +288,11 @@ export interface UpdateOrderData {
   voice_notes?: string[]
   completed_images?: string[]
   worker_completed_at?: string | null
+  // تسعير وتقييم العمال (migration 43)
+  worker_price?: number | null
+  worker_bonus?: number | null
+  worker_rating?: number | null
+  worker_notes?: string | null
   // التسجيلات الصوتية مع البيانات الكاملة (النصوص المحولة والترجمات)
   voice_transcriptions?: Array<{
     id: string

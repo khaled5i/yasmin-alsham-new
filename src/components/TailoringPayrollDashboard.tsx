@@ -106,31 +106,14 @@ interface OrderPricingData {
   rating: number // 0-5
 }
 
-const PRICING_STORAGE_KEY = 'tailoring-payroll-order-pricing-v1'
-
-function getAllPricingData(): Record<string, OrderPricingData> {
-  try {
-    const stored = localStorage.getItem(PRICING_STORAGE_KEY)
-    if (!stored) return {}
-    return JSON.parse(stored)
-  } catch {
-    return {}
+function orderToPricingData(order: Order): OrderPricingData {
+  return {
+    orderId: order.id,
+    price:  order.worker_price  != null ? String(order.worker_price)  : '',
+    bonus:  order.worker_bonus  != null ? String(order.worker_bonus)  : '',
+    rating: order.worker_rating ?? 0,
+    notes:  order.worker_notes  ?? '',
   }
-}
-
-function savePricingData(orderId: string, data: OrderPricingData): void {
-  try {
-    const all = getAllPricingData()
-    all[orderId] = data
-    localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(all))
-  } catch (error) {
-    console.error('Failed to save pricing data:', error)
-  }
-}
-
-function getPricingData(orderId: string): OrderPricingData {
-  const all = getAllPricingData()
-  return all[orderId] || { orderId, price: '', notes: '', bonus: '', rating: 0 }
 }
 
 
@@ -1067,16 +1050,16 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
     setPricingOrdersLoading(true)
     try {
       const result = await orderService.getAll({
-        status: 'completed',
+        status: ['completed', 'delivered'],
         worker_id: worker.id,
         pageSize: 200
       })
       const orders = result.data || []
       setPricingOrders(orders)
-      // تحميل بيانات التسعير المحفوظة
+      // قراءة بيانات التسعير مباشرةً من أعمدة الطلب
       const forms: Record<string, OrderPricingData> = {}
       orders.forEach((order) => {
-        forms[order.id] = getPricingData(order.id)
+        forms[order.id] = orderToPricingData(order)
       })
       setPricingForms(forms)
     } catch (error) {
@@ -1117,8 +1100,15 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
   }, [selectedOrderForPricing, orderFullDetails])
 
   const handleSavePricingForm = useCallback((orderId: string, data: OrderPricingData) => {
-    savePricingData(orderId, data)
+    // حفظ فوري في الحالة المحلية (responsive UI)
     setPricingForms((prev) => ({ ...prev, [orderId]: data }))
+    // حفظ في قاعدة البيانات
+    orderService.update(orderId, {
+      worker_price:  data.price  ? parseFloat(data.price)  : null,
+      worker_bonus:  data.bonus  ? parseFloat(data.bonus)  : null,
+      worker_rating: data.rating || null,
+      worker_notes:  data.notes  || null,
+    }).catch(() => { /* تجاهل — الحالة المحلية لا تزال محدَّثة */ })
   }, [])
 
   const handleApplyPricingToSalary = useCallback((worker: WorkerWithUser) => {
