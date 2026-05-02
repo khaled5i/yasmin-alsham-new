@@ -1880,10 +1880,17 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                       className={'w-full ' + NUMBER_INPUT_CLASS}
                     />
 
+                    {/* تنبيه عند الرصيد السالب */}
+                    {row.salary_status === 'negative' && (
+                      <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-700">
+                        صافي المستحق سالب — أي دفعة تُسجَّل ستُضاف كدين يُرحَّل للشهر القادم تحت "خصومات متراكمة".
+                      </div>
+                    )}
+
                     {/* زر تسجيل الدفعة */}
                     <button
                       onClick={() => handleRegisterPayment(worker)}
-                      disabled={!!actionKey || row.salary_status === 'negative' || isReadOnly}
+                      disabled={!!actionKey || isReadOnly}
                       className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                     >
                       <Wallet className="h-4 w-4" />

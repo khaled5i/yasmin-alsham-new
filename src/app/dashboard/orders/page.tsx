@@ -33,6 +33,7 @@ import {
   AlertCircle,
   Plus,
   User,
+  Users,
   X,
   Languages,
   Trash2,
@@ -971,13 +972,22 @@ function OrdersPageInner() {
 
           <div className="flex items-center gap-3">
             {user.role === 'admin' && (
-              <Link
-                href="/dashboard/add-order"
-                className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse px-6 py-3 group"
-              >
-                <Plus className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-                <span>{t('add_new_order')}</span>
-              </Link>
+              <>
+                <Link
+                  href="/dashboard/queue-management"
+                  className="inline-flex items-center justify-center space-x-2 space-x-reverse px-4 py-3 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-xl font-medium transition-colors gap-2"
+                >
+                  <Users className="w-5 h-5" />
+                  <span>إدارة الدور</span>
+                </Link>
+                <Link
+                  href="/dashboard/add-order"
+                  className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse px-6 py-3 group"
+                >
+                  <Plus className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+                  <span>{t('add_new_order')}</span>
+                </Link>
+              </>
             )}
           </div>
         </motion.div>

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Menu, X, Calendar, Search, Scissors, Palette, Home, Sparkles, HelpCircle, Wand2, Share2 } from 'lucide-react'
+import { Menu, X, Calendar, Search, Scissors, Palette, Home, Sparkles, HelpCircle, Wand2, Share2, Users } from 'lucide-react'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -170,6 +170,7 @@ export default function Header() {
     { href: '#', label: 'الفساتين الجاهزة', icon: Palette, onClick: () => scrollToSection('ready-designs'), external: false },
     // [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
     // { href: '/book-appointment', label: 'حجز موعد', icon: Calendar, onClick: null, external: false },
+    { href: '/queue', label: 'احجزي دورك', icon: Users, onClick: null, external: false },
     { href: '/track-order', label: 'تتبع الطلب', icon: Search, onClick: null, external: false },
     { href: '#', label: 'الأقمشة', icon: Scissors, onClick: () => scrollToSection('featured-fabrics'), external: false },
     { href: 'https://yasmin-alsham-ai.com', label: 'مصمم ياسمين الشام الذكي', icon: Wand2, onClick: null, external: true },
