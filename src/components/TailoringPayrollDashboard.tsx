@@ -35,6 +35,7 @@ import { useAuthStore } from '@/store/authStore'
 import { workerService, type WorkerWithUser } from '@/lib/services/worker-service'
 import {
   deleteWorkerPayrollOperation,
+  getLastNegativeBalanceBeforeMonth,
   getLastSalaryInfoBeforeMonth,
   getSuspendedWorkerIds,
   suspendWorkerPayroll,
@@ -43,12 +44,16 @@ import {
   getWorkerPayrollMonths,
   getWorkerPayrollOperations,
   getWorkerPayrollPeriodLock,
+  getWorkerPayrollBigDebts,
   lockWorkerPayrollPeriod,
   unlockWorkerPayrollPeriod,
   propagateSalaryToFutureMonths,
   registerWorkerPayrollAdjustment,
   registerWorkerPayrollPayment,
-  saveWorkerPayrollSnapshot
+  saveWorkerPayrollSnapshot,
+  getWorkerDeductionPayments,
+  payWorkerDeductionDebt,
+  type WorkerDeductionPayment
 } from '@/lib/services/worker-payroll-service'
 import type {
   PayrollOperationType,
@@ -330,6 +335,14 @@ export default function TailoringPayrollDashboard() {
     specialty: ''
   })
 
+  // حالة نافذة الخصومات والديون
+  const [selectedWorkerForDeductions, setSelectedWorkerForDeductions] = useState<WorkerWithUser | null>(null)
+  const [bigDebtsByWorker, setBigDebtsByWorker] = useState<Record<string, number>>({})
+  const [deductionPaymentsForWorker, setDeductionPaymentsForWorker] = useState<WorkerDeductionPayment[]>([])
+  const [deductionPaymentsLoading, setDeductionPaymentsLoading] = useState(false)
+  const [deductionPaymentForms, setDeductionPaymentForms] = useState<Record<string, { amount: string; paymentDate: string; note: string }>>({})
+  const [newDeductionForms, setNewDeductionForms] = useState<Record<string, { amount: string; operationDate: string; note: string }>>({})
+
   // حالة تعليق الرواتب (مخزنة في localStorage لكل شهر)
   const [suspendedWorkers, setSuspendedWorkers] = useState<Set<string>>(() => new Set())
 
@@ -366,14 +379,16 @@ export default function TailoringPayrollDashboard() {
 
     try {
       const prevMonth = previousMonthValue(selectedMonth)
-      const [workerResult, months, operations, lockRow, previousMonths, lastSalaryInfo, suspendedIds] = await Promise.all([
+      const [workerResult, months, operations, lockRow, previousMonths, lastNegativeBalances, lastSalaryInfo, suspendedIds, bigDebts] = await Promise.all([
         workerService.getAll(),
         getWorkerPayrollMonths(BRANCH, selectedMonth),
         getWorkerPayrollOperations(BRANCH, selectedMonth),
         getWorkerPayrollPeriodLock(BRANCH, selectedMonth),
         getWorkerPayrollMonths(BRANCH, prevMonth),
+        getLastNegativeBalanceBeforeMonth(BRANCH, selectedMonth),
         getLastSalaryInfoBeforeMonth(BRANCH, selectedMonth),
-        getSuspendedWorkerIds(BRANCH, selectedMonth)
+        getSuspendedWorkerIds(BRANCH, selectedMonth),
+        getWorkerPayrollBigDebts(BRANCH)
       ])
 
       const tailoringWorkers = (workerResult.data || []).filter(
@@ -396,12 +411,22 @@ export default function TailoringPayrollDashboard() {
       })
 
       const previousRemainingMap: Record<string, number> = {}
-      const previousNegativeMap: Record<string, number> = {}
+      // الرصيد السالب: نبدأ بآخر رصيد معروف قبل هذا الشهر (يحفظ الدين عبر شهور التعليق)
+      const previousNegativeMap: Record<string, number> = { ...lastNegativeBalances }
+
+      // نُعيد تطبيق بيانات الشهر السابق المباشر (M-1) لتكون هي المرجع النهائي:
+      // - إذا كان M-1 موجوداً وسالباً → يُستخدم مباشرةً
+      // - إذا كان M-1 موجوداً وإيجابياً (دين سُدّد) → نمسح الدين القديم
+      // - إذا لم يكن M-1 موجوداً (عامل معلق) → يبقى lastNegativeBalances كـ fallback
       previousMonths.forEach((row) => {
         if (row.remaining_due > 0.009) {
           previousRemainingMap[row.worker_id] = row.remaining_due
-        } else if (row.remaining_due < -0.009) {
+        }
+        if (row.remaining_due < -0.009) {
           previousNegativeMap[row.worker_id] = Math.abs(row.remaining_due)
+        } else {
+          // M-1 موجود وغير سالب → الدين سُدّد أو لا يوجد، نمسح أي قيمة قديمة
+          delete previousNegativeMap[row.worker_id]
         }
       })
 
@@ -415,6 +440,8 @@ export default function TailoringPayrollDashboard() {
       if (isAdmin && !isPeriodLocked) {
         const workersNeedingAutoSave = allWorkers.filter((worker) => {
           if (monthMap[worker.id]) return false
+          // العمال المعلقون لا يُحفظون تلقائياً (راتبهم صفر في الشهر المعلق)
+          if (suspendedIds.has(worker.id)) return false
           const info = lastSalaryInfo[worker.id]
           return info && info.salary_type === 'fixed' && info.fixed_salary_value > 0
         })
@@ -453,6 +480,11 @@ export default function TailoringPayrollDashboard() {
         }
       }
 
+      const bigDebtsMap: Record<string, number> = {}
+      ;(bigDebts || []).forEach((debt) => {
+        bigDebtsMap[debt.worker_id] = debt.remaining_amount || 0
+      })
+
       setWorkers(allWorkers)
       setMonthRowsByWorker(monthMap)
       setOperationsByWorker(operationMap)
@@ -461,6 +493,7 @@ export default function TailoringPayrollDashboard() {
       setIsLocked(isPeriodLocked)
       setLockReason(lockRow?.lock_reason || '')
       setSuspendedWorkers(suspendedIds)
+      setBigDebtsByWorker(bigDebtsMap)
 
       setSalaryForms(() => {
         const next: Record<string, SalaryFormState> = {}
@@ -634,12 +667,13 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
         if (suspendedWorkers.has(worker.id)) return acc
         const row = getMonthRow(worker)
         acc.salary += row.basic_salary + row.works_total
-        acc.deductions += row.deductions_total + row.advances_total
+        acc.advances += row.advances_total
+        acc.deductions += bigDebtsByWorker[worker.id] || 0
         acc.paid += row.total_paid
         acc.remaining += row.remaining_due
         return acc
       },
-      { salary: 0, deductions: 0, paid: 0, remaining: 0 }
+      { salary: 0, advances: 0, deductions: 0, paid: 0, remaining: 0 }
     )
   }, [filteredWorkers, getMonthRow, suspendedWorkers])
 
@@ -1048,6 +1082,116 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
   }, [isAdmin, isLocked, advanceForms, selectedMonth, loadData])
 
   // ============================================================================
+  // معالجات الخصومات والديون
+  // ============================================================================
+
+  const openDeductionsModal = useCallback(async (worker: WorkerWithUser) => {
+    setSelectedWorkerForDeductions(worker)
+    setDeductionPaymentsLoading(true)
+    setDeductionPaymentsForWorker([])
+    const today = new Date().toISOString().split('T')[0]
+    setDeductionPaymentForms((prev) => ({
+      ...prev,
+      [worker.id]: prev[worker.id] || { amount: '', paymentDate: today, note: '' }
+    }))
+    setNewDeductionForms((prev) => ({
+      ...prev,
+      [worker.id]: prev[worker.id] || { amount: '', operationDate: monthEndDate(selectedMonth), note: '' }
+    }))
+    try {
+      const payments = await getWorkerDeductionPayments(BRANCH, worker.id)
+      setDeductionPaymentsForWorker(payments)
+    } catch {
+      setDeductionPaymentsForWorker([])
+    } finally {
+      setDeductionPaymentsLoading(false)
+    }
+  }, [selectedMonth])
+
+  const handleAddDeduction = useCallback(async (worker: WorkerWithUser) => {
+    if (isLocked) {
+      alert('الشهر مقفل. لا يمكن إضافة خصم.')
+      return
+    }
+    if (!isAdmin) {
+      alert('إضافة الخصومات مسموحة للأدمن فقط.')
+      return
+    }
+    const form = newDeductionForms[worker.id]
+    if (!form) return
+    const amount = toNumber(form.amount)
+    if (amount <= 0) {
+      alert('يرجى إدخال مبلغ خصم صحيح')
+      return
+    }
+    setActionKey(`deduction-${worker.id}`)
+    try {
+      await registerWorkerPayrollAdjustment({
+        branch: BRANCH,
+        workerId: worker.id,
+        workerName: getWorkerName(worker),
+        monthValue: selectedMonth,
+        operationType: 'deduction',
+        operationDate: form.operationDate,
+        amount,
+        note: form.note || undefined
+      })
+      setNewDeductionForms((prev) => ({
+        ...prev,
+        [worker.id]: { ...prev[worker.id], amount: '', note: '' }
+      }))
+      await loadData(true)
+      const payments = await getWorkerDeductionPayments(BRANCH, worker.id)
+      setDeductionPaymentsForWorker(payments)
+    } catch (error) {
+      alert(toReadableError(error))
+    } finally {
+      setActionKey(null)
+    }
+  }, [isAdmin, isLocked, newDeductionForms, selectedMonth, loadData])
+
+  const handlePayDeductionDebt = useCallback(async (worker: WorkerWithUser) => {
+    if (!isAdmin) {
+      alert('سداد الديون مسموح للأدمن فقط.')
+      return
+    }
+    const form = deductionPaymentForms[worker.id]
+    if (!form) return
+    const amount = toNumber(form.amount)
+    if (amount <= 0) {
+      alert('يرجى إدخال مبلغ السداد')
+      return
+    }
+    const remainingDebt = bigDebtsByWorker[worker.id] || 0
+    if (amount > remainingDebt + 0.009) {
+      alert(`مبلغ السداد (${formatCurrency(amount)}) أكبر من الدين المتبقي (${formatCurrency(remainingDebt)})`)
+      return
+    }
+    setActionKey(`deduction-pay-${worker.id}`)
+    try {
+      await payWorkerDeductionDebt({
+        branch: BRANCH,
+        workerId: worker.id,
+        workerName: getWorkerName(worker),
+        amount,
+        paymentDate: form.paymentDate,
+        note: form.note || undefined
+      })
+      setDeductionPaymentForms((prev) => ({
+        ...prev,
+        [worker.id]: { ...prev[worker.id], amount: '', note: '' }
+      }))
+      await loadData(true)
+      const payments = await getWorkerDeductionPayments(BRANCH, worker.id)
+      setDeductionPaymentsForWorker(payments)
+    } catch (error) {
+      alert(toReadableError(error))
+    } finally {
+      setActionKey(null)
+    }
+  }, [isAdmin, deductionPaymentForms, bigDebtsByWorker, loadData])
+
+  // ============================================================================
   // معالجات التسعير والتقييم
   // ============================================================================
 
@@ -1251,13 +1395,17 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
           </div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
           <div className="rounded-xl border border-blue-200 bg-white p-4">
             <p className="text-sm text-blue-600">إجمالي الرواتب</p>
             <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(totals.salary)}</p>
           </div>
+          <div className="rounded-xl border border-amber-200 bg-white p-4">
+            <p className="text-sm text-amber-600">إجمالي السلف</p>
+            <p className="mt-1 text-xl font-bold text-amber-700">{formatCurrency(totals.advances)}</p>
+          </div>
           <div className="rounded-xl border border-red-200 bg-white p-4">
-            <p className="text-sm text-red-600">إجمالي الخصومات</p>
+            <p className="text-sm text-red-600">إجمالي الديون المتراكمة</p>
             <p className="mt-1 text-xl font-bold text-red-700">{formatCurrency(totals.deductions)}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -1276,7 +1424,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
             <PauseCircle className="h-4 w-4 shrink-0 text-orange-500" />
             <p className="text-sm text-orange-700">
               <span className="font-semibold">{suspendedWorkers.size}</span>{' '}
-              {suspendedWorkers.size === 1 ? 'عامل معلَّق' : 'عمال معلَّقون'} — رواتبهم مستثناة من الإجماليات أعلاه
+              {suspendedWorkers.size === 1 ? 'عامل معلَّق دائماً' : 'عمال معلَّقون دائماً'} — رواتبهم مستثناة من الإجماليات في هذا الشهر وجميع الشهور القادمة حتى إلغاء التعليق
             </p>
           </div>
         )}
@@ -1298,9 +1446,9 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     <tr>
                       <th className="px-3 py-2.5">العامل</th>
                       <th className="px-3 py-2.5">الراتب</th>
-                      <th className="px-3 py-2.5">إجمالي الخصومات</th>
+                      <th className="px-3 py-2.5">السلف والديون</th>
                       <th className="px-3 py-2.5">إجمالي المدفوع</th>
-                      <th className="px-3 py-2.5">المتبقي</th>
+                      <th className="px-3 py-2.5">المتبقي من الراتب</th>
                       <th className="px-3 py-2.5">الحالة</th>
                       <th className="px-3 py-2.5">الإجراءات</th>
                     </tr>
@@ -1313,6 +1461,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                       const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
                       const displayedRemaining = row.remaining_due - prevCarryover
                       const isSuspended = suspendedWorkers.has(worker.id)
+                      const workerDebt = bigDebtsByWorker[worker.id] || 0
                       return (
                         <tr key={worker.id} className={isSuspended ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}>
                           <td className="px-3 py-2.5">
@@ -1339,10 +1488,17 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                             </div>
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-blue-700">{formatCurrency(row.basic_salary + row.works_total)}</td>
-                          <td className="px-3 py-2.5 font-semibold text-red-700">
-                            {formatCurrency(row.deductions_total + row.advances_total + prevCarryover)}
-                            {prevCarryover > 0.009 && (
-                              <p className="text-xs font-normal text-orange-600 mt-0.5">خصومات متراكمة</p>
+                          <td className="px-3 py-2.5">
+                            {row.advances_total > 0.009 && (
+                              <p className="text-xs font-semibold text-amber-700">سلف: {formatCurrency(row.advances_total)}</p>
+                            )}
+                            {workerDebt > 0.009 && (
+                              <p className="mt-0.5 inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">
+                                دين: {formatCurrency(workerDebt)}
+                              </p>
+                            )}
+                            {row.advances_total <= 0.009 && workerDebt <= 0.009 && (
+                              <span className="text-xs text-gray-400">—</span>
                             )}
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-gray-900">{formatCurrency(row.total_paid)}</td>
@@ -1367,6 +1523,17 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                 <CreditCard className="h-4 w-4" />
                               </button>
                               <button
+                                onClick={() => openDeductionsModal(worker)}
+                                className={`group inline-flex items-center justify-center rounded-lg border p-2 transition-all hover:shadow-sm ${
+                                  workerDebt > 0.009
+                                    ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
+                                    : 'border-red-200 bg-red-50 text-red-500 hover:bg-red-100'
+                                }`}
+                                title="إدارة الخصومات والديون"
+                              >
+                                <AlertTriangle className="h-4 w-4" />
+                              </button>
+                              <button
                                 onClick={() => setSelectedWorkerForSalary(worker)}
                                 className="group inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-indigo-600 transition-all hover:bg-indigo-100 hover:shadow-sm"
                                 title="فئة الراتب الشهري"
@@ -1388,7 +1555,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                       ? 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100'
                                       : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
                                   }`}
-                                  title={isSuspended ? 'استئناف الراتب' : 'تعليق الراتب'}
+                                  title={isSuspended ? 'إلغاء التعليق الدائم' : 'تعليق دائم (جميع الشهور القادمة)'}
                                 >
                                   {isSuspended ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
                                 </button>
@@ -1422,9 +1589,9 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     <tr>
                       <th className="px-3 py-2.5">العامل</th>
                       <th className="px-3 py-2.5">الراتب</th>
-                      <th className="px-3 py-2.5">إجمالي الخصومات</th>
+                      <th className="px-3 py-2.5">السلف والديون</th>
                       <th className="px-3 py-2.5">إجمالي المدفوع</th>
-                      <th className="px-3 py-2.5">المتبقي</th>
+                      <th className="px-3 py-2.5">المتبقي من الراتب</th>
                       <th className="px-3 py-2.5">الحالة</th>
                       <th className="px-3 py-2.5">الإجراءات</th>
                     </tr>
@@ -1437,6 +1604,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                       const hasPreviousPositive = (previousRemainingByWorker[worker.id] || 0) > 0.009
                       const displayedRemaining = row.remaining_due - prevCarryover
                       const isSuspended = suspendedWorkers.has(worker.id)
+                      const workerDebt = bigDebtsByWorker[worker.id] || 0
                       return (
                         <tr key={worker.id} className={isSuspended ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}>
                           <td className="px-3 py-2.5">
@@ -1463,10 +1631,17 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                             </div>
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-blue-700">{formatCurrency(row.basic_salary + row.works_total)}</td>
-                          <td className="px-3 py-2.5 font-semibold text-red-700">
-                            {formatCurrency(row.deductions_total + row.advances_total + prevCarryover)}
-                            {prevCarryover > 0.009 && (
-                              <p className="text-xs font-normal text-orange-600 mt-0.5">خصومات متراكمة</p>
+                          <td className="px-3 py-2.5">
+                            {row.advances_total > 0.009 && (
+                              <p className="text-xs font-semibold text-amber-700">سلف: {formatCurrency(row.advances_total)}</p>
+                            )}
+                            {workerDebt > 0.009 && (
+                              <p className="mt-0.5 inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">
+                                دين: {formatCurrency(workerDebt)}
+                              </p>
+                            )}
+                            {row.advances_total <= 0.009 && workerDebt <= 0.009 && (
+                              <span className="text-xs text-gray-400">—</span>
                             )}
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-gray-900">{formatCurrency(row.total_paid)}</td>
@@ -1491,6 +1666,17 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                 <CreditCard className="h-4 w-4" />
                               </button>
                               <button
+                                onClick={() => openDeductionsModal(worker)}
+                                className={`group inline-flex items-center justify-center rounded-lg border p-2 transition-all hover:shadow-sm ${
+                                  workerDebt > 0.009
+                                    ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
+                                    : 'border-red-200 bg-red-50 text-red-500 hover:bg-red-100'
+                                }`}
+                                title="إدارة الخصومات والديون"
+                              >
+                                <AlertTriangle className="h-4 w-4" />
+                              </button>
+                              <button
                                 onClick={() => setSelectedWorkerForSalary(worker)}
                                 className="group inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-indigo-600 transition-all hover:bg-indigo-100 hover:shadow-sm"
                                 title="فئة الراتب الشهري"
@@ -1505,7 +1691,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                       ? 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100'
                                       : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
                                   }`}
-                                  title={isSuspended ? 'استئناف الراتب' : 'تعليق الراتب'}
+                                  title={isSuspended ? 'إلغاء التعليق الدائم' : 'تعليق دائم (جميع الشهور القادمة)'}
                                 >
                                   {isSuspended ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
                                 </button>
@@ -1521,6 +1707,220 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
             </div>
           </div>
         )}
+
+        {/* نافذة إدارة الخصومات والديون */}
+        {selectedWorkerForDeductions && (() => {
+          const worker = selectedWorkerForDeductions
+          const row = getMonthRow(worker)
+          const workerDebt = bigDebtsByWorker[worker.id] || 0
+          const deductionPayForm = deductionPaymentForms[worker.id] || { amount: '', paymentDate: new Date().toISOString().split('T')[0], note: '' }
+          const newDeductionForm = newDeductionForms[worker.id] || { amount: '', operationDate: monthEndDate(selectedMonth), note: '' }
+          const monthDeductions = (operationsByWorker[worker.id] || []).filter((op) => op.operation_type === 'deduction')
+
+          return (
+            <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForDeductions(null)}>
+              <div className="mx-auto my-8 max-w-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+                  {/* رأس النافذة */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-red-100 p-2">
+                        <AlertTriangle className="h-5 w-5 text-red-600" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900">إدارة الخصومات والديون</h2>
+                        <p className="text-sm text-gray-600">{getWorkerName(worker)}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedWorkerForDeductions(null)}
+                      className="rounded-lg p-2 hover:bg-gray-100"
+                      title="إغلاق"
+                    >
+                      <X className="h-5 w-5 text-gray-500" />
+                    </button>
+                  </div>
+
+                  {/* ملخص */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-center">
+                      <p className="text-xs text-red-700">خصومات هذا الشهر</p>
+                      <p className="mt-1 text-lg font-bold text-red-900">{formatCurrency(row.deductions_total)}</p>
+                    </div>
+                    <div className={`rounded-xl border p-3 text-center ${workerDebt > 0.009 ? 'border-red-300 bg-red-100' : 'border-gray-200 bg-gray-50'}`}>
+                      <p className={`text-xs ${workerDebt > 0.009 ? 'text-red-700 font-semibold' : 'text-gray-600'}`}>إجمالي الدين المتراكم</p>
+                      <p className={`mt-1 text-lg font-bold ${workerDebt > 0.009 ? 'text-red-900' : 'text-gray-500'}`}>{formatCurrency(workerDebt)}</p>
+                    </div>
+                  </div>
+
+                  {/* تنبيه: الخصومات منفصلة عن الراتب */}
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    الخصومات مستقلة عن الراتب — لا تُخصم من المتبقي، ويمكن تسديدها بشكل منفصل
+                  </div>
+
+                  {/* قسم إضافة خصم جديد */}
+                  {!isReadOnly && (
+                    <div className="rounded-xl border border-red-200 p-4 space-y-3">
+                      <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                        <AlertTriangle className="h-4 w-4 text-red-600" />
+                        تسجيل خصم جديد
+                      </h3>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="مبلغ الخصم"
+                        value={newDeductionForm.amount}
+                        onChange={(e) => setNewDeductionForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], amount: sanitizeNonNegativeInput(e.target.value) }
+                        }))}
+                        className={'w-full ' + NUMBER_INPUT_CLASS}
+                      />
+                      <input
+                        type="date"
+                        value={newDeductionForm.operationDate}
+                        onChange={(e) => setNewDeductionForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], operationDate: e.target.value }
+                        }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      />
+                      <input
+                        type="text"
+                        placeholder="سبب الخصم (اختياري)"
+                        value={newDeductionForm.note}
+                        onChange={(e) => setNewDeductionForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], note: e.target.value }
+                        }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      />
+                      <button
+                        onClick={() => handleAddDeduction(worker)}
+                        disabled={!!actionKey}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                        {actionKey === 'deduction-' + worker.id ? 'جاري التسجيل...' : 'تسجيل الخصم'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* قسم تسديد دفعة من الدين */}
+                  {workerDebt > 0.009 && (
+                    <div className="rounded-xl border border-emerald-200 p-4 space-y-3">
+                      <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                        <Wallet className="h-4 w-4 text-emerald-600" />
+                        تسديد دفعة من الدين
+                      </h3>
+                      <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                        الدين المتبقي: <span className="font-bold">{formatCurrency(workerDebt)}</span> — يمكن تسديد جزء أو كامل المبلغ
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="مبلغ السداد"
+                        value={deductionPayForm.amount}
+                        onChange={(e) => setDeductionPaymentForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], amount: sanitizeNonNegativeInput(e.target.value) }
+                        }))}
+                        className={'w-full ' + NUMBER_INPUT_CLASS}
+                      />
+                      <input
+                        type="date"
+                        value={deductionPayForm.paymentDate}
+                        onChange={(e) => setDeductionPaymentForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], paymentDate: e.target.value }
+                        }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                      />
+                      <input
+                        type="text"
+                        placeholder="ملاحظة (اختياري)"
+                        value={deductionPayForm.note}
+                        onChange={(e) => setDeductionPaymentForms((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...prev[worker.id], note: e.target.value }
+                        }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                      />
+                      <button
+                        onClick={() => handlePayDeductionDebt(worker)}
+                        disabled={!!actionKey || !isAdmin}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        <Wallet className="h-4 w-4" />
+                        {actionKey === 'deduction-pay-' + worker.id ? 'جاري التسديد...' : 'تسديد الدفعة'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* سجل خصومات هذا الشهر */}
+                  {monthDeductions.length > 0 && (
+                    <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                      <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                        <History className="h-4 w-4 text-gray-600" />
+                        خصومات هذا الشهر ({monthDeductions.length})
+                      </h3>
+                      <div className="max-h-[200px] space-y-2 overflow-y-auto">
+                        {monthDeductions.map((op) => (
+                          <div key={op.id} className="flex items-center justify-between rounded-lg border border-red-100 bg-red-50 p-3">
+                            <div>
+                              <p className="font-semibold text-red-900">{formatCurrency(op.amount)}</p>
+                              <p className="text-xs text-red-700">
+                                {new Date(op.operation_date).toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
+                              </p>
+                              {op.note && <p className="text-xs text-gray-600 mt-0.5">{op.note}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* سجل دفعات الدين */}
+                  <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                    <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                      <History className="h-4 w-4 text-gray-600" />
+                      سجل دفعات الدين ({deductionPaymentsLoading ? '...' : deductionPaymentsForWorker.length})
+                    </h3>
+                    {deductionPaymentsLoading ? (
+                      <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-sm text-gray-400">
+                        جاري التحميل...
+                      </div>
+                    ) : deductionPaymentsForWorker.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-sm text-gray-400">
+                        لا توجد دفعات مسجلة
+                      </div>
+                    ) : (
+                      <div className="max-h-[250px] space-y-2 overflow-y-auto">
+                        {deductionPaymentsForWorker.map((payment) => (
+                          <div key={payment.id} className="flex items-start justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                            <div>
+                              <p className="font-semibold text-emerald-900">{formatCurrency(payment.amount)}</p>
+                              <p className="text-xs text-emerald-700">
+                                {new Date(payment.payment_date).toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
+                              </p>
+                              {payment.note && <p className="text-xs text-gray-600 mt-0.5">{payment.note}</p>}
+                            </div>
+                            <div className="text-left text-xs text-gray-500">
+                              <p>قبل: {formatCurrency(payment.before_amount)}</p>
+                              <p>بعد: {formatCurrency(payment.after_amount)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* نافذة إدارة السُّلَف */}
         {selectedWorkerForAdvances && (() => {

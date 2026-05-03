@@ -601,6 +601,80 @@ export async function registerWorkerPayrollBigDebtPayment(
   return data as WorkerPayrollBigDebt
 }
 
+export interface WorkerDeductionPayment {
+  id: string
+  branch: string
+  worker_id: string
+  worker_name: string
+  amount: number
+  payment_date: string
+  note: string | null
+  before_amount: number
+  after_amount: number
+  created_at: string
+}
+
+export async function getWorkerDeductionPayments(
+  branch: BranchType,
+  workerId: string
+): Promise<WorkerDeductionPayment[]> {
+  if (!isSupabaseConfigured()) return []
+
+  try {
+    const { data, error } = await supabase
+      .from('worker_payroll_deduction_payments')
+      .select('*')
+      .eq('branch', branch)
+      .eq('worker_id', workerId)
+      .order('payment_date', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      if (isMissingSupabaseResourceError(error)) return []
+      console.warn('Warning fetching deduction payments:', toErrorMessage(error))
+      return []
+    }
+
+    return (data || []) as WorkerDeductionPayment[]
+  } catch (err) {
+    console.warn('Warning fetching deduction payments:', toErrorMessage(err))
+    return []
+  }
+}
+
+interface PayWorkerDeductionDebtInput {
+  branch: BranchType
+  workerId: string
+  workerName: string
+  amount: number
+  paymentDate: string
+  note?: string
+}
+
+export async function payWorkerDeductionDebt(
+  input: PayWorkerDeductionDebtInput
+): Promise<{ before_amount: number; after_amount: number; paid_amount: number }> {
+  if (!isSupabaseConfigured()) throw new Error('Supabase is not configured')
+
+  const { data, error } = await supabase.rpc('pay_worker_deduction_debt', {
+    p_branch: input.branch,
+    p_worker_id: input.workerId,
+    p_worker_name: input.workerName,
+    p_amount: input.amount,
+    p_payment_date: input.paymentDate,
+    p_note: input.note || null
+  })
+
+  if (error) {
+    if (isMissingSupabaseResourceError(error)) {
+      throw new Error('Deduction payment migration is missing. Please apply migration 48 first.')
+    }
+    throw new Error(toErrorMessage(error))
+  }
+
+  return data as { before_amount: number; after_amount: number; paid_amount: number }
+}
+
 export async function deleteWorkerPayrollOperation(operationId: string): Promise<void> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase is not configured')
@@ -675,6 +749,7 @@ export async function propagateFixedSalaryToFutureMonths(
 
 /**
  * جلب IDs العمال المعلقين لشهر معين
+ * يجمع التعليق الشهري القديم (للتوافق العكسي) مع التعليق الدائم الجديد
  */
 export async function getSuspendedWorkerIds(
   branch: BranchType,
@@ -684,20 +759,34 @@ export async function getSuspendedWorkerIds(
 
   try {
     const { year, month } = monthToYearMonth(monthValue)
-    const { data, error } = await supabase
-      .from('worker_payroll_suspensions')
-      .select('worker_id')
-      .eq('branch', branch)
-      .eq('payroll_year', year)
-      .eq('payroll_month', month)
 
-    if (error) {
-      if (isMissingSupabaseResourceError(error)) return new Set()
-      console.error('Error fetching suspended workers:', error)
-      return new Set()
+    const [perMonthResult, persistentResult] = await Promise.all([
+      // التعليق الشهري القديم (للتوافق العكسي)
+      supabase
+        .from('worker_payroll_suspensions')
+        .select('worker_id')
+        .eq('branch', branch)
+        .eq('payroll_year', year)
+        .eq('payroll_month', month),
+      // التعليق الدائم: يسري من start_year/start_month وما بعده
+      supabase
+        .from('worker_payroll_persistent_suspensions')
+        .select('worker_id')
+        .eq('branch', branch)
+        .or(`start_year.lt.${year},and(start_year.eq.${year},start_month.lte.${month})`)
+    ])
+
+    if (perMonthResult.error && !isMissingSupabaseResourceError(perMonthResult.error)) {
+      console.error('Error fetching per-month suspended workers:', perMonthResult.error)
+    }
+    if (persistentResult.error && !isMissingSupabaseResourceError(persistentResult.error)) {
+      console.error('Error fetching persistent suspended workers:', persistentResult.error)
     }
 
-    return new Set((data || []).map((row: { worker_id: string }) => row.worker_id))
+    const ids = new Set<string>()
+    ;(perMonthResult.data || []).forEach((row: { worker_id: string }) => ids.add(row.worker_id))
+    ;(persistentResult.data || []).forEach((row: { worker_id: string }) => ids.add(row.worker_id))
+    return ids
   } catch (err) {
     console.error('Error fetching suspended workers:', err)
     return new Set()
@@ -705,7 +794,7 @@ export async function getSuspendedWorkerIds(
 }
 
 /**
- * تعليق راتب عامل لشهر معين
+ * تعليق راتب عامل بشكل دائم (يسري على جميع الشهور من الشهر المحدد وما بعده)
  */
 export async function suspendWorkerPayroll(
   branch: BranchType,
@@ -718,47 +807,97 @@ export async function suspendWorkerPayroll(
 
   const { year, month } = monthToYearMonth(monthValue)
   const { error } = await supabase
-    .from('worker_payroll_suspensions')
+    .from('worker_payroll_persistent_suspensions')
     .upsert(
       {
         branch,
         worker_id: workerId,
         worker_name: workerName,
-        payroll_year: year,
-        payroll_month: month,
+        start_year: year,
+        start_month: month,
         reason: reason ?? null,
         updated_at: new Date().toISOString()
       },
-      { onConflict: 'branch,worker_id,payroll_year,payroll_month' }
+      { onConflict: 'branch,worker_id' }
     )
 
   if (error) {
-    console.error('Error suspending worker payroll:', error)
+    console.error('Error suspending worker payroll (persistent):', error)
     throw new Error(toErrorMessage(error))
   }
 }
 
 /**
- * إلغاء تعليق راتب عامل لشهر معين
+ * إلغاء التعليق الدائم للعامل
  */
 export async function unsuspendWorkerPayroll(
   branch: BranchType,
   workerId: string,
-  monthValue: string
+  _monthValue: string
 ): Promise<void> {
   if (!isSupabaseConfigured()) return
 
-  const { year, month } = monthToYearMonth(monthValue)
   const { error } = await supabase
-    .from('worker_payroll_suspensions')
+    .from('worker_payroll_persistent_suspensions')
     .delete()
     .eq('branch', branch)
     .eq('worker_id', workerId)
-    .eq('payroll_year', year)
-    .eq('payroll_month', month)
 
   if (error) {
-    console.error('Error unsuspending worker payroll:', error)
+    console.error('Error unsuspending worker payroll (persistent):', error)
     throw new Error(toErrorMessage(error))
+  }
+}
+
+/**
+ * جلب آخر قيمة remaining_due لكل عامل قبل الشهر المحدد
+ * يُستخدم لحفظ سلسلة الديون عبر الشهور المعلقة (بدون سجل):
+ * - إذا كان آخر رصيد سالباً → دين يجب الإظهار
+ * - إذا كان إيجابياً → الدين سُدّد، لا شيء يُرحَّل
+ */
+export async function getLastNegativeBalanceBeforeMonth(
+  branch: BranchType,
+  monthValue: string
+): Promise<Record<string, number>> {
+  if (!isSupabaseConfigured()) return {}
+
+  try {
+    const { year, month } = monthToYearMonth(monthValue)
+
+    // نجلب جميع السجلات قبل هذا الشهر (بترتيب تنازلي) لنأخذ الأحدث لكل عامل
+    const { data, error } = await supabase
+      .from('worker_payroll_months')
+      .select('worker_id, remaining_due, payroll_year, payroll_month')
+      .eq('branch', branch)
+      .or(`payroll_year.lt.${year},and(payroll_year.eq.${year},payroll_month.lt.${month})`)
+      .order('payroll_year', { ascending: false })
+      .order('payroll_month', { ascending: false })
+
+    if (error) {
+      if (isMissingSupabaseResourceError(error)) return {}
+      console.error('Error fetching last remaining balances:', error)
+      return {}
+    }
+
+    // نأخذ أول سجل لكل عامل (الأحدث بفضل الترتيب التنازلي)
+    // ثم نُعيد فقط الأرصدة السالبة (ديون فعلية)
+    const latestByWorker: Record<string, number> = {}
+    ;(data || []).forEach((row: { worker_id: string; remaining_due: number }) => {
+      if (!(row.worker_id in latestByWorker)) {
+        latestByWorker[row.worker_id] = row.remaining_due
+      }
+    })
+
+    const result: Record<string, number> = {}
+    Object.entries(latestByWorker).forEach(([workerId, remaining]) => {
+      if (remaining < -0.009) {
+        result[workerId] = Math.abs(remaining)
+      }
+      // remaining >= -0.009 → الدين سُدّد أو لا يوجد دين، لا نُرجع شيئاً
+    })
+    return result
+  } catch (err) {
+    console.error('Error fetching last remaining balances:', err)
+    return {}
   }
 }
