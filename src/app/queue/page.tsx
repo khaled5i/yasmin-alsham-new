@@ -53,6 +53,7 @@ function formatDate(d: Date): string {
 }
 
 function getOrCreateSessionToken(): string {
+  if (typeof window === 'undefined') return ''
   const KEY = 'queue_session_token'
   let token = sessionStorage.getItem(KEY)
   if (!token) {
