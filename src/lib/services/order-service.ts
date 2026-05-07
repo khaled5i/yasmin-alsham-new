@@ -595,9 +595,19 @@ export const orderService = {
       // Server-side search: client_name, client_phone, order_number, fabric
       if (filters?.search?.trim()) {
         const safeTerm = filters.search.trim()
-        query = query.or(
-          `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,order_number.ilike.%${safeTerm}%,fabric.ilike.%${safeTerm}%`
-        )
+        const words = safeTerm.split(/\s+/).filter(Boolean)
+        if (words.length <= 1) {
+          query = query.or(
+            `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,order_number.ilike.%${safeTerm}%,fabric.ilike.%${safeTerm}%`
+          )
+        } else {
+          // Multi-word: every word must appear in at least one searchable field (AND between words)
+          for (const word of words) {
+            query = query.or(
+              `client_name.ilike.%${word}%,client_phone.ilike.%${word}%,order_number.ilike.%${word}%,fabric.ilike.%${word}%`
+            )
+          }
+        }
       }
 
       // Server-side date filter

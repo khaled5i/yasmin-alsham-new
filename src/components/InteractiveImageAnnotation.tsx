@@ -442,7 +442,9 @@ function DraggableText({
   onScaleChange,
   onTextChange,
   onEditStart,
-  onEditEnd
+  onEditEnd,
+  onTextColorChange,
+  onToggleBackground
 }: {
   annotation: ImageAnnotation
   annotationIndex: number
@@ -455,6 +457,8 @@ function DraggableText({
   onTextChange: (annotationId: string, newText: string) => void
   onEditStart?: (annotationId: string) => void
   onEditEnd?: () => void
+  onTextColorChange?: (annotationId: string, color: string) => void
+  onToggleBackground?: (annotationId: string) => void
 }) {
   const elementRef = useRef<HTMLDivElement>(null)
   const x = useMotionValue(0)
@@ -542,13 +546,26 @@ function DraggableText({
     commitEdit()
   }, [commitEdit])
 
-  // التركيز على textarea عند بدء التعديل
+  // التركيز على textarea عند بدء التعديل + auto-resize
   useEffect(() => {
     if (isEditing && textareaRef.current) {
-      textareaRef.current.focus()
-      textareaRef.current.select()
+      const el = textareaRef.current
+      el.focus()
+      const len = el.value.length
+      el.setSelectionRange(len, len)
+      el.style.height = 'auto'
+      el.style.height = el.scrollHeight + 'px'
     }
   }, [isEditing])
+
+  // auto-resize عند تغيير النص
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      const el = textareaRef.current
+      el.style.height = 'auto'
+      el.style.height = el.scrollHeight + 'px'
+    }
+  }, [editText, isEditing])
 
   // إبقاء مربع التعديل داخل شاشة الرسم
   useEffect(() => {
@@ -622,24 +639,122 @@ function DraggableText({
         <span className="font-bold flex-shrink-0">
           {annotationIndex}.
         </span>
-        {isEditing ? (
-          <textarea
-            ref={textareaRef}
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
-            onBlur={handleBlur}
-            onClick={(e) => e.stopPropagation()}
+        <p className="leading-snug break-words max-w-[200px]" dir={annotation.translatedText ? "auto" : "rtl"}>
+          {(annotation.translatedText || annotation.transcription || '').split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
+        </p>
+        {isEditing && typeof document !== 'undefined' && createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50"
             onPointerDown={(e) => e.stopPropagation()}
-            data-annotation-edit="true"
-            className="leading-snug break-words min-w-[200px] w-auto max-w-[320px] bg-white/90 border border-pink-300 rounded px-2 py-1 overflow-hidden"
-            style={{ fontSize, minHeight: '1.5em', height: 'auto', userSelect: 'text', touchAction: 'manipulation' }}
-            rows={Math.max(1, Math.ceil((editText.length) / 25))}
-            dir="rtl"
-          />
-        ) : (
-          <p className="leading-snug break-words max-w-[200px]" dir={annotation.translatedText ? "auto" : "rtl"}>
-            {(annotation.translatedText || annotation.transcription || '').split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
-          </p>
+            onClick={(e) => e.stopPropagation()}
+          >
+          <div
+            className="relative w-[90vw] max-w-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); setIsEditing(false); setEditText(annotation.transcription || '') }}
+              className="absolute -top-4 -right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white shadow-lg text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition-colors z-10 border border-gray-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          <div
+            className="bg-white rounded-2xl shadow-2xl p-4 flex flex-col gap-3"
+          >
+            <textarea
+              ref={textareaRef}
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); setIsEditing(false); setEditText(annotation.transcription || '') }
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitEdit() }
+                e.stopPropagation()
+              }}
+              data-annotation-edit="true"
+              className="w-full rounded-lg border border-pink-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-400 overflow-hidden"
+              style={{
+                fontSize: '1.1rem',
+                lineHeight: '2',
+                minHeight: '6rem',
+                height: 'auto',
+                resize: 'none',
+                userSelect: 'text',
+                touchAction: 'manipulation',
+                color: annotation.textColor || '#000000',
+                backgroundColor: annotation.textBackground
+                  ? (isLightTextColor(annotation.textColor || '#000000') ? '#000000' : '#ffffff')
+                  : 'transparent',
+              }}
+              dir="rtl"
+            />
+            {/* شريط الألوان وزر الخلفية */}
+            <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                {DRAWING_COLORS.map(c => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onTextColorChange?.(annotation.id, c.value) }}
+                    title={c.name}
+                    className="w-7 h-7 rounded-full border-2 transition-all hover:scale-110 flex-shrink-0"
+                    style={{
+                      backgroundColor: c.value,
+                      borderColor: (annotation.textColor || '#000000') === c.value ? '#ec4899' : '#d1d5db',
+                      transform: (annotation.textColor || '#000000') === c.value ? 'scale(1.2)' : undefined,
+                    }}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onToggleBackground?.(annotation.id) }}
+                className={`self-start h-8 px-3 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  annotation.textBackground
+                    ? 'border-purple-400 bg-purple-50 text-purple-700'
+                    : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <span
+                  className="inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-bold border"
+                  style={{
+                    backgroundColor: annotation.textBackground
+                      ? (isLightTextColor(annotation.textColor || '#000000') ? '#000000' : '#ffffff')
+                      : '#f3f4f6',
+                    color: annotation.textColor || '#000000',
+                    borderColor: '#d1d5db',
+                  }}
+                >ن</span>
+                {annotation.textBackground ? 'إزالة الخلفية' : 'إضافة خلفية'}
+              </button>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); commitEdit() }}
+                className="px-4 py-2 bg-pink-500 text-white rounded-lg text-sm font-medium hover:bg-pink-600"
+              >
+                حفظ
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setIsEditing(false); setEditText(annotation.transcription || '') }}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+          </div>
+          </div>,
+          document.body
         )}
       </div>
     </motion.div>
@@ -4684,6 +4799,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                       onTextChange={handleTextChange}
                       onEditStart={(id) => { setEditingAnnotationId(id); editingAnnotationIdRef.current = id }}
                       onEditEnd={() => { setEditingAnnotationId(null); editingAnnotationIdRef.current = null }}
+                      onTextColorChange={handleTextColorChange}
+                      onToggleBackground={handleToggleTextBackground}
                     />
                   )
                 })}
