@@ -15,8 +15,27 @@ import {
   Package,
   CheckCircle,
   LogOut,
-  Loader2
+  Loader2,
+  Calendar,
 } from 'lucide-react'
+
+const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+
+function getCurrentMonthKey() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+function getRecentMonths(count: number): { key: string; label: string }[] {
+  const months = []
+  const now = new Date()
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    months.push({ key, label: `${ARABIC_MONTHS[d.getMonth()]} ${d.getFullYear()}` })
+  }
+  return months
+}
 
 export default function WorkerMonitoringPage() {
   const router = useRouter()
@@ -27,6 +46,8 @@ export default function WorkerMonitoringPage() {
   const [activeOrderCounts, setActiveOrderCounts] = useState<Record<string, number>>({})
   const [completedOrderCounts, setCompletedOrderCounts] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey)
+  const recentMonths = getRecentMonths(18)
 
   // Access guard
   useEffect(() => {
@@ -58,6 +79,7 @@ export default function WorkerMonitoringPage() {
             status: ['completed', 'delivered'],
             noPagination: true,
             lightweight: true,
+            monthFilter: selectedMonth || undefined,
           }),
         ])
 
@@ -89,7 +111,7 @@ export default function WorkerMonitoringPage() {
     }
 
     fetchData()
-  }, [user, permissionsLoading])
+  }, [user, permissionsLoading, selectedMonth])
 
   const handleSignOut = async () => {
     await signOut()
@@ -151,15 +173,30 @@ export default function WorkerMonitoringPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Page title */}
+        {/* Page title + month filter */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="mb-6"
+          className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
         >
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800">الخياطون</h2>
-          <p className="text-sm text-gray-500 mt-1">عرض ومتابعة أداء جميع الخياطين وطلباتهم</p>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800">الخياطون</h2>
+            <p className="text-sm text-gray-500 mt-1">عرض ومتابعة أداء جميع الخياطين وطلباتهم</p>
+          </div>
+          <div className="relative self-start sm:self-auto">
+            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-500 pointer-events-none" />
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="pr-9 pl-4 py-2 text-sm border border-teal-200 rounded-xl bg-white focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100 appearance-none cursor-pointer font-medium text-gray-700 shadow-sm"
+            >
+              <option value="">كل الأشهر</option>
+              {recentMonths.map((m) => (
+                <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+            </select>
+          </div>
         </motion.div>
 
         {/* Summary stats bar */}

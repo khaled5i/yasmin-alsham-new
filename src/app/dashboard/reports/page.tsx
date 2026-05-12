@@ -530,6 +530,31 @@ export default function ReportsPage() {
       .sort((a, b) => b.count - a.count)
   }, [filteredData])
 
+  // Price Distribution
+  const priceDistribution = useMemo(() => {
+    const { currentOrders } = filteredData
+
+    const ranges = [
+      { label: 'أقل من 700', min: 0, max: 699 },
+      { label: '700', min: 700, max: 799 },
+      { label: '800', min: 800, max: 899 },
+      { label: '900', min: 900, max: 999 },
+      { label: '1000', min: 1000, max: 1099 },
+      { label: '1100', min: 1100, max: 1199 },
+      { label: '1200', min: 1200, max: 1299 },
+      { label: 'أكثر من 1200', min: 1300, max: Infinity },
+    ]
+
+    return ranges.map(range => ({
+      label: range.label,
+      count: currentOrders.filter(o => {
+        const price = Number(o.price || 0)
+        if (price < 700 && ((o as any).is_pre_booking === true || price === 1)) return false
+        return price >= range.min && price <= range.max
+      }).length,
+    }))
+  }, [filteredData])
+
   // Monthly Trend (last 6 months)
   const monthlyTrend = useMemo(() => {
     const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -1147,6 +1172,91 @@ export default function ReportsPage() {
               <h3 className="text-2xl sm:text-3xl font-bold text-teal-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.fabricStats.internal}</h3>
               <p className="text-xs sm:text-sm font-semibold text-teal-800 leading-tight">قماش داخلي</p>
             </div>
+          </div>
+        </motion.div>
+
+        {/* Price Distribution Chart */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.87 }}
+          className="mb-8"
+        >
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
+            <span>توزيع أسعار الفساتين</span>
+          </h2>
+
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300">
+            {(() => {
+              const maxCount = Math.max(...priceDistribution.map(b => b.count), 1)
+              const chartColors = [
+                'from-sky-400 to-blue-600',
+                'from-indigo-400 to-indigo-600',
+                'from-violet-400 to-violet-600',
+                'from-purple-400 to-purple-600',
+                'from-fuchsia-400 to-pink-600',
+                'from-pink-400 to-rose-600',
+                'from-rose-400 to-red-600',
+                'from-orange-400 to-amber-600',
+              ]
+              const peak = priceDistribution.reduce((a, b) => b.count > a.count ? b : a, priceDistribution[0])
+              const total = priceDistribution.reduce((sum, b) => sum + b.count, 0)
+
+              return (
+                <>
+                  {/* Bar Chart */}
+                  <div className="flex items-end gap-1.5 sm:gap-3 mb-2" style={{ height: '180px' }}>
+                    {priceDistribution.map((bucket, index) => {
+                      const barHeightPx = maxCount > 0
+                        ? Math.max((bucket.count / maxCount) * 160, bucket.count > 0 ? 6 : 0)
+                        : 0
+                      return (
+                        <div key={index} className="flex-1 flex flex-col items-center justify-end h-full">
+                          {bucket.count > 0 && (
+                            <span className="text-[10px] sm:text-xs font-bold text-gray-700 mb-1 leading-none">{bucket.count}</span>
+                          )}
+                          <motion.div
+                            initial={{ height: 0 }}
+                            animate={{ height: barHeightPx }}
+                            transition={{ duration: 0.7, delay: 0.9 + index * 0.06, ease: 'easeOut' }}
+                            className={`w-full bg-gradient-to-t ${chartColors[index]} rounded-t-md shadow-sm`}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* X-axis labels */}
+                  <div className="flex gap-1.5 sm:gap-3 border-t-2 border-gray-200 pt-2 mb-4">
+                    {priceDistribution.map((bucket, index) => (
+                      <div key={index} className="flex-1 text-center">
+                        <span className="text-[9px] sm:text-[11px] font-medium text-gray-600 leading-tight block">{bucket.label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Summary */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                    <div className="bg-pink-50 rounded-lg p-3 text-center">
+                      <p className="text-[10px] sm:text-xs text-pink-600 mb-1">أكثر فئة سعرية</p>
+                      <p className="font-bold text-pink-700 text-sm sm:text-base">{peak?.label}</p>
+                      <p className="text-[10px] text-pink-500">{peak?.count} فستان</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3 text-center">
+                      <p className="text-[10px] sm:text-xs text-blue-600 mb-1">إجمالي الفساتين</p>
+                      <p className="font-bold text-blue-700 text-sm sm:text-base">{total}</p>
+                      <p className="text-[10px] text-blue-500">في الفترة المحددة</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3 text-center col-span-2 sm:col-span-1">
+                      <p className="text-[10px] sm:text-xs text-green-600 mb-1">متوسط السعر</p>
+                      <p className="font-bold text-green-700 text-sm sm:text-base">{comprehensiveStats.averageOrderValue.toLocaleString()} ر.س</p>
+                      <p className="text-[10px] text-green-500">للفساتين المؤهلة</p>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </motion.div>
 

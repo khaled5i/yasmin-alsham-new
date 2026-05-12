@@ -101,7 +101,10 @@ export default function WorkerDetailPage() {
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false)
 
   // Completed orders filters
-  const [completedMonthFilter, setCompletedMonthFilter] = useState('')
+  const [completedMonthFilter, setCompletedMonthFilter] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [completedUnratedOnly, setCompletedUnratedOnly] = useState(false)
 
   // Reports tab
@@ -708,6 +711,21 @@ function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; o
 // Completed Orders Tab — يستخدم CompletedOrderRow للمدير
 // ============================================================================
 
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.floor(ms / 60000)
+  const totalHours = Math.floor(ms / 3600000)
+  const totalDays = Math.floor(ms / 86400000)
+  if (totalDays >= 1) {
+    const remainingHours = totalHours - totalDays * 24
+    return remainingHours > 0 ? `${totalDays} يوم و ${remainingHours} ساعة` : `${totalDays} يوم`
+  }
+  if (totalHours >= 1) {
+    const remainingMinutes = totalMinutes - totalHours * 60
+    return remainingMinutes > 0 ? `${totalHours} ساعة و ${remainingMinutes} دقيقة` : `${totalHours} ساعة`
+  }
+  return totalMinutes > 0 ? `${totalMinutes} دقيقة` : 'أقل من دقيقة'
+}
+
 function getRecentMonths(count: number): { key: string; label: string }[] {
   const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
   const months = []
@@ -886,21 +904,31 @@ function CompletedOrdersTab({
       </div>
 
       <div className="space-y-3">
-        {orders.map((order) => (
-          <CompletedOrderRow
-            key={order.id}
-            order={order}
-            isAdmin={isAdmin}
-            pricingData={pricingForms[order.id] || { orderId: order.id, price: '', notes: '', bonus: '', rating: 0 }}
-            isExpanded={expandedOrderIds.has(order.id)}
-            orderFullDetail={orderFullDetails[order.id] || null}
-            onToggle={onTogglePricing}
-            onSavePricing={onSavePricing}
-            onOpenModal={onOpenModal}
-            onLightbox={onLightbox}
-            onToggleRatingVisibility={onToggleRatingVisibility}
-          />
-        ))}
+        {orders.map((order, index) => {
+          // وقت الإنجاز = الفرق بين إنجاز هذا الطلب والطلب الذي أُنجز قبله (التالي في القائمة المرتبة تنازلياً)
+          const nextOrder = orders[index + 1]
+          let completionGap: number | null = null
+          if (order.worker_completed_at && nextOrder?.worker_completed_at) {
+            const diff = new Date(order.worker_completed_at).getTime() - new Date(nextOrder.worker_completed_at).getTime()
+            if (diff > 0) completionGap = diff
+          }
+          return (
+            <CompletedOrderRow
+              key={order.id}
+              order={order}
+              isAdmin={isAdmin}
+              pricingData={pricingForms[order.id] || { orderId: order.id, price: '', notes: '', bonus: '', rating: 0 }}
+              isExpanded={expandedOrderIds.has(order.id)}
+              orderFullDetail={orderFullDetails[order.id] || null}
+              completionGap={completionGap}
+              onToggle={onTogglePricing}
+              onSavePricing={onSavePricing}
+              onOpenModal={onOpenModal}
+              onLightbox={onLightbox}
+              onToggleRatingVisibility={onToggleRatingVisibility}
+            />
+          )
+        })}
       </div>
       {total > PAGE_SIZE && (
         <div className="mt-6">
@@ -928,6 +956,7 @@ function CompletedOrderRow({
   pricingData,
   isExpanded,
   orderFullDetail,
+  completionGap,
   onToggle,
   onSavePricing,
   onOpenModal,
@@ -939,6 +968,7 @@ function CompletedOrderRow({
   pricingData: OrderPricingData
   isExpanded: boolean
   orderFullDetail: Order | null
+  completionGap: number | null
   onToggle: (order: Order) => void
   onSavePricing: (orderId: string, data: OrderPricingData) => void
   onOpenModal: (order: Order) => void
@@ -1019,6 +1049,15 @@ function CompletedOrderRow({
                   <CheckCircle className="w-3 h-3 flex-shrink-0" />
                   أنهاه العامل:{' '}
                   {formatGregorianDate(order.worker_completed_at, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                </p>
+              )}
+              {completionGap !== null && (
+                <p className="text-xs text-indigo-600 flex items-center gap-1 font-medium">
+                  <TrendingUp className="w-3 h-3 flex-shrink-0" />
+                  وقت الإنجاز:{' '}
+                  <span className="bg-indigo-50 border border-indigo-200 rounded-md px-1.5 py-0.5">
+                    {formatDuration(completionGap)}
+                  </span>
                 </p>
               )}
               {order.due_date && (

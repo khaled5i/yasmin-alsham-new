@@ -177,7 +177,7 @@ export default function DatePickerWithStats({
   const renderDayContents = (day: number, date: Date) => {
     const dateStr = toLocalDateKey(date)
     const count = stats[dateStr] || 0
-    const isOverloaded = count > 5
+    const isOverloaded = count > 7
     const hijri = toHijri(date)
 
     const isFriday = date.getDay() === 5
@@ -219,7 +219,7 @@ export default function DatePickerWithStats({
     const dateStr = toLocalDateKey(date)
     const count = stats[dateStr] || 0
     const classes: string[] = []
-    if (count > 5) classes.push('overloaded-date')
+    if (count > 7) classes.push('overloaded-date')
     if (date.getDay() === 5) classes.push('friday-day')
     if (date.getDay() === 6) classes.push('saturday-day')
     return classes.join(' ')
@@ -334,7 +334,7 @@ export default function DatePickerWithStats({
       />
 
       {/* رسالة تحذيرية إذا كان التاريخ المختار مزدحم */}
-      {dateValue && selectedDateKey && stats[selectedDateKey] > 5 && (
+      {dateValue && selectedDateKey && stats[selectedDateKey] > 7 && (
         <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
           <p className="text-sm text-red-700 flex items-center gap-2">
             <span className="text-lg">⚠️</span>
