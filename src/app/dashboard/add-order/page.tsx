@@ -232,6 +232,10 @@ function AddOrderContent() {
   const { t, isArabic } = useTranslation()
   const router = useRouter()
 
+  // حالة مودال تأكيد الخروج
+  const [showExitConfirm, setShowExitConfirm] = useState(false)
+  const pendingExitRef = useRef<string | null>(null)
+
   // استخدام hook الحفظ التلقائي
   const {
     data: formData,
@@ -268,6 +272,37 @@ function AddOrderContent() {
   useAppResume(() => {
     loadWorkers()
   })
+
+  // اعتراض زر الرجوع في المتصفح/الجهاز عند وجود بيانات في النموذج
+  useEffect(() => {
+    if (isFormDataEmpty(formData)) return
+    // إضافة entry وهمي لاعتراض popstate
+    window.history.pushState(null, '', window.location.href)
+    const handlePopState = () => {
+      // إعادة الـ entry حتى لا ينتقل المتصفح للخلف فعلياً
+      window.history.pushState(null, '', window.location.href)
+      pendingExitRef.current = null
+      setShowExitConfirm(true)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [formData])
+
+  // دالة الخروج المشروط: تتحقق من البيانات قبل التنقل
+  const handleExitAttempt = useCallback((destination: string) => {
+    if (isFormDataEmpty(formData)) {
+      router.push(destination)
+      return
+    }
+    pendingExitRef.current = destination
+    setShowExitConfirm(true)
+  }, [formData, router])
+
+  // تأكيد الخروج: الانتقال مع الإبقاء على البيانات المحفوظة مؤقتاً
+  const confirmExit = useCallback(() => {
+    setShowExitConfirm(false)
+    router.push(pendingExitRef.current ?? '/dashboard')
+  }, [router])
 
   // إظهار رسالة عند استرجاع البيانات المحفوظة
   useEffect(() => {
@@ -1395,13 +1430,14 @@ function AddOrderContent() {
           transition={{ duration: 0.6 }}
           className="mb-8"
         >
-          <Link
-            href="/dashboard"
+          <button
+            type="button"
+            onClick={() => handleExitAttempt('/dashboard')}
             className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300"
           >
             <ArrowRight className="w-4 h-4" />
             <span>{t('back_to_dashboard')}</span>
-          </Link>
+          </button>
         </motion.div>
 
         {/* العنوان */}
@@ -1925,16 +1961,55 @@ function AddOrderContent() {
                 )}
               </button>
 
-              <Link
-                href="/dashboard"
+              <button
+                type="button"
+                onClick={() => handleExitAttempt('/dashboard')}
                 className="bg-gradient-to-r from-purple-100 to-pink-100 hover:from-purple-200 hover:to-pink-200 text-purple-800 py-4 px-8 text-lg rounded-lg font-semibold border border-purple-200 hover:border-purple-300 transition-all duration-300 inline-flex items-center justify-center"
               >
                 {t('cancel')}
-              </Link>
+              </button>
             </div>
           </form >
         </motion.div >
       </div >
+
+      {/* مودال تأكيد الخروج */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowExitConfirm(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-auto">
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-7 h-7 text-amber-500" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                {isArabic ? 'هل تريد الخروج؟' : 'Are you sure you want to leave?'}
+              </h3>
+              <p className="text-sm text-gray-500">
+                {isArabic
+                  ? 'لديك بيانات غير محفوظة في النموذج. هل تريد الخروج وفقدان هذه البيانات؟'
+                  : 'You have unsaved data in the form. Do you want to leave and lose this data?'}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={confirmExit}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl font-semibold text-sm transition-colors"
+              >
+                {isArabic ? 'نعم، خروج' : 'Yes, leave'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowExitConfirm(false)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 px-4 rounded-xl font-semibold text-sm transition-colors"
+              >
+                {isArabic ? 'البقاء في الصفحة' : 'Stay on page'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* مودال الطباعة */}
       {savedOrderForPrint && (

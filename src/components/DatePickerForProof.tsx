@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import DatePicker from 'react-datepicker'
 import { shift } from '@floating-ui/dom'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -71,6 +71,9 @@ export default function DatePickerForProof({
   const [proofStats, setProofStats] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const viewedDateRef = useRef(new Date())
+  const decreaseMonthRef = useRef<(() => void) | null>(null)
+  const increaseMonthRef = useRef<(() => void) | null>(null)
+  const touchStartXRef = useRef<number | null>(null)
 
   // تحويل التاريخ من string إلى Date
   const dateValue = parseDateKeyForPicker(selectedDate)
@@ -121,6 +124,41 @@ export default function DatePickerForProof({
     }
   }
 
+  // دعم السحب يمين/يسار على الجوال للتنقل بين الشهور
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX
+  }, [])
+
+  const handleTouchEnd = useCallback((e: TouchEvent) => {
+    if (touchStartXRef.current === null) return
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current
+    touchStartXRef.current = null
+    if (Math.abs(deltaX) < 50) return
+    if (deltaX > 0) {
+      decreaseMonthRef.current?.()
+    } else {
+      increaseMonthRef.current?.()
+    }
+  }, [])
+
+  const handleCalendarOpen = useCallback(() => {
+    setTimeout(() => {
+      const calendar = document.querySelector('.custom-calendar-proof-hijri')
+      if (calendar) {
+        calendar.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true })
+        calendar.addEventListener('touchend', handleTouchEnd as EventListener)
+      }
+    }, 60)
+  }, [handleTouchStart, handleTouchEnd])
+
+  const handleCalendarClose = useCallback(() => {
+    const calendar = document.querySelector('.custom-calendar-proof-hijri')
+    if (calendar) {
+      calendar.removeEventListener('touchstart', handleTouchStart as EventListener)
+      calendar.removeEventListener('touchend', handleTouchEnd as EventListener)
+    }
+  }, [handleTouchStart, handleTouchEnd])
+
   // دالة لتخصيص عرض كل يوم في التقويم مع التاريخ الهجري
   const renderDayContents = (day: number, date: Date) => {
     const dateStr = toLocalDateKey(date)
@@ -143,13 +181,13 @@ export default function DatePickerForProof({
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
         {(isFriday || isSaturday) && (
-          <span className="text-[10px] text-black font-bold leading-none">✕</span>
+          <span className="cal-weekend-mark text-[10px] text-black font-bold leading-none">✕</span>
         )}
-        <span className={`text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
-        <span className="text-[12px] leading-none mt-0.5 font-medium" style={{ color: hijriDayColor }}>{hijri.day}</span>
+        <span className={`cal-day-num text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
+        <span className="cal-hijri-num text-[12px] leading-none mt-0.5 font-medium" style={{ color: hijriDayColor }}>{hijri.day}</span>
         {proofCount > 0 && (
           <span
-            className={`text-[12px] font-semibold leading-none ${isOverloaded
+            className={`cal-order-count text-[12px] font-semibold leading-none ${isOverloaded
               ? 'text-red-600'
               : 'text-green-600'
               }`}
@@ -187,6 +225,8 @@ export default function DatePickerForProof({
     nextMonthButtonDisabled: boolean
   }) => {
     viewedDateRef.current = date
+    decreaseMonthRef.current = decreaseMonth
+    increaseMonthRef.current = increaseMonth
     const gregorianMonth = date.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })
     const hijriMonthsInView = getHijriMonthsInView(date)
 
@@ -275,6 +315,8 @@ export default function DatePickerForProof({
           // منع الكتابة اليدوية مع السماح بفتح التقويم
           e.preventDefault()
         }}
+        onCalendarOpen={handleCalendarOpen}
+        onCalendarClose={handleCalendarClose}
       />
 
       {/* رسالة تحذيرية إذا كان التاريخ المختار مزدحم */}
@@ -422,15 +464,34 @@ export default function DatePickerForProof({
         }
 
         @media (max-width: 640px) {
+          .custom-calendar-proof-hijri {
+            max-width: calc(100vw - 16px);
+          }
+
+          .custom-calendar-proof-hijri .react-datepicker__month {
+            margin: 0.15rem;
+          }
+
           .custom-calendar-proof-hijri .react-datepicker__day {
-            width: 3.375rem;
-            height: 3.75rem;
-            margin: 0.075rem;
+            width: 2.5rem;
+            height: 2.8rem;
+            margin: 0.05rem;
           }
 
           .custom-calendar-proof-hijri .react-datepicker__day-name {
-            width: 3.375rem;
-            font-size: 0.9rem;
+            width: 2.5rem;
+            font-size: 0.75rem;
+            margin: 0.05rem;
+          }
+
+          .custom-calendar-proof-hijri .react-datepicker__day .cal-day-num {
+            font-size: 0.78rem !important;
+          }
+
+          .custom-calendar-proof-hijri .react-datepicker__day .cal-hijri-num,
+          .custom-calendar-proof-hijri .react-datepicker__day .cal-order-count,
+          .custom-calendar-proof-hijri .react-datepicker__day .cal-weekend-mark {
+            font-size: 0.6rem !important;
           }
         }
 

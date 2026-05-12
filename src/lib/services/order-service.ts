@@ -535,11 +535,28 @@ export const orderService = {
 
   /**
    * الحصول على جميع الطلبات (مع فلاتر اختيارية وترقيم الصفحات)
-   * 
+   *
    * PERFORMANCE: Uses light column projection (ORDER_LIST_COLUMNS) to avoid
    * fetching heavy JSONB columns (measurements with base64 images).
    * Supports server-side pagination and status array filtering.
    */
+
+  /**
+   * Generates search variants for Arabic text to handle character equivalences:
+   * أ/إ/آ ↔ ا  and  ة ↔ ه
+   * Returns deduplicated array of all variants so ilike OR covers all forms.
+   */
+  _getArabicSearchVariants(term: string): string[] {
+    // Normalize: unify all alef variants → ا, ta marbuta → ه
+    const normalized = term.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه')
+    // Reverse: if normalized has ه, also try ة (DB may store ة)
+    const withTaMarbuta = normalized.replace(/ه/g, 'ة')
+    // If normalized has word-initial ا, also try أ (DB may store أ)
+    const withHamza = normalized.replace(/(^| )ا/g, '$1أ')
+    const withBoth = withHamza.replace(/ه/g, 'ة')
+    return [...new Set([term, normalized, withTaMarbuta, withHamza, withBoth])]
+  },
+
   async getAll(filters?: {
     status?: string | string[]  // single status or array of statuses
     worker_id?: string
@@ -593,19 +610,26 @@ export const orderService = {
       }
 
       // Server-side search: client_name, client_phone, order_number, fabric
+      // Arabic-aware: generates variants for أ/ا and ة/ه equivalences
       if (filters?.search?.trim()) {
         const safeTerm = filters.search.trim()
         const words = safeTerm.split(/\s+/).filter(Boolean)
+        const buildWordConditions = (word: string): string => {
+          const nameVariants = orderService._getArabicSearchVariants(word)
+          const nameConditions = nameVariants.map(v => `client_name.ilike.%${v}%`)
+          return [
+            ...nameConditions,
+            `client_phone.ilike.%${word}%`,
+            `order_number.ilike.%${word}%`,
+            `fabric.ilike.%${word}%`,
+          ].join(',')
+        }
         if (words.length <= 1) {
-          query = query.or(
-            `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,order_number.ilike.%${safeTerm}%,fabric.ilike.%${safeTerm}%`
-          )
+          query = query.or(buildWordConditions(safeTerm))
         } else {
           // Multi-word: every word must appear in at least one searchable field (AND between words)
           for (const word of words) {
-            query = query.or(
-              `client_name.ilike.%${word}%,client_phone.ilike.%${word}%,order_number.ilike.%${word}%,fabric.ilike.%${word}%`
-            )
+            query = query.or(buildWordConditions(word))
           }
         }
       }
