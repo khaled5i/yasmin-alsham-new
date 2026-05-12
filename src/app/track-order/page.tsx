@@ -113,9 +113,7 @@ export default function TrackOrderPage() {
       pending: { label: 'في الانتظار', color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
       assigned: { label: 'تم التعيين', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
       in_progress: { label: 'قيد التنفيذ', color: 'text-purple-600', bgColor: 'bg-purple-100', icon: Package },
-      completed: adminConfirmed
-        ? { label: 'جاهز للاستلام', color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle }
-        : { label: 'قيد الإنهاء', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
+      completed: { label: 'مكتمل وجاهز للتسليم', color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
       delivered: { label: 'تم التسليم', color: 'text-green-700', bgColor: 'bg-green-200', icon: CheckCircle }
     }
     return statusMap[status as keyof typeof statusMap] || statusMap.pending
@@ -250,7 +248,7 @@ export default function TrackOrderPage() {
                 </div>
               </div>
 
-              {orderData.status === 'completed' && orderData.admin_confirmed && (
+              {orderData.status === 'completed' && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -260,9 +258,9 @@ export default function TrackOrderPage() {
                   <div className="flex items-center space-x-3 space-x-reverse">
                     <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
                     <div>
-                      <p className="font-medium text-green-800 text-sm">طلبك جاهز للاستلام!</p>
+                      <p className="font-medium text-green-800 text-sm">الطلب مكتمل وجاهز للتسليم</p>
                       <p className="text-xs text-green-700 mt-0.5">
-                        بإمكانك الحضور واستلام الفستان في أي وقت تريدينه
+                        يرجى إحضار المتبقي من الحساب كاش
                       </p>
                     </div>
                   </div>
