@@ -457,17 +457,22 @@ export default function ReportsPage() {
   // Worker Performance
   const workerPerformance = useMemo(() => {
     const { currentOrders } = filteredData
+    const totalRevenue = currentOrders
+      .filter(o => o.status === 'completed' || o.status === 'delivered')
+      .reduce((sum, o) => sum + Number(o.price || 0), 0)
 
     return workers.map(worker => {
       const workerOrders = currentOrders.filter(o => o.worker_id === worker.id)
       const completedOrders = workerOrders.filter(o => o.status === 'completed' || o.status === 'delivered')
+      const inProgressOrders = workerOrders.filter(o => o.status === 'in_progress')
+      const pendingOrders = workerOrders.filter(o => o.status === 'pending')
       const revenue = completedOrders.reduce((sum, o) => sum + Number(o.price || 0), 0)
+      const revenueShare = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0
 
       const completionRate = workerOrders.length > 0
         ? Number(((completedOrders.length / workerOrders.length) * 100).toFixed(1))
         : 0
 
-      // Calculate average completion time for this worker
       const completedWithDates = completedOrders.filter(o => o.delivery_date)
       const avgTime = completedWithDates.length > 0
         ? Math.round(
@@ -479,20 +484,63 @@ export default function ReportsPage() {
         )
         : 0
 
+      // Piece count: orders where worker completed (worker_completed_at) within the period and have worker_price > 0
+      const { dateRange } = filteredData
+      const pieceCount = orders.filter(o => {
+        if (o.worker_id !== worker.id) return false
+        if (Number((o as any).worker_price || 0) <= 0) return false
+        const completedAt = (o as any).worker_completed_at
+        if (!completedAt) return false
+        const d = new Date(completedAt)
+        return d >= dateRange.startDate && d <= dateRange.endDate
+      }).length
+
+      // Payroll data for this worker in the selected period
+      const workerPayrolls = workerSalaries.filter(s => s.worker_id === worker.id)
+      const totalNetDue = workerPayrolls.reduce((sum, s) => sum + Number(s.net_due || 0), 0)
+      const totalAdvances = workerPayrolls.reduce((sum, s) => sum + Number(s.advances_total || 0), 0)
+      const totalDeductions = workerPayrolls.reduce((sum, s) => sum + Number(s.deductions_total || 0), 0)
+      const totalPaid = workerPayrolls.reduce((sum, s) => sum + Number(s.total_paid || 0), 0)
+      const latestPayroll = workerPayrolls.length > 0 ? workerPayrolls[0] : null
+
+      // Performance score (0-100): weighted composite
+      const speedScore = avgTime > 0
+        ? Math.max(0, Math.min(100, 100 - avgTime * 2))
+        : (completedOrders.length > 0 ? 70 : 0)
+      const revenueScore = Math.min(100, revenueShare * 4)
+      const perfScore = workerOrders.length > 0
+        ? Math.round(completionRate * 0.5 + speedScore * 0.3 + revenueScore * 0.2)
+        : 0
+
       return {
         id: worker.id,
-        name: worker.user?.full_name || worker.user?.email || 'عامل',
+        name: (worker as any).name || worker.user?.full_name || worker.user?.email || 'عامل',
+        specialty: worker.specialty || '',
+        workerType: worker.worker_type,
+        isAvailable: worker.is_available,
         totalOrders: workerOrders.length,
         completedOrders: completedOrders.length,
+        inProgressOrders: inProgressOrders.length,
+        pendingOrders: pendingOrders.length,
         completionRate,
         revenue,
+        revenueShare: Number(revenueShare.toFixed(1)),
         avgCompletionTime: avgTime,
+        netDue: totalNetDue,
+        advances: totalAdvances,
+        deductions: totalDeductions,
+        pieceCount,
+        totalPaid,
+        salaryStatus: latestPayroll?.salary_status ?? null,
+        salaryType: latestPayroll?.salary_type ?? null,
+        hasPayrollData: workerPayrolls.length > 0,
+        perfScore,
         efficiency: completionRate >= 80 ? 'excellent' : completionRate >= 60 ? 'good' : 'needs_improvement'
       }
     })
-      .filter(w => w.totalOrders > 0)
-      .sort((a, b) => b.revenue - a.revenue)
-  }, [workers, filteredData])
+      .filter(w => w.totalOrders > 0 || w.hasPayrollData)
+      .sort((a, b) => b.perfScore - a.perfScore)
+  }, [workers, filteredData, workerSalaries, orders])
 
   // Orders by Type
   const ordersByType = useMemo(() => {
@@ -1260,132 +1308,310 @@ export default function ReportsPage() {
           </div>
         </motion.div>
 
-        <div className="grid lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-8">
-          {/* Worker Performance */}
-          <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.9 }}
-            className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300"
-          >
-            <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+        {/* Worker Performance - Full Width */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.9 }}
+          className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300 mb-8"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
+            <h3 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center gap-2">
               <Award className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
               <span>أداء العمال</span>
             </h3>
+            {workerPerformance.length > 0 && (
+              <span className="text-xs sm:text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                {workerPerformance.filter(w => w.totalOrders > 0).length} عامل نشط في الفترة
+              </span>
+            )}
+          </div>
 
-            <div className="space-y-3 sm:space-y-4">
-              {workerPerformance.slice(0, 5).map((worker, index) => (
-                <div key={worker.id} className="relative overflow-hidden bg-gradient-to-r from-pink-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-pink-200 hover:shadow-md transition-all duration-300">
-                  <div className="flex items-center justify-between gap-2 sm:gap-3">
-                    <div className="flex items-center space-x-2 sm:space-x-3 space-x-reverse flex-1 min-w-0">
-                      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md text-sm sm:text-base ${index === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
-                        index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500' :
-                          index === 2 ? 'bg-gradient-to-br from-orange-400 to-orange-600' :
-                            'bg-gradient-to-br from-pink-400 to-pink-600'
-                        }`}>
-                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
+          {/* Summary Stats Bar */}
+          {workerPerformance.length > 0 && (() => {
+            const activeWorkers = workerPerformance.filter(w => w.totalOrders > 0)
+            const avgCompletionRate = activeWorkers.length > 0
+              ? Math.round(activeWorkers.reduce((s, w) => s + w.completionRate, 0) / activeWorkers.length)
+              : 0
+            const totalCompleted = workerPerformance.reduce((s, w) => s + w.completedOrders, 0)
+            const totalPieces = workerPerformance.reduce((s, w) => s + w.pieceCount, 0)
+            const totalRevenue = workerPerformance.reduce((s, w) => s + w.revenue, 0)
+            const totalSalaries = workerPerformance.reduce((s, w) => s + w.netDue, 0)
+
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-3 text-center border border-blue-200">
+                  <p className="text-2xl sm:text-3xl font-bold text-blue-700">{activeWorkers.length}</p>
+                  <p className="text-xs text-blue-600 mt-0.5">عامل نشط</p>
+                </div>
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 text-center border border-green-200">
+                  <p className="text-2xl sm:text-3xl font-bold text-green-700">{avgCompletionRate}%</p>
+                  <p className="text-xs text-green-600 mt-0.5">متوسط الإنجاز</p>
+                </div>
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-3 text-center border border-purple-200">
+                  {totalPieces > 0 ? (
+                    <>
+                      <p className="text-2xl sm:text-3xl font-bold text-purple-700">{totalPieces}</p>
+                      <p className="text-xs text-purple-600 mt-0.5">إجمالي القطع</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-2xl sm:text-3xl font-bold text-purple-700">{totalCompleted}</p>
+                      <p className="text-xs text-purple-600 mt-0.5">طلب مكتمل</p>
+                    </>
+                  )}
+                </div>
+                <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-3 text-center border border-orange-200">
+                  {totalSalaries > 0 ? (
+                    <>
+                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalSalaries.toLocaleString()}</p>
+                      <p className="text-xs text-orange-600 mt-0.5">إجمالي الرواتب ر.س</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalRevenue.toLocaleString()}</p>
+                      <p className="text-xs text-orange-600 mt-0.5">إجمالي الإيرادات ر.س</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* درجة الأداء - توضيح */}
+          {workerPerformance.length > 0 && (
+            <div className="flex items-center gap-2 mb-4 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+              <Activity className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <span>درجة الأداء محسوبة من: نسبة الإنجاز (50%) + سرعة التسليم (30%) + مساهمة الإيرادات (20%)</span>
+            </div>
+          )}
+
+          {/* Worker Cards */}
+          <div className="space-y-3 sm:space-y-4">
+            {workerPerformance.map((worker, index) => {
+              const workerTypeLabels: Record<string, string> = {
+                tailor: 'خياط',
+                fabric_store_manager: 'مسؤول القماش',
+                accountant: 'محاسب',
+                general_manager: 'مدير عام',
+                workshop_manager: 'مدير الورشة',
+              }
+              const salaryStatusConfig: Record<string, { label: string; color: string }> = {
+                paid: { label: 'مدفوع', color: 'bg-green-100 text-green-700 border-green-200' },
+                partial: { label: 'مدفوع جزئياً', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+                unpaid: { label: 'غير مدفوع', color: 'bg-red-100 text-red-700 border-red-200' },
+                negative: { label: 'رصيد سالب', color: 'bg-red-100 text-red-700 border-red-200' },
+                zero: { label: 'صفر', color: 'bg-gray-100 text-gray-600 border-gray-200' },
+              }
+              const rankGradients = [
+                'from-yellow-400 to-amber-500',
+                'from-slate-300 to-slate-500',
+                'from-orange-400 to-amber-600',
+              ]
+              const rankGradient = index < 3 ? rankGradients[index] : 'from-pink-400 to-rose-500'
+              const rankLabel = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : String(index + 1)
+
+              const scoreColor = worker.perfScore >= 75 ? 'text-green-600' :
+                worker.perfScore >= 50 ? 'text-blue-600' :
+                  worker.perfScore >= 25 ? 'text-orange-500' : 'text-red-500'
+              const scoreRing = worker.perfScore >= 75 ? 'border-green-400 bg-green-50' :
+                worker.perfScore >= 50 ? 'border-blue-400 bg-blue-50' :
+                  worker.perfScore >= 25 ? 'border-orange-400 bg-orange-50' : 'border-red-400 bg-red-50'
+              const barColor = worker.completionRate >= 80
+                ? 'from-green-400 to-emerald-500'
+                : worker.completionRate >= 60
+                  ? 'from-blue-400 to-cyan-500'
+                  : 'from-orange-400 to-red-400'
+
+              return (
+                <div key={worker.id} className="bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-300 p-4">
+                  {/* Main row */}
+                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+
+                    {/* Rank + Name + Completion bar */}
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${rankGradient} flex items-center justify-center text-white font-bold shadow-md flex-shrink-0 text-sm leading-none`}>
+                        {rankLabel}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-gray-800 truncate text-sm sm:text-base">{worker.name}</h4>
-                        <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-gray-600 mt-0.5 sm:mt-1 flex-wrap">
-                          <span className="flex items-center gap-0.5 sm:gap-1">
-                            <Package className="w-3 h-3" />
-                            <span className="hidden sm:inline">{worker.totalOrders} طلب</span>
-                            <span className="sm:hidden">{worker.totalOrders}</span>
-                          </span>
-                          <span className="flex items-center gap-0.5 sm:gap-1">
-                            <CheckCircle className="w-3 h-3" />
-                            {worker.completionRate}%
-                          </span>
-                          {worker.avgCompletionTime > 0 && (
-                            <span className="hidden sm:flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {worker.avgCompletionTime} يوم
+                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                          <h4 className="font-bold text-gray-800 text-sm sm:text-base">{worker.name}</h4>
+                          {worker.workerType && (
+                            <span className="text-[10px] sm:text-xs bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full border border-pink-200 leading-none">
+                              {workerTypeLabels[worker.workerType] || worker.workerType}
+                            </span>
+                          )}
+                          {worker.specialty && (
+                            <span className="text-[10px] sm:text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200 leading-none hidden sm:inline-block">
+                              {worker.specialty}
+                            </span>
+                          )}
+                          {!worker.isAvailable && worker.totalOrders === 0 && (
+                            <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full border border-gray-200 leading-none">
+                              غير متاح
                             </span>
                           )}
                         </div>
+                        {/* Completion rate bar */}
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${worker.completionRate}%` }}
+                              transition={{ duration: 1, delay: 1 + index * 0.08 }}
+                              className={`h-full rounded-full bg-gradient-to-r ${barColor}`}
+                            />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-600 flex-shrink-0 w-10 text-left">{worker.completionRate}%</span>
+                        </div>
+                      </div>
+
+                      {/* Performance score ring */}
+                      <div className={`w-12 h-12 rounded-full border-4 ${scoreRing} flex flex-col items-center justify-center flex-shrink-0`}>
+                        <span className={`text-sm font-bold ${scoreColor} leading-none`}>{worker.perfScore}</span>
+                        <span className="text-[9px] text-gray-400 leading-none mt-0.5">أداء</span>
                       </div>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="font-bold text-green-600 text-sm sm:text-base lg:text-lg leading-tight">{worker.revenue.toLocaleString()} ر.س</p>
-                      <div className={`text-[10px] sm:text-xs font-semibold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full inline-block mt-0.5 sm:mt-1 ${worker.efficiency === 'excellent' ? 'bg-green-100 text-green-700' :
-                        worker.efficiency === 'good' ? 'bg-blue-100 text-blue-700' :
-                          'bg-orange-100 text-orange-700'
-                        }`}>
-                        {worker.efficiency === 'excellent' ? 'ممتاز' : worker.efficiency === 'good' ? 'جيد' : 'يحتاج تحسين'}
+
+                    {/* Stats mini-grid */}
+                    <div className="grid grid-cols-4 sm:grid-cols-4 gap-2 sm:w-56 lg:w-64 flex-shrink-0">
+                      <div className="bg-blue-50 rounded-lg p-2 text-center border border-blue-100">
+                        <p className="text-sm sm:text-base font-bold text-blue-700 leading-none">{worker.totalOrders}</p>
+                        <p className="text-[9px] sm:text-[10px] text-blue-600 mt-0.5">إجمالي</p>
+                      </div>
+                      <div className="bg-green-50 rounded-lg p-2 text-center border border-green-100">
+                        <p className="text-sm sm:text-base font-bold text-green-700 leading-none">{worker.completedOrders}</p>
+                        <p className="text-[9px] sm:text-[10px] text-green-600 mt-0.5">مكتمل</p>
+                      </div>
+                      <div className="bg-orange-50 rounded-lg p-2 text-center border border-orange-100">
+                        <p className="text-sm sm:text-base font-bold text-orange-700 leading-none">{worker.inProgressOrders}</p>
+                        <p className="text-[9px] sm:text-[10px] text-orange-600 mt-0.5">جاري</p>
+                      </div>
+                      <div className="bg-pink-50 rounded-lg p-2 text-center border border-pink-100">
+                        <p className="text-xs sm:text-sm font-bold text-pink-700 leading-none">{worker.revenue > 999 ? `${(worker.revenue / 1000).toFixed(1)}k` : worker.revenue.toLocaleString()}</p>
+                        <p className="text-[9px] sm:text-[10px] text-pink-600 mt-0.5">ر.س</p>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
 
-              {workerPerformance.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  <Users className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                  <p>لا توجد بيانات عمال في هذه الفترة</p>
-                </div>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Orders by Type */}
-          <motion.div
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 1.0 }}
-            className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300"
-          >
-            <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
-              <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
-              <span>الطلبات حسب النوع</span>
-            </h3>
-
-            <div className="space-y-3 sm:space-y-4 lg:space-y-5">
-              {ordersByType.map((type, index) => {
-                const colors = [
-                  { bg: 'from-pink-500 to-rose-500', text: 'text-pink-700', light: 'bg-pink-50' },
-                  { bg: 'from-purple-500 to-indigo-500', text: 'text-purple-700', light: 'bg-purple-50' },
-                  { bg: 'from-blue-500 to-cyan-500', text: 'text-blue-700', light: 'bg-blue-50' },
-                  { bg: 'from-green-500 to-emerald-500', text: 'text-green-700', light: 'bg-green-50' },
-                  { bg: 'from-orange-500 to-yellow-500', text: 'text-orange-700', light: 'bg-orange-50' }
-                ]
-                const color = colors[index % colors.length]
-
-                return (
-                  <div key={index} className="space-y-1.5 sm:space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`font-bold ${color.text} text-sm sm:text-base truncate`}>{type.type}</span>
-                      <div className="flex items-center space-x-2 sm:space-x-3 space-x-reverse flex-shrink-0">
-                        <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">{type.count} طلب</span>
-                        <span className={`text-xs sm:text-sm font-bold ${color.text} ${color.light} px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full`}>
-                          {type.percentage}%
+                  {/* Extra info row */}
+                  {(worker.avgCompletionTime > 0 || worker.hasPayrollData || worker.pendingOrders > 0 || worker.revenueShare > 0) && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-1.5 sm:gap-2">
+                      {worker.avgCompletionTime > 0 && (
+                        <span className="flex items-center gap-1 bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-[10px] sm:text-xs">
+                          <Clock className="w-3 h-3 flex-shrink-0" />
+                          <span>متوسط التسليم: {worker.avgCompletionTime} يوم</span>
                         </span>
-                        <span className="text-xs sm:text-sm font-semibold text-green-600">
-                          {type.revenue.toLocaleString()} ر.س
+                      )}
+                      {worker.revenueShare > 0 && (
+                        <span className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
+                          <Percent className="w-3 h-3 flex-shrink-0" />
+                          <span>{worker.revenueShare}% من الإيرادات</span>
                         </span>
-                      </div>
+                      )}
+                      {worker.pendingOrders > 0 && (
+                        <span className="flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
+                          <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                          <span>{worker.pendingOrders} قيد الانتظار</span>
+                        </span>
+                      )}
+                      {worker.hasPayrollData && worker.netDue > 0 && (
+                        <span className="flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
+                          <Receipt className="w-3 h-3 flex-shrink-0" />
+                          <span>راتب مستحق: {worker.netDue.toLocaleString()} ر.س</span>
+                        </span>
+                      )}
+                      {worker.hasPayrollData && worker.advances > 0 && (
+                        <span className="flex items-center gap-1 bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
+                          <DollarSign className="w-3 h-3 flex-shrink-0" />
+                          <span>سلف: {worker.advances.toLocaleString()} ر.س</span>
+                        </span>
+                      )}
+                      {worker.pieceCount > 0 && (
+                        <span className="flex items-center gap-1 bg-teal-100 text-teal-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
+                          <Scissors className="w-3 h-3 flex-shrink-0" />
+                          <span>{worker.pieceCount} قطعة منجزة</span>
+                        </span>
+                      )}
+                      {worker.salaryStatus && salaryStatusConfig[worker.salaryStatus] && (
+                        <span className={`flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] sm:text-xs ${salaryStatusConfig[worker.salaryStatus].color}`}>
+                          <span>{salaryStatusConfig[worker.salaryStatus].label}</span>
+                        </span>
+                      )}
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 sm:h-3 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${type.percentage}%` }}
-                        transition={{ duration: 1, delay: 1.2 + index * 0.1 }}
-                        className={`bg-gradient-to-r ${color.bg} h-2.5 sm:h-3 rounded-full shadow-sm`}
-                      ></motion.div>
+                  )}
+                </div>
+              )
+            })}
+
+            {workerPerformance.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <Users className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                <p className="text-base font-medium">لا توجد بيانات عمال في هذه الفترة</p>
+                <p className="text-sm text-gray-400 mt-1">جرب تغيير نطاق التاريخ</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Orders by Type */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 1.0 }}
+          className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300 mb-8"
+        >
+          <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
+            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
+            <span>الطلبات حسب النوع</span>
+          </h3>
+
+          <div className="space-y-3 sm:space-y-4 lg:space-y-5">
+            {ordersByType.map((type, index) => {
+              const colors = [
+                { bg: 'from-pink-500 to-rose-500', text: 'text-pink-700', light: 'bg-pink-50' },
+                { bg: 'from-purple-500 to-indigo-500', text: 'text-purple-700', light: 'bg-purple-50' },
+                { bg: 'from-blue-500 to-cyan-500', text: 'text-blue-700', light: 'bg-blue-50' },
+                { bg: 'from-green-500 to-emerald-500', text: 'text-green-700', light: 'bg-green-50' },
+                { bg: 'from-orange-500 to-yellow-500', text: 'text-orange-700', light: 'bg-orange-50' }
+              ]
+              const color = colors[index % colors.length]
+
+              return (
+                <div key={index} className="space-y-1.5 sm:space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`font-bold ${color.text} text-sm sm:text-base truncate`}>{type.type}</span>
+                    <div className="flex items-center space-x-2 sm:space-x-3 space-x-reverse flex-shrink-0">
+                      <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">{type.count} طلب</span>
+                      <span className={`text-xs sm:text-sm font-bold ${color.text} ${color.light} px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full`}>
+                        {type.percentage}%
+                      </span>
+                      <span className="text-xs sm:text-sm font-semibold text-green-600">
+                        {type.revenue.toLocaleString()} ر.س
+                      </span>
                     </div>
                   </div>
-                )
-              })}
-
-              {ordersByType.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                  <p>لا توجد طلبات في هذه الفترة</p>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 sm:h-3 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${type.percentage}%` }}
+                      transition={{ duration: 1, delay: 1.2 + index * 0.1 }}
+                      className={`bg-gradient-to-r ${color.bg} h-2.5 sm:h-3 rounded-full shadow-sm`}
+                    ></motion.div>
+                  </div>
                 </div>
-              )}
-            </div>
-          </motion.div>
-        </div>
+              )
+            })}
+
+            {ordersByType.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                <p>لا توجد طلبات في هذه الفترة</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
 
 
 

@@ -181,16 +181,13 @@ export default function DatePickerForProof({
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center py-0.5">
         {(isFriday || isSaturday) && (
-          <span className="cal-weekend-mark text-[10px] text-black font-bold leading-none">✕</span>
+          <span className="cal-weekend-mark text-[10px] text-gray-500 font-bold leading-none">✕</span>
         )}
         <span className={`cal-day-num text-base leading-none ${isOverloaded ? 'font-bold' : ''}`}>{day}</span>
         <span className="cal-hijri-num text-[12px] leading-none mt-0.5 font-medium" style={{ color: hijriDayColor }}>{hijri.day}</span>
         {proofCount > 0 && (
           <span
-            className={`cal-order-count text-[12px] font-semibold leading-none ${isOverloaded
-              ? 'text-red-600'
-              : 'text-green-600'
-              }`}
+            className="cal-order-count text-[14px] font-bold leading-none text-red-700"
           >
             ({proofCount})
           </span>
@@ -228,6 +225,7 @@ export default function DatePickerForProof({
     decreaseMonthRef.current = decreaseMonth
     increaseMonthRef.current = increaseMonth
     const gregorianMonth = date.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })
+    const monthNumber = date.getMonth() + 1
     const hijriMonthsInView = getHijriMonthsInView(date)
 
     return (
@@ -244,7 +242,7 @@ export default function DatePickerForProof({
         </button>
         <div className="text-center">
           <div className="text-sm font-bold text-green-900">
-            {gregorianMonth}
+            {gregorianMonth} <span className="font-normal text-green-600">({monthNumber})</span>
           </div>
           <div className="text-xs font-semibold leading-relaxed">
             {hijriMonthsInView.length === 1 ? (
@@ -421,22 +419,22 @@ export default function DatePickerForProof({
         }
 
         .custom-calendar-proof-hijri .react-datepicker__day.friday-day-proof {
-          background-color: #888888;
+          background-color: #aaaaaa;
           color: white;
         }
 
         .custom-calendar-proof-hijri .react-datepicker__day.friday-day-proof:hover {
-          background-color: #666666;
-          color: white;
-        }
-
-        .custom-calendar-proof-hijri .react-datepicker__day.saturday-day-proof {
           background-color: #888888;
           color: white;
         }
 
+        .custom-calendar-proof-hijri .react-datepicker__day.saturday-day-proof {
+          background-color: #aaaaaa;
+          color: white;
+        }
+
         .custom-calendar-proof-hijri .react-datepicker__day.saturday-day-proof:hover {
-          background-color: #666666;
+          background-color: #888888;
           color: white;
         }
 

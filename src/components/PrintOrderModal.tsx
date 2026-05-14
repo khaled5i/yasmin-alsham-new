@@ -1005,25 +1005,25 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
                 )}
               </div>
             )}
-          </div>
 
-          {/* خيار الطباعة بالهندية */}
-          {hindiDesignCommentsSnapshots.length > 0 && (
-            <div className="px-6 pb-4">
-              <label className="flex items-center gap-3 cursor-pointer bg-orange-50 border border-orange-200 rounded-lg p-3 hover:bg-orange-100 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={includeHindiPrint}
-                  onChange={(e) => setIncludeHindiPrint(e.target.checked)}
-                  className="w-4 h-4 accent-orange-500"
-                />
-                <div>
-                  <span className="font-medium text-orange-800">طباعة نسخة هندية (हिंदी)</span>
-                  <p className="text-xs text-orange-600 mt-0.5">سيتم طباعة الطلب مرتين: الأولى بالعربية والثانية بالهندية</p>
-                </div>
-              </label>
-            </div>
-          )}
+            {/* خيار الطباعة بالهندية */}
+            {hindiDesignCommentsSnapshots.length > 0 && (
+              <div className="pt-2">
+                <label className="flex items-center gap-3 cursor-pointer bg-orange-50 border border-orange-200 rounded-lg p-3 hover:bg-orange-100 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={includeHindiPrint}
+                    onChange={(e) => setIncludeHindiPrint(e.target.checked)}
+                    className="w-4 h-4 accent-orange-500"
+                  />
+                  <div>
+                    <span className="font-medium text-orange-800">طباعة نسخة هندية (हिंदी)</span>
+                    <p className="text-xs text-orange-600 mt-0.5">سيتم طباعة الطلب مرتين: الأولى بالعربية والثانية بالهندية</p>
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
 
           {/* أزرار الإجراءات */}
           <div className="border-t border-gray-200 p-4 bg-gray-50 flex justify-between items-center">
