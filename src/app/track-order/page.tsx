@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare } from 'lucide-react'
 import { useOrderStore } from '@/store/orderStore'
-import { formatGregorianDate } from '@/lib/date-utils'
+import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import NumericInput from '@/components/NumericInput'
 import Header from '@/components/Header'
 
@@ -22,6 +22,7 @@ interface OrderInfo {
   order_date: string
   due_date: string
   proof_delivery_date?: string
+  has_second_proof?: boolean
   status: string
   admin_confirmed?: boolean
   measurements?: Record<string, unknown>
@@ -44,6 +45,7 @@ export default function TrackOrderPage() {
     order_date: order.created_at,
     due_date: order.due_date,
     proof_delivery_date: order.proof_delivery_date,
+    has_second_proof: order.has_second_proof,
     status: order.status,
     admin_confirmed: order.admin_confirmed,
     measurements: order.measurements
@@ -200,12 +202,22 @@ export default function TrackOrderPage() {
                 <p className="text-base font-semibold text-gray-800 truncate">{orderData.client_name}</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-3">
-                <span className="text-xs text-gray-400 block mb-1">موعد البروفا</span>
+                <span className="text-xs text-gray-400 block mb-1">{orderData.has_second_proof ? 'موعد البروفا الأولى' : 'موعد البروفا'}</span>
                 <p className="text-sm font-medium text-gray-800">
                   {orderData.proof_delivery_date ? formatDate(orderData.proof_delivery_date) : '—'}
                 </p>
               </div>
             </div>
+
+            {/* موعد البروفا الثانية */}
+            {orderData.has_second_proof && orderData.due_date && (
+              <div className="bg-yellow-50 rounded-xl p-3 border border-yellow-200">
+                <span className="text-xs text-yellow-700 block mb-1">موعد البروفا الثانية</span>
+                <p className="text-sm font-semibold text-yellow-800">
+                  {formatDate(shiftDate(orderData.due_date, -1))}
+                </p>
+              </div>
+            )}
 
             {/* السطر الثاني: رقم الهاتف أو رقم الطلب + تاريخ الطلب */}
             <div className="grid grid-cols-2 gap-3">
@@ -244,7 +256,7 @@ export default function TrackOrderPage() {
                 </div>
                 <div className="text-left flex-shrink-0">
                   <p className="text-xs text-gray-500 whitespace-nowrap">موعد التسليم</p>
-                  <p className="text-sm font-bold text-gray-800">{formatDate(orderData.due_date)}</p>
+                  <p className="text-sm font-bold text-gray-800">{formatDate(shiftDate(orderData.due_date, 2))}</p>
                 </div>
               </div>
 

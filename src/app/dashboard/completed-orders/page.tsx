@@ -43,7 +43,7 @@ import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
-import { formatGregorianDate } from '@/lib/date-utils'
+import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import toast from 'react-hot-toast'
 
 const PAGE_SIZE = 50
@@ -675,8 +675,14 @@ export default function CompletedOrdersPage() {
                         <div className="flex flex-col gap-1">
                           {order.proof_delivery_date && (
                             <p className="text-sm text-gray-600">
-                              <span className="font-medium">{t('proof_delivery_date') || (isArabic ? 'موعد البروفة:' : 'Proof Date:')}</span>{' '}
+                              <span className="font-medium">{order.has_second_proof ? (isArabic ? 'موعد البروفة الأولى:' : 'First Proof Date:') : (t('proof_delivery_date') || (isArabic ? 'موعد البروفة:' : 'Proof Date:'))}</span>{' '}
                               {formatDate(order.proof_delivery_date)}
+                            </p>
+                          )}
+                          {order.has_second_proof && order.due_date && (
+                            <p className="text-sm text-yellow-700">
+                              <span className="font-medium">{isArabic ? 'موعد البروفا الثانية:' : 'Second Proof:'}</span>{' '}
+                              {formatDate(shiftDate(order.due_date, -1))}
                             </p>
                           )}
                           <p className="text-sm text-gray-600">

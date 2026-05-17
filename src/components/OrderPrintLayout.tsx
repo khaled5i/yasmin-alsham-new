@@ -2,7 +2,7 @@
 
 import { forwardRef } from 'react'
 import { Order } from '@/lib/services/order-service'
-import { parseDateForDisplay } from '@/lib/date-utils'
+import { parseDateForDisplay, shiftDate } from '@/lib/date-utils'
 import { MEASUREMENT_ORDER, MEASUREMENT_LABELS } from '@/types/measurements'
 
 // نوع snapshot التعليق للطباعة
@@ -204,12 +204,18 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
             <div className="header-item header-right header-dates">
               {order.proof_delivery_date && (
                 <div className="date-row" style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '1.2em' }}>
-                  <span>موعد تسليم البروفا: </span>
+                  <span>{order.has_second_proof ? 'البروفا الأولى: ' : 'البروفا: '}</span>
                   <span>{formatDate(order.proof_delivery_date)}</span>
                 </div>
               )}
+              {order.has_second_proof && order.due_date && (
+                <div className="date-row" style={{ color: '#ca8a04', fontWeight: 'bold', fontSize: '1.2em' }}>
+                  <span>البروفا الثانية: </span>
+                  <span>{formatDate(shiftDate(order.due_date, -1))}</span>
+                </div>
+              )}
               <div className="date-row" style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '1.2em' }}>
-                <span>موعد التسليم النهائي: </span>
+                <span>التسليم النهائي: </span>
                 <span>{formatDate(order.due_date)}</span>
               </div>
             </div>

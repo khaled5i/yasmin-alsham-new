@@ -48,7 +48,7 @@ import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measur
 import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
-import { formatGregorianDate, parseDateForDisplay } from '@/lib/date-utils'
+import { formatGregorianDate, parseDateForDisplay, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import GenerateDesignButton from './GenerateDesignButton'
 
@@ -914,9 +914,20 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     <div className="bg-white p-2 sm:p-3 rounded-lg">
                       <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
                         <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium truncate">{t('proof_delivery_date')}:</span>
+                        <span className="text-xs sm:text-sm font-medium truncate">{order.has_second_proof ? 'موعد البروفا الأولى' : t('proof_delivery_date')}:</span>
                       </div>
                       <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{formatDate(order.proof_delivery_date)}</p>
+                    </div>
+                  )}
+
+                  {/* موعد تسليم البروفا الثانية */}
+                  {order.has_second_proof && order.due_date && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">موعد تسليم البروفا الثانية:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-yellow-600 truncate">{formatDate(shiftDate(order.due_date, -1))}</p>
                     </div>
                   )}
 

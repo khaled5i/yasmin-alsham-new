@@ -405,7 +405,7 @@ const arTranslations: Translations = {
   'customer_information': 'معلومات الزبونة',
   'order_date': 'تاريخ الطلب',
 
-  'assigned_worker': 'العامل المسؤول',
+  'assigned_worker': 'العامل',
   'chest_bust': 'الصدر',
   'advanced_tailoring_measurements': 'مقاسات التفصيل المتقدمة',
   'additional_measurements': 'مقاسات إضافية',

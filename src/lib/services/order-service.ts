@@ -55,6 +55,7 @@ const ORDER_LIST_COLUMNS = [
   'is_urgent',         // migration 39
   'is_flagged',        // migration 40
   'fabric_type',
+  'has_second_proof',  // migration 23
   'has_alterations',   // migration 34
   'alteration_count',  // migration 34
   'design_thumbnail',           // عمود مستقل (migration 32)
@@ -109,6 +110,8 @@ export interface Order {
   is_pre_booking: boolean
   is_urgent: boolean    // migration 39
   is_flagged: boolean   // migration 40
+  // بروفا ثانية (migration 23)
+  has_second_proof: boolean
   // تتبع التعديلات (migration 34)
   has_alterations: boolean
   alteration_count: number
@@ -169,6 +172,7 @@ export interface CreateOrderData {
   is_pre_booking?: boolean
   is_urgent?: boolean   // migration 39
   is_flagged?: boolean  // migration 40
+  has_second_proof?: boolean // migration 23
   price: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -276,6 +280,7 @@ export interface UpdateOrderData {
   needs_review?: boolean
   is_pre_booking?: boolean
   is_flagged?: boolean  // migration 40
+  has_second_proof?: boolean | null // migration 23
   fabric_type?: string | null
   price?: number
   paid_amount?: number
@@ -435,6 +440,7 @@ export const orderService = {
         is_pre_booking: orderData.is_pre_booking ?? orderData.measurements?.is_pre_booking ?? false,
         is_urgent: orderData.is_urgent ?? false,  // migration 39
         is_flagged: orderData.is_flagged ?? false, // migration 40
+        has_second_proof: orderData.has_second_proof ?? false, // migration 23
         price: orderData.price,
         paid_amount: orderData.paid_amount || 0,
         payment_status: orderData.payment_status || 'unpaid',

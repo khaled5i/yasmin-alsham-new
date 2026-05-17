@@ -16,6 +16,7 @@ import ImageUpload from '@/components/ImageUpload'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
+import { shiftDate } from '@/lib/date-utils'
 import DatePickerForProof from '@/components/DatePickerForProof'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
 import {
@@ -103,6 +104,7 @@ interface FormDataType {
   customDesignImage: string | null // legacy فقط؛ لا نخزن base64 جديداً في state
   savedDesignComments: SavedDesignComment[]
   fabricType: 'external' | 'internal' | null
+  hasSecondProof: 'yes' | 'no' | null
   aiGeneratedImages: string[]
   designLinks: string
 }
@@ -129,6 +131,7 @@ const getInitialFormData = (): FormDataType => ({
   customDesignImage: null,
   savedDesignComments: [],
   fabricType: null,
+  hasSecondProof: null,
   aiGeneratedImages: [],
   designLinks: ''
 })
@@ -151,7 +154,8 @@ const isFormDataEmpty = (data: FormDataType): boolean => {
     data.imageDrawings.length === 0 &&
     !data.customDesignImage &&
     data.savedDesignComments.length === 0 &&
-    !data.fabricType
+    !data.fabricType &&
+    !data.hasSecondProof
   )
 }
 
@@ -627,6 +631,11 @@ function AddOrderContent() {
       return
     }
 
+    if (!formData.hasSecondProof) {
+      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
+      return
+    }
+
     isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
@@ -833,7 +842,8 @@ function AddOrderContent() {
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: formData.dueDate,
+        due_date: shiftDate(formData.dueDate, -2),
+        has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
@@ -897,6 +907,11 @@ function AddOrderContent() {
     // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
+      return
+    }
+
+    if (!formData.hasSecondProof) {
+      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
       return
     }
 
@@ -998,7 +1013,8 @@ function AddOrderContent() {
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: formData.dueDate,
+        due_date: shiftDate(formData.dueDate, -2),
+        has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
@@ -1036,6 +1052,7 @@ function AddOrderContent() {
           orderNumber: result.data?.order_number || undefined,
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
           dueDate: formData.dueDate,
+          hasSecondProof: formData.hasSecondProof === 'yes',
           totalPrice: price,
           remainingAmount: Math.max(0, price - paidAmount)
         })
@@ -1073,6 +1090,11 @@ function AddOrderContent() {
 
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
+      return
+    }
+
+    if (!formData.hasSecondProof) {
+      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
       return
     }
 
@@ -1145,7 +1167,8 @@ function AddOrderContent() {
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: formData.dueDate,
+        due_date: shiftDate(formData.dueDate, -2),
+        has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
@@ -1190,6 +1213,11 @@ function AddOrderContent() {
 
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
+      return
+    }
+
+    if (!formData.hasSecondProof) {
+      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
       return
     }
 
@@ -1262,7 +1290,8 @@ function AddOrderContent() {
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: formData.dueDate,
+        due_date: shiftDate(formData.dueDate, -2),
+        has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
@@ -1308,6 +1337,11 @@ function AddOrderContent() {
     // التحقق من الحقول المطلوبة
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
+      return
+    }
+
+    if (!formData.hasSecondProof) {
+      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
       return
     }
 
@@ -1381,7 +1415,8 @@ function AddOrderContent() {
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: formData.dueDate,
+        due_date: shiftDate(formData.dueDate, -2),
+        has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
@@ -1751,6 +1786,39 @@ function AddOrderContent() {
                         disabled={isSubmitting}
                       />
                       <span className="text-gray-700 font-medium">قماش داخلي</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 11.1 هل يوجد بروفا ثانية؟ */}
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    هل يوجد بروفا ثانية؟ <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="hasSecondProof"
+                        value="yes"
+                        checked={formData.hasSecondProof === 'yes'}
+                        onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
+                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                        disabled={isSubmitting}
+                      />
+                      <span className="text-gray-700 font-medium">نعم</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="hasSecondProof"
+                        value="no"
+                        checked={formData.hasSecondProof === 'no'}
+                        onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
+                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                        disabled={isSubmitting}
+                      />
+                      <span className="text-gray-700 font-medium">لا</span>
                     </label>
                   </div>
                 </div>

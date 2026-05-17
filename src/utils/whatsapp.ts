@@ -3,7 +3,7 @@
  * تجهيز وإرسال رسائل واتساب للعملاء
  */
 
-import { formatGregorianDate } from '../lib/date-utils'
+import { formatGregorianDate, shiftDate } from '../lib/date-utils'
 
 interface OrderDetails {
   clientName: string
@@ -11,6 +11,7 @@ interface OrderDetails {
   orderNumber?: string
   proofDeliveryDate?: string
   dueDate: string
+  hasSecondProof?: boolean
   totalPrice?: number
   paidAmount?: number
   remainingAmount?: number
@@ -84,6 +85,7 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
     orderNumber,
     proofDeliveryDate,
     dueDate,
+    hasSecondProof,
     totalPrice,
     paidAmount,
     remainingAmount
@@ -92,6 +94,8 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
   // تنسيق التواريخ
   const formattedDueDate = formatDateArabic(dueDate)
   const formattedProofDate = proofDeliveryDate ? formatDateArabic(proofDeliveryDate) : null
+  // موعد البروفا الثانية = التاريخ الذي تراه الزبونة - 3 أيام
+  const formattedSecondProofDate = hasSecondProof && dueDate ? formatDateArabic(shiftDate(dueDate, -3)) : null
 
   // بناء الرسالة بدون إيموجيات
   let message = `مرحباً ${clientName}\n\n`
@@ -117,7 +121,13 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
 
   // إضافة موعد تسليم البروفا إذا كان موجوداً
   if (formattedProofDate) {
-    message += `- موعد تسليم البروفا: ${formattedProofDate}\n`
+    const proofLabel = hasSecondProof ? 'موعد تسليم البروفا الأولى' : 'موعد تسليم البروفا'
+    message += `- ${proofLabel}: ${formattedProofDate}\n`
+  }
+
+  // إضافة موعد تسليم البروفا الثانية إذا كان موجوداً
+  if (formattedSecondProofDate) {
+    message += `- موعد تسليم البروفا الثانية: ${formattedSecondProofDate}\n`
   }
 
   // إضافة موعد التسليم النهائي

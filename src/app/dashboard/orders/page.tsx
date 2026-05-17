@@ -11,7 +11,7 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService } from '@/lib/services/order-service'
-import { formatGregorianDate } from '@/lib/date-utils'
+import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp, sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import OrderModal from '@/components/OrderModal'
@@ -48,7 +48,8 @@ import {
   CalendarDays,
   Wrench,
   RotateCcw,
-  Zap
+  Zap,
+  AlertTriangle
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
@@ -239,6 +240,8 @@ function OrdersPageInner() {
   const [isChangingStatus, setIsChangingStatus] = useState(false)
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
+  const [showSecondProofWarning, setShowSecondProofWarning] = useState(false)
+  const [orderToStartWork, setOrderToStartWork] = useState<any>(null)
 
   // إغلاق قائمة تغيير الحالة عند النقر خارجها
   useEffect(() => {
@@ -641,7 +644,19 @@ function OrdersPageInner() {
   }
 
   // بدء العمل في الطلب (للعمال)
-  const handleStartWork = async (orderId: string) => {
+  const handleStartWork = (order: any) => {
+    if (!user || user.role !== 'worker') return
+
+    if (order.has_second_proof) {
+      setOrderToStartWork(order)
+      setShowSecondProofWarning(true)
+      return
+    }
+
+    void executeStartWork(order.id)
+  }
+
+  const executeStartWork = async (orderId: string) => {
     if (!user || user.role !== 'worker') return
 
     setIsProcessing(true)
@@ -789,7 +804,8 @@ function OrdersPageInner() {
         clientPhone: order.client_phone,
         orderNumber: order.order_number || undefined,
         proofDeliveryDate: order.proof_delivery_date || undefined,
-        dueDate: order.due_date,
+        dueDate: shiftDate(order.due_date, 2),
+        hasSecondProof: order.has_second_proof === true,
         totalPrice,
         paidAmount,
         remainingAmount: Math.max(0, totalPrice - paidAmount)
@@ -1159,6 +1175,9 @@ function OrdersPageInner() {
                             {order.client_phone && (
                               <p><span className="font-semibold">{isArabic ? 'الهاتف:' : 'Phone:'}</span> <span dir="ltr">{order.client_phone}</span></p>
                             )}
+                            {order.has_second_proof && order.due_date && (
+                              <p className="text-yellow-700"><span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span> {formatDate(shiftDate(order.due_date, -1))}</p>
+                            )}
                             <p><span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span> {formatDate(order.due_date)}</p>
                           </div>
                         </div>
@@ -1169,7 +1188,7 @@ function OrdersPageInner() {
                         <div className="pt-4 border-t border-gray-100">
                           {order.status === 'pending' && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleStartWork(order.id) }}
+                              onClick={(e) => { e.stopPropagation(); handleStartWork(order) }}
                               disabled={isProcessing}
                               className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                             >
@@ -1208,7 +1227,17 @@ function OrdersPageInner() {
                           <div className="flex items-center gap-1.5 px-3 py-1.5 mb-2 rounded-lg bg-violet-50 border border-violet-200 w-fit">
                             <CalendarDays className="w-3.5 h-3.5 text-violet-600 flex-shrink-0" />
                             <span className="text-xs font-semibold text-violet-700">
-                              {isArabic ? 'البروفا:' : 'Proof:'}{' '}{formatDate(order.proof_delivery_date)}
+                              {isArabic ? (order.has_second_proof ? 'البروفا الأولى:' : 'البروفا:') : (order.has_second_proof ? 'First Proof:' : 'Proof:')}{' '}{formatDate(order.proof_delivery_date)}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* شارة موعد البروفا الثانية - لمدير الورشة فقط */}
+                        {workerType === 'workshop_manager' && order.has_second_proof && order.due_date && (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 mb-2 rounded-lg bg-yellow-50 border border-yellow-200 w-fit">
+                            <CalendarDays className="w-3.5 h-3.5 text-yellow-600 flex-shrink-0" />
+                            <span className="text-xs font-semibold text-yellow-700">
+                              {isArabic ? 'البروفا الثانية:' : 'Second Proof:'}{' '}{formatDate(shiftDate(order.due_date, -1))}
                             </span>
                           </div>
                         )}
@@ -1235,8 +1264,14 @@ function OrdersPageInner() {
                           <div className="flex flex-col gap-1">
                             {order.proof_delivery_date && (
                               <p className="text-sm text-gray-700">
-                                <span className="font-semibold">{isArabic ? 'البروفا:' : 'Proof:'}</span>{' '}
+                                <span className="font-semibold">{isArabic ? (order.has_second_proof ? 'البروفا الأولى:' : 'البروفا:') : (order.has_second_proof ? 'First Proof:' : 'Proof:')}</span>{' '}
                                 {formatDate(order.proof_delivery_date)}
+                              </p>
+                            )}
+                            {order.has_second_proof && order.due_date && (
+                              <p className="text-sm text-yellow-700">
+                                <span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span>{' '}
+                                {formatDate(shiftDate(order.due_date, -1))}
                               </p>
                             )}
                             <p className="text-sm text-gray-700">
@@ -1688,6 +1723,67 @@ function OrdersPageInner() {
           onMarkAsPaid={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, true) }}
           onIgnore={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, false) }}
         />
+
+        {/* تحذير وجود بروفا ثانية عند بدء العمل */}
+        {showSecondProofWarning && orderToStartWork && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.25 }}
+              className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl"
+            >
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-9 h-9 sm:w-12 sm:h-12 text-yellow-600" />
+              </div>
+              <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-3 text-center">
+                {isArabic ? 'تنبيه: هذا الطلب يحتوي على بروفا ثانية' : 'Warning: This Order Has a Second Proof'}
+              </h3>
+              <p className="text-sm sm:text-base text-gray-700 mb-4 text-center leading-relaxed">
+                {isArabic
+                  ? 'الرجاء عدم إنهاء الفستان قبل أن تجربه الزبونة في موعد البروفا الثانية.'
+                  : 'Please do not finalize the dress before the customer tries it on at the second proof appointment.'}
+              </p>
+              <div className="bg-gray-50 rounded-xl p-4 mb-5 space-y-2">
+                <div className="flex items-center justify-between text-sm sm:text-base">
+                  <span className="font-semibold text-gray-700">
+                    {isArabic ? 'موعد البروفا الثانية:' : 'Second Proof Date:'}
+                  </span>
+                  <span className="font-bold text-yellow-700">
+                    {formatDate(shiftDate(orderToStartWork.due_date, -1))}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm sm:text-base">
+                  <span className="font-semibold text-gray-700">
+                    {isArabic ? 'موعد التسليم النهائي:' : 'Final Delivery Date:'}
+                  </span>
+                  <span className="font-bold text-pink-700">
+                    {formatDate(orderToStartWork.due_date)}
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                <button
+                  onClick={() => { setShowSecondProofWarning(false); setOrderToStartWork(null) }}
+                  className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+                >
+                  {isArabic ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  onClick={() => {
+                    const id = orderToStartWork.id
+                    setShowSecondProofWarning(false)
+                    setOrderToStartWork(null)
+                    void executeStartWork(id)
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors"
+                >
+                  {isArabic ? 'فهمت، بدء العمل' : 'Understood, Start Work'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
 
         {/* نافذة المقاسات */}
         {

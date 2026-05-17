@@ -59,6 +59,16 @@ export function parseDateKeyForPicker(value?: string | null): Date | null {
   return new Date(year, month - 1, day, 12, 0, 0, 0)
 }
 
+export function shiftDate(dateStr: string | null | undefined, days: number): string {
+  if (!dateStr) return ''
+  const dateKey = extractDateKey(dateStr)
+  if (!dateKey) return dateStr
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  date.setDate(date.getDate() + days)
+  return toLocalDateKey(date)
+}
+
 export function formatGregorianDate(
   value: string | null | undefined,
   locale: string = 'ar-SA',
