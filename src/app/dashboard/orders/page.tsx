@@ -804,7 +804,8 @@ function OrdersPageInner() {
         clientPhone: order.client_phone,
         orderNumber: order.order_number || undefined,
         proofDeliveryDate: order.proof_delivery_date || undefined,
-        dueDate: shiftDate(order.due_date, 2),
+        // للطلبات الجديدة: التاريخ الحقيقي للزبون من customer_due_date (migration 49)
+        dueDate: order.customer_due_date || shiftDate(order.due_date, 2),
         hasSecondProof: order.has_second_proof === true,
         totalPrice,
         paidAmount,

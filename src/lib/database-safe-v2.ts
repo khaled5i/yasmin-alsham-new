@@ -92,6 +92,7 @@ export interface Order {
   balance_due: number
   start_date: string
   due_date: string
+  customer_due_date?: string | null
   completion_date?: string
   notes?: string
   special_requests?: string

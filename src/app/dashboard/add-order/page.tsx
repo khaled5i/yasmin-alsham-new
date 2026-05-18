@@ -16,7 +16,7 @@ import ImageUpload from '@/components/ImageUpload'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
-import { shiftDate } from '@/lib/date-utils'
+import { shiftDate, DUE_DATE_BACKDATE_DAYS } from '@/lib/date-utils'
 import DatePickerForProof from '@/components/DatePickerForProof'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
 import {
@@ -842,7 +842,8 @@ function AddOrderContent() {
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: shiftDate(formData.dueDate, -2),
+        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
+        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
@@ -1013,7 +1014,8 @@ function AddOrderContent() {
         payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: shiftDate(formData.dueDate, -2),
+        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
+        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
@@ -1167,7 +1169,8 @@ function AddOrderContent() {
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: shiftDate(formData.dueDate, -2),
+        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
+        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
@@ -1290,7 +1293,8 @@ function AddOrderContent() {
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: shiftDate(formData.dueDate, -2),
+        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
+        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
@@ -1415,7 +1419,8 @@ function AddOrderContent() {
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: shiftDate(formData.dueDate, -2),
+        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
+        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         notes: formData.notes || undefined,
@@ -1642,6 +1647,7 @@ function AddOrderContent() {
                     onChange={(date) => handleInputChange('dueDate', date)}
                     minDate={new Date()}
                     required={true}
+                    useCustomerDueDate={true}
                   />
                 </div>
 

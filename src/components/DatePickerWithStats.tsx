@@ -17,6 +17,10 @@ interface DatePickerWithStatsProps {
   required?: boolean
   className?: string
   statsType?: 'orders' | 'alterations' // نوع الإحصائيات المراد عرضها
+  // إذا كانت true، تُحسب الإحصائيات حسب التاريخ الحقيقي للزبون (`customer_due_date`)
+  // بدل التاريخ الداخلي المُزاح (`due_date`). الطلبات القديمة التي لا تحوي القيمة
+  // تستخدم `due_date` كـ fallback.
+  useCustomerDueDate?: boolean
 }
 
 // أسماء الأشهر الهجرية
@@ -68,7 +72,8 @@ export default function DatePickerWithStats({
   minDate,
   required = false,
   className = '',
-  statsType = 'orders' // القيمة الافتراضية هي الطلبات
+  statsType = 'orders', // القيمة الافتراضية هي الطلبات
+  useCustomerDueDate = false
 }: DatePickerWithStatsProps) {
   const { t } = useTranslation()
   const [stats, setStats] = useState<Record<string, number>>({})
@@ -85,7 +90,7 @@ export default function DatePickerWithStats({
   // جلب الإحصائيات عند تحميل المكون أو تغيير النوع
   useEffect(() => {
     fetchStats()
-  }, [statsType])
+  }, [statsType, useCustomerDueDate])
 
   // إنشاء portal container في body عند تحميل المكون
   useEffect(() => {
@@ -123,7 +128,7 @@ export default function DatePickerWithStats({
         data = result.data
         error = result.error
       } else {
-        const result = await orderService.getOrderStatsByDate(startDate, endDate)
+        const result = await orderService.getOrderStatsByDate(startDate, endDate, { useCustomerDueDate })
         data = result.data
         error = result.error
       }

@@ -1,6 +1,11 @@
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/
 const DATE_PREFIX_REGEX = /^(\d{4}-\d{2}-\d{2})/
 
+// عدد الأيام التي يُخزَّن بها `due_date` قبل تاريخ الزبون الحقيقي (للضغط على التسليم).
+// التاريخ الأصلي للزبون يُحفظ في عمود `customer_due_date` ويُعرض فقط في الواجهات التي
+// يراها الزبون مباشرةً (تتبع الطلب، تقويم إضافة طلب، رسالة الواتساب).
+export const DUE_DATE_BACKDATE_DAYS = 2
+
 export function toLocalDateKey(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')

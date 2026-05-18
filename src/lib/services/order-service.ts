@@ -44,6 +44,7 @@ const ORDER_LIST_COLUMNS = [
   'order_received_date',
   'status',
   'due_date',
+  'customer_due_date',   // التاريخ الحقيقي للزبون (migration 49)
   'proof_delivery_date',
   'delivery_date',
   // أعمدة مستقلة (migration 29) - لا تحتاج JSONB extraction بعد الآن
@@ -135,6 +136,7 @@ export interface Order {
   order_received_date?: string
   status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date: string
+  customer_due_date?: string | null  // التاريخ الحقيقي للزبون (migration 49). null للطلبات القديمة → fallback إلى due_date
   proof_delivery_date?: string | null
   delivery_date?: string | null
   notes?: string | null
@@ -180,6 +182,7 @@ export interface CreateOrderData {
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date: string
+  customer_due_date?: string  // التاريخ الحقيقي للزبون (migration 49)
   proof_delivery_date?: string
   delivery_date?: string
   notes?: string
@@ -289,6 +292,7 @@ export interface UpdateOrderData {
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date?: string
+  customer_due_date?: string | null  // التاريخ الحقيقي للزبون (migration 49)
   proof_delivery_date?: string | null
   delivery_date?: string | null
   notes?: string | null
@@ -448,6 +452,7 @@ export const orderService = {
         order_received_date: orderData.order_received_date || new Date().toISOString().split('T')[0],
         status: orderData.status || 'pending',
         due_date: orderData.due_date,
+        customer_due_date: orderData.customer_due_date || null,  // migration 49
         proof_delivery_date: orderData.proof_delivery_date || null,
         delivery_date: orderData.delivery_date || null,
         notes: orderData.notes || null,
@@ -926,22 +931,43 @@ export const orderService = {
   /**
    * جلب إحصائيات الطلبات حسب التاريخ
    * يُستخدم لعرض عدد الطلبات في التقويم
+   *
+   * options.useCustomerDueDate:
+   * - عند true، يُستخدم `customer_due_date` (تاريخ الزبون الحقيقي) عند توفره،
+   *   ويُعاد إلى `due_date` للطلبات القديمة التي لا تحوي القيمة.
+   * - عند false (الافتراضي)، يُستخدم `due_date` (التاريخ الداخلي المُزاح).
    */
-  async getOrderStatsByDate(startDate: string, endDate: string): Promise<{ data: Record<string, number> | null; error: string | null }> {
+  async getOrderStatsByDate(
+    startDate: string,
+    endDate: string,
+    options?: { useCustomerDueDate?: boolean }
+  ): Promise<{ data: Record<string, number> | null; error: string | null }> {
     if (!isSupabaseConfigured()) {
       return { data: null, error: 'Supabase is not configured.' }
     }
 
-    try {
-      if (isDev) console.log('📊 Fetching order stats by date:', { startDate, endDate })
+    const useCustomerDueDate = options?.useCustomerDueDate ?? false
 
-      const { data, error } = await supabase
+    try {
+      if (isDev) console.log('📊 Fetching order stats by date:', { startDate, endDate, useCustomerDueDate })
+
+      // عند الاعتماد على `customer_due_date`، يجب جلب الطلبات بدلالة كلا العمودين
+      // لأن أيّاً منهما قد يقع داخل نطاق العرض.
+      let query = supabase
         .from('orders')
-        .select('due_date')
-        .gte('due_date', startDate)
-        .lte('due_date', endDate)
+        .select(useCustomerDueDate ? 'due_date, customer_due_date' : 'due_date')
         .not('status', 'eq', 'cancelled')
         .not('status', 'eq', 'delivered')
+
+      if (useCustomerDueDate) {
+        // نطاق أوسع: أي طلب تاريخه الحقيقي أو الداخلي ضمن المدى
+        query = query
+          .or(`and(customer_due_date.gte.${startDate},customer_due_date.lte.${endDate}),and(due_date.gte.${startDate},due_date.lte.${endDate})`)
+      } else {
+        query = query.gte('due_date', startDate).lte('due_date', endDate)
+      }
+
+      const { data, error } = await query
 
       if (error) {
         console.error('❌ Supabase error fetching order stats:', error.message)
@@ -949,9 +975,14 @@ export const orderService = {
       }
 
       const stats: Record<string, number> = {}
-      data?.forEach((order) => {
-        const dateKey = extractDateKey(order.due_date)
+      data?.forEach((order: any) => {
+        const source = useCustomerDueDate
+          ? (order.customer_due_date || order.due_date)
+          : order.due_date
+        const dateKey = extractDateKey(source)
         if (!dateKey) return
+        // تطبيق فلتر النطاق على المفتاح النهائي حتى لا نحسب طلبات خارج العرض
+        if (dateKey < startDate || dateKey > endDate) return
         stats[dateKey] = (stats[dateKey] || 0) + 1
       })
 

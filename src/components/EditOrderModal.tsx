@@ -18,7 +18,7 @@ import {
   BookMarked
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
-import { shiftDate } from '@/lib/date-utils'
+import { shiftDate, DUE_DATE_BACKDATE_DAYS } from '@/lib/date-utils'
 import ImageUpload from './ImageUpload'
 import GenerateDesignButton from './GenerateDesignButton'
 import UnifiedNotesInput from './UnifiedNotesInput'
@@ -195,7 +195,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         orderStatus: (order.status || 'pending') as 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled',
         orderReceivedDate: order.order_received_date || new Date().toISOString().split('T')[0],
         assignedWorker: order.worker_id || '',
-        dueDate: shiftDate(order.due_date, 2),
+        // للطلبات الجديدة نستخدم customer_due_date مباشرةً؛ للطلبات القديمة نُبقي السلوك السابق (due_date + 2)
+        dueDate: order.customer_due_date || shiftDate(order.due_date, DUE_DATE_BACKDATE_DAYS),
         proofDeliveryDate: order.proof_delivery_date || '',
         notes: order.notes || '',
         voiceNotes: voiceNotesData,
@@ -548,7 +549,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         status: formData.orderStatus,
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : null,
-        due_date: shiftDate(formData.dueDate, -2),
+        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
+        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : null,
         notes: formData.notes || null,
         // إرسال مصفوفة فارغة إذا تم حذف جميع العناصر (للتأكد من حفظ الحذف في قاعدة البيانات)
@@ -692,7 +694,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         status: formData.orderStatus,
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : null,
-        due_date: shiftDate(formData.dueDate, -2),
+        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
+        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : null,
         notes: formData.notes || null,
         // إرسال مصفوفة فارغة إذا تم حذف جميع العناصر (للتأكد من حفظ الحذف في قاعدة البيانات)

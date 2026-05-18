@@ -21,6 +21,7 @@ interface OrderInfo {
   client_phone: string
   order_date: string
   due_date: string
+  customer_due_date?: string | null  // التاريخ الحقيقي للزبون (migration 49)
   proof_delivery_date?: string
   has_second_proof?: boolean
   status: string
@@ -44,6 +45,7 @@ export default function TrackOrderPage() {
     client_phone: order.client_phone,
     order_date: order.created_at,
     due_date: order.due_date,
+    customer_due_date: order.customer_due_date,
     proof_delivery_date: order.proof_delivery_date,
     has_second_proof: order.has_second_proof,
     status: order.status,
@@ -256,7 +258,9 @@ export default function TrackOrderPage() {
                 </div>
                 <div className="text-left flex-shrink-0">
                   <p className="text-xs text-gray-500 whitespace-nowrap">موعد التسليم</p>
-                  <p className="text-sm font-bold text-gray-800">{formatDate(shiftDate(orderData.due_date, 2))}</p>
+                  {/* للطلبات الجديدة: التاريخ الحقيقي للزبون من customer_due_date (migration 49).
+                      للطلبات القديمة: نُبقي السلوك السابق (due_date + 2). */}
+                  <p className="text-sm font-bold text-gray-800">{formatDate(orderData.customer_due_date || shiftDate(orderData.due_date, 2))}</p>
                 </div>
               </div>
 
