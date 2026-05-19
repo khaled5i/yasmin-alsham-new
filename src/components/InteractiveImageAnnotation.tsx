@@ -667,8 +667,6 @@ function DraggableText({
               ref={textareaRef}
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') { e.preventDefault(); setIsEditing(false); setEditText(annotation.transcription || '') }
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitEdit() }
@@ -683,7 +681,7 @@ function DraggableText({
                 height: 'auto',
                 resize: 'none',
                 userSelect: 'text',
-                touchAction: 'manipulation',
+                touchAction: 'auto',
                 color: annotation.textColor || '#000000',
                 backgroundColor: annotation.textBackground
                   ? (isLightTextColor(annotation.textColor || '#000000') ? '#000000' : '#ffffff')
