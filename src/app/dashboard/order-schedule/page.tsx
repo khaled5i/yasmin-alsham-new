@@ -8,6 +8,7 @@ import Link from 'next/link'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const moment = require('moment-hijri')
 import { useAuthStore } from '@/store/authStore'
+import { useWorkerStore } from '@/store/workerStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService } from '@/lib/services/order-service'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
@@ -67,6 +68,7 @@ interface OrderOnDate {
     client_phone: string
     order_number: string
     status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
+    worker_name?: string | null
 }
 
 const ORDER_STATUS_LABEL: Record<OrderOnDate['status'], string> = {
@@ -330,6 +332,12 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                                             {ORDER_STATUS_LABEL[order.status]}
                                         </span>
                                     </div>
+                                    {order.worker_name && (
+                                        <p className="text-xs text-gray-600 flex items-center gap-1 mt-0.5">
+                                            <User className="w-3 h-3" />
+                                            <span className="truncate">{order.worker_name}</span>
+                                        </p>
+                                    )}
                                     <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
                                         <Phone className="w-3 h-3" />
                                         <span dir="ltr">{order.client_phone}</span>
@@ -610,6 +618,7 @@ export default function OrderSchedulePage() {
     const router = useRouter()
     const { user, isLoading: authLoading } = useAuthStore()
     const { workerType, isLoading: workerLoading } = useWorkerPermissions()
+    const { workers, loadWorkers } = useWorkerStore()
 
     const now = new Date()
     const [anchorYear, setAnchorYear] = useState(now.getFullYear())
@@ -658,7 +667,15 @@ export default function OrderSchedulePage() {
                     if (mode === 'proof' && (order.status === 'delivered')) return
                     newStats[key] = (newStats[key] || 0) + 1
                     if (!newOrdersMap[key]) newOrdersMap[key] = []
-                    newOrdersMap[key].push({ id: order.id, client_name: order.client_name, client_phone: order.client_phone, order_number: order.order_number, status: order.status })
+                    const worker = order.worker_id ? workers.find(w => w.id === order.worker_id) : null
+                    newOrdersMap[key].push({
+                        id: order.id,
+                        client_name: order.client_name,
+                        client_phone: order.client_phone,
+                        order_number: order.order_number,
+                        status: order.status,
+                        worker_name: worker?.user?.full_name || null,
+                    })
                 })
                 setStats(newStats)
                 setOrdersMap(newOrdersMap)
@@ -666,9 +683,9 @@ export default function OrderSchedulePage() {
         } finally {
             setIsLoadingData(false)
         }
-    }, [mode])
+    }, [mode, workers])
 
-    useEffect(() => { if (user) { fetchData(); fetchExtras() } }, [fetchData, fetchExtras, user])
+    useEffect(() => { if (user) { fetchData(); fetchExtras(); loadWorkers() } }, [fetchData, fetchExtras, loadWorkers, user])
 
     // Navigation: RIGHT = next months, LEFT = prev months (RTL convention)
     const goToNextMonths = () => {
