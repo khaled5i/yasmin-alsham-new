@@ -68,7 +68,7 @@ interface OrderOnDate {
     client_phone: string
     order_number: string
     status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
-    worker_name?: string | null
+    worker_id?: string | null
 }
 
 const ORDER_STATUS_LABEL: Record<OrderOnDate['status'], string> = {
@@ -266,11 +266,12 @@ interface DateModalProps {
     orders: OrderOnDate[]
     extraSlots: ExtraSlot[]
     mode: CalendarMode
+    workerNameMap: Record<string, string>
     onClose: () => void
     onViewMore: () => void
 }
 
-function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMore }: DateModalProps) {
+function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, onClose, onViewMore }: DateModalProps) {
     const [year, monthIndex, day] = dateKey.split('-').map(Number)
     const displayDate = new Date(year, monthIndex - 1, day, 12)
     const hijri = toHijri(displayDate)
@@ -332,10 +333,10 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                                             {ORDER_STATUS_LABEL[order.status]}
                                         </span>
                                     </div>
-                                    {order.worker_name && (
+                                    {order.worker_id && workerNameMap[order.worker_id] && (
                                         <p className="text-xs text-gray-600 flex items-center gap-1 mt-0.5">
                                             <User className="w-3 h-3" />
-                                            <span className="truncate">{order.worker_name}</span>
+                                            <span className="truncate">{workerNameMap[order.worker_id]}</span>
                                         </p>
                                     )}
                                     <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
@@ -667,14 +668,13 @@ export default function OrderSchedulePage() {
                     if (mode === 'proof' && (order.status === 'delivered')) return
                     newStats[key] = (newStats[key] || 0) + 1
                     if (!newOrdersMap[key]) newOrdersMap[key] = []
-                    const worker = order.worker_id ? workers.find(w => w.id === order.worker_id) : null
                     newOrdersMap[key].push({
                         id: order.id,
                         client_name: order.client_name,
                         client_phone: order.client_phone,
                         order_number: order.order_number,
                         status: order.status,
-                        worker_name: worker?.user?.full_name || null,
+                        worker_id: order.worker_id || null,
                     })
                 })
                 setStats(newStats)
@@ -683,9 +683,15 @@ export default function OrderSchedulePage() {
         } finally {
             setIsLoadingData(false)
         }
-    }, [mode, workers])
+    }, [mode])
 
-    useEffect(() => { if (user) { fetchData(); fetchExtras(); loadWorkers() } }, [fetchData, fetchExtras, loadWorkers, user])
+    useEffect(() => { if (user) { fetchData(); fetchExtras() } }, [fetchData, fetchExtras, user])
+    useEffect(() => { if (user) loadWorkers() }, [user, loadWorkers])
+
+    const workerNameMap = workers.reduce<Record<string, string>>((acc, w) => {
+        if (w.user?.full_name) acc[w.id] = w.user.full_name
+        return acc
+    }, {})
 
     // Navigation: RIGHT = next months, LEFT = prev months (RTL convention)
     const goToNextMonths = () => {
@@ -816,6 +822,7 @@ export default function OrderSchedulePage() {
                     orders={selectedOrders}
                     extraSlots={selectedExtras}
                     mode={mode}
+                    workerNameMap={workerNameMap}
                     onClose={() => setSelectedDateKey(null)}
                     onViewMore={() => {
                         const typeParam = mode === 'delivery' ? 'delivery' : 'proof'

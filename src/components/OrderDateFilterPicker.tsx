@@ -119,7 +119,7 @@ export default function OrderDateFilterPicker({
   const renderDayContents = (day: number, date: Date) => {
     const dateStr = toLocalDateKey(date)
     const count = stats[dateStr] || 0
-    const isOverloaded = count > 5
+    const isOverloaded = count >= 8
     const hijri = toHijri(date)
     const isFriday = date.getDay() === 5
 
@@ -153,7 +153,7 @@ export default function OrderDateFilterPicker({
     const dateStr = toLocalDateKey(date)
     const count = stats[dateStr] || 0
     const classes: string[] = []
-    if (count > 5) classes.push('overloaded-date')
+    if (count >= 8) classes.push('overloaded-date')
     if (date.getDay() === 5) classes.push('friday-day')
     return classes.join(' ')
   }
