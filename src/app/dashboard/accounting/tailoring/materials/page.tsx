@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
@@ -14,7 +15,8 @@ import {
   X,
   Pencil
 } from 'lucide-react'
-import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuthStore } from '@/store/authStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import { MATERIAL_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
@@ -528,9 +530,37 @@ function MaterialExpensesContent() {
 }
 
 export default function MaterialExpensesPage() {
-  return (
-    <ProtectedRoute requiredRole="admin">
-      <MaterialExpensesContent />
-    </ProtectedRoute>
-  )
+  const router = useRouter()
+  const { user, isLoading } = useAuthStore()
+  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/login')
+      return
+    }
+
+    if (!isLoading && !permissionsLoading && user) {
+      const isAdmin = user.role === 'admin'
+      const isAccountant = user.role === 'worker' && workerType === 'accountant'
+
+      if (!isAdmin && !isAccountant) {
+        router.push('/dashboard')
+        return
+      }
+    }
+  }, [user, workerType, isLoading, permissionsLoading, router])
+
+  if (isLoading || permissionsLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 text-lg">جاري التحميل...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return <MaterialExpensesContent />
 }

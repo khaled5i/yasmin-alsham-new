@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
-import { ArrowRight, Calculator, FileText, LogOut } from 'lucide-react'
+import { ArrowRight, Calculator, ShoppingBag, LogOut } from 'lucide-react'
 
 export default function AccountantDashboard() {
   const router = useRouter()
@@ -91,41 +91,23 @@ export default function AccountantDashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid md:grid-cols-2 gap-6 mb-8"
+          className="mb-8"
         >
           <Link
-            href="/dashboard/accounting"
-            className="group bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-blue-100 hover:shadow-lg transition-all duration-300"
+            href="/dashboard/accounting/tailoring/materials"
+            className="group block bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-blue-100 hover:shadow-lg transition-all duration-300"
           >
             <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Calculator className="w-6 h-6 text-white" />
+              <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                <ShoppingBag className="w-6 h-6 text-white" />
               </div>
-              <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors rotate-180" />
+              <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-orange-500 transition-colors rotate-180" />
             </div>
-            <h3 className="text-xl font-bold text-gray-800 mb-2">النظام المحاسبي</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">مصروفات المواد</h3>
             <p className="text-gray-600 text-sm">
-              إدارة الحسابات والقيود المحاسبية
+              قسم التفصيل — إضافة وعرض وتعديل مصروفات المواد (أقمشة، خيوط، إكسسوارات)
             </p>
           </Link>
-
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-blue-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-400 rounded-full flex items-center justify-center">
-                <FileText className="w-6 h-6 text-white" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold text-gray-800 mb-2">التقارير المالية</h3>
-            <p className="text-gray-600 text-sm mb-4">
-              عرض التقارير والإحصائيات المالية
-            </p>
-            <Link
-              href="/dashboard/accounting?tab=reports"
-              className="text-blue-600 hover:text-blue-700 font-medium text-sm"
-            >
-              عرض التقارير ←
-            </Link>
-          </div>
         </motion.div>
 
       </div>

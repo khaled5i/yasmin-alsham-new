@@ -66,6 +66,23 @@ interface OrderOnDate {
     client_name: string
     client_phone: string
     order_number: string
+    status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
+}
+
+const ORDER_STATUS_LABEL: Record<OrderOnDate['status'], string> = {
+    pending: 'بانتظار البدء',
+    in_progress: 'قيد التنفيذ',
+    completed: 'مكتمل',
+    delivered: 'تم التسليم',
+    cancelled: 'ملغي',
+}
+
+const ORDER_STATUS_BADGE: Record<OrderOnDate['status'], string> = {
+    pending: 'bg-amber-50 text-amber-700 border-amber-200',
+    in_progress: 'bg-blue-50 text-blue-700 border-blue-200',
+    completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    delivered: 'bg-gray-100 text-gray-700 border-gray-200',
+    cancelled: 'bg-red-50 text-red-700 border-red-200',
 }
 
 // ─── Supabase extra-slots service ─────────────────────────────────────────────
@@ -307,7 +324,12 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, onClose, onViewMor
                                     <User className={`w-5 h-5 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="font-semibold text-gray-900 truncate">{order.client_name}</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-semibold text-gray-900 truncate">{order.client_name}</p>
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-md border shrink-0 whitespace-nowrap ${ORDER_STATUS_BADGE[order.status]}`}>
+                                            {ORDER_STATUS_LABEL[order.status]}
+                                        </span>
+                                    </div>
                                     <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
                                         <Phone className="w-3 h-3" />
                                         <span dir="ltr">{order.client_phone}</span>
@@ -636,7 +658,7 @@ export default function OrderSchedulePage() {
                     if (mode === 'proof' && (order.status === 'delivered')) return
                     newStats[key] = (newStats[key] || 0) + 1
                     if (!newOrdersMap[key]) newOrdersMap[key] = []
-                    newOrdersMap[key].push({ id: order.id, client_name: order.client_name, client_phone: order.client_phone, order_number: order.order_number })
+                    newOrdersMap[key].push({ id: order.id, client_name: order.client_name, client_phone: order.client_phone, order_number: order.order_number, status: order.status })
                 })
                 setStats(newStats)
                 setOrdersMap(newOrdersMap)

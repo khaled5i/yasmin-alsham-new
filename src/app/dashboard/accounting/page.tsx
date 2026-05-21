@@ -60,6 +60,11 @@ function AccountingMainContent() {
   const { user } = useAuthStore()
   const { workerType, getDashboardRoute } = useWorkerPermissions()
 
+  const isAccountant = user?.role === 'worker' && workerType === 'accountant'
+  const visibleBranches = isAccountant
+    ? branches.filter((branch) => branch.id === 'tailoring')
+    : branches
+
   // تحديد مسار العودة حسب نوع المستخدم
   const getBackRoute = () => {
     if (user?.role === 'admin') {
@@ -101,7 +106,7 @@ function AccountingMainContent() {
 
         {/* بطاقات الفروع */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {branches.map((branch, index) => (
+          {visibleBranches.map((branch, index) => (
             <motion.div
               key={branch.id}
               initial={{ opacity: 0, y: 20 }}

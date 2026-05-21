@@ -78,7 +78,16 @@ function TailoringAccountingContent() {
   const { user } = useAuthStore()
   const { workerType, getDashboardRoute } = useWorkerPermissions()
 
+  const isAccountant = user?.role === 'worker' && workerType === 'accountant'
+  const visibleSections = isAccountant
+    ? sections.filter((section) => section.id === 'materials')
+    : sections
+
   useEffect(() => {
+    if (isAccountant) {
+      setLoading(false)
+      return
+    }
     const loadStats = async () => {
       try {
         const data = await getQuickStats('tailoring')
@@ -90,7 +99,7 @@ function TailoringAccountingContent() {
       }
     }
     loadStats()
-  }, [])
+  }, [isAccountant])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US').format(amount) + ' ر.س'
@@ -138,7 +147,8 @@ function TailoringAccountingContent() {
           </div>
         </motion.div>
 
-        {/* الملخص المالي */}
+        {/* الملخص المالي - مخفي عن المحاسب */}
+        {!isAccountant && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -174,6 +184,7 @@ function TailoringAccountingContent() {
             </div>
           )}
         </motion.div>
+        )}
 
         {/* أقسام المحاسبة */}
         <motion.div
@@ -183,7 +194,7 @@ function TailoringAccountingContent() {
         >
           <h2 className="text-lg font-bold text-gray-900 mb-4">الأقسام</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {sections.map((section, index) => (
+            {visibleSections.map((section, index) => (
               <Link key={section.id} href={section.href}>
                 <motion.div
                   initial={{ opacity: 0, x: -20 }}
