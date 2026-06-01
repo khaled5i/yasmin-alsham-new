@@ -662,8 +662,12 @@ export const orderService = {
       if (filters?.monthFilter) {
         const [year, month] = filters.monthFilter.split('-').map(Number)
         const startDate = `${filters.monthFilter}-01`
-        const nextMonth = new Date(year, month, 1) // first day of next month (month is already 1-indexed so this works)
-        const endDate = nextMonth.toISOString().split('T')[0]
+        // first day of next month — built as a string directly to avoid timezone
+        // conversion. Using new Date(...).toISOString() shifts the boundary back a
+        // day in timezones ahead of UTC, dropping orders completed on the last day.
+        const nextYear = month === 12 ? year + 1 : year
+        const nextMonth = month === 12 ? 1 : month + 1
+        const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
         query = query.gte('worker_completed_at', startDate).lt('worker_completed_at', endDate)
       }
 
@@ -861,11 +865,31 @@ export const orderService = {
 
       // إذا غيّر المدير الحالة إلى completed أو delivered → سجّل وقت الإنهاء
       const finalUpdates: any = { ...updates }
+      const nowIso = new Date().toISOString()
       if (
         (updates.status === 'completed' || updates.status === 'delivered') &&
         !finalUpdates.admin_completed_at
       ) {
-        finalUpdates.admin_completed_at = new Date().toISOString()
+        finalUpdates.admin_completed_at = nowIso
+      }
+
+      // عند تحويل حالة الطلب إلى "مكتمل" نحفظ توقيت التغيير بالضبط في worker_completed_at
+      // كأن العامل هو من أنهى الطلب (وليس مدير النظام)، ما لم يكن للعامل توقيت إنهاء فعلي مسبق.
+      if (updates.status === 'completed' && !finalUpdates.worker_completed_at) {
+        let existingWorkerCompletedAt: string | null = null
+        try {
+          const { data: existing } = await supabase
+            .from('orders')
+            .select('worker_completed_at')
+            .eq('id', id)
+            .single()
+          existingWorkerCompletedAt = existing?.worker_completed_at ?? null
+        } catch (e) {
+          // في حال فشل الجلب نكمل بدون طمس أي قيمة (نضبط التوقيت كاحتياط)
+        }
+        if (!existingWorkerCompletedAt) {
+          finalUpdates.worker_completed_at = nowIso
+        }
       }
 
       const { data, error } = await supabase
