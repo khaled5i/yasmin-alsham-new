@@ -1203,6 +1203,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
       const result = await orderService.getAll({
         status: ['completed', 'delivered'],
         worker_id: worker.id,
+        monthFilter: selectedMonth,
         pageSize: 200
       })
       const orders = result.data || []
@@ -1218,7 +1219,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
     } finally {
       setPricingOrdersLoading(false)
     }
-  }, [])
+  }, [selectedMonth])
 
   const handleClosePricingModal = useCallback(() => {
     setSelectedWorkerForPricing(null)
@@ -2511,7 +2512,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     </div>
                     <div>
                       <h2 className="text-lg sm:text-xl font-bold text-gray-800">تسعير وتقييم الطلبات</h2>
-                      <p className="text-sm text-gray-500">{getWorkerName(selectedWorkerForPricing)}</p>
+                      <p className="text-sm text-gray-500">{getWorkerName(selectedWorkerForPricing)} — شهر {selectedMonth}</p>
                     </div>
                   </div>
                   <button
@@ -2533,8 +2534,8 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                 ) : pricingOrders.length === 0 ? (
                   <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-12 border border-pink-100 text-center">
                     <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-xl font-bold text-gray-800 mb-2">لا توجد طلبات مكتملة</h3>
-                    <p className="text-gray-600">لا توجد طلبات مكتملة لهذا العامل حتى الآن</p>
+                    <h3 className="text-xl font-bold text-gray-800 mb-2">لا توجد طلبات مكتملة في هذا الشهر</h3>
+                    <p className="text-gray-600">لا توجد قطع نفّذها هذا العامل خلال شهر {selectedMonth}</p>
                   </div>
                 ) : (
                   <>

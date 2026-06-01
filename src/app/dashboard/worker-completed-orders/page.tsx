@@ -55,7 +55,8 @@ export default function WorkerCompletedOrdersPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [deliverySuccess, setDeliverySuccess] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedMonth, setSelectedMonth] = useState('')
+  // افتراضياً نعرض الشهر الحالي فقط؛ يمكن للمستخدم اختيار شهر أقدم أو كل الأشهر من الفلتر
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
@@ -82,17 +83,27 @@ export default function WorkerCompletedOrdersPage() {
       return
     }
 
-    loadOrders()
+    // نجلب كل الطلبات المكتملة/المسلّمة بدون ترقيم صفحات (noPagination)
+    // وإلا يكتفي الخادم بأحدث 50 طلباً عالمياً فتختفي طلبات الأشهر القديمة للعامل
+    loadOrders({ status: ['completed', 'delivered'], noPagination: true })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
 
   // الشهر الحالي كـ "YYYY-MM"
   const currentMonthKey = new Date().toISOString().slice(0, 7)
 
-  // دالة لاستخراج مفتاح الشهر من الطلب (worker_completed_at أو الشهر الحالي للطلبات القديمة)
+  // دالة لاستخراج مفتاح الشهر من الطلب
+  // نعتمد على تاريخ الإنهاء الفعلي، ومع غيابه نستخدم تواريخ بديلة حقيقية
+  // (تاريخ إكمال الإدارة ← تاريخ التسليم ← آخر تحديث ← تاريخ الإنشاء)
+  // بدلاً من دفع الطلب إلى الشهر الحالي
   const getOrderMonthKey = (order: any): string => {
-    if (order.worker_completed_at) return order.worker_completed_at.slice(0, 7)
-    return currentMonthKey
+    const dateStr =
+      order.worker_completed_at ||
+      order.admin_completed_at ||
+      order.delivery_date ||
+      order.updated_at ||
+      order.created_at
+    return dateStr ? dateStr.slice(0, 7) : currentMonthKey
   }
 
   // دالة لتنسيق اسم الشهر بالعربي
@@ -131,20 +142,24 @@ export default function WorkerCompletedOrdersPage() {
   })
 
   // الأشهر المتاحة مرتبة تنازلياً (من الأحدث للأقدم)
+  // نضيف الشهر الحالي دائماً حتى لو لم يحتوِ على طلبات بعد (لأنه الخيار الافتراضي)
   const availableMonths: string[] = Array.from(
     new Set(
-      orders
-        .filter(order => {
-          if (!validStatuses.includes(order.status)) return false
-          const currentWorker = workers.find(w => w.user_id === user?.id)
-          const currentWorkerId = currentWorker?.id
-          if (user?.role !== 'admin') {
-            if (!currentWorkerId) return false
-            if (order.worker_id !== currentWorkerId) return false
-          }
-          return true
-        })
-        .map(o => getOrderMonthKey(o))
+      [
+        currentMonthKey,
+        ...orders
+          .filter(order => {
+            if (!validStatuses.includes(order.status)) return false
+            const currentWorker = workers.find(w => w.user_id === user?.id)
+            const currentWorkerId = currentWorker?.id
+            if (user?.role !== 'admin') {
+              if (!currentWorkerId) return false
+              if (order.worker_id !== currentWorkerId) return false
+            }
+            return true
+          })
+          .map(o => getOrderMonthKey(o))
+      ]
     )
   ).sort((a, b) => b.localeCompare(a))
 

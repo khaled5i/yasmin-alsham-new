@@ -94,10 +94,9 @@ export default function WorkerDetailPage() {
   const [activeOrdersPage, setActiveOrdersPage] = useState(0)
   const [isLoadingActive, setIsLoadingActive] = useState(true)
 
-  // Completed orders tab
+  // Completed orders tab — تُعرض كل طلبات الشهر دفعةً واحدة بدون ترقيم صفحات
   const [completedOrders, setCompletedOrders] = useState<Order[]>([])
   const [completedOrdersTotal, setCompletedOrdersTotal] = useState(0)
-  const [completedOrdersPage, setCompletedOrdersPage] = useState(0)
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false)
 
   // Completed orders filters
@@ -171,15 +170,14 @@ export default function WorkerDetailPage() {
     fetchActiveOrders(activeOrdersPage)
   }, [workerId, activeOrdersPage, fetchActiveOrders])
 
-  // Fetch completed orders (lazy)
-  const fetchCompletedOrders = useCallback(async (page: number, monthFilter?: string, unratedOnly?: boolean) => {
+  // Fetch completed orders (lazy) — بدون ترقيم: نعرض كل طلبات الشهر المحدد دفعةً واحدة
+  const fetchCompletedOrders = useCallback(async (monthFilter?: string, unratedOnly?: boolean) => {
     setIsLoadingCompleted(true)
     try {
       const { data, total } = await orderService.getAll({
         worker_id: workerId,
         status: ['completed', 'delivered'],
-        page,
-        pageSize: PAGE_SIZE,
+        noPagination: true,
         monthFilter: monthFilter || undefined,
         unratedOnly: unratedOnly || undefined,
         orderBy: 'worker_completed_at',
@@ -218,7 +216,7 @@ export default function WorkerDetailPage() {
     setActiveTab(tab)
     if (!loadedTabs.current.has(tab)) {
       loadedTabs.current.add(tab)
-      if (tab === 'completed') fetchCompletedOrders(0, completedMonthFilter, completedUnratedOnly)
+      if (tab === 'completed') fetchCompletedOrders(completedMonthFilter, completedUnratedOnly)
       if (tab === 'reports') fetchReports()
     }
   }
@@ -226,8 +224,7 @@ export default function WorkerDetailPage() {
   const handleCompletedFilterChange = useCallback((monthFilter: string, unratedOnly: boolean) => {
     setCompletedMonthFilter(monthFilter)
     setCompletedUnratedOnly(unratedOnly)
-    setCompletedOrdersPage(0)
-    fetchCompletedOrders(0, monthFilter, unratedOnly)
+    fetchCompletedOrders(monthFilter, unratedOnly)
   }, [fetchCompletedOrders])
 
   function openOrderModal(order: Order) {
@@ -497,7 +494,6 @@ export default function WorkerDetailPage() {
               <CompletedOrdersTab
                 orders={completedOrders}
                 total={completedOrdersTotal}
-                page={completedOrdersPage}
                 isLoading={isLoadingCompleted}
                 isAdmin={isAdmin}
                 pricingForms={pricingForms}
@@ -507,10 +503,6 @@ export default function WorkerDetailPage() {
                 monthFilter={completedMonthFilter}
                 unratedOnly={completedUnratedOnly}
                 onFilterChange={handleCompletedFilterChange}
-                onPageChange={(p) => {
-                  setCompletedOrdersPage(p)
-                  fetchCompletedOrders(p, completedMonthFilter, completedUnratedOnly)
-                }}
                 onTogglePricing={handleTogglePricing}
                 onSavePricing={handleSavePricing}
                 onOpenModal={openOrderModal}
@@ -741,7 +733,6 @@ function getRecentMonths(count: number): { key: string; label: string }[] {
 function CompletedOrdersTab({
   orders,
   total,
-  page,
   isLoading,
   isAdmin,
   pricingForms,
@@ -751,7 +742,6 @@ function CompletedOrdersTab({
   monthFilter,
   unratedOnly,
   onFilterChange,
-  onPageChange,
   onTogglePricing,
   onSavePricing,
   onOpenModal,
@@ -763,7 +753,6 @@ function CompletedOrdersTab({
 }: {
   orders: Order[]
   total: number
-  page: number
   isLoading: boolean
   isAdmin: boolean
   pricingForms: Record<string, OrderPricingData>
@@ -773,7 +762,6 @@ function CompletedOrdersTab({
   monthFilter: string
   unratedOnly: boolean
   onFilterChange: (monthFilter: string, unratedOnly: boolean) => void
-  onPageChange: (page: number) => void
   onTogglePricing: (order: Order) => void
   onSavePricing: (orderId: string, data: OrderPricingData) => void
   onOpenModal: (order: Order) => void
@@ -930,14 +918,9 @@ function CompletedOrdersTab({
           )
         })}
       </div>
-      {total > PAGE_SIZE && (
-        <div className="mt-6">
-          <PaginationControls
-            currentPage={page}
-            pageSize={PAGE_SIZE}
-            totalItems={total}
-            onPageChange={onPageChange}
-          />
+      {total > 0 && (
+        <div className="mt-6 text-center text-sm text-gray-500">
+          إجمالي طلبات {monthFilter ? 'الشهر' : 'العامل'}: <span className="font-bold text-gray-700">{total}</span> طلب
         </div>
       )}
       </>

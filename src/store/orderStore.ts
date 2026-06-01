@@ -50,6 +50,7 @@ interface OrderState {
     page?: number
     pageSize?: number
     lightweight?: boolean
+    noPagination?: boolean
   }) => Promise<void>
 
   loadMoreOrders: (filters?: {

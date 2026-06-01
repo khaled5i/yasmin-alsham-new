@@ -54,6 +54,9 @@ export interface CreateExpenseInput {
 // الواردات (من الطلبات المسلمة)
 // ============================================================================
 
+// طريقة الدفع
+export type PaymentMethod = 'cash' | 'network'
+
 export interface Income {
   id: string
   branch: BranchType
@@ -63,6 +66,8 @@ export interface Income {
   description: string
   amount: number
   quantity_meters?: number | null // الكمية بالمتر (اختياري)
+  payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
+  customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   date: string
   is_automatic: boolean   // هل تم إضافته تلقائياً من الطلبات
   created_at: string
@@ -76,6 +81,8 @@ export interface CreateIncomeInput {
   description?: string
   amount: number
   quantity_meters?: number | null // الكمية بالمتر (اختياري)
+  payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
+  customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   date: string
   is_automatic?: boolean
 }

@@ -21,14 +21,14 @@ import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
-import { getInventoryItems, addMovement, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
+import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
 
 function FabricsIncomeContent() {
   const [income, setIncome] = useState<Income[]>([])
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState<Date | null>(null)
+  const [dateFilter, setDateFilter] = useState<Date | null>(new Date())
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -36,10 +36,12 @@ function FabricsIncomeContent() {
 
   // حقول النموذج
   const [selectedInventoryId, setSelectedInventoryId] = useState('')
-  const [quantity, setQuantity] = useState('')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'network' | ''>('')
+  const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
+  const [otherSourceText, setOtherSourceText] = useState('')
 
   // عند التعديل — لا يوجد ربط بالمخزون (التعديل على السجل المالي فقط)
   const [editAmount, setEditAmount] = useState('')
@@ -70,18 +72,15 @@ function FabricsIncomeContent() {
 
   const resetForm = () => {
     setSelectedInventoryId('')
-    setQuantity('')
     setAmount('')
     setDescription('')
     setDate(new Date().toISOString().split('T')[0])
+    setPaymentMethod('')
+    setCustomerSource('')
+    setOtherSourceText('')
   }
 
   const selectedItem = inventoryItems.find((it) => it.id === selectedInventoryId)
-  const unitLabel = selectedItem?.unit === 'meter' ? 'متر' : 'قطعة'
-  const pricePerUnit =
-    amount && quantity && parseFloat(quantity) > 0
-      ? parseFloat(amount) / parseFloat(quantity)
-      : null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -113,17 +112,22 @@ function FabricsIncomeContent() {
 
     // إضافة جديدة
     if (!selectedInventoryId || !amount) return
-    const qty = parseFloat(quantity)
-    const amt = parseFloat(amount)
 
-    if (quantity && qty <= 0) {
-      alert('يرجى إدخال كمية صحيحة')
+    // طريقة الدفع ومصدر الزبونة إجباريان
+    if (!paymentMethod) {
+      alert('يرجى اختيار طريقة الدفع (كاش أو شبكة)')
       return
     }
-    if (selectedItem && quantity && qty > selectedItem.current_quantity) {
-      alert(`❌ الكمية (${qty}) أكبر من الرصيد المتاح (${selectedItem.current_quantity} ${unitLabel})`)
+    if (!customerSource) {
+      alert('يرجى اختيار مصدر الزبونة')
       return
     }
+
+    const amt = parseFloat(amount)
+    const resolvedSource =
+      customerSource === 'yasmin_alsham'
+        ? 'ياسمين الشام'
+        : otherSourceText.trim() || 'مصدر آخر'
 
     setSaving(true)
     try {
@@ -133,29 +137,13 @@ function FabricsIncomeContent() {
         customer_name: selectedItem?.name ?? '-',
         description: description || selectedItem?.name || '',
         amount: amt,
-        quantity_meters: quantity ? qty : undefined,
+        payment_method: paymentMethod,
+        customer_source: resolvedSource,
         date
       }
       const result = await createIncome(payload)
       if (result) {
         setIncome([result, ...income])
-        // إخراج من المخزون
-        if (quantity && qty > 0) {
-          await addMovement({
-            inventory_item_id: selectedInventoryId,
-            movement_type: 'out',
-            quantity: qty,
-            description: description || 'بيع',
-            date
-          })
-          setInventoryItems((prev) =>
-            prev.map((it) =>
-              it.id === selectedInventoryId
-                ? { ...it, current_quantity: it.current_quantity - qty }
-                : it
-            )
-          )
-        }
       }
       setShowModal(false)
       resetForm()
@@ -339,7 +327,7 @@ function FabricsIncomeContent() {
                       {item.description && item.customer_name !== item.description && (
                         <p className="text-sm text-gray-500">{item.description}</p>
                       )}
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center flex-wrap gap-2 mt-1">
                         <p className="text-xs text-gray-400">{formatDate(item.date)}</p>
                         {item.quantity_meters && (
                           <>
@@ -349,6 +337,16 @@ function FabricsIncomeContent() {
                               <span>{item.quantity_meters} متر</span>
                             </div>
                           </>
+                        )}
+                        {item.payment_method && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">
+                            {item.payment_method === 'cash' ? 'كاش' : 'شبكة'}
+                          </span>
+                        )}
+                        {item.customer_source && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium">
+                            {item.customer_source}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -485,16 +483,7 @@ function FabricsIncomeContent() {
                         ) : (
                           <select
                             value={selectedInventoryId}
-                            onChange={(e) => {
-                              setSelectedInventoryId(e.target.value)
-                              // إذا كان هناك كمية مدخلة ومخزون محدد بوحدة المتر، ملأ الكمية تلقائياً
-                              if (!quantity) {
-                                const it = inventoryItems.find((i) => i.id === e.target.value)
-                                if (it?.unit === 'meter' && it.cost_per_unit) {
-                                  // لا نملأ تلقائياً — المستخدم يختار هو
-                                }
-                              }
-                            }}
+                            onChange={(e) => setSelectedInventoryId(e.target.value)}
                             className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white"
                             required
                           >
@@ -510,46 +499,86 @@ function FabricsIncomeContent() {
                         )}
                       </div>
 
-                      {/* الكمية والمبلغ */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            الكمية {selectedItem ? `(${unitLabel})` : ''}
-                          </label>
-                          <input
-                            type="number"
-                            value={quantity}
-                            onChange={(e) => setQuantity(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                            min="0.01" step="0.01" placeholder="0"
-                          />
-                          {selectedItem && (
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              متاح: {selectedItem.current_quantity} {unitLabel}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ (ر.س) *</label>
-                          <input
-                            type="number"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                            min="0" step="0.01" required
-                          />
+                      {/* المبلغ */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ (ر.س) *</label>
+                        <input
+                          type="number"
+                          value={amount}
+                          onChange={(e) => setAmount(e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                          min="0" step="0.01" required
+                        />
+                      </div>
+
+                      {/* طريقة الدفع */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">طريقة الدفع *</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {([
+                            { value: 'cash', label: 'كاش' },
+                            { value: 'network', label: 'شبكة' }
+                          ] as const).map((opt) => (
+                            <label
+                              key={opt.value}
+                              className={`flex items-center justify-center gap-2 px-4 py-2.5 border rounded-xl cursor-pointer transition-colors ${
+                                paymentMethod === opt.value
+                                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                                  : 'border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="paymentMethod"
+                                value={opt.value}
+                                checked={paymentMethod === opt.value}
+                                onChange={() => setPaymentMethod(opt.value)}
+                                className="accent-emerald-600"
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
                         </div>
                       </div>
 
-                      {/* سعر الوحدة */}
-                      {pricePerUnit !== null && (
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-                          <p className="text-sm text-emerald-800 flex items-center justify-between">
-                            <span>سعر المتر:</span>
-                            <span className="font-bold">{formatCurrency(pricePerUnit)}/م</span>
-                          </p>
+                      {/* مصدر الزبونة */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">مصدر الزبونة *</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {([
+                            { value: 'yasmin_alsham', label: 'ياسمين الشام' },
+                            { value: 'other', label: 'مصدر آخر' }
+                          ] as const).map((opt) => (
+                            <label
+                              key={opt.value}
+                              className={`flex items-center justify-center gap-2 px-4 py-2.5 border rounded-xl cursor-pointer transition-colors ${
+                                customerSource === opt.value
+                                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                                  : 'border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="customerSource"
+                                value={opt.value}
+                                checked={customerSource === opt.value}
+                                onChange={() => setCustomerSource(opt.value)}
+                                className="accent-emerald-600"
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
                         </div>
-                      )}
+                        {customerSource === 'other' && (
+                          <input
+                            type="text"
+                            value={otherSourceText}
+                            onChange={(e) => setOtherSourceText(e.target.value)}
+                            className="w-full mt-3 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                            placeholder="اكتب اسم المصدر (اختياري)..."
+                          />
+                        )}
+                      </div>
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات (اختياري)</label>
