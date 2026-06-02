@@ -21,6 +21,7 @@ interface OrderPrintLayoutProps {
   designComments?: string
   designCommentsSnapshots?: DesignCommentSnapshot[] // قائمة التعليقات المتعددة
   hindiDesignCommentsSnapshots?: DesignCommentSnapshot[] // النسخة الهندية
+  selectedSummaryNoteIds?: string[] // معرّفات نصوص ملخص التصميم المحددة للطباعة (إن لم تُمرّر تُطبع الكل)
 }
 
 /**
@@ -33,7 +34,7 @@ interface OrderPrintLayoutProps {
  * - الصفحة الأخيرة: باقي صور التصميم
  */
 const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
-  ({ order, printableImages, designComments, designCommentsSnapshots = [], hindiDesignCommentsSnapshots }, ref) => {
+  ({ order, printableImages, designComments, designCommentsSnapshots = [], hindiDesignCommentsSnapshots, selectedSummaryNoteIds }, ref) => {
 
     // الحصول على اسم المقاس بالعربية
     const getMeasurementLabel = (key: string): string => {
@@ -194,6 +195,13 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
 
     const allNotes = getAllNotes()
 
+    // ملخص التصميم (migration 50) - النصوص المحوّلة من التسجيلات الصوتية
+    // عند تمرير selectedSummaryNoteIds نطبع فقط النصوص المحددة، وإلا نطبع الكل
+    const designSummaryNotes = (order.design_summary_notes || []).filter(
+      note => note.transcription && note.transcription.trim() &&
+        (!selectedSummaryNoteIds || selectedSummaryNoteIds.includes(note.id))
+    )
+
     // دالة لرسم الصفحة الأولى (مع إمكانية تمرير صورة خلف بديلة)
     const renderMainPage = (backImageUrl: string | null) => (
       <div className="print-page page-front">
@@ -292,7 +300,6 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
             {/* قسم نوع القماش */}
             {order.fabric && (
               <div className="print-fabric-type print-additional-notes" style={{ marginBottom: '15px' }}>
-                <h2 className="section-title section-title-compact">نوع القماش</h2>
                 <div className="additional-notes-list">
                   <div className="additional-note-item">
                     <span className="note-number">1.</span>
@@ -304,12 +311,11 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
               </div>
             )}
 
-            {/* قسم ملاحظات إضافية - جميع أنواع الملاحظات مع الترجمات */}
-            <div className="print-additional-notes">
-              <h2 className="section-title section-title-compact">ملاحظات إضافية</h2>
-              <div className="additional-notes-list">
-                {allNotes.length > 0 ? (
-                  allNotes.map((note, idx) => (
+            {/* قسم ملاحظات إضافية - يُعرض فقط عند وجود ملاحظات، بدون عنوان */}
+            {allNotes.length > 0 && (
+              <div className="print-additional-notes">
+                <div className="additional-notes-list">
+                  {allNotes.map((note, idx) => (
                     <div key={idx} className="additional-note-item">
                       <span className="note-number">{idx + 1}.</span>
                       <div className="note-content">
@@ -319,34 +325,57 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                         )}
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="additional-note-item additional-note-empty">
-                    <span className="note-text">لا توجد ملاحظات</span>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
+            )}
+
+            {/* قسم تعديلات البروفا الأولى - يبقى فارغاً دائماً */}
+            <div className="print-proof-modifications">
+              <h2 className="section-title section-title-compact">تعديلات البروفا الأولى</h2>
             </div>
           </div>
 
-          {/* الجزء الأيسر - صورة الخلف */}
-          <div className="print-comments">
-            <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Back</h3>
-            <div className="comments-box">
-              {backImageUrl ? (
-                <div className="first-images-grid first-images-single">
-                  <div className="first-image-container first-image-single">
-                    <img
-                      src={backImageUrl}
-                      alt="صورة التصميم"
-                      className="first-design-image"
-                    />
+          {/* العمود الأيسر - صورة الخلف + ملخص التصميم */}
+          <div className="print-right-column">
+            {/* صورة الخلف */}
+            <div className="print-comments">
+              <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '10px' }}>Back</h3>
+              <div className="comments-box">
+                {backImageUrl ? (
+                  <div className="first-images-grid first-images-single">
+                    <div className="first-image-container first-image-single">
+                      <img
+                        src={backImageUrl}
+                        alt="صورة التصميم"
+                        className="first-design-image"
+                      />
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="empty-comments" />
-              )}
+                ) : (
+                  <div className="empty-comments" />
+                )}
+              </div>
             </div>
+
+            {/* ملخص التصميم - يُعرض فقط عند وجود ملخص، وإلا يبقى المكان فارغاً */}
+            {designSummaryNotes.length > 0 && (
+              <div className="print-design-summary">
+                <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '8px' }}>ملخص التصميم</h3>
+                <div className="design-summary-list">
+                  {designSummaryNotes.map((note, idx) => (
+                    <div key={note.id} className="design-summary-item">
+                      <span className="note-number">{idx + 1}.</span>
+                      <span className="note-text">
+                        {note.transcription!.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (
+                          <span key={i}>{i > 0 && <br />}{line.trim()}</span>
+                        ))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

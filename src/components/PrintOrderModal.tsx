@@ -35,6 +35,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
   const [designComments, setDesignComments] = useState<string>(order.notes || '')
   const [designCommentsSnapshots, setDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
   const [selectedCommentsIds, setSelectedCommentsIds] = useState<string[]>([]) // التعليقات المحددة للطباعة
+  const [selectedSummaryNoteIds, setSelectedSummaryNoteIds] = useState<string[]>([]) // نصوص ملخص التصميم المحددة للطباعة
   const [hindiDesignCommentsSnapshots, setHindiDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
   const [includeHindiPrint, setIncludeHindiPrint] = useState(false)
   const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(false)
@@ -67,6 +68,11 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
   // الحصول على التعليقات المحددة فقط
   const selectedCommentsSnapshots = designCommentsSnapshots.filter(
     snapshot => selectedCommentsIds.includes(snapshot.id)
+  )
+
+  // نصوص ملخص التصميم المحوّلة من الصوت (migration 50)
+  const designSummaryNotes = (order.design_summary_notes || []).filter(
+    note => note.transcription && note.transcription.trim()
   )
 
   // دالة مساعدة لإنشاء snapshot لتعليق واحد
@@ -473,6 +479,12 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
       setPrintableImages([])
       setDesignComments(order.notes || '')
 
+      // تحديد جميع نصوص ملخص التصميم افتراضياً (المستخدم يلغي ما لا يريد طباعته)
+      const summaryNotes = (order.design_summary_notes || []).filter(
+        note => note.transcription && note.transcription.trim()
+      )
+      setSelectedSummaryNoteIds(summaryNotes.map(note => note.id))
+
       // إعادة توليد التعليقات عند تحديث البيانات
       // يحدث هذا عندما يتم جلب fullOrder (مع measurements)
       generateAllSnapshots()
@@ -518,6 +530,23 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
   // إلغاء تحديد جميع التعليقات
   const deselectAllComments = () => {
     setSelectedCommentsIds([])
+  }
+
+  // تبديل حالة تحديد نص ملخص التصميم للطباعة
+  const toggleSummaryNote = (noteId: string) => {
+    setSelectedSummaryNoteIds(prev =>
+      prev.includes(noteId) ? prev.filter(id => id !== noteId) : [...prev, noteId]
+    )
+  }
+
+  // تحديد جميع نصوص ملخص التصميم
+  const selectAllSummaryNotes = () => {
+    setSelectedSummaryNoteIds(designSummaryNotes.map(note => note.id))
+  }
+
+  // إلغاء تحديد جميع نصوص ملخص التصميم
+  const deselectAllSummaryNotes = () => {
+    setSelectedSummaryNoteIds([])
   }
 
   // التحقق من نوع الجهاز
@@ -580,20 +609,26 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
     .measurement-label { color: #000000; font-weight: bold; }
     .measurement-value { color: #111827; font-weight: bold; min-width: 50px; text-align: center; }
     .print-additional-notes { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; background: #f0fdf4; }
+    .print-proof-modifications { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; min-height: 90px; flex: 1; background: #fdf2f8; }
     .additional-notes-list { display: flex; flex-direction: column; gap: 4px; }
     .additional-note-item { display: flex; gap: 6px; font-size: 10px; line-height: 1.4; padding: 3px 0; border-bottom: 1px dashed #d1fae5; }
     .additional-note-item:last-child { border-bottom: none; }
     .additional-note-empty { color: #9ca3af; font-style: italic; justify-content: center; }
     .note-number { color: #059669; font-weight: bold; flex-shrink: 0; }
     .note-text { color: #374151; }
-    .print-comments { width: 70%; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; }
+    .print-right-column { width: 70%; display: flex; flex-direction: column; gap: 10px; }
+    .print-comments { width: 100%; height: 75%; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; }
+    .print-design-summary { flex: 1; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; background: #f0fdf4; overflow: hidden; }
+    .design-summary-list { display: flex; flex-direction: column; gap: 4px; }
+    .design-summary-item { display: flex; gap: 6px; font-size: 11px; line-height: 1.5; padding: 3px 0; border-bottom: 1px dashed #d1fae5; }
+    .design-summary-item:last-child { border-bottom: none; }
     .comments-box { flex: 1; min-height: 300px; padding: 10px; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 4px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 10px; }
     .empty-comments { height: 100%; min-height: 280px; }
     .first-images-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; flex: 1; }
-    .first-images-single { display: flex; justify-content: center; align-items: center; flex: 1; width: 100%; height: 100%; }
+    .first-images-single { display: flex; justify-content: center; align-items: flex-start; flex: 1; width: 100%; height: 100%; }
     .first-image-container { border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; aspect-ratio: 1; }
-    .first-image-single { width: 100%; height: 100%; max-height: 100%; aspect-ratio: auto; display: flex; justify-content: center; align-items: center; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
-    .first-image-single .first-design-image { width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; }
+    .first-image-single { width: 100%; height: auto; max-height: 100%; aspect-ratio: auto; display: flex; justify-content: center; align-items: flex-start; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
+    .first-image-single .first-design-image { width: 100%; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; object-position: top; }
     .first-design-image { width: 100%; height: 100%; object-fit: cover; }
     .text-comments-section { border-top: 1px dashed #d1d5db; padding-top: 8px; margin-top: auto; }
     .notes-label { font-weight: bold; color: #ec4899; font-size: 12px; margin-bottom: 4px; }
@@ -948,6 +983,68 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
               </div>
             )}
 
+            {/* اختيار نصوص ملخص التصميم للطباعة (النصوص المحوّلة من الصوت) */}
+            {designSummaryNotes.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block font-bold text-gray-800">
+                    اختر نصوص ملخص التصميم للطباعة ({selectedSummaryNoteIds.length} من {designSummaryNotes.length}):
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={selectAllSummaryNotes}
+                      className="text-xs px-3 py-1 bg-pink-100 text-pink-700 rounded-full hover:bg-pink-200 transition-colors"
+                    >
+                      تحديد الكل
+                    </button>
+                    <button
+                      onClick={deselectAllSummaryNotes}
+                      className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
+                    >
+                      إلغاء الكل
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mb-2">اضغط على أي نص لإلغاء تحديده فلا تتم طباعته</p>
+                <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 flex flex-col gap-2">
+                  {designSummaryNotes.map((note, idx) => {
+                    const isSelected = selectedSummaryNoteIds.includes(note.id)
+                    const lines = note.transcription!.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
+                    return (
+                      <div
+                        key={note.id}
+                        onClick={() => toggleSummaryNote(note.id)}
+                        className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-all ${
+                          isSelected
+                            ? 'border-pink-500 bg-pink-50'
+                            : 'border-gray-200 bg-white opacity-60 hover:opacity-100'
+                        }`}
+                      >
+                        <div
+                          className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center border-2 ${
+                            isSelected ? 'bg-pink-500 border-pink-500 text-white' : 'border-gray-300 bg-white'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3.5 h-3.5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-pink-600 font-bold text-sm ml-1">{idx + 1}.</span>
+                          <span
+                            className={`text-sm ${isSelected ? 'text-gray-800' : 'text-gray-500 line-through'}`}
+                            dir="auto"
+                          >
+                            {lines.map((line, i) => (
+                              <span key={i}>{i > 0 && <br />}{line}</span>
+                            ))}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* اختيار الصور للطباعة */}
             {imageOnlyList.length > 0 && (
               <div className="mb-6">
@@ -1052,6 +1149,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
               designComments={designComments}
               designCommentsSnapshots={selectedCommentsSnapshots}
               hindiDesignCommentsSnapshots={includeHindiPrint ? hindiDesignCommentsSnapshots : undefined}
+              selectedSummaryNoteIds={selectedSummaryNoteIds}
             />
           </div>
         </div>
