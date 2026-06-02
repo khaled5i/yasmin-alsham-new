@@ -34,6 +34,18 @@ export interface DesignCommentsData {
 }
 
 /**
+ * واجهة ملاحظة ملخص التصميم الصوتية
+ * Design Summary Voice Note Interface
+ */
+export interface DesignSummaryNote {
+  id: string
+  data: string        // base64 audio
+  timestamp: number
+  duration?: number
+  transcription?: string
+}
+
+/**
  * إنشاء معرف فريد للتعليق
  * Generate unique ID for comment
  */

@@ -13,7 +13,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ImageUpload from '@/components/ImageUpload'
-import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
+import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
 import { shiftDate, DUE_DATE_BACKDATE_DAYS } from '@/lib/date-utils'
@@ -39,18 +39,25 @@ import {
   Download,
   BookMarked,
   Zap,
-  Flag
+  Flag,
+  Mic,
+  Play,
+  Pause,
+  Trash2,
+  Loader2
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import GenerateDesignButton from '@/components/GenerateDesignButton'
+import DesignSummarySection from '@/components/DesignSummarySection'
 import { Order } from '@/lib/services/order-service'
 import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
 
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
 const DESIGN_COMMENTS_STORAGE_KEY = 'add-order-design-comments-v1'
+const DESIGN_SUMMARY_STORAGE_KEY = 'add-order-design-summary-v1'
 const DESIGN_ACTIVE_VIEW_STORAGE_KEY = 'add-order-design-active-view'
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
@@ -103,6 +110,7 @@ interface FormDataType {
   imageDrawings: DrawingPath[]
   customDesignImage: string | null // legacy فقط؛ لا نخزن base64 جديداً في state
   savedDesignComments: SavedDesignComment[]
+  designSummaryNotes: DesignSummaryNote[]
   fabricType: 'external' | 'internal' | null
   hasSecondProof: 'yes' | 'no' | null
   aiGeneratedImages: string[]
@@ -130,6 +138,7 @@ const getInitialFormData = (): FormDataType => ({
   imageDrawings: [],
   customDesignImage: null,
   savedDesignComments: [],
+  designSummaryNotes: [],
   fabricType: null,
   hasSecondProof: null,
   aiGeneratedImages: [],
@@ -154,6 +163,7 @@ const isFormDataEmpty = (data: FormDataType): boolean => {
     data.imageDrawings.length === 0 &&
     !data.customDesignImage &&
     data.savedDesignComments.length === 0 &&
+    data.designSummaryNotes.length === 0 &&
     !data.fabricType &&
     !data.hasSecondProof
   )
@@ -254,7 +264,7 @@ function AddOrderContent() {
     isDataEmpty: isFormDataEmpty,
     // استبعاد الحقول الكبيرة (الصور والملاحظات الصوتية) من الحفظ التلقائي
     // لتجنب تجاوز حد localStorage
-    excludeFields: ['images', 'customDesignImage', 'voiceNotes', 'savedDesignComments']
+    excludeFields: ['images', 'customDesignImage', 'voiceNotes', 'savedDesignComments', 'designSummaryNotes']
   })
 
   // حالة لتتبع ملف الصورة المخصصة (File object لا يمكن حفظه في localStorage)
@@ -351,6 +361,7 @@ function AddOrderContent() {
       } catch (error) {
         console.error('Error restoring design comments:', error)
         localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+        localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
       }
 
       // استرجاع العرض النشط الأخير (أمام/خلف)
@@ -403,8 +414,36 @@ function AddOrderContent() {
     } else {
       // حذف التعليقات من localStorage إذا كانت فارغة
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
     }
   }, [formData.savedDesignComments, hasLoadedComments])
+
+  // حفظ واسترجاع ملخص التصميم الصوتي
+  const [hasLoadedSummary, setHasLoadedSummary] = useState(false)
+  useEffect(() => {
+    if (hasLoadedSummary) return
+    const saved = localStorage.getItem(DESIGN_SUMMARY_STORAGE_KEY)
+    if (saved) {
+      try {
+        const notes = JSON.parse(saved)
+        if (Array.isArray(notes) && notes.length > 0) {
+          setFormData(prev => ({ ...prev, designSummaryNotes: notes }))
+        }
+      } catch { /* ignore */ }
+    }
+    setHasLoadedSummary(true)
+  }, [hasLoadedSummary, setFormData])
+
+  useEffect(() => {
+    if (!hasLoadedSummary) return
+    if (formData.designSummaryNotes.length > 0) {
+      try {
+        localStorage.setItem(DESIGN_SUMMARY_STORAGE_KEY, JSON.stringify(formData.designSummaryNotes))
+      } catch { /* quota exceeded - skip */ }
+    } else {
+      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
+    }
+  }, [formData.designSummaryNotes, hasLoadedSummary])
 
   // رسالة تحذيرية عند محاولة إغلاق الصفحة مع بيانات غير محفوظة
   useEffect(() => {
@@ -468,6 +507,11 @@ function AddOrderContent() {
       ...prev,
       voiceNotes
     }))
+  }, [setFormData])
+
+  // معالجة تغيير ملخص التصميم الصوتي
+  const handleDesignSummaryNotesChange = useCallback((notes: DesignSummaryNote[]) => {
+    setFormData(prev => ({ ...prev, designSummaryNotes: notes }))
   }, [setFormData])
 
   // معالجة تغيير التعليقات على الصورة
@@ -570,6 +614,7 @@ function AddOrderContent() {
     setIsUrgent(false)
     // حذف تعليقات التصميم والعرض النشط من localStorage
     localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+    localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
     localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
     setHasLoadedComments(false)
     setRestoredActiveView(undefined)
@@ -852,6 +897,7 @@ function AddOrderContent() {
         images: formData.images.length > 0 ? formData.images : undefined,
         // استخدام البنية الجديدة للتعليقات المتعددة
         saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
         // للتوافق مع الكود القديم - سنحتفظ بهذه الحقول أيضاً
         image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
@@ -871,6 +917,7 @@ function AddOrderContent() {
       // مسح البيانات المحفوظة من localStorage بعد النجاح
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       // إظهار رسالة النجاح
@@ -1023,6 +1070,7 @@ function AddOrderContent() {
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
         images: formData.images.length > 0 ? formData.images : undefined,
         saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
         image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
         custom_design_image: customDesignImageBase64,
@@ -1040,6 +1088,7 @@ function AddOrderContent() {
       // مسح البيانات المحفوظة من localStorage بعد النجاح
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       // إظهار رسالة النجاح
@@ -1178,6 +1227,7 @@ function AddOrderContent() {
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
         images: formData.images.length > 0 ? formData.images : undefined,
         saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
         image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
         custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
@@ -1190,6 +1240,7 @@ function AddOrderContent() {
 
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       setSaveSuccess(true)
@@ -1302,6 +1353,7 @@ function AddOrderContent() {
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
         images: formData.images.length > 0 ? formData.images : undefined,
         saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
         image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
         custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
@@ -1314,6 +1366,7 @@ function AddOrderContent() {
 
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       setSaveSuccess(true)
@@ -1428,6 +1481,7 @@ function AddOrderContent() {
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
         images: formData.images.length > 0 ? formData.images : undefined,
         saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
+        design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
         image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
         custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
@@ -1440,6 +1494,7 @@ function AddOrderContent() {
 
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
+      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
       localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
 
       setSaveSuccess(true)
@@ -1875,6 +1930,8 @@ function AddOrderContent() {
                 currentImageBase64={formData.customDesignImage}
                 initialView={restoredActiveView}
                 onViewChange={handleViewChange}
+                designSummaryNotes={formData.designSummaryNotes}
+                onDesignSummaryNotesChange={handleDesignSummaryNotesChange}
               />
 
               {/* زر حفظ التصاميم على الجهاز */}
@@ -1889,6 +1946,14 @@ function AddOrderContent() {
                 </button>
               )}
             </div>
+
+            {/* ملخص التصميم الصوتي */}
+            {formData.designSummaryNotes.length > 0 && (
+              <DesignSummarySection
+                notes={formData.designSummaryNotes}
+                onNotesChange={handleDesignSummaryNotesChange}
+              />
+            )}
 
             {/* صور التصميم */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100 relative z-20">

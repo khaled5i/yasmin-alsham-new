@@ -156,6 +156,14 @@ export interface Order {
   worker_notes?: string | null
   // إظهار التقييم للعامل (migration 44)
   worker_rating_visible?: boolean
+  // ملخص التصميم الصوتي (migration 50)
+  design_summary_notes?: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
+  }>
 }
 
 export interface CreateOrderData {
@@ -250,6 +258,14 @@ export interface CreateOrderData {
     image: string | null
     title?: string
     view?: 'front' | 'back'
+  }>
+  // ملخص التصميم الصوتي (migration 50)
+  design_summary_notes?: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
   }>
   // حقول محاسبية
   branch?: Branch
@@ -371,6 +387,14 @@ export interface UpdateOrderData {
     title?: string
     view?: 'front' | 'back'
   }>
+  // ملخص التصميم الصوتي (migration 50)
+  design_summary_notes?: Array<{
+    id: string
+    data: string
+    timestamp: number
+    duration?: number
+    transcription?: string
+  }>
 }
 
 // ============================================================================
@@ -460,6 +484,7 @@ export const orderService = {
         images: orderData.images || [],
         voice_notes: orderData.voice_notes || [],
         voice_transcriptions: orderData.voice_transcriptions || [],
+        design_summary_notes: orderData.design_summary_notes || [],  // migration 50
         branch: orderData.branch || 'tailoring',
         cost_center: orderData.cost_center || 'CC-001',
         discount_amount: orderData.discount_amount || 0,
@@ -1129,7 +1154,7 @@ export const orderService = {
       // نجلب measurements + الأعمدة المستقلة (migrations 30, 33) معاً لتوحيد نقطة الوصول
       const { data, error } = await supabase
         .from('orders')
-        .select('measurements, image_annotations, image_drawings, design_comments, custom_design_image, ai_generated_images')
+        .select('measurements, image_annotations, image_drawings, design_comments, custom_design_image, ai_generated_images, design_summary_notes')
         .eq('id', id)
         .single()
 
@@ -1159,6 +1184,10 @@ export const orderService = {
         ai_generated_images: row?.ai_generated_images?.length
           ? row.ai_generated_images
           : (row?.measurements?.ai_generated_images || []),
+        // ملخص التصميم الصوتي (migration 50)
+        design_summary_notes: row?.design_summary_notes?.length
+          ? row.design_summary_notes
+          : (row?.measurements?.design_summary_notes || []),
       }
 
       if (isDev) console.log('✅ Measurements fetched successfully')

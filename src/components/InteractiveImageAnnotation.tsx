@@ -403,6 +403,14 @@ export interface SavedDesignComment {
   compositeImageHi?: string | null // نسخة هندية من الصورة المركّبة (النص بالهندية)
 }
 
+export interface DesignSummaryNote {
+  id: string
+  data: string        // base64 audio
+  timestamp: number
+  duration?: number
+  transcription?: string
+}
+
 interface InteractiveImageAnnotationProps {
   imageSrc: string
   annotations: ImageAnnotation[]
@@ -421,6 +429,9 @@ interface InteractiveImageAnnotationProps {
   initialView?: 'front' | 'back'
   // إشعار المكون الأب عند تغيير العرض
   onViewChange?: (view: 'front' | 'back') => void
+  // ملخص التصميم الصوتي
+  designSummaryNotes?: DesignSummaryNote[]
+  onDesignSummaryNotesChange?: (notes: DesignSummaryNote[]) => void
 }
 
 // نوع الـ ref للوصول إلى دوال المكون من الخارج
@@ -843,7 +854,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   showSaveButton = true,
   currentImageBase64 = null,
   initialView,
-  onViewChange
+  onViewChange,
+  designSummaryNotes = [],
+  onDesignSummaryNotesChange
 }, ref) => {
   const { t } = useTranslation()
 
@@ -879,6 +892,11 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const soxAnnotationIdRef = useRef<string>('')
   const soxMimeTypeRef = useRef<string>('audio/webm')
   const annotationsRef = useRef(annotations)
+
+  // ملخص التصميم - refs ومتغيرات الحالة
+  const designSummaryNotesRef = useRef<DesignSummaryNote[]>(designSummaryNotes)
+  const summaryStartTimeRef = useRef<number>(0)
+  const [isDesignSummaryRecording, setIsDesignSummaryRecording] = useState(false)
 
   // حالات التعليقات الصوتية
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
@@ -3019,6 +3037,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   // مزامنة annotationsRef
   useEffect(() => { annotationsRef.current = annotations }, [annotations])
 
+  // مزامنة designSummaryNotesRef
+  useEffect(() => { designSummaryNotesRef.current = designSummaryNotes }, [designSummaryNotes])
+
   // بدء التسجيل تلقائياً بعد إضافة التعليق عبر النقر المزدوج
   useEffect(() => {
     const id = autoRecordAnnotationIdRef.current
@@ -3050,6 +3071,45 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     reader.onloadend = () => {
       const base64 = reader.result as string
       const cleaned = cleanText(finalText)
+
+      // --- توجيه ملخص التصميم ---
+      if (annotationId === '__design_summary__') {
+        const duration = Math.round((Date.now() - summaryStartTimeRef.current) / 1000)
+        const noteId = `summary_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+        const newNote: DesignSummaryNote = {
+          id: noteId,
+          data: base64,
+          timestamp: Date.now(),
+          duration,
+          transcription: cleaned || undefined
+        }
+        onDesignSummaryNotesChange?.([...designSummaryNotesRef.current, newNote])
+        setIsDesignSummaryRecording(false)
+        setLiveTranscription('')
+        setTranscribingId(null)
+
+        // إذا فشل التحويل الفوري → جرّب async
+        if (!cleaned) {
+          setAsyncTranscribingId('__design_summary__')
+          const audioBlob = new Blob([blob], { type: mimeType })
+          const ext = mimeType.split('/')[1]?.split(';')[0] || 'webm'
+          const form = new FormData()
+          form.append('audio', audioBlob, `recording.${ext}`)
+          fetch('/api/soniox-async-transcribe', { method: 'POST', body: form })
+            .then(res => res.ok ? res.json() : Promise.reject(res.statusText))
+            .then(({ text }: { text: string }) => {
+              if (text) {
+                const updated = designSummaryNotesRef.current.map(n =>
+                  n.id === noteId ? { ...n, transcription: cleanText(text) } : n
+                )
+                onDesignSummaryNotesChange?.(updated)
+              }
+            })
+            .catch(err => console.error('Summary async transcription failed:', err))
+            .finally(() => setAsyncTranscribingId(null))
+        }
+        return
+      }
 
       if (cleaned) {
         // التحويل الفوري نجح — حفظ النص مباشرة
@@ -3385,6 +3445,18 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       }
       soxFinishedRef.current = true
     }
+  }
+
+  // بدء تسجيل ملخص التصميم
+  const startDesignSummaryRecording = async () => {
+    summaryStartTimeRef.current = Date.now()
+    setIsDesignSummaryRecording(true)
+    await startRecording('__design_summary__')
+  }
+
+  // حذف ملاحظة ملخص التصميم
+  const deleteDesignSummaryNote = (noteId: string) => {
+    onDesignSummaryNotesChange?.(designSummaryNotesRef.current.filter(n => n.id !== noteId))
   }
 
   // ترجمة النص المستخرج من التسجيل الصوتي
@@ -4151,6 +4223,61 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               >
                 <Pencil className="w-5 h-5" />
               </motion.button>
+
+              {/* زر تسجيل ملخص التصميم - فوق زر الرسم */}
+              <div className="relative">
+                <motion.button
+                  type="button"
+                  onClick={isDesignSummaryRecording ? stopRecording : startDesignSummaryRecording}
+                  disabled={disabled || (isRecordingActive && !isDesignSummaryRecording)}
+                  className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                    isDesignSummaryRecording
+                      ? 'bg-red-500 text-white ring-2 ring-red-300'
+                      : (isRecordingActive && !isDesignSummaryRecording)
+                        ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-teal-600 hover:bg-teal-50 border border-teal-300'
+                  }`}
+                  title={isDesignSummaryRecording ? 'إيقاف تسجيل الملخص' : 'تسجيل ملخص التصميم'}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {isDesignSummaryRecording ? (
+                    <MicOff className="w-5 h-5" />
+                  ) : (
+                    <Mic className="w-5 h-5" />
+                  )}
+                </motion.button>
+
+                {/* مؤشر التسجيل النشط */}
+                {isDesignSummaryRecording && (
+                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping" />
+                )}
+
+                {/* لوحة التسجيل المتحركة */}
+                <AnimatePresence>
+                  {isDesignSummaryRecording && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -8, scale: 0.9 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -8, scale: 0.9 }}
+                      className="absolute bottom-0 left-full ml-2 bg-white rounded-xl shadow-xl border border-red-200 p-3 w-52"
+                      style={{ zIndex: 200 }}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
+                        <span className="text-xs font-semibold text-red-600">ملخص التصميم</span>
+                        <span className="text-xs text-gray-500 mr-auto font-mono">{`${Math.floor(recordingTime / 60)}:${String(recordingTime % 60).padStart(2, '0')}`}</span>
+                      </div>
+                      {sonioxConnected && liveTranscription ? (
+                        <p className="text-xs text-gray-700 leading-relaxed text-right max-h-20 overflow-y-auto">
+                          {liveTranscription.replace(/<end>/gi, '\n')}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-400 italic">جاري الاستماع...</p>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
 
               {/* زر القائمة الإضافية (Plus) - يظهر دائماً */}
               <div className="relative plus-menu-container">

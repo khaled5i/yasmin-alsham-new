@@ -130,8 +130,8 @@ export default function ReportsPage() {
     })
     loadWorkers()
     // تحميل بيانات المحاسبة (التفصيل)
-    getExpenses('tailoring', 'material').then(setMaterialExpenses).catch(() => {})
-    getExpenses('tailoring', 'fixed').then(setFixedExpenses).catch(() => {})
+    getExpenses('tailoring', 'material').then(setMaterialExpenses).catch(() => { })
+    getExpenses('tailoring', 'fixed').then(setFixedExpenses).catch(() => { })
   }, [loadWorkers])
 
   // التحقق من الصلاحيات
@@ -450,8 +450,8 @@ export default function ReportsPage() {
     const range = getDateRange()
     getWorkerPayrollMonthsInRange('tailoring', range.startDate, range.endDate)
       .then(setWorkerSalaries)
-      .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      .catch(() => { })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, customDateRange, specificDay, specificMonth])
 
   // Worker Performance
@@ -798,7 +798,7 @@ export default function ReportsPage() {
                   {selectedPeriod === 'last30days' && 'آخر شهر'}
                   {selectedPeriod === 'month' && 'هذا الشهر'}
                   {selectedPeriod === 'specific_month' && (() => {
-                    const arabicMonths = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+                    const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
                     const [y, m] = specificMonth.split('-').map(Number)
                     return `${arabicMonths[m - 1]} ${y}`
                   })()}
