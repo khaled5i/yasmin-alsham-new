@@ -38,8 +38,6 @@ import {
   Printer,
   Download,
   BookMarked,
-  Zap,
-  Flag,
   Mic,
   Play,
   Pause,
@@ -49,7 +47,6 @@ import {
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
 import PrintOrderModal from '@/components/PrintOrderModal'
-import GenerateDesignButton from '@/components/GenerateDesignButton'
 import DesignSummarySection from '@/components/DesignSummarySection'
 import { Order } from '@/lib/services/order-service'
 import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
@@ -111,9 +108,7 @@ interface FormDataType {
   customDesignImage: string | null // legacy فقط؛ لا نخزن base64 جديداً في state
   savedDesignComments: SavedDesignComment[]
   designSummaryNotes: DesignSummaryNote[]
-  fabricType: 'external' | 'internal' | null
   hasSecondProof: 'yes' | 'no' | null
-  aiGeneratedImages: string[]
   designLinks: string
 }
 
@@ -139,9 +134,7 @@ const getInitialFormData = (): FormDataType => ({
   customDesignImage: null,
   savedDesignComments: [],
   designSummaryNotes: [],
-  fabricType: null,
   hasSecondProof: null,
-  aiGeneratedImages: [],
   designLinks: ''
 })
 
@@ -164,7 +157,6 @@ const isFormDataEmpty = (data: FormDataType): boolean => {
     !data.customDesignImage &&
     data.savedDesignComments.length === 0 &&
     data.designSummaryNotes.length === 0 &&
-    !data.fabricType &&
     !data.hasSecondProof
   )
 }
@@ -470,8 +462,6 @@ function AddOrderContent() {
     }
   }, [formData, isArabic])
 
-  const [isUrgent, setIsUrgent] = useState(false)
-  const [isFlagged, setIsFlagged] = useState(false)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isSubmittingRef = useRef(false)
@@ -611,7 +601,6 @@ function AddOrderContent() {
   const handleClearAllFields = useCallback(() => {
     resetToInitial()
     setCustomDesignImageFile(null)
-    setIsUrgent(false)
     // حذف تعليقات التصميم والعرض النشط من localStorage
     localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
     localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
@@ -873,14 +862,8 @@ function AddOrderContent() {
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
-        // أعمدة مستقلة (migration 29)
-        fabric_type: formData.fabricType || null,
-        is_urgent: isUrgent,  // migration 39
-        is_flagged: isFlagged, // migration 40
         measurements: {}, // المقاسات فارغة - سيتم إضافتها لاحقاً من صفحة الطلبات
         design_thumbnail: designThumbnail || undefined, // عمود مستقل (migration 32)
-        // عمود مستقل (migration 33)
-        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
         price: price,
@@ -1049,12 +1032,7 @@ function AddOrderContent() {
         client_phone: formData.clientPhone,
         description: formData.description,
         fabric: formData.fabric || undefined,
-        fabric_type: formData.fabricType || null,
-        is_urgent: isUrgent,  // migration 39
-        is_flagged: isFlagged, // migration 40
         measurements: {},
-        // عمود مستقل (migration 33)
-        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
         price: price,
@@ -1123,132 +1101,6 @@ function AddOrderContent() {
       setTimeout(() => {
         router.push('/dashboard/orders')
       }, 3000)
-
-    } catch (error) {
-      console.error('❌ Error adding order:', error)
-      setSaveError(t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
-    } finally {
-      isSubmittingRef.current = false
-      setIsSubmitting(false)
-    }
-  }
-
-  // حفظ الطلب مع تأشيرة "يحتاج مراجعة"
-  const handleSubmitWithReview = async (e: React.MouseEvent) => {
-    e.preventDefault()
-
-    if (isSubmittingRef.current) return
-
-    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
-      return
-    }
-
-    if (!formData.hasSecondProof) {
-      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
-      return
-    }
-
-    isSubmittingRef.current = true
-    setIsSubmitting(true)
-    setSaveError(null)
-
-    try {
-      const voiceNotesData = formData.voiceNotes.map(vn => vn.data)
-      const voiceTranscriptions = formData.voiceNotes.map(vn => ({
-        id: vn.id, data: vn.data, timestamp: vn.timestamp, duration: vn.duration,
-        transcription: vn.transcription, translatedText: vn.translatedText, translationLanguage: vn.translationLanguage
-      }))
-
-      const price = Number(formData.price)
-      const paidAmount = Number(formData.paidAmount) || 0
-
-      let customDesignImageBase64: string | undefined = undefined
-      if (formData.customDesignImage) {
-        customDesignImageBase64 = formData.customDesignImage
-        if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
-          toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
-          return
-        }
-      } else if (customDesignImageFile) {
-        try {
-          const compressedBlob = await compressFileForStorage(customDesignImageFile, 1920)
-          const reader = new FileReader()
-          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(compressedBlob)
-          })
-          if (Math.round(customDesignImageBase64.length / 1024) > 10 * 1024) {
-            toast.error('حجم الصورة كبير جداً. الحد الأقصى هو 10MB')
-            return
-          }
-        } catch {
-          toast.error('خطأ في تحويل الصورة')
-          return
-        }
-      }
-
-      let allSavedComments = formData.savedDesignComments.map(comment => ({
-        ...comment, image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
-      }))
-
-      if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
-        let compositeImage: string | null = null
-        if (annotationRef.current) {
-          compositeImage = await annotationRef.current.generateCompositeImage()
-        }
-        const currentView = annotationRef.current?.getCurrentView() || 'front'
-        allSavedComments = upsertSlotComment(allSavedComments, currentView, formData.imageAnnotations, formData.imageDrawings, customDesignImageBase64, compositeImage)
-      }
-
-      const result = await createOrder({
-        client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
-        fabric: formData.fabric || undefined,
-        // أعمدة مستقلة (migration 29)
-        fabric_type: formData.fabricType || null,
-        needs_review: true,
-        is_urgent: isUrgent,  // migration 39
-        is_flagged: isFlagged, // migration 40
-        measurements: {},
-        // عمود مستقل (migration 33)
-        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
-        // عمود مستقل (migration 36)
-        design_links: formData.designLinks.trim() || undefined,
-        price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
-        order_received_date: formData.orderReceivedDate,
-        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
-        due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
-        customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
-        has_second_proof: formData.hasSecondProof === 'yes',
-        proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
-        notes: formData.notes || undefined,
-        voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
-        voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
-        images: formData.images.length > 0 ? formData.images : undefined,
-        saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
-        design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
-        image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
-        image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
-        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
-      })
-
-      if (!result.success) {
-        setSaveError(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
-        return
-      }
-
-      clearSavedData()
-      localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
-      localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
-      localStorage.removeItem(DESIGN_ACTIVE_VIEW_STORAGE_KEY)
-
-      setSaveSuccess(true)
-      toast.success('تم حفظ الطلب - يحتاج مراجعة', { icon: '⚠️', duration: 3000 })
-      setTimeout(() => {
-        setSaveSuccess(false)
-        router.push('/dashboard/orders')
-      }, 1500)
 
     } catch (error) {
       console.error('❌ Error adding order:', error)
@@ -1331,14 +1183,8 @@ function AddOrderContent() {
       const result = await createOrder({
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined,
-        // أعمدة مستقلة (migration 29)
-        fabric_type: formData.fabricType || null,
         is_pre_booking: true,
-        is_urgent: isUrgent,  // migration 39
-        is_flagged: isFlagged, // migration 40
         measurements: {},
-        // عمود مستقل (migration 33)
-        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
@@ -1460,13 +1306,7 @@ function AddOrderContent() {
       const result = await createOrder({
         client_name: formData.clientName, client_phone: formData.clientPhone, description: formData.description,
         fabric: formData.fabric || undefined,
-        // أعمدة مستقلة (migration 29)
-        fabric_type: formData.fabricType || null,
-        is_urgent: isUrgent,  // migration 39
-        is_flagged: isFlagged, // migration 40
         measurements: {},
-        // عمود مستقل (migration 33)
-        ai_generated_images: formData.aiGeneratedImages.length > 0 ? formData.aiGeneratedImages : undefined,
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
         price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
@@ -1719,46 +1559,14 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 6. تاريخ استلام الطلب (تلقائي) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('order_received_date')}
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.orderReceivedDate}
-                    onChange={(e) => handleInputChange('orderReceivedDate', e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700"
-                    disabled
-                  />
-                </div>
 
                 {/* الصف الثالث: السعر | الدفعة المستلمة | الدفعة المتبقية */}
 
                 {/* 7. السعر */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      {t('price_sar')} <span className="text-red-500">*</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsUrgent(prev => {
-                          return !prev
-                        })
-                      }}
-                      disabled={isSubmitting}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 ${
-                        isUrgent
-                          ? 'bg-orange-500 text-white shadow-md shadow-orange-200'
-                          : 'bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100'
-                      }`}
-                    >
-                      <Zap className="w-3.5 h-3.5" />
-                      <span>طلب مستعجل</span>
-                    </button>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('price_sar')} <span className="text-red-500">*</span>
+                  </label>
                   <NumericInput
                     value={formData.price}
                     onChange={(value) => handleInputChange('price', value)}
@@ -1803,53 +1611,6 @@ function AddOrderContent() {
                   </div>
                 </div>
 
-                {/* 11. مصدر القماش + إشارة */}
-                <div className="col-span-2 sm:col-span-1">
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="block text-sm font-medium text-gray-700">
-                      مصدر القماش (داخلي للمشغل)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsFlagged(prev => !prev)}
-                      disabled={isSubmitting}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 ${
-                        isFlagged
-                          ? 'bg-red-500 text-white shadow-md shadow-red-200'
-                          : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
-                      }`}
-                    >
-                      <Flag className="w-3.5 h-3.5" />
-                      <span>إشارة</span>
-                    </button>
-                  </div>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="fabricType"
-                        value="external"
-                        checked={formData.fabricType === 'external'}
-                        onChange={(e) => handleInputChange('fabricType', e.target.value)}
-                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
-                        disabled={isSubmitting}
-                      />
-                      <span className="text-gray-700 font-medium">قماش خارجي</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="fabricType"
-                        value="internal"
-                        checked={formData.fabricType === 'internal'}
-                        onChange={(e) => handleInputChange('fabricType', e.target.value)}
-                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
-                        disabled={isSubmitting}
-                      />
-                      <span className="text-gray-700 font-medium">قماش داخلي</span>
-                    </label>
-                  </div>
-                </div>
 
                 {/* 11.1 هل يوجد بروفا ثانية؟ */}
                 <div className="col-span-2 sm:col-span-1">
@@ -1986,41 +1747,6 @@ function AddOrderContent() {
                 />
               </div>
 
-              {/* زر توليد التصميم بالذكاء الاصطناعي */}
-              <div className="mt-4">
-                <GenerateDesignButton
-                  images={formData.images}
-                  designComments={formData.savedDesignComments}
-                  fabric={formData.fabric}
-                  fabricType={formData.fabricType}
-                  generatedImages={formData.aiGeneratedImages}
-                  disabled={isSubmitting}
-                  onRequestDesignImages={async () => {
-                    // توليد compositeImage مباشرة من Canvas للـ view الحالي
-                    let currentComposite: string | null = null
-                    let currentView: 'front' | 'back' = 'front'
-                    if (annotationRef.current) {
-                      currentView = annotationRef.current.getCurrentView()
-                      currentComposite = await annotationRef.current.generateCompositeImage()
-                    }
-                    // الـ view الآخر: نأخذه من savedDesignComments إن وجد
-                    const otherView = currentView === 'front' ? 'back' : 'front'
-                    const otherComposite = formData.savedDesignComments.find(c => c.view === otherView)?.compositeImage || null
-                    return {
-                      front: currentView === 'front' ? currentComposite : otherComposite,
-                      back: currentView === 'back' ? currentComposite : otherComposite,
-                    }
-                  }}
-                  onGenerated={(imageDataUrl) => {
-                    handleInputChange('aiGeneratedImages', [...formData.aiGeneratedImages, imageDataUrl])
-                  }}
-                  onDeleteGeneratedImage={(index) => {
-                    const newImages = [...formData.aiGeneratedImages]
-                    newImages.splice(index, 1)
-                    handleInputChange('aiGeneratedImages', newImages)
-                  }}
-                />
-              </div>
             </div>
 
             {/* ملاحظات إضافية */}
@@ -2056,26 +1782,6 @@ function AddOrderContent() {
                   <div className="flex items-center justify-center space-x-2 space-x-reverse">
                     <Save className="w-5 h-5" />
                     <span>{t('save_order')}</span>
-                  </div>
-                )}
-              </button>
-
-              {/* زر حفظ الطلب مع تأشيرة المراجعة */}
-              <button
-                type="button"
-                onClick={handleSubmitWithReview}
-                disabled={isSubmitting}
-                className="bg-orange-500 hover:bg-orange-600 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
-              >
-                {isSubmitting ? (
-                  <div className="flex items-center justify-center space-x-2 space-x-reverse">
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>{t('saving')}</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center space-x-2 space-x-reverse">
-                    <AlertCircle className="w-5 h-5" />
-                    <span>{isArabic ? 'حفظ ولكن يحتاج مراجعة' : 'Save - Needs Review'}</span>
                   </div>
                 )}
               </button>

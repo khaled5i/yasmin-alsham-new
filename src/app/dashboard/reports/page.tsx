@@ -39,7 +39,6 @@ import {
   Target,
   Award,
   Activity,
-  Zap,
   Star,
   UserCheck,
   CalendarCheck,
@@ -301,10 +300,6 @@ export default function ReportsPage() {
     const preBookingOrders = currentOrders.filter(o => (o as any).is_pre_booking === true)
     const preBookingCount = preBookingOrders.length
 
-    // طلبات مستعجلة
-    const urgentOrders = currentOrders.filter(o => (o as any).is_urgent === true)
-    const urgentOrdersCount = urgentOrders.length
-
     // متوسط قيمة الطلب: يستثني الحجز المسبق والطلبات أقل من 100 ريال
     // البسط: مجموع قيمة الطلبات (بغض النظر عن حالة الدفع)
     // المقام: عدد الطلبات المستوفية للشرط
@@ -337,12 +332,6 @@ export default function ReportsPage() {
       completed: currentOrders.filter(o => o.status === 'completed').length,
       delivered: currentOrders.filter(o => o.status === 'delivered').length,
       cancelled: currentOrders.filter(o => o.status === 'cancelled').length
-    }
-
-    // Orders by Fabric Type
-    const fabricStats = {
-      external: currentOrders.filter(o => (o as any).fabric_type === 'external').length,
-      internal: currentOrders.filter(o => (o as any).fabric_type === 'internal').length
     }
 
 
@@ -389,13 +378,8 @@ export default function ReportsPage() {
       averageOrderValue,
       avgCompletionTime,
       ordersByStatus,
-      fabricStats,
-
       // Pre-booking
       preBookingCount,
-
-      // Urgent orders
-      urgentOrdersCount,
 
       // Customers
       uniqueCustomers,
@@ -942,22 +926,6 @@ export default function ReportsPage() {
 
 
 
-          {/* Urgent Orders */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-orange-300 transition-all duration-300 hover:shadow-lg">
-            <div className="flex items-center justify-between mb-2 sm:mb-3">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-orange-400 to-red-400 rounded-lg flex items-center justify-center">
-                <Zap className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 text-white" />
-              </div>
-              <div className="text-xs sm:text-sm font-semibold text-orange-600">
-                {comprehensiveStats.totalOrders > 0
-                  ? Number(((comprehensiveStats.urgentOrdersCount / comprehensiveStats.totalOrders) * 100).toFixed(1))
-                  : 0}%
-              </div>
-            </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.urgentOrdersCount}</h3>
-            <p className="text-xs sm:text-sm text-gray-600 leading-tight">طلبات مستعجلة</p>
-          </div>
-
           {/* Payment Collection Rate */}
           <div className="bg-white/80 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-gray-200 hover:border-pink-300 transition-all duration-300 hover:shadow-lg">
             <div className="flex items-center justify-between mb-2 sm:mb-3">
@@ -1181,45 +1149,6 @@ export default function ReportsPage() {
               <p className="text-xs sm:text-sm font-semibold text-purple-800 leading-tight">تم التسليم</p>
             </div>
 
-          </div>
-        </motion.div>
-
-        {/* Orders By Fabric Type Breakdown */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.85 }}
-          className="mb-8"
-        >
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
-            <Package className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
-            <span>حالة الأقمشة</span>
-          </h2>
-
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* External Fabric */}
-            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-indigo-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <Package className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-indigo-600" />
-                <span className="text-[10px] sm:text-xs font-semibold text-indigo-700 bg-indigo-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
-                  {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.fabricStats.external / comprehensiveStats.totalOrders) * 100) : 0}%
-                </span>
-              </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-indigo-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.fabricStats.external}</h3>
-              <p className="text-xs sm:text-sm font-semibold text-indigo-800 leading-tight">قماش خارجي</p>
-            </div>
-
-            {/* Internal Fabric */}
-            <div className="bg-gradient-to-br from-teal-50 to-emerald-50 rounded-lg sm:rounded-xl p-3 sm:p-4 lg:p-5 border-2 border-teal-200 hover:shadow-lg transition-all duration-300">
-              <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <PackageCheck className="w-6 h-6 sm:w-7 sm:h-7 lg:w-8 lg:h-8 text-teal-600" />
-                <span className="text-[10px] sm:text-xs font-semibold text-teal-700 bg-teal-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
-                  {comprehensiveStats.totalOrders > 0 ? Math.round((comprehensiveStats.fabricStats.internal / comprehensiveStats.totalOrders) * 100) : 0}%
-                </span>
-              </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-teal-700 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.fabricStats.internal}</h3>
-              <p className="text-xs sm:text-sm font-semibold text-teal-800 leading-tight">قماش داخلي</p>
-            </div>
           </div>
         </motion.div>
 
