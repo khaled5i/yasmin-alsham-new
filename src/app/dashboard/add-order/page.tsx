@@ -1375,23 +1375,6 @@ function AddOrderContent() {
           </button>
         </motion.div>
 
-        {/* العنوان */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-center mb-12"
-        >
-          <h1 className="text-3xl sm:text-4xl font-bold mb-4">
-            <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              {t('add_new_order')}
-            </span>
-          </h1>
-          <p className="text-lg text-gray-600">
-            {t('add_new_order_description')}
-          </p>
-        </motion.div>
-
         {/* رسالة الخطأ - تصميم مطابق لصفحة الأقمشة */}
         {saveError && (
           <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-4">
@@ -1515,21 +1498,6 @@ function AddOrderContent() {
                   />
                 </div>
 
-                {/* 3. نوع القماش */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    نوع القماش
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fabric || ''}
-                    onChange={(e) => handleInputChange('fabric', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                    placeholder="أدخل نوع القماش..."
-                    disabled={isSubmitting}
-                  />
-                </div>
-
                 {/* الصف الثاني: موعد التسليم | موعد تسليم البروفا | تاريخ استلام الطلب */}
 
                 {/* 4. موعد التسليم - تقويم ذكي */}
@@ -1609,6 +1577,21 @@ function AddOrderContent() {
                   <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
                     {(Math.max(0, (Number(formData.price) || 0) - (Number(formData.paidAmount) || 0))).toFixed(2)} {t('sar')}
                   </div>
+                </div>
+
+                {/* نوع القماش */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    نوع القماش
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.fabric || ''}
+                    onChange={(e) => handleInputChange('fabric', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
+                    placeholder="أدخل نوع القماش..."
+                    disabled={isSubmitting}
+                  />
                 </div>
 
 

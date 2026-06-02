@@ -268,6 +268,10 @@ function OrdersPageInner() {
     'image_drawings',
     'custom_design_image',
     'ai_generated_images',
+    // اسم عمود migration 30 المستقل لتعليقات التصميم (يُدمج كـ saved_design_comments في getMeasurements)
+    'design_comments',
+    // ملخص التصميم الصوتي (migration 50) - ليس مقاساً ويجب ألا يُفعّل علامة المقاسات
+    'design_summary_notes',
     // أعلام نُقلت لأعمدة مستقلة (migration 29)
     'is_printed',
     'has_measurements',

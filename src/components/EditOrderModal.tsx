@@ -7,7 +7,6 @@ import {
   X,
   Save,
   User,
-  Users,
   MessageSquare,
   CheckCircle,
   AlertCircle,
@@ -20,12 +19,12 @@ import {
 import { openWhatsApp } from '@/utils/whatsapp'
 import { shiftDate, DUE_DATE_BACKDATE_DAYS } from '@/lib/date-utils'
 import ImageUpload from './ImageUpload'
-import GenerateDesignButton from './GenerateDesignButton'
 import UnifiedNotesInput from './UnifiedNotesInput'
 import NumericInput from './NumericInput'
 import DatePickerWithStats from './DatePickerWithStats'
 import DatePickerForProof from './DatePickerForProof'
-import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from './InteractiveImageAnnotation'
+import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef, DesignSummaryNote } from './InteractiveImageAnnotation'
+import DesignSummarySection from './DesignSummarySection'
 import { Order, orderService } from '@/lib/services/order-service'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -57,7 +56,7 @@ interface EditOrderModalProps {
   onSave: (orderId: string, updates: any) => void
 }
 
-export default function EditOrderModal({ order: initialOrder, workers, isOpen, onClose, onSave }: EditOrderModalProps) {
+export default function EditOrderModal({ order: initialOrder, isOpen, onClose, onSave }: EditOrderModalProps) {
   const { t, isArabic } = useTranslation()
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
   const initialDesignStateRef = useRef<{ annotations: string; drawings: string; comments: string; hasCustomImage: boolean }>({
@@ -83,9 +82,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     price: '',
     paidAmount: '',
     paymentMethod: 'cash' as 'cash' | 'card',
-    orderStatus: 'pending' as 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled',
     orderReceivedDate: '',
-    assignedWorker: '',
     dueDate: '',
     proofDeliveryDate: '',
     notes: '',
@@ -103,8 +100,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     imageDrawings: [] as DrawingPath[],
     customDesignImage: null as File | null,
     savedDesignComments: [] as SavedDesignComment[],
-    fabricType: null as 'external' | 'internal' | null,
-    aiGeneratedImages: [] as string[]
+    hasSecondProof: null as 'yes' | 'no' | null,
+    designSummaryNotes: [] as DesignSummaryNote[]
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -192,9 +189,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         price: order.price.toString(),
         paidAmount: (order.paid_amount || 0).toString(),
         paymentMethod: (order.payment_method || 'cash') as 'cash' | 'card',
-        orderStatus: (order.status || 'pending') as 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled',
         orderReceivedDate: order.order_received_date || new Date().toISOString().split('T')[0],
-        assignedWorker: order.worker_id || '',
         // للطلبات الجديدة نستخدم customer_due_date مباشرةً؛ للطلبات القديمة نُبقي السلوك السابق (due_date + 2)
         dueDate: order.customer_due_date || shiftDate(order.due_date, DUE_DATE_BACKDATE_DAYS),
         proofDeliveryDate: order.proof_delivery_date || '',
@@ -205,9 +200,9 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         imageDrawings: drawings,
         customDesignImage: null as File | null, // File objects are set via handleDesignImageChange
         savedDesignComments: savedComments,
-        fabricType: (order as any).fabric_type || measurements?.fabric_type || null,
-        // ai_generated_images: أولاً من العمود المستقل (migration 33)، ثم fallback لـ measurements
-        aiGeneratedImages: (orderAny.ai_generated_images?.length ? orderAny.ai_generated_images : null) || measurements?.ai_generated_images || []
+        hasSecondProof: order.has_second_proof === true ? 'yes' : order.has_second_proof === false ? 'no' : null,
+        // ملخص التصميم الصوتي (migration 50): من العمود المستقل، ثم fallback لـ measurements
+        designSummaryNotes: (orderAny.design_summary_notes?.length ? orderAny.design_summary_notes : null) || measurements?.design_summary_notes || []
       })
 
       // نحفظ نسخة من التعليقات بدون compositeImage لأنها كبيرة ولا تفيد في المقارنة
@@ -235,7 +230,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
   }, [formData.price, formData.paidAmount])
 
   // معالجة تغيير الحقول
-  const handleInputChange = useCallback((field: string, value: string | string[] | null) => {
+  const handleInputChange = useCallback((field: string, value: string | string[] | DesignSummaryNote[] | null) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -454,6 +449,11 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
       return
     }
 
+    if (!formData.hasSecondProof) {
+      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
+      return
+    }
+
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -529,26 +529,23 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         ? buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
         : undefined
 
-      // تحديث الطلب - الأعلام وfabric_type كأعمدة مستقلة (migration 29)
+      // تحديث الطلب
       onSave(order.id, {
-        // أعمدة مستقلة
-        fabric_type: formData.fabricType || null,
         ...(clearReview ? { needs_review: false } : {}),
         ...(clearPreBooking ? { is_pre_booking: false } : {}),
         measurements: order.measurements || {},
-        // عمود مستقل (migration 33)
-        ai_generated_images: formData.aiGeneratedImages,
+        // ملخص التصميم الصوتي - عمود مستقل (migration 50)
+        design_summary_notes: formData.designSummaryNotes,
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
         description: formData.description,
+        has_second_proof: formData.hasSecondProof === 'yes',
         // إرسال null بدلاً من undefined للحقول النصية القابلة للحذف (للتأكد من حفظ الحذف في قاعدة البيانات)
         fabric: formData.fabric || null,
         price: price,
         payment_method: formData.paymentMethod,
-        status: formData.orderStatus,
         order_received_date: formData.orderReceivedDate,
-        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : null,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : null,
@@ -600,6 +597,11 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
     // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
     if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
       setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
+      return
+    }
+
+    if (!formData.hasSecondProof) {
+      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
       return
     }
 
@@ -677,23 +679,21 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
         ? buildSavedCommentsForSubmit(customDesignImageBase64, compositeImage)
         : undefined
 
-      // تحديث الطلب - fabric_type كعمود مستقل (migration 29)
+      // تحديث الطلب
       onSave(order.id, {
-        fabric_type: formData.fabricType || null,
         measurements: order.measurements || {},
-        // عمود مستقل (migration 33)
-        ai_generated_images: formData.aiGeneratedImages,
+        // ملخص التصميم الصوتي - عمود مستقل (migration 50)
+        design_summary_notes: formData.designSummaryNotes,
         order_number: formData.orderNumber && formData.orderNumber.trim() !== '' ? formData.orderNumber.trim() : undefined,
         client_name: formData.clientName,
         client_phone: formData.clientPhone,
         description: formData.description,
+        has_second_proof: formData.hasSecondProof === 'yes',
         // إرسال null بدلاً من undefined للحقول النصية القابلة للحذف (للتأكد من حفظ الحذف في قاعدة البيانات)
         fabric: formData.fabric || null,
         price: price,
         payment_method: formData.paymentMethod,
-        status: formData.orderStatus,
         order_received_date: formData.orderReceivedDate,
-        worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : null,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : null,
@@ -724,7 +724,7 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
           orderNumber: formData.orderNumber || undefined,
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
           dueDate: formData.dueDate,
-          hasSecondProof: order?.has_second_proof === true,
+          hasSecondProof: formData.hasSecondProof === 'yes',
           totalPrice: price,
           remainingAmount: Math.max(0, price - paidAmount)
         })
@@ -936,50 +936,35 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                       </div>
                     </div>
 
-                    {/* 10. رقم الطلب */}
-                    <div className="col-span-2 sm:col-span-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('order_number')} ({isArabic ? 'تلقائي' : 'Auto'})
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.orderNumber}
-                        onChange={(e) => handleInputChange('orderNumber', e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        placeholder={isArabic ? 'سيتم التوليد تلقائياً (1، 2، 3...)' : 'Auto-generated (1, 2, 3...)'}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-
-                    {/* 11. مصدر القماش */}
+                    {/* 10. هل يوجد بروفا ثانية؟ */}
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-sm font-medium text-gray-700 mb-3">
-                        مصدر القماش (داخلي للمشغل)
+                        هل يوجد بروفا ثانية؟ <span className="text-red-500">*</span>
                       </label>
                       <div className="flex gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="radio"
-                            name="fabricTypeEdit"
-                            value="external"
-                            checked={formData.fabricType === 'external'}
-                            onChange={(e) => handleInputChange('fabricType', e.target.value)}
+                            name="hasSecondProofEdit"
+                            value="yes"
+                            checked={formData.hasSecondProof === 'yes'}
+                            onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
                             className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
                             disabled={isSubmitting}
                           />
-                          <span className="text-gray-700 font-medium">قماش خارجي</span>
+                          <span className="text-gray-700 font-medium">نعم</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="radio"
-                            name="fabricTypeEdit"
-                            value="internal"
-                            checked={formData.fabricType === 'internal'}
-                            onChange={(e) => handleInputChange('fabricType', e.target.value)}
+                            name="hasSecondProofEdit"
+                            value="no"
+                            checked={formData.hasSecondProof === 'no'}
+                            onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
                             className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
                             disabled={isSubmitting}
                           />
-                          <span className="text-gray-700 font-medium">قماش داخلي</span>
+                          <span className="text-gray-700 font-medium">لا</span>
                         </label>
                       </div>
                     </div>
@@ -1007,6 +992,8 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     onSavedCommentsChange={handleSavedCommentsChange}
                     showSaveButton={true}
                     currentImageBase64={currentImageBase64}
+                    designSummaryNotes={formData.designSummaryNotes}
+                    onDesignSummaryNotesChange={(notes) => handleInputChange('designSummaryNotes', notes)}
                   />
 
                   {/* زر حفظ التصاميم على الجهاز */}
@@ -1022,6 +1009,14 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                   )}
                 </div>
 
+                {/* ملخص التصميم الصوتي */}
+                {formData.designSummaryNotes.length > 0 && (
+                  <DesignSummarySection
+                    notes={formData.designSummaryNotes}
+                    onNotesChange={(notes) => handleInputChange('designSummaryNotes', notes)}
+                  />
+                )}
+
                 {/* صور التصميم */}
                 <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-pink-100 relative z-20">
                   <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
@@ -1034,26 +1029,6 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     onImagesChange={(images) => handleInputChange('images', images)}
                     alwaysShowDeleteOnMobileAndTablet={true}
                   />
-
-                  {/* زر توليد التصميم بالذكاء الاصطناعي */}
-                  <div className="mt-6 pt-6 border-t border-pink-100">
-                    <GenerateDesignButton
-                      images={formData.images}
-                      designComments={formData.savedDesignComments}
-                      fabric={formData.fabric}
-                      fabricType={formData.fabricType}
-                      generatedImages={formData.aiGeneratedImages}
-                      disabled={isSubmitting}
-                      onGenerated={(imageDataUrl) => {
-                        handleInputChange('aiGeneratedImages', [...formData.aiGeneratedImages, imageDataUrl])
-                      }}
-                      onDeleteGeneratedImage={(index) => {
-                        const newImages = [...formData.aiGeneratedImages]
-                        newImages.splice(index, 1)
-                        handleInputChange('aiGeneratedImages', newImages)
-                      }}
-                    />
-                  </div>
                 </div>
 
                 {/* ملاحظات إضافية */}
@@ -1070,52 +1045,6 @@ export default function EditOrderModal({ order: initialOrder, workers, isOpen, o
                     onVoiceNotesChange={handleVoiceNotesChange}
                     disabled={isSubmitting}
                   />
-                </div>
-
-                {/* اختيار العامل المسؤول */}
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
-                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
-                    <Users className="w-5 h-5 text-pink-600" />
-                    <span>{t('responsible_worker')}</span>
-                  </h3>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {t('choose_worker')} ({t('optional')})
-                      </label>
-                      <select
-                        value={formData.assignedWorker}
-                        onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        disabled={isSubmitting}
-                      >
-                        <option value="">{t('choose_worker')}</option>
-                        {workers.filter(w => w.is_available && w.worker_type === 'tailor').map(worker => (
-                          <option key={worker.id} value={worker.id}>
-                            {worker.user.full_name} - {worker.specialty}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {isArabic ? 'حالة الطلب' : 'Order Status'}
-                      </label>
-                      <select
-                        value={formData.orderStatus}
-                        onChange={(e) => handleInputChange('orderStatus', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300"
-                        disabled={isSubmitting}
-                      >
-                        <option value="pending">{isArabic ? 'في الانتظار' : 'Pending'}</option>
-                        <option value="in_progress">{isArabic ? 'قيد العمل' : 'In Progress'}</option>
-                        <option value="completed">{isArabic ? 'مكتمل' : 'Completed'}</option>
-                        <option value="delivered">{isArabic ? 'تم التسليم' : 'Delivered'}</option>
-                      </select>
-                    </div>
-                  </div>
                 </div>
               </form>
 

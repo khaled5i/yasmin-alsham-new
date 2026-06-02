@@ -45,12 +45,12 @@ import { toast } from 'react-hot-toast' // إضافة
 import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
-import { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
+import { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote } from './InteractiveImageAnnotation'
+import DesignSummarySection from './DesignSummarySection'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatGregorianDate, parseDateForDisplay, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
-import GenerateDesignButton from './GenerateDesignButton'
 
 interface OrderModalProps {
   order: Order | null
@@ -152,9 +152,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [showPrintModal, setShowPrintModal] = useState(false)
   // Full order data (fetched when lightweight order is missing measurements)
   const [fullOrder, setFullOrder] = useState<Order | null>(null)
-  // AI generated images (local state, auto-saved to order on generation)
-  // يُعاد تهيئته عند تغيير الطلب لمنع التسريب بين الطلبات
-  const [localAiImages, setLocalAiImages] = useState<string[]>([])
+  // يُعاد تهيئة حالة الكرتون عند تغيير الطلب لمنع التسريب بين الطلبات
   const prevOrderIdRef = useRef<string | null>(null)
   const [measurementsData, setMeasurementsData] = useState<Record<string, any> | null>(null)
   const [isMeasurementsLoading, setIsMeasurementsLoading] = useState(false)
@@ -173,6 +171,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [imageDrawings, setImageDrawings] = useState<DrawingPath[]>([])
   const [customDesignImage, setCustomDesignImage] = useState<string | null>(null)
   const [savedDesignComments, setSavedDesignComments] = useState<SavedDesignComment[]>([])
+  const [designSummaryNotes, setDesignSummaryNotes] = useState<DesignSummaryNote[]>([])
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null)
   const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null)
   const [translatingAnnotationId, setTranslatingAnnotationId] = useState<string | null>(null)
@@ -364,11 +363,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }, [order])
 
   // Fetch full order data when opened with lightweight-loaded order
-  // إعادة تهيئة localAiImages عند تغيير الطلب لمنع التسريب بين الطلبات
+  // إعادة تهيئة حالة الكرتون عند تغيير الطلب لمنع التسريب بين الطلبات
   useEffect(() => {
     if (initialOrder?.id && initialOrder.id !== prevOrderIdRef.current) {
       prevOrderIdRef.current = initialOrder.id
-      setLocalAiImages([])
       setCartoonImage(null)
       setCartoonUploadImage(null)
       setCartoonNotes('')
@@ -425,6 +423,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
         image_drawings: orderAny.image_drawings?.length
           ? orderAny.image_drawings
           : (rawMeasurements.image_drawings || []),
+        design_summary_notes: orderAny.design_summary_notes?.length
+          ? orderAny.design_summary_notes
+          : (rawMeasurements.design_summary_notes || []),
       })
       setIsMeasurementsLoading(false)
       return
@@ -466,6 +467,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       setImageAnnotations(measurementsData.image_annotations || [])
       setImageDrawings(measurementsData.image_drawings || [])
       setCustomDesignImage(measurementsData.custom_design_image || null)
+      setDesignSummaryNotes(measurementsData.design_summary_notes || [])
       if (measurementsData.cartoon_image) {
         setCartoonImage(measurementsData.cartoon_image)
       }
@@ -474,6 +476,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       setImageAnnotations([])
       setImageDrawings([])
       setCustomDesignImage(null)
+      setDesignSummaryNotes([])
     }
   }, [measurementsData])
 
@@ -931,6 +934,17 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     </div>
                   )}
 
+                  {/* تاريخ استلام الطلب */}
+                  {order.order_received_date && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('order_received_date')}:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">{formatDate(order.order_received_date)}</p>
+                    </div>
+                  )}
+
                   {/* العامل المسؤول - مع إمكانية التعديل للمشرفين */}
                   <div className="bg-white p-2 sm:p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-0.5 sm:mb-1">
@@ -1132,6 +1146,17 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         <span className="text-xs sm:text-sm font-medium truncate">{t('price')}:</span>
                       </div>
                       <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{order.price} {t('sar')}</p>
+                    </div>
+                  )}
+
+                  {/* الدفعة المستلمة - للمدراء فقط */}
+                  {user?.role === 'admin' && (
+                    <div className="bg-white p-2 sm:p-3 rounded-lg">
+                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
+                        <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-medium truncate">{t('paid_amount')}:</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-semibold text-blue-600 truncate">{order.paid_amount || 0} {t('sar')}</p>
                     </div>
                   )}
                 </div>
@@ -1627,6 +1652,15 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 </div>
               )}
 
+              {/* ملخص التصميم الصوتي (للعرض فقط) */}
+              {designSummaryNotes.length > 0 && (
+                <DesignSummarySection
+                  notes={designSummaryNotes}
+                  onNotesChange={() => {}}
+                  readOnly
+                />
+              )}
+
               {/* 4️⃣ قسم المقاسات */}
               {(measurementsData || order.measurements) && Object.values(measurementsData || order.measurements || {}).some(val => val !== undefined && val !== '') && (
                 <div className="space-y-4 sm:space-y-6">
@@ -1705,49 +1739,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     ))}
                   </div>
 
-                  {/* أزرار الذكاء الاصطناعي */}
+                  {/* أزرار إضافية */}
+                  {canShowCartoonButton && (
                   <div className="pt-4 border-t border-gray-100">
                     <div className="flex flex-wrap gap-3 items-start">
-                      {workerType !== 'tailor' && <GenerateDesignButton
-                        images={order.images || []}
-                        designComments={savedDesignComments}
-                        fabric={order.fabric}
-                        fabricType={(order as any).fabric_type || (order.measurements as any)?.fabric_type || null}
-                        generatedImages={[
-                          // عمود مستقل (migration 33) مع fallback للبيانات القديمة
-                          ...((order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []),
-                          ...localAiImages
-                        ]}
-                        onGenerated={async (imageDataUrl) => {
-                          const dbImages = (order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []
-                          const newImages = [...dbImages, ...localAiImages, imageDataUrl]
-                          setLocalAiImages(prev => [...prev, imageDataUrl])
-                          try {
-                            await orderService.update(order.id, {
-                              ai_generated_images: newImages  // عمود مستقل (migration 33)
-                            })
-                            toast.success('تم حفظ التصميم المولد في الطلب')
-                          } catch (err) {
-                            console.error('Failed to save AI image:', err)
-                            toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
-                          }
-                        }}
-                        onDeleteGeneratedImage={async (index) => {
-                          const dbImages = Array.isArray((order as any).ai_generated_images) ? (order as any).ai_generated_images : ((order.measurements as any)?.ai_generated_images || [])
-                          const allImages = [...dbImages, ...localAiImages]
-                          const newImages = allImages.filter((_, i) => i !== index)
-                          try {
-                            await updateOrder(order.id, {
-                              ai_generated_images: newImages  // عمود مستقل (migration 33)
-                            })
-                            setLocalAiImages([])
-                            toast.success('تم حذف التصميم')
-                          } catch (err) {
-                            console.error('Failed to delete AI image:', err)
-                            toast.error('فشل حذف التصميم')
-                          }
-                        }}
-                      />}
                       {/* زر تحويل الصورة إلى كرتون */}
                       {canShowCartoonButton && (
                         <button
@@ -1770,51 +1765,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       )}
                     </div>
                   </div>
+                  )}
                 </div>
               )}
 
-              {/* قسم التصاميم المولدة - يظهر حتى لو لا توجد صور (بدون صور) */}
-              {(!order.images || order.images.length === 0) && (
+              {/* قسم تحويل الصورة إلى كرتون - يظهر حتى لو لا توجد صور (بدون صور) */}
+              {(!order.images || order.images.length === 0) && canShowCartoonButton && (
                 <div className="flex flex-wrap gap-3 items-start">
-                  {workerType !== 'tailor' && <GenerateDesignButton
-                    images={order.images || []}
-                    designComments={savedDesignComments}
-                    fabric={order.fabric}
-                    fabricType={(order as any).fabric_type || (order.measurements as any)?.fabric_type || null}
-                    generatedImages={[
-                      // عمود مستقل (migration 33) مع fallback للبيانات القديمة
-                      ...((order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []),
-                      ...localAiImages
-                    ]}
-                    onGenerated={async (imageDataUrl) => {
-                      const dbImages = (order as any).ai_generated_images || (order.measurements as any)?.ai_generated_images || []
-                      const newImages = [...dbImages, ...localAiImages, imageDataUrl]
-                      setLocalAiImages(prev => [...prev, imageDataUrl])
-                      try {
-                        await orderService.update(order.id, {
-                          ai_generated_images: newImages  // عمود مستقل (migration 33)
-                        })
-                        toast.success('تم حفظ التصميم المولد في الطلب')
-                      } catch {
-                        toast.error('تم توليد التصميم لكن فشل الحفظ التلقائي')
-                      }
-                    }}
-                    onDeleteGeneratedImage={async (index) => {
-                      const dbImages = Array.isArray((order as any).ai_generated_images) ? (order as any).ai_generated_images : ((order.measurements as any)?.ai_generated_images || [])
-                      const allImages = [...dbImages, ...localAiImages]
-                      const newImages = allImages.filter((_, i) => i !== index)
-                      try {
-                        await updateOrder(order.id, {
-                          ai_generated_images: newImages  // عمود مستقل (migration 33)
-                        })
-                        setLocalAiImages([])
-                        toast.success('تم حذف التصميم')
-                      } catch (err) {
-                        console.error('Failed to delete AI image:', err)
-                        toast.error('فشل حذف التصميم')
-                      }
-                    }}
-                  />}
                   {/* زر تحويل الصورة إلى كرتون */}
                   {canShowCartoonButton && (
                     <button
