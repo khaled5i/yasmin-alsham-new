@@ -467,6 +467,40 @@ function AddOrderContent() {
   const isSubmittingRef = useRef(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // إبراز زر ملخص التصميم بسهم متحرك عند محاولة الحفظ بدون ملخص
+  const [highlightSummary, setHighlightSummary] = useState(false)
+  // علامة على أن خطأ الحفظ الحالي بسبب غياب ملخص التصميم (لتمرير الشاشة عند الإغلاق)
+  const summaryErrorPendingRef = useRef(false)
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // التحقق من وجود ملخص التصميم (إجباري لكل أنواع الحفظ عدا الحجز المسبق)
+  const requireDesignSummary = useCallback((): boolean => {
+    if (formData.designSummaryNotes.length > 0) return true
+    setSaveError('يرجى إضافة ملخص للتصميم')
+    summaryErrorPendingRef.current = true
+    return false
+  }, [formData.designSummaryNotes.length])
+
+  // إغلاق رسالة الخطأ، ومع غياب ملخص التصميم: تمرير الشاشة وإظهار السهم
+  const handleCloseSaveError = useCallback(() => {
+    setSaveError(null)
+    if (summaryErrorPendingRef.current) {
+      summaryErrorPendingRef.current = false
+      const el = document.getElementById('design-summary-record-button')
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightSummary(true)
+      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current)
+      highlightTimeoutRef.current = setTimeout(() => setHighlightSummary(false), 6000)
+    }
+  }, [])
+
+  // إيقاف السهم بمجرد تسجيل أول ملخص
+  useEffect(() => {
+    if (formData.designSummaryNotes.length > 0 && highlightSummary) {
+      setHighlightSummary(false)
+      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current)
+    }
+  }, [formData.designSummaryNotes.length, highlightSummary])
 
   // حساب المبلغ المتبقي
   const remainingAmount = useMemo(() => {
@@ -669,6 +703,8 @@ function AddOrderContent() {
       setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
       return
     }
+
+    if (!requireDesignSummary()) return
 
     isSubmittingRef.current = true
     setIsSubmitting(true)
@@ -945,6 +981,8 @@ function AddOrderContent() {
       setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
       return
     }
+
+    if (!requireDesignSummary()) return
 
     isSubmittingRef.current = true
     setIsSubmitting(true)
@@ -1248,6 +1286,8 @@ function AddOrderContent() {
       return
     }
 
+    if (!requireDesignSummary()) return
+
     isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
@@ -1391,7 +1431,7 @@ function AddOrderContent() {
               </div>
               <h3 className="text-xl font-bold text-gray-800 mb-2">{saveError}</h3>
               <button
-                onClick={() => setSaveError(null)}
+                onClick={handleCloseSaveError}
                 className="mt-4 px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
               >
                 حسناً
@@ -1400,7 +1440,7 @@ function AddOrderContent() {
           </div>
         )}
         {saveError && (
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => setSaveError(null)} />
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={handleCloseSaveError} />
         )}
 
         {/* مودال رسالة النجاح - تصميم مطابق لصفحة الأقمشة */}
@@ -1676,6 +1716,7 @@ function AddOrderContent() {
                 onViewChange={handleViewChange}
                 designSummaryNotes={formData.designSummaryNotes}
                 onDesignSummaryNotesChange={handleDesignSummaryNotesChange}
+                highlightSummaryButton={highlightSummary}
               />
 
               {/* زر حفظ التصاميم على الجهاز */}

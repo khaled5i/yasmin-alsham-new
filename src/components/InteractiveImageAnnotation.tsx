@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion'
-import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, RotateCw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut, MousePointer2, ScanText, Plus, Wand2 } from 'lucide-react'
+import { Mic, MicOff, X, Trash2, Loader2, Play, Pause, FileText, Check, XCircle, Pencil, Eraser, RotateCcw, RotateCw, Palette, PenTool, Highlighter, Circle, ImageIcon, Camera, Upload, RefreshCw, Save, ChevronDown, ChevronUp, Languages, Eye, EyeOff, Type, ZoomIn, ZoomOut, MousePointer2, ScanText, Plus, Wand2, ArrowLeft } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast'
 import Image from 'next/image'
@@ -484,6 +484,8 @@ interface InteractiveImageAnnotationProps {
   // ملخص التصميم الصوتي
   designSummaryNotes?: DesignSummaryNote[]
   onDesignSummaryNotesChange?: (notes: DesignSummaryNote[]) => void
+  // إبراز زر ملخص التصميم بسهم متحرك (عند محاولة الحفظ بدون ملخص)
+  highlightSummaryButton?: boolean
 }
 
 // نوع الـ ref للوصول إلى دوال المكون من الخارج
@@ -908,7 +910,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   initialView,
   onViewChange,
   designSummaryNotes = [],
-  onDesignSummaryNotesChange
+  onDesignSummaryNotesChange,
+  highlightSummaryButton = false
 }, ref) => {
   const { t } = useTranslation()
 
@@ -4296,17 +4299,49 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               </motion.button>
 
               {/* زر تسجيل ملخص التصميم - فوق زر الرسم */}
-              <div className="relative">
+              <div className="relative" id="design-summary-record-button">
+                {/* سهم متحرك يشير إلى زر ملخص التصميم عند محاولة الحفظ بدونه */}
+                <AnimatePresence>
+                  {highlightSummaryButton && !isDesignSummaryRecording && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 12 }}
+                      className="absolute top-1/2 left-full ml-3 -translate-y-1/2 flex items-center gap-1 whitespace-nowrap pointer-events-none"
+                      style={{ zIndex: 210 }}
+                    >
+                      <motion.div
+                        animate={{ x: [0, -8, 0] }}
+                        transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
+                        className="flex items-center gap-1"
+                      >
+                        <ArrowLeft className="w-6 h-6 text-red-500 drop-shadow" />
+                        <span className="bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg">
+                          سجّل ملخص التصميم هنا
+                        </span>
+                      </motion.div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <motion.button
                   type="button"
                   onClick={isDesignSummaryRecording ? stopRecording : startDesignSummaryRecording}
                   disabled={disabled || (isRecordingActive && !isDesignSummaryRecording)}
+                  animate={highlightSummaryButton && !isDesignSummaryRecording
+                    ? { scale: [1, 1.15, 1] }
+                    : { scale: 1 }}
+                  transition={highlightSummaryButton && !isDesignSummaryRecording
+                    ? { duration: 1, repeat: Infinity, ease: 'easeInOut' }
+                    : { duration: 0.2 }}
                   className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${
                     isDesignSummaryRecording
                       ? 'bg-red-500 text-white ring-2 ring-red-300'
-                      : (isRecordingActive && !isDesignSummaryRecording)
-                        ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
-                        : 'bg-white text-teal-600 hover:bg-teal-50 border border-teal-300'
+                      : highlightSummaryButton
+                        ? 'bg-white text-teal-600 ring-2 ring-red-400 border border-teal-300'
+                        : (isRecordingActive && !isDesignSummaryRecording)
+                          ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                          : 'bg-white text-teal-600 hover:bg-teal-50 border border-teal-300'
                   }`}
                   title={isDesignSummaryRecording ? 'إيقاف تسجيل الملخص' : 'تسجيل ملخص التصميم'}
                   whileTap={{ scale: 0.95 }}
