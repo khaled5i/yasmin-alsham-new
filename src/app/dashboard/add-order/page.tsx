@@ -16,8 +16,9 @@ import ImageUpload from '@/components/ImageUpload'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
-import { shiftDate, DUE_DATE_BACKDATE_DAYS } from '@/lib/date-utils'
+import { shiftDate, DUE_DATE_BACKDATE_DAYS, formatGregorianDate } from '@/lib/date-utils'
 import DatePickerForProof from '@/components/DatePickerForProof'
+import DatePickerForSecondProof from '@/components/DatePickerForSecondProof'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
 import {
   ArrowRight,
@@ -109,6 +110,8 @@ interface FormDataType {
   savedDesignComments: SavedDesignComment[]
   designSummaryNotes: DesignSummaryNote[]
   hasSecondProof: 'yes' | 'no' | null
+  // موعد البروفا الثانية المُعدّل يدوياً (فارغ = يُحسب تلقائياً كـ dueDate - 3 أيام)
+  secondProofDate: string
   designLinks: string
 }
 
@@ -135,6 +138,7 @@ const getInitialFormData = (): FormDataType => ({
   savedDesignComments: [],
   designSummaryNotes: [],
   hasSecondProof: null,
+  secondProofDate: '',
   designLinks: ''
 })
 
@@ -467,6 +471,8 @@ function AddOrderContent() {
   const isSubmittingRef = useRef(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // إظهار تقويم تعديل موعد البروفا الثانية عند الضغط على زر "تعديل التاريخ"
+  const [showSecondProofCalendar, setShowSecondProofCalendar] = useState(false)
   // إبراز زر ملخص التصميم بسهم متحرك عند محاولة الحفظ بدون ملخص
   const [highlightSummary, setHighlightSummary] = useState(false)
   // علامة على أن خطأ الحفظ الحالي بسبب غياب ملخص التصميم (لتمرير الشاشة عند الإغلاق)
@@ -910,6 +916,8 @@ function AddOrderContent() {
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
+        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1081,6 +1089,8 @@ function AddOrderContent() {
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
+        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1120,6 +1130,7 @@ function AddOrderContent() {
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
           dueDate: formData.dueDate,
           hasSecondProof: formData.hasSecondProof === 'yes',
+          secondProofDate: formData.secondProofDate || undefined,
           totalPrice: price,
           remainingAmount: Math.max(0, price - paidAmount)
         })
@@ -1232,6 +1243,8 @@ function AddOrderContent() {
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
+        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1356,6 +1369,8 @@ function AddOrderContent() {
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
+        // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
+        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1666,6 +1681,52 @@ function AddOrderContent() {
                       <span className="text-gray-700 font-medium">لا</span>
                     </label>
                   </div>
+
+                  {/* زر تعديل تاريخ البروفا الثانية - يظهر فقط عند اختيار "نعم" */}
+                  {formData.hasSecondProof === 'yes' && (() => {
+                    // التاريخ الافتراضي: قبل تاريخ التسليم الحقيقي للزبون بثلاثة أيام (= due_date - 1)
+                    const effectiveSecondProofDate =
+                      formData.secondProofDate || (formData.dueDate ? shiftDate(formData.dueDate, -3) : '')
+                    return (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="text-sm text-gray-600">
+                            موعد البروفا الثانية:{' '}
+                            <span className="font-semibold text-amber-700">
+                              {effectiveSecondProofDate
+                                ? formatGregorianDate(effectiveSecondProofDate, 'ar-SA', { day: 'numeric', month: 'long', year: 'numeric' })
+                                : 'حدد موعد التسليم أولاً'}
+                            </span>
+                          </div>
+                          {formData.dueDate && (
+                            <button
+                              type="button"
+                              onClick={() => setShowSecondProofCalendar((prev) => !prev)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors"
+                              disabled={isSubmitting}
+                            >
+                              <Calendar className="w-3.5 h-3.5" />
+                              تعديل التاريخ
+                            </button>
+                          )}
+                        </div>
+                        {showSecondProofCalendar && formData.dueDate && (
+                          <div className="mt-2">
+                            <DatePickerForSecondProof
+                              selectedDate={effectiveSecondProofDate}
+                              onChange={(date) => {
+                                handleInputChange('secondProofDate', date)
+                                setShowSecondProofCalendar(false)
+                              }}
+                              minDate={new Date()}
+                              autoOpen
+                              onClose={() => setShowSecondProofCalendar(false)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
                 {/* 12. تحديد العامل المسؤول - يظهر فقط لمدير الورشة */}
                 {workerType === 'workshop_manager' && (

@@ -407,6 +407,12 @@ function OrdersPageInner() {
       supabaseUpdates.voice_transcriptions = updates.voice_transcriptions
     }
 
+    // ملخص التصميم الصوتي - عمود مستقل (migration 50)
+    // يجب نسخه حتى عند كونه مصفوفة فارغة [] لضمان حفظ حذف التسجيلات الصوتية
+    if (updates.design_summary_notes !== undefined) {
+      supabaseUpdates.design_summary_notes = updates.design_summary_notes
+    }
+
     // الصور
     if (updates.images !== undefined) supabaseUpdates.images = updates.images
 
@@ -1181,7 +1187,7 @@ function OrdersPageInner() {
                               <p><span className="font-semibold">{isArabic ? 'الهاتف:' : 'Phone:'}</span> <span dir="ltr">{order.client_phone}</span></p>
                             )}
                             {order.has_second_proof && order.due_date && (
-                              <p className="text-yellow-700"><span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span> {formatDate(shiftDate(order.due_date, -1))}</p>
+                              <p className="text-yellow-700"><span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span> {formatDate(order.second_proof_date || shiftDate(order.due_date, -1))}</p>
                             )}
                             <p><span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span> {formatDate(order.due_date)}</p>
                           </div>
@@ -1242,7 +1248,7 @@ function OrdersPageInner() {
                           <div className="flex items-center gap-1.5 px-3 py-1.5 mb-2 rounded-lg bg-yellow-50 border border-yellow-200 w-fit">
                             <CalendarDays className="w-3.5 h-3.5 text-yellow-600 flex-shrink-0" />
                             <span className="text-xs font-semibold text-yellow-700">
-                              {isArabic ? 'البروفا الثانية:' : 'Second Proof:'}{' '}{formatDate(shiftDate(order.due_date, -1))}
+                              {isArabic ? 'البروفا الثانية:' : 'Second Proof:'}{' '}{formatDate(order.second_proof_date || shiftDate(order.due_date, -1))}
                             </span>
                           </div>
                         )}
@@ -1276,7 +1282,7 @@ function OrdersPageInner() {
                             {order.has_second_proof && order.due_date && (
                               <p className="text-sm text-yellow-700">
                                 <span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span>{' '}
-                                {formatDate(shiftDate(order.due_date, -1))}
+                                {formatDate(order.second_proof_date || shiftDate(order.due_date, -1))}
                               </p>
                             )}
                             <p className="text-sm text-gray-700">
@@ -1755,7 +1761,7 @@ function OrdersPageInner() {
                     {isArabic ? 'موعد البروفا الثانية:' : 'Second Proof Date:'}
                   </span>
                   <span className="font-bold text-yellow-700">
-                    {formatDate(shiftDate(orderToStartWork.due_date, -1))}
+                    {formatDate(orderToStartWork.second_proof_date || shiftDate(orderToStartWork.due_date, -1))}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm sm:text-base">

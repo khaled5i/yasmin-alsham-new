@@ -46,6 +46,7 @@ const ORDER_LIST_COLUMNS = [
   'due_date',
   'customer_due_date',   // التاريخ الحقيقي للزبون (migration 49)
   'proof_delivery_date',
+  'second_proof_date',   // موعد البروفا الثانية القابل للتعديل (migration 51)
   'delivery_date',
   // أعمدة مستقلة (migration 29) - لا تحتاج JSONB extraction بعد الآن
   'has_measurements',
@@ -138,6 +139,7 @@ export interface Order {
   due_date: string
   customer_due_date?: string | null  // التاريخ الحقيقي للزبون (migration 49). null للطلبات القديمة → fallback إلى due_date
   proof_delivery_date?: string | null
+  second_proof_date?: string | null  // موعد البروفا الثانية القابل للتعديل (migration 51). null → يُحسب كـ due_date - 1
   delivery_date?: string | null
   notes?: string | null
   admin_notes?: string | null
@@ -192,6 +194,7 @@ export interface CreateOrderData {
   due_date: string
   customer_due_date?: string  // التاريخ الحقيقي للزبون (migration 49)
   proof_delivery_date?: string
+  second_proof_date?: string  // موعد البروفا الثانية القابل للتعديل (migration 51)
   delivery_date?: string
   notes?: string
   admin_notes?: string
@@ -310,6 +313,7 @@ export interface UpdateOrderData {
   due_date?: string
   customer_due_date?: string | null  // التاريخ الحقيقي للزبون (migration 49)
   proof_delivery_date?: string | null
+  second_proof_date?: string | null  // موعد البروفا الثانية القابل للتعديل (migration 51)
   delivery_date?: string | null
   notes?: string | null
   admin_notes?: string | null
@@ -478,6 +482,7 @@ export const orderService = {
         due_date: orderData.due_date,
         customer_due_date: orderData.customer_due_date || null,  // migration 49
         proof_delivery_date: orderData.proof_delivery_date || null,
+        second_proof_date: orderData.second_proof_date || null,  // migration 51
         delivery_date: orderData.delivery_date || null,
         notes: orderData.notes || null,
         admin_notes: orderData.admin_notes || null,

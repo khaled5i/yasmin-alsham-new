@@ -12,6 +12,8 @@ interface OrderDetails {
   proofDeliveryDate?: string
   dueDate: string
   hasSecondProof?: boolean
+  // موعد البروفا الثانية المُعدّل يدوياً (إن غاب يُحسب كـ dueDate - 3 أيام)
+  secondProofDate?: string
   totalPrice?: number
   paidAmount?: number
   remainingAmount?: number
@@ -86,6 +88,7 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
     proofDeliveryDate,
     dueDate,
     hasSecondProof,
+    secondProofDate,
     totalPrice,
     paidAmount,
     remainingAmount
@@ -94,8 +97,10 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
   // تنسيق التواريخ
   const formattedDueDate = formatDateArabic(dueDate)
   const formattedProofDate = proofDeliveryDate ? formatDateArabic(proofDeliveryDate) : null
-  // موعد البروفا الثانية = التاريخ الذي تراه الزبونة - 3 أيام
-  const formattedSecondProofDate = hasSecondProof && dueDate ? formatDateArabic(shiftDate(dueDate, -3)) : null
+  // موعد البروفا الثانية = الموعد المُعدّل يدوياً إن وُجد، وإلا التاريخ الذي تراه الزبونة - 3 أيام
+  const formattedSecondProofDate = hasSecondProof && dueDate
+    ? formatDateArabic(secondProofDate || shiftDate(dueDate, -3))
+    : null
 
   // بناء الرسالة بدون إيموجيات
   let message = `مرحباً ${clientName}\n\n`

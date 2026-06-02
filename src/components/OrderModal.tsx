@@ -930,7 +930,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
                         <span className="text-xs sm:text-sm font-medium truncate">موعد تسليم البروفا الثانية:</span>
                       </div>
-                      <p className="text-xs sm:text-base font-semibold text-yellow-600 truncate">{formatDate(shiftDate(order.due_date, -1))}</p>
+                      <p className="text-xs sm:text-base font-semibold text-yellow-600 truncate">{formatDate(order.second_proof_date || shiftDate(order.due_date, -1))}</p>
                     </div>
                   )}
 

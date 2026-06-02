@@ -219,7 +219,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
               {order.has_second_proof && order.due_date && (
                 <div className="date-row" style={{ color: '#ca8a04', fontWeight: 'bold', fontSize: '1.2em' }}>
                   <span>البروفا الثانية: </span>
-                  <span>{formatDate(shiftDate(order.due_date, -1))}</span>
+                  <span>{formatDate(order.second_proof_date || shiftDate(order.due_date, -1))}</span>
                 </div>
               )}
               <div className="date-row" style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '1.2em' }}>
