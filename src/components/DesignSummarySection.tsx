@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Play, Pause, Trash2, Loader2 } from 'lucide-react'
+import { Mic, Play, Pause, Trash2, Loader2, Pencil, Check, X } from 'lucide-react'
 import { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
 
 interface Props {
@@ -26,7 +26,28 @@ function formatDate(ts: number) {
 
 export default function DesignSummarySection({ notes, onNotesChange, readOnly = false }: Props) {
   const [playingId, setPlayingId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftText, setDraftText] = useState('')
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
+
+  const startEditing = (note: DesignSummaryNote) => {
+    setEditingId(note.id)
+    setDraftText(note.transcription || '')
+  }
+
+  const cancelEditing = () => {
+    setEditingId(null)
+    setDraftText('')
+  }
+
+  const saveEditing = (noteId: string) => {
+    const trimmed = draftText.trim()
+    onNotesChange(
+      notes.map(n => (n.id === noteId ? { ...n, transcription: trimmed } : n))
+    )
+    setEditingId(null)
+    setDraftText('')
+  }
 
   const base64ToBlob = (base64: string): Blob => {
     const b64 = base64.split(',')[1]
@@ -93,12 +114,48 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
                 {/* المحتوى */}
                 <div className="flex-1 min-w-0">
                   {/* النص المحوّل */}
-                  {note.transcription ? (
+                  {editingId === note.id ? (
+                    <div className="mb-2">
+                      <textarea
+                        value={draftText}
+                        onChange={(e) => setDraftText(e.target.value)}
+                        dir="rtl"
+                        rows={3}
+                        autoFocus
+                        placeholder="اكتب نص الملاحظة..."
+                        className="w-full text-sm text-gray-800 leading-relaxed text-right bg-white border border-teal-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-teal-400 resize-y"
+                      />
+                      <div className="flex items-center gap-2 mt-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => saveEditing(note.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white text-xs rounded-lg hover:bg-teal-700 transition-colors"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>حفظ</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditing}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>إلغاء</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : note.transcription ? (
                     <p className="text-sm text-gray-800 leading-relaxed mb-2 text-right">
                       {note.transcription.split('\n').filter(Boolean).map((line, i) => (
                         <span key={i}>{i > 0 && <br />}{line}</span>
                       ))}
                     </p>
+                  ) : readOnly ? (
+                    // ملاحظة محفوظة بدون نص: لا نُظهر مؤشّر تحميل دائم (يبدو كحلقة لا نهائية).
+                    // التسجيل الصوتي ما زال قابلاً للتشغيل عبر زر التشغيل.
+                    <div className="flex items-center gap-1.5 mb-2 text-sm text-gray-400 italic">
+                      <span>تسجيل صوتي (بدون نص محوّل)</span>
+                    </div>
                   ) : (
                     <div className="flex items-center gap-1.5 mb-2 text-sm text-gray-400">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -119,34 +176,46 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
                 </div>
 
                 {/* أزرار التحكم */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => togglePlayback(note)}
-                    className={`p-2 rounded-lg transition-colors ${
-                      playingId === note.id
-                        ? 'bg-teal-600 text-white'
-                        : 'text-teal-700 hover:bg-teal-100'
-                    }`}
-                    title={playingId === note.id ? 'إيقاف' : 'تشغيل الصوت'}
-                  >
-                    {playingId === note.id
-                      ? <Pause className="w-4 h-4" />
-                      : <Play className="w-4 h-4" />
-                    }
-                  </button>
-
-                  {!readOnly && (
+                {editingId !== note.id && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       type="button"
-                      onClick={() => deleteNote(note.id)}
-                      className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
-                      title="حذف"
+                      onClick={() => togglePlayback(note)}
+                      className={`p-2 rounded-lg transition-colors ${
+                        playingId === note.id
+                          ? 'bg-teal-600 text-white'
+                          : 'text-teal-700 hover:bg-teal-100'
+                      }`}
+                      title={playingId === note.id ? 'إيقاف' : 'تشغيل الصوت'}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      {playingId === note.id
+                        ? <Pause className="w-4 h-4" />
+                        : <Play className="w-4 h-4" />
+                      }
                     </button>
-                  )}
-                </div>
+
+                    {!readOnly && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => startEditing(note)}
+                          className="p-2 text-teal-700 hover:bg-teal-100 rounded-lg transition-colors"
+                          title="تعديل النص"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteNote(note.id)}
+                          className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}

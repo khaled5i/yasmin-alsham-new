@@ -14,7 +14,15 @@ import {
   Ruler,
   Pencil,
   Trash2,
-  Boxes
+  Boxes,
+  Store,
+  Users,
+  CreditCard,
+  Banknote,
+  Layers,
+  Square,
+  BarChart3,
+  ChevronDown
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -22,6 +30,54 @@ import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
+
+// ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
+type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
+
+const ACCENT_CLASSES: Record<StatAccent, { box: string; icon: string; total: string }> = {
+  amber: { box: 'bg-amber-50 border-amber-100', icon: 'text-amber-600', total: 'text-amber-700' },
+  slate: { box: 'bg-slate-50 border-slate-100', icon: 'text-slate-600', total: 'text-slate-700' },
+  indigo: { box: 'bg-indigo-50 border-indigo-100', icon: 'text-indigo-600', total: 'text-indigo-700' },
+  green: { box: 'bg-green-50 border-green-100', icon: 'text-green-600', total: 'text-green-700' },
+  teal: { box: 'bg-teal-50 border-teal-100', icon: 'text-teal-600', total: 'text-teal-700' },
+  purple: { box: 'bg-purple-50 border-purple-100', icon: 'text-purple-600', total: 'text-purple-700' }
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  count,
+  total,
+  accent,
+  formatCurrency
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  count: number
+  total: number
+  accent: StatAccent
+  formatCurrency: (n: number) => string
+}) {
+  const c = ACCENT_CLASSES[accent]
+  return (
+    <div className={`rounded-xl border p-3 ${c.box}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className={`w-5 h-5 ${c.icon}`} />
+        <span className="text-sm font-bold text-gray-800">{label}</span>
+      </div>
+      <div className="flex items-end justify-between gap-2">
+        <div>
+          <p className="text-[11px] text-gray-500">عدد الطلبات</p>
+          <p className="text-lg font-bold text-gray-900">{count}</p>
+        </div>
+        <div className="text-left">
+          <p className="text-[11px] text-gray-500">إجمالي المدخول</p>
+          <p className={`text-sm font-bold ${c.total}`}>{formatCurrency(total)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function FabricsIncomeContent() {
   const [income, setIncome] = useState<Income[]>([])
@@ -33,6 +89,7 @@ function FabricsIncomeContent() {
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [showStats, setShowStats] = useState(false)
 
   // حقول النموذج
   const [selectedInventoryId, setSelectedInventoryId] = useState('')
@@ -49,6 +106,7 @@ function FabricsIncomeContent() {
   const [editDate, setEditDate] = useState('')
   const [editCategoryLabel, setEditCategoryLabel] = useState('')
   const [editQuantity, setEditQuantity] = useState('')
+  const [editInventoryId, setEditInventoryId] = useState('')
 
   useEffect(() => {
     loadAll()
@@ -89,12 +147,15 @@ function FabricsIncomeContent() {
       // تعديل — سجل مالي فقط
       if (!editAmount) return
       setSaving(true)
+      const editItem = inventoryItems.find((it) => it.id === editInventoryId)
       try {
         const result = await updateIncome(editingId, {
           amount: parseFloat(editAmount),
           description: editDescription || undefined,
           date: editDate,
-          quantity_meters: editQuantity ? parseFloat(editQuantity) : undefined
+          quantity_meters: editQuantity ? parseFloat(editQuantity) : undefined,
+          // عند اختيار قماش جديد من المخزون يتغيّر اسم القماش وبالتالي تصنيفه (سادة/شك)
+          ...(editItem ? { customer_name: editItem.name } : {})
         })
         if (result) {
           setIncome(income.map((it) => (it.id === editingId ? result : it)))
@@ -162,6 +223,9 @@ function FabricsIncomeContent() {
     setEditDate(item.date)
     setEditCategoryLabel(item.customer_name || item.description || '')
     setEditQuantity(item.quantity_meters?.toString() || '')
+    // ربط القماش الحالي بالمخزون (للسماح بتغيير نوع القماش)
+    const matched = inventoryItems.find((inv) => inv.name === item.customer_name)
+    setEditInventoryId(matched?.id ?? '')
     setShowModal(true)
   }
 
@@ -197,6 +261,54 @@ function FabricsIncomeContent() {
   })
 
   const totalIncome = filteredIncome.reduce((sum, it) => sum + it.amount, 0)
+
+  // ─── إحصائيات المبيعات (تتبع نفس الفلترة الحالية: الشهر/البحث) ───
+  // تصنيف نوع القماش (شك / سادة) بالاعتماد على بيانات المخزون
+  const inventoryByName = new Map(inventoryItems.map((it) => [it.name, it]))
+  const classifyFabric = (item: Income): 'shek' | 'plain' | 'other' => {
+    const inv = item.customer_name ? inventoryByName.get(item.customer_name) : undefined
+    const text = `${inv?.name ?? item.customer_name ?? ''} ${inv?.fabric_type ?? ''}`
+    if (text.includes('شك')) return 'shek'
+    if (text.includes('سادة')) return 'plain'
+    return 'other'
+  }
+
+  const emptyStat = () => ({ count: 0, total: 0 })
+  const breakdown = {
+    yasmin: emptyStat(),
+    otherSource: emptyStat(),
+    network: emptyStat(),
+    cash: emptyStat(),
+    plain: emptyStat(),
+    shek: emptyStat()
+  }
+  for (const it of filteredIncome) {
+    // حسب مصدر الزبونة
+    if (it.customer_source === 'ياسمين الشام') {
+      breakdown.yasmin.count++
+      breakdown.yasmin.total += it.amount
+    } else if (it.customer_source) {
+      breakdown.otherSource.count++
+      breakdown.otherSource.total += it.amount
+    }
+    // حسب طريقة الدفع
+    if (it.payment_method === 'network') {
+      breakdown.network.count++
+      breakdown.network.total += it.amount
+    } else if (it.payment_method === 'cash') {
+      breakdown.cash.count++
+      breakdown.cash.total += it.amount
+    }
+    // حسب نوع القماش
+    const fab = classifyFabric(it)
+    if (fab === 'plain') {
+      breakdown.plain.count++
+      breakdown.plain.total += it.amount
+    } else if (fab === 'shek') {
+      breakdown.shek.count++
+      breakdown.shek.total += it.amount
+    }
+  }
 
   const formatCurrency = (n: number) =>
     new Intl.NumberFormat('ar-SA').format(n) + ' ر.س'
@@ -241,6 +353,114 @@ function FabricsIncomeContent() {
               <p className="text-3xl font-bold">{filteredIncome.length}</p>
             </div>
           </div>
+        </motion.div>
+
+        {/* إحصائيات تفصيلية (قائمة منسدلة) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="mb-6"
+        >
+          <button
+            type="button"
+            onClick={() => setShowStats((v) => !v)}
+            className="w-full flex items-center justify-between bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:bg-gray-50 transition-colors"
+            aria-expanded={showStats}
+          >
+            <span className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow">
+                <BarChart3 className="w-5 h-5 text-white" />
+              </span>
+              <span className="text-sm font-bold text-gray-800">الإحصائيات التفصيلية</span>
+            </span>
+            <ChevronDown
+              className={`w-5 h-5 text-gray-400 transition-transform ${showStats ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {showStats && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-4 pt-4">
+          {/* حسب مصدر الزبونة */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h3 className="text-sm font-bold text-gray-700 mb-3">حسب مصدر الزبونة</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard
+                icon={Store}
+                label="ياسمين الشام"
+                count={breakdown.yasmin.count}
+                total={breakdown.yasmin.total}
+                accent="amber"
+                formatCurrency={formatCurrency}
+              />
+              <StatCard
+                icon={Users}
+                label="مصدر آخر"
+                count={breakdown.otherSource.count}
+                total={breakdown.otherSource.total}
+                accent="slate"
+                formatCurrency={formatCurrency}
+              />
+            </div>
+          </div>
+
+          {/* حسب طريقة الدفع */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h3 className="text-sm font-bold text-gray-700 mb-3">حسب طريقة الدفع</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard
+                icon={CreditCard}
+                label="الشبكة"
+                count={breakdown.network.count}
+                total={breakdown.network.total}
+                accent="indigo"
+                formatCurrency={formatCurrency}
+              />
+              <StatCard
+                icon={Banknote}
+                label="الكاش"
+                count={breakdown.cash.count}
+                total={breakdown.cash.total}
+                accent="green"
+                formatCurrency={formatCurrency}
+              />
+            </div>
+          </div>
+
+          {/* حسب نوع القماش */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h3 className="text-sm font-bold text-gray-700 mb-3">حسب نوع القماش</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard
+                icon={Square}
+                label="قماش سادة"
+                count={breakdown.plain.count}
+                total={breakdown.plain.total}
+                accent="teal"
+                formatCurrency={formatCurrency}
+              />
+              <StatCard
+                icon={Layers}
+                label="قماش شك"
+                count={breakdown.shek.count}
+                total={breakdown.shek.total}
+                accent="purple"
+                formatCurrency={formatCurrency}
+              />
+            </div>
+          </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
 
         {/* Filters */}
@@ -420,6 +640,30 @@ function FabricsIncomeContent() {
                     <>
                       <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
                         {editCategoryLabel}
+                      </div>
+                      {/* تغيير نوع القماش (إعادة ربط بالمخزون) */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">القماش / النوع</label>
+                        {inventoryItems.length === 0 ? (
+                          <div className="text-sm text-gray-400 py-2">لا يوجد مخزون لاختياره</div>
+                        ) : (
+                          <select
+                            value={editInventoryId}
+                            onChange={(e) => setEditInventoryId(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white"
+                          >
+                            <option value="">— إبقاء القماش الحالي —</option>
+                            {inventoryItems.map((it) => (
+                              <option key={it.id} value={it.id}>
+                                {it.name}
+                                {it.fabric_type ? ` — ${it.fabric_type}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          اختيار قماش جديد يغيّر تصنيف المبيعة (سادة / شك)
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ (ر.س) *</label>

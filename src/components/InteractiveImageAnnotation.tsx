@@ -493,6 +493,8 @@ export interface InteractiveImageAnnotationRef {
   generateCompositeImage: () => Promise<string | null>
   saveCurrentComment: () => Promise<SavedDesignComment | null>
   getCurrentView: () => 'front' | 'back'
+  /** يُرجع true إذا كان هناك تسجيل صوتي جارٍ أو تحويل صوت→نص لم يكتمل بعد */
+  isTranscribing: () => boolean
 }
 
 // مكون النص القابل للسحب - يستخدم useMotionValue لإعادة تعيين الموقع بعد السحب
@@ -952,6 +954,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   const designSummaryNotesRef = useRef<DesignSummaryNote[]>(designSummaryNotes)
   const summaryStartTimeRef = useRef<number>(0)
   const [isDesignSummaryRecording, setIsDesignSummaryRecording] = useState(false)
+  // مرآة لحالة التسجيل النشط (تسجيل صوت جارٍ) لقراءتها عبر ref
+  const recordingActiveRef = useRef(false)
+  // الوقت الذي بدأ عنده تحويل الصوت→نص (null عند عدم وجود تحويل جارٍ).
+  // يُستخدم للسماح بالحفظ بعد مهلة قصوى إذا تأخّر التحويل.
+  const transcriptionPendingSinceRef = useRef<number | null>(null)
+  // الحد الأقصى لانتظار تحويل الصوت→نص قبل السماح بالحفظ على أي حال (لتجنّب التعليق)
+  const TRANSCRIPTION_MAX_WAIT_MS = 5000
 
   // حالات التعليقات الصوتية
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
@@ -1574,7 +1583,16 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
   useImperativeHandle(ref, () => ({
     generateCompositeImage,
     saveCurrentComment,
-    getCurrentView
+    getCurrentView,
+    isTranscribing: () => {
+      // التسجيل النشط يمنع الحفظ دائماً (الصوت لم يُنهَ بعد)
+      if (recordingActiveRef.current) return true
+      // تحويل الصوت→نص: نمنع الحفظ فقط خلال أول 5 ثوانٍ، ثم نسمح به على أي حال
+      const since = transcriptionPendingSinceRef.current
+      if (since === null) return false
+      if (Date.now() - since > TRANSCRIPTION_MAX_WAIT_MS) return false
+      return true
+    }
   }), [generateCompositeImage, saveCurrentComment, getCurrentView])
 
   // دالة التبديل بين الأمام والخلف - نظام slot ثابت
@@ -3094,6 +3112,24 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
   // مزامنة designSummaryNotesRef
   useEffect(() => { designSummaryNotesRef.current = designSummaryNotes }, [designSummaryNotes])
+
+  // مزامنة حالة التسجيل النشط
+  useEffect(() => {
+    recordingActiveRef.current = isRecordingActive || isDesignSummaryRecording
+  }, [isRecordingActive, isDesignSummaryRecording])
+
+  // تتبّع بدء/انتهاء تحويل الصوت→نص لاحتساب المهلة القصوى
+  useEffect(() => {
+    const transcriptionPending = asyncTranscribingId !== null || transcribingId !== null
+    if (transcriptionPending) {
+      // تسجيل لحظة بدء التحويل مرة واحدة فقط (لا نُعيد ضبطها مع كل تحديث)
+      if (transcriptionPendingSinceRef.current === null) {
+        transcriptionPendingSinceRef.current = Date.now()
+      }
+    } else {
+      transcriptionPendingSinceRef.current = null
+    }
+  }, [asyncTranscribingId, transcribingId])
 
   // بدء التسجيل تلقائياً بعد إضافة التعليق عبر النقر المزدوج
   useEffect(() => {

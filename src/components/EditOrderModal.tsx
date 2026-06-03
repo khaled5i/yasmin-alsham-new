@@ -454,6 +454,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
+    if (annotationRef.current?.isTranscribing()) {
+      setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
+      return
+    }
+
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -602,6 +607,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
 
     if (!formData.hasSecondProof) {
       setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
+      return
+    }
+
+    if (annotationRef.current?.isTranscribing()) {
+      setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return
     }
 

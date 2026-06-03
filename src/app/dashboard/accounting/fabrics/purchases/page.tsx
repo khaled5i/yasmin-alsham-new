@@ -36,7 +36,7 @@ function FabricsPurchasesContent() {
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState<Date | null>(null)
+  const [dateFilter, setDateFilter] = useState<Date | null>(new Date())
   const [categoryFilter, setCategoryFilter] = useState('')
   const [supplierFilter, setSupplierFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -247,8 +247,7 @@ function FabricsPurchasesContent() {
     let matchesDate = true
     if (dateFilter) {
       const itemDate = new Date(item.date)
-      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
-        itemDate.getMonth() === dateFilter.getMonth() &&
+      matchesDate = itemDate.getMonth() === dateFilter.getMonth() &&
         itemDate.getFullYear() === dateFilter.getFullYear()
     }
 
@@ -374,8 +373,9 @@ function FabricsPurchasesContent() {
                   <DatePicker
                     selected={dateFilter}
                     onChange={(date: Date | null) => setDateFilter(date)}
-                    dateFormat="yyyy/MM/dd"
-                    placeholderText="اختر التاريخ"
+                    dateFormat="yyyy/MM"
+                    showMonthYearPicker
+                    placeholderText="اختر الشهر"
                     className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent text-right"
                     isClearable
                   />

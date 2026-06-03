@@ -75,7 +75,7 @@ export default function DatePickerWithStats({
   statsType = 'orders', // القيمة الافتراضية هي الطلبات
   useCustomerDueDate = false
 }: DatePickerWithStatsProps) {
-  const { t } = useTranslation()
+  const { t, isArabic } = useTranslation()
   const [stats, setStats] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const viewedDateRef = useRef(new Date())
@@ -86,6 +86,20 @@ export default function DatePickerWithStats({
   // تحويل التاريخ من string إلى Date
   const dateValue = parseDateKeyForPicker(selectedDate)
   const selectedDateKey = selectedDate ? extractDateKey(selectedDate) : ''
+
+  // إجمالي عدد الطلبات في الـ 30 يوماً القادمة (من اليوم)
+  const next30DaysTotal = (() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const limit = new Date(today)
+    limit.setDate(limit.getDate() + 30)
+    const startKey = toLocalDateKey(today)
+    const endKey = toLocalDateKey(limit)
+    return Object.entries(stats).reduce((sum, [key, count]) => {
+      if (key >= startKey && key <= endKey) return sum + count
+      return sum
+    }, 0)
+  })()
 
   // جلب الإحصائيات عند تحميل المكون أو تغيير النوع
   useEffect(() => {
@@ -273,16 +287,19 @@ export default function DatePickerWithStats({
             {hijriMonthsInView.length === 1 ? (
               <span style={{ color: HIJRI_MONTH_COLORS.first.text }}>
                 {hijriMonthsInView[0].name} {hijriMonthsInView[0].year}
+                <span className="font-normal opacity-70"> ({hijriMonthsInView[0].month + 1})</span>
               </span>
             ) : (
               <>
                 <span style={{ color: HIJRI_MONTH_COLORS.second.text }}>
                   {hijriMonthsInView[1].name} {hijriMonthsInView[1].year}
+                  <span className="font-normal opacity-70"> ({hijriMonthsInView[1].month + 1})</span>
                 </span>
                 <span className="text-gray-400 mx-1">/</span>
                 <span style={{ color: HIJRI_MONTH_COLORS.first.text }}>
                   {hijriMonthsInView[0].name}
                   {hijriMonthsInView[0].year !== hijriMonthsInView[1].year ? ` ${hijriMonthsInView[0].year}` : ''}
+                  <span className="font-normal opacity-70"> ({hijriMonthsInView[0].month + 1})</span>
                 </span>
               </>
             )}
@@ -337,7 +354,15 @@ export default function DatePickerWithStats({
         }}
         onCalendarOpen={handleCalendarOpen}
         onCalendarClose={handleCalendarClose}
-      />
+      >
+        {/* تذييل التقويم: إجمالي الطلبات في الـ 30 يوماً القادمة */}
+        <div className="cal-month-total">
+          {statsType === 'alterations'
+            ? (isArabic ? 'عدد التعديلات في الـ 30 يوماً القادمة' : 'Number of alterations in the next 30 days')
+            : (isArabic ? 'عدد الطلبات في الـ 30 يوماً القادمة' : 'Number of orders in the next 30 days')}
+          <span className="cal-month-total-num">{next30DaysTotal}</span>
+        </div>
+      </DatePicker>
 
       {/* رسالة تحذيرية إذا كان التاريخ المختار مزدحم */}
       {dateValue && selectedDateKey && stats[selectedDateKey] > 7 && (
@@ -476,6 +501,41 @@ export default function DatePickerWithStats({
 
         .custom-calendar-hijri .react-datepicker__day--outside-month {
           opacity: 0.4;
+        }
+
+        /* تذييل إجمالي طلبات الشهر المعروض */
+        .custom-calendar-hijri .react-datepicker__children-container {
+          width: 100%;
+          margin: 0;
+          padding: 0;
+        }
+
+        .custom-calendar-hijri .cal-month-total {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          direction: rtl;
+          background-color: #fdf2f8;
+          border-top: 1px solid #f9a8d4;
+          padding: 0.6rem 0.5rem;
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #9f1239;
+        }
+
+        .custom-calendar-hijri .cal-month-total-num {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 1.75rem;
+          height: 1.75rem;
+          padding: 0 0.5rem;
+          border-radius: 9999px;
+          background-color: #ec4899;
+          color: #ffffff;
+          font-weight: 700;
+          font-size: 0.95rem;
         }
 
         @media (max-width: 640px) {

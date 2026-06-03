@@ -487,6 +487,17 @@ function AddOrderContent() {
     return false
   }, [formData.designSummaryNotes.length])
 
+  // منع الحفظ أثناء وجود تسجيل صوتي جارٍ أو تحويل صوت→نص لم يكتمل بعد.
+  // الحفظ في هذه اللحظة يخزّن الملاحظة بدون نص (تظهر "جاري التحويل" للأبد في صفحة الطلب)
+  // ويضيع ناتج التحويل لأن الصفحة تُغادر قبل اكتماله.
+  const requireTranscriptionDone = useCallback((): boolean => {
+    if (annotationRef.current?.isTranscribing()) {
+      setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
+      return false
+    }
+    return true
+  }, [])
+
   // إغلاق رسالة الخطأ، ومع غياب ملخص التصميم: تمرير الشاشة وإظهار السهم
   const handleCloseSaveError = useCallback(() => {
     setSaveError(null)
@@ -711,6 +722,7 @@ function AddOrderContent() {
     }
 
     if (!requireDesignSummary()) return
+    if (!requireTranscriptionDone()) return
 
     isSubmittingRef.current = true
     setIsSubmitting(true)
@@ -991,6 +1003,7 @@ function AddOrderContent() {
     }
 
     if (!requireDesignSummary()) return
+    if (!requireTranscriptionDone()) return
 
     isSubmittingRef.current = true
     setIsSubmitting(true)
@@ -1300,6 +1313,7 @@ function AddOrderContent() {
     }
 
     if (!requireDesignSummary()) return
+    if (!requireTranscriptionDone()) return
 
     isSubmittingRef.current = true
     setIsSubmitting(true)
