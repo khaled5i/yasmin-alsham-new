@@ -10,7 +10,7 @@ import Header from '@/components/Header'
 
 const EXCLUDED_KEYS = [
   'image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments',
-  'cartoon_image', 'ai_generated_images', 'design_thumbnail',
+  'cartoon_image', 'ai_generated_images', 'design_thumbnail', 'design_summary_notes',
   // أعلام نُقلت لأعمدة مستقلة (migration 29) - تُبقى للتوافق مع البيانات القديمة
   'is_printed', 'has_measurements', 'whatsapp_sent', 'needs_review', 'is_pre_booking', 'fabric_type'
 ]
@@ -325,30 +325,25 @@ export default function TrackOrderPage() {
           )}
         </div>
 
-        {/* معلومات التواصل */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 shadow-sm">
+        {/* أحدث تصاميم ياسمين الشام */}
+        <div className="bg-gradient-to-br from-pink-50 to-purple-50 rounded-2xl p-6 border border-pink-100 shadow-sm">
           <h3 className="text-base font-bold text-gray-800 mb-2 text-center">
-            هل لديك استفسار حول طلبك؟
+            اطّلعي على أحدث تصاميم ياسمين الشام
           </h3>
           <p className="text-gray-500 text-sm text-center mb-4">
-            لا تترددي في التواصل معنا للحصول على مزيد من التفاصيل
+            تابعينا على تيك توك لمشاهدة آخر التصاميم والإطلالات الجديدة
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <div className="flex justify-center">
             <a
-              href="tel:+966598862609"
-              className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse"
-            >
-              <Phone className="w-5 h-5" />
-              <span>اتصلي بنا</span>
-            </a>
-            <a
-              href={`https://wa.me/+966598862609?text=استفسار عن الطلب رقم: ${orderData.order_number}`}
+              href="https://www.tiktok.com/@yasminalsham.fashion"
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-black transition-colors duration-300"
             >
-              <MessageSquare className="w-5 h-5" />
-              <span>واتساب</span>
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+                <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.35 6.35 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34l-.01-8.83a8.22 8.22 0 0 0 4.79 1.53V4.56a4.85 4.85 0 0 1-1.02-.12z" />
+              </svg>
+              <span>تابعينا على تيك توك</span>
             </a>
           </div>
         </div>
@@ -362,25 +357,28 @@ export default function TrackOrderPage() {
       <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
 
-          {/* العنوان */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            className="text-center mb-12"
-          >
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6">
-              <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-                استعلام عن الطلب
-              </span>
-            </h1>
-            <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
-              تابعي حالة طلبك في أي وقت. أدخلي رقم الطلب لمعرفة مرحلة التفصيل والموعد المتوقع للتسليم
-            </p>
-          </motion.div>
+          {/* العنوان - يختفي بعد ظهور النتائج */}
+          {ordersData.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8 }}
+              className="text-center mb-12"
+            >
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6">
+                <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                  استعلام عن الطلب
+                </span>
+              </h1>
+              <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
+                تابعي حالة طلبك في أي وقت. أدخلي رقم الطلب لمعرفة مرحلة التفصيل والموعد المتوقع للتسليم
+              </p>
+            </motion.div>
+          )}
 
           <div className="max-w-4xl mx-auto">
-            {/* نموذج البحث */}
+            {/* نموذج البحث - يختفي بعد ظهور النتائج */}
+            {ordersData.length === 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -487,6 +485,7 @@ export default function TrackOrderPage() {
                 </motion.div>
               )}
             </motion.div>
+            )}
 
             {/* نتائج البحث */}
             {ordersData.length > 0 && (
@@ -497,6 +496,23 @@ export default function TrackOrderPage() {
                 transition={{ duration: 0.6 }}
                 className="space-y-8"
               >
+                {/* زر البحث عن طلب آخر */}
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOrdersData([])
+                      setSearchTerm('')
+                      setError(null)
+                      window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                    className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse"
+                  >
+                    <Search className="w-5 h-5" />
+                    <span>بحث عن طلب آخر</span>
+                  </button>
+                </div>
+
                 {/* عنوان النتائج عند وجود أكثر من طلب */}
                 {ordersData.length > 1 && (
                   <div className="text-center">

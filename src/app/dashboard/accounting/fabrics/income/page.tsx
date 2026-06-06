@@ -91,7 +91,7 @@ function FabricsIncomeContent() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showStats, setShowStats] = useState(false)
 
-  // حقول النموذج
+  // حقول النموذج (مشتركة بين الإضافة والتعديل)
   const [selectedInventoryId, setSelectedInventoryId] = useState('')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
@@ -99,14 +99,6 @@ function FabricsIncomeContent() {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'network' | ''>('')
   const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
   const [otherSourceText, setOtherSourceText] = useState('')
-
-  // عند التعديل — لا يوجد ربط بالمخزون (التعديل على السجل المالي فقط)
-  const [editAmount, setEditAmount] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [editDate, setEditDate] = useState('')
-  const [editCategoryLabel, setEditCategoryLabel] = useState('')
-  const [editQuantity, setEditQuantity] = useState('')
-  const [editInventoryId, setEditInventoryId] = useState('')
 
   useEffect(() => {
     loadAll()
@@ -143,38 +135,8 @@ function FabricsIncomeContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (isEditing && editingId) {
-      // تعديل — سجل مالي فقط
-      if (!editAmount) return
-      setSaving(true)
-      const editItem = inventoryItems.find((it) => it.id === editInventoryId)
-      try {
-        const result = await updateIncome(editingId, {
-          amount: parseFloat(editAmount),
-          description: editDescription || undefined,
-          date: editDate,
-          quantity_meters: editQuantity ? parseFloat(editQuantity) : undefined,
-          // عند اختيار قماش جديد من المخزون يتغيّر اسم القماش وبالتالي تصنيفه (سادة/شك)
-          ...(editItem ? { customer_name: editItem.name } : {})
-        })
-        if (result) {
-          setIncome(income.map((it) => (it.id === editingId ? result : it)))
-        }
-        setShowModal(false)
-        setIsEditing(false)
-        setEditingId(null)
-      } catch {
-        alert('❌ حدث خطأ أثناء الحفظ')
-      } finally {
-        setSaving(false)
-      }
-      return
-    }
-
-    // إضافة جديدة
+    // التحقق من الحقول الإجبارية (نفس الحقول في الإضافة والتعديل)
     if (!selectedInventoryId || !amount) return
-
-    // طريقة الدفع ومصدر الزبونة إجباريان
     if (!paymentMethod) {
       alert('يرجى اختيار طريقة الدفع (كاش أو شبكة)')
       return
@@ -190,6 +152,34 @@ function FabricsIncomeContent() {
         ? 'ياسمين الشام'
         : otherSourceText.trim() || 'مصدر آخر'
 
+    if (isEditing && editingId) {
+      // تعديل سجل موجود
+      setSaving(true)
+      try {
+        const result = await updateIncome(editingId, {
+          customer_name: selectedItem?.name ?? '-',
+          description: description || selectedItem?.name || '',
+          amount: amt,
+          payment_method: paymentMethod,
+          customer_source: resolvedSource,
+          date
+        })
+        if (result) {
+          setIncome(income.map((it) => (it.id === editingId ? result : it)))
+        }
+        setShowModal(false)
+        setIsEditing(false)
+        setEditingId(null)
+        resetForm()
+      } catch {
+        alert('❌ حدث خطأ أثناء الحفظ')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
+    // إضافة جديدة
     setSaving(true)
     try {
       const payload: CreateIncomeInput = {
@@ -218,14 +208,24 @@ function FabricsIncomeContent() {
   const handleEdit = (item: Income) => {
     setIsEditing(true)
     setEditingId(item.id)
-    setEditAmount(item.amount.toString())
-    setEditDescription(item.description || '')
-    setEditDate(item.date)
-    setEditCategoryLabel(item.customer_name || item.description || '')
-    setEditQuantity(item.quantity_meters?.toString() || '')
-    // ربط القماش الحالي بالمخزون (للسماح بتغيير نوع القماش)
+    // ربط القماش الحالي بالمخزون
     const matched = inventoryItems.find((inv) => inv.name === item.customer_name)
-    setEditInventoryId(matched?.id ?? '')
+    setSelectedInventoryId(matched?.id ?? '')
+    setAmount(item.amount.toString())
+    setDescription(item.description || '')
+    setDate(item.date)
+    setPaymentMethod((item.payment_method as 'cash' | 'network') || '')
+    // مصدر الزبونة: تحويل القيمة المخزّنة إلى خيار النموذج
+    if (item.customer_source === 'ياسمين الشام') {
+      setCustomerSource('yasmin_alsham')
+      setOtherSourceText('')
+    } else if (item.customer_source) {
+      setCustomerSource('other')
+      setOtherSourceText(item.customer_source)
+    } else {
+      setCustomerSource('')
+      setOtherSourceText('')
+    }
     setShowModal(true)
   }
 
@@ -635,79 +635,8 @@ function FabricsIncomeContent() {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {isEditing ? (
-                    /* ─── نموذج التعديل ─── */
-                    <>
-                      <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
-                        {editCategoryLabel}
-                      </div>
-                      {/* تغيير نوع القماش (إعادة ربط بالمخزون) */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">القماش / النوع</label>
-                        {inventoryItems.length === 0 ? (
-                          <div className="text-sm text-gray-400 py-2">لا يوجد مخزون لاختياره</div>
-                        ) : (
-                          <select
-                            value={editInventoryId}
-                            onChange={(e) => setEditInventoryId(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white"
-                          >
-                            <option value="">— إبقاء القماش الحالي —</option>
-                            {inventoryItems.map((it) => (
-                              <option key={it.id} value={it.id}>
-                                {it.name}
-                                {it.fabric_type ? ` — ${it.fabric_type}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <p className="text-[11px] text-gray-400 mt-1">
-                          اختيار قماش جديد يغيّر تصنيف المبيعة (سادة / شك)
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ (ر.س) *</label>
-                        <input
-                          type="number"
-                          value={editAmount}
-                          onChange={(e) => setEditAmount(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                          min="0" step="0.01" required
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">الكمية (متر)</label>
-                        <input
-                          type="number"
-                          value={editQuantity}
-                          onChange={(e) => setEditQuantity(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                          min="0" step="0.1" placeholder="اختياري"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">الوصف</label>
-                        <input
-                          type="text"
-                          value={editDescription}
-                          onChange={(e) => setEditDescription(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                          placeholder="ملاحظات..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">التاريخ</label>
-                        <input
-                          type="date"
-                          value={editDate}
-                          onChange={(e) => setEditDate(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                          required
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    /* ─── نموذج الإضافة ─── */
+                  {/* نموذج موحّد للإضافة والتعديل */}
+                  {(
                     <>
                       {/* اختيار القماش من المخزون */}
                       <div>
@@ -850,7 +779,7 @@ function FabricsIncomeContent() {
 
                   <button
                     type="submit"
-                    disabled={saving || (!isEditing && inventoryItems.length === 0)}
+                    disabled={saving || inventoryItems.length === 0}
                     className="w-full py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50 font-medium"
                   >
                     {saving ? 'جاري الحفظ...' : isEditing ? 'تحديث' : 'حفظ'}

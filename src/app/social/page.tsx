@@ -32,8 +32,8 @@ const socialLinks = [
   },
   {
     name: 'تيك توك',
-    handle: '@_yasmin._.alsham',
-    href: 'https://www.tiktok.com/@_yasmin._.alsham?is_from_webapp=1&sender_device=pc',
+    handle: '@yasminalsham.fashion',
+    href: 'https://www.tiktok.com/@yasminalsham.fashion',
     external: true,
     iconColor: '#9d174d',
     iconBg: '#fce7f3',

@@ -72,6 +72,41 @@ export default function ImageUpload({
     ? 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100'
     : 'opacity-0 group-hover:opacity-100'
 
+  // حفظ الصورة الملتقطة من الكاميرا في معرض الجهاز عبر Web Share API
+  // ملاحظة: لا يمكن لتطبيق ويب الحفظ في المعرض بشكل صامت؛ تُفتح قائمة المشاركة
+  // الأصلية ليختار المستخدم "حفظ في الصور". تُستخدم نسخة File الأصلية مباشرة
+  // (دون fetch) للحفاظ على إيماءة المستخدم المطلوبة لاستدعاء navigator.share.
+  const saveCapturedPhotoToGallery = async (file: File) => {
+    try {
+      if (typeof navigator === 'undefined') return
+      const shareData = { files: [file] }
+      if (typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
+        await navigator.share(shareData)
+        return
+      }
+      // احتياطي للمتصفحات التي لا تدعم مشاركة الملفات: تنزيل الصورة
+      const objectUrl = URL.createObjectURL(file)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = file.name || `design-${Date.now()}.jpg`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+    } catch {
+      // المستخدم ألغى المشاركة أو غير مدعوم — تجاهل بصمت
+    }
+  }
+
+  // مُعالِج خاص بالتقاط الصور من الكاميرا: يعرض خيار الحفظ في المعرض ثم يكمل الرفع
+  const handleCameraSelect = (files: FileList | null) => {
+    if (files && files.length > 0) {
+      // يجب استدعاء المشاركة ضمن نفس إيماءة المستخدم (دون await قبلها)
+      void saveCapturedPhotoToGallery(files[0])
+    }
+    handleFileSelect(files)
+  }
+
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || uploading) return
 
@@ -560,7 +595,7 @@ export default function ImageUpload({
             type="file"
             accept="image/*"
             capture="environment"
-            onChange={(e) => handleFileSelect(e.target.files)}
+            onChange={(e) => handleCameraSelect(e.target.files)}
             className="hidden"
             disabled={images.length >= maxImages || uploading}
           />
