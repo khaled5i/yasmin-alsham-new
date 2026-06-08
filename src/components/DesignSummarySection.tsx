@@ -18,7 +18,7 @@ function formatTime(seconds: number) {
 }
 
 function formatDate(ts: number) {
-  return new Date(ts).toLocaleString('ar-SA', {
+  return new Date(ts).toLocaleString('ar-SA-u-nu-latn', {
     month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit'
   })

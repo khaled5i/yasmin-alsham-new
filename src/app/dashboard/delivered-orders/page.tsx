@@ -132,7 +132,7 @@ export default function DeliveredOrdersPage() {
 
   // تنسيق التاريخ
   const formatDate = (dateString: string) => {
-    return formatGregorianDate(dateString, 'ar-SA', {
+    return formatGregorianDate(dateString, 'ar-SA-u-nu-latn', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'

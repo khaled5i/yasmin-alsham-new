@@ -76,7 +76,7 @@ export function shiftDate(dateStr: string | null | undefined, days: number): str
 
 export function formatGregorianDate(
   value: string | null | undefined,
-  locale: string = 'ar-SA',
+  locale: string = 'ar-SA-u-nu-latn',
   options: Intl.DateTimeFormatOptions = {}
 ): string {
   if (!value) return ''

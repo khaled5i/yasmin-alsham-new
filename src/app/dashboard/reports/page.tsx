@@ -892,7 +892,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-orange-700 mb-0.5 sm:mb-1 leading-tight">
-                  {comprehensiveStats.averageOrderValue.toLocaleString()} ر.س
+                  {comprehensiveStats.averageOrderValue.toLocaleString('en-US')} ر.س
                 </h3>
                 <p className="text-xs sm:text-sm font-semibold text-orange-800 leading-tight">متوسط قيمة الطلب</p>
                 <p className="text-[10px] sm:text-xs text-orange-600 mt-0.5 sm:mt-1">متوسط وقت الإنجاز</p>
@@ -936,7 +936,7 @@ export default function ReportsPage() {
                 {comprehensiveStats.paymentCollectionRate}%
               </div>
             </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalPaid.toLocaleString()} ر.س</h3>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalPaid.toLocaleString('en-US')} ر.س</h3>
             <p className="text-xs sm:text-sm text-gray-600 leading-tight">المبالغ المحصلة</p>
           </div>
 
@@ -950,7 +950,7 @@ export default function ReportsPage() {
                 {comprehensiveStats.totalAllOrdersValueChange > 0 ? '+' : ''}{comprehensiveStats.totalAllOrdersValueChange}%
               </div>
             </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalAllOrdersValue.toLocaleString()} ر.س</h3>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalAllOrdersValue.toLocaleString('en-US')} ر.س</h3>
             <p className="text-xs sm:text-sm text-gray-600 leading-tight">إجمالي قيمة الطلبات</p>
             <p className="text-[10px] sm:text-xs text-teal-600 mt-0.5">بغض النظر عن الدفع</p>
           </div>
@@ -988,7 +988,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-amber-700 mb-0.5 sm:mb-1 leading-tight">
-                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalMaterialExpenses.toLocaleString()} ر.س
+                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalMaterialExpenses.toLocaleString('en-US')} ر.س
                 </h3>
                 <p className="text-xs sm:text-sm font-semibold text-amber-800 leading-tight">مصروفات المواد</p>
                 <p className="text-[10px] sm:text-xs text-amber-600 mt-0.5 sm:mt-1">خيوط، أقمشة، مستلزمات</p>
@@ -1014,7 +1014,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-slate-700 mb-0.5 sm:mb-1 leading-tight">
-                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalFixedExpenses.toLocaleString()} ر.س
+                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalFixedExpenses.toLocaleString('en-US')} ر.س
                 </h3>
                 <p className="text-xs sm:text-sm font-semibold text-slate-800 leading-tight">المصاريف الثابتة</p>
                 <p className="text-[10px] sm:text-xs text-slate-600 mt-0.5 sm:mt-1">إيجار، كهرباء، صيانة</p>
@@ -1040,7 +1040,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-violet-700 mb-0.5 sm:mb-1 leading-tight">
-                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalWorkerSalaries.toLocaleString()} ر.س
+                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalWorkerSalaries.toLocaleString('en-US')} ر.س
                 </h3>
                 <p className="text-xs sm:text-sm font-semibold text-violet-800 leading-tight">رواتب العمال</p>
                 <p className="text-[10px] sm:text-xs text-violet-600 mt-0.5 sm:mt-1">صافي المستحق للعمال</p>
@@ -1060,7 +1060,7 @@ export default function ReportsPage() {
               </div>
             </div>
             <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-red-700">
-              {tailoringExpensesStats.totalExpenses.toLocaleString()} ر.س
+              {tailoringExpensesStats.totalExpenses.toLocaleString('en-US')} ر.س
             </h3>
           </div>
 
@@ -1073,13 +1073,13 @@ export default function ReportsPage() {
               <div>
                 <p className="text-xs sm:text-sm font-semibold text-pink-800">متوسط تكلفة الفستان</p>
                 <p className="text-[10px] sm:text-xs text-pink-600">
-                  {tailoringExpensesStats.totalExpenses.toLocaleString()} ÷ {tailoringExpensesStats.completedOrdersCount} طلب مكتمل
+                  {tailoringExpensesStats.totalExpenses.toLocaleString('en-US')} ÷ {tailoringExpensesStats.completedOrdersCount} طلب مكتمل
                 </p>
               </div>
             </div>
             <div className="text-left">
               <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-pink-700">
-                {tailoringExpensesStats.avgDressCost.toLocaleString()} ر.س
+                {tailoringExpensesStats.avgDressCost.toLocaleString('en-US')} ر.س
               </h3>
               {tailoringExpensesStats.completedOrdersCount === 0 && (
                 <p className="text-[10px] text-pink-500 text-left">لا توجد طلبات مكتملة</p>
@@ -1227,7 +1227,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="bg-green-50 rounded-lg p-3 text-center col-span-2 sm:col-span-1">
                       <p className="text-[10px] sm:text-xs text-green-600 mb-1">متوسط السعر</p>
-                      <p className="font-bold text-green-700 text-sm sm:text-base">{comprehensiveStats.averageOrderValue.toLocaleString()} ر.س</p>
+                      <p className="font-bold text-green-700 text-sm sm:text-base">{comprehensiveStats.averageOrderValue.toLocaleString('en-US')} ر.س</p>
                       <p className="text-[10px] text-green-500">للفساتين المؤهلة</p>
                     </div>
                   </div>
@@ -1294,12 +1294,12 @@ export default function ReportsPage() {
                 <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-3 text-center border border-orange-200">
                   {totalSalaries > 0 ? (
                     <>
-                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalSalaries.toLocaleString()}</p>
+                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalSalaries.toLocaleString('en-US')}</p>
                       <p className="text-xs text-orange-600 mt-0.5">إجمالي الرواتب ر.س</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalRevenue.toLocaleString()}</p>
+                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalRevenue.toLocaleString('en-US')}</p>
                       <p className="text-xs text-orange-600 mt-0.5">إجمالي الإيرادات ر.س</p>
                     </>
                   )}
@@ -1418,7 +1418,7 @@ export default function ReportsPage() {
                         <p className="text-[9px] sm:text-[10px] text-orange-600 mt-0.5">جاري</p>
                       </div>
                       <div className="bg-pink-50 rounded-lg p-2 text-center border border-pink-100">
-                        <p className="text-xs sm:text-sm font-bold text-pink-700 leading-none">{worker.revenue > 999 ? `${(worker.revenue / 1000).toFixed(1)}k` : worker.revenue.toLocaleString()}</p>
+                        <p className="text-xs sm:text-sm font-bold text-pink-700 leading-none">{worker.revenue > 999 ? `${(worker.revenue / 1000).toFixed(1)}k` : worker.revenue.toLocaleString('en-US')}</p>
                         <p className="text-[9px] sm:text-[10px] text-pink-600 mt-0.5">ر.س</p>
                       </div>
                     </div>
@@ -1448,13 +1448,13 @@ export default function ReportsPage() {
                       {worker.hasPayrollData && worker.netDue > 0 && (
                         <span className="flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
                           <Receipt className="w-3 h-3 flex-shrink-0" />
-                          <span>راتب مستحق: {worker.netDue.toLocaleString()} ر.س</span>
+                          <span>راتب مستحق: {worker.netDue.toLocaleString('en-US')} ر.س</span>
                         </span>
                       )}
                       {worker.hasPayrollData && worker.advances > 0 && (
                         <span className="flex items-center gap-1 bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
                           <DollarSign className="w-3 h-3 flex-shrink-0" />
-                          <span>سلف: {worker.advances.toLocaleString()} ر.س</span>
+                          <span>سلف: {worker.advances.toLocaleString('en-US')} ر.س</span>
                         </span>
                       )}
                       {worker.pieceCount > 0 && (
@@ -1517,7 +1517,7 @@ export default function ReportsPage() {
                         {type.percentage}%
                       </span>
                       <span className="text-xs sm:text-sm font-semibold text-green-600">
-                        {type.revenue.toLocaleString()} ر.س
+                        {type.revenue.toLocaleString('en-US')} ر.س
                       </span>
                     </div>
                   </div>
@@ -1570,7 +1570,7 @@ export default function ReportsPage() {
                   <h4 className="font-bold text-gray-800 mb-2 sm:mb-3 text-center text-sm sm:text-base">{month.fullMonth}</h4>
                   <div className="space-y-2 sm:space-y-3">
                     <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
-                      <p className="text-base sm:text-lg lg:text-xl font-bold text-green-600 text-center leading-tight">{month.revenue.toLocaleString()}</p>
+                      <p className="text-base sm:text-lg lg:text-xl font-bold text-green-600 text-center leading-tight">{month.revenue.toLocaleString('en-US')}</p>
                       <p className="text-[10px] sm:text-xs text-gray-600 text-center">ر.س</p>
                     </div>
                     <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">

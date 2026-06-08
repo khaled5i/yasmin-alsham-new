@@ -7,7 +7,6 @@ import {
   Package,
   ArrowLeft,
   TrendingUp,
-  TrendingDown,
   DollarSign,
   ShoppingCart,
   Home,
@@ -102,7 +101,7 @@ function FabricsAccountingContent() {
   }, [])
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
+    return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
   }
 
   // تحديد مسار العودة حسب نوع المستخدم
@@ -154,16 +153,21 @@ function FabricsAccountingContent() {
           {loading ? (
             <div className="text-center py-8 text-gray-400">جاري التحميل...</div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="text-center p-4 bg-emerald-50 rounded-xl">
                 <TrendingUp className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-500 mb-1">المبيعات</p>
                 <p className="text-xl font-bold text-emerald-700">{formatCurrency(stats?.totalIncome || 0)}</p>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-xl">
-                <TrendingDown className="w-8 h-8 text-red-600 mx-auto mb-2" />
-                <p className="text-sm text-gray-500 mb-1">المصروفات</p>
-                <p className="text-xl font-bold text-red-700">{formatCurrency(stats?.totalExpenses || 0)}</p>
+              <div className="text-center p-4 bg-orange-50 rounded-xl">
+                <ShoppingCart className="w-8 h-8 text-orange-600 mx-auto mb-2" />
+                <p className="text-sm text-gray-500 mb-1">المشتريات</p>
+                <p className="text-xl font-bold text-orange-700">{formatCurrency(stats?.totalMaterialExpenses || 0)}</p>
+              </div>
+              <div className="text-center p-4 bg-blue-50 rounded-xl">
+                <Home className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+                <p className="text-sm text-gray-500 mb-1">مصاريف ثابتة</p>
+                <p className="text-xl font-bold text-blue-700">{formatCurrency(stats?.totalFixedExpenses || 0)}</p>
               </div>
               <div className="text-center p-4 bg-purple-50 rounded-xl">
                 <Users className="w-8 h-8 text-purple-600 mx-auto mb-2" />

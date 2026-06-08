@@ -28,7 +28,7 @@ function FabricsFixedExpensesContent() {
   const [categories, setCategories] = useState<AccountingCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState<Date | null>(null)
+  const [dateFilter, setDateFilter] = useState<Date | null>(new Date())
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -166,8 +166,7 @@ function FabricsFixedExpensesContent() {
     let matchesDate = true
     if (dateFilter) {
       const itemDate = new Date(item.date)
-      matchesDate = itemDate.getDate() === dateFilter.getDate() &&
-        itemDate.getMonth() === dateFilter.getMonth() &&
+      matchesDate = itemDate.getMonth() === dateFilter.getMonth() &&
         itemDate.getFullYear() === dateFilter.getFullYear()
     }
 
@@ -179,11 +178,11 @@ function FabricsFixedExpensesContent() {
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
+    return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
   }
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ar-SA', {
+    return new Date(dateStr).toLocaleDateString('ar-SA-u-nu-latn', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
@@ -260,8 +259,9 @@ function FabricsFixedExpensesContent() {
                   <DatePicker
                     selected={dateFilter}
                     onChange={(date: Date | null) => setDateFilter(date)}
-                    dateFormat="yyyy/MM/dd"
-                    placeholderText="اختر التاريخ"
+                    dateFormat="yyyy/MM"
+                    showMonthYearPicker
+                    placeholderText="اختر الشهر"
                     className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-right"
                     isClearable
                   />

@@ -1708,7 +1708,7 @@ function AddOrderContent() {
                             موعد البروفا الثانية:{' '}
                             <span className="font-semibold text-amber-700">
                               {effectiveSecondProofDate
-                                ? formatGregorianDate(effectiveSecondProofDate, 'ar-SA', { day: 'numeric', month: 'long', year: 'numeric' })
+                                ? formatGregorianDate(effectiveSecondProofDate, 'ar-SA-u-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' })
                                 : 'حدد موعد التسليم أولاً'}
                             </span>
                           </div>

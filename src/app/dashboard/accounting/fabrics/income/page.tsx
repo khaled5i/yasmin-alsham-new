@@ -311,10 +311,10 @@ function FabricsIncomeContent() {
   }
 
   const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('ar-SA').format(n) + ' ر.س'
+    new Intl.NumberFormat('ar-SA-u-nu-latn').format(n) + ' ر.س'
 
   const formatDate = (d: string) =>
-    new Date(d).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })
+    new Date(d).toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100" dir="rtl">

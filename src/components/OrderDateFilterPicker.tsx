@@ -172,7 +172,7 @@ export default function OrderDateFilterPicker({
     nextMonthButtonDisabled: boolean
   }) => {
     viewedDateRef.current = date
-    const gregorianMonth = date.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })
+    const gregorianMonth = date.toLocaleDateString('ar-SA-u-nu-latn', { month: 'long', year: 'numeric' })
     const hijriMonthsInView = getHijriMonthsInView(date)
     const receivedLabel = t('order_received_date') || (isArabic ? 'تاريخ الاستلام' : 'Received Date')
     const deliveryLabel = t('due_date') || (isArabic ? 'تاريخ التسليم' : 'Delivery Date')

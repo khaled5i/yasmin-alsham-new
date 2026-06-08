@@ -905,7 +905,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
                 <p><span className="text-gray-600">الزبونة:</span> {order.client_name}</p>
                 <p><span className="text-gray-600">الهاتف:</span> {order.client_phone}</p>
                 <p><span className="text-gray-600">رقم الطلب:</span> #{order.order_number || order.id.slice(0, 8)}</p>
-                <p><span className="text-gray-600">موعد التسليم:</span> {formatGregorianDate(order.due_date, 'ar-SA')}</p>
+                <p><span className="text-gray-600">موعد التسليم:</span> {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn')}</p>
               </div>
             </div>
 

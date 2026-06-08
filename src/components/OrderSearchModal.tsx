@@ -216,7 +216,7 @@ export default function OrderSearchModal({
                                   {isArabic ? 'التسليم:' : 'Due:'}{' '}
                                   {isToday
                                     ? (isArabic ? 'اليوم' : 'Today')
-                                    : new Date(order.due_date).toLocaleDateString(isArabic ? 'ar-SA' : 'en-US')}
+                                    : new Date(order.due_date).toLocaleDateString(isArabic ? 'ar-SA-u-nu-latn' : 'en-US')}
                                 </p>
                               )
                             })()}

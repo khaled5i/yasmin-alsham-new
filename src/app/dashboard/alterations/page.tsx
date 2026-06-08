@@ -341,7 +341,7 @@ export default function AlterationsPage() {
                     )}
                     <p className="text-sm text-gray-600">
                       <span className="font-medium">{isArabic ? 'موعد التسليم:' : 'Due Date:'}</span>{' '}
-                      {new Date(alteration.alteration_due_date).toLocaleDateString(isArabic ? 'ar-SA' : 'en-US')}
+                      {new Date(alteration.alteration_due_date).toLocaleDateString(isArabic ? 'ar-SA-u-nu-latn' : 'en-US')}
                     </p>
                   </div>
 

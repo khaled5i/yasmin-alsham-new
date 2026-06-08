@@ -276,7 +276,7 @@ export default function WorkersPage() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('ar-SA', {
+    return date.toLocaleDateString('ar-SA-u-nu-latn', {
       calendar: 'gregory', // استخدام التقويم الميلادي
       year: 'numeric',
       month: 'long',

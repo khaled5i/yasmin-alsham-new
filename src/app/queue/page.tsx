@@ -44,7 +44,7 @@ const VISIT_REASONS: { value: VisitReason; label: string }[] = [
 ]
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString('ar-SA', {
+  return d.toLocaleDateString('ar-SA-u-nu-latn', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',

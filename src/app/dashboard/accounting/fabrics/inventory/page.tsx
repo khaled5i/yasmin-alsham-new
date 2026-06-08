@@ -820,7 +820,7 @@ function MovementsHistoryModal({ item, onClose }: MovementsHistoryModalProps) {
 
   const unitLabel = item.unit === 'meter' ? 'م' : 'ق'
   const formatDate = (d: string) =>
-    new Date(d).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })
+    new Date(d).toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })
 
   return (
     <motion.div
@@ -1223,7 +1223,7 @@ function FabricsInventoryContent() {
             <p className="text-slate-300 mb-1 text-sm">إجمالي قيمة المخزون</p>
             <p className="text-2xl font-bold">
               {totalValue > 0
-                ? new Intl.NumberFormat('ar-SA').format(totalValue) + ' ر.س'
+                ? new Intl.NumberFormat('ar-SA-u-nu-latn').format(totalValue) + ' ر.س'
                 : '—'}
             </p>
           </div>

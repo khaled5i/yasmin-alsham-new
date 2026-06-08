@@ -73,7 +73,7 @@ export function formatDateArabic(dateString: string): string {
     day: 'numeric'
   }
 
-  return formatGregorianDate(dateString, 'ar-SA', options)
+  return formatGregorianDate(dateString, 'ar-SA-u-nu-latn', options)
 }
 
 /**

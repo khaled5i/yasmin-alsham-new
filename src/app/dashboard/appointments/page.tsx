@@ -128,7 +128,7 @@ export default function AppointmentsPage() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('ar-SA', {
+    return date.toLocaleDateString('ar-SA-u-nu-latn', {
       calendar: 'gregory', // استخدام التقويم الميلادي
       weekday: 'long',
       year: 'numeric',
@@ -523,7 +523,7 @@ export default function AppointmentsPage() {
 
                     <div className="flex items-center space-x-2 space-x-reverse">
                       <div className="text-xs text-gray-500">
-                        {t('created_on')} {new Date(appointment.created_at).toLocaleDateString('ar-SA', { calendar: 'gregory' })}
+                        {t('created_on')} {new Date(appointment.created_at).toLocaleDateString('ar-SA-u-nu-latn', { calendar: 'gregory' })}
                       </div>
                     </div>
                   </div>

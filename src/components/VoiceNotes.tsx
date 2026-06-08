@@ -442,7 +442,7 @@ export default function VoiceNotes({
   // تنسيق التاريخ
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp)
-    return date.toLocaleString('ar-SA', {
+    return date.toLocaleString('ar-SA-u-nu-latn', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

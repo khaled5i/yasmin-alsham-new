@@ -79,7 +79,7 @@ export default function BookAppointmentPage() {
         month: 'long',
         day: 'numeric'
       }
-      const gregorianDate = date.toLocaleDateString('ar-SA', gregorianOptions)
+      const gregorianDate = date.toLocaleDateString('ar-SA-u-nu-latn', gregorianOptions)
 
       formatted[dateString] = gregorianDate
     })

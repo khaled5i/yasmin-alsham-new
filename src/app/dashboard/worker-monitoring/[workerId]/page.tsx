@@ -672,14 +672,14 @@ function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; o
               <p className="text-xs text-gray-500 flex items-center gap-1">
                 <Clock className="w-3 h-3 flex-shrink-0" />
                 موعد التسليم:{' '}
-                {formatGregorianDate(order.due_date, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
               </p>
             )}
             {showCompletedAt && order.worker_completed_at && (
               <p className="text-xs text-green-600 flex items-center gap-1 font-medium">
                 <CheckCircle className="w-3 h-3 flex-shrink-0" />
                 أنهاه العامل:{' '}
-                {formatGregorianDate(order.worker_completed_at, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                {formatGregorianDate(order.worker_completed_at, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
               </p>
             )}
           </div>
@@ -689,7 +689,7 @@ function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; o
         <div className="flex flex-col items-end justify-between flex-shrink-0">
           {order.price ? (
             <span className="text-sm font-bold text-gray-800">
-              {order.price.toLocaleString('ar-SA')} ر.س
+              {order.price.toLocaleString('ar-SA-u-nu-latn')} ر.س
             </span>
           ) : <span />}
           <ChevronLeft className="w-4 h-4 text-gray-300 group-hover:text-teal-400" />
@@ -1031,7 +1031,7 @@ function CompletedOrderRow({
                 <p className="text-xs text-green-600 flex items-center gap-1 font-medium">
                   <CheckCircle className="w-3 h-3 flex-shrink-0" />
                   أنهاه العامل:{' '}
-                  {formatGregorianDate(order.worker_completed_at, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                  {formatGregorianDate(order.worker_completed_at, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
                 </p>
               )}
               {completionGap !== null && (
@@ -1047,13 +1047,13 @@ function CompletedOrderRow({
                 <p className="text-xs text-gray-500 flex items-center gap-1">
                   <Clock className="w-3 h-3 flex-shrink-0" />
                   موعد التسليم:{' '}
-                  {formatGregorianDate(order.due_date, 'ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                  {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
                 </p>
               )}
               {hasPricing && !isExpanded && (
                 <p className="text-xs font-semibold text-pink-700 flex items-center gap-1">
                   <Tag className="w-3 h-3" />
-                  {parseFloat(pricingData.price).toLocaleString('ar-SA')} ر.س
+                  {parseFloat(pricingData.price).toLocaleString('ar-SA-u-nu-latn')} ر.س
                 </p>
               )}
               {pricingData.rating > 0 && !isExpanded && (
@@ -1069,7 +1069,7 @@ function CompletedOrderRow({
           {/* يمين: السعر + أزرار التقييم */}
           <div className="flex flex-col items-end justify-between flex-shrink-0 gap-2">
             {order.price ? (
-              <span className="text-sm font-bold text-gray-800">{order.price.toLocaleString('ar-SA')} ر.س</span>
+              <span className="text-sm font-bold text-gray-800">{order.price.toLocaleString('ar-SA-u-nu-latn')} ر.س</span>
             ) : <span />}
             {isAdmin && (
               <>
@@ -1458,13 +1458,13 @@ function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean
               />
               <KpiCard
                 label="إجمالي الراتب الكلي"
-                value={`${totalSalaryAll.toLocaleString('ar-SA')} ر.س`}
+                value={`${totalSalaryAll.toLocaleString('ar-SA-u-nu-latn')} ر.س`}
                 icon={<DollarSign className="w-4 h-4" />}
                 colorClass="text-emerald-700 bg-emerald-50 border-emerald-200"
               />
               <KpiCard
                 label="متوسط الشهر"
-                value={`${avgMonthlySalary.toLocaleString('ar-SA')} ر.س`}
+                value={`${avgMonthlySalary.toLocaleString('ar-SA-u-nu-latn')} ر.س`}
                 icon={<TrendingUp className="w-4 h-4" />}
                 colorClass="text-teal-700 bg-teal-50 border-teal-200"
               />
@@ -1496,15 +1496,15 @@ function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean
                     <span className="font-medium text-gray-700">{monthLabel}</span>
                     <span className="text-center text-gray-600">{m.count}</span>
                     <span className="text-center text-gray-600">
-                      {m.price.toLocaleString('ar-SA')}
+                      {m.price.toLocaleString('ar-SA-u-nu-latn')}
                       {m.bonus > 0 && (
                         <span className="text-green-600 text-xs mr-1">
-                          +{m.bonus.toLocaleString('ar-SA')}
+                          +{m.bonus.toLocaleString('ar-SA-u-nu-latn')}
                         </span>
                       )}
                     </span>
                     <span className="text-left font-bold text-emerald-700">
-                      {total.toLocaleString('ar-SA')} <span className="font-normal text-xs text-gray-400">ر.س</span>
+                      {total.toLocaleString('ar-SA-u-nu-latn')} <span className="font-normal text-xs text-gray-400">ر.س</span>
                     </span>
                   </div>
                 )
@@ -1515,10 +1515,10 @@ function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean
                 <span className="text-emerald-800">الإجمالي</span>
                 <span className="text-center text-emerald-800">{pricedOrders.length}</span>
                 <span className="text-center text-emerald-800">
-                  {pricedOrders.reduce((s, o) => s + (o.worker_price ?? 0), 0).toLocaleString('ar-SA')}
+                  {pricedOrders.reduce((s, o) => s + (o.worker_price ?? 0), 0).toLocaleString('ar-SA-u-nu-latn')}
                 </span>
                 <span className="text-left text-emerald-700">
-                  {totalSalaryAll.toLocaleString('ar-SA')} <span className="font-normal text-xs text-gray-400">ر.س</span>
+                  {totalSalaryAll.toLocaleString('ar-SA-u-nu-latn')} <span className="font-normal text-xs text-gray-400">ر.س</span>
                 </span>
               </div>
             </div>
@@ -1535,19 +1535,19 @@ function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <KpiCard
             label="إجمالي الإيرادات"
-            value={`${totalRevenue.toLocaleString('ar-SA')} ريال`}
+            value={`${totalRevenue.toLocaleString('ar-SA-u-nu-latn')} ريال`}
             icon={<DollarSign className="w-4 h-4" />}
             colorClass="text-green-700 bg-green-50 border-green-200"
           />
           <KpiCard
             label="متوسط قيمة الطلب"
-            value={`${avgOrderValue.toLocaleString('ar-SA')} ريال`}
+            value={`${avgOrderValue.toLocaleString('ar-SA-u-nu-latn')} ريال`}
             icon={<TrendingUp className="w-4 h-4" />}
             colorClass="text-teal-700 bg-teal-50 border-teal-200"
           />
           <KpiCard
             label="المبالغ المتبقية"
-            value={`${totalOutstanding.toLocaleString('ar-SA')} ريال`}
+            value={`${totalOutstanding.toLocaleString('ar-SA-u-nu-latn')} ريال`}
             icon={<AlertCircle className="w-4 h-4" />}
             colorClass="text-orange-700 bg-orange-50 border-orange-200"
           />

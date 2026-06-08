@@ -135,7 +135,7 @@ export async function getExpenses(
   }
 
   try {
-    if (!type || type === 'fixed') {
+    if (!type || type === 'fixed' || type === 'salary') {
       await ensureRecurringExpensesGenerated(branch)
     }
 
@@ -569,8 +569,16 @@ export async function getFinancialSummary(
     .filter(e => e.type === 'fixed')
     .reduce((sum, e) => sum + e.amount, 0)
 
-  // جلب الرواتب من نظام رواتب العمال الجديد (worker_payroll_months)
-  const totalSalaries = await getPayrollSalariesForPeriod(branch, startDate, endDate)
+  // الرواتب المسجّلة يدوياً في جدول المصروفات (type='salary')
+  // تستخدمها أقسام الأقمشة والجاهز التي لا تعتمد على نظام رواتب التفصيل
+  const manualSalaryExpenses = allExpenses
+    .filter(e => e.type === 'salary')
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  // جلب الرواتب من نظام رواتب العمال الجديد (worker_payroll_months) لقسم التفصيل
+  const payrollSalaries = await getPayrollSalariesForPeriod(branch, startDate, endDate)
+
+  const totalSalaries = manualSalaryExpenses + payrollSalaries
 
   const totalExpenses = totalMaterialExpenses + totalFixedExpenses + totalSalaries
 

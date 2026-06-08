@@ -179,11 +179,11 @@ function ReadyDesignsFixedExpensesContent() {
   const categoryOptions = categoriesToOptions(categories)
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
+    return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
   }
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ar-SA', {
+    return new Date(dateStr).toLocaleDateString('ar-SA-u-nu-latn', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'

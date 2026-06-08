@@ -263,7 +263,7 @@ export default function DatePickerWithStats({
     decreaseMonthRef.current = decreaseMonth
     increaseMonthRef.current = increaseMonth
 
-    const gregorianMonth = date.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })
+    const gregorianMonth = date.toLocaleDateString('ar-SA-u-nu-latn', { month: 'long', year: 'numeric' })
     const monthNumber = date.getMonth() + 1
     const hijriMonthsInView = getHijriMonthsInView(date)
 

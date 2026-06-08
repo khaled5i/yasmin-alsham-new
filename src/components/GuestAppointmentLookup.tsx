@@ -70,7 +70,7 @@ export default function GuestAppointmentLookup() {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    return date.toLocaleDateString('ar-SA', {
+    return date.toLocaleDateString('ar-SA-u-nu-latn', {
       calendar: 'gregory', // استخدام التقويم الميلادي
       weekday: 'long',
       year: 'numeric',

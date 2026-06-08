@@ -85,7 +85,7 @@ function ReadyDesignsAccountingContent() {
   }, [])
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA').format(amount) + ' ر.س'
+    return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
   }
 
   // تحديد مسار العودة حسب نوع المستخدم

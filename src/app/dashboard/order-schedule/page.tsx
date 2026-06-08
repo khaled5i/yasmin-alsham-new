@@ -275,7 +275,7 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, onC
     const [year, monthIndex, day] = dateKey.split('-').map(Number)
     const displayDate = new Date(year, monthIndex - 1, day, 12)
     const hijri = toHijri(displayDate)
-    const gregorianLabel = displayDate.toLocaleDateString('ar-SA', {
+    const gregorianLabel = displayDate.toLocaleDateString('ar-SA-u-nu-latn', {
         calendar: 'gregory', year: 'numeric', month: 'long', day: 'numeric'
     })
     const extraCount = extraSlots.reduce((s, sl) => s + sl.count, 0)
@@ -516,7 +516,7 @@ function ManageExtraSlotsModal({ slots, onDelete, onUpdate, onClose }: ManageExt
 
     const formatDate = (dateKey: string) => {
         const [y, m, d] = dateKey.split('-').map(Number)
-        return new Date(y, m - 1, d, 12).toLocaleDateString('ar-SA', {
+        return new Date(y, m - 1, d, 12).toLocaleDateString('ar-SA-u-nu-latn', {
             calendar: 'gregory', year: 'numeric', month: 'long', day: 'numeric'
         })
     }
