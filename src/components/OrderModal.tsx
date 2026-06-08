@@ -187,6 +187,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   // المدير فقط يمكنه تعديل ملخص التصميم وإضافة تسجيلات صوتية من صفحة عرض التفاصيل
   const isManager = user?.role === 'admin'
 
+  // في صفحة العمال فقط: قسم معلومات الطلب وقسم المقاسات يصبحان قائمتين منسدلتين،
+  // مع نقل قسم المقاسات إلى أسفل الصفحة. لا يتغيّر محتوى القسمين إطلاقاً.
+  const isWorkerView = user?.role === 'worker'
+  const [isOrderInfoOpen, setIsOrderInfoOpen] = useState(false)
+  const [isMeasurementsOpen, setIsMeasurementsOpen] = useState(false)
+
   // تحديث ملخص التصميم (تعديل النص/حذف/تسجيل جديد) مع الحفظ المباشر في قاعدة البيانات
   const handleDesignSummaryNotesChange = useCallback((notes: DesignSummaryNote[]) => {
     setDesignSummaryNotes(notes)
@@ -830,6 +836,68 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return `${day}/${month}/${year}`
   }
 
+  // قسم المقاسات: محتواه ثابت لم يتغيّر. في صفحة العمال يصبح قائمة منسدلة ويُعرض أسفل الصفحة،
+  // وفي باقي الصفحات يُعرض في مكانه الأصلي كما هو.
+  const hasMeasurements =
+    (measurementsData || order.measurements) &&
+    Object.values(measurementsData || order.measurements || {}).some(val => val !== undefined && val !== '')
+
+  const measurementsSection = hasMeasurements ? (
+    <div className={isWorkerView
+      ? 'bg-gradient-to-r from-emerald-50 to-teal-50 p-3 sm:p-6 rounded-xl border border-emerald-200 space-y-4 sm:space-y-6'
+      : 'space-y-4 sm:space-y-6'}>
+      <h3
+        className={`text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse ${isWorkerView ? 'cursor-pointer justify-between select-none' : ''}`}
+        onClick={isWorkerView ? () => setIsMeasurementsOpen(v => !v) : undefined}
+      >
+        <span className="flex items-center space-x-2 space-x-reverse">
+          <Ruler className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
+          <span>
+            {t('measurements_cm')}
+          </span>
+        </span>
+        {isWorkerView && (
+          <ChevronDown className={`w-5 h-5 text-pink-600 flex-shrink-0 transition-transform duration-300 ${isMeasurementsOpen ? 'rotate-180' : ''}`} />
+        )}
+      </h3>
+
+      {(!isWorkerView || isMeasurementsOpen) && (
+        <>
+          {/* المقاسات الرقمية */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+            {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => {
+              const value = (measurementsData || order.measurements as any)?.[key]
+              if (!value) return null
+
+              return (
+                <div key={key} className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
+                  <p className="text-xs sm:text-sm text-gray-600 mb-1">
+                    {getMeasurementLabelWithSymbol(key as any)}
+                  </p>
+                  <p className="text-base sm:text-lg font-bold text-gray-800">{value}</p>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* مقاسات إضافية */}
+          {(measurementsData || order.measurements as any)?.additional_notes && (
+            <div className="space-y-2">
+              <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
+                {t('measurement_additional_notes')}
+              </h4>
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
+                <p className="text-sm sm:text-base text-gray-700 whitespace-pre-wrap">
+                  {(measurementsData || order.measurements as any)?.additional_notes}
+                </p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  ) : null
+
   return (
     <>
     <AnimatePresence>
@@ -882,11 +950,20 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
             <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
               {/* 1️⃣ القسم العلوي - معلومات الطلب الأساسية */}
               <div className="bg-gradient-to-r from-pink-50 to-purple-50 p-3 sm:p-6 rounded-xl border border-pink-200">
-                <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center space-x-2 space-x-reverse">
-                  <Package className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
-                  <span>{t('order_info')}</span>
+                <h3
+                  className={`text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse ${isWorkerView ? 'cursor-pointer justify-between select-none' : ''} ${(!isWorkerView || isOrderInfoOpen) ? 'mb-3 sm:mb-4' : ''}`}
+                  onClick={isWorkerView ? () => setIsOrderInfoOpen(v => !v) : undefined}
+                >
+                  <span className="flex items-center space-x-2 space-x-reverse">
+                    <Package className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />
+                    <span>{t('order_info')}</span>
+                  </span>
+                  {isWorkerView && (
+                    <ChevronDown className={`w-5 h-5 text-pink-600 flex-shrink-0 transition-transform duration-300 ${isOrderInfoOpen ? 'rotate-180' : ''}`} />
+                  )}
                 </h3>
 
+                {(!isWorkerView || isOrderInfoOpen) && (
                 <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
                   {/* اسم العميل */}
                   <div className="bg-white p-2 sm:p-3 rounded-lg">
@@ -1174,6 +1251,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     </div>
                   )}
                 </div>
+                )}
               </div>
 
               {/* 2️⃣ قسم الملاحظات - تصميم مدمج واحترافي */}
@@ -1683,48 +1761,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 />
               ) : null}
 
-              {/* 4️⃣ قسم المقاسات */}
-              {(measurementsData || order.measurements) && Object.values(measurementsData || order.measurements || {}).some(val => val !== undefined && val !== '') && (
-                <div className="space-y-4 sm:space-y-6">
-                  <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center space-x-2 space-x-reverse">
-                    <Ruler className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600 flex-shrink-0" />
-                    <span>
-                      {t('measurements_cm')}
-                    </span>
-                  </h3>
-
-                  {/* المقاسات الرقمية */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                    {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => {
-                      const value = (measurementsData || order.measurements as any)?.[key]
-                      if (!value) return null
-
-                      return (
-                        <div key={key} className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
-                          <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                            {getMeasurementLabelWithSymbol(key as any)}
-                          </p>
-                          <p className="text-base sm:text-lg font-bold text-gray-800">{value}</p>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {/* مقاسات إضافية */}
-                  {(measurementsData || order.measurements as any)?.additional_notes && (
-                    <div className="space-y-2">
-                      <h4 className="text-sm sm:text-base font-semibold text-gray-700 border-b border-pink-200 pb-2">
-                        {t('measurement_additional_notes')}
-                      </h4>
-                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
-                        <p className="text-sm sm:text-base text-gray-700 whitespace-pre-wrap">
-                          {(measurementsData || order.measurements as any)?.additional_notes}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* 4️⃣ قسم المقاسات — في صفحة العمال يُنقل إلى أسفل الصفحة */}
+              {!isWorkerView && measurementsSection}
 
               {/* 5️⃣ قسم صور التصميم */}
               {order.images && order.images.length > 0 && (
@@ -1990,6 +2028,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   </div>
                 </div>
               )}
+
+              {/* قسم المقاسات (صفحة العمال فقط): قائمة منسدلة في أسفل الصفحة */}
+              {isWorkerView && measurementsSection}
 
             </div>
 

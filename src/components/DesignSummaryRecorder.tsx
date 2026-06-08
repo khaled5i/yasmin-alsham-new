@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff } from 'lucide-react'
 import { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
-import { recordingBlobToWav, pickSupportedMimeType, cleanTranscriptText } from '@/lib/audio-utils'
+import { pickSupportedMimeType } from '@/lib/audio-utils'
 
 interface Props {
   notes: DesignSummaryNote[]
@@ -48,7 +48,9 @@ export default function DesignSummaryRecorder({ notes, onNotesChange, disabled =
     }
   }, [])
 
-  // عند انتهاء التسجيل: حفظ الصوت كملاحظة ثم تحويله إلى نص
+  // عند انتهاء التسجيل: حفظ الصوت كملاحظة فقط.
+  // التحويل إلى نص يتولّاه DesignSummarySection لأي ملاحظة بلا نص، حتى يعمل
+  // التحويل أيضاً عند إعادة فتح الطلب على تسجيل لم يكتمل تحويله سابقاً.
   const finalizeRecording = useCallback(() => {
     const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current })
     chunksRef.current = []
@@ -68,35 +70,6 @@ export default function DesignSummaryRecorder({ notes, onNotesChange, disabled =
         transcription: undefined
       }
       onNotesChange([...notesRef.current, newNote])
-
-      // التحويل إلى نص من الملف المسجّل (async) — نُعيد ترميزه إلى WAV نظيف أولاً
-      ;(async () => {
-        try {
-          let uploadBlob: Blob = blob
-          let filename = `recording.${mimeTypeRef.current.split('/')[1]?.split(';')[0] || 'webm'}`
-          try {
-            uploadBlob = await recordingBlobToWav(blob)
-            filename = 'recording.wav'
-          } catch (convErr) {
-            console.warn('WAV conversion failed, sending original recording:', convErr)
-          }
-          const form = new FormData()
-          form.append('audio', uploadBlob, filename)
-          // trailing slash لتجنّب توجيه 308 الذي يرفع الصوت مرتين
-          const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', body: form })
-          const body = await res.json().catch(() => ({}))
-          if (!res.ok) throw new Error(body?.message || body?.error || res.statusText)
-          const text: string = body.text
-          if (text) {
-            const updated = notesRef.current.map(n =>
-              n.id === noteId ? { ...n, transcription: cleanTranscriptText(text) } : n
-            )
-            onNotesChange(updated)
-          }
-        } catch (err) {
-          console.error('Summary transcription failed:', err)
-        }
-      })()
     }
     reader.readAsDataURL(blob)
   }, [onNotesChange])

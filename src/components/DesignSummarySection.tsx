@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Play, Pause, Trash2, Loader2, Pencil, Check, X } from 'lucide-react'
 import { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
 import DesignSummaryRecorder from '@/components/DesignSummaryRecorder'
+import { recordingBlobToWav, cleanTranscriptText } from '@/lib/audio-utils'
 
 interface Props {
   notes: DesignSummaryNote[]
@@ -33,6 +34,15 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
   const [draftText, setDraftText] = useState('')
   const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
 
+  // مرآة لأحدث قائمة ملاحظات لقراءتها داخل دوال التحويل غير المتزامنة
+  const notesRef = useRef<DesignSummaryNote[]>(notes)
+  useEffect(() => { notesRef.current = notes }, [notes])
+
+  // معرّفات الملاحظات التي يجري تحويلها إلى نص الآن (لإظهار مؤشّر التحميل بدقّة)
+  const [transcribingIds, setTranscribingIds] = useState<Set<string>>(new Set())
+  // معرّفات الملاحظات التي حاولنا تحويلها بالفعل (لتجنّب التكرار)
+  const transcribeAttemptedRef = useRef<Set<string>>(new Set())
+
   const startEditing = (note: DesignSummaryNote) => {
     setEditingId(note.id)
     setDraftText(note.transcription || '')
@@ -59,6 +69,57 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
     for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
     return new Blob([arr], { type: 'audio/webm' })
   }
+
+  // تحويل تسجيل إلى نص من بياناته الصوتية المخزّنة (base64) وتحديث الملاحظة.
+  const transcribeNote = async (note: DesignSummaryNote) => {
+    setTranscribingIds(prev => new Set(prev).add(note.id))
+    try {
+      const blob = base64ToBlob(note.data)
+      let uploadBlob: Blob = blob
+      let filename = 'recording.webm'
+      try {
+        uploadBlob = await recordingBlobToWav(blob)
+        filename = 'recording.wav'
+      } catch (convErr) {
+        console.warn('WAV conversion failed, sending original recording:', convErr)
+      }
+      const form = new FormData()
+      form.append('audio', uploadBlob, filename)
+      // trailing slash لتجنّب توجيه 308 الذي يرفع الصوت مرتين
+      const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', body: form })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.message || body?.error || res.statusText)
+      const text: string = body.text
+      if (text) {
+        onNotesChange(
+          notesRef.current.map(n =>
+            n.id === note.id ? { ...n, transcription: cleanTranscriptText(text) } : n
+          )
+        )
+      }
+    } catch (err) {
+      console.error('Summary transcription failed:', err)
+    } finally {
+      setTranscribingIds(prev => {
+        const next = new Set(prev)
+        next.delete(note.id)
+        return next
+      })
+    }
+  }
+
+  // تحويل أي تسجيل بلا نص محوّل إلى نص (في وضع المدير فقط).
+  // يعالج الحالة الحيّة (تسجيل جديد) وحالة إعادة فتح طلب يحوي تسجيلاً لم يكتمل تحويله.
+  useEffect(() => {
+    if (!allowRecording || readOnly) return
+    notes.forEach(note => {
+      if (note.transcription || !note.data) return
+      if (transcribeAttemptedRef.current.has(note.id)) return
+      transcribeAttemptedRef.current.add(note.id)
+      transcribeNote(note)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes, allowRecording, readOnly])
 
   const togglePlayback = (note: DesignSummaryNote) => {
     // stop any current
@@ -166,16 +227,18 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
                         <span key={i}>{i > 0 && <br />}{line}</span>
                       ))}
                     </p>
-                  ) : readOnly ? (
-                    // ملاحظة محفوظة بدون نص: لا نُظهر مؤشّر تحميل دائم (يبدو كحلقة لا نهائية).
-                    // التسجيل الصوتي ما زال قابلاً للتشغيل عبر زر التشغيل.
-                    <div className="flex items-center gap-1.5 mb-2 text-sm text-gray-400 italic">
-                      <span>تسجيل صوتي (بدون نص محوّل)</span>
-                    </div>
-                  ) : (
+                  ) : (transcribingIds.has(note.id) || (!allowRecording && !readOnly)) ? (
+                    // مؤشّر التحويل يظهر فقط أثناء تحويل فعلي جارٍ (هذه الجلسة)،
+                    // أو في صفحة التعديل حيث يتولّى مكوّن الرسم التحويل الحيّ.
                     <div className="flex items-center gap-1.5 mb-2 text-sm text-gray-400">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       <span>جاري التحويل إلى نص...</span>
+                    </div>
+                  ) : (
+                    // ملاحظة بلا نص ولا تحويل جارٍ: لا نُظهر حلقة تحميل لا نهائية.
+                    // التسجيل الصوتي ما زال قابلاً للتشغيل عبر زر التشغيل.
+                    <div className="flex items-center gap-1.5 mb-2 text-sm text-gray-400 italic">
+                      <span>تسجيل صوتي (بدون نص محوّل)</span>
                     </div>
                   )}
 
