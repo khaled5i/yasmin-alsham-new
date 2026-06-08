@@ -142,7 +142,8 @@ export default function TrackOrderPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return formatGregorianDate(dateString, 'ar-SA', {
+    // ar-SA-u-nu-latn: أسماء الأشهر بالعربية مع أرقام لاتينية (إنجليزية)
+    return formatGregorianDate(dateString, 'ar-SA-u-nu-latn', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -215,32 +216,12 @@ export default function TrackOrderPage() {
           </div>
 
           <div className="p-5 space-y-3">
-            {/* السطر الأول: الاسم + موعد البروفا */}
+            {/* السطر الأول: الاسم + رقم الطلب أو رقم الهاتف حسب الحالة */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-50 rounded-xl p-3">
                 <span className="text-xs text-gray-400 block mb-1">الاسم</span>
                 <p className="text-base font-semibold text-gray-800 truncate">{orderData.client_name}</p>
               </div>
-              <div className="bg-gray-50 rounded-xl p-3">
-                <span className="text-xs text-gray-400 block mb-1">{orderData.has_second_proof ? 'موعد البروفا الأولى' : 'موعد البروفا'}</span>
-                <p className="text-sm font-medium text-gray-800">
-                  {orderData.proof_delivery_date ? formatDate(orderData.proof_delivery_date) : '—'}
-                </p>
-              </div>
-            </div>
-
-            {/* موعد البروفا الثانية */}
-            {orderData.has_second_proof && orderData.due_date && (
-              <div className="bg-yellow-50 rounded-xl p-3 border border-yellow-200">
-                <span className="text-xs text-yellow-700 block mb-1">موعد البروفا الثانية</span>
-                <p className="text-sm font-semibold text-yellow-800">
-                  {formatDate(shiftDate(orderData.due_date, -1))}
-                </p>
-              </div>
-            )}
-
-            {/* السطر الثاني: رقم الهاتف أو رقم الطلب + تاريخ الطلب */}
-            <div className="grid grid-cols-2 gap-3">
               {searchType === 'order' ? (
                 <div className="bg-gray-50 rounded-xl p-3">
                   <span className="text-xs text-gray-400 block mb-1">رقم الهاتف</span>
@@ -252,10 +233,24 @@ export default function TrackOrderPage() {
                   <p className="text-sm font-bold text-pink-600">{orderData.order_number}</p>
                 </div>
               )}
-              <div className="bg-gray-50 rounded-xl p-3">
-                <span className="text-xs text-gray-400 block mb-1">تاريخ الطلب</span>
-                <p className="text-sm font-medium text-gray-800">{formatDate(orderData.order_date)}</p>
+            </div>
+
+            {/* السطر الثاني: موعد البروفا الأولى + موعد البروفا الثانية (نفس الحجم واللون) */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className={`bg-gray-50 rounded-xl p-3 ${!orderData.has_second_proof ? 'col-span-2' : ''}`}>
+                <span className="text-xs text-gray-400 block mb-1">{orderData.has_second_proof ? 'موعد البروفا الأولى' : 'موعد البروفا'}</span>
+                <p className="text-sm font-medium text-gray-800">
+                  {orderData.proof_delivery_date ? formatDate(orderData.proof_delivery_date) : '—'}
+                </p>
               </div>
+              {orderData.has_second_proof && orderData.due_date && (
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <span className="text-xs text-gray-400 block mb-1">موعد البروفا الثانية</span>
+                  <p className="text-sm font-medium text-gray-800">
+                    {formatDate(shiftDate(orderData.due_date, -1))}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* حالة الطلب */}
