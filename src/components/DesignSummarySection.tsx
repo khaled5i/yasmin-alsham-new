@@ -4,11 +4,14 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Play, Pause, Trash2, Loader2, Pencil, Check, X } from 'lucide-react'
 import { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
+import DesignSummaryRecorder from '@/components/DesignSummaryRecorder'
 
 interface Props {
   notes: DesignSummaryNote[]
   onNotesChange: (notes: DesignSummaryNote[]) => void
   readOnly?: boolean
+  /** إظهار زر "تسجيل صوتي جديد" أعلى القسم (للمدير فقط) */
+  allowRecording?: boolean
 }
 
 function formatTime(seconds: number) {
@@ -24,7 +27,7 @@ function formatDate(ts: number) {
   })
 }
 
-export default function DesignSummarySection({ notes, onNotesChange, readOnly = false }: Props) {
+export default function DesignSummarySection({ notes, onNotesChange, readOnly = false, allowRecording = false }: Props) {
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftText, setDraftText] = useState('')
@@ -89,11 +92,24 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
 
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-teal-100">
-      <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
-        <Mic className="w-5 h-5 text-teal-600" />
-        <span>ملخص التصميم</span>
-        <span className="text-sm font-normal text-gray-500 mr-1">({notes.length})</span>
-      </h3>
+      <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6 flex-wrap">
+        <h3 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center gap-2">
+          <Mic className="w-5 h-5 text-teal-600" />
+          <span>ملخص التصميم</span>
+          <span className="text-sm font-normal text-gray-500 mr-1">({notes.length})</span>
+        </h3>
+
+        {/* زر إضافة تسجيل صوتي جديد (للمدير فقط) */}
+        {allowRecording && !readOnly && (
+          <DesignSummaryRecorder notes={notes} onNotesChange={onNotesChange} />
+        )}
+      </div>
+
+      {notes.length === 0 && allowRecording && !readOnly && (
+        <p className="text-sm text-gray-400 text-center py-4">
+          لا توجد تسجيلات بعد. اضغط على "تسجيل جديد" لإضافة ملخص صوتي.
+        </p>
+      )}
 
       <div className="space-y-3">
         <AnimatePresence>

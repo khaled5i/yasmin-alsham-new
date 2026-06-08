@@ -184,6 +184,20 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return '/front2.png'
   }, [customDesignImage])
 
+  // المدير فقط يمكنه تعديل ملخص التصميم وإضافة تسجيلات صوتية من صفحة عرض التفاصيل
+  const isManager = user?.role === 'admin'
+
+  // تحديث ملخص التصميم (تعديل النص/حذف/تسجيل جديد) مع الحفظ المباشر في قاعدة البيانات
+  const handleDesignSummaryNotesChange = useCallback((notes: DesignSummaryNote[]) => {
+    setDesignSummaryNotes(notes)
+    if (!order?.id) return
+    updateOrder(order.id, { design_summary_notes: notes }).then((res) => {
+      if (!res.success) {
+        toast.error(res.error || 'تعذّر حفظ ملخص التصميم')
+      }
+    })
+  }, [order?.id, updateOrder])
+
   // حالات تحويل الصورة إلى كرتون
   const [isConvertingToCartoon, setIsConvertingToCartoon] = useState(false)
   const [cartoonImage, setCartoonImage] = useState<string | null>(null)
@@ -1652,14 +1666,22 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 </div>
               )}
 
-              {/* ملخص التصميم الصوتي (للعرض فقط) */}
-              {designSummaryNotes.length > 0 && (
+              {/* ملخص التصميم الصوتي */}
+              {/* المدير: تعديل النص المحوّل + إضافة تسجيل جديد (مطابق لصفحة تعديل الطلب).
+                  باقي المستخدمين: عرض فقط ويظهر القسم فقط عند وجود تسجيلات. */}
+              {isManager ? (
+                <DesignSummarySection
+                  notes={designSummaryNotes}
+                  onNotesChange={handleDesignSummaryNotesChange}
+                  allowRecording
+                />
+              ) : designSummaryNotes.length > 0 ? (
                 <DesignSummarySection
                   notes={designSummaryNotes}
                   onNotesChange={() => {}}
                   readOnly
                 />
-              )}
+              ) : null}
 
               {/* 4️⃣ قسم المقاسات */}
               {(measurementsData || order.measurements) && Object.values(measurementsData || order.measurements || {}).some(val => val !== undefined && val !== '') && (
@@ -2177,7 +2199,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
         <PrintOrderModal
           isOpen={showPrintModal}
           onClose={() => setShowPrintModal(false)}
-          order={order}
+          // دمج أحدث ملاحظات ملخص التصميم من الحالة المحلية حتى تظهر التسجيلات
+          // الجديدة فوراً في الطباعة دون الحاجة لإغلاق الصفحة وإعادة فتحها
+          order={{ ...order, design_summary_notes: designSummaryNotes }}
           onPrint={async () => {
             try {
               // is_printed عمود مستقل (migration 29)

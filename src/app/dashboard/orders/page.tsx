@@ -932,7 +932,7 @@ function OrdersPageInner() {
             : statusFilter === 'has_alterations'
             ? hasAlterations(order)
             : statusFilter === 'incomplete_progress'
-              ? !(isOrderPrinted(order) && hasMeasurementsBadge(order) && isWhatsAppSent(order))
+              ? !isPreBooking(order) && !(isOrderPrinted(order) && hasMeasurementsBadge(order) && isWhatsAppSent(order))
               : order.status === statusFilter
 
     // Date filter is server-side when dateFilterResults is active; apply client-side only for text search results
@@ -1060,11 +1060,8 @@ function OrdersPageInner() {
                 className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all appearance-none bg-white"
               >
                 <option value="all">{t('all_orders')}</option>
-                <option value="pending">{t('pending')}</option>
-                <option value="in_progress">{t('in_progress')}</option>
                 <option value="needs_review">{isArabic ? 'يحتاج مراجعة' : 'Needs Review'}</option>
                 <option value="pre_booking">{isArabic ? 'حجز مسبق' : 'Pre-booking'}</option>
-                <option value="urgent">{isArabic ? 'مستعجل' : 'Urgent'}</option>
                 <option value="has_alterations">{isArabic ? 'يوجد تعديل' : 'Has Alteration'}</option>
                 <option value="incomplete_progress">{isArabic ? 'غير مكتملة (أقل من 100%)' : 'Incomplete (< 100%)'}</option>
               </select>
