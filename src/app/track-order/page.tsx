@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare } from 'lucide-react'
 import { useOrderStore } from '@/store/orderStore'
@@ -59,11 +59,11 @@ export default function TrackOrderPage() {
     }, 300)
   }
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const performSearch = async (term: string, type: 'order' | 'phone') => {
+    const trimmedTerm = term.trim()
 
-    if (!searchTerm.trim()) {
-      setError(searchType === 'order' ? 'يرجى إدخال رقم الطلب' : 'يرجى إدخال رقم الهاتف')
+    if (!trimmedTerm) {
+      setError(type === 'order' ? 'يرجى إدخال رقم الطلب' : 'يرجى إدخال رقم الهاتف')
       return
     }
 
@@ -72,8 +72,8 @@ export default function TrackOrderPage() {
     setOrdersData([])
 
     try {
-      if (searchType === 'order') {
-        await loadOrderByNumber(searchTerm)
+      if (type === 'order') {
+        await loadOrderByNumber(trimmedTerm)
         const state = useOrderStore.getState()
 
         if (state.error || !state.currentOrder) {
@@ -83,7 +83,7 @@ export default function TrackOrderPage() {
           scrollToResults()
         }
       } else {
-        await loadOrdersByPhone(searchTerm)
+        await loadOrdersByPhone(trimmedTerm)
         const state = useOrderStore.getState()
 
         if (state.error || !state.orders || state.orders.length === 0) {
@@ -111,6 +111,24 @@ export default function TrackOrderPage() {
       setIsLoading(false)
     }
   }
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await performSearch(searchTerm, searchType)
+  }
+
+  // عند فتح الصفحة عبر رابط يتضمّن رقم الطلب (مثل: /track-order/?order=2026-0001)
+  // نعبّئ الحقل ونبدأ البحث تلقائياً
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const orderParam = params.get('order')
+    if (orderParam && orderParam.trim()) {
+      setSearchType('order')
+      setSearchTerm(orderParam.trim())
+      performSearch(orderParam.trim(), 'order')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const getStatusInfo = (status: string, adminConfirmed?: boolean) => {
     const statusMap = {

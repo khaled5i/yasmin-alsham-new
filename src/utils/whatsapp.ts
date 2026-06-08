@@ -138,9 +138,14 @@ export function generateWhatsAppMessage(orderDetails: OrderDetails): string {
   // إضافة موعد التسليم النهائي
   message += `- موعد التسليم النهائي: ${formattedDueDate}\n\n`
 
+  // رابط التتبع: عند توفر رقم الطلب نضمّنه في الرابط ليُعبّأ ويُبحث تلقائياً عند فتح الصفحة
+  const trackUrl = orderNumber
+    ? `https://www.yasmin-alsham.fashion/track-order/?order=${encodeURIComponent(orderNumber)}`
+    : `https://www.yasmin-alsham.fashion/track-order/`
+
   message += `*تتبع طلبك:*\n`
   message += `يمكنك متابعة حالة طلبك في أي وقت من خلال الرابط التالي:\n`
-  message += `https://www.yasmin-alsham.fashion/track-order/\n\n`
+  message += `${trackUrl}\n\n`
 
   message += `*ملاحظة مهمة:*\n`
   message += `يُرجى الحضور في المواعيد المحددة لضمان استلام طلبك في الوقت المناسب.\n\n`
@@ -213,9 +218,13 @@ export function generateAlterationWhatsAppMessage(alterationDetails: AlterationD
   // إضافة موعد التسليم
   message += `- موعد التسليم: ${formattedDueDate}\n\n`
 
+  const trackUrl = alterationNumber
+    ? `https://www.yasmin-alsham.fashion/track-order/?order=${encodeURIComponent(alterationNumber)}`
+    : `https://www.yasmin-alsham.fashion/track-order/`
+
   message += `*تتبع طلب التعديل:*\n`
   message += `يمكنك متابعة حالة طلب التعديل في أي وقت من خلال الرابط التالي:\n`
-  message += `https://www.yasmin-alsham.fashion/track-order/\n\n`
+  message += `${trackUrl}\n\n`
 
   message += `*ملاحظة مهمة:*\n`
   message += `يُرجى الحضور في الموعد المحدد لاستلام طلب التعديل.\n\n`
