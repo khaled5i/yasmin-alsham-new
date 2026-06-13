@@ -78,7 +78,7 @@ export async function uploadBase64ToStorage(
 export async function uploadImageToStorage(
   imageStr: string,
   orderId: string,
-  type: 'custom_design' | 'ai_generated' | 'completed' | 'thumbnail',
+  type: 'custom_design' | 'ai_generated' | 'completed' | 'thumbnail' | 'design_comment',
   index = 0
 ): Promise<string> {
   if (!isBase64Image(imageStr)) return imageStr // URL بالفعل
@@ -107,6 +107,9 @@ export interface OrderImageFields {
   ai_generated_images?: string[]       // عمود مستقل (migration 33)
   images?: string[]
   completed_images?: string[]
+  // تعليقات التصميم (عمود design_comments / migration 30): كل تعليق يحمل صورة خلفية
+  // خاصة بعرضه (أمام/خلف) في الحقل image. نرفعها هنا لكل تعليق على حدة.
+  design_comments?: any[]
 }
 
 export interface UploadedOrderImages {
@@ -116,6 +119,7 @@ export interface UploadedOrderImages {
   ai_generated_images?: string[]   // عمود مستقل (migration 33)
   images?: string[]
   completed_images?: string[]
+  design_comments?: any[]          // تعليقات التصميم بصور خلفية مرفوعة لكل عرض
 }
 
 /**
@@ -227,6 +231,21 @@ export async function uploadOrderImages(
           ? uploadImageToStorage(img, orderId, 'completed', i)
           : Promise.resolve(img)
       )
+    )
+    hasChanges = true
+  }
+
+  // 6. design_comments[] — صورة خلفية كل تعليق (لكل عرض أمام/خلف)
+  // نرفع base64 الخاص بكل تعليق إلى Storage ونستبدله برابط، حتى يبقى عمود JSONB
+  // صغيراً وتُسترجع صورة كل عرض بشكل مستقل (يحلّ تضارب الصورة الواحدة المشتركة).
+  const designComments = fields.design_comments ?? []
+  if (designComments.length > 0 && designComments.some((c: any) => isBase64Image(c?.image))) {
+    result.design_comments = await Promise.all(
+      designComments.map(async (c: any, i: number) => {
+        if (!isBase64Image(c?.image)) return c
+        const url = await uploadImageToStorage(c.image, orderId, 'design_comment', i)
+        return { ...c, image: url }
+      })
     )
     hasChanges = true
   }

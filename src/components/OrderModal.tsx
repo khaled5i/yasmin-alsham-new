@@ -178,10 +178,14 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [showAnnotationLanguageDropdown, setShowAnnotationLanguageDropdown] = useState<string | null>(null)
   const [showHindiComments, setShowHindiComments] = useState(false)
   const resolveCommentImageSrc = useCallback((comment: SavedDesignComment): string => {
+    // البنية الجديدة: صورة العرض محفوظة داخل التعليق (base64 أو رابط Storage)
     if (comment.image && comment.image.startsWith('data:')) return comment.image
     if (comment.image && comment.image !== 'custom') return comment.image
+    // البنية القديمة: الصورة الواحدة المشتركة (custom_design_image) — للطلبات القديمة فقط
     if (customDesignImage) return customDesignImage
-    return '/front2.png'
+    // افتراضي حسب العرض (أمام/خلف) بدلاً من /front2.png الثابت الذي كان يظهر للخلف خطأً
+    const view = comment.view ?? (comment.title?.trim().startsWith('خلف') ? 'back' : 'front')
+    return view === 'back' ? '/back2.png' : '/front2.png'
   }, [customDesignImage])
 
   // المدير فقط يمكنه تعديل ملخص التصميم وإضافة تسجيلات صوتية من صفحة عرض التفاصيل

@@ -544,6 +544,8 @@ export const orderService = {
           custom_design_image: insertData.custom_design_image,
           ai_generated_images: insertData.ai_generated_images,
           images: insertData.images,
+          // صور خلفية تعليقات التصميم (لكل عرض) — تُرفع وتُستبدل بروابط
+          design_comments: insertData.design_comments,
         })
         if (imageUpdates) {
           const { error: updateError } = await supabase
@@ -879,6 +881,8 @@ export const orderService = {
           ai_generated_images: (updates as any).ai_generated_images,
           images: (updates as any).images,
           completed_images: (updates as any).completed_images,
+          // صور خلفية تعليقات التصميم (لكل عرض) — عمود design_comments
+          design_comments: (updates as any).design_comments,
         })
         if (imageUpdates) {
           if (imageUpdates.measurements) (updates as any).measurements = imageUpdates.measurements
@@ -887,6 +891,7 @@ export const orderService = {
           if (imageUpdates.ai_generated_images) (updates as any).ai_generated_images = imageUpdates.ai_generated_images
           if (imageUpdates.images) (updates as any).images = imageUpdates.images
           if (imageUpdates.completed_images) (updates as any).completed_images = imageUpdates.completed_images
+          if (imageUpdates.design_comments) (updates as any).design_comments = imageUpdates.design_comments
           if (isDev) console.log('✅ Images uploaded to Storage before update:', id)
         }
       } catch (uploadErr: any) {

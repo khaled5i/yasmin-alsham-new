@@ -391,6 +391,20 @@ async function loadImageWithTimeout(src: string, timeoutMs: number): Promise<HTM
   })
 }
 
+/**
+ * هل الصورة قابلة للاسترجاع/التخزين كخلفية ثابتة لكل عرض؟
+ * تقبل base64 (data:) وروابط Storage (http/https) فقط.
+ * ترفض:
+ *  - العلامة القديمة 'custom' و null
+ *  - روابط blob: المؤقتة — لأنها تُبطَل (revoked) عند تغيّر ملف الصورة، فإذا خُزّنت
+ *    في viewCustomImagesRef تختفي الصورة عند العودة للواجهة (ERR_FILE_NOT_FOUND).
+ *    النسخة الثابتة (data:) تُحفظ تلقائياً عبر saveBase64ForView.
+ */
+function isRestorableCommentImage(img: string | null | undefined): img is string {
+  if (!img) return false
+  return img.startsWith('data:') || img.startsWith('http')
+}
+
 // واجهة التعليق المحفوظ
 export interface SavedDesignComment {
   id: string
@@ -1020,7 +1034,9 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     viewCustomImagesInitializedRef.current = true
     for (const comment of savedComments) {
       const commentView = comment.view ?? getViewFromTitle(comment.title)
-      if (commentView && comment.image && comment.image.startsWith('data:')) {
+      // نقبل الآن روابط Storage (http) إضافةً إلى base64، لأن صورة كل عرض
+      // أصبحت تُحفظ داخل التعليق نفسه كرابط مستقل (لا كعلامة 'custom' مشتركة).
+      if (commentView && isRestorableCommentImage(comment.image)) {
         viewCustomImagesRef.current[commentView] = comment.image
       }
     }
@@ -1551,8 +1567,8 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     const isAlreadyInView = currentView === targetView
     if (isAlreadyInView) return
 
-    // 1. حفظ الصورة المخصصة الحالية في ref قبل التبديل
-    if (imagePreview && imagePreview.startsWith('data:')) {
+    // 1. حفظ الصورة المخصصة الحالية في ref قبل التبديل (base64 أو رابط Storage)
+    if (isRestorableCommentImage(imagePreview)) {
       viewCustomImagesRef.current[currentView] = imagePreview
     }
 
@@ -1660,15 +1676,15 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     if (inferredView) {
       const targetPath = inferredView === 'front' ? '/front2.png' : '/back2.png'
       setInternalImageOverride(targetPath)
-      // استعادة الصورة المخصصة للواجهة المستهدفة
-      if (comment.image && comment.image.startsWith('data:')) {
+      // استعادة الصورة المخصصة للواجهة المستهدفة (base64 أو رابط Storage)
+      if (isRestorableCommentImage(comment.image)) {
         setImagePreview(comment.image)
         viewCustomImagesRef.current[inferredView] = comment.image
       } else {
         const savedViewImage = viewCustomImagesRef.current[inferredView]
         setImagePreview(savedViewImage || null)
       }
-    } else if (comment.image && comment.image.startsWith('data:')) {
+    } else if (isRestorableCommentImage(comment.image)) {
       setImagePreview(comment.image)
       setInternalImageOverride(null)
     }
@@ -4216,10 +4232,14 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             <div className={`relative w-full ${isDrawingMode ? 'h-full' : 'aspect-[3/4]'}`}>
               {imagePreview ? (
                 // صورة مخصصة - نستخدم img عادي لأن Next.js Image لا يدعم blob URLs
+                // crossOrigin=anonymous فقط لروابط Storage (http): يضمن أن نسخة الكاش
+                // نظيفة CORS حتى يحمّلها generateCompositeImage على الـ canvas دون تلويثه.
+                // لا نضعه لروابط blob/data (لا تحتاجه وقد يعطّل عرض blob في بعض المتصفحات).
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={imagePreview}
                   alt="صورة التصميم المخصصة"
+                  crossOrigin={imagePreview.startsWith('http') ? 'anonymous' : undefined}
                   className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (

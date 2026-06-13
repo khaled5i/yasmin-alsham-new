@@ -684,7 +684,8 @@ function AddOrderContent() {
         ...updated[existingIndex],
         annotations: newAnnotations,
         drawings: newDrawings,
-        image: image ? 'custom' : (updated[existingIndex].image || null),
+        // نُبقي base64/رابط صورة العرض كما هو (يُرفع لاحقاً إلى Storage) بدلاً من 'custom'
+        image: image || (updated[existingIndex].image || null),
         compositeImage: compositeImage || updated[existingIndex].compositeImage || null,
         view: currentView,
         timestamp: Date.now()
@@ -696,7 +697,7 @@ function AddOrderContent() {
       timestamp: Date.now(),
       annotations: newAnnotations,
       drawings: newDrawings,
-      image: image ? 'custom' : null,
+      image: image || null,
       title: viewLabel,
       view: currentView,
       compositeImage
@@ -801,10 +802,7 @@ function AddOrderContent() {
       })
 
       // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = formData.savedDesignComments.map(comment => ({
-        ...comment,
-        image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
-      }))
+      let allSavedComments = formData.savedDesignComments.map(comment => ({ ...comment }))
 
       // حفظ التعليق الحالي في slot العرض الحالي
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
@@ -1070,10 +1068,7 @@ function AddOrderContent() {
       }
 
       // تجميع جميع التعليقات المحفوظة
-      let allSavedComments = formData.savedDesignComments.map(comment => ({
-        ...comment,
-        image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
-      }))
+      let allSavedComments = formData.savedDesignComments.map(comment => ({ ...comment }))
 
       // حفظ التعليق الحالي في slot العرض الحالي
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
@@ -1229,9 +1224,7 @@ function AddOrderContent() {
         }
       }
 
-      let allSavedComments = formData.savedDesignComments.map(comment => ({
-        ...comment, image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
-      }))
+      let allSavedComments = formData.savedDesignComments.map(comment => ({ ...comment }))
 
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
         let compositeImage: string | null = null
@@ -1357,9 +1350,7 @@ function AddOrderContent() {
         }
       }
 
-      let allSavedComments = formData.savedDesignComments.map(comment => ({
-        ...comment, image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
-      }))
+      let allSavedComments = formData.savedDesignComments.map(comment => ({ ...comment }))
 
       if (formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0) {
         let compositeImage: string | null = null

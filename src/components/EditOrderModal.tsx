@@ -217,8 +217,16 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         hasCustomImage: !!customImage
       }
 
-      // تحميل صورة التصميم المخصصة الموجودة كـ base64 لتمريرها إلى InteractiveImageAnnotation
-      setCurrentImageBase64(customImage || null)
+      // تحميل صورة التصميم المخصصة الموجودة لتمريرها إلى InteractiveImageAnnotation.
+      // البنية الجديدة: كل تعليق يحمل صورة عرضه (رابط Storage / base64) داخله، فيستعيدها
+      // المكوّن لكل عرض على حدة. في هذه الحالة نُمرّر null للصورة الواحدة المشتركة حتى
+      // لا تطغى على العرض الذي لا يملك صورة (فيظهر الفستان الافتراضي الصحيح بدل صورة العرض الآخر).
+      // البنية القديمة (تعليقات بعلامة 'custom' فقط): نعتمد على custom_design_image الواحدة.
+      const commentsHaveOwnImages = savedComments.some((c: any) =>
+        typeof c?.image === 'string' &&
+        (c.image.startsWith('data:') || c.image.startsWith('http') || c.image.startsWith('blob:'))
+      )
+      setCurrentImageBase64(commentsHaveOwnImages ? null : (customImage || null))
     }
   }, [order])
 
@@ -337,10 +345,9 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
   }, [formData.customDesignImage, formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
 
   const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string, compositeImage?: string | null) => {
-    const allSavedComments = formData.savedDesignComments.map(comment => ({
-      ...comment,
-      image: comment.image?.startsWith('data:') ? 'custom' : (comment.image || null)
-    }))
+    // نُبقي صورة خلفية كل تعليق كما هي (base64/رابط) بدلاً من استبدالها بـ 'custom'
+    // حتى تُحفظ صورة كل عرض (أمام/خلف) بشكل مستقل وتُسترجع عند التعديل لاحقاً.
+    const allSavedComments = formData.savedDesignComments.map(comment => ({ ...comment }))
     const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
 
     if (!hasCurrentPayload) {
@@ -362,7 +369,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         ...updatedComments[existingSlotIndex],
         annotations: formData.imageAnnotations,
         drawings: formData.imageDrawings,
-        image: customDesignImageBase64 ? 'custom' : (updatedComments[existingSlotIndex].image || null),
+        // صورة جديدة رُفعت لهذا العرض → استخدمها؛ وإلا نُبقي صورة العرض الموجودة (رابط/base64)
+        image: customDesignImageBase64 || (updatedComments[existingSlotIndex].image || null),
         compositeImage: compositeImage || updatedComments[existingSlotIndex].compositeImage || null,
         view: currentView,
         timestamp: Date.now()
@@ -375,7 +383,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       timestamp: Date.now(),
       annotations: formData.imageAnnotations,
       drawings: formData.imageDrawings,
-      image: customDesignImageBase64 ? 'custom' : null,
+      image: customDesignImageBase64 || null,
       title: viewLabel,
       view: currentView,
       compositeImage: compositeImage || null

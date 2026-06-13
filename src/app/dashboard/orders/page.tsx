@@ -431,12 +431,11 @@ function OrdersPageInner() {
     // كتابة بيانات التصميم كأعمدة مستقلة مباشرة (migration 30)
     if (hasDesignDataUpdates) {
       if (updates.saved_design_comments !== undefined) {
-        supabaseUpdates.design_comments = updates.saved_design_comments.map((comment: any) => ({
-          ...comment,
-          image: typeof comment.image === 'string' && comment.image.startsWith('data:')
-            ? 'custom'
-            : (comment.image || null)
-        }))
+        // نُبقي صورة خلفية كل تعليق كما هي بدلاً من استبدالها بـ 'custom':
+        // - base64 سيُرفع إلى Storage ويُستبدل برابط في order-service/storage-service
+        // - الروابط تبقى كما هي
+        // هذا يحفظ صورة كل عرض (أمام/خلف) بشكل مستقل ويمنع تضارب الصورة الواحدة المشتركة.
+        supabaseUpdates.design_comments = updates.saved_design_comments
       }
       if (updates.image_annotations !== undefined) {
         supabaseUpdates.image_annotations = updates.image_annotations
