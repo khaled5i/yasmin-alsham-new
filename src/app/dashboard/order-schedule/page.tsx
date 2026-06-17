@@ -3,16 +3,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, ChevronLeft, ChevronRight, CalendarDays, Plus, X, Phone, User, Eye, Loader, Settings, Trash2, Edit3, Check } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, CalendarDays, CalendarCheck, Plus, X, Phone, User, Eye, Loader, Settings, Trash2, Edit3, Check } from 'lucide-react'
 import Link from 'next/link'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const moment = require('moment-hijri')
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
-import { orderService } from '@/lib/services/order-service'
+import { orderService, type Order } from '@/lib/services/order-service'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { toLocalDateKey } from '@/lib/date-utils'
+import OrderModal from '@/components/OrderModal'
 
 // ─── Hijri helpers ───────────────────────────────────────────────────────────
 const hijriMonths = [
@@ -267,11 +268,13 @@ interface DateModalProps {
     extraSlots: ExtraSlot[]
     mode: CalendarMode
     workerNameMap: Record<string, string>
+    loadingOrderId: string | null
     onClose: () => void
     onViewMore: () => void
+    onOrderClick: (order: OrderOnDate) => void
 }
 
-function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, onClose, onViewMore }: DateModalProps) {
+function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, loadingOrderId, onClose, onViewMore, onOrderClick }: DateModalProps) {
     const [year, monthIndex, day] = dateKey.split('-').map(Number)
     const displayDate = new Date(year, monthIndex - 1, day, 12)
     const hijri = toHijri(displayDate)
@@ -322,9 +325,19 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, onC
                             </div>
                         )}
                         {orders.map((order) => (
-                            <div key={order.id} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex items-center gap-3">
+                            <button
+                                type="button"
+                                key={order.id}
+                                onClick={() => onOrderClick(order)}
+                                disabled={loadingOrderId !== null}
+                                className={`w-full text-right bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex items-center gap-3 transition-all duration-200 hover:shadow-md ${mode === 'proof' ? 'hover:border-[#6ee7b7] hover:bg-[#ecfdf5]' : 'hover:border-pink-200 hover:bg-pink-50'} disabled:opacity-60 disabled:cursor-wait`}
+                            >
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${mode === 'proof' ? 'bg-[#d1fae5]' : 'bg-pink-100'}`}>
-                                    <User className={`w-5 h-5 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
+                                    {loadingOrderId === order.id ? (
+                                        <Loader className={`w-5 h-5 animate-spin ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
+                                    ) : (
+                                        <User className={`w-5 h-5 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
+                                    )}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
@@ -345,7 +358,8 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, onC
                                     </p>
                                     {order.order_number && <p className="text-xs text-gray-400 mt-0.5">#{order.order_number}</p>}
                                 </div>
-                            </div>
+                                <Eye className={`w-4 h-4 flex-shrink-0 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-500'}`} />
+                            </button>
                         ))}
                         {extraSlots.filter(slot => slot.label).map((slot) => (
                             <div key={slot.id} className="bg-white border border-dashed border-gray-300 rounded-xl p-4 shadow-sm flex items-center gap-3">
@@ -626,6 +640,9 @@ export default function OrderSchedulePage() {
     const [anchorMonth, setAnchorMonth] = useState(now.getMonth())
 
     const [mode, setMode] = useState<CalendarMode>('delivery')
+    // عند true: يعرض تقويم التسليم التواريخ الحقيقية للزبون (customer_due_date)
+    // بدلاً من due_date الداخلي المُزاح يومين للخلف
+    const [useRealDates, setUseRealDates] = useState(false)
     const [stats, setStats] = useState<Record<string, number>>({})
     const [ordersMap, setOrdersMap] = useState<Record<string, OrderOnDate[]>>({})
     const [isLoadingData, setIsLoadingData] = useState(false)
@@ -635,6 +652,8 @@ export default function OrderSchedulePage() {
     const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
     const [showAddSlot, setShowAddSlot] = useState(false)
     const [showManage, setShowManage] = useState(false)
+    const [viewingOrder, setViewingOrder] = useState<Order | null>(null)
+    const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null)
 
     const secondYear = anchorMonth === 11 ? anchorYear + 1 : anchorYear
     const secondMonth = anchorMonth === 11 ? 0 : anchorMonth + 1
@@ -660,8 +679,11 @@ export default function OrderSchedulePage() {
                 const newOrdersMap: Record<string, OrderOnDate[]> = {}
                 result.data.forEach((order) => {
                     if (order.status === 'cancelled') return
+                    const deliveryDate = useRealDates
+                        ? (order.customer_due_date || order.due_date)
+                        : order.due_date
                     const key = mode === 'delivery'
-                        ? (order.due_date || '').slice(0, 10)
+                        ? (deliveryDate || '').slice(0, 10)
                         : (order.proof_delivery_date || '').slice(0, 10)
                     if (!key) return
                     if (mode === 'delivery' && (order.status === 'delivered' || order.status === 'completed')) return
@@ -683,7 +705,7 @@ export default function OrderSchedulePage() {
         } finally {
             setIsLoadingData(false)
         }
-    }, [mode])
+    }, [mode, useRealDates])
 
     useEffect(() => { if (user) { fetchData(); fetchExtras() } }, [fetchData, fetchExtras, user])
     useEffect(() => { if (user) loadWorkers() }, [user, loadWorkers])
@@ -716,6 +738,19 @@ export default function OrderSchedulePage() {
     const handleUpdateExtra = async (id: string, count: number, label: string) => {
         const ok = await extraSlotsService.update(id, count, label)
         if (ok) setExtraSlots(prev => prev.map(s => s.id === id ? { ...s, count, label } : s))
+    }
+
+    // فتح بطاقة تفاصيل الطلب بنفس طريقة بطاقات صفحة الطلبات
+    const handleOrderClick = async (order: OrderOnDate) => {
+        setLoadingOrderId(order.id)
+        try {
+            const result = await orderService.getById(order.id)
+            if (result.data) {
+                setViewingOrder(result.data)
+            }
+        } finally {
+            setLoadingOrderId(null)
+        }
     }
 
     if (authLoading || !user) {
@@ -779,6 +814,17 @@ export default function OrderSchedulePage() {
                         </button>
                     </div>
 
+                    {/* زر عرض المواعيد الحقيقية — يبدّل تقويم التسليم بين التاريخ الداخلي والتاريخ الحقيقي للزبون */}
+                    {mode === 'delivery' && (
+                        <button onClick={() => setUseRealDates(v => !v)}
+                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border-2 transition-all duration-300 ${useRealDates
+                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-amber-500 shadow-md'
+                                : 'bg-white text-amber-600 border-amber-300 hover:bg-amber-50'}`}>
+                            <CalendarCheck className="w-4 h-4" />
+                            {useRealDates ? 'عرض المواعيد المُعدّلة' : 'عرض المواعيد الحقيقية'}
+                        </button>
+                    )}
+
                     {(isLoadingData || isLoadingExtras) && (
                         <div className="flex items-center gap-2 text-gray-400 text-sm">
                             <Loader className="w-4 h-4 animate-spin" />
@@ -823,13 +869,22 @@ export default function OrderSchedulePage() {
                     extraSlots={selectedExtras}
                     mode={mode}
                     workerNameMap={workerNameMap}
+                    loadingOrderId={loadingOrderId}
                     onClose={() => setSelectedDateKey(null)}
+                    onOrderClick={handleOrderClick}
                     onViewMore={() => {
                         const typeParam = mode === 'delivery' ? 'delivery' : 'proof'
                         router.push(`/dashboard/orders?date=${selectedDateKey}&type=${typeParam}`)
                     }}
                 />
             )}
+
+            <OrderModal
+                order={viewingOrder}
+                workers={workers}
+                isOpen={!!viewingOrder}
+                onClose={() => setViewingOrder(null)}
+            />
 
             {showAddSlot && (
                 <AddSlotModal
