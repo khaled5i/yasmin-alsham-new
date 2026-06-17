@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -35,8 +35,10 @@ import {
   PackageCheck,
   Truck,
   Calculator,
-  Wrench
+  Wrench,
+  Bell
 } from 'lucide-react'
+import { orderService } from '@/lib/services/order-service'
 
 function DashboardContent() {
   const { user, signOut } = useAuthStore()
@@ -50,6 +52,28 @@ function DashboardContent() {
   // States for Alteration Modals
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [showOrderSearchModal, setShowOrderSearchModal] = useState(false)
+
+  // عدد إشعارات البروفا الثانية الجديدة (مُبلَّغ عنها ولم تُرسَل رسالتها بعد) — للمدير
+  const [notificationsCount, setNotificationsCount] = useState(0)
+
+  const loadNotificationsCount = useCallback(async () => {
+    if (user?.role !== 'admin') return
+    try {
+      const { data } = await orderService.getAll({
+        secondProofCompleted: true,
+        noPagination: true,
+        orderBy: 'second_proof_completed_at',
+        orderAscending: false,
+      })
+      setNotificationsCount((data || []).filter(o => o.second_proof_whatsapp_sent !== true).length)
+    } catch {
+      // تجاهل أخطاء جلب العدّاد
+    }
+  }, [user?.role])
+
+  useEffect(() => {
+    loadNotificationsCount()
+  }, [loadNotificationsCount])
 
   // إعادة توجيه العمال إلى صفحاتهم المخصصة
   useEffect(() => {
@@ -76,6 +100,7 @@ function DashboardContent() {
     loadOrders()
     loadAppointments()
     loadWorkers()
+    loadNotificationsCount()
   })
 
 
@@ -341,6 +366,22 @@ function DashboardContent() {
                     <p className="text-sm text-gray-600 truncate">{user?.email}</p>
                   </div>
 
+                  {/* أيقونة جرس الإشعارات للمدير - شاشات كبيرة */}
+                  {user?.role === 'admin' && (
+                    <Link
+                      href="/dashboard/notifications"
+                      className="relative p-2 text-gray-600 hover:text-pink-600 transition-colors duration-300"
+                      title={isArabic ? 'مركز الإشعارات' : 'Notification Center'}
+                    >
+                      <Bell className="w-5 h-5" />
+                      {notificationsCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white">
+                          {notificationsCount}
+                        </span>
+                      )}
+                    </Link>
+                  )}
+
                   {/* زر تغيير اللغة للشاشات الكبيرة */}
                   <button
                     onClick={() => changeLanguage(language === 'ar' ? 'en' : 'ar')}
@@ -395,6 +436,21 @@ function DashboardContent() {
                   <span className="px-2 sm:px-3 py-1 bg-gradient-to-r from-pink-100 to-rose-100 text-pink-700 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap">
                     {t(user?.role === 'admin' ? 'admin' : 'worker')}
                   </span>
+                  {/* أيقونة جرس الإشعارات للمدير - شاشات صغيرة */}
+                  {user?.role === 'admin' && (
+                    <Link
+                      href="/dashboard/notifications"
+                      className="relative p-1.5 text-gray-600 hover:text-pink-600 transition-colors duration-300 flex-shrink-0"
+                      title={isArabic ? 'مركز الإشعارات' : 'Notification Center'}
+                    >
+                      <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+                      {notificationsCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">
+                          {notificationsCount}
+                        </span>
+                      )}
+                    </Link>
+                  )}
                   <button
                     onClick={() => changeLanguage(language === 'ar' ? 'en' : 'ar')}
                     className="px-2 sm:px-3 py-1 text-xs sm:text-sm text-gray-600 hover:text-pink-600 bg-gray-100 hover:bg-pink-50 rounded-full transition-all duration-300 flex-shrink-0 font-medium min-w-[60px] sm:min-w-[70px] text-center"
@@ -563,6 +619,20 @@ function DashboardContent() {
                     <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
                   </Link>
+
+                  {/* مركز الإشعارات - آخر بطاقة */}
+                  <Link
+                    href="/dashboard/notifications"
+                    className="relative p-4 bg-gradient-to-r from-pink-50 to-rose-100 rounded-lg border border-pink-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    {notificationsCount > 0 && (
+                      <span className="absolute top-2 left-2 min-w-[20px] h-[20px] px-1 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                        {notificationsCount}
+                      </span>
+                    )}
+                    <Bell className="w-6 h-6 text-pink-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-pink-800">{isArabic ? 'مركز الإشعارات' : 'Notifications'}</span>
+                  </Link>
                 </div>
               </motion.div>
             )}
@@ -692,6 +762,20 @@ function DashboardContent() {
                   >
                     <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
+                  </Link>
+
+                  {/* مركز الإشعارات - آخر بطاقة */}
+                  <Link
+                    href="/dashboard/notifications"
+                    className="relative p-4 bg-gradient-to-r from-pink-50 to-rose-100 rounded-lg border border-pink-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    {notificationsCount > 0 && (
+                      <span className="absolute top-2 left-2 min-w-[20px] h-[20px] px-1 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                        {notificationsCount}
+                      </span>
+                    )}
+                    <Bell className="w-6 h-6 text-pink-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-pink-800">{isArabic ? 'مركز الإشعارات' : 'Notifications'}</span>
                   </Link>
                 </div>
               </motion.div>

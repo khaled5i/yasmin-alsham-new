@@ -13,15 +13,16 @@ import {
   X,
   Trash2,
   Receipt,
-  Pencil
+  Pencil,
+  Banknote,
+  CreditCard
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
-import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
+import type { Expense, CreateExpenseInput, PaymentMethod } from '@/types/simple-accounting'
 import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
-import { getSuppliers, type Supplier } from '@/lib/services/supplier-service'
 import {
   getInventoryItems,
   createInventoryItem,
@@ -32,17 +33,17 @@ import {
 function FabricsPurchasesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<AccountingCategory[]>([])
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState<Date | null>(new Date())
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [supplierFilter, setSupplierFilter] = useState('')
+  const [paymentFilter, setPaymentFilter] = useState<'' | 'cash' | 'network'>('')
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('')
   // حقول ربط المخزون
   const [addToInventory, setAddToInventory] = useState(false)
   const [inventoryItemId, setInventoryItemId] = useState('')
@@ -55,14 +56,11 @@ function FabricsPurchasesContent() {
     description: '',
     amount: 0,
     date: new Date().toISOString().split('T')[0],
-    supplier_id: '',
-    supplier_name: ''
   })
 
   useEffect(() => {
     loadExpenses()
     loadCategories()
-    loadSuppliers()
     loadInventoryItems()
   }, [])
 
@@ -87,15 +85,6 @@ function FabricsPurchasesContent() {
     }
   }
 
-  const loadSuppliers = async () => {
-    try {
-      const data = await getSuppliers('fabrics')
-      setSuppliers(data)
-    } catch (error) {
-      console.error('Error loading suppliers:', error)
-    }
-  }
-
   const loadInventoryItems = async () => {
     try {
       const data = await getInventoryItems()
@@ -105,9 +94,30 @@ function FabricsPurchasesContent() {
     }
   }
 
+  const resetForm = () => {
+    setFormData({
+      branch: 'fabrics',
+      type: 'material',
+      category: '',
+      description: '',
+      amount: 0,
+      date: new Date().toISOString().split('T')[0],
+    })
+    setPaymentMethod('')
+    setAddToInventory(false)
+    setInventoryItemId('')
+    setInventoryNewName('')
+    setInventoryQuantity('')
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.category || !formData.amount) return
+
+    if (!paymentMethod) {
+      alert('يرجى اختيار طريقة الدفع (كاش أو شبكة)')
+      return
+    }
 
     // التحقق من حقول المخزون إذا كان الربط مفعلاً
     if (!isEditing && addToInventory) {
@@ -121,35 +131,37 @@ function FabricsPurchasesContent() {
       }
     }
 
+    const payload = { ...formData, payment_method: paymentMethod as PaymentMethod }
+
     setSaving(true)
     try {
       if (isEditing && editingId) {
-        const result = await updateExpense(editingId, formData as Partial<CreateExpenseInput>)
+        const result = await updateExpense(editingId, payload)
         if (result) {
           setExpenses(expenses.map(item => item.id === editingId ? result : item))
           alert('✅ تم تحديث المشترى بنجاح')
+        } else {
+          alert('❌ فشل تحديث المشترى، يرجى المحاولة مجدداً')
+          return
         }
       } else {
-        const result = await createExpense(formData as CreateExpenseInput)
+        const result = await createExpense(payload as CreateExpenseInput)
         if (result) {
           setExpenses([result, ...expenses])
 
           // ربط المخزون تلقائياً
-          if (addToInventory && result) {
+          if (addToInventory) {
             let targetItemId = inventoryItemId
             const qty = parseFloat(inventoryQuantity)
             const costUnit = formData.amount && qty > 0
               ? formData.amount / qty
               : undefined
 
-            // إنشاء صنف جديد إذا لم يتم اختيار موجود
             if (!targetItemId && inventoryNewName.trim()) {
               const newItem = await createInventoryItem({
                 name: inventoryNewName.trim(),
                 unit: 'meter',
                 cost_per_unit: costUnit,
-                supplier_id: formData.supplier_id || undefined,
-                supplier_name: formData.supplier_name || undefined
               })
               setInventoryItems((prev) => [newItem, ...prev])
               targetItemId = newItem.id
@@ -165,7 +177,6 @@ function FabricsPurchasesContent() {
                 purchase_expense_id: result.id,
                 date: formData.date
               })
-              // تحديث الكمية محلياً
               setInventoryItems((prev) =>
                 prev.map((it) =>
                   it.id === targetItemId
@@ -183,18 +194,7 @@ function FabricsPurchasesContent() {
       setShowModal(false)
       setIsEditing(false)
       setEditingId(null)
-      setAddToInventory(false)
-      setInventoryItemId('')
-      setInventoryNewName('')
-      setInventoryQuantity('')
-      setFormData({
-        branch: 'fabrics',
-        type: 'material',
-        category: '',
-        description: '',
-        amount: 0,
-        date: new Date().toISOString().split('T')[0]
-      })
+      resetForm()
     } catch (error) {
       console.error('Error saving expense:', error)
       alert('❌ حدث خطأ أثناء الحفظ')
@@ -214,9 +214,8 @@ function FabricsPurchasesContent() {
       amount: item.amount,
       date: item.date,
       notes: item.notes || '',
-      supplier_id: item.supplier_id || '',
-      supplier_name: item.supplier_name || ''
     })
+    setPaymentMethod((item.payment_method as PaymentMethod) || '')
     setShowModal(true)
   }
 
@@ -241,8 +240,7 @@ function FabricsPurchasesContent() {
     const matchesSearch = item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       getCategoryLabel(categories, item.category).includes(searchQuery)
     const matchesCategory = !categoryFilter || item.category === categoryFilter
-    const matchesSupplier = !supplierFilter || item.supplier_id === supplierFilter
-
+    const matchesPayment = !paymentFilter || item.payment_method === paymentFilter
 
     let matchesDate = true
     if (dateFilter) {
@@ -251,12 +249,14 @@ function FabricsPurchasesContent() {
         itemDate.getFullYear() === dateFilter.getFullYear()
     }
 
-    return matchesSearch && matchesCategory && matchesSupplier && matchesDate
+    return matchesSearch && matchesCategory && matchesPayment && matchesDate
   })
 
   const categoryOptions = categoriesToOptions(categories)
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
+  const cashTotal = filteredExpenses.filter(i => i.payment_method === 'cash').reduce((s, i) => s + i.amount, 0)
+  const networkTotal = filteredExpenses.filter(i => i.payment_method === 'network').reduce((s, i) => s + i.amount, 0)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
@@ -304,7 +304,7 @@ function FabricsPurchasesContent() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 text-white mb-6"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-orange-100 mb-1">إجمالي المشتريات</p>
               <p className="text-3xl font-bold">{formatCurrency(totalExpenses)}</p>
@@ -312,6 +312,22 @@ function FabricsPurchasesContent() {
             <div className="text-left">
               <p className="text-orange-100 mb-1">عدد العمليات</p>
               <p className="text-3xl font-bold">{filteredExpenses.length}</p>
+            </div>
+          </div>
+          <div className="flex gap-3 pt-4 border-t border-orange-400/40">
+            <div className="flex items-center gap-2 bg-white/15 rounded-xl px-3 py-2 flex-1">
+              <Banknote className="w-4 h-4 text-green-200" />
+              <div>
+                <p className="text-xs text-orange-100">كاش</p>
+                <p className="text-sm font-bold">{formatCurrency(cashTotal)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-white/15 rounded-xl px-3 py-2 flex-1">
+              <CreditCard className="w-4 h-4 text-blue-200" />
+              <div>
+                <p className="text-xs text-orange-100">شبكة</p>
+                <p className="text-sm font-bold">{formatCurrency(networkTotal)}</p>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -335,7 +351,7 @@ function FabricsPurchasesContent() {
               />
             </div>
 
-            <div className="relative min-w-[200px]">
+            <div className="relative min-w-[180px]">
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
@@ -346,54 +362,49 @@ function FabricsPurchasesContent() {
                   <option key={cat.id} value={cat.id}>{cat.label}</option>
                 ))}
               </select>
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                <ShoppingCart className="w-4 h-4" />
-              </div>
             </div>
 
-            <div className="relative min-w-[200px]">
-              <select
-                value={supplierFilter}
-                onChange={(e) => setSupplierFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent appearance-none bg-white font-sans"
-              >
-                <option value="">كل الموردين</option>
-                {suppliers.map(sup => (
-                  <option key={sup.id} value={sup.id}>{sup.name}</option>
-                ))}
-              </select>
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                <ShoppingCart className="w-4 h-4" />
-              </div>
+            {/* فلتر طريقة الدفع */}
+            <div className="flex gap-2">
+              {(['', 'cash', 'network'] as const).map((method) => (
+                <button
+                  key={method}
+                  onClick={() => setPaymentFilter(method)}
+                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    paymentFilter === method
+                      ? method === 'cash'
+                        ? 'bg-green-500 text-white'
+                        : method === 'network'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-orange-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {method === '' && 'الكل'}
+                  {method === 'cash' && <><Banknote className="w-4 h-4" />كاش</>}
+                  {method === 'network' && <><CreditCard className="w-4 h-4" />شبكة</>}
+                </button>
+              ))}
             </div>
 
             <div className="flex gap-2">
               <div className="relative">
-                <div className="relative w-full">
-                  <DatePicker
-                    selected={dateFilter}
-                    onChange={(date: Date | null) => setDateFilter(date)}
-                    dateFormat="yyyy/MM"
-                    showMonthYearPicker
-                    placeholderText="اختر الشهر"
-                    className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent text-right"
-                    isClearable
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                </div>
+                <DatePicker
+                  selected={dateFilter}
+                  onChange={(date: Date | null) => setDateFilter(date)}
+                  dateFormat="yyyy/MM"
+                  showMonthYearPicker
+                  placeholderText="اختر الشهر"
+                  className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent text-right"
+                  isClearable
+                />
+                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
               </div>
               <button
                 onClick={() => {
                   setIsEditing(false)
                   setEditingId(null)
-                  setFormData({
-                    branch: 'fabrics',
-                    type: 'material',
-                    category: '',
-                    description: '',
-                    amount: 0,
-                    date: new Date().toISOString().split('T')[0]
-                  })
+                  resetForm()
                   setShowModal(true)
                 }}
                 className="px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors flex items-center gap-2"
@@ -434,7 +445,21 @@ function FabricsPurchasesContent() {
                       <Package className="w-6 h-6 text-orange-600" />
                     </div>
                     <div>
-                      <p className="font-bold text-gray-900">{getCategoryLabel(categories, item.category)}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-gray-900">{getCategoryLabel(categories, item.category)}</p>
+                        {item.payment_method && (
+                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                            item.payment_method === 'cash'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {item.payment_method === 'cash'
+                              ? <><Banknote className="w-3 h-3" />كاش</>
+                              : <><CreditCard className="w-3 h-3" />شبكة</>
+                            }
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500">{item.description || 'بدون وصف'}</p>
                       <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                     </div>
@@ -478,7 +503,7 @@ function FabricsPurchasesContent() {
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className="bg-white rounded-2xl p-6 w-full max-w-md"
+                className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
@@ -511,26 +536,37 @@ function FabricsPurchasesContent() {
                       ))}
                     </select>
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">المورد (اختياري)</label>
-                    <select
-                      value={formData.supplier_id}
-                      onChange={(e) => {
-                        const supplier = suppliers.find(s => s.id === e.target.value)
-                        setFormData({
-                          ...formData,
-                          supplier_id: e.target.value,
-                          supplier_name: supplier?.name || ''
-                        })
-                      }}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
-                    >
-                      <option value="">اختر المورد</option>
-                      {suppliers.map(sup => (
-                        <option key={sup.id} value={sup.id}>{sup.name}</option>
-                      ))}
-                    </select>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">طريقة الدفع</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('cash')}
+                        className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium transition-all ${
+                          paymentMethod === 'cash'
+                            ? 'border-green-500 bg-green-50 text-green-700'
+                            : 'border-gray-200 text-gray-600 hover:border-green-300 hover:bg-green-50'
+                        }`}
+                      >
+                        <Banknote className="w-5 h-5" />
+                        كاش
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('network')}
+                        className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium transition-all ${
+                          paymentMethod === 'network'
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50'
+                        }`}
+                      >
+                        <CreditCard className="w-5 h-5" />
+                        شبكة
+                      </button>
+                    </div>
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">الوصف</label>
                     <input
@@ -658,4 +694,3 @@ export default function FabricsPurchasesPage() {
     </ProtectedWorkerRoute>
   )
 }
-

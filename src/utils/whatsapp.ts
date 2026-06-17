@@ -307,6 +307,34 @@ export function generateDeliveredMessage(clientName: string): string {
 }
 
 /**
+ * تجهيز رسالة "البروفا الثانية جاهزة للاستلام"
+ * تُرسَل من مركز إشعارات المدير عندما يُبلّغ العامل بجهوزية البروفا الثانية.
+ * @param clientName - اسم العميل
+ * @returns نص الرسالة المنسق
+ */
+export function generateSecondProofReadyMessage(clientName: string): string {
+  let message = `السلام عليكم${clientName ? ` ${clientName}` : ''}\n\n`
+  message += `البروفا الثانية جاهزة للاستلام، يمكنك مراجعة المشغل النسائي خلال أوقات الدوام من الساعة 4 إلى 10.\n\n`
+  message += `يرجى الحضور في الموعد بأسرع وقت ممكن لتفادي وقوع أية مشاكل.\n\n`
+  message += `شكراً لثقتكم بنا\n`
+  message += `ياسمين الشام`
+
+  return message
+}
+
+/**
+ * إرسال رسالة "البروفا الثانية جاهزة" عبر واتساب
+ * @param clientName - اسم العميل
+ * @param clientPhone - رقم هاتف العميل
+ */
+export function sendSecondProofReadyWhatsApp(clientName: string, clientPhone: string): void {
+  const formattedPhone = formatPhoneNumber(clientPhone)
+  const message = generateSecondProofReadyMessage(clientName)
+  const encodedMessage = encodeURIComponent(message)
+  window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank')
+}
+
+/**
  * إرسال رسالة "جاهز للاستلام" عبر واتساب
  * @param clientName - اسم العميل
  * @param clientPhone - رقم هاتف العميل

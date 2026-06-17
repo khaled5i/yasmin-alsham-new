@@ -58,6 +58,8 @@ function normalizeCreateExpensePayload(input: CreateExpenseInput): CreateExpense
     recurrence_type: input.recurrence_type ?? ONE_TIME_RECURRENCE
   }
 
+  if (payload.supplier_id === '') payload.supplier_id = undefined
+
   if (payload.recurrence_type === MONTHLY_RECURRENCE) {
     const baseDate = payload.date || getTodayISODate()
     const fallbackDay = getDayFromISODate(baseDate)
@@ -76,6 +78,8 @@ function normalizeCreateExpensePayload(input: CreateExpenseInput): CreateExpense
 
 function normalizeUpdateExpensePayload(input: Partial<CreateExpenseInput>): Partial<CreateExpenseInput> {
   const payload: Partial<CreateExpenseInput> = { ...input }
+
+  if (payload.supplier_id === '') payload.supplier_id = undefined
 
   if (payload.recurrence_type === MONTHLY_RECURRENCE) {
     const baseDate = payload.date || getTodayISODate()

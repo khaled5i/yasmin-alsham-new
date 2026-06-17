@@ -58,6 +58,11 @@ const ORDER_LIST_COLUMNS = [
   'is_flagged',        // migration 40
   'fabric_type',
   'has_second_proof',  // migration 23
+  // إشعارات البروفا الثانية (migration 54)
+  'second_proof_completed',
+  'second_proof_completed_at',
+  'second_proof_whatsapp_sent',
+  'second_proof_dismissed',
   'has_alterations',   // migration 34
   'alteration_count',  // migration 34
   'design_thumbnail',           // عمود مستقل (migration 32)
@@ -114,6 +119,11 @@ export interface Order {
   is_flagged: boolean   // migration 40
   // بروفا ثانية (migration 23)
   has_second_proof: boolean
+  // إشعارات البروفا الثانية (migration 54)
+  second_proof_completed?: boolean
+  second_proof_completed_at?: string | null
+  second_proof_whatsapp_sent?: boolean
+  second_proof_dismissed?: boolean
   // تتبع التعديلات (migration 34)
   has_alterations: boolean
   alteration_count: number
@@ -303,6 +313,11 @@ export interface UpdateOrderData {
   is_pre_booking?: boolean
   is_flagged?: boolean  // migration 40
   has_second_proof?: boolean | null // migration 23
+  // إشعارات البروفا الثانية (migration 54)
+  second_proof_completed?: boolean
+  second_proof_completed_at?: string | null
+  second_proof_whatsapp_sent?: boolean
+  second_proof_dismissed?: boolean
   fabric_type?: string | null
   price?: number
   paid_amount?: number
@@ -614,6 +629,7 @@ export const orderService = {
     dateFilterType?: 'received' | 'delivery' | 'proof'  // which date field to filter on
     monthFilter?: string  // 'YYYY-MM' — filter by worker_completed_at month
     unratedOnly?: boolean  // only orders with no worker_rating and no worker_price
+    secondProofCompleted?: boolean  // إشعارات البروفا الثانية: العامل أبلغ بالجهوزية ولم يُخفِها المدير (migration 54)
     orderBy?: string       // column to order by (default: 'created_at')
     orderAscending?: boolean  // sort direction (default: false = descending)
   }): Promise<{ data: Order[]; error: string | null; total?: number }> {
@@ -701,6 +717,13 @@ export const orderService = {
         const nextMonth = month === 12 ? 1 : month + 1
         const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
         query = query.gte('worker_completed_at', startDate).lt('worker_completed_at', endDate)
+      }
+
+      // إشعارات البروفا الثانية: الطلبات التي أبلغ العامل بجهوزية بروفتها الثانية ولم يُخفِها المدير
+      if (filters?.secondProofCompleted) {
+        query = query
+          .eq('second_proof_completed', true)
+          .or('second_proof_dismissed.is.null,second_proof_dismissed.eq.false')
       }
 
       // Unrated filter: no worker_rating (null or 0) AND no worker_price (null or 0)

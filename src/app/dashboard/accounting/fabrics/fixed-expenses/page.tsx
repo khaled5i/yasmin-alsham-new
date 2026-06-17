@@ -95,6 +95,9 @@ function FabricsFixedExpensesContent() {
         if (result) {
           setExpenses(expenses.map(item => item.id === editingId ? result : item))
           alert('✅ تم تحديث المصروف بنجاح')
+        } else {
+          alert('❌ فشل تحديث المصروف، يرجى المحاولة مجدداً')
+          return
         }
       } else {
         const result = await createExpense(formData as CreateExpenseInput)

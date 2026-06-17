@@ -31,6 +31,7 @@ export interface Expense {
   created_by?: string
   supplier_id?: string    // معرف المورد (اختياري)
   supplier_name?: string  // اسم المورد (اختياري - للتسهيل)
+  payment_method?: PaymentMethod | null
 }
 
 export interface CreateExpenseInput {
@@ -43,6 +44,7 @@ export interface CreateExpenseInput {
   notes?: string
   supplier_id?: string
   supplier_name?: string
+  payment_method?: PaymentMethod | null
   recurrence_type?: ExpenseRecurrenceType
   recurring_day_of_month?: number | null
   recurring_source_id?: string | null

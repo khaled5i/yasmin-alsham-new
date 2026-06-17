@@ -49,7 +49,9 @@ import {
   Wrench,
   RotateCcw,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  Bell,
+  BellRing
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
@@ -242,6 +244,8 @@ function OrdersPageInner() {
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [showSecondProofWarning, setShowSecondProofWarning] = useState(false)
   const [orderToStartWork, setOrderToStartWork] = useState<any>(null)
+  // إبلاغ المدير بجهوزية البروفا الثانية (للعامل) — معرف الطلب قيد المعالجة
+  const [notifyingSecondProofId, setNotifyingSecondProofId] = useState<string | null>(null)
 
   // إغلاق قائمة تغيير الحالة عند النقر خارجها
   useEffect(() => {
@@ -845,6 +849,35 @@ function OrdersPageInner() {
     }
   }
 
+  // إبلاغ المدير بجهوزية البروفا الثانية (للعامل) — يدعم التراجع
+  const handleNotifySecondProof = async (order: any) => {
+    if (!user || user.role !== 'worker') return
+
+    const markCompleted = !order.second_proof_completed
+    setNotifyingSecondProofId(order.id)
+    try {
+      const result = await updateOrder(order.id, {
+        second_proof_completed: markCompleted,
+        // عند الإبلاغ: نسجّل توقيت الإنجاز. عند التراجع: نُصفّر التوقيت وحالة الإرسال والإخفاء
+        second_proof_completed_at: markCompleted ? new Date().toISOString() : null,
+        ...(markCompleted ? {} : { second_proof_whatsapp_sent: false, second_proof_dismissed: false }),
+      } as any)
+
+      if (result.success) {
+        toast.success(
+          markCompleted
+            ? (isArabic ? 'تم إبلاغ المدير بجهوزية البروفا الثانية' : 'Manager notified: second proof is ready')
+            : (isArabic ? 'تم التراجع عن الإبلاغ' : 'Notification undone'),
+          { icon: markCompleted ? '🔔' : '↩️' }
+        )
+      } else {
+        toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
+      }
+    } finally {
+      setNotifyingSecondProofId(null)
+    }
+  }
+
   // فتح نافذة إنهاء الطلب
   const handleOpenCompleteModal = (order: any) => {
     setSelectedOrder(order)
@@ -1192,7 +1225,7 @@ function OrdersPageInner() {
 
                       {/* أزرار العمل في الأسفل */}
                       {currentWorkerId && order.worker_id === currentWorkerId && (
-                        <div className="pt-4 border-t border-gray-100">
+                        <div className="pt-4 border-t border-gray-100 flex flex-col gap-2.5">
                           {order.status === 'pending' && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleStartWork(order) }}
@@ -1211,6 +1244,35 @@ function OrdersPageInner() {
                             >
                               {isProcessing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <CheckCircle className="w-5 h-5" />}
                               <span>{t('complete_order') || 'إنهاء الطلب'}</span>
+                            </button>
+                          )}
+
+                          {/* زر إبلاغ المدير بجهوزية البروفا الثانية — يظهر دائماً للطلبات ذات البروفا الثانية */}
+                          {order.has_second_proof && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleNotifySecondProof(order) }}
+                              disabled={notifyingSecondProofId === order.id}
+                              className={`w-full flex items-center justify-center gap-2 px-4 py-3 text-base font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm border-2 ${
+                                order.second_proof_completed
+                                  ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100'
+                                  : 'bg-amber-500 border-amber-500 text-white hover:bg-amber-600'
+                              }`}
+                              title={order.second_proof_completed
+                                ? (isArabic ? 'تم إبلاغ المدير — اضغط للتراجع' : 'Manager notified — tap to undo')
+                                : (isArabic ? 'إبلاغ المدير أن البروفا الثانية جاهزة' : 'Notify manager second proof is ready')}
+                            >
+                              {notifyingSecondProofId === order.id ? (
+                                <div className={`w-5 h-5 border-2 ${order.second_proof_completed ? 'border-green-600' : 'border-white'} border-t-transparent rounded-full animate-spin`}></div>
+                              ) : order.second_proof_completed ? (
+                                <CheckCircle className="w-5 h-5" />
+                              ) : (
+                                <BellRing className="w-5 h-5" />
+                              )}
+                              <span>
+                                {order.second_proof_completed
+                                  ? (isArabic ? 'تم إبلاغ المدير بجهوزية البروفا الثانية' : 'Manager notified (second proof)')
+                                  : (isArabic ? 'البروفا الثانية جاهزة — إبلاغ المدير' : 'Second proof ready — notify manager')}
+                              </span>
                             </button>
                           )}
                         </div>

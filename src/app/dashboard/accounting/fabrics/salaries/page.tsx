@@ -95,6 +95,9 @@ function FabricsSalariesContent() {
         if (result) {
           setExpenses(expenses.map(item => item.id === editingId ? result : item))
           alert('✅ تم تحديث الراتب بنجاح')
+        } else {
+          alert('❌ فشل تحديث الراتب، يرجى المحاولة مجدداً')
+          return
         }
       } else {
         const result = await createExpense(formData as CreateExpenseInput)

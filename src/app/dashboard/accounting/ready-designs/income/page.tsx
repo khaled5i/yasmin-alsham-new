@@ -79,6 +79,9 @@ function ReadyDesignsIncomeContent() {
         if (result) {
           setIncomeList(incomeList.map(item => item.id === editingId ? result : item))
           alert('✅ تم تحديث المبيعة بنجاح')
+        } else {
+          alert('❌ فشل تحديث المبيعة، يرجى المحاولة مجدداً')
+          return
         }
       } else {
         const result = await createIncome(formData as CreateIncomeInput)
