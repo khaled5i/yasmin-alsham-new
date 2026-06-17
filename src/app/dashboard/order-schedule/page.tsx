@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, ChevronLeft, ChevronRight, CalendarDays, CalendarCheck, Plus, X, Phone, User, Eye, Loader, Settings, Trash2, Edit3, Check } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, CalendarDays, CalendarCheck, X, Phone, User, Eye, Loader } from 'lucide-react'
 import Link from 'next/link'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const moment = require('moment-hijri')
@@ -11,7 +11,6 @@ import { useAuthStore } from '@/store/authStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService, type Order } from '@/lib/services/order-service'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { toLocalDateKey } from '@/lib/date-utils'
 import OrderModal from '@/components/OrderModal'
 
@@ -55,14 +54,6 @@ function getHijriMonthsInView(year: number, month: number) {
 // ─── Types ────────────────────────────────────────────────────────────────────
 type CalendarMode = 'delivery' | 'proof'
 
-interface ExtraSlot {
-    id: string
-    date_key: string
-    count: number
-    slot_type: 'delivery' | 'proof'
-    label?: string
-}
-
 interface OrderOnDate {
     id: string
     client_name: string
@@ -88,51 +79,6 @@ const ORDER_STATUS_BADGE: Record<OrderOnDate['status'], string> = {
     cancelled: 'bg-red-50 text-red-700 border-red-200',
 }
 
-// ─── Supabase extra-slots service ─────────────────────────────────────────────
-// SQL to create/update:
-//   CREATE TABLE IF NOT EXISTS schedule_extra_slots (
-//     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-//     date_key text NOT NULL,
-//     count integer NOT NULL DEFAULT 1,
-//     slot_type text NOT NULL DEFAULT 'delivery',
-//     label text,
-//     created_at timestamptz DEFAULT now()
-//   );
-//   ALTER TABLE schedule_extra_slots ENABLE ROW LEVEL SECURITY;
-//   CREATE POLICY "Allow all for authenticated" ON schedule_extra_slots FOR ALL TO authenticated USING (true) WITH CHECK (true);
-//   -- If table already exists, add column:
-//   ALTER TABLE schedule_extra_slots ADD COLUMN IF NOT EXISTS slot_type text NOT NULL DEFAULT 'delivery';
-
-const extraSlotsService = {
-    async getAll(): Promise<ExtraSlot[]> {
-        if (!isSupabaseConfigured()) return []
-        const { data } = await supabase.from('schedule_extra_slots').select('*').order('date_key')
-        return (data as ExtraSlot[]) || []
-    },
-    async add(date_key: string, count: number, slot_type: 'delivery' | 'proof', label?: string): Promise<ExtraSlot | null> {
-        if (!isSupabaseConfigured()) return null
-        const { data } = await supabase
-            .from('schedule_extra_slots')
-            .insert({ date_key, count, slot_type, label: label || null })
-            .select()
-            .single()
-        return data as ExtraSlot | null
-    },
-    async update(id: string, count: number, label?: string): Promise<boolean> {
-        if (!isSupabaseConfigured()) return false
-        const { error } = await supabase
-            .from('schedule_extra_slots')
-            .update({ count, label: label || null })
-            .eq('id', id)
-        return !error
-    },
-    async delete(id: string): Promise<boolean> {
-        if (!isSupabaseConfigured()) return false
-        const { error } = await supabase.from('schedule_extra_slots').delete().eq('id', id)
-        return !error
-    },
-}
-
 // ─── Calendar grid helper ─────────────────────────────────────────────────────
 function buildMonthGrid(year: number, month: number): (Date | null)[][] {
     const firstDay = new Date(year, month, 1)
@@ -153,23 +99,14 @@ interface MonthCalendarProps {
     month: number
     mode: CalendarMode
     stats: Record<string, number>
-    extraSlots: ExtraSlot[]
     onDateClick: (dateKey: string) => void
 }
 
-function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: MonthCalendarProps) {
+function MonthCalendar({ year, month, mode, stats, onDateClick }: MonthCalendarProps) {
     const todayKey = toLocalDateKey(new Date())
     const gregorianMonth = arabicMonths[month]
     const rows = buildMonthGrid(year, month)
     const hijriMonthsInView = getHijriMonthsInView(year, month)
-
-    // Build extra count map — filtered by current mode
-    const extraMap: Record<string, number> = {}
-    for (const slot of extraSlots) {
-        if (slot.slot_type === mode) {
-            extraMap[slot.date_key] = (extraMap[slot.date_key] || 0) + slot.count
-        }
-    }
 
     const isProof = mode === 'proof'
 
@@ -214,9 +151,7 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
                         {row.map((date, ci) => {
                             if (!date) return <div key={ci} className="aspect-square" />
                             const dateKey = toLocalDateKey(date)
-                            const realCount = stats[dateKey] || 0
-                            const extra = extraMap[dateKey] || 0
-                            const total = realCount + extra
+                            const total = stats[dateKey] || 0
                             const isToday = dateKey === todayKey
                             const isOverloaded = isProof ? total >= 4 : total >= 6
                             const hijri = toHijri(date)
@@ -265,7 +200,6 @@ function MonthCalendar({ year, month, mode, stats, extraSlots, onDateClick }: Mo
 interface DateModalProps {
     dateKey: string
     orders: OrderOnDate[]
-    extraSlots: ExtraSlot[]
     mode: CalendarMode
     workerNameMap: Record<string, string>
     loadingOrderId: string | null
@@ -274,14 +208,13 @@ interface DateModalProps {
     onOrderClick: (order: OrderOnDate) => void
 }
 
-function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, loadingOrderId, onClose, onViewMore, onOrderClick }: DateModalProps) {
+function DateOrdersModal({ dateKey, orders, mode, workerNameMap, loadingOrderId, onClose, onViewMore, onOrderClick }: DateModalProps) {
     const [year, monthIndex, day] = dateKey.split('-').map(Number)
     const displayDate = new Date(year, monthIndex - 1, day, 12)
     const hijri = toHijri(displayDate)
     const gregorianLabel = displayDate.toLocaleDateString('ar-SA-u-nu-latn', {
         calendar: 'gregory', year: 'numeric', month: 'long', day: 'numeric'
     })
-    const extraCount = extraSlots.reduce((s, sl) => s + sl.count, 0)
 
     return (
         <AnimatePresence>
@@ -310,18 +243,15 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, loa
                         <CalendarDays className={`w-4 h-4 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
                         <span className={`text-sm font-medium ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-700'}`}>
                             {mode === 'delivery' ? 'مواعيد التسليم' : 'مواعيد البروفا'}:
-                            <span className={`font-bold mr-1 ${mode === 'proof' ? 'text-green-900' : 'text-pink-900'}`}>{orders.length + extraCount}</span> طلب
+                            <span className={`font-bold mr-1 ${mode === 'proof' ? 'text-green-900' : 'text-pink-900'}`}>{orders.length}</span> طلب
                         </span>
-                        {extraCount > 0 && (
-                            <span className="text-xs text-gray-400 mr-auto">({extraCount} مضاف يدوياً)</span>
-                        )}
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        {orders.length === 0 && extraCount > 0 && extraSlots.filter(s => s.label).length === 0 && (
+                        {orders.length === 0 && (
                             <div className="text-center py-6 text-gray-400 text-sm">
                                 <CalendarDays className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                                <p>لا توجد طلبات فعلية في هذا التاريخ</p>
+                                <p>لا توجد طلبات في هذا التاريخ</p>
                             </div>
                         )}
                         {orders.map((order) => (
@@ -361,26 +291,6 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, loa
                                 <Eye className={`w-4 h-4 flex-shrink-0 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-500'}`} />
                             </button>
                         ))}
-                        {extraSlots.filter(slot => slot.label).map((slot) => (
-                            <div key={slot.id} className="bg-white border border-dashed border-gray-300 rounded-xl p-4 shadow-sm flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${mode === 'proof' ? 'bg-[#d1fae5]' : 'bg-pink-100'}`}>
-                                    <User className={`w-5 h-5 ${mode === 'proof' ? 'text-[#047857]' : 'text-pink-600'}`} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex justify-between items-start">
-                                        <p className="font-semibold text-gray-900 truncate max-w-[70%]">{slot.label}</p>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-md border ${mode === 'proof' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-pink-50 text-pink-700 border-pink-200'} shrink-0 whitespace-nowrap`}>
-                                            مضاف بشكل يدوي
-                                        </span>
-                                    </div>
-                                    {slot.count > 1 && (
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            العدد: <span className="font-bold">{slot.count}</span>
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
                     </div>
 
                     {orders.length > 0 && (
@@ -394,234 +304,6 @@ function DateOrdersModal({ dateKey, orders, extraSlots, mode, workerNameMap, loa
                             </button>
                         </div>
                     )}
-                </motion.div>
-            </motion.div>
-        </AnimatePresence>
-    )
-}
-
-// ─── Add Slot Modal ───────────────────────────────────────────────────────────
-interface AddSlotModalProps {
-    defaultMode: CalendarMode
-    onClose: () => void
-    onAdd: (dateKey: string, count: number, slotType: CalendarMode, label: string) => Promise<void>
-}
-
-function AddSlotModal({ defaultMode, onClose, onAdd }: AddSlotModalProps) {
-    const today = toLocalDateKey(new Date())
-    const [dateKey, setDateKey] = useState(today)
-    const [count, setCount] = useState(1)
-    const [label, setLabel] = useState('')
-    const [slotType, setSlotType] = useState<CalendarMode>(defaultMode)
-    const [saving, setSaving] = useState(false)
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
-        if (!dateKey || count < 1) return
-        setSaving(true)
-        await onAdd(dateKey, count, slotType, label)
-        setSaving(false)
-        onClose()
-    }
-
-    return (
-        <AnimatePresence>
-            <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-                onClick={onClose}
-            >
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <div className="bg-gradient-to-r from-teal-500 to-cyan-600 px-6 py-4 flex items-center justify-between">
-                        <h2 className="text-white font-bold text-lg">إضافة موعد جديد</h2>
-                        <button onClick={onClose} className="text-white hover:text-teal-200"><X className="w-6 h-6" /></button>
-                    </div>
-
-                    <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                        {/* Slot Type Toggle */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">نوع الموعد</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                <button type="button" onClick={() => setSlotType('delivery')}
-                                    className={`py-2 px-3 rounded-lg text-sm font-semibold border-2 transition-all ${slotType === 'delivery'
-                                        ? 'bg-pink-500 text-white border-pink-500'
-                                        : 'bg-white text-gray-500 border-gray-200 hover:border-pink-300'
-                                        }`}>
-                                    🗓️ موعد تسليم
-                                </button>
-                                <button type="button" onClick={() => setSlotType('proof')}
-                                    className={`py-2 px-3 rounded-lg text-sm font-semibold border-2 transition-all ${slotType === 'proof'
-                                        ? 'bg-[#10b981] text-white border-[#10b981]'
-                                        : 'bg-white text-gray-500 border-gray-200 hover:border-[#10b981]'
-                                        }`}>
-                                    📋 موعد بروفا
-                                </button>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">التاريخ</label>
-                            <input type="date" value={dateKey} onChange={(e) => setDateKey(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-400 focus:border-teal-400 text-sm" required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">عدد المواعيد المضافة</label>
-                            <input type="number" min={1} max={99} value={count}
-                                onChange={(e) => setCount(Math.max(1, parseInt(e.target.value) || 1))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-400 focus:border-teal-400 text-sm" required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">الاسم (اختياري)</label>
-                            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثال: أحمد عبد الله"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-400 focus:border-teal-400 text-sm" />
-                        </div>
-                        <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-2">
-                            ⚠️ هذا الموعد يُخزّن في قاعدة البيانات ويظهر على جميع الأجهزة، لكنه لا يؤثر على صفحة الطلبات.
-                        </p>
-                        <button type="submit" disabled={saving}
-                            className="w-full py-3 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-xl font-semibold hover:from-teal-600 hover:to-cyan-700 transition-all duration-300 shadow-md disabled:opacity-60 flex items-center justify-center gap-2">
-                            {saving && <Loader className="w-4 h-4 animate-spin" />}
-                            {saving ? 'جاري الحفظ...' : 'إضافة'}
-                        </button>
-                    </form>
-                </motion.div>
-            </motion.div>
-        </AnimatePresence>
-    )
-}
-
-// ─── Manage Extra Slots Modal ──────────────────────────────────────────────────
-interface ManageExtraSlotsProps {
-    slots: ExtraSlot[]
-    onDelete: (id: string) => Promise<void>
-    onUpdate: (id: string, count: number, label: string) => Promise<void>
-    onClose: () => void
-}
-
-function ManageExtraSlotsModal({ slots, onDelete, onUpdate, onClose }: ManageExtraSlotsProps) {
-    const [editingId, setEditingId] = useState<string | null>(null)
-    const [editCount, setEditCount] = useState(1)
-    const [editLabel, setEditLabel] = useState('')
-    const [saving, setSaving] = useState<string | null>(null)
-
-    const startEdit = (slot: ExtraSlot) => {
-        setEditingId(slot.id)
-        setEditCount(slot.count)
-        setEditLabel(slot.label || '')
-    }
-
-    const saveEdit = async (id: string) => {
-        setSaving(id)
-        await onUpdate(id, editCount, editLabel)
-        setSaving(null)
-        setEditingId(null)
-    }
-
-    const handleDelete = async (id: string) => {
-        setSaving(id)
-        await onDelete(id)
-        setSaving(null)
-    }
-
-    const formatDate = (dateKey: string) => {
-        const [y, m, d] = dateKey.split('-').map(Number)
-        return new Date(y, m - 1, d, 12).toLocaleDateString('ar-SA-u-nu-latn', {
-            calendar: 'gregory', year: 'numeric', month: 'long', day: 'numeric'
-        })
-    }
-
-    return (
-        <AnimatePresence>
-            <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-                onClick={onClose}
-            >
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <div className="bg-gradient-to-r from-gray-700 to-gray-900 px-6 py-4 flex items-center justify-between">
-                        <h2 className="text-white font-bold text-lg flex items-center gap-2">
-                            <Settings className="w-5 h-5" /> إدارة المواعيد المضافة يدوياً
-                        </h2>
-                        <button onClick={onClose} className="text-white hover:text-gray-300"><X className="w-6 h-6" /></button>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-4">
-                        {slots.length === 0 ? (
-                            <div className="text-center py-12 text-gray-400">
-                                <Settings className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                                <p>لا توجد مواعيد مضافة يدوياً</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {slots.map((slot) => (
-                                    <div key={slot.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                                        {editingId === slot.id ? (
-                                            <div className="space-y-2">
-                                                <p className="text-xs text-gray-500 font-medium">{formatDate(slot.date_key)}</p>
-                                                <div className="flex gap-2">
-                                                    <input type="number" min={1} max={99} value={editCount}
-                                                        onChange={(e) => setEditCount(Math.max(1, parseInt(e.target.value) || 1))}
-                                                        className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-400" />
-                                                    <input type="text" value={editLabel} onChange={(e) => setEditLabel(e.target.value)}
-                                                        placeholder="ملاحظة..."
-                                                        className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-400" />
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => saveEdit(slot.id)} disabled={saving === slot.id}
-                                                        className="flex items-center gap-1 px-3 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-medium hover:bg-teal-600 disabled:opacity-60">
-                                                        {saving === slot.id ? <Loader className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                                        حفظ
-                                                    </button>
-                                                    <button onClick={() => setEditingId(null)}
-                                                        className="px-3 py-1.5 bg-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-300">
-                                                        إلغاء
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex-1">
-                                                    <p className="font-medium text-gray-900 text-sm">{formatDate(slot.date_key)}</p>
-                                                    {slot.label && <p className="text-xs text-gray-500 mt-0.5">{slot.label}</p>}
-                                                    <span className="inline-block mt-1 px-2 py-0.5 bg-pink-100 text-pink-700 rounded-full text-xs font-bold">
-                                                        +{slot.count} موعد
-                                                    </span>
-                                                </div>
-                                                <div className="flex gap-1.5">
-                                                    <button onClick={() => startEdit(slot)}
-                                                        className="p-2 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors">
-                                                        <Edit3 className="w-4 h-4" />
-                                                    </button>
-                                                    <button onClick={() => handleDelete(slot.id)} disabled={saving === slot.id}
-                                                        className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-60">
-                                                        {saving === slot.id ? <Loader className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="border-t border-gray-100 p-4">
-                        <button onClick={onClose}
-                            className="w-full py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors">
-                            إغلاق
-                        </button>
-                    </div>
                 </motion.div>
             </motion.div>
         </AnimatePresence>
@@ -646,12 +328,8 @@ export default function OrderSchedulePage() {
     const [stats, setStats] = useState<Record<string, number>>({})
     const [ordersMap, setOrdersMap] = useState<Record<string, OrderOnDate[]>>({})
     const [isLoadingData, setIsLoadingData] = useState(false)
-    const [extraSlots, setExtraSlots] = useState<ExtraSlot[]>([])
-    const [isLoadingExtras, setIsLoadingExtras] = useState(false)
 
     const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
-    const [showAddSlot, setShowAddSlot] = useState(false)
-    const [showManage, setShowManage] = useState(false)
     const [viewingOrder, setViewingOrder] = useState<Order | null>(null)
     const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null)
 
@@ -662,13 +340,6 @@ export default function OrderSchedulePage() {
         if (!authLoading && !workerLoading && user && user.role !== 'admin' && workerType !== 'workshop_manager') router.push('/dashboard')
         if (!authLoading && !user) router.push('/login')
     }, [user, authLoading, workerLoading, workerType, router])
-
-    const fetchExtras = useCallback(async () => {
-        setIsLoadingExtras(true)
-        const data = await extraSlotsService.getAll()
-        setExtraSlots(data)
-        setIsLoadingExtras(false)
-    }, [])
 
     const fetchData = useCallback(async () => {
         setIsLoadingData(true)
@@ -707,7 +378,7 @@ export default function OrderSchedulePage() {
         }
     }, [mode, useRealDates])
 
-    useEffect(() => { if (user) { fetchData(); fetchExtras() } }, [fetchData, fetchExtras, user])
+    useEffect(() => { if (user) fetchData() }, [fetchData, user])
     useEffect(() => { if (user) loadWorkers() }, [user, loadWorkers])
 
     const workerNameMap = workers.reduce<Record<string, string>>((acc, w) => {
@@ -723,21 +394,6 @@ export default function OrderSchedulePage() {
     const goToPrevMonths = () => {
         if (anchorMonth === 0) { setAnchorYear(y => y - 1); setAnchorMonth(11) }
         else setAnchorMonth(m => Math.max(m - 2, 0))
-    }
-
-    const handleAddExtraSlot = async (dateKey: string, count: number, slotType: CalendarMode, label: string) => {
-        const newSlot = await extraSlotsService.add(dateKey, count, slotType, label)
-        if (newSlot) setExtraSlots(prev => [...prev, newSlot])
-    }
-
-    const handleDeleteExtra = async (id: string) => {
-        const ok = await extraSlotsService.delete(id)
-        if (ok) setExtraSlots(prev => prev.filter(s => s.id !== id))
-    }
-
-    const handleUpdateExtra = async (id: string, count: number, label: string) => {
-        const ok = await extraSlotsService.update(id, count, label)
-        if (ok) setExtraSlots(prev => prev.map(s => s.id === id ? { ...s, count, label } : s))
     }
 
     // فتح بطاقة تفاصيل الطلب بنفس طريقة بطاقات صفحة الطلبات
@@ -762,7 +418,6 @@ export default function OrderSchedulePage() {
     }
 
     const selectedOrders = selectedDateKey ? (ordersMap[selectedDateKey] || []) : []
-    const selectedExtras = extraSlots.filter(s => s.date_key === selectedDateKey && s.slot_type === mode)
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
@@ -776,27 +431,12 @@ export default function OrderSchedulePage() {
                 </motion.div>
 
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                    className="mb-6">
                     <div>
                         <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent">
                             مواعيد الطلبات
                         </h1>
                         <p className="text-gray-500 text-sm mt-1">عرض جميع مواعيد التسليم والبروفا</p>
-                    </div>
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowManage(true)}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition-all text-sm shadow-sm">
-                            <Settings className="w-4 h-4" />
-                            إدارة المضافة
-                            {extraSlots.length > 0 && (
-                                <span className="bg-pink-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">{extraSlots.length}</span>
-                            )}
-                        </button>
-                        <button onClick={() => setShowAddSlot(true)}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-xl font-semibold hover:from-teal-600 hover:to-cyan-700 transition-all duration-300 shadow-md text-sm">
-                            <Plus className="w-4 h-4" />
-                            إضافة موعد جديد
-                        </button>
                     </div>
                 </motion.div>
 
@@ -825,7 +465,7 @@ export default function OrderSchedulePage() {
                         </button>
                     )}
 
-                    {(isLoadingData || isLoadingExtras) && (
+                    {isLoadingData && (
                         <div className="flex items-center gap-2 text-gray-400 text-sm">
                             <Loader className="w-4 h-4 animate-spin" />
                             <span>جاري تحميل البيانات...</span>
@@ -850,8 +490,8 @@ export default function OrderSchedulePage() {
 
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
                     className="grid grid-cols-1 gap-6">
-                    <MonthCalendar year={anchorYear} month={anchorMonth} mode={mode} stats={stats} extraSlots={extraSlots} onDateClick={setSelectedDateKey} />
-                    <MonthCalendar year={secondYear} month={secondMonth} mode={mode} stats={stats} extraSlots={extraSlots} onDateClick={setSelectedDateKey} />
+                    <MonthCalendar year={anchorYear} month={anchorMonth} mode={mode} stats={stats} onDateClick={setSelectedDateKey} />
+                    <MonthCalendar year={secondYear} month={secondMonth} mode={mode} stats={stats} onDateClick={setSelectedDateKey} />
                 </motion.div>
 
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
@@ -866,7 +506,6 @@ export default function OrderSchedulePage() {
                 <DateOrdersModal
                     dateKey={selectedDateKey}
                     orders={selectedOrders}
-                    extraSlots={selectedExtras}
                     mode={mode}
                     workerNameMap={workerNameMap}
                     loadingOrderId={loadingOrderId}
@@ -885,23 +524,6 @@ export default function OrderSchedulePage() {
                 isOpen={!!viewingOrder}
                 onClose={() => setViewingOrder(null)}
             />
-
-            {showAddSlot && (
-                <AddSlotModal
-                    defaultMode={mode}
-                    onClose={() => setShowAddSlot(false)}
-                    onAdd={handleAddExtraSlot}
-                />
-            )}
-
-            {showManage && (
-                <ManageExtraSlotsModal
-                    slots={extraSlots}
-                    onDelete={handleDeleteExtra}
-                    onUpdate={handleUpdateExtra}
-                    onClose={() => setShowManage(false)}
-                />
-            )}
         </div>
     )
 }

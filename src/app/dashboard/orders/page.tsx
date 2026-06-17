@@ -149,7 +149,7 @@ function OrdersPageInner() {
   const [dateFilterResults, setDateFilterResults] = useState<any[] | null>(null) // null = no date filter active
   const [isDateFiltering, setIsDateFiltering] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
-  const [dateFilterType, setDateFilterType] = useState<'received' | 'delivery' | 'proof'>('received')
+  const [dateFilterType, setDateFilterType] = useState<'received' | 'delivery' | 'proof'>('delivery')
   const [dateFilter, setDateFilter] = useState('')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
 
