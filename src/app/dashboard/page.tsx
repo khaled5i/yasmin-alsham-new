@@ -36,7 +36,9 @@ import {
   Truck,
   Calculator,
   Wrench,
-  Bell
+  Bell,
+  Zap,
+  Wallet
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 
@@ -712,6 +714,31 @@ function DashboardContent() {
               </motion.div>
             )}
 
+            {/* لوحة الوصول السريع - للمدير فقط في الشاشات الصغيرة */}
+            {user?.role === 'admin' && (
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.8 }}
+                className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-pink-100"
+              >
+                <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
+                  <Zap className="w-5 h-5 text-pink-600" />
+                  <span>{isArabic ? 'لوحة الوصول السريع' : 'Quick Access'}</span>
+                </h3>
+
+                <div className="grid gap-4 grid-cols-2">
+                  <Link
+                    href="/dashboard/accounting/tailoring/salaries"
+                    className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <Wallet className="w-6 h-6 text-amber-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-amber-800">{isArabic ? 'رواتب العمال' : 'Worker Salaries'}</span>
+                  </Link>
+                </div>
+              </motion.div>
+            )}
+
           </div>
 
           {/* التخطيط الأصلي للشاشات الكبيرة */}
@@ -851,6 +878,31 @@ function DashboardContent() {
                   >
                     <Users className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">متابعة العمال</span>
+                  </Link>
+                </div>
+              </motion.div>
+            )}
+
+            {/* لوحة الوصول السريع - للمدير فقط */}
+            {user?.role === 'admin' && (
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.6 }}
+                className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-pink-100"
+              >
+                <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
+                  <Zap className="w-5 h-5 text-pink-600" />
+                  <span>{isArabic ? 'لوحة الوصول السريع' : 'Quick Access'}</span>
+                </h3>
+
+                <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
+                  <Link
+                    href="/dashboard/accounting/tailoring/salaries"
+                    className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <Wallet className="w-6 h-6 text-amber-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-amber-800">{isArabic ? 'رواتب العمال' : 'Worker Salaries'}</span>
                   </Link>
                 </div>
               </motion.div>

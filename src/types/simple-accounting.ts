@@ -9,6 +9,9 @@ export type BranchType = 'tailoring' | 'fabrics' | 'ready_designs'
 export type ExpenseType = 'material' | 'fixed' | 'salary' | 'other'
 export type ExpenseRecurrenceType = 'one_time' | 'monthly'
 
+// مصدر تمويل المصروف: من الصندوق أو من خارج الصندوق
+export type ExpenseCashSource = 'box' | 'external'
+
 // ============================================================================
 // المصروفات
 // ============================================================================
@@ -32,6 +35,7 @@ export interface Expense {
   supplier_id?: string    // معرف المورد (اختياري)
   supplier_name?: string  // اسم المورد (اختياري - للتسهيل)
   payment_method?: PaymentMethod | null
+  cash_source?: ExpenseCashSource | null // مصدر التمويل: من الصندوق أو من خارجه
 }
 
 export interface CreateExpenseInput {
@@ -45,6 +49,7 @@ export interface CreateExpenseInput {
   supplier_id?: string
   supplier_name?: string
   payment_method?: PaymentMethod | null
+  cash_source?: ExpenseCashSource | null
   recurrence_type?: ExpenseRecurrenceType
   recurring_day_of_month?: number | null
   recurring_source_id?: string | null
@@ -105,6 +110,7 @@ export interface FinancialSummary {
   totalSalaries: number         // إجمالي الرواتب
   totalExpenses: number         // إجمالي المصروفات
   netProfit: number             // صافي الربح
+  cashBoxBalance: number        // رصيد الصندوق = المبيعات الكاش - المشتريات من الصندوق
 }
 
 // ============================================================================

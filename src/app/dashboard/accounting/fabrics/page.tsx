@@ -13,7 +13,8 @@ import {
   Users,
   ChevronLeft,
   Settings,
-  Boxes
+  Boxes,
+  Wallet
 } from 'lucide-react'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
@@ -153,7 +154,7 @@ function FabricsAccountingContent() {
           {loading ? (
             <div className="text-center py-8 text-gray-400">جاري التحميل...</div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="text-center p-4 bg-emerald-50 rounded-xl">
                 <TrendingUp className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-500 mb-1">المبيعات</p>
@@ -179,6 +180,13 @@ function FabricsAccountingContent() {
                 <p className="text-sm text-gray-500 mb-1">صافي الربح</p>
                 <p className={`text-xl font-bold ${(stats?.netProfit || 0) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                   {formatCurrency(stats?.netProfit || 0)}
+                </p>
+              </div>
+              <div className="text-center p-4 bg-amber-50 rounded-xl">
+                <Wallet className="w-8 h-8 text-amber-600 mx-auto mb-2" />
+                <p className="text-sm text-gray-500 mb-1">الصندوق</p>
+                <p className={`text-xl font-bold ${(stats?.cashBoxBalance || 0) >= 0 ? 'text-amber-700' : 'text-red-700'}`}>
+                  {formatCurrency(stats?.cashBoxBalance || 0)}
                 </p>
               </div>
             </div>

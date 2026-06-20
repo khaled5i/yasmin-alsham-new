@@ -15,13 +15,15 @@ import {
   Receipt,
   Pencil,
   Banknote,
-  CreditCard
+  CreditCard,
+  Wallet,
+  ExternalLink
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
-import type { Expense, CreateExpenseInput, PaymentMethod } from '@/types/simple-accounting'
+import type { Expense, CreateExpenseInput, PaymentMethod, ExpenseCashSource } from '@/types/simple-accounting'
 import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 import {
   getInventoryItems,
@@ -44,6 +46,7 @@ function FabricsPurchasesContent() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('')
+  const [cashSource, setCashSource] = useState<ExpenseCashSource | ''>('')
   // حقول ربط المخزون
   const [addToInventory, setAddToInventory] = useState(false)
   const [inventoryItemId, setInventoryItemId] = useState('')
@@ -104,6 +107,7 @@ function FabricsPurchasesContent() {
       date: new Date().toISOString().split('T')[0],
     })
     setPaymentMethod('')
+    setCashSource('')
     setAddToInventory(false)
     setInventoryItemId('')
     setInventoryNewName('')
@@ -119,6 +123,11 @@ function FabricsPurchasesContent() {
       return
     }
 
+    if (!cashSource) {
+      alert('يرجى اختيار مصدر التمويل (من الصندوق أو من خارج الصندوق)')
+      return
+    }
+
     // التحقق من حقول المخزون إذا كان الربط مفعلاً
     if (!isEditing && addToInventory) {
       if (!inventoryItemId && !inventoryNewName.trim()) {
@@ -131,7 +140,11 @@ function FabricsPurchasesContent() {
       }
     }
 
-    const payload = { ...formData, payment_method: paymentMethod as PaymentMethod }
+    const payload = {
+      ...formData,
+      payment_method: paymentMethod as PaymentMethod,
+      cash_source: cashSource as ExpenseCashSource,
+    }
 
     setSaving(true)
     try {
@@ -216,6 +229,7 @@ function FabricsPurchasesContent() {
       notes: item.notes || '',
     })
     setPaymentMethod((item.payment_method as PaymentMethod) || '')
+    setCashSource((item.cash_source as ExpenseCashSource) || '')
     setShowModal(true)
   }
 
@@ -459,6 +473,18 @@ function FabricsPurchasesContent() {
                             }
                           </span>
                         )}
+                        {item.cash_source && (
+                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                            item.cash_source === 'box'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {item.cash_source === 'box'
+                              ? <><Wallet className="w-3 h-3" />من الصندوق</>
+                              : <><ExternalLink className="w-3 h-3" />من خارج الصندوق</>
+                            }
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-500">{item.description || 'بدون وصف'}</p>
                       <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
@@ -563,6 +589,36 @@ function FabricsPurchasesContent() {
                       >
                         <CreditCard className="w-5 h-5" />
                         شبكة
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">مصدر التمويل</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setCashSource('box')}
+                        className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium transition-all ${
+                          cashSource === 'box'
+                            ? 'border-amber-500 bg-amber-50 text-amber-700'
+                            : 'border-gray-200 text-gray-600 hover:border-amber-300 hover:bg-amber-50'
+                        }`}
+                      >
+                        <Wallet className="w-5 h-5" />
+                        من الصندوق
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCashSource('external')}
+                        className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium transition-all ${
+                          cashSource === 'external'
+                            ? 'border-slate-500 bg-slate-50 text-slate-700'
+                            : 'border-gray-200 text-gray-600 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ExternalLink className="w-5 h-5" />
+                        من خارج الصندوق
                       </button>
                     </div>
                   </div>

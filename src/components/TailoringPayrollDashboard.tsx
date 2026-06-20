@@ -556,7 +556,7 @@ export default function TailoringPayrollDashboard() {
           const month = monthMap[worker.id] || buildEmptyMonth(worker, selectedMonth)
           next[worker.id] = {
             amount: month.remaining_due > 0 ? month.remaining_due.toFixed(2) : '',
-            operationDate: defaultDate,
+            operationDate: todayDate,
             reference: '',
             note: ''
           }

@@ -586,6 +586,18 @@ export async function getFinancialSummary(
 
   const totalExpenses = totalMaterialExpenses + totalFixedExpenses + totalSalaries
 
+  // ─── رصيد الصندوق ───
+  // يرتفع برصيد المبيعات الكاش المسجّلة، وينخفض بالمشتريات التي تكون "من الصندوق"
+  const cashIncome = allIncome
+    .filter(i => i.payment_method === 'cash')
+    .reduce((sum, i) => sum + i.amount, 0)
+
+  const boxPurchases = allExpenses
+    .filter(e => e.type === 'material' && e.cash_source === 'box')
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  const cashBoxBalance = cashIncome - boxPurchases
+
   return {
     branch,
     period: { startDate, endDate },
@@ -594,7 +606,8 @@ export async function getFinancialSummary(
     totalFixedExpenses,
     totalSalaries,
     totalExpenses,
-    netProfit: totalIncome - totalExpenses
+    netProfit: totalIncome - totalExpenses,
+    cashBoxBalance
   }
 }
 
