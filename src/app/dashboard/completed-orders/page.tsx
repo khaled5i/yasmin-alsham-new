@@ -336,7 +336,7 @@ export default function CompletedOrdersPage() {
   const handleAutoConvertOverdue = async () => {
     setIsAutoConverting(true)
     try {
-      const result = await orderService.bulkDeliverOverdue(2)
+      const result = await orderService.bulkDeliverOverdue(10)
       if (result.error) {
         toast.error(result.error, { icon: '⚠️' })
         return
@@ -572,7 +572,7 @@ export default function CompletedOrdersPage() {
                 ? <Loader className="w-3.5 h-3.5 animate-spin" />
                 : <Truck className="w-3.5 h-3.5" />
               }
-              <span>{isAutoConverting ? 'جارٍ التحويل...' : 'تحويل المتأخرة (أكثر من يومين)'}</span>
+              <span>{isAutoConverting ? 'جارٍ التحويل...' : 'تحويل المتأخرة (أكثر من 10 أيام)'}</span>
             </button>
           </div>
 

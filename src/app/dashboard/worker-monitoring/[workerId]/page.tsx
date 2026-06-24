@@ -9,7 +9,7 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { workerService, WorkerWithUser } from '@/lib/services/worker-service'
 import { orderService, Order } from '@/lib/services/order-service'
-import { formatGregorianDate } from '@/lib/date-utils'
+import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import OrderModal from '@/components/OrderModal'
 import PaginationControls from '@/components/PaginationControls'
 import {
@@ -33,6 +33,7 @@ import {
   Eye,
   Calendar,
   Filter,
+  BellRing,
 } from 'lucide-react'
 
 const PAGE_SIZE = 20
@@ -231,6 +232,34 @@ export default function WorkerDetailPage() {
     setSelectedOrder(order)
     setIsModalOpen(true)
   }
+
+  // تبديل حالة جهوزية البروفا الثانية من قبل المدير — يُسجَّل تماماً كما لو غيّرها العامل
+  const [togglingSecondProofId, setTogglingSecondProofId] = useState<string | null>(null)
+  const handleToggleSecondProof = useCallback(async (order: Order) => {
+    const markCompleted = !order.second_proof_completed
+    const completedAt = markCompleted ? new Date().toISOString() : null
+    const patch = {
+      second_proof_completed: markCompleted,
+      second_proof_completed_at: completedAt,
+      // عند التراجع: نُصفّر حالة الإرسال والإخفاء — كما في صفحة العامل
+      ...(markCompleted ? {} : { second_proof_whatsapp_sent: false, second_proof_dismissed: false }),
+    }
+    setTogglingSecondProofId(order.id)
+    // تحديث متفائل للحالة المحلية
+    setActiveOrders((prev) =>
+      prev.map((o) => o.id === order.id ? { ...o, ...patch } : o)
+    )
+    try {
+      await orderService.update(order.id, patch as any)
+    } catch {
+      // تراجع عن التحديث المتفائل عند الفشل
+      setActiveOrders((prev) =>
+        prev.map((o) => o.id === order.id ? { ...order } : o)
+      )
+    } finally {
+      setTogglingSecondProofId(null)
+    }
+  }, [])
 
   // معالجات التسعير
   const handleTogglePricing = useCallback(async (order: Order) => {
@@ -488,6 +517,8 @@ export default function WorkerDetailPage() {
                 onPageChange={(p) => setActiveOrdersPage(p)}
                 onOrderClick={openOrderModal}
                 emptyMessage="لا توجد طلبات نشطة لهذه الخياطة حالياً"
+                onToggleSecondProof={handleToggleSecondProof}
+                togglingSecondProofId={togglingSecondProofId}
               />
             )}
             {activeTab === 'completed' && (
@@ -566,6 +597,8 @@ function OrdersTab({
   onOrderClick,
   emptyMessage,
   showCompletedAt = false,
+  onToggleSecondProof,
+  togglingSecondProofId = null,
 }: {
   orders: Order[]
   total: number
@@ -575,6 +608,8 @@ function OrdersTab({
   onOrderClick: (order: Order) => void
   emptyMessage: string
   showCompletedAt?: boolean
+  onToggleSecondProof?: (order: Order) => void
+  togglingSecondProofId?: string | null
 }) {
   if (isLoading) {
     return (
@@ -597,7 +632,14 @@ function OrdersTab({
     <div>
       <div className="space-y-3">
         {orders.map((order) => (
-          <OrderRow key={order.id} order={order} onClick={() => onOrderClick(order)} showCompletedAt={showCompletedAt} />
+          <OrderRow
+            key={order.id}
+            order={order}
+            onClick={() => onOrderClick(order)}
+            showCompletedAt={showCompletedAt}
+            onToggleSecondProof={onToggleSecondProof}
+            isTogglingSecondProof={togglingSecondProofId === order.id}
+          />
         ))}
       </div>
       {total > PAGE_SIZE && (
@@ -614,7 +656,19 @@ function OrdersTab({
   )
 }
 
-function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; onClick: () => void; showCompletedAt?: boolean }) {
+function OrderRow({
+  order,
+  onClick,
+  showCompletedAt = false,
+  onToggleSecondProof,
+  isTogglingSecondProof = false,
+}: {
+  order: Order
+  onClick: () => void
+  showCompletedAt?: boolean
+  onToggleSecondProof?: (order: Order) => void
+  isTogglingSecondProof?: boolean
+}) {
   const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
   const thumbnail = (order as any).design_thumbnail || '/front2.png'
 
@@ -682,7 +736,49 @@ function OrderRow({ order, onClick, showCompletedAt = false }: { order: Order; o
                 {formatGregorianDate(order.worker_completed_at, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
               </p>
             )}
+            {order.has_second_proof && (
+              <p className="text-xs text-amber-600 flex items-center gap-1 font-medium">
+                <Calendar className="w-3 h-3 flex-shrink-0" />
+                موعد البروفا الثانية:{' '}
+                {formatGregorianDate(order.second_proof_date || shiftDate(order.due_date, -1), 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
+              </p>
+            )}
           </div>
+
+          {/* حالة جهوزية البروفا الثانية — قابلة للضغط لتغييرها من قبل المدير */}
+          {order.has_second_proof && (
+            <div className="mt-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); onToggleSecondProof?.(order) }}
+                disabled={isTogglingSecondProof || !onToggleSecondProof}
+                title={order.second_proof_completed
+                  ? 'البروفا الثانية جاهزة — اضغط للتراجع'
+                  : 'اضغط لتحديد البروفا الثانية كجاهزة'}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                  order.second_proof_completed
+                    ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100'
+                    : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                }`}
+              >
+                {isTogglingSecondProof ? (
+                  <div className={`w-3 h-3 border-2 ${order.second_proof_completed ? 'border-green-600' : 'border-amber-600'} border-t-transparent rounded-full animate-spin`} />
+                ) : order.second_proof_completed ? (
+                  <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                ) : (
+                  <BellRing className="w-3.5 h-3.5 flex-shrink-0" />
+                )}
+                <span>
+                  {order.second_proof_completed ? 'البروفا الثانية جاهزة' : 'البروفا الثانية غير جاهزة'}
+                </span>
+              </button>
+              {order.second_proof_completed && order.second_proof_completed_at && (
+                <p className="text-[11px] text-green-600 mt-1">
+                  حُدِّدت:{' '}
+                  {formatGregorianDate(order.second_proof_completed_at, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* السعر + سهم */}

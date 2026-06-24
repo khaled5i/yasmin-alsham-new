@@ -759,9 +759,9 @@ export const orderService = {
 
   /**
    * تحويل الطلبات المكتملة المتأخرة إلى "تم التسليم"
-   * يشمل كل طلب مكتمل تجاوز موعد تسليمه بأكثر من يومين
+   * يشمل كل طلب مكتمل تجاوز موعد تسليمه بأكثر من 10 أيام
    */
-  async bulkDeliverOverdue(daysOverdue: number = 2): Promise<{ count: number; error: string | null }> {
+  async bulkDeliverOverdue(daysOverdue: number = 10): Promise<{ count: number; error: string | null }> {
     if (!isSupabaseConfigured()) {
       return { count: 0, error: 'Supabase is not configured.' }
     }

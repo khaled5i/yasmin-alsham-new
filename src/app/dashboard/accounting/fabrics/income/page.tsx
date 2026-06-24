@@ -79,6 +79,59 @@ function StatCard({
   )
 }
 
+// ─── بطاقة مصدر الزبونة مع تفصيل نوع القماش (سادة / شك) ───
+function SourceStatCard({
+  icon: Icon,
+  label,
+  stat,
+  accent,
+  formatCurrency
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  stat: {
+    plain: { count: number; total: number }
+    shek: { count: number; total: number }
+    count: number
+    total: number
+  }
+  accent: StatAccent
+  formatCurrency: (n: number) => string
+}) {
+  const c = ACCENT_CLASSES[accent]
+  return (
+    <div className={`rounded-xl border p-3 ${c.box}`}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <span className="flex items-center gap-2">
+          <Icon className={`w-5 h-5 ${c.icon}`} />
+          <span className="text-sm font-bold text-gray-800">{label}</span>
+        </span>
+        <span className={`text-sm font-bold ${c.total}`}>{formatCurrency(stat.total)}</span>
+      </div>
+      <div className="space-y-2">
+        {/* سادة */}
+        <div className="flex items-center justify-between bg-white/60 rounded-lg px-2.5 py-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+            <Square className="w-3.5 h-3.5 text-teal-600" />
+            سادة
+            <span className="text-[11px] text-gray-500">({stat.plain.count} قطعة)</span>
+          </span>
+          <span className="text-xs font-bold text-gray-900">{formatCurrency(stat.plain.total)}</span>
+        </div>
+        {/* شك */}
+        <div className="flex items-center justify-between bg-white/60 rounded-lg px-2.5 py-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+            <Layers className="w-3.5 h-3.5 text-purple-600" />
+            شك
+            <span className="text-[11px] text-gray-500">({stat.shek.count} قطعة)</span>
+          </span>
+          <span className="text-xs font-bold text-gray-900">{formatCurrency(stat.shek.total)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FabricsIncomeContent() {
   const [income, setIncome] = useState<Income[]>([])
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
@@ -274,22 +327,40 @@ function FabricsIncomeContent() {
   }
 
   const emptyStat = () => ({ count: 0, total: 0 })
+  // إحصائية مصدر مفصّلة حسب نوع القماش (سادة / شك) + إجمالي المصدر
+  const emptySourceStat = () => ({
+    plain: emptyStat(),
+    shek: emptyStat(),
+    count: 0,
+    total: 0
+  })
   const breakdown = {
-    yasmin: emptyStat(),
-    otherSource: emptyStat(),
+    yasmin: emptySourceStat(),
+    otherSource: emptySourceStat(),
     network: emptyStat(),
     cash: emptyStat(),
     plain: emptyStat(),
     shek: emptyStat()
   }
   for (const it of filteredIncome) {
-    // حسب مصدر الزبونة
+    const fab = classifyFabric(it)
+    // حسب مصدر الزبونة (مع تفصيل نوع القماش داخل كل مصدر)
+    let sourceBucket: ReturnType<typeof emptySourceStat> | null = null
     if (it.customer_source === 'ياسمين الشام') {
-      breakdown.yasmin.count++
-      breakdown.yasmin.total += it.amount
+      sourceBucket = breakdown.yasmin
     } else if (it.customer_source) {
-      breakdown.otherSource.count++
-      breakdown.otherSource.total += it.amount
+      sourceBucket = breakdown.otherSource
+    }
+    if (sourceBucket) {
+      sourceBucket.count++
+      sourceBucket.total += it.amount
+      if (fab === 'plain') {
+        sourceBucket.plain.count++
+        sourceBucket.plain.total += it.amount
+      } else if (fab === 'shek') {
+        sourceBucket.shek.count++
+        sourceBucket.shek.total += it.amount
+      }
     }
     // حسب طريقة الدفع
     if (it.payment_method === 'network') {
@@ -300,7 +371,6 @@ function FabricsIncomeContent() {
       breakdown.cash.total += it.amount
     }
     // حسب نوع القماش
-    const fab = classifyFabric(it)
     if (fab === 'plain') {
       breakdown.plain.count++
       breakdown.plain.total += it.amount
@@ -393,19 +463,17 @@ function FabricsIncomeContent() {
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <h3 className="text-sm font-bold text-gray-700 mb-3">حسب مصدر الزبونة</h3>
             <div className="grid grid-cols-2 gap-3">
-              <StatCard
+              <SourceStatCard
                 icon={Store}
                 label="ياسمين الشام"
-                count={breakdown.yasmin.count}
-                total={breakdown.yasmin.total}
+                stat={breakdown.yasmin}
                 accent="amber"
                 formatCurrency={formatCurrency}
               />
-              <StatCard
+              <SourceStatCard
                 icon={Users}
                 label="مصدر آخر"
-                count={breakdown.otherSource.count}
-                total={breakdown.otherSource.total}
+                stat={breakdown.otherSource}
                 accent="slate"
                 formatCurrency={formatCurrency}
               />
