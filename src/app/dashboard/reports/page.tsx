@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { useWorkerStore } from '@/store/workerStore'
 import { orderService, Order } from '@/lib/services/order-service'
 import { getExpenses } from '@/lib/services/simple-accounting-service'
 import { getWorkerPayrollMonthsInRange } from '@/lib/services/worker-payroll-service'
@@ -20,7 +19,6 @@ import {
   TrendingDown,
   DollarSign,
   Package,
-  Users,
   Calendar,
   Download,
   Filter,
@@ -30,14 +28,12 @@ import {
   PackageCheck,
   Truck,
   XCircle,
-  AlertCircle,
   FileText,
   Printer,
   FileSpreadsheet,
   ChevronDown,
   ChevronUp,
   Target,
-  Award,
   Activity,
   Star,
   UserCheck,
@@ -82,6 +78,111 @@ interface DateFilter {
   endDate: Date
 }
 
+// تحويل تاريخ إلى صيغة input[type=date] محلية (yyyy-mm-dd)
+const toDateInput = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// ============================================================================
+// Custom Analysis Chart - Metric Definitions
+// ============================================================================
+
+type CustomMetricKey =
+  | 'totalOrders'
+  | 'completedOrders'
+  | 'totalValue'
+  | 'revenue'
+  | 'paidAmount'
+  | 'avgOrderValue'
+  | 'preBooking'
+
+interface CustomMetricDef {
+  key: CustomMetricKey
+  label: string
+  isMoney: boolean
+  isAverage?: boolean
+  // created: يُحسب حسب تاريخ إنشاء الطلب | completed: حسب تاريخ الإنجاز
+  basis: 'created' | 'completed'
+  color: string // gradient classes للأعمدة
+  compute: (orders: Order[]) => number
+}
+
+const CUSTOM_METRICS: CustomMetricDef[] = [
+  {
+    key: 'totalOrders',
+    label: 'إجمالي الطلبات',
+    isMoney: false,
+    basis: 'created',
+    color: 'from-blue-400 to-cyan-600',
+    compute: (o) => o.length,
+  },
+  {
+    key: 'completedOrders',
+    label: 'الطلبات المكتملة',
+    isMoney: false,
+    basis: 'completed',
+    color: 'from-green-400 to-emerald-600',
+    compute: (o) => o.length,
+  },
+  {
+    key: 'totalValue',
+    label: 'إجمالي قيمة الطلبات',
+    isMoney: true,
+    basis: 'created',
+    color: 'from-teal-400 to-cyan-600',
+    compute: (o) => o.reduce((s, x) => s + Number(x.price || 0), 0),
+  },
+  {
+    key: 'revenue',
+    label: 'الإيرادات المحققة',
+    isMoney: true,
+    basis: 'completed',
+    color: 'from-pink-400 to-rose-600',
+    compute: (o) => o.reduce((s, x) => s + Number(x.price || 0), 0),
+  },
+  {
+    key: 'paidAmount',
+    label: 'المبالغ المحصلة',
+    isMoney: true,
+    basis: 'created',
+    color: 'from-emerald-400 to-green-600',
+    compute: (o) => o.reduce((s, x) => s + Number(x.paid_amount || 0), 0),
+  },
+  {
+    key: 'avgOrderValue',
+    label: 'متوسط قيمة الطلب',
+    isMoney: true,
+    isAverage: true,
+    basis: 'created',
+    color: 'from-orange-400 to-amber-600',
+    compute: (o) => {
+      // يستثني الحجز المسبق والطلبات أقل من 100 ريال (مطابق لمنطق KPIs)
+      const eligible = o.filter(x => !(x as any).is_pre_booking && Number(x.price || 0) >= 100)
+      if (eligible.length === 0) return 0
+      return Math.round(eligible.reduce((s, x) => s + Number(x.price || 0), 0) / eligible.length)
+    },
+  },
+  {
+    key: 'preBooking',
+    label: 'الحجوزات المسبقة',
+    isMoney: false,
+    basis: 'created',
+    color: 'from-indigo-400 to-purple-600',
+    compute: (o) => o.filter(x => (x as any).is_pre_booking === true).length,
+  },
+]
+
+// أزرار الفترات السريعة للرسم المخصص
+const CUSTOM_PRESETS: { key: string; label: string }[] = [
+  { key: 'today', label: 'اليوم' },
+  { key: 'last7', label: 'آخر ٧ أيام' },
+  { key: 'thisWeek', label: 'هذا الأسبوع' },
+  { key: 'lastWeek', label: 'الأسبوع الماضي' },
+  { key: 'last30', label: 'آخر ٣٠ يوم' },
+  { key: 'month', label: 'هذا الشهر' },
+  { key: 'lastMonth', label: 'الشهر الماضي' },
+  { key: 'year', label: 'هذا العام' },
+]
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -93,7 +194,6 @@ export default function ReportsPage() {
   const [materialExpenses, setMaterialExpenses] = useState<Expense[]>([])
   const [fixedExpenses, setFixedExpenses] = useState<Expense[]>([])
   const [workerSalaries, setWorkerSalaries] = useState<WorkerPayrollMonth[]>([])
-  const { workers, loadWorkers } = useWorkerStore()
   const { t } = useTranslation()
   const router = useRouter()
 
@@ -117,6 +217,18 @@ export default function ReportsPage() {
   const [expandedSection, setExpandedSection] = useState<string | null>(null)
 
   // ============================================================================
+  // Custom Analysis Chart State (فلترة مستقلة بالتاريخ + نوع المؤشر)
+  // ============================================================================
+
+  const [customChartMetric, setCustomChartMetric] = useState<CustomMetricKey>('totalOrders')
+  const [customChartStart, setCustomChartStart] = useState<string>(() => {
+    const now = new Date()
+    return toDateInput(new Date(now.getFullYear(), now.getMonth(), 1))
+  })
+  const [customChartEnd, setCustomChartEnd] = useState<string>(() => toDateInput(new Date()))
+  const [customChartPreset, setCustomChartPreset] = useState<string>('month')
+
+  // ============================================================================
   // Effects
   // ============================================================================
 
@@ -127,11 +239,10 @@ export default function ReportsPage() {
       setOrders(data || [])
       setIsLoadingOrders(false)
     })
-    loadWorkers()
     // تحميل بيانات المحاسبة (التفصيل)
     getExpenses('tailoring', 'material').then(setMaterialExpenses).catch(() => { })
     getExpenses('tailoring', 'fixed').then(setFixedExpenses).catch(() => { })
-  }, [loadWorkers])
+  }, [])
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -438,130 +549,6 @@ export default function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, customDateRange, specificDay, specificMonth])
 
-  // Worker Performance
-  const workerPerformance = useMemo(() => {
-    const { currentOrders } = filteredData
-    const totalRevenue = currentOrders
-      .filter(o => o.status === 'completed' || o.status === 'delivered')
-      .reduce((sum, o) => sum + Number(o.price || 0), 0)
-
-    return workers.map(worker => {
-      const workerOrders = currentOrders.filter(o => o.worker_id === worker.id)
-      const completedOrders = workerOrders.filter(o => o.status === 'completed' || o.status === 'delivered')
-      const inProgressOrders = workerOrders.filter(o => o.status === 'in_progress')
-      const pendingOrders = workerOrders.filter(o => o.status === 'pending')
-      const revenue = completedOrders.reduce((sum, o) => sum + Number(o.price || 0), 0)
-      const revenueShare = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0
-
-      const completionRate = workerOrders.length > 0
-        ? Number(((completedOrders.length / workerOrders.length) * 100).toFixed(1))
-        : 0
-
-      const completedWithDates = completedOrders.filter(o => o.delivery_date)
-      const avgTime = completedWithDates.length > 0
-        ? Math.round(
-          completedWithDates.reduce((sum, o) => {
-            const start = new Date(o.created_at).getTime()
-            const end = new Date(o.delivery_date!).getTime()
-            return sum + (end - start) / (1000 * 60 * 60 * 24)
-          }, 0) / completedWithDates.length
-        )
-        : 0
-
-      // Piece count: orders where worker completed (worker_completed_at) within the period and have worker_price > 0
-      const { dateRange } = filteredData
-      const pieceCount = orders.filter(o => {
-        if (o.worker_id !== worker.id) return false
-        if (Number((o as any).worker_price || 0) <= 0) return false
-        const completedAt = (o as any).worker_completed_at
-        if (!completedAt) return false
-        const d = new Date(completedAt)
-        return d >= dateRange.startDate && d <= dateRange.endDate
-      }).length
-
-      // Payroll data for this worker in the selected period
-      const workerPayrolls = workerSalaries.filter(s => s.worker_id === worker.id)
-      const totalNetDue = workerPayrolls.reduce((sum, s) => sum + Number(s.net_due || 0), 0)
-      const totalAdvances = workerPayrolls.reduce((sum, s) => sum + Number(s.advances_total || 0), 0)
-      const totalDeductions = workerPayrolls.reduce((sum, s) => sum + Number(s.deductions_total || 0), 0)
-      const totalPaid = workerPayrolls.reduce((sum, s) => sum + Number(s.total_paid || 0), 0)
-      const latestPayroll = workerPayrolls.length > 0 ? workerPayrolls[0] : null
-
-      // Performance score (0-100): weighted composite
-      const speedScore = avgTime > 0
-        ? Math.max(0, Math.min(100, 100 - avgTime * 2))
-        : (completedOrders.length > 0 ? 70 : 0)
-      const revenueScore = Math.min(100, revenueShare * 4)
-      const perfScore = workerOrders.length > 0
-        ? Math.round(completionRate * 0.5 + speedScore * 0.3 + revenueScore * 0.2)
-        : 0
-
-      return {
-        id: worker.id,
-        name: (worker as any).name || worker.user?.full_name || worker.user?.email || 'عامل',
-        specialty: worker.specialty || '',
-        workerType: worker.worker_type,
-        isAvailable: worker.is_available,
-        totalOrders: workerOrders.length,
-        completedOrders: completedOrders.length,
-        inProgressOrders: inProgressOrders.length,
-        pendingOrders: pendingOrders.length,
-        completionRate,
-        revenue,
-        revenueShare: Number(revenueShare.toFixed(1)),
-        avgCompletionTime: avgTime,
-        netDue: totalNetDue,
-        advances: totalAdvances,
-        deductions: totalDeductions,
-        pieceCount,
-        totalPaid,
-        salaryStatus: latestPayroll?.salary_status ?? null,
-        salaryType: latestPayroll?.salary_type ?? null,
-        hasPayrollData: workerPayrolls.length > 0,
-        perfScore,
-        efficiency: completionRate >= 80 ? 'excellent' : completionRate >= 60 ? 'good' : 'needs_improvement'
-      }
-    })
-      .filter(w => w.totalOrders > 0 || w.hasPayrollData)
-      .sort((a, b) => b.perfScore - a.perfScore)
-  }, [workers, filteredData, workerSalaries, orders])
-
-  // Orders by Type
-  const ordersByType = useMemo(() => {
-    const { currentOrders } = filteredData
-    const typeCount: { [key: string]: number } = {}
-
-    currentOrders.forEach(order => {
-      const desc = order.description.toLowerCase()
-      const type = desc.includes('زفاف') || desc.includes('wedding') ? 'فستان زفاف' :
-        desc.includes('سهرة') || desc.includes('evening') ? 'فستان سهرة' :
-          desc.includes('خطوبة') || desc.includes('engagement') ? 'فستان خطوبة' :
-            desc.includes('يومي') || desc.includes('casual') ? 'فستان يومي' : 'أخرى'
-
-      typeCount[type] = (typeCount[type] || 0) + 1
-    })
-
-    const total = currentOrders.length
-
-    return Object.entries(typeCount).map(([type, count]) => ({
-      type,
-      count,
-      percentage: total > 0 ? Number(((count / total) * 100).toFixed(1)) : 0,
-      revenue: currentOrders
-        .filter(o => {
-          const desc = o.description.toLowerCase()
-          if (type === 'فستان زفاف') return desc.includes('زفاف') || desc.includes('wedding')
-          if (type === 'فستان سهرة') return desc.includes('سهرة') || desc.includes('evening')
-          if (type === 'فستان خطوبة') return desc.includes('خطوبة') || desc.includes('engagement')
-          if (type === 'فستان يومي') return desc.includes('يومي') || desc.includes('casual')
-          return true
-        })
-        .filter(o => o.status === 'completed' || o.status === 'delivered')
-        .reduce((sum, o) => sum + Number(o.price || 0), 0)
-    }))
-      .sort((a, b) => b.count - a.count)
-  }, [filteredData])
-
   // Price Distribution
   const priceDistribution = useMemo(() => {
     const { currentOrders } = filteredData
@@ -587,39 +574,138 @@ export default function ReportsPage() {
     }))
   }, [filteredData])
 
-  // Monthly Trend (last 6 months)
-  const monthlyTrend = useMemo(() => {
-    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
-    const trend = []
-    const currentDate = new Date()
+  // ============================================================================
+  // Custom Analysis Chart - Presets + Binned Data
+  // ============================================================================
 
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
-      const monthName = months[date.getMonth()]
-      const monthShort = monthName.substring(0, 3)
+  const applyCustomPreset = (preset: string) => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const dayMs = 24 * 60 * 60 * 1000
+    let s = today
+    let e = today
 
-      const monthOrders = orders.filter(order => {
-        const orderDate = new Date(order.created_at)
-        return orderDate.getMonth() === date.getMonth() &&
-          orderDate.getFullYear() === date.getFullYear()
-      })
+    switch (preset) {
+      case 'today':
+        s = today; e = today; break
+      case 'last7':
+        s = new Date(today.getTime() - 6 * dayMs); e = today; break
+      case 'thisWeek': {
+        const ws = new Date(today)
+        ws.setDate(today.getDate() - today.getDay())
+        s = ws; e = today; break
+      }
+      case 'lastWeek': {
+        const ws = new Date(today)
+        ws.setDate(today.getDate() - today.getDay() - 7)
+        s = ws; e = new Date(ws.getTime() + 6 * dayMs); break
+      }
+      case 'last30':
+        s = new Date(today.getTime() - 29 * dayMs); e = today; break
+      case 'month':
+        s = new Date(now.getFullYear(), now.getMonth(), 1); e = today; break
+      case 'lastMonth':
+        s = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        e = new Date(now.getFullYear(), now.getMonth(), 0); break
+      case 'year':
+        s = new Date(now.getFullYear(), 0, 1); e = today; break
+    }
 
-      const revenue = monthOrders
-        .filter(order => order.status === 'completed' || order.status === 'delivered')
-        .reduce((sum, order) => sum + Number(order.price || 0), 0)
+    setCustomChartStart(toDateInput(s))
+    setCustomChartEnd(toDateInput(e))
+    setCustomChartPreset(preset)
+  }
 
-      trend.push({
-        month: monthShort,
-        fullMonth: monthName,
-        revenue,
-        orders: monthOrders.length,
-        completedOrders: monthOrders.filter(o => o.status === 'completed' || o.status === 'delivered').length
+  const customChart = useMemo(() => {
+    const def = CUSTOM_METRICS.find(m => m.key === customChartMetric) || CUSTOM_METRICS[0]
+    const start = new Date(customChartStart + 'T00:00:00')
+    const end = new Date(customChartEnd + 'T23:59:59')
+    const valid = !isNaN(start.getTime()) && !isNaN(end.getTime()) && start <= end
+
+    if (!valid) {
+      return {
+        valid: false, def, buckets: [] as { label: string; value: number }[],
+        periodName: 'يوم', sum: 0, overallValue: 0, bucketAverage: 0,
+        peak: null as { label: string; value: number } | null, nBuckets: 0,
+      }
+    }
+
+    const dayMs = 24 * 60 * 60 * 1000
+    const rangeDays = Math.floor((end.getTime() - start.getTime()) / dayMs) + 1
+
+    // تقسيم تلقائي: يومي للمدد القصيرة، أسبوعي للمتوسطة، شهري للطويلة
+    let granularity: 'day' | 'week' | 'month'
+    if (rangeDays <= 16) granularity = 'day'
+    else if (rangeDays <= 92) granularity = 'week'
+    else granularity = 'month'
+
+    const arabicMonthsShort = ['ينا', 'فبر', 'مار', 'أبر', 'مايو', 'يون', 'يول', 'أغس', 'سبت', 'أكت', 'نوف', 'ديس']
+    const rawBuckets: { start: Date; end: Date; label: string }[] = []
+
+    if (granularity === 'day') {
+      let cur = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+      while (cur <= end) {
+        const bStart = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate(), 0, 0, 0)
+        const bEnd = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate(), 23, 59, 59)
+        rawBuckets.push({ start: bStart, end: bEnd > end ? end : bEnd, label: `${bStart.getDate()}/${bStart.getMonth() + 1}` })
+        cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1)
+      }
+    } else if (granularity === 'week') {
+      let cur = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+      while (cur <= end) {
+        const bStart = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate(), 0, 0, 0)
+        const tentativeEnd = new Date(bStart.getTime() + 7 * dayMs - 1000)
+        const bEnd = tentativeEnd > end ? end : tentativeEnd
+        rawBuckets.push({ start: bStart, end: bEnd, label: `${bStart.getDate()}/${bStart.getMonth() + 1}` })
+        cur = new Date(bStart.getTime() + 7 * dayMs)
+      }
+    } else {
+      let cur = new Date(start.getFullYear(), start.getMonth(), 1)
+      while (cur <= end) {
+        const mStart = new Date(cur.getFullYear(), cur.getMonth(), 1, 0, 0, 0)
+        const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0, 23, 59, 59)
+        rawBuckets.push({
+          start: mStart < start ? start : mStart,
+          end: mEnd > end ? end : mEnd,
+          label: arabicMonthsShort[cur.getMonth()],
+        })
+        cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
+      }
+    }
+
+    // إسناد الطلبات لكل فترة حسب أساس المؤشر (تاريخ الإنشاء أو الإنجاز)
+    const assign = (rangeStart: Date, rangeEnd: Date): Order[] => {
+      if (def.basis === 'created') {
+        return orders.filter(o => {
+          const d = new Date(o.created_at)
+          return d >= rangeStart && d <= rangeEnd
+        })
+      }
+      return orders.filter(o => {
+        if (o.status !== 'completed' && o.status !== 'delivered') return false
+        const cd = o.worker_completed_at || o.admin_completed_at || o.delivery_date
+        if (!cd) return false
+        const d = new Date(cd)
+        return d >= rangeStart && d <= rangeEnd
       })
     }
 
-    return trend
-  }, [orders])
+    const buckets = rawBuckets.map(b => ({
+      label: b.label,
+      value: def.compute(assign(b.start, b.end)),
+    }))
+
+    const sum = buckets.reduce((s, b) => s + b.value, 0)
+    const overallValue = def.compute(assign(start, end))
+    const nBuckets = buckets.length
+    const bucketAverage = nBuckets > 0 ? Math.round(sum / nBuckets) : 0
+    const peak = buckets.reduce<{ label: string; value: number } | null>(
+      (a, b) => (a === null || b.value > a.value) ? b : a, null
+    )
+    const periodName = granularity === 'day' ? 'يوم' : granularity === 'week' ? 'أسبوع' : 'شهر'
+
+    return { valid: true, def, buckets, periodName, sum, overallValue, bucketAverage, peak, nBuckets }
+  }, [orders, customChartMetric, customChartStart, customChartEnd])
 
   // ============================================================================
   // Loading & Permission Check
@@ -1237,365 +1323,174 @@ export default function ReportsPage() {
           </div>
         </motion.div>
 
-        {/* Worker Performance - Full Width */}
+        {/* Custom Analysis Chart - تحليل مخصص حسب الفترة والمؤشر */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.9 }}
-          className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300 mb-8"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
-            <h3 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center gap-2">
-              <Award className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
-              <span>أداء العمال</span>
-            </h3>
-            {workerPerformance.length > 0 && (
-              <span className="text-xs sm:text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                {workerPerformance.filter(w => w.totalOrders > 0).length} عامل نشط في الفترة
-              </span>
-            )}
-          </div>
-
-          {/* Summary Stats Bar */}
-          {workerPerformance.length > 0 && (() => {
-            const activeWorkers = workerPerformance.filter(w => w.totalOrders > 0)
-            const avgCompletionRate = activeWorkers.length > 0
-              ? Math.round(activeWorkers.reduce((s, w) => s + w.completionRate, 0) / activeWorkers.length)
-              : 0
-            const totalCompleted = workerPerformance.reduce((s, w) => s + w.completedOrders, 0)
-            const totalPieces = workerPerformance.reduce((s, w) => s + w.pieceCount, 0)
-            const totalRevenue = workerPerformance.reduce((s, w) => s + w.revenue, 0)
-            const totalSalaries = workerPerformance.reduce((s, w) => s + w.netDue, 0)
-
-            return (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-3 text-center border border-blue-200">
-                  <p className="text-2xl sm:text-3xl font-bold text-blue-700">{activeWorkers.length}</p>
-                  <p className="text-xs text-blue-600 mt-0.5">عامل نشط</p>
-                </div>
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 text-center border border-green-200">
-                  <p className="text-2xl sm:text-3xl font-bold text-green-700">{avgCompletionRate}%</p>
-                  <p className="text-xs text-green-600 mt-0.5">متوسط الإنجاز</p>
-                </div>
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-3 text-center border border-purple-200">
-                  {totalPieces > 0 ? (
-                    <>
-                      <p className="text-2xl sm:text-3xl font-bold text-purple-700">{totalPieces}</p>
-                      <p className="text-xs text-purple-600 mt-0.5">إجمالي القطع</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-2xl sm:text-3xl font-bold text-purple-700">{totalCompleted}</p>
-                      <p className="text-xs text-purple-600 mt-0.5">طلب مكتمل</p>
-                    </>
-                  )}
-                </div>
-                <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-3 text-center border border-orange-200">
-                  {totalSalaries > 0 ? (
-                    <>
-                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalSalaries.toLocaleString('en-US')}</p>
-                      <p className="text-xs text-orange-600 mt-0.5">إجمالي الرواتب ر.س</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-lg sm:text-xl font-bold text-orange-700 leading-tight">{totalRevenue.toLocaleString('en-US')}</p>
-                      <p className="text-xs text-orange-600 mt-0.5">إجمالي الإيرادات ر.س</p>
-                    </>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* درجة الأداء - توضيح */}
-          {workerPerformance.length > 0 && (
-            <div className="flex items-center gap-2 mb-4 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-              <Activity className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-              <span>درجة الأداء محسوبة من: نسبة الإنجاز (50%) + سرعة التسليم (30%) + مساهمة الإيرادات (20%)</span>
-            </div>
-          )}
-
-          {/* Worker Cards */}
-          <div className="space-y-3 sm:space-y-4">
-            {workerPerformance.map((worker, index) => {
-              const workerTypeLabels: Record<string, string> = {
-                tailor: 'خياط',
-                fabric_store_manager: 'مسؤول القماش',
-                accountant: 'محاسب',
-                general_manager: 'مدير عام',
-                workshop_manager: 'مدير الورشة',
-              }
-              const salaryStatusConfig: Record<string, { label: string; color: string }> = {
-                paid: { label: 'مدفوع', color: 'bg-green-100 text-green-700 border-green-200' },
-                partial: { label: 'مدفوع جزئياً', color: 'bg-orange-100 text-orange-700 border-orange-200' },
-                unpaid: { label: 'غير مدفوع', color: 'bg-red-100 text-red-700 border-red-200' },
-                negative: { label: 'رصيد سالب', color: 'bg-red-100 text-red-700 border-red-200' },
-                zero: { label: 'صفر', color: 'bg-gray-100 text-gray-600 border-gray-200' },
-              }
-              const rankGradients = [
-                'from-yellow-400 to-amber-500',
-                'from-slate-300 to-slate-500',
-                'from-orange-400 to-amber-600',
-              ]
-              const rankGradient = index < 3 ? rankGradients[index] : 'from-pink-400 to-rose-500'
-              const rankLabel = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : String(index + 1)
-
-              const scoreColor = worker.perfScore >= 75 ? 'text-green-600' :
-                worker.perfScore >= 50 ? 'text-blue-600' :
-                  worker.perfScore >= 25 ? 'text-orange-500' : 'text-red-500'
-              const scoreRing = worker.perfScore >= 75 ? 'border-green-400 bg-green-50' :
-                worker.perfScore >= 50 ? 'border-blue-400 bg-blue-50' :
-                  worker.perfScore >= 25 ? 'border-orange-400 bg-orange-50' : 'border-red-400 bg-red-50'
-              const barColor = worker.completionRate >= 80
-                ? 'from-green-400 to-emerald-500'
-                : worker.completionRate >= 60
-                  ? 'from-blue-400 to-cyan-500'
-                  : 'from-orange-400 to-red-400'
-
-              return (
-                <div key={worker.id} className="bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-300 p-4">
-                  {/* Main row */}
-                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-
-                    {/* Rank + Name + Completion bar */}
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${rankGradient} flex items-center justify-center text-white font-bold shadow-md flex-shrink-0 text-sm leading-none`}>
-                        {rankLabel}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                          <h4 className="font-bold text-gray-800 text-sm sm:text-base">{worker.name}</h4>
-                          {worker.workerType && (
-                            <span className="text-[10px] sm:text-xs bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full border border-pink-200 leading-none">
-                              {workerTypeLabels[worker.workerType] || worker.workerType}
-                            </span>
-                          )}
-                          {worker.specialty && (
-                            <span className="text-[10px] sm:text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200 leading-none hidden sm:inline-block">
-                              {worker.specialty}
-                            </span>
-                          )}
-                          {!worker.isAvailable && worker.totalOrders === 0 && (
-                            <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full border border-gray-200 leading-none">
-                              غير متاح
-                            </span>
-                          )}
-                        </div>
-                        {/* Completion rate bar */}
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${worker.completionRate}%` }}
-                              transition={{ duration: 1, delay: 1 + index * 0.08 }}
-                              className={`h-full rounded-full bg-gradient-to-r ${barColor}`}
-                            />
-                          </div>
-                          <span className="text-xs font-semibold text-gray-600 flex-shrink-0 w-10 text-left">{worker.completionRate}%</span>
-                        </div>
-                      </div>
-
-                      {/* Performance score ring */}
-                      <div className={`w-12 h-12 rounded-full border-4 ${scoreRing} flex flex-col items-center justify-center flex-shrink-0`}>
-                        <span className={`text-sm font-bold ${scoreColor} leading-none`}>{worker.perfScore}</span>
-                        <span className="text-[9px] text-gray-400 leading-none mt-0.5">أداء</span>
-                      </div>
-                    </div>
-
-                    {/* Stats mini-grid */}
-                    <div className="grid grid-cols-4 sm:grid-cols-4 gap-2 sm:w-56 lg:w-64 flex-shrink-0">
-                      <div className="bg-blue-50 rounded-lg p-2 text-center border border-blue-100">
-                        <p className="text-sm sm:text-base font-bold text-blue-700 leading-none">{worker.totalOrders}</p>
-                        <p className="text-[9px] sm:text-[10px] text-blue-600 mt-0.5">إجمالي</p>
-                      </div>
-                      <div className="bg-green-50 rounded-lg p-2 text-center border border-green-100">
-                        <p className="text-sm sm:text-base font-bold text-green-700 leading-none">{worker.completedOrders}</p>
-                        <p className="text-[9px] sm:text-[10px] text-green-600 mt-0.5">مكتمل</p>
-                      </div>
-                      <div className="bg-orange-50 rounded-lg p-2 text-center border border-orange-100">
-                        <p className="text-sm sm:text-base font-bold text-orange-700 leading-none">{worker.inProgressOrders}</p>
-                        <p className="text-[9px] sm:text-[10px] text-orange-600 mt-0.5">جاري</p>
-                      </div>
-                      <div className="bg-pink-50 rounded-lg p-2 text-center border border-pink-100">
-                        <p className="text-xs sm:text-sm font-bold text-pink-700 leading-none">{worker.revenue > 999 ? `${(worker.revenue / 1000).toFixed(1)}k` : worker.revenue.toLocaleString('en-US')}</p>
-                        <p className="text-[9px] sm:text-[10px] text-pink-600 mt-0.5">ر.س</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Extra info row */}
-                  {(worker.avgCompletionTime > 0 || worker.hasPayrollData || worker.pendingOrders > 0 || worker.revenueShare > 0) && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-1.5 sm:gap-2">
-                      {worker.avgCompletionTime > 0 && (
-                        <span className="flex items-center gap-1 bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-[10px] sm:text-xs">
-                          <Clock className="w-3 h-3 flex-shrink-0" />
-                          <span>متوسط التسليم: {worker.avgCompletionTime} يوم</span>
-                        </span>
-                      )}
-                      {worker.revenueShare > 0 && (
-                        <span className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
-                          <Percent className="w-3 h-3 flex-shrink-0" />
-                          <span>{worker.revenueShare}% من الإيرادات</span>
-                        </span>
-                      )}
-                      {worker.pendingOrders > 0 && (
-                        <span className="flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
-                          <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                          <span>{worker.pendingOrders} قيد الانتظار</span>
-                        </span>
-                      )}
-                      {worker.hasPayrollData && worker.netDue > 0 && (
-                        <span className="flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
-                          <Receipt className="w-3 h-3 flex-shrink-0" />
-                          <span>راتب مستحق: {worker.netDue.toLocaleString('en-US')} ر.س</span>
-                        </span>
-                      )}
-                      {worker.hasPayrollData && worker.advances > 0 && (
-                        <span className="flex items-center gap-1 bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
-                          <DollarSign className="w-3 h-3 flex-shrink-0" />
-                          <span>سلف: {worker.advances.toLocaleString('en-US')} ر.س</span>
-                        </span>
-                      )}
-                      {worker.pieceCount > 0 && (
-                        <span className="flex items-center gap-1 bg-teal-100 text-teal-700 px-2 py-1 rounded-full text-[10px] sm:text-xs">
-                          <Scissors className="w-3 h-3 flex-shrink-0" />
-                          <span>{worker.pieceCount} قطعة منجزة</span>
-                        </span>
-                      )}
-                      {worker.salaryStatus && salaryStatusConfig[worker.salaryStatus] && (
-                        <span className={`flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] sm:text-xs ${salaryStatusConfig[worker.salaryStatus].color}`}>
-                          <span>{salaryStatusConfig[worker.salaryStatus].label}</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
-            {workerPerformance.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                <Users className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                <p className="text-base font-medium">لا توجد بيانات عمال في هذه الفترة</p>
-                <p className="text-sm text-gray-400 mt-1">جرب تغيير نطاق التاريخ</p>
-              </div>
-            )}
-          </div>
-        </motion.div>
-
-        {/* Orders by Type */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 1.0 }}
-          className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 lg:p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300 mb-8"
-        >
-          <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">
-            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
-            <span>الطلبات حسب النوع</span>
-          </h3>
-
-          <div className="space-y-3 sm:space-y-4 lg:space-y-5">
-            {ordersByType.map((type, index) => {
-              const colors = [
-                { bg: 'from-pink-500 to-rose-500', text: 'text-pink-700', light: 'bg-pink-50' },
-                { bg: 'from-purple-500 to-indigo-500', text: 'text-purple-700', light: 'bg-purple-50' },
-                { bg: 'from-blue-500 to-cyan-500', text: 'text-blue-700', light: 'bg-blue-50' },
-                { bg: 'from-green-500 to-emerald-500', text: 'text-green-700', light: 'bg-green-50' },
-                { bg: 'from-orange-500 to-yellow-500', text: 'text-orange-700', light: 'bg-orange-50' }
-              ]
-              const color = colors[index % colors.length]
-
-              return (
-                <div key={index} className="space-y-1.5 sm:space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`font-bold ${color.text} text-sm sm:text-base truncate`}>{type.type}</span>
-                    <div className="flex items-center space-x-2 sm:space-x-3 space-x-reverse flex-shrink-0">
-                      <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">{type.count} طلب</span>
-                      <span className={`text-xs sm:text-sm font-bold ${color.text} ${color.light} px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full`}>
-                        {type.percentage}%
-                      </span>
-                      <span className="text-xs sm:text-sm font-semibold text-green-600">
-                        {type.revenue.toLocaleString('en-US')} ر.س
-                      </span>
-                    </div>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5 sm:h-3 overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${type.percentage}%` }}
-                      transition={{ duration: 1, delay: 1.2 + index * 0.1 }}
-                      className={`bg-gradient-to-r ${color.bg} h-2.5 sm:h-3 rounded-full shadow-sm`}
-                    ></motion.div>
-                  </div>
-                </div>
-              )
-            })}
-
-            {ordersByType.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                <p>لا توجد طلبات في هذه الفترة</p>
-              </div>
-            )}
-          </div>
-        </motion.div>
-
-
-
-        {/* Monthly Trend - الاتجاه الشهري */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 1.2 }}
-          className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border-2 border-pink-100 hover:shadow-xl transition-all duration-300 mb-8"
+          transition={{ duration: 0.6, delay: 0.95 }}
+          className="mb-8"
         >
           <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
-            <span>الاتجاه الشهري (آخر 6 أشهر)</span>
+            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" />
+            <span>تحليل مخصص حسب الفترة</span>
           </h2>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-            {monthlyTrend.map((month, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 1.3 + index * 0.1 }}
-                className="relative overflow-hidden bg-gradient-to-br from-pink-50 to-rose-50 rounded-lg sm:rounded-xl p-3 sm:p-4 border-2 border-pink-200 hover:shadow-lg transition-all duration-300 group"
-              >
-                <div className="absolute top-0 right-0 w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 bg-pink-200/30 rounded-full -mr-6 sm:-mr-7 lg:-mr-8 -mt-6 sm:-mt-7 lg:-mt-8 group-hover:scale-150 transition-transform duration-500"></div>
-                <div className="relative">
-                  <h4 className="font-bold text-gray-800 mb-2 sm:mb-3 text-center text-sm sm:text-base">{month.fullMonth}</h4>
-                  <div className="space-y-2 sm:space-y-3">
-                    <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
-                      <p className="text-base sm:text-lg lg:text-xl font-bold text-green-600 text-center leading-tight">{month.revenue.toLocaleString('en-US')}</p>
-                      <p className="text-[10px] sm:text-xs text-gray-600 text-center">ر.س</p>
-                    </div>
-                    <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
-                      <p className="text-sm sm:text-base lg:text-lg font-bold text-blue-600 text-center leading-tight">{month.orders}</p>
-                      <p className="text-[10px] sm:text-xs text-gray-600 text-center">طلب</p>
-                    </div>
-                    <div className="bg-white/70 rounded-lg p-1.5 sm:p-2">
-                      <div className="flex items-center justify-center gap-1">
-                        <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" />
-                        <p className="text-xs sm:text-sm font-bold text-green-600">{month.completedOrders}</p>
-                      </div>
-                      <p className="text-[10px] sm:text-xs text-gray-600 text-center">مكتمل</p>
-                    </div>
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 border-2 border-purple-100 hover:shadow-xl transition-all duration-300">
+
+            {/* Controls */}
+            <div className="space-y-4 mb-5">
+              {/* Metric selector */}
+              <div>
+                <p className="text-xs sm:text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-purple-500" /> نوع الإحصائية
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {CUSTOM_METRICS.map(m => (
+                    <button
+                      key={m.key}
+                      onClick={() => setCustomChartMetric(m.key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all duration-200 ${
+                        customChartMetric === m.key
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white border-transparent shadow-md'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date controls */}
+              <div>
+                <p className="text-xs sm:text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-pink-500" /> الفترة الزمنية
+                </p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {CUSTOM_PRESETS.map(p => (
+                    <button
+                      key={p.key}
+                      onClick={() => applyCustomPreset(p.key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all duration-200 ${
+                        customChartPreset === p.key
+                          ? 'bg-pink-500 text-white border-transparent shadow'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-pink-300'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] sm:text-xs font-semibold text-gray-500">من</span>
+                    <input
+                      type="date"
+                      value={customChartStart}
+                      max={customChartEnd}
+                      onChange={(e) => { setCustomChartStart(e.target.value); setCustomChartPreset('custom') }}
+                      className="px-3 py-2 border-2 border-pink-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 bg-white cursor-pointer text-xs sm:text-sm font-medium"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] sm:text-xs font-semibold text-gray-500">إلى</span>
+                    <input
+                      type="date"
+                      value={customChartEnd}
+                      min={customChartStart}
+                      max={toDateInput(new Date())}
+                      onChange={(e) => { setCustomChartEnd(e.target.value); setCustomChartPreset('custom') }}
+                      className="px-3 py-2 border-2 border-pink-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 bg-white cursor-pointer text-xs sm:text-sm font-medium"
+                    />
                   </div>
                 </div>
-              </motion.div>
-            ))}
-          </div>
-
-          {monthlyTrend.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <BarChart3 className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-              <p className="text-lg">لا توجد بيانات شهرية متاحة</p>
+              </div>
             </div>
-          )}
+
+            {/* Chart */}
+            {(() => {
+              const { buckets, def, peak, sum, overallValue, bucketAverage, nBuckets, periodName, valid } = customChart
+              const fmtVal = (v: number) =>
+                def.isMoney ? `${Math.round(v).toLocaleString('en-US')} ر.س` : v.toLocaleString('en-US')
+
+              if (!valid || buckets.length === 0) {
+                return (
+                  <div className="text-center py-12 text-gray-400">
+                    <BarChart3 className="w-12 h-12 mx-auto mb-3" />
+                    <p className="text-sm">يرجى اختيار فترة زمنية صحيحة</p>
+                  </div>
+                )
+              }
+
+              const maxValue = Math.max(...buckets.map(b => b.value), 1)
+              const granularityLabel = periodName === 'يوم' ? 'يومي' : periodName === 'أسبوع' ? 'أسبوعي' : 'شهري'
+
+              return (
+                <>
+                  {/* Metric headline */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pb-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm sm:text-base font-bold text-gray-700">{def.label}</span>
+                      <span className="text-[10px] sm:text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{granularityLabel}</span>
+                    </div>
+                    <div className="text-sm sm:text-base font-bold text-purple-600">{fmtVal(overallValue)}</div>
+                  </div>
+
+                  {/* Bar chart */}
+                  <div className="flex items-end gap-1 sm:gap-2 mb-2" style={{ height: '180px' }}>
+                    {buckets.map((bucket, index) => {
+                      const barHeightPx = Math.max((bucket.value / maxValue) * 160, bucket.value > 0 ? 6 : 0)
+                      return (
+                        <div key={index} className="flex-1 flex flex-col items-center justify-end h-full min-w-0">
+                          {bucket.value > 0 && (
+                            <span className="text-[9px] sm:text-[11px] font-bold text-gray-700 mb-1 leading-none whitespace-nowrap">
+                              {def.isMoney && bucket.value >= 10000
+                                ? `${Math.round(bucket.value / 1000)}k`
+                                : bucket.value.toLocaleString('en-US')}
+                            </span>
+                          )}
+                          <motion.div
+                            initial={{ height: 0 }}
+                            animate={{ height: barHeightPx }}
+                            transition={{ duration: 0.6, delay: index * 0.04, ease: 'easeOut' }}
+                            className={`w-full bg-gradient-to-t ${def.color} rounded-t-md shadow-sm`}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* X-axis labels */}
+                  <div className="flex gap-1 sm:gap-2 border-t-2 border-gray-200 pt-2 mb-4">
+                    {buckets.map((bucket, index) => (
+                      <div key={index} className="flex-1 text-center min-w-0">
+                        <span className="text-[8px] sm:text-[10px] font-medium text-gray-500 leading-tight block truncate">{bucket.label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Summary */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                    <div className="bg-purple-50 rounded-lg p-3 text-center">
+                      <p className="text-[10px] sm:text-xs text-purple-600 mb-1">أعلى {periodName}</p>
+                      <p className="font-bold text-purple-700 text-sm sm:text-base truncate">{peak ? fmtVal(peak.value) : '-'}</p>
+                      <p className="text-[10px] text-purple-500">{peak?.label || '—'}</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3 text-center">
+                      <p className="text-[10px] sm:text-xs text-blue-600 mb-1">{def.isAverage ? 'المتوسط العام' : 'الإجمالي خلال الفترة'}</p>
+                      <p className="font-bold text-blue-700 text-sm sm:text-base">{def.isAverage ? fmtVal(overallValue) : fmtVal(sum)}</p>
+                      <p className="text-[10px] text-blue-500">{nBuckets} {periodName}</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3 text-center col-span-2 sm:col-span-1">
+                      <p className="text-[10px] sm:text-xs text-green-600 mb-1">متوسط لكل {periodName}</p>
+                      <p className="font-bold text-green-700 text-sm sm:text-base">{fmtVal(bucketAverage)}</p>
+                      <p className="text-[10px] text-green-500">بالمتوسط</p>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
         </motion.div>
 
         {/* Summary Footer */}

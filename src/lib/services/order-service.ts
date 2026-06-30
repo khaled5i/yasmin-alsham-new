@@ -760,6 +760,7 @@ export const orderService = {
   /**
    * تحويل الطلبات المكتملة المتأخرة إلى "تم التسليم"
    * يشمل كل طلب مكتمل تجاوز موعد تسليمه بأكثر من 10 أيام
+   * بشرط أن يكون قد تم تحديد العامل الخاص بالطلب (worker_id غير فارغ)
    */
   async bulkDeliverOverdue(daysOverdue: number = 10): Promise<{ count: number; error: string | null }> {
     if (!isSupabaseConfigured()) {
@@ -778,6 +779,7 @@ export const orderService = {
         .update({ status: 'delivered', delivery_date: deliveryDate })
         .eq('status', 'completed')
         .lt('due_date', cutoffDate)
+        .not('worker_id', 'is', null)
         .select('id')
 
       if (error) throw error
