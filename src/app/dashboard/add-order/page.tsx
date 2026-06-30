@@ -16,7 +16,7 @@ import ImageUpload from '@/components/ImageUpload'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
-import { shiftDate, DUE_DATE_BACKDATE_DAYS, formatGregorianDate } from '@/lib/date-utils'
+import { shiftDate, DUE_DATE_BACKDATE_DAYS, formatGregorianDate, computeSecondProofDateFromCustomer } from '@/lib/date-utils'
 import DatePickerForProof from '@/components/DatePickerForProof'
 import DatePickerForSecondProof from '@/components/DatePickerForSecondProof'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
@@ -927,7 +927,9 @@ function AddOrderContent() {
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
-        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
+        // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
+        // حتى لا يتأثر العرض المحسوب للطلبات القديمة (التي تبقى second_proof_date = NULL)
+        second_proof_date: formData.hasSecondProof === 'yes' ? (formData.secondProofDate || computeSecondProofDateFromCustomer(formData.dueDate)) : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1098,7 +1100,9 @@ function AddOrderContent() {
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
-        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
+        // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
+        // حتى لا يتأثر العرض المحسوب للطلبات القديمة (التي تبقى second_proof_date = NULL)
+        second_proof_date: formData.hasSecondProof === 'yes' ? (formData.secondProofDate || computeSecondProofDateFromCustomer(formData.dueDate)) : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1138,7 +1142,7 @@ function AddOrderContent() {
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
           dueDate: formData.dueDate,
           hasSecondProof: formData.hasSecondProof === 'yes',
-          secondProofDate: formData.secondProofDate || undefined,
+          secondProofDate: formData.hasSecondProof === 'yes' ? (formData.secondProofDate || computeSecondProofDateFromCustomer(formData.dueDate)) : undefined,
           totalPrice: price,
           remainingAmount: Math.max(0, price - paidAmount)
         })
@@ -1250,7 +1254,9 @@ function AddOrderContent() {
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
-        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
+        // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
+        // حتى لا يتأثر العرض المحسوب للطلبات القديمة (التي تبقى second_proof_date = NULL)
+        second_proof_date: formData.hasSecondProof === 'yes' ? (formData.secondProofDate || computeSecondProofDateFromCustomer(formData.dueDate)) : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1375,7 +1381,9 @@ function AddOrderContent() {
         has_second_proof: formData.hasSecondProof === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
-        second_proof_date: formData.hasSecondProof === 'yes' && formData.secondProofDate ? formData.secondProofDate : undefined,
+        // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
+        // حتى لا يتأثر العرض المحسوب للطلبات القديمة (التي تبقى second_proof_date = NULL)
+        second_proof_date: formData.hasSecondProof === 'yes' ? (formData.secondProofDate || computeSecondProofDateFromCustomer(formData.dueDate)) : undefined,
         notes: formData.notes || undefined,
         voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
         voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1690,8 +1698,9 @@ function AddOrderContent() {
                   {/* زر تعديل تاريخ البروفا الثانية - يظهر فقط عند اختيار "نعم" */}
                   {formData.hasSecondProof === 'yes' && (() => {
                     // التاريخ الافتراضي: قبل تاريخ التسليم الحقيقي للزبون بثلاثة أيام (= due_date - 1)
+                    // مع تفادي يوم الجمعة (المحل مغلق) فيُزاح للخميس → العميل − 4
                     const effectiveSecondProofDate =
-                      formData.secondProofDate || (formData.dueDate ? shiftDate(formData.dueDate, -3) : '')
+                      formData.secondProofDate || (formData.dueDate ? computeSecondProofDateFromCustomer(formData.dueDate) : '')
                     return (
                       <div className="mt-3">
                         <div className="flex items-center gap-3 flex-wrap">

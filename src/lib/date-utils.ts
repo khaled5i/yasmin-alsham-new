@@ -74,6 +74,28 @@ export function shiftDate(dateStr: string | null | undefined, days: number): str
   return toLocalDateKey(date)
 }
 
+// المحل مغلق يوم الجمعة (getDay() === 5)، فلا تُحجز فيه مواعيد البروفا الثانية.
+function fallsOnClosedDay(dateKey: string): boolean {
+  const parsed = parseDateForDisplay(dateKey)
+  return parsed ? parsed.getDay() === 5 : false
+}
+
+/**
+ * موعد البروفا الثانية للطلبات الجديدة، محسوباً من تاريخ التسليم الذي تراه الزبونة
+ * (`customer_due_date` / `formData.dueDate`).
+ * القاعدة الأساسية: العميل − 3 (أي `due_date` الداخلي − 1).
+ * بما أن المحل مغلق يوم الجمعة، إذا وقع الموعد يوم جمعة يُزاح يوماً إضافياً للخلف
+ * (الخميس) فيصبح العميل − 4.
+ *
+ * تُستخدم فقط عند إنشاء الطلب لتخزين القيمة في `second_proof_date`. الطلبات القديمة
+ * (`second_proof_date = NULL`) تبقى على حساب العرض القديم `due_date − 1` دون تغيير.
+ */
+export function computeSecondProofDateFromCustomer(customerDueDate: string | null | undefined): string {
+  const base = shiftDate(customerDueDate, -3)
+  if (base && fallsOnClosedDay(base)) return shiftDate(customerDueDate, -4)
+  return base
+}
+
 export function formatGregorianDate(
   value: string | null | undefined,
   locale: string = 'ar-SA-u-nu-latn',
