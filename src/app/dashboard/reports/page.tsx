@@ -12,6 +12,12 @@ import type { Expense } from '@/types/simple-accounting'
 import type { WorkerPayrollMonth } from '@/types/worker-payroll'
 
 import { useTranslation } from '@/hooks/useTranslation'
+import ReportPeriodPicker, {
+  computePresetRange,
+  getPeriodLabel,
+  type DateRange,
+  type DateFilter,
+} from '@/components/ReportPeriodPicker'
 import {
   ArrowRight,
   BarChart3,
@@ -21,7 +27,6 @@ import {
   Package,
   Calendar,
   Download,
-  Filter,
   Clock,
   CheckCircle,
   Loader,
@@ -70,13 +75,7 @@ const formatDateInArabic = (date: Date): string => {
 // ============================================================================
 // Types
 // ============================================================================
-
-type DateRange = 'today' | 'last7days' | 'last14days' | 'last21days' | 'week' | 'last30days' | 'month' | 'specific_month' | 'last60days' | 'quarter' | 'year' | 'specific_day' | 'custom'
-
-interface DateFilter {
-  startDate: Date
-  endDate: Date
-}
+// DateRange و DateFilter مستوردان من ReportPeriodPicker
 
 // تحويل تاريخ إلى صيغة input[type=date] محلية (yyyy-mm-dd)
 const toDateInput = (d: Date): string =>
@@ -201,20 +200,16 @@ export default function ReportsPage() {
   // State
   // ============================================================================
 
+  // الفترة المختارة: مفتاح الاختصار (أو 'custom') + النطاق الفعلي للتاريخ
   const [selectedPeriod, setSelectedPeriod] = useState<DateRange>('month')
-  const [customDateRange, setCustomDateRange] = useState<DateFilter>({
-    startDate: new Date(),
-    endDate: new Date()
-  })
-  const [specificDay, setSpecificDay] = useState<string>(() => {
-    const today = new Date()
-    return today.toISOString().split('T')[0]
-  })
-  const [specificMonth, setSpecificMonth] = useState<string>(() => {
-    const today = new Date()
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
-  })
+  const [periodRange, setPeriodRange] = useState<DateFilter>(() => computePresetRange('month'))
   const [expandedSection, setExpandedSection] = useState<string | null>(null)
+
+  // تطبيق فترة جديدة من نافذة الفلتر المنبثقة
+  const handleApplyPeriod = (period: DateRange, range: DateFilter) => {
+    setSelectedPeriod(period)
+    setPeriodRange(range)
+  }
 
   // ============================================================================
   // Custom Analysis Chart State (فلترة مستقلة بالتاريخ + نوع المؤشر)
@@ -255,76 +250,8 @@ export default function ReportsPage() {
   // Helper Functions - Date Filtering
   // ============================================================================
 
-  const getDateRange = (): DateFilter => {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const daysAgo = (n: number) => new Date(today.getTime() - n * 24 * 60 * 60 * 1000)
-
-    switch (selectedPeriod) {
-      case 'today':
-        return {
-          startDate: today,
-          endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1)
-        }
-      case 'last7days':
-        return { startDate: daysAgo(6), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
-      case 'last14days':
-        return { startDate: daysAgo(13), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
-      case 'last21days':
-        return { startDate: daysAgo(20), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
-      case 'week': {
-        const weekStart = new Date(today)
-        weekStart.setDate(today.getDate() - today.getDay())
-        return {
-          startDate: weekStart,
-          endDate: new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000 - 1)
-        }
-      }
-      case 'last30days':
-        return { startDate: daysAgo(29), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
-      case 'month':
-        return {
-          startDate: new Date(now.getFullYear(), now.getMonth(), 1),
-          endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
-        }
-      case 'specific_month': {
-        const [y, m] = specificMonth.split('-').map(Number)
-        return {
-          startDate: new Date(y, m - 1, 1),
-          endDate: new Date(y, m, 0, 23, 59, 59)
-        }
-      }
-      case 'last60days':
-        return { startDate: daysAgo(59), endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1) }
-      case 'quarter': {
-        const quarterMonth = Math.floor(now.getMonth() / 3) * 3
-        return {
-          startDate: new Date(now.getFullYear(), quarterMonth, 1),
-          endDate: new Date(now.getFullYear(), quarterMonth + 3, 0, 23, 59, 59)
-        }
-      }
-      case 'year':
-        return {
-          startDate: new Date(now.getFullYear(), 0, 1),
-          endDate: new Date(now.getFullYear(), 11, 31, 23, 59, 59)
-        }
-      case 'specific_day': {
-        const day = specificDay ? new Date(specificDay) : today
-        const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-        return {
-          startDate: dayStart,
-          endDate: new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1)
-        }
-      }
-      case 'custom':
-        return customDateRange
-      default:
-        return {
-          startDate: new Date(now.getFullYear(), now.getMonth(), 1),
-          endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
-        }
-    }
-  }
+  // النطاق الفعلي محسوب مسبقاً في periodRange (عبر نافذة الفلتر)
+  const getDateRange = (): DateFilter => periodRange
 
   const getPreviousDateRange = (): DateFilter => {
     const current = getDateRange()
@@ -375,7 +302,7 @@ export default function ReportsPage() {
       dateRange,
       previousRange
     }
-  }, [orders, selectedPeriod, customDateRange, specificDay, specificMonth])
+  }, [orders, periodRange])
 
   // ============================================================================
   // Comprehensive Statistics Calculations
@@ -546,8 +473,7 @@ export default function ReportsPage() {
     getWorkerPayrollMonthsInRange('tailoring', range.startDate, range.endDate)
       .then(setWorkerSalaries)
       .catch(() => { })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriod, customDateRange, specificDay, specificMonth])
+  }, [periodRange])
 
   // Price Distribution
   const priceDistribution = useMemo(() => {
@@ -767,60 +693,13 @@ export default function ReportsPage() {
 
             {/* Filters and Export Buttons */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-              {/* Date Range Selector */}
+              {/* Date Range Picker - فلتر الفترة المنبثق */}
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 pointer-events-none" />
-                  <select
-                    value={selectedPeriod}
-                    onChange={(e) => setSelectedPeriod(e.target.value as DateRange)}
-                    className="w-full sm:w-auto pr-9 sm:pr-10 pl-3 sm:pl-4 py-2 sm:py-2.5 border-2 border-gray-200 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300 bg-white hover:border-pink-300 cursor-pointer text-xs sm:text-sm font-medium"
-                  >
-                    <option value="today">اليوم</option>
-                    <option value="specific_day">يوم محدد</option>
-                    <option disabled>──────────</option>
-                    <option value="last7days">آخر أسبوع</option>
-                    <option value="last14days">آخر أسبوعين</option>
-                    <option value="last21days">آخر 3 أسابيع</option>
-                    <option value="week">هذا الأسبوع</option>
-                    <option disabled>──────────</option>
-                    <option value="last30days">آخر شهر</option>
-                    <option value="month">هذا الشهر</option>
-                    <option value="specific_month">شهر محدد</option>
-                    <option value="last60days">آخر شهرين</option>
-                    <option disabled>──────────</option>
-                    <option value="quarter">هذا الربع</option>
-                    <option value="year">هذا العام</option>
-                  </select>
-                </div>
-
-                {/* Specific Day Picker */}
-                {selectedPeriod === 'specific_day' && (
-                  <div className="relative flex items-center">
-                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-500 pointer-events-none" />
-                    <input
-                      type="date"
-                      value={specificDay}
-                      onChange={(e) => setSpecificDay(e.target.value)}
-                      max={new Date().toISOString().split('T')[0]}
-                      className="pr-9 pl-3 py-2 sm:py-2.5 border-2 border-pink-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300 bg-white cursor-pointer text-xs sm:text-sm font-medium"
-                    />
-                  </div>
-                )}
-
-                {/* Specific Month Picker */}
-                {selectedPeriod === 'specific_month' && (
-                  <div className="relative flex items-center">
-                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-500 pointer-events-none" />
-                    <input
-                      type="month"
-                      value={specificMonth}
-                      onChange={(e) => setSpecificMonth(e.target.value)}
-                      max={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`}
-                      className="pr-9 pl-3 py-2 sm:py-2.5 border-2 border-purple-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 bg-white cursor-pointer text-xs sm:text-sm font-medium"
-                    />
-                  </div>
-                )}
+                <ReportPeriodPicker
+                  period={selectedPeriod}
+                  range={periodRange}
+                  onApply={handleApplyPeriod}
+                />
               </div>
 
               {/* Export Buttons */}
@@ -859,23 +738,7 @@ export default function ReportsPage() {
                 <Calendar className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
                 <span className="font-semibold">الفترة المحددة:</span>
                 <span className="font-bold">
-                  {selectedPeriod === 'today' && 'اليوم'}
-                  {selectedPeriod === 'specific_day' && (specificDay ? formatDateInArabic(new Date(specificDay + 'T12:00:00')) : 'يوم محدد')}
-                  {selectedPeriod === 'last7days' && 'آخر أسبوع'}
-                  {selectedPeriod === 'last14days' && 'آخر أسبوعين'}
-                  {selectedPeriod === 'last21days' && 'آخر 3 أسابيع'}
-                  {selectedPeriod === 'week' && 'هذا الأسبوع'}
-                  {selectedPeriod === 'last30days' && 'آخر شهر'}
-                  {selectedPeriod === 'month' && 'هذا الشهر'}
-                  {selectedPeriod === 'specific_month' && (() => {
-                    const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
-                    const [y, m] = specificMonth.split('-').map(Number)
-                    return `${arabicMonths[m - 1]} ${y}`
-                  })()}
-                  {selectedPeriod === 'last60days' && 'آخر شهرين'}
-                  {selectedPeriod === 'quarter' && 'هذا الربع'}
-                  {selectedPeriod === 'year' && 'هذا العام'}
-                  {selectedPeriod === 'custom' && 'مخصص'}
+                  {getPeriodLabel(selectedPeriod, filteredData.dateRange)}
                 </span>
               </div>
               <div className="text-xs sm:text-sm text-blue-600">
