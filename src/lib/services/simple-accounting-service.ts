@@ -310,6 +310,16 @@ export async function getIncome(
   }
 }
 
+// هل الخطأ ناتج عن عمود fabric_images غير موجود بعد (لم تُطبَّق الهجرة 57)؟
+function isMissingFabricImagesColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    error.code === 'PGRST204' ||
+    error.code === '42703' ||
+    (error.message?.includes('fabric_images') ?? false)
+  )
+}
+
 export async function createIncome(input: CreateIncomeInput): Promise<Income | null> {
   if (!isSupabaseConfigured()) {
     console.warn('⚠️ Supabase not configured')
@@ -317,14 +327,27 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
   }
 
   try {
-    const { data, error } = await supabase
+    const payload = {
+      ...input,
+      is_automatic: input.is_automatic ?? false
+    }
+
+    let { data, error } = await supabase
       .from('income')
-      .insert({
-        ...input,
-        is_automatic: input.is_automatic ?? false
-      })
+      .insert(payload)
       .select()
       .single()
+
+    // توافق تدريجي: إذا لم يُطبَّق عمود fabric_images بعد، أعد المحاولة بدونه
+    if (error && isMissingFabricImagesColumn(error)) {
+      console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
+      const { fabric_images: _omit, ...withoutImages } = payload
+      ;({ data, error } = await supabase
+        .from('income')
+        .insert(withoutImages)
+        .select()
+        .single())
+    }
 
     if (error) {
       if (error.code === '42P01') {
@@ -349,12 +372,24 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
   }
 
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('income')
       .update(input)
       .eq('id', id)
       .select()
       .single()
+
+    // توافق تدريجي: إذا لم يُطبَّق عمود fabric_images بعد، أعد المحاولة بدونه
+    if (error && isMissingFabricImagesColumn(error)) {
+      console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
+      const { fabric_images: _omit, ...withoutImages } = input
+      ;({ data, error } = await supabase
+        .from('income')
+        .update(withoutImages)
+        .eq('id', id)
+        .select()
+        .single())
+    }
 
     if (error) {
       console.error('Error updating income:', error.message || error)
@@ -365,6 +400,44 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
   } catch (err) {
     console.error('Error updating income:', err)
     return null
+  }
+}
+
+// جلب جميع مبيعات القماش التي تحتوي على صور (لعرض معرض صور أقمشة الشك)
+export async function getFabricSaleImages(branch: BranchType): Promise<Income[]> {
+  if (!isSupabaseConfigured()) {
+    console.warn('⚠️ Supabase not configured, returning empty fabric sale images')
+    return []
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('income')
+      .select('*')
+      .eq('branch', branch)
+      .not('fabric_images', 'is', null)
+      .order('date', { ascending: false })
+
+    if (error) {
+      // الجدول أو العمود غير موجود بعد — تجاهل بهدوء
+      if (
+        error.code === '42P01' ||
+        isMissingFabricImagesColumn(error) ||
+        error.message?.includes('does not exist')
+      ) {
+        return []
+      }
+      console.error('Error fetching fabric sale images:', error.message || error)
+      return []
+    }
+
+    // الاحتفاظ فقط بالسجلات التي تحتوي على صور فعلية
+    return (data || []).filter(
+      (item: Income) => Array.isArray(item.fabric_images) && item.fabric_images.length > 0
+    )
+  } catch (err) {
+    console.error('Error fetching fabric sale images:', err)
+    return []
   }
 }
 
@@ -544,6 +617,159 @@ async function getPayrollSalariesForPeriod(
 }
 
 // ============================================================================
+// رصيد الصندوق (تراكمي عبر الأشهر)
+// ============================================================================
+
+// إجمالي المبيعات الكاش (يرفع رصيد الصندوق) — حتى تاريخ معيّن اختيارياً
+async function getAllTimeCashIncome(branch: BranchType, asOfDate?: string): Promise<number> {
+  if (!isSupabaseConfigured()) return 0
+
+  try {
+    let query = supabase
+      .from('income')
+      .select('amount')
+      .eq('branch', branch)
+      .eq('payment_method', 'cash')
+
+    if (asOfDate) query = query.lte('date', asOfDate)
+
+    const { data, error } = await query
+
+    if (error) {
+      if (error.code === '42P01' || error.message?.includes('does not exist')) return 0
+      console.error('Error fetching all-time cash income:', error.message || error)
+      return 0
+    }
+
+    return (data as { amount: number }[] | null || []).reduce((sum, row) => sum + (row.amount || 0), 0)
+  } catch (err) {
+    console.error('Error fetching all-time cash income:', err)
+    return 0
+  }
+}
+
+// إجمالي المشتريات المدفوعة من الصندوق (يخفض رصيد الصندوق) — حتى تاريخ معيّن اختيارياً
+async function getAllTimeBoxPurchases(branch: BranchType, asOfDate?: string): Promise<number> {
+  if (!isSupabaseConfigured()) return 0
+
+  try {
+    let query = supabase
+      .from('expenses')
+      .select('amount')
+      .eq('branch', branch)
+      .eq('type', 'material')
+      .eq('cash_source', 'box')
+
+    if (asOfDate) query = query.lte('date', asOfDate)
+
+    const { data, error } = await query
+
+    if (error) {
+      if (error.code === '42P01' || error.message?.includes('does not exist')) return 0
+      console.error('Error fetching all-time box purchases:', error.message || error)
+      return 0
+    }
+
+    return (data as { amount: number }[] | null || []).reduce((sum, row) => sum + (row.amount || 0), 0)
+  } catch (err) {
+    console.error('Error fetching all-time box purchases:', err)
+    return 0
+  }
+}
+
+// مجموع التعديلات اليدوية على الصندوق (قد يكون الجدول غير موجود قبل تطبيق الهجرة 56)
+// asOfDate يقصر الحساب على التعديلات المسجّلة حتى نهاية ذلك التاريخ
+export async function getCashBoxAdjustmentsTotal(branch: BranchType, asOfDate?: string): Promise<number> {
+  if (!isSupabaseConfigured()) return 0
+
+  try {
+    let query = supabase
+      .from('cash_box_adjustments')
+      .select('amount')
+      .eq('branch', branch)
+
+    if (asOfDate) query = query.lte('created_at', `${asOfDate}T23:59:59.999`)
+
+    const { data, error } = await query
+
+    if (error) {
+      // الجدول غير موجود بعد (لم تُطبَّق الهجرة) — تجاهل بهدوء
+      if (error.code === '42P01' || error.message?.includes('does not exist')) return 0
+      console.error('Error fetching cash box adjustments:', error.message || error)
+      return 0
+    }
+
+    return (data as { amount: number }[] | null || []).reduce((sum, row) => sum + (row.amount || 0), 0)
+  } catch (err) {
+    console.error('Error fetching cash box adjustments:', err)
+    return 0
+  }
+}
+
+/**
+ * رصيد الصندوق التراكمي (لا يُصفَّر مع بداية الشهر):
+ *   المبيعات الكاش - المشتريات من الصندوق + مجموع التعديلات اليدوية
+ * عند تمرير asOfDate يُحسب الرصيد كما كان في نهاية ذلك التاريخ (لعرض ملخص شهر سابق).
+ * بدون asOfDate يُرجِع الرصيد الحيّ الحالي (كامل التاريخ).
+ */
+export async function getCashBoxBalance(branch: BranchType, asOfDate?: string): Promise<number> {
+  const [cashIncome, boxPurchases, adjustments] = await Promise.all([
+    getAllTimeCashIncome(branch, asOfDate),
+    getAllTimeBoxPurchases(branch, asOfDate),
+    getCashBoxAdjustmentsTotal(branch, asOfDate)
+  ])
+
+  return cashIncome - boxPurchases + adjustments
+}
+
+/**
+ * تعيين رصيد الصندوق إلى قيمة محددة (خاص بمدير النظام).
+ * يُحسب الفرق بين الرصيد الحالي والقيمة المطلوبة ويُسجَّل كتعديل، بحيث تبقى
+ * حركات المبيعات/المشتريات المستقبلية تُضاف فوق القيمة الجديدة بشكل صحيح.
+ */
+export async function setCashBoxBalance(
+  branch: BranchType,
+  targetBalance: number,
+  options?: { note?: string; createdByName?: string }
+): Promise<{ success: boolean; newBalance: number }> {
+  if (!isSupabaseConfigured()) {
+    console.warn('⚠️ Supabase not configured')
+    return { success: false, newBalance: 0 }
+  }
+
+  try {
+    // إعادة حساب الرصيد الحالي لحظة التعديل لتقليل أثر البيانات القديمة
+    const currentBalance = await getCashBoxBalance(branch)
+    const delta = targetBalance - currentBalance
+
+    const { error } = await supabase
+      .from('cash_box_adjustments')
+      .insert({
+        branch,
+        amount: delta,
+        previous_balance: currentBalance,
+        new_balance: targetBalance,
+        note: options?.note?.trim() || null,
+        created_by_name: options?.createdByName || null
+      })
+
+    if (error) {
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        console.warn('⚠️ cash_box_adjustments table does not exist. Please run migrations/56-cash-box-adjustments.sql')
+      } else {
+        console.error('Error setting cash box balance:', error.message || error)
+      }
+      return { success: false, newBalance: currentBalance }
+    }
+
+    return { success: true, newBalance: targetBalance }
+  } catch (err) {
+    console.error('Error setting cash box balance:', err)
+    return { success: false, newBalance: 0 }
+  }
+}
+
+// ============================================================================
 // الملخص المالي
 // ============================================================================
 
@@ -586,17 +812,11 @@ export async function getFinancialSummary(
 
   const totalExpenses = totalMaterialExpenses + totalFixedExpenses + totalSalaries
 
-  // ─── رصيد الصندوق ───
-  // يرتفع برصيد المبيعات الكاش المسجّلة، وينخفض بالمشتريات التي تكون "من الصندوق"
-  const cashIncome = allIncome
-    .filter(i => i.payment_method === 'cash')
-    .reduce((sum, i) => sum + i.amount, 0)
-
-  const boxPurchases = allExpenses
-    .filter(e => e.type === 'material' && e.cash_source === 'box')
-    .reduce((sum, e) => sum + e.amount, 0)
-
-  const cashBoxBalance = cashIncome - boxPurchases
+  // ─── رصيد الصندوق (تراكمي عبر الأشهر — لا يُصفَّر عند بداية الشهر) ───
+  // يُحسب تراكمياً حتى نهاية فترة التقرير (endDate)، بحيث:
+  //   - عند عرض الشهر الحالي يظهر الرصيد الحيّ (لأن endDate = نهاية الشهر الحالي)
+  //   - عند عرض شهر سابق يظهر الرصيد كما كان في نهاية ذلك الشهر
+  const cashBoxBalance = await getCashBoxBalance(branch, endDate)
 
   return {
     branch,

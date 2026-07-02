@@ -431,7 +431,13 @@ export default function TailoringPayrollDashboard() {
       })
 
       const defaultDate = monthEndDate(selectedMonth)
-      const todayDate = new Date().toISOString().split('T')[0]
+      // الدفعات والسلف تُسجَّل افتراضياً بتاريخ اليوم عندما يكون الشهر المحدد هو الشهر الحالي فقط.
+      // أما للأشهر السابقة فيجب أن ينتمي تاريخ العملية لشهر الراتب المحدد وإلا رفضته قاعدة البيانات
+      // (assert_worker_payroll_operation_period: Operation date must belong to payroll month).
+      const isCurrentMonth = selectedMonth === toMonthValue(new Date())
+      const operationDefaultDate = isCurrentMonth
+        ? new Date().toISOString().split('T')[0]
+        : defaultDate
       const isPeriodLocked = lockRow?.is_locked === true
 
       // حفظ تلقائي للراتب الثابت فقط: إذا كان المستخدم أدمن والشهر غير مقفل،
@@ -556,7 +562,7 @@ export default function TailoringPayrollDashboard() {
           const month = monthMap[worker.id] || buildEmptyMonth(worker, selectedMonth)
           next[worker.id] = {
             amount: month.remaining_due > 0 ? month.remaining_due.toFixed(2) : '',
-            operationDate: todayDate,
+            operationDate: operationDefaultDate,
             reference: '',
             note: ''
           }
@@ -569,7 +575,7 @@ export default function TailoringPayrollDashboard() {
         allWorkers.forEach((worker) => {
           next[worker.id] = {
             amount: '',
-            operationDate: todayDate,
+            operationDate: operationDefaultDate,
             note: ''
           }
         })

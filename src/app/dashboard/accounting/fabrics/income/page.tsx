@@ -22,11 +22,13 @@ import {
   Layers,
   Square,
   BarChart3,
-  ChevronDown
+  ChevronDown,
+  Images
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
+import ImageUpload from '@/components/ImageUpload'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
@@ -49,7 +51,8 @@ function StatCard({
   count,
   total,
   accent,
-  formatCurrency
+  formatCurrency,
+  action
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
@@ -57,6 +60,7 @@ function StatCard({
   total: number
   accent: StatAccent
   formatCurrency: (n: number) => string
+  action?: React.ReactNode
 }) {
   const c = ACCENT_CLASSES[accent]
   return (
@@ -75,6 +79,7 @@ function StatCard({
           <p className={`text-sm font-bold ${c.total}`}>{formatCurrency(total)}</p>
         </div>
       </div>
+      {action}
     </div>
   )
 }
@@ -152,6 +157,7 @@ function FabricsIncomeContent() {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'network' | ''>('')
   const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
   const [otherSourceText, setOtherSourceText] = useState('')
+  const [fabricImages, setFabricImages] = useState<string[]>([])
 
   useEffect(() => {
     loadAll()
@@ -181,9 +187,17 @@ function FabricsIncomeContent() {
     setPaymentMethod('')
     setCustomerSource('')
     setOtherSourceText('')
+    setFabricImages([])
   }
 
   const selectedItem = inventoryItems.find((it) => it.id === selectedInventoryId)
+
+  // هل القماش المختار من نوع "شك"؟ (يُظهر خيار رفع صور القماش)
+  const isShekFabric = (item?: FabricInventoryItem | null): boolean => {
+    if (!item) return false
+    return `${item.name ?? ''} ${item.fabric_type ?? ''}`.includes('شك')
+  }
+  const showFabricImages = isShekFabric(selectedItem)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -215,6 +229,7 @@ function FabricsIncomeContent() {
           amount: amt,
           payment_method: paymentMethod,
           customer_source: resolvedSource,
+          fabric_images: showFabricImages ? fabricImages : [],
           date
         })
         if (result) {
@@ -243,6 +258,7 @@ function FabricsIncomeContent() {
         amount: amt,
         payment_method: paymentMethod,
         customer_source: resolvedSource,
+        fabric_images: showFabricImages ? fabricImages : [],
         date
       }
       const result = await createIncome(payload)
@@ -267,6 +283,7 @@ function FabricsIncomeContent() {
     setAmount(item.amount.toString())
     setDescription(item.description || '')
     setDate(item.date)
+    setFabricImages(item.fabric_images ?? [])
     setPaymentMethod((item.payment_method as 'cash' | 'network') || '')
     // مصدر الزبونة: تحويل القيمة المخزّنة إلى خيار النموذج
     if (item.customer_source === 'ياسمين الشام') {
@@ -522,6 +539,15 @@ function FabricsIncomeContent() {
                 total={breakdown.shek.total}
                 accent="purple"
                 formatCurrency={formatCurrency}
+                action={
+                  <Link
+                    href="/dashboard/accounting/fabrics/income/shek-images"
+                    className="mt-3 flex items-center justify-center gap-1.5 w-full px-2 py-2 rounded-lg bg-purple-600 text-white text-xs font-medium hover:bg-purple-700 transition-colors"
+                  >
+                    <Images className="w-3.5 h-3.5" />
+                    عرض صور الأقمشة
+                  </Link>
+                }
               />
             </div>
           </div>
@@ -687,7 +713,7 @@ function FabricsIncomeContent() {
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className="bg-white rounded-2xl p-6 w-full max-w-md"
+                className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
@@ -725,7 +751,8 @@ function FabricsIncomeContent() {
                           <select
                             value={selectedInventoryId}
                             onChange={(e) => setSelectedInventoryId(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white"
+                            dir="rtl"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white text-base text-right truncate"
                             required
                           >
                             <option value="">اختر القماش...</option>
@@ -733,12 +760,28 @@ function FabricsIncomeContent() {
                               <option key={it.id} value={it.id}>
                                 {it.name}
                                 {it.fabric_type ? ` — ${it.fabric_type}` : ''}
-                                {' '}(الرصيد: {it.current_quantity} {it.unit === 'meter' ? 'م' : 'ق'})
+                                {' '}— الرصيد {it.current_quantity} {it.unit === 'meter' ? 'م' : 'ق'}
                               </option>
                             ))}
                           </select>
                         )}
                       </div>
+
+                      {/* صور القماش — تظهر فقط عند اختيار قماش "شك" */}
+                      {showFabricImages && (
+                        <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-3">
+                          <label className="flex items-center gap-2 text-sm font-medium text-purple-800 mb-2">
+                            <Images className="w-4 h-4" />
+                            صور القماش (شك)
+                          </label>
+                          <ImageUpload
+                            images={fabricImages}
+                            onImagesChange={setFabricImages}
+                            acceptVideo={false}
+                            alwaysShowDeleteOnMobileAndTablet
+                          />
+                        </div>
+                      )}
 
                       {/* المبلغ */}
                       <div>
