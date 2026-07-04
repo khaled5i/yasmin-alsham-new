@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
-  CreditCard,
   Lock,
   Unlock,
   RefreshCw,
@@ -40,7 +39,7 @@ import {
   getSuspendedWorkerIds,
   suspendWorkerPayroll,
   unsuspendWorkerPayroll,
-  getWorkerAdvancesAllPeriods,
+  getWorkerOperationsAllPeriods,
   getWorkerPayrollMonths,
   getWorkerPayrollOperations,
   getWorkerPayrollPeriodLock,
@@ -74,7 +73,6 @@ interface SalaryFormState {
   pieceCount: string
   pieceRate: string
   overtimeHours: string
-  advancesTotal: string
   operationDate: string
   reference: string
   note: string
@@ -91,12 +89,6 @@ interface NewWorkerFormState {
   full_name: string
   phone: string
   specialty: string
-}
-
-interface AdvanceFormState {
-  amount: string
-  operationDate: string
-  note: string
 }
 
 // ============================================================================
@@ -129,7 +121,6 @@ interface SalaryCalculation {
   pieceTotal: number
   overtimeHours: number
   overtimeTotal: number
-  advancesTotal: number
   basicSalaryForSnapshot: number
   worksTotalForSnapshot: number
   grossBeforeDeductions: number
@@ -198,7 +189,7 @@ function operationTypeLabel(type: PayrollOperationType): string {
   if (type === 'salary') return 'راتب'
   if (type === 'payment') return 'دفعة'
   if (type === 'advance') return 'سلفة'
-  return 'خصم'
+  return 'دين'
 }
 
 const STATUS_STYLE: Record<PayrollStatus, string> = {
@@ -272,14 +263,13 @@ function calculateSalaryValues(form: SalaryFormState): SalaryCalculation {
   const pieceTotal = roundMoney(pieceCount * pieceRate)
   const overtimeHours = roundMoney(toNumber(form.overtimeHours))
   const overtimeTotal = roundMoney(overtimeHours * OVERTIME_RATE)
-  const advancesTotal = roundMoney(toNumber(form.advancesTotal))
 
   const basicSalaryForSnapshot = form.salaryType === 'fixed' ? fixedSalaryValue : 0
   const worksTotalForSnapshot = form.salaryType === 'fixed'
     ? overtimeTotal
     : roundMoney(pieceTotal + overtimeTotal)
   const grossBeforeDeductions = roundMoney(basicSalaryForSnapshot + worksTotalForSnapshot)
-  const netAfterDeductions = roundMoney(grossBeforeDeductions - advancesTotal)
+  const netAfterDeductions = grossBeforeDeductions
 
   return {
     fixedSalaryValue,
@@ -288,7 +278,6 @@ function calculateSalaryValues(form: SalaryFormState): SalaryCalculation {
     pieceTotal,
     overtimeHours,
     overtimeTotal,
-    advancesTotal,
     basicSalaryForSnapshot,
     worksTotalForSnapshot,
     grossBeforeDeductions,
@@ -325,17 +314,16 @@ export default function TailoringPayrollDashboard() {
   const [paymentForms, setPaymentForms] = useState<Record<string, PaymentFormState>>({})
   const [showNewWorkerModal, setShowNewWorkerModal] = useState(false)
   const [selectedWorkerForSalary, setSelectedWorkerForSalary] = useState<WorkerWithUser | null>(null)
-  const [selectedWorkerForAdvances, setSelectedWorkerForAdvances] = useState<WorkerWithUser | null>(null)
-  const [allAdvancesForWorker, setAllAdvancesForWorker] = useState<WorkerPayrollOperation[]>([])
-  const [allAdvancesLoading, setAllAdvancesLoading] = useState(false)
-  const [advanceForms, setAdvanceForms] = useState<Record<string, AdvanceFormState>>({})
+  const [selectedWorkerForOperations, setSelectedWorkerForOperations] = useState<WorkerWithUser | null>(null)
+  const [allOperationsForWorker, setAllOperationsForWorker] = useState<WorkerPayrollOperation[]>([])
+  const [allOperationsLoading, setAllOperationsLoading] = useState(false)
   const [newWorkerForm, setNewWorkerForm] = useState<NewWorkerFormState>({
     full_name: '',
     phone: '',
     specialty: ''
   })
 
-  // حالة نافذة الخصومات والديون
+  // حالة نافذة الديون
   const [selectedWorkerForDeductions, setSelectedWorkerForDeductions] = useState<WorkerWithUser | null>(null)
   const [bigDebtsByWorker, setBigDebtsByWorker] = useState<Record<string, number>>({})
   const [deductionPaymentsForWorker, setDeductionPaymentsForWorker] = useState<WorkerDeductionPayment[]>([])
@@ -359,17 +347,17 @@ export default function TailoringPayrollDashboard() {
 
   const isReadOnly = isLocked || !isAdmin
 
-  const openAdvancesModal = useCallback(async (worker: WorkerWithUser) => {
-    setSelectedWorkerForAdvances(worker)
-    setAllAdvancesLoading(true)
-    setAllAdvancesForWorker([])
+  const openOperationsModal = useCallback(async (worker: WorkerWithUser) => {
+    setSelectedWorkerForOperations(worker)
+    setAllOperationsLoading(true)
+    setAllOperationsForWorker([])
     try {
-      const advances = await getWorkerAdvancesAllPeriods(BRANCH, worker.id)
-      setAllAdvancesForWorker(advances)
+      const operations = await getWorkerOperationsAllPeriods(BRANCH, worker.id)
+      setAllOperationsForWorker(operations)
     } catch {
-      setAllAdvancesForWorker([])
+      setAllOperationsForWorker([])
     } finally {
-      setAllAdvancesLoading(false)
+      setAllOperationsLoading(false)
     }
   }, [])
 
@@ -511,7 +499,6 @@ export default function TailoringPayrollDashboard() {
           let pieceCountValue = 0
           let pieceRateValue = 0
           let overtimeHoursValue = 0
-          let advancesTotalValue = 0
           let salaryType: PayrollSalaryType = 'fixed'
 
           if (month) {
@@ -520,7 +507,6 @@ export default function TailoringPayrollDashboard() {
             pieceCountValue = month.piece_count || 0
             pieceRateValue = month.piece_rate || 0
             overtimeHoursValue = month.overtime_hours || 0
-            advancesTotalValue = month.advances_total || 0
             salaryType = month.salary_type === 'piecework' ? 'piecework' : 'fixed'
           } else {
             // لا يوجد سجل لهذا الشهر - نستخدم آخر معلومات راتب معروفة مع الحفاظ على نوع الراتب
@@ -547,7 +533,6 @@ export default function TailoringPayrollDashboard() {
             pieceCount: normalizedPieceCount > 0 ? normalizedPieceCount.toString() : '',
             pieceRate: normalizedPieceRate > 0 ? normalizedPieceRate.toString() : '',
             overtimeHours: overtimeHoursValue > 0 ? overtimeHoursValue.toString() : '',
-            advancesTotal: advancesTotalValue > 0 ? advancesTotalValue.toString() : '',
             operationDate: defaultDate,
             reference: '',
             note: ''
@@ -564,18 +549,6 @@ export default function TailoringPayrollDashboard() {
             amount: month.remaining_due > 0 ? month.remaining_due.toFixed(2) : '',
             operationDate: operationDefaultDate,
             reference: '',
-            note: ''
-          }
-        })
-        return next
-      })
-
-      setAdvanceForms(() => {
-        const next: Record<string, AdvanceFormState> = {}
-        allWorkers.forEach((worker) => {
-          next[worker.id] = {
-            amount: '',
-            operationDate: operationDefaultDate,
             note: ''
           }
         })
@@ -673,13 +646,12 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
         if (suspendedWorkers.has(worker.id)) return acc
         const row = getMonthRow(worker)
         acc.salary += row.basic_salary + row.works_total
-        acc.advances += row.advances_total
         acc.deductions += bigDebtsByWorker[worker.id] || 0
         acc.paid += row.total_paid
         acc.remaining += row.remaining_due
         return acc
       },
-      { salary: 0, advances: 0, deductions: 0, paid: 0, remaining: 0 }
+      { salary: 0, deductions: 0, paid: 0, remaining: 0 }
     )
   }, [filteredWorkers, getMonthRow, suspendedWorkers])
 
@@ -704,8 +676,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
         salary.fixedSalaryValue,
         salary.pieceCount,
         salary.pieceRate,
-        salary.overtimeHours,
-        salary.advancesTotal
+        salary.overtimeHours
       ].some((v) => v < 0)
     ) {
       alert('لا يمكن إدخال قيم سالبة في مكونات الراتب')
@@ -729,7 +700,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
         overtimeRate: OVERTIME_RATE,
         allowancesTotal: 0,
         deductionsTotal: 0,
-        advancesTotal: salary.advancesTotal,
+        advancesTotal: 0,
         operationDate: form.operationDate,
         reference: form.reference || undefined,
         note: form.note || undefined
@@ -793,7 +764,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
         overtimeRate: OVERTIME_RATE,
         allowancesTotal: 0,
         deductionsTotal: 0,
-        advancesTotal: salary.advancesTotal,
+        advancesTotal: 0,
         operationDate: currentForm.operationDate
       })
 
@@ -998,7 +969,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
       return
     }
 
-    const operationTypeAr = operationType === 'payment' ? 'الدفعة' : operationType === 'advance' ? 'السلفة' : operationType === 'salary' ? 'عملية الراتب' : 'العملية'
+    const operationTypeAr = operationType === 'payment' ? 'الدفعة' : operationType === 'salary' ? 'عملية الراتب' : 'العملية'
     if (!confirm(`هل أنت متأكد من حذف ${operationTypeAr}؟`)) {
       return
     }
@@ -1008,87 +979,20 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
       await deleteWorkerPayrollOperation(operationId)
       alert('تم حذف العملية بنجاح')
       await loadData(true)
-      // تحديث السجل الكامل إذا كان المودال مفتوحاً لعامل
-      if (operationType === 'advance' && selectedWorkerForAdvances) {
-        const advances = await getWorkerAdvancesAllPeriods(BRANCH, selectedWorkerForAdvances.id)
-        setAllAdvancesForWorker(advances)
+      // تحديث سجل العمليات إذا كان المودال مفتوحاً لعامل
+      if (selectedWorkerForOperations) {
+        const operations = await getWorkerOperationsAllPeriods(BRANCH, selectedWorkerForOperations.id)
+        setAllOperationsForWorker(operations)
       }
     } catch (error) {
       alert(toReadableError(error))
     } finally {
       setActionKey(null)
     }
-  }, [isAdmin, isLocked, loadData, selectedWorkerForAdvances])
-
-  const handleDeleteAdvance = useCallback(async (operationId: string, worker: WorkerWithUser) => {
-    if (!isAdmin) {
-      alert('حذف السُّلَف مسموح للأدمن فقط.')
-      return
-    }
-    if (!confirm('هل أنت متأكد من حذف هذه السلفة؟')) return
-
-    setActionKey(`delete-operation-${operationId}`)
-    try {
-      await deleteWorkerPayrollOperation(operationId)
-      await loadData(true)
-      const advances = await getWorkerAdvancesAllPeriods(BRANCH, worker.id)
-      setAllAdvancesForWorker(advances)
-    } catch (error) {
-      alert(toReadableError(error))
-    } finally {
-      setActionKey(null)
-    }
-  }, [isAdmin, loadData])
-
-  const handleRegisterAdvance = useCallback(async (worker: WorkerWithUser) => {
-    if (isLocked) {
-      alert('الشهر مقفل. لا يمكن تسجيل سلفة.')
-      return
-    }
-    if (!isAdmin) {
-      alert('تسجيل السُّلَف مسموح للأدمن فقط.')
-      return
-    }
-
-    const form = advanceForms[worker.id]
-    if (!form) return
-
-    const amount = toNumber(form.amount)
-    if (amount <= 0) {
-      alert('يرجى إدخال مبلغ سلفة صحيح')
-      return
-    }
-
-    setActionKey(`advance-${worker.id}`)
-    try {
-      await registerWorkerPayrollAdjustment({
-        branch: BRANCH,
-        workerId: worker.id,
-        workerName: getWorkerName(worker),
-        monthValue: selectedMonth,
-        operationType: 'advance',
-        operationDate: form.operationDate,
-        amount,
-        note: form.note || undefined
-      })
-      // إعادة تعيين النموذج
-      setAdvanceForms((prev) => ({
-        ...prev,
-        [worker.id]: { ...prev[worker.id], amount: '', note: '' }
-      }))
-      await loadData(true)
-      // تحديث السجل الكامل
-      const advances = await getWorkerAdvancesAllPeriods(BRANCH, worker.id)
-      setAllAdvancesForWorker(advances)
-    } catch (error) {
-      alert(toReadableError(error))
-    } finally {
-      setActionKey(null)
-    }
-  }, [isAdmin, isLocked, advanceForms, selectedMonth, loadData])
+  }, [isAdmin, isLocked, loadData, selectedWorkerForOperations])
 
   // ============================================================================
-  // معالجات الخصومات والديون
+  // معالجات الديون
   // ============================================================================
 
   const openDeductionsModal = useCallback(async (worker: WorkerWithUser) => {
@@ -1116,18 +1020,18 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
 
   const handleAddDeduction = useCallback(async (worker: WorkerWithUser) => {
     if (isLocked) {
-      alert('الشهر مقفل. لا يمكن إضافة خصم.')
+      alert('الشهر مقفل. لا يمكن إضافة دين.')
       return
     }
     if (!isAdmin) {
-      alert('إضافة الخصومات مسموحة للأدمن فقط.')
+      alert('إضافة الديون مسموحة للأدمن فقط.')
       return
     }
     const form = newDeductionForms[worker.id]
     if (!form) return
     const amount = toNumber(form.amount)
     if (amount <= 0) {
-      alert('يرجى إدخال مبلغ خصم صحيح')
+      alert('يرجى إدخال مبلغ دين صحيح')
       return
     }
     setActionKey(`deduction-${worker.id}`)
@@ -1316,7 +1220,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">رواتب العمال - قسم التفصيل</h1>
                 <p className="mt-1 text-sm text-gray-500">
-                  نظام شهري مترابط: الراتب، الدفعات، السلف، الخصومات، والقيود المحاسبية.
+                  نظام شهري مترابط: الراتب، الدفعات، الديون، والقيود المحاسبية.
                 </p>
               </div>
             </div>
@@ -1402,14 +1306,10 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
           </div>
         )}
 
-        <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <div className="rounded-xl border border-blue-200 bg-white p-4">
             <p className="text-sm text-blue-600">إجمالي الرواتب</p>
             <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(totals.salary)}</p>
-          </div>
-          <div className="rounded-xl border border-amber-200 bg-white p-4">
-            <p className="text-sm text-amber-600">إجمالي السلف</p>
-            <p className="mt-1 text-xl font-bold text-amber-700">{formatCurrency(totals.advances)}</p>
           </div>
           <div className="rounded-xl border border-red-200 bg-white p-4">
             <p className="text-sm text-red-600">إجمالي الديون المتراكمة</p>
@@ -1453,7 +1353,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     <tr>
                       <th className="px-3 py-2.5">العامل</th>
                       <th className="px-3 py-2.5">الراتب</th>
-                      <th className="px-3 py-2.5">السلف والديون</th>
+                      <th className="px-3 py-2.5">الديون</th>
                       <th className="px-3 py-2.5">إجمالي المدفوع</th>
                       <th className="px-3 py-2.5">المتبقي من الراتب</th>
                       <th className="px-3 py-2.5">الحالة</th>
@@ -1496,15 +1396,11 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-blue-700">{formatCurrency(row.basic_salary + row.works_total)}</td>
                           <td className="px-3 py-2.5">
-                            {row.advances_total > 0.009 && (
-                              <p className="text-xs font-semibold text-amber-700">سلف: {formatCurrency(row.advances_total)}</p>
-                            )}
-                            {workerDebt > 0.009 && (
-                              <p className="mt-0.5 inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">
+                            {workerDebt > 0.009 ? (
+                              <p className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">
                                 دين: {formatCurrency(workerDebt)}
                               </p>
-                            )}
-                            {row.advances_total <= 0.009 && workerDebt <= 0.009 && (
+                            ) : (
                               <span className="text-xs text-gray-400">—</span>
                             )}
                           </td>
@@ -1523,11 +1419,11 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <button
-                                onClick={() => openAdvancesModal(worker)}
-                                className="group inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-600 transition-all hover:bg-amber-100 hover:shadow-sm"
-                                title="إدارة السُّلَف"
+                                onClick={() => openOperationsModal(worker)}
+                                className="group inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 transition-all hover:bg-slate-100 hover:shadow-sm"
+                                title="سجل العمليات"
                               >
-                                <CreditCard className="h-4 w-4" />
+                                <History className="h-4 w-4" />
                               </button>
                               <button
                                 onClick={() => openDeductionsModal(worker)}
@@ -1536,7 +1432,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                     ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
                                     : 'border-red-200 bg-red-50 text-red-500 hover:bg-red-100'
                                 }`}
-                                title="إدارة الخصومات والديون"
+                                title="إدارة الديون"
                               >
                                 <AlertTriangle className="h-4 w-4" />
                               </button>
@@ -1596,7 +1492,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     <tr>
                       <th className="px-3 py-2.5">العامل</th>
                       <th className="px-3 py-2.5">الراتب</th>
-                      <th className="px-3 py-2.5">السلف والديون</th>
+                      <th className="px-3 py-2.5">الديون</th>
                       <th className="px-3 py-2.5">إجمالي المدفوع</th>
                       <th className="px-3 py-2.5">المتبقي من الراتب</th>
                       <th className="px-3 py-2.5">الحالة</th>
@@ -1639,15 +1535,11 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-blue-700">{formatCurrency(row.basic_salary + row.works_total)}</td>
                           <td className="px-3 py-2.5">
-                            {row.advances_total > 0.009 && (
-                              <p className="text-xs font-semibold text-amber-700">سلف: {formatCurrency(row.advances_total)}</p>
-                            )}
-                            {workerDebt > 0.009 && (
-                              <p className="mt-0.5 inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">
+                            {workerDebt > 0.009 ? (
+                              <p className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">
                                 دين: {formatCurrency(workerDebt)}
                               </p>
-                            )}
-                            {row.advances_total <= 0.009 && workerDebt <= 0.009 && (
+                            ) : (
                               <span className="text-xs text-gray-400">—</span>
                             )}
                           </td>
@@ -1666,11 +1558,11 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <button
-                                onClick={() => openAdvancesModal(worker)}
-                                className="group inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-600 transition-all hover:bg-amber-100 hover:shadow-sm"
-                                title="إدارة السُّلَف"
+                                onClick={() => openOperationsModal(worker)}
+                                className="group inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 transition-all hover:bg-slate-100 hover:shadow-sm"
+                                title="سجل العمليات"
                               >
-                                <CreditCard className="h-4 w-4" />
+                                <History className="h-4 w-4" />
                               </button>
                               <button
                                 onClick={() => openDeductionsModal(worker)}
@@ -1679,7 +1571,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                     ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
                                     : 'border-red-200 bg-red-50 text-red-500 hover:bg-red-100'
                                 }`}
-                                title="إدارة الخصومات والديون"
+                                title="إدارة الديون"
                               >
                                 <AlertTriangle className="h-4 w-4" />
                               </button>
@@ -1715,7 +1607,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
           </div>
         )}
 
-        {/* نافذة إدارة الخصومات والديون */}
+        {/* نافذة إدارة الديون */}
         {selectedWorkerForDeductions && (() => {
           const worker = selectedWorkerForDeductions
           const row = getMonthRow(worker)
@@ -1735,7 +1627,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                         <AlertTriangle className="h-5 w-5 text-red-600" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-gray-900">إدارة الخصومات والديون</h2>
+                        <h2 className="text-lg font-bold text-gray-900">إدارة الديون</h2>
                         <p className="text-sm text-gray-600">{getWorkerName(worker)}</p>
                       </div>
                     </div>
@@ -1751,7 +1643,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                   {/* ملخص */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-center">
-                      <p className="text-xs text-red-700">خصومات هذا الشهر</p>
+                      <p className="text-xs text-red-700">ديون هذا الشهر</p>
                       <p className="mt-1 text-lg font-bold text-red-900">{formatCurrency(row.deductions_total)}</p>
                     </div>
                     <div className={`rounded-xl border p-3 text-center ${workerDebt > 0.009 ? 'border-red-300 bg-red-100' : 'border-gray-200 bg-gray-50'}`}>
@@ -1760,23 +1652,23 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     </div>
                   </div>
 
-                  {/* تنبيه: الخصومات منفصلة عن الراتب */}
+                  {/* تنبيه: الديون منفصلة عن الراتب */}
                   <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                    الخصومات مستقلة عن الراتب — لا تُخصم من المتبقي، ويمكن تسديدها بشكل منفصل
+                    الديون مستقلة عن الراتب — لا تُخصم من المتبقي، ويمكن تسديدها بشكل منفصل
                   </div>
 
-                  {/* قسم إضافة خصم جديد */}
+                  {/* قسم إضافة دين جديد */}
                   {!isReadOnly && (
                     <div className="rounded-xl border border-red-200 p-4 space-y-3">
                       <h3 className="flex items-center gap-2 font-semibold text-gray-900">
                         <AlertTriangle className="h-4 w-4 text-red-600" />
-                        تسجيل خصم جديد
+                        تسجيل دين جديد
                       </h3>
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        placeholder="مبلغ الخصم"
+                        placeholder="مبلغ الدين"
                         value={newDeductionForm.amount}
                         onChange={(e) => setNewDeductionForms((prev) => ({
                           ...prev,
@@ -1795,7 +1687,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                       />
                       <input
                         type="text"
-                        placeholder="سبب الخصم (اختياري)"
+                        placeholder="سبب الدين (اختياري)"
                         value={newDeductionForm.note}
                         onChange={(e) => setNewDeductionForms((prev) => ({
                           ...prev,
@@ -1809,7 +1701,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                         className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
                       >
                         <AlertTriangle className="h-4 w-4" />
-                        {actionKey === 'deduction-' + worker.id ? 'جاري التسجيل...' : 'تسجيل الخصم'}
+                        {actionKey === 'deduction-' + worker.id ? 'جاري التسجيل...' : 'تسجيل الدين'}
                       </button>
                     </div>
                   )}
@@ -1866,12 +1758,12 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     </div>
                   )}
 
-                  {/* سجل خصومات هذا الشهر */}
+                  {/* سجل ديون هذا الشهر */}
                   {monthDeductions.length > 0 && (
                     <div className="rounded-xl border border-gray-200 p-4 space-y-3">
                       <h3 className="flex items-center gap-2 font-semibold text-gray-900">
                         <History className="h-4 w-4 text-gray-600" />
-                        خصومات هذا الشهر ({monthDeductions.length})
+                        ديون هذا الشهر ({monthDeductions.length})
                       </h3>
                       <div className="max-h-[200px] space-y-2 overflow-y-auto">
                         {monthDeductions.map((op) => (
@@ -1929,33 +1821,34 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
           )
         })()}
 
-        {/* نافذة إدارة السُّلَف */}
-        {selectedWorkerForAdvances && (() => {
-          const worker = selectedWorkerForAdvances
-          const row = getMonthRow(worker)
-          const advanceForm = advanceForms[worker.id]
-          const operations = operationsByWorker[worker.id] || []
-          const totalAdvances = allAdvancesForWorker.reduce((sum, op) => sum + op.amount, 0)
+        {/* نافذة سجل العمليات */}
+        {selectedWorkerForOperations && (() => {
+          const worker = selectedWorkerForOperations
 
-          if (!advanceForm) return null
+          const typeStyles: Record<PayrollOperationType, { border: string; bg: string; iconBg: string; iconText: string; amountText: string; icon: typeof DollarSign }> = {
+            salary:    { border: 'border-indigo-200',  bg: 'bg-indigo-50',  iconBg: 'bg-indigo-100',  iconText: 'text-indigo-700',  amountText: 'text-indigo-900',  icon: DollarSign },
+            payment:   { border: 'border-emerald-200', bg: 'bg-emerald-50', iconBg: 'bg-emerald-100', iconText: 'text-emerald-700', amountText: 'text-emerald-900', icon: Wallet },
+            deduction: { border: 'border-red-200',     bg: 'bg-red-50',     iconBg: 'bg-red-100',     iconText: 'text-red-700',     amountText: 'text-red-900',     icon: AlertTriangle },
+            advance:   { border: 'border-amber-200',   bg: 'bg-amber-50',   iconBg: 'bg-amber-100',   iconText: 'text-amber-700',   amountText: 'text-amber-900',   icon: History },
+          }
 
           return (
-            <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForAdvances(null)}>
+            <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForOperations(null)}>
               <div className="mx-auto my-8 max-w-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
                   {/* رأس النافذة */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
                     <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-amber-100 p-2">
-                        <CreditCard className="h-5 w-5 text-amber-600" />
+                      <div className="rounded-lg bg-slate-100 p-2">
+                        <History className="h-5 w-5 text-slate-600" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-gray-900">إدارة السُّلَف</h2>
+                        <h2 className="text-lg font-bold text-gray-900">سجل العمليات</h2>
                         <p className="text-sm text-gray-600">{getWorkerName(worker)}</p>
                       </div>
                     </div>
                     <button
-                      onClick={() => setSelectedWorkerForAdvances(null)}
+                      onClick={() => setSelectedWorkerForOperations(null)}
                       className="rounded-lg p-2 hover:bg-gray-100"
                       title="إغلاق"
                     >
@@ -1963,130 +1856,66 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     </button>
                   </div>
 
-                  {/* ملخص السُّلَف */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
-                      <p className="text-xs text-amber-700">إجمالي السُّلَف</p>
-                      <p className="mt-1 text-lg font-bold text-amber-900">{formatCurrency(totalAdvances)}</p>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-center">
-                      <p className="text-xs text-gray-600">صافي الراتب المستحق</p>
-                      <p className="mt-1 text-lg font-bold text-gray-900">{formatCurrency(row.net_due)}</p>
-                    </div>
+                  {/* تنبيه توضيحي */}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                    جميع العمليات المسجَّلة على ملف العامل عبر كل الفترات: تغيير الراتب، الدفعات، والديون — مرتبة من الأحدث إلى الأقدم.
                   </div>
 
-                  {/* نموذج إضافة سلفة جديدة */}
-                  {!isReadOnly && (
-                    <div className="rounded-xl border border-amber-200 p-4 space-y-3">
-                      <h3 className="flex items-center gap-2 font-semibold text-gray-900">
-                        <CreditCard className="h-4 w-4 text-amber-600" />
-                        تسجيل سلفة جديدة
-                      </h3>
-
-                      <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        السلفة تُخصم تلقائيًا من صافي الراتب عند حفظ الراتب الشهري
-                      </div>
-
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="مبلغ السلفة"
-                        value={advanceForm.amount}
-                        onChange={(e) => setAdvanceForms((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...prev[worker.id], amount: sanitizeNonNegativeInput(e.target.value) }
-                        }))}
-                        className={'w-full ' + NUMBER_INPUT_CLASS}
-                      />
-
-                      <input
-                        type="date"
-                        value={advanceForm.operationDate}
-                        onChange={(e) => setAdvanceForms((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...prev[worker.id], operationDate: e.target.value }
-                        }))}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                      />
-
-                      <input
-                        type="text"
-                        placeholder="ملاحظة (اختياري)"
-                        value={advanceForm.note}
-                        onChange={(e) => setAdvanceForms((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...prev[worker.id], note: e.target.value }
-                        }))}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                      />
-
-                      <button
-                        onClick={() => handleRegisterAdvance(worker)}
-                        disabled={!!actionKey}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
-                      >
-                        <CreditCard className="h-4 w-4" />
-                        {actionKey === 'advance-' + worker.id ? 'جاري التسجيل...' : 'تسجيل السلفة'}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* سجل السُّلَف - جميع الفترات */}
+                  {/* قائمة العمليات - جميع الفترات */}
                   <div className="rounded-xl border border-gray-200 p-4 space-y-3">
                     <h3 className="flex items-center gap-2 font-semibold text-gray-900">
                       <History className="h-4 w-4 text-gray-600" />
-                      سجل السُّلَف الكامل ({allAdvancesLoading ? '...' : allAdvancesForWorker.length})
+                      كل العمليات ({allOperationsLoading ? '...' : allOperationsForWorker.length})
                     </h3>
 
-                    {allAdvancesLoading ? (
+                    {allOperationsLoading ? (
                       <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
                         جاري التحميل...
                       </div>
-                    ) : allAdvancesForWorker.length === 0 ? (
+                    ) : allOperationsForWorker.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
-                        لا توجد سُلَف مسجلة
+                        لا توجد عمليات مسجلة
                       </div>
                     ) : (
-                      <div className="max-h-[350px] space-y-2 overflow-y-auto">
-                        {allAdvancesForWorker.map((op) => (
+                      <div className="max-h-[440px] space-y-2 overflow-y-auto">
+                        {allOperationsForWorker.map((op) => {
+                          const style = typeStyles[op.operation_type] || typeStyles.salary
+                          const OpIcon = style.icon
+                          return (
                             <div
                               key={op.id}
-                              className="group flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 transition-all hover:border-amber-300 hover:shadow-sm"
+                              className={`flex items-start justify-between rounded-lg border ${style.border} ${style.bg} p-3`}
                             >
                               <div className="flex items-start gap-2">
-                                <div className="rounded-lg bg-amber-100 p-1.5">
-                                  <CreditCard className="h-4 w-4 text-amber-700" />
+                                <div className={`rounded-lg ${style.iconBg} p-1.5`}>
+                                  <OpIcon className={`h-4 w-4 ${style.iconText}`} />
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-amber-900">{formatCurrency(op.amount)}</p>
-                                  <p className="text-xs text-amber-700">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`rounded-full border ${style.border} bg-white px-2 py-0.5 text-[11px] font-semibold ${style.iconText}`}>
+                                      {operationTypeLabel(op.operation_type)}
+                                    </span>
+                                    <p className={`font-semibold ${style.amountText}`}>{formatCurrency(op.amount)}</p>
+                                  </div>
+                                  <p className="mt-1 text-xs text-gray-600">
                                     {new Date(op.operation_date).toLocaleDateString('ar-SA-u-nu-latn', {
                                       year: 'numeric',
                                       month: 'short',
                                       day: 'numeric'
                                     })}
-                                  </p>
-                                  <p className="text-xs text-gray-500 mt-0.5">
-                                    الفترة: {op.payroll_month}/{op.payroll_year}
+                                    <span className="text-gray-400"> · الفترة {op.payroll_month}/{op.payroll_year}</span>
                                   </p>
                                   {op.note && (
-                                    <p className="text-xs text-gray-600 mt-0.5">{op.note}</p>
+                                    <p className="mt-0.5 text-xs text-gray-700">📝 {op.note}</p>
+                                  )}
+                                  {op.reference && (
+                                    <p className="mt-0.5 text-xs text-gray-500">المرجع: {op.reference}</p>
                                   )}
                                 </div>
                               </div>
-                              {isAdmin && (
-                                <button
-                                  onClick={() => handleDeleteAdvance(op.id, worker)}
-                                  disabled={!!actionKey}
-                                  className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
-                                  title="حذف السلفة"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              )}
                             </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -2290,7 +2119,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     {/* تنبيه عند الرصيد السالب */}
                     {row.salary_status === 'negative' && (
                       <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-700">
-                        صافي المستحق سالب — أي دفعة تُسجَّل ستُضاف كدين يُرحَّل للشهر القادم تحت "خصومات متراكمة".
+                        صافي المستحق سالب — أي دفعة تُسجَّل ستُضاف كدين يُرحَّل للشهر القادم تحت "ديون متراكمة".
                       </div>
                     )}
 

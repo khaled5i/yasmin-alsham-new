@@ -240,7 +240,11 @@ export async function getWorkerPayrollOperations(
   }
 }
 
-export async function getWorkerAdvancesAllPeriods(
+/**
+ * يجلب جميع العمليات المسجَّلة على ملف العامل عبر كل الفترات
+ * (الراتب، الدفعات، الديون) لعرضها في "سجل العمليات".
+ */
+export async function getWorkerOperationsAllPeriods(
   branch: BranchType,
   workerId: string
 ): Promise<WorkerPayrollOperation[]> {
@@ -254,19 +258,18 @@ export async function getWorkerAdvancesAllPeriods(
       .select('*')
       .eq('branch', branch)
       .eq('worker_id', workerId)
-      .eq('operation_type', 'advance')
-      .order('payroll_year', { ascending: false })
-      .order('payroll_month', { ascending: false })
+      .in('operation_type', ['salary', 'payment', 'deduction'])
       .order('operation_date', { ascending: false })
+      .order('created_at', { ascending: false })
 
     if (error) {
-      console.error('Error fetching worker advances all periods:', error)
+      console.error('Error fetching worker operations all periods:', error)
       return []
     }
 
     return (data || []) as WorkerPayrollOperation[]
   } catch (error) {
-    console.error('Error fetching worker advances all periods:', error)
+    console.error('Error fetching worker operations all periods:', error)
     return []
   }
 }
@@ -400,7 +403,7 @@ interface RegisterPayrollAdjustmentInput {
   workerId: string
   workerName: string
   monthValue: string
-  operationType: Extract<PayrollOperationType, 'advance' | 'deduction'>
+  operationType: Extract<PayrollOperationType, 'deduction'>
   operationDate: string
   amount: number
   reference?: string
