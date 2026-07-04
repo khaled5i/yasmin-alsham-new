@@ -808,20 +808,25 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         <body>
           <div class="mobile-controls">
             <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
-            <button class="close-btn" onclick="parent.document.getElementById('mobile-print-frame').remove()">✖ إغلاق</button>
+            <button class="close-btn">✖ إغلاق</button>
           </div>
           <div class="print-container">${printContent}</div>
-          <script>
-            // إغلاق iframe بعد الطباعة (اختياري)
-            window.onafterprint = function() {
-              // يمكن إلغاء التعليق لإغلاق تلقائي بعد الطباعة
-              // setTimeout(() => parent.document.getElementById('mobile-print-frame').remove(), 500);
-            };
-          </script>
         </body>
         </html>
       `)
       frameDoc.close()
+
+      // بعد انتهاء الطباعة (أو إغلاق المعاينة): إزالة الـ iframe وإغلاق المودال
+      // للعودة مباشرة إلى صفحة الطلبات الحديثة في نفس المكان الذي كان فيه المستخدم
+      const returnToOrders = () => {
+        try { printFrame?.remove() } catch {}
+        onClose()
+      }
+      const frameWin = printFrame.contentWindow
+      if (frameWin) {
+        frameWin.onafterprint = returnToOrders
+      }
+      frameDoc.querySelector('.close-btn')?.addEventListener('click', returnToOrders)
     } else {
       // على الكمبيوتر: استخدام نافذة منبثقة (كما هو)
       const printWindow = window.open('', '_blank', 'width=800,height=600')
@@ -856,6 +861,15 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         </html>
       `)
       printWindow.document.close()
+
+      // مراقبة إغلاق نافذة الطباعة للعودة مباشرة إلى صفحة الطلبات الحديثة
+      // في نفس المكان الذي كان فيه المستخدم قبل بدء الطباعة
+      const closeChecker = setInterval(() => {
+        if (printWindow.closed) {
+          clearInterval(closeChecker)
+          onClose()
+        }
+      }, 400)
     }
   }
 
