@@ -808,7 +808,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         <body>
           <div class="mobile-controls">
             <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
-            <button class="close-btn">✖ إغلاق</button>
+            <button class="close-btn" onclick="parent.document.getElementById('mobile-print-frame').remove()">✖ إغلاق</button>
           </div>
           <div class="print-container">${printContent}</div>
         </body>
@@ -816,17 +816,16 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
       `)
       frameDoc.close()
 
-      // بعد انتهاء الطباعة (أو إغلاق المعاينة): إزالة الـ iframe وإغلاق المودال
-      // للعودة مباشرة إلى صفحة الطلبات الحديثة في نفس المكان الذي كان فيه المستخدم
-      const returnToOrders = () => {
-        try { printFrame?.remove() } catch {}
-        onClose()
-      }
-      const frameWin = printFrame.contentWindow
-      if (frameWin) {
-        frameWin.onafterprint = returnToOrders
-      }
-      frameDoc.querySelector('.close-btn')?.addEventListener('click', returnToOrders)
+      // مراقبة إزالة الـ iframe (عند ضغط المستخدم زر "إغلاق" بعد الطباعة)
+      // لإغلاق المودال والعودة مباشرة إلى صفحة الطلبات في نفس المكان.
+      // مهم: لا نربط onafterprint ولا نحذف الـ iframe تلقائياً، لأن حذفه أثناء
+      // تجهيز معاينة الطباعة على أندرويد/أجهزة اللمس كان يسبب شاشة بيضاء / عدم ظهور الطابعة.
+      const frameWatcher = setInterval(() => {
+        if (!document.getElementById('mobile-print-frame')) {
+          clearInterval(frameWatcher)
+          onClose()
+        }
+      }, 400)
     } else {
       // على الكمبيوتر: استخدام نافذة منبثقة (كما هو)
       const printWindow = window.open('', '_blank', 'width=800,height=600')
