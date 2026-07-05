@@ -678,6 +678,66 @@ export async function payWorkerDeductionDebt(
   return data as { before_amount: number; after_amount: number; paid_amount: number }
 }
 
+interface SettleWorkerDebtFromSalaryInput {
+  branch: BranchType
+  workerId: string
+  workerName: string
+  monthValue: string
+  amount: number
+  paymentDate: string
+  note?: string
+}
+
+export interface SettleWorkerDebtResult {
+  before_amount: number
+  after_amount: number
+  paid_amount: number
+  /** الجزء الذي احتُسب ضمن سداد راتب الشهر (0 إذا كان الراتب مكتملاً أو الشهر مقفلاً) */
+  salary_part: number
+}
+
+/**
+ * تسديد دفعة من الدين مع احتسابها ضمن سداد راتب الشهر (تسوية):
+ * - يُخفَّض الدين المتراكم ويُسجَّل في سجل دفعات الديون
+ * - يُسجَّل الجزء المتاح كدفعة راتب بعلامة debt_settlement (لا يُحتسب نقداً فعلياً)
+ * يتراجع تلقائياً للسلوك القديم (تخفيض الدين فقط) إذا لم تُطبَّق migration 59 بعد.
+ */
+export async function settleWorkerDebtFromSalary(
+  input: SettleWorkerDebtFromSalaryInput
+): Promise<SettleWorkerDebtResult> {
+  if (!isSupabaseConfigured()) throw new Error('Supabase is not configured')
+
+  const { year, month } = monthToYearMonth(input.monthValue)
+  const { data, error } = await supabase.rpc('settle_worker_debt_from_salary', {
+    p_branch: input.branch,
+    p_worker_id: input.workerId,
+    p_worker_name: input.workerName,
+    p_year: year,
+    p_month: month,
+    p_amount: input.amount,
+    p_payment_date: input.paymentDate,
+    p_note: input.note || null
+  })
+
+  if (error) {
+    if (isMissingSupabaseResourceError(error)) {
+      // migration 59 غير مطبَّقة بعد — نستخدم التسديد القديم (بدون احتساب في الراتب)
+      const fallback = await payWorkerDeductionDebt({
+        branch: input.branch,
+        workerId: input.workerId,
+        workerName: input.workerName,
+        amount: input.amount,
+        paymentDate: input.paymentDate,
+        note: input.note
+      })
+      return { ...fallback, salary_part: 0 }
+    }
+    throw new Error(toErrorMessage(error))
+  }
+
+  return data as SettleWorkerDebtResult
+}
+
 export async function deleteWorkerPayrollOperation(operationId: string): Promise<void> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase is not configured')
@@ -688,6 +748,28 @@ export async function deleteWorkerPayrollOperation(operationId: string): Promise
   })
 
   if (error) {
+    throw new Error(toErrorMessage(error))
+  }
+}
+
+/**
+ * حذف سجل سداد دين:
+ * - يُعيد المبلغ إلى الدين المتراكم للعامل
+ * - إن كان السداد مرتبطاً بدفعة تسوية راتب تُحذف الدفعة معه ويُعاد حساب الشهر
+ */
+export async function deleteWorkerDeductionPayment(paymentId: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured')
+  }
+
+  const { error } = await supabase.rpc('delete_worker_deduction_payment', {
+    p_payment_id: paymentId
+  })
+
+  if (error) {
+    if (isMissingSupabaseResourceError(error)) {
+      throw new Error('حذف سداد الدين يتطلب تطبيق migration 60 أولاً')
+    }
     throw new Error(toErrorMessage(error))
   }
 }
@@ -836,6 +918,7 @@ export async function suspendWorkerPayroll(
 export async function unsuspendWorkerPayroll(
   branch: BranchType,
   workerId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _monthValue: string
 ): Promise<void> {
   if (!isSupabaseConfigured()) return

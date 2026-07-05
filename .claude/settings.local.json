@@ -21,7 +21,8 @@
       "Bash(wc -l \"/c/Users/khale/OneDrive/yasmin-alsham-main \\(1\\)/src/components/EditOrderModal.tsx\")",
       "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\app\\\\dashboard\\\\add-order\\\\page.tsx\")",
       "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\components\\\\EditOrderModal.tsx\")",
-      "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\app\\\\dashboard\\\\orders\\\\page.tsx\")"
+      "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\app\\\\dashboard\\\\orders\\\\page.tsx\")",
+      "Bash(echo \"build-exit:$?\")"
     ]
   }
 }
