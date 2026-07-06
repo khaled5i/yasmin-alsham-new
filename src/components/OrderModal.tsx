@@ -930,8 +930,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   {t('order_details')}
                 </h2>
                 <div className="flex items-center space-x-3 space-x-reverse">
-                  {/* زر الطباعة - للمدراء فقط */}
-                  {user?.role === 'admin' && (
+                  {/* زر الطباعة - للمدراء ومدراء الورشة */}
+                  {(user?.role === 'admin' || workerType === 'workshop_manager') && (
                     <button
                       onClick={() => setShowPrintModal(true)}
                       className="p-2 text-pink-500 hover:text-pink-700 hover:bg-pink-50 rounded-full transition-colors duration-300"

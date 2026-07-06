@@ -76,6 +76,9 @@ export interface Income {
   payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
   customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)
+  buyer_name?: string | null             // اسم العميل (اختياري) — customer_name يخزن اسم القماش
+  buyer_phone?: string | null            // رقم هاتف العميل (اختياري)
+  invoice_number?: number | null          // رقم الفاتورة التسلسلي (فرع الأقمشة فقط، يُعيَّن تلقائياً)
   date: string
   is_automatic: boolean   // هل تم إضافته تلقائياً من الطلبات
   created_at: string
@@ -92,6 +95,8 @@ export interface CreateIncomeInput {
   payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
   customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)
+  buyer_name?: string | null             // اسم العميل (اختياري) — customer_name يخزن اسم القماش
+  buyer_phone?: string | null            // رقم هاتف العميل (اختياري)
   date: string
   is_automatic?: boolean
 }

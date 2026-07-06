@@ -17,13 +17,16 @@ import {
   Boxes,
   Store,
   Users,
+  User,
+  Phone,
   CreditCard,
   Banknote,
   Layers,
   Square,
   BarChart3,
   ChevronDown,
-  Images
+  Images,
+  Printer
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -32,6 +35,7 @@ import ImageUpload from '@/components/ImageUpload'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
+import { printFabricSaleReceipt } from '@/lib/print-fabric-receipt'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
 type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
@@ -158,6 +162,9 @@ function FabricsIncomeContent() {
   const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
   const [otherSourceText, setOtherSourceText] = useState('')
   const [fabricImages, setFabricImages] = useState<string[]>([])
+  // اسم العميل ورقم هاتفه (اختياريان — لا يمنعان حفظ المبيعة)
+  const [buyerName, setBuyerName] = useState('')
+  const [buyerPhone, setBuyerPhone] = useState('')
 
   useEffect(() => {
     loadAll()
@@ -188,6 +195,8 @@ function FabricsIncomeContent() {
     setCustomerSource('')
     setOtherSourceText('')
     setFabricImages([])
+    setBuyerName('')
+    setBuyerPhone('')
   }
 
   const selectedItem = inventoryItems.find((it) => it.id === selectedInventoryId)
@@ -230,6 +239,8 @@ function FabricsIncomeContent() {
           payment_method: paymentMethod,
           customer_source: resolvedSource,
           fabric_images: showFabricImages ? fabricImages : [],
+          buyer_name: buyerName.trim() || null,
+          buyer_phone: buyerPhone.trim() || null,
           date
         })
         if (result) {
@@ -259,6 +270,8 @@ function FabricsIncomeContent() {
         payment_method: paymentMethod,
         customer_source: resolvedSource,
         fabric_images: showFabricImages ? fabricImages : [],
+        buyer_name: buyerName.trim() || null,
+        buyer_phone: buyerPhone.trim() || null,
         date
       }
       const result = await createIncome(payload)
@@ -284,6 +297,8 @@ function FabricsIncomeContent() {
     setDescription(item.description || '')
     setDate(item.date)
     setFabricImages(item.fabric_images ?? [])
+    setBuyerName(item.buyer_name ?? '')
+    setBuyerPhone(item.buyer_phone ?? '')
     setPaymentMethod((item.payment_method as 'cash' | 'network') || '')
     // مصدر الزبونة: تحويل القيمة المخزّنة إلى خيار النموذج
     if (item.customer_source === 'ياسمين الشام') {
@@ -318,7 +333,9 @@ function FabricsIncomeContent() {
     const matchSearch =
       !q ||
       item.customer_name?.toLowerCase().includes(q) ||
-      item.description?.toLowerCase().includes(q)
+      item.description?.toLowerCase().includes(q) ||
+      item.buyer_name?.toLowerCase().includes(q) ||
+      item.buyer_phone?.toLowerCase().includes(q)
 
     let matchDate = true
     if (dateFilter) {
@@ -662,6 +679,18 @@ function FabricsIncomeContent() {
                             {item.customer_source}
                           </span>
                         )}
+                        {item.buyer_name && (
+                          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+                            <User className="w-3 h-3" />
+                            {item.buyer_name}
+                          </span>
+                        )}
+                        {item.buyer_phone && (
+                          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-medium" dir="ltr">
+                            <Phone className="w-3 h-3" />
+                            {item.buyer_phone}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -674,24 +703,33 @@ function FabricsIncomeContent() {
                         </p>
                       )}
                     </div>
-                    {!item.is_automatic && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="تعديل"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="حذف"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => printFabricSaleReceipt(item)}
+                        className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        title="طباعة الفاتورة"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
+                      {!item.is_automatic && (
+                        <>
+                          <button
+                            onClick={() => handleEdit(item)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="تعديل"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="حذف"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -862,6 +900,37 @@ function FabricsIncomeContent() {
                             placeholder="اكتب اسم المصدر (اختياري)..."
                           />
                         )}
+                      </div>
+
+                      {/* اسم العميل ورقم الهاتف (اختياريان) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">اسم العميل (اختياري)</label>
+                          <div className="relative">
+                            <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={buyerName}
+                              onChange={(e) => setBuyerName(e.target.value)}
+                              className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                              placeholder="اسم العميل..."
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف (اختياري)</label>
+                          <div className="relative">
+                            <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <input
+                              type="tel"
+                              value={buyerPhone}
+                              onChange={(e) => setBuyerPhone(e.target.value)}
+                              dir="ltr"
+                              className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-right"
+                              placeholder="05xxxxxxxx"
+                            />
+                          </div>
+                        </div>
                       </div>
 
                       <div>

@@ -320,6 +320,15 @@ function isMissingFabricImagesColumn(error: { code?: string; message?: string } 
   )
 }
 
+// هل الخطأ ناتج عن عمودي buyer_name/buyer_phone غير موجودين بعد (لم تُطبَّق الهجرة 61)؟
+function isMissingBuyerColumns(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    (error.message?.includes('buyer_name') ?? false) ||
+    (error.message?.includes('buyer_phone') ?? false)
+  )
+}
+
 export async function createIncome(input: CreateIncomeInput): Promise<Income | null> {
   if (!isSupabaseConfigured()) {
     console.warn('⚠️ Supabase not configured')
@@ -327,7 +336,7 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
   }
 
   try {
-    const payload = {
+    let payload: Record<string, any> = {
       ...input,
       is_automatic: input.is_automatic ?? false
     }
@@ -337,6 +346,18 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
       .insert(payload)
       .select()
       .single()
+
+    // توافق تدريجي: إذا لم يُطبَّق عمودا buyer_name/buyer_phone بعد، أعد المحاولة بدونهما
+    if (error && isMissingBuyerColumns(error)) {
+      console.warn('⚠️ income.buyer_name/buyer_phone columns missing. Please run migrations/61-income-buyer-info.sql')
+      const { buyer_name: _n, buyer_phone: _p, ...withoutBuyer } = payload
+      payload = withoutBuyer
+      ;({ data, error } = await supabase
+        .from('income')
+        .insert(payload)
+        .select()
+        .single())
+    }
 
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_images بعد، أعد المحاولة بدونه
     if (error && isMissingFabricImagesColumn(error)) {
@@ -372,17 +393,32 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
   }
 
   try {
+    let payload: Record<string, any> = { ...input }
+
     let { data, error } = await supabase
       .from('income')
-      .update(input)
+      .update(payload)
       .eq('id', id)
       .select()
       .single()
 
+    // توافق تدريجي: إذا لم يُطبَّق عمودا buyer_name/buyer_phone بعد، أعد المحاولة بدونهما
+    if (error && isMissingBuyerColumns(error)) {
+      console.warn('⚠️ income.buyer_name/buyer_phone columns missing. Please run migrations/61-income-buyer-info.sql')
+      const { buyer_name: _n, buyer_phone: _p, ...withoutBuyer } = payload
+      payload = withoutBuyer
+      ;({ data, error } = await supabase
+        .from('income')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single())
+    }
+
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_images بعد، أعد المحاولة بدونه
     if (error && isMissingFabricImagesColumn(error)) {
       console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
-      const { fabric_images: _omit, ...withoutImages } = input
+      const { fabric_images: _omit, ...withoutImages } = payload
       ;({ data, error } = await supabase
         .from('income')
         .update(withoutImages)
