@@ -1,0 +1,96 @@
+// ============================================================================
+// خدمة طابور الطباعة عن بُعد (print_jobs) — migration 63
+// ----------------------------------------------------------------------------
+// الجوال يُرسل طلب طباعة (queueFabricReceiptPrint) → محطة الطباعة على الكاشير
+// تجلب المعلّق (getPendingPrintJobs)، تطالب به ذرياً (claimPrintJob) ثم تنهيه.
+// ============================================================================
+
+import { supabase } from '@/lib/supabase'
+import type { Income } from '@/types/simple-accounting'
+
+export type PrintJobStatus = 'pending' | 'printing' | 'done' | 'error'
+
+export interface PrintJob {
+  id: string
+  branch: string
+  job_type: string
+  income_id: string | null
+  payload: Income
+  status: PrintJobStatus
+  error_message: string | null
+  printed_at: string | null
+  created_at: string
+}
+
+const FABRICS_BRANCH = 'fabrics'
+
+/**
+ * إرسال طلب طباعة فاتورة بيع قماش إلى الطابور (يُستدعى من الجوال/صفحة المبيعات).
+ * نخزّن نسخة كاملة من بيانات البيع (payload) حتى تُطبع كما أُرسلت حتى لو تغيّر السجل لاحقاً.
+ */
+export async function queueFabricReceiptPrint(item: Income): Promise<void> {
+  const { error } = await supabase.from('print_jobs').insert({
+    branch: FABRICS_BRANCH,
+    job_type: 'fabric_sale_receipt',
+    income_id: item.id,
+    payload: item,
+    status: 'pending',
+  })
+  if (error) throw error
+}
+
+/** جلب الطلبات المعلّقة بالترتيب (تُستدعى عند بدء تشغيل المحطة + بعد كل حدث Realtime). */
+export async function getPendingPrintJobs(branch: string = FABRICS_BRANCH): Promise<PrintJob[]> {
+  const { data, error } = await supabase
+    .from('print_jobs')
+    .select('*')
+    .eq('branch', branch)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as PrintJob[]
+}
+
+/**
+ * مطالبة ذرية بطلب: pending → printing.
+ * الشرط `.eq('status', 'pending')` في UPDATE ذرّي على مستوى الصف في Postgres،
+ * فلو فُتحت المحطة على جهازين لن ينجح إلا واحد؛ الخاسر يحصل على null (لا طباعة مزدوجة).
+ */
+export async function claimPrintJob(id: string): Promise<PrintJob | null> {
+  const { data, error } = await supabase
+    .from('print_jobs')
+    .update({ status: 'printing' })
+    .eq('id', id)
+    .eq('status', 'pending')
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  return (data as PrintJob) ?? null
+}
+
+/** إنهاء الطلب بنجاح. */
+export async function markPrintJobDone(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('print_jobs')
+    .update({ status: 'done', printed_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** تعليم الطلب كفاشل مع رسالة مختصرة. */
+export async function markPrintJobError(id: string, message: string): Promise<void> {
+  const { error } = await supabase
+    .from('print_jobs')
+    .update({ status: 'error', error_message: message.slice(0, 500) })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** إعادة طلب فاشل إلى المعلّقات (زر "إعادة المحاولة" في المحطة). */
+export async function retryPrintJob(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('print_jobs')
+    .update({ status: 'pending', error_message: null })
+    .eq('id', id)
+  if (error) throw error
+}

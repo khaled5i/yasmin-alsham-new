@@ -17,7 +17,6 @@ import {
   Boxes,
   Store,
   Users,
-  User,
   Phone,
   CreditCard,
   Banknote,
@@ -26,7 +25,8 @@ import {
   BarChart3,
   ChevronDown,
   Images,
-  Printer
+  Printer,
+  Send
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -36,6 +36,7 @@ import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/servi
 import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
 import { printFabricSaleReceipt } from '@/lib/print-fabric-receipt'
+import { queueFabricReceiptPrint } from '@/lib/services/print-job-service'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
 type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
@@ -152,6 +153,8 @@ function FabricsIncomeContent() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showStats, setShowStats] = useState(false)
+  // نوع الجهاز: في الجوال نعرض زر «إرسال» للطابور، وفي الكمبيوتر زر «طباعة محلية»
+  const [isMobile, setIsMobile] = useState(false)
 
   // حقول النموذج (مشتركة بين الإضافة والتعديل)
   const [selectedInventoryId, setSelectedInventoryId] = useState('')
@@ -162,12 +165,19 @@ function FabricsIncomeContent() {
   const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
   const [otherSourceText, setOtherSourceText] = useState('')
   const [fabricImages, setFabricImages] = useState<string[]>([])
-  // اسم العميل ورقم هاتفه (اختياريان — لا يمنعان حفظ المبيعة)
-  const [buyerName, setBuyerName] = useState('')
+  // رقم هاتف العميل (اختياري — لا يمنع حفظ المبيعة)
   const [buyerPhone, setBuyerPhone] = useState('')
 
   useEffect(() => {
     loadAll()
+  }, [])
+
+  // كشف الجوال مرة واحدة بعد التحميل (يتجنّب اختلاف SSR)
+  useEffect(() => {
+    const ua = navigator.userAgent || ''
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua)
+    const isIpadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1
+    setIsMobile(isMobileUA || isIpadOS)
   }, [])
 
   const loadAll = async () => {
@@ -195,7 +205,6 @@ function FabricsIncomeContent() {
     setCustomerSource('')
     setOtherSourceText('')
     setFabricImages([])
-    setBuyerName('')
     setBuyerPhone('')
   }
 
@@ -207,6 +216,20 @@ function FabricsIncomeContent() {
     return `${item.name ?? ''} ${item.fabric_type ?? ''}`.includes('شك')
   }
   const showFabricImages = isShekFabric(selectedItem)
+
+  // بعد الحفظ: الكمبيوتر يطبع الفاتورة محلياً، الجوال يرسلها لطابور محطة الطباعة
+  const printOrQueueReceipt = async (rec: Income) => {
+    try {
+      if (isMobile) {
+        await queueFabricReceiptPrint(rec)
+        alert('✅ تم الحفظ وأُرسلت الفاتورة للطباعة على الكاشير')
+      } else {
+        printFabricSaleReceipt(rec)
+      }
+    } catch {
+      alert('⚠️ تم الحفظ لكن تعذّرت الطباعة')
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -239,12 +262,13 @@ function FabricsIncomeContent() {
           payment_method: paymentMethod,
           customer_source: resolvedSource,
           fabric_images: showFabricImages ? fabricImages : [],
-          buyer_name: buyerName.trim() || null,
+          buyer_name: null,
           buyer_phone: buyerPhone.trim() || null,
           date
         })
         if (result) {
           setIncome(income.map((it) => (it.id === editingId ? result : it)))
+          await printOrQueueReceipt(result)
         }
         setShowModal(false)
         setIsEditing(false)
@@ -270,13 +294,14 @@ function FabricsIncomeContent() {
         payment_method: paymentMethod,
         customer_source: resolvedSource,
         fabric_images: showFabricImages ? fabricImages : [],
-        buyer_name: buyerName.trim() || null,
+        buyer_name: null,
         buyer_phone: buyerPhone.trim() || null,
         date
       }
       const result = await createIncome(payload)
       if (result) {
         setIncome([result, ...income])
+        await printOrQueueReceipt(result)
       }
       setShowModal(false)
       resetForm()
@@ -297,7 +322,6 @@ function FabricsIncomeContent() {
     setDescription(item.description || '')
     setDate(item.date)
     setFabricImages(item.fabric_images ?? [])
-    setBuyerName(item.buyer_name ?? '')
     setBuyerPhone(item.buyer_phone ?? '')
     setPaymentMethod((item.payment_method as 'cash' | 'network') || '')
     // مصدر الزبونة: تحويل القيمة المخزّنة إلى خيار النموذج
@@ -334,7 +358,6 @@ function FabricsIncomeContent() {
       !q ||
       item.customer_name?.toLowerCase().includes(q) ||
       item.description?.toLowerCase().includes(q) ||
-      item.buyer_name?.toLowerCase().includes(q) ||
       item.buyer_phone?.toLowerCase().includes(q)
 
     let matchDate = true
@@ -429,7 +452,7 @@ function FabricsIncomeContent() {
             <Link href="/dashboard/accounting/fabrics" className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
               <ArrowLeft className="w-6 h-6 rotate-180" />
             </Link>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="p-3 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl shadow-lg">
                 <TrendingUp className="w-8 h-8 text-white" />
               </div>
@@ -438,6 +461,14 @@ function FabricsIncomeContent() {
                 <p className="text-gray-500">إيرادات مبيعات الأقمشة</p>
               </div>
             </div>
+            <Link
+              href="/dashboard/accounting/fabrics/print-station"
+              className="flex items-center gap-2 px-3 py-2 bg-sky-50 text-sky-700 rounded-xl hover:bg-sky-100 transition-colors text-sm font-medium flex-shrink-0"
+              title="محطة الطباعة (تُفتح على جهاز الكاشير)"
+            >
+              <Printer className="w-4 h-4" />
+              <span className="hidden sm:inline">محطة الطباعة</span>
+            </Link>
           </div>
         </motion.div>
 
@@ -679,12 +710,6 @@ function FabricsIncomeContent() {
                             {item.customer_source}
                           </span>
                         )}
-                        {item.buyer_name && (
-                          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
-                            <User className="w-3 h-3" />
-                            {item.buyer_name}
-                          </span>
-                        )}
                         {item.buyer_phone && (
                           <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-medium" dir="ltr">
                             <Phone className="w-3 h-3" />
@@ -704,13 +729,30 @@ function FabricsIncomeContent() {
                       )}
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => printFabricSaleReceipt(item)}
-                        className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                        title="طباعة الفاتورة"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
+                      {isMobile ? (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await queueFabricReceiptPrint(item)
+                              alert('✅ أُرسلت الفاتورة إلى محطة الطباعة على الكاشير')
+                            } catch {
+                              alert('❌ تعذّر إرسال الفاتورة للطباعة، تحقق من الاتصال')
+                            }
+                          }}
+                          className="p-2 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
+                          title="إرسال للطباعة على الكاشير"
+                        >
+                          <Send className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => printFabricSaleReceipt(item)}
+                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="طباعة محلية"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                      )}
                       {!item.is_automatic && (
                         <>
                           <button
@@ -902,34 +944,19 @@ function FabricsIncomeContent() {
                         )}
                       </div>
 
-                      {/* اسم العميل ورقم الهاتف (اختياريان) */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">اسم العميل (اختياري)</label>
-                          <div className="relative">
-                            <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            <input
-                              type="text"
-                              value={buyerName}
-                              onChange={(e) => setBuyerName(e.target.value)}
-                              className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                              placeholder="اسم العميل..."
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف (اختياري)</label>
-                          <div className="relative">
-                            <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            <input
-                              type="tel"
-                              value={buyerPhone}
-                              onChange={(e) => setBuyerPhone(e.target.value)}
-                              dir="ltr"
-                              className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-right"
-                              placeholder="05xxxxxxxx"
-                            />
-                          </div>
+                      {/* رقم هاتف العميل (اختياري) */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف (اختياري)</label>
+                        <div className="relative">
+                          <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                          <input
+                            type="tel"
+                            value={buyerPhone}
+                            onChange={(e) => setBuyerPhone(e.target.value)}
+                            dir="ltr"
+                            className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-right"
+                            placeholder="05xxxxxxxx"
+                          />
                         </div>
                       </div>
 
@@ -962,7 +989,11 @@ function FabricsIncomeContent() {
                     disabled={saving || inventoryItems.length === 0}
                     className="w-full py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50 font-medium"
                   >
-                    {saving ? 'جاري الحفظ...' : isEditing ? 'تحديث' : 'حفظ'}
+                    {saving
+                      ? 'جاري الحفظ...'
+                      : isEditing
+                        ? (isMobile ? 'تحديث وإرسال' : 'تحديث وطباعة')
+                        : (isMobile ? 'حفظ وإرسال' : 'حفظ وطباعة')}
                   </button>
                 </form>
               </motion.div>

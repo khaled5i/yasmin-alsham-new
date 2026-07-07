@@ -37,7 +37,10 @@ function invoiceNumberLabel(item: Income): string {
   return `#${item.id.slice(0, 8)}`
 }
 
-export function printFabricSaleReceipt(item: Income): void {
+// يبني مستند HTML كامل للإيصال (بدون سكربت طباعة تلقائي افتراضياً).
+// - المسار المباشر (زر الطباعة على الكاشير): autoPrint=true → يطبع ويغلق النافذة.
+// - محطة الطباعة عن بُعد: autoPrint=false → المحطة ترسمه في iframe وتستدعي print() بنفسها.
+export function buildFabricSaleReceiptHtml(item: Income, opts: { autoPrint?: boolean } = {}): string {
   const fabricName =
     item.customer_name && item.customer_name !== '-' ? item.customer_name : item.description || 'قماش'
   const pricePerMeter =
@@ -45,9 +48,7 @@ export function printFabricSaleReceipt(item: Income): void {
 
   const rows: string[] = [row('القماش', escapeHtml(fabricName))]
 
-  if (item.description && item.description !== fabricName) {
-    rows.push(row('ملاحظات', escapeHtml(item.description)))
-  }
+  // (الملاحظات لا تُطبع في الإيصال عمداً — بطلب المستخدم)
   if (item.quantity_meters) {
     rows.push(row('الكمية', `${item.quantity_meters} م`))
   }
@@ -57,14 +58,22 @@ export function printFabricSaleReceipt(item: Income): void {
   if (item.payment_method) {
     rows.push(row('طريقة الدفع', item.payment_method === 'cash' ? 'كاش' : 'شبكة'))
   }
-  if (item.buyer_name) {
-    rows.push(row('اسم العميل', escapeHtml(item.buyer_name)))
-  }
   if (item.buyer_phone) {
     rows.push(row('رقم الهاتف', escapeHtml(item.buyer_phone), true))
   }
 
-  const html = `
+  const autoPrintScript = opts.autoPrint
+    ? `<script>
+    window.onload = function () {
+      setTimeout(function () {
+        window.print();
+        window.close();
+      }, 300);
+    };
+  </script>`
+    : ''
+
+  return `
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -123,17 +132,14 @@ export function printFabricSaleReceipt(item: Income): void {
     </div>
   </div>
   <div class="feed"></div>
-  <script>
-    window.onload = function () {
-      setTimeout(function () {
-        window.print();
-        window.close();
-      }, 300);
-    };
-  </script>
+  ${autoPrintScript}
 </body>
 </html>
 `
+}
+
+export function printFabricSaleReceipt(item: Income): void {
+  const html = buildFabricSaleReceiptHtml(item, { autoPrint: true })
 
   const printWindow = window.open('', '_blank', 'width=400,height=600')
   if (!printWindow) {
