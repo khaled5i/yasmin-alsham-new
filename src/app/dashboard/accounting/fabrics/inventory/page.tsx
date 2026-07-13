@@ -41,6 +41,8 @@ import {
   type MovementType
 } from '@/lib/services/fabric-inventory-service'
 import { getSuppliers, createSupplier, type Supplier } from '@/lib/services/supplier-service'
+import { syncFabricProductToAlostaz } from '@/lib/services/alostaz-client'
+import { useAuthStore } from '@/store/authStore'
 
 // ─── ألوان سريعة للاختيار ──────────────────────────────────────────────────
 const PRESET_COLORS = [
@@ -225,12 +227,15 @@ interface ItemModalProps {
 }
 
 function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: ItemModalProps) {
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<CreateInventoryItemInput>({
     name: item?.name ?? '',
     fabric_type: item?.fabric_type ?? '',
     unit: item?.unit ?? 'meter',
     cost_per_unit: item?.cost_per_unit ?? undefined,
+    sale_price_per_unit: item?.sale_price_per_unit ?? undefined,
     supplier_id: item?.supplier_id ?? undefined,
     supplier_name: item?.supplier_name ?? undefined,
     notes: item?.notes ?? ''
@@ -281,6 +286,11 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.name) return
+    // سعر الشراء وسعر البيع إلزاميان (لازمان لتتبّع المخزون في الأستاذ)
+    if (form.cost_per_unit == null || form.sale_price_per_unit == null) {
+      alert('يرجى إدخال سعر الشراء وسعر البيع')
+      return
+    }
     setSaving(true)
     try {
       const payload: CreateInventoryItemInput = {
@@ -296,6 +306,11 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
         result = { ...result, colors }
       } else {
         result = await createInventoryItem(payload)
+        // إضافة المنتج المقابل في نظام المحاسبة (الأستاذ — فرع بروكار الشرقية)
+        // أفضل جهد: لا يوقف حفظ المخزون إن فشل، وللمدير فقط
+        if (isAdmin) {
+          syncFabricProductToAlostaz(result.id).catch(() => {})
+        }
         // حفظ الألوان المؤقتة
         const savedColors: FabricInventoryColor[] = []
         for (const c of colors) {
@@ -413,21 +428,41 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              سعر الشراء للوحدة (ر.س) — اختياري
-            </label>
-            <input
-              type="number"
-              value={form.cost_per_unit ?? ''}
-              onChange={e =>
-                setForm({ ...form, cost_per_unit: e.target.value ? parseFloat(e.target.value) : undefined })
-              }
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              min="0"
-              step="0.01"
-              placeholder="0.00"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                سعر الشراء للوحدة (ر.س) *
+              </label>
+              <input
+                type="number"
+                value={form.cost_per_unit ?? ''}
+                onChange={e =>
+                  setForm({ ...form, cost_per_unit: e.target.value ? parseFloat(e.target.value) : undefined })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                سعر البيع للوحدة (ر.س) *
+              </label>
+              <input
+                type="number"
+                value={form.sale_price_per_unit ?? ''}
+                onChange={e =>
+                  setForm({ ...form, sale_price_per_unit: e.target.value ? parseFloat(e.target.value) : undefined })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                required
+              />
+            </div>
           </div>
 
           {!item && (

@@ -15,7 +15,12 @@ import {
   Trash2,
   Wrench,
   MessageCircle, // Import MessageCircle
-  Loader
+  Loader,
+  Send,
+  CheckCircle2,
+  Calculator,
+  Banknote,
+  CreditCard
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast' // Import toast
@@ -28,6 +33,8 @@ import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
+import { sendInvoiceToAlostaz, getAutoSendEnabled, setAutoSendEnabled } from '@/lib/services/alostaz-client'
+import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 
 const PAGE_SIZE = 50
 
@@ -50,6 +57,14 @@ export default function DeliveredOrdersPage() {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
+  const [sendingId, setSendingId] = useState<string | null>(null)
+  const [sentMap, setSentMap] = useState<Record<string, { code?: string }>>({})
+  const [autoSend, setAutoSend] = useState(false)
+  const [autoSendBusy, setAutoSendBusy] = useState(false)
+  // الطلب المطروح عليه سؤال «ماذا نُرسِل؟» عند وجود كاش وشبكة معاً (الزر اليدوي)
+  const [sendChoiceOrder, setSendChoiceOrder] = useState<any>(null)
 
   // OPTIMIZATION: Load data immediately, don't wait for permissions
   useEffect(() => {
@@ -95,6 +110,70 @@ export default function DeliveredOrdersPage() {
     loadOrders({ status: 'delivered', page: 0, pageSize: PAGE_SIZE })
     loadWorkers()
   })
+
+  // تحميل حالة «الإرسال التلقائي» للمحاسبة (للمدير فقط)
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      getAutoSendEnabled().then(setAutoSend).catch(() => {})
+    }
+  }, [user])
+
+  // إرسال فاتورة الطلب إلى الأستاذ للمحاسبة (الزر اليدوي)
+  // عند وجود كاش وشبكة معاً نسأل ماذا نُرسِل؛ خلاف ذلك نُرسِل المتاح مباشرة.
+  const handleSendToAccounting = async (order: any, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (sendingId) return
+    const bd = computePaymentBreakdown(order)
+    if (bd.cashTotal > 0 && bd.networkTotal > 0) {
+      setSendChoiceOrder(order)
+      return
+    }
+    await performManualSend(order, 'both')
+  }
+
+  // تنفيذ الإرسال اليدوي بالوضع المختار: 'both' (كاش+شبكة) | 'cash' | 'network'
+  const performManualSend = async (order: any, mode: 'both' | 'cash' | 'network') => {
+    setSendChoiceOrder(null)
+    if (sendingId) return
+    setSendingId(order.id)
+    const res = await sendInvoiceToAlostaz(order.id, { mode })
+    setSendingId(null)
+
+    if (res.success) {
+      // يُعلَّم الطلب كمُرسَل حتى في وضع المسودة (منع إعادة الإرسال)
+      setSentMap(prev => ({ ...prev, [order.id]: { code: res.invoice_code } }))
+      if (res.alreadySent) {
+        toast('هذا الطلب مُرسَل مسبقاً إلى المحاسبة')
+      } else if (res.isDraft) {
+        toast(`مسودة أُنشئت في الأستاذ${res.invoice_code ? ' — ' + res.invoice_code : ''} (وضع تجريب)`, { icon: '🧪', duration: 6000 })
+      } else {
+        toast.success(`تم إرسال الفاتورة للمحاسبة${res.invoice_code ? ' — ' + res.invoice_code : ''}`)
+      }
+      if (res.warning) toast(res.warning, { icon: '⚠️' })
+    } else {
+      toast.error(res.error || 'فشل إرسال الفاتورة للمحاسبة')
+    }
+  }
+
+  // تفعيل/إيقاف الإرسال التلقائي
+  const handleToggleAutoSend = async () => {
+    if (autoSendBusy) return
+    const next = !autoSend
+    setAutoSend(next) // تفاؤلي
+    setAutoSendBusy(true)
+    const { error } = await setAutoSendEnabled(next)
+    setAutoSendBusy(false)
+    if (error) {
+      setAutoSend(!next) // تراجع عند الفشل
+      toast.error('تعذّر تحديث الإعداد: ' + error)
+    } else {
+      toast.success(next ? 'تم تفعيل الإرسال التلقائي لكل الفواتير' : 'تم إيقاف الإرسال التلقائي')
+    }
+  }
+
+  // هل أُرسِل الطلب للمحاسبة؟ (من قاعدة البيانات أو من الحالة المحلية)
+  const isOrderSent = (order: any) => !!order.alostaz_invoice_id || !!sentMap[order.id]
+  const getSentCode = (order: any) => order.alostaz_invoice_code || sentMap[order.id]?.code
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {
@@ -294,6 +373,34 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
 
       </div>
 
+      {/* مفتاح الإرسال التلقائي للمحاسبة (للمدير فقط) */}
+      {isAdmin && (
+        <div className="max-w-7xl mx-auto mb-6">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center shrink-0">
+                <Calculator className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800 text-sm">الإرسال التلقائي للمحاسبة (الأستاذ)</p>
+                <p className="text-xs text-gray-500">عند التفعيل تُرسَل فاتورة كل طلب تلقائياً بمجرد تسليمه</p>
+              </div>
+            </div>
+            <button
+              onClick={handleToggleAutoSend}
+              disabled={autoSendBusy}
+              role="switch"
+              aria-checked={autoSend}
+              dir="ltr"
+              className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${autoSend ? 'bg-emerald-500' : 'bg-gray-300'}`}
+              title={autoSend ? 'إيقاف الإرسال التلقائي' : 'تفعيل الإرسال التلقائي'}
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSend ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* قائمة الطلبات المسلمة */}
       <div className="max-w-7xl mx-auto">
         {deliveredOrders.length === 0 ? (
@@ -385,6 +492,29 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
 
                     {/* Action Buttons Stack */}
                     <div className="flex flex-col gap-2 mt-1">
+                      {/* إرسال للمحاسبة (الأستاذ) — للمدير فقط */}
+                      {isAdmin && (
+                        isOrderSent(order) ? (
+                          <div
+                            className="p-2 text-emerald-600 rounded-lg border border-emerald-100 bg-emerald-50 cursor-default"
+                            title={`تم الإرسال للمحاسبة${getSentCode(order) ? ' — ' + getSentCode(order) : ''}`}
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => handleSendToAccounting(order, e)}
+                            disabled={sendingId === order.id}
+                            className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-emerald-100"
+                            title="إرسال للمحاسبة (الأستاذ)"
+                          >
+                            {sendingId === order.id
+                              ? <Loader className="w-4 h-4 animate-spin" />
+                              : <Send className="w-4 h-4" />}
+                          </button>
+                        )
+                      )}
+
                       <Link
                         href={`/dashboard/alterations/add?orderId=${order.id}`}
                         onClick={(e) => e.stopPropagation()}
@@ -491,6 +621,68 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
           />
         </div>
       )}
+
+      {/* اختيار ما يُرسَل للمحاسبة عند وجود كاش وشبكة معاً (الزر اليدوي) */}
+      {sendChoiceOrder && (() => {
+        const bd = computePaymentBreakdown(sendChoiceOrder)
+        return (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setSendChoiceOrder(null)}
+          >
+            <div
+              className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-5">
+                <h3 className="text-lg font-bold text-white">إرسال للمحاسبة</h3>
+                <p className="text-white/80 text-sm mt-1">
+                  هذا الطلب يحتوي على دفعات كاش وشبكة. ماذا تريد أن تُرسِل؟
+                </p>
+              </div>
+              <div className="p-5 space-y-3">
+                <button
+                  onClick={() => performManualSend(sendChoiceOrder, 'both')}
+                  className="w-full flex items-center justify-between gap-2 py-3 px-4 rounded-xl border-2 border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-800 font-semibold transition-all"
+                >
+                  <span className="flex items-center gap-2">
+                    <Banknote className="w-5 h-5" />
+                    <CreditCard className="w-5 h-5" />
+                    الكاش والشبكة معاً
+                  </span>
+                  <span className="text-sm">{(bd.cashTotal + bd.networkTotal).toFixed(2)} ر.س</span>
+                </button>
+                <button
+                  onClick={() => performManualSend(sendChoiceOrder, 'network')}
+                  className="w-full flex items-center justify-between gap-2 py-3 px-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-semibold transition-all"
+                >
+                  <span className="flex items-center gap-2">
+                    <CreditCard className="w-5 h-5" />
+                    الشبكة فقط
+                  </span>
+                  <span className="text-sm">{bd.networkTotal.toFixed(2)} ر.س</span>
+                </button>
+                <button
+                  onClick={() => performManualSend(sendChoiceOrder, 'cash')}
+                  className="w-full flex items-center justify-between gap-2 py-3 px-4 rounded-xl border-2 border-green-200 bg-green-50 hover:bg-green-100 text-green-800 font-semibold transition-all"
+                >
+                  <span className="flex items-center gap-2">
+                    <Banknote className="w-5 h-5" />
+                    الكاش فقط
+                  </span>
+                  <span className="text-sm">{bd.cashTotal.toFixed(2)} ر.س</span>
+                </button>
+                <button
+                  onClick={() => setSendChoiceOrder(null)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium transition-all"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

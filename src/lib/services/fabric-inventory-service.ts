@@ -14,6 +14,7 @@ export interface FabricInventoryItem {
   unit: InventoryUnit
   current_quantity: number
   cost_per_unit: number | null
+  sale_price_per_unit: number | null
   supplier_id: string | null
   supplier_name: string | null
   notes: string | null
@@ -56,6 +57,7 @@ export interface CreateInventoryItemInput {
   fabric_type?: string
   unit: InventoryUnit
   cost_per_unit?: number
+  sale_price_per_unit?: number
   supplier_id?: string
   supplier_name?: string
   notes?: string
@@ -166,14 +168,35 @@ export async function deleteColor(id: string): Promise<void> {
 
 // ---- إنشاء ----
 
+// هل الخطأ ناتج عن عمود sale_price_per_unit غير موجود بعد (لم تُطبَّق الهجرة 66)؟
+function isMissingSalePriceColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    error.code === 'PGRST204' ||
+    error.code === '42703' ||
+    (error.message?.includes('sale_price_per_unit') ?? false)
+  )
+}
+
 export async function createInventoryItem(
   input: CreateInventoryItemInput
 ): Promise<FabricInventoryItem> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('fabric_inventory')
     .insert([{ ...input }])
     .select()
     .single()
+
+  // توافق تدريجي: إذا لم يُطبَّق عمود sale_price_per_unit بعد، أعد المحاولة بدونه
+  if (error && isMissingSalePriceColumn(error)) {
+    console.warn('⚠️ fabric_inventory.sale_price_per_unit column missing. Please run migrations/66-fabric-inventory-sale-price.sql')
+    const { sale_price_per_unit: _omit, ...withoutSale } = input
+    ;({ data, error } = await supabase
+      .from('fabric_inventory')
+      .insert([{ ...withoutSale }])
+      .select()
+      .single())
+  }
 
   if (error) throw error
   return data
@@ -201,12 +224,24 @@ export async function updateInventoryItem(
   id: string,
   input: Partial<CreateInventoryItemInput>
 ): Promise<FabricInventoryItem> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('fabric_inventory')
     .update({ ...input })
     .eq('id', id)
     .select()
     .single()
+
+  // توافق تدريجي: إذا لم يُطبَّق عمود sale_price_per_unit بعد، أعد المحاولة بدونه
+  if (error && isMissingSalePriceColumn(error)) {
+    console.warn('⚠️ fabric_inventory.sale_price_per_unit column missing. Please run migrations/66-fabric-inventory-sale-price.sql')
+    const { sale_price_per_unit: _omit, ...withoutSale } = input
+    ;({ data, error } = await supabase
+      .from('fabric_inventory')
+      .update({ ...withoutSale })
+      .eq('id', id)
+      .select()
+      .single())
+  }
 
   if (error) throw error
   return data

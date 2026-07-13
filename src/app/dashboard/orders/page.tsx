@@ -54,7 +54,8 @@ import {
   BellRing
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
-import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
+import RemainingPaymentWarningModal, { type RemainingPaymentMethod } from '@/components/RemainingPaymentWarningModal'
+import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
 
 const PAGE_SIZE = 50
 
@@ -694,10 +695,13 @@ function OrdersPageInner() {
   const handleDeliverOrder = async (orderId: string) => {
     setIsProcessing(true)
     try {
-      const today = new Date()
-      const deliveryDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-      const result = await updateOrder(orderId, { status: 'delivered', delivery_date: deliveryDate })
+      const order = orders.find(o => o.id === orderId) || orderToDeliver
+      // تحديثات موحّدة: لقطة العربون (لا يوجد متبقٍ يُحصَّل هنا)
+      const updates = buildDeliveryUpdates(order, { markAsPaid: false })
+      const result = await updateOrder(orderId, updates)
       if (result.success) {
+        // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
+        void autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
         toast.success(isArabic ? 'تم تسليم الطلب' : 'Order delivered', { icon: '✓' })
       } else {
         toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
@@ -718,19 +722,18 @@ function OrdersPageInner() {
     await handleDeliverOrder(order.id)
   }
 
-  const deliverOrderWithPaidStatus = async (orderId: string, markAsPaid: boolean) => {
+  const deliverOrderWithPaidStatus = async (orderId: string, markAsPaid: boolean, remainingMethod?: RemainingPaymentMethod) => {
     setIsProcessing(true)
     try {
       const order = orderToDeliver
-      const updates: any = { status: 'delivered', delivery_date: new Date().toISOString() }
-      if (markAsPaid && order) {
-        updates.paid_amount = order.price
-        updates.payment_status = 'paid'
-      }
+      // تحديثات موحّدة: لقطة العربون + طريقة دفع المتبقي عند markAsPaid
+      const updates = buildDeliveryUpdates(order, { markAsPaid, remainingMethod })
       const result = await updateOrder(orderId, updates)
       if (result.success) {
         setShowPaymentWarning(false)
         setOrderToDeliver(null)
+        // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
+        void autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
         if (order && order.client_phone) {
           sendDeliveredWhatsApp(order.client_name, order.client_phone)
         }
@@ -1559,7 +1562,7 @@ function OrdersPageInner() {
                                     <Edit className="w-5 h-5" />
                                   </button>
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); if (order.status === 'pending') handleDeliverOrder(order.id) }}
+                                    onClick={(e) => { e.stopPropagation(); if (order.status === 'pending') handleMarkAsDeliveredWithCheck(order) }}
                                     disabled={isProcessing || order.status !== 'pending'}
                                     className="flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200 disabled:opacity-30 disabled:cursor-not-allowed"
                                     title={isArabic ? 'تم التسليم' : 'Mark as Delivered'}
@@ -1789,7 +1792,7 @@ function OrdersPageInner() {
           isOpen={showPaymentWarning}
           remainingAmount={orderToDeliver?.remaining_amount || 0}
           onCancel={() => { setShowPaymentWarning(false); setOrderToDeliver(null) }}
-          onMarkAsPaid={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, true) }}
+          onMarkAsPaid={(method) => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, true, method) }}
           onIgnore={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, false) }}
         />
 

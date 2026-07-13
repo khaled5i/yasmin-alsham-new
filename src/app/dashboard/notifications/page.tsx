@@ -11,7 +11,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { orderService, type Order } from '@/lib/services/order-service'
 import { shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
-import { sendSecondProofReadyWhatsApp } from '@/utils/whatsapp'
+import { sendSecondProofReadyWhatsApp, sendReadyForPickupWhatsApp } from '@/utils/whatsapp'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
 import MeasurementsModal from '@/components/MeasurementsModal'
@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Bell,
   BellRing,
+  PackageCheck,
   MessageCircle,
   CheckCircle,
   Ruler,
@@ -35,9 +36,10 @@ import {
 } from 'lucide-react'
 
 // أقسام الإشعارات — مصمَّمة لتقبل أنواعاً جديدة مستقبلاً (طلبات تحتاج مراجعة، إلخ)
-type NotificationCategory = 'second_proof'
+type NotificationCategory = 'second_proof' | 'completion'
 const NOTIFICATION_CATEGORIES: { key: NotificationCategory; labelAr: string; labelEn: string; icon: typeof BellRing }[] = [
   { key: 'second_proof', labelAr: 'البروفا الثانية', labelEn: 'Second Proof', icon: BellRing },
+  { key: 'completion', labelAr: 'اكتمال الطلب', labelEn: 'Order Completed', icon: PackageCheck },
 ]
 
 type SortOption = 'newest' | 'oldest' | 'priority'
@@ -49,10 +51,20 @@ export default function NotificationsPage() {
   const { t, isArabic } = useTranslation()
   const router = useRouter()
 
-  const [orders, setOrders] = useState<Order[]>([])
+  // قائمتان منفصلتان لكل نوع إشعار (لعرض عدّادات دقيقة على أزرار الفلترة)
+  const [secondProofOrders, setSecondProofOrders] = useState<Order[]>([])
+  const [completionOrders, setCompletionOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [category, setCategory] = useState<NotificationCategory>('second_proof')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
+
+  // القائمة النشطة + مُحدّثها حسب القسم المختار
+  const isCompletion = category === 'completion'
+  const orders = isCompletion ? completionOrders : secondProofOrders
+  const updateActiveOrders = (updater: (prev: Order[]) => Order[]) => {
+    if (isCompletion) setCompletionOrders(updater)
+    else setSecondProofOrders(updater)
+  }
 
   // تتبّع العمليات الجارية لكل طلب
   const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null)
@@ -80,17 +92,26 @@ export default function NotificationsPage() {
     }
   }, [user, authLoading, router])
 
-  // جلب إشعارات البروفا الثانية (مرتبة من الأحدث إلى الأقدم حسب تاريخ الإنجاز)
+  // جلب كل أنواع الإشعارات معاً (مرتبة من الأحدث إلى الأقدم حسب تاريخ الإنجاز/الاكتمال)
   const loadNotifications = useCallback(async () => {
     setIsLoading(true)
     try {
-      const { data } = await orderService.getAll({
-        secondProofCompleted: true,
-        noPagination: true,
-        orderBy: 'second_proof_completed_at',
-        orderAscending: false,
-      })
-      setOrders(data || [])
+      const [secondProof, completion] = await Promise.all([
+        orderService.getAll({
+          secondProofCompleted: true,
+          noPagination: true,
+          orderBy: 'second_proof_completed_at',
+          orderAscending: false,
+        }),
+        orderService.getAll({
+          completionPending: true,
+          noPagination: true,
+          orderBy: 'completion_notified_at',
+          orderAscending: false,
+        }),
+      ])
+      setSecondProofOrders(secondProof.data || [])
+      setCompletionOrders(completion.data || [])
     } finally {
       setIsLoading(false)
     }
@@ -149,6 +170,11 @@ export default function NotificationsPage() {
   const isOrderPrinted = (order: any) => order?.is_printed === true
 
   // ============ ترتيب الطلبات ============
+  // توقيت الإنجاز المعتمد للترتيب يختلف حسب نوع الإشعار
+  const getSortTimestamp = (o: any) => isCompletion
+    ? (o.completion_notified_at || o.worker_completed_at || o.created_at)
+    : (o.second_proof_completed_at || o.created_at)
+
   const sortedOrders = [...orders].sort((a, b) => {
     if (sortBy === 'priority') {
       // الأولوية: المستعجل أولاً، ثم الأقرب موعد تسليم
@@ -157,12 +183,12 @@ export default function NotificationsPage() {
       if (aUrgent !== bUrgent) return bUrgent - aUrgent
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
     }
-    const aTime = new Date(a.second_proof_completed_at || a.created_at).getTime()
-    const bTime = new Date(b.second_proof_completed_at || b.created_at).getTime()
+    const aTime = new Date(getSortTimestamp(a)).getTime()
+    const bTime = new Date(getSortTimestamp(b)).getTime()
     return sortBy === 'oldest' ? aTime - bTime : bTime - aTime
   })
 
-  // ============ الإجراءات ============
+  // ============ إجراءات إشعارات البروفا الثانية ============
   // إرسال رسالة "البروفا الثانية جاهزة" + تمييز الطلب بأنه أُرسل (علامة الصح)
   const handleSendSecondProofWhatsApp = async (order: any) => {
     if (!order?.client_phone || order.client_phone.trim() === '') {
@@ -174,7 +200,7 @@ export default function NotificationsPage() {
       sendSecondProofReadyWhatsApp(order.client_name, order.client_phone)
       if (order.second_proof_whatsapp_sent !== true) {
         await updateOrder(order.id, { second_proof_whatsapp_sent: true } as any)
-        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, second_proof_whatsapp_sent: true } : o))
+        setSecondProofOrders(prev => prev.map(o => o.id === order.id ? { ...o, second_proof_whatsapp_sent: true } : o))
       }
       toast.success(isArabic ? 'تم فتح واتساب لإرسال رسالة البروفا الثانية' : 'WhatsApp opened (second proof message)', { icon: '📱', duration: 3000 })
     } catch {
@@ -184,13 +210,13 @@ export default function NotificationsPage() {
     }
   }
 
-  // إخفاء الإشعار يدوياً بعد الانتهاء منه نهائياً
-  const handleDismiss = async (order: any) => {
+  // إخفاء إشعار البروفا الثانية يدوياً بعد الانتهاء منه نهائياً
+  const handleDismissSecondProof = async (order: any) => {
     setDismissingId(order.id)
     try {
       const result = await updateOrder(order.id, { second_proof_dismissed: true } as any)
       if (result.success) {
-        setOrders(prev => prev.filter(o => o.id !== order.id))
+        setSecondProofOrders(prev => prev.filter(o => o.id !== order.id))
         toast.success(isArabic ? 'تم إخفاء الإشعار' : 'Notification hidden', { icon: '✓' })
       } else {
         toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
@@ -199,6 +225,51 @@ export default function NotificationsPage() {
       setDismissingId(null)
     }
   }
+
+  // ============ إجراءات إشعارات اكتمال الطلب ============
+  // إرسال رسالة "الطلب جاهز للاستلام" + ضبط admin_confirmed=true → يُخفي الإشعار تلقائياً
+  const handleSendCompletionWhatsApp = async (order: any) => {
+    if (!order?.client_phone || order.client_phone.trim() === '') {
+      toast.error(isArabic ? 'لا يوجد رقم هاتف للزبونة' : 'Client phone is missing', { icon: '⚠️' })
+      return
+    }
+    setSendingWhatsAppId(order.id)
+    try {
+      sendReadyForPickupWhatsApp(order.client_name, order.client_phone)
+      // إرسال رسالة الجاهزية يُعدّ تأكيداً للمراجعة (admin_confirmed) → يُخفي إشعار الاكتمال تلقائياً
+      const result = await updateOrder(order.id, { admin_confirmed: true } as any)
+      if (result.success) {
+        setCompletionOrders(prev => prev.filter(o => o.id !== order.id))
+        toast.success(isArabic ? 'تم فتح واتساب وإخفاء الإشعار تلقائياً' : 'WhatsApp opened, notification auto-hidden', { icon: '📱', duration: 3000 })
+      } else {
+        toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
+      }
+    } catch {
+      toast.error(isArabic ? 'حدث خطأ أثناء فتح واتساب' : 'Failed to open WhatsApp', { icon: '⚠️' })
+    } finally {
+      setSendingWhatsAppId(null)
+    }
+  }
+
+  // إخفاء إشعار الاكتمال يدوياً
+  const handleDismissCompletion = async (order: any) => {
+    setDismissingId(order.id)
+    try {
+      const result = await updateOrder(order.id, { completion_dismissed: true } as any)
+      if (result.success) {
+        setCompletionOrders(prev => prev.filter(o => o.id !== order.id))
+        toast.success(isArabic ? 'تم إخفاء الإشعار' : 'Notification hidden', { icon: '✓' })
+      } else {
+        toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
+      }
+    } finally {
+      setDismissingId(null)
+    }
+  }
+
+  // اختيار المُعالِج المناسب حسب القسم النشط
+  const handleSendWhatsApp = (order: any) => isCompletion ? handleSendCompletionWhatsApp(order) : handleSendSecondProofWhatsApp(order)
+  const handleDismiss = (order: any) => isCompletion ? handleDismissCompletion(order) : handleDismissSecondProof(order)
 
   const handleViewOrder = (order: any) => { setSelectedOrder(order); setShowViewModal(true) }
   const handleEditOrder = (order: any) => { setSelectedOrder(order); setShowEditModal(true) }
@@ -220,7 +291,7 @@ export default function NotificationsPage() {
   }
 
   const refreshOrderInList = (orderId: string, updated: Partial<Order>) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updated } : o))
+    updateActiveOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updated } : o))
   }
 
   // حفظ المقاسات (منطق مطابق لصفحة الطلبات)
@@ -328,8 +399,13 @@ export default function NotificationsPage() {
     setSelectedOrder(null)
   }
 
-  // عدد الإشعارات الجديدة (لم تُرسَل رسالتها بعد)
-  const newCount = orders.filter(o => o.second_proof_whatsapp_sent !== true).length
+  // عدد الإشعارات الجديدة (لم تُرسَل رسالتها بعد) عبر كل الأقسام
+  const secondProofNewCount = secondProofOrders.filter(o => o.second_proof_whatsapp_sent !== true).length
+  const completionNewCount = completionOrders.length  // كل إشعارات الاكتمال تُعدّ جديدة (إرسال الواتساب يُخفيها)
+  const newCount = secondProofNewCount + completionNewCount
+
+  // عدّاد يظهر على زر فلترة كل قسم
+  const categoryCount = (key: NotificationCategory) => key === 'completion' ? completionOrders.length : secondProofOrders.length
 
   if (authLoading || !user) {
     return (
@@ -368,7 +444,7 @@ export default function NotificationsPage() {
               {isArabic ? 'مركز الإشعارات' : 'Notification Center'}
             </h1>
             <p className="text-sm sm:text-base text-gray-600">
-              {isArabic ? 'مراجعة الأمور المهمة التي يحددها العمال' : 'Review important items flagged by workers'}
+              {isArabic ? 'مراجعة الأمور المهمة التي يحددها العمال والنظام' : 'Review important items flagged by workers and the system'}
             </p>
           </div>
         </motion.div>
@@ -385,6 +461,7 @@ export default function NotificationsPage() {
                 {NOTIFICATION_CATEGORIES.map(cat => {
                   const Icon = cat.icon
                   const active = category === cat.key
+                  const count = categoryCount(cat.key)
                   return (
                     <button
                       key={cat.key}
@@ -395,9 +472,9 @@ export default function NotificationsPage() {
                     >
                       <Icon className="w-4 h-4" />
                       {isArabic ? cat.labelAr : cat.labelEn}
-                      {cat.key === 'second_proof' && orders.length > 0 && (
+                      {count > 0 && (
                         <span className={`px-1.5 py-0.5 rounded-full text-xs ${active ? 'bg-pink-200 text-pink-800' : 'bg-gray-100 text-gray-600'}`}>
-                          {orders.length}
+                          {count}
                         </span>
                       )}
                     </button>
@@ -435,13 +512,16 @@ export default function NotificationsPage() {
             <Inbox className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-xl font-medium text-gray-600 mb-2">{isArabic ? 'لا توجد إشعارات' : 'No notifications'}</h3>
             <p className="text-gray-500">
-              {isArabic ? 'ستظهر هنا الطلبات التي يبلّغ العمال بجهوزية بروفتها الثانية' : 'Orders flagged by workers as second-proof-ready will appear here'}
+              {isCompletion
+                ? (isArabic ? 'ستظهر هنا الطلبات التي تُحدَّد كمكتملة' : 'Orders marked as completed will appear here')
+                : (isArabic ? 'ستظهر هنا الطلبات التي يبلّغ العمال بجهوزية بروفتها الثانية' : 'Orders flagged by workers as second-proof-ready will appear here')}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {sortedOrders.map((order, index) => {
-              const isSent = order.second_proof_whatsapp_sent === true
+              // حالة "أُرسِلت الرسالة" تخصّ البروفا الثانية فقط (إشعار الاكتمال يُخفى عند الإرسال)
+              const isSent = !isCompletion && order.second_proof_whatsapp_sent === true
               return (
                 <motion.div
                   key={order.id}
@@ -449,17 +529,24 @@ export default function NotificationsPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: Math.min(index, 6) * 0.06 }}
                   className={`bg-white rounded-xl border p-5 shadow-sm hover:shadow-lg transition-all ${
-                    isSent ? 'border-green-200' : 'border-amber-200'
+                    isSent ? 'border-green-200' : (isCompletion ? 'border-emerald-200' : 'border-amber-200')
                   }`}
                 >
                   {/* شارة الإشعار + وقت الإنجاز */}
                   <div className="flex items-center justify-between mb-3">
-                    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                      isSent ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      <BellRing className="w-3.5 h-3.5" />
-                      {isArabic ? 'البروفا الثانية جاهزة' : 'Second Proof Ready'}
-                    </div>
+                    {isCompletion ? (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                        <PackageCheck className="w-3.5 h-3.5" />
+                        {isArabic ? 'الطلب مكتمل — جاهز للتسليم' : 'Order Completed — Ready'}
+                      </div>
+                    ) : (
+                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        isSent ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        <BellRing className="w-3.5 h-3.5" />
+                        {isArabic ? 'البروفا الثانية جاهزة' : 'Second Proof Ready'}
+                      </div>
+                    )}
                     {(order as any).is_urgent === true && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 text-xs font-semibold">
                         <Zap className="w-3 h-3" /> {isArabic ? 'مستعجل' : 'Urgent'}
@@ -479,17 +566,21 @@ export default function NotificationsPage() {
                       )}
                       <div className="space-y-1 mt-1">
                         <p className="text-sm text-gray-600"><span className="font-medium">{isArabic ? 'الهاتف:' : 'Phone:'}</span> <span dir="ltr">{order.client_phone}</span></p>
-                        <p className="text-sm text-yellow-700">
-                          <span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span>{' '}
-                          {formatDate(order.second_proof_date || (order.due_date ? shiftDate(order.due_date, -1) : null))}
-                        </p>
+                        {!isCompletion && (
+                          <p className="text-sm text-yellow-700">
+                            <span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span>{' '}
+                            {formatDate(order.second_proof_date || (order.due_date ? shiftDate(order.due_date, -1) : null))}
+                          </p>
+                        )}
                         <p className="text-sm text-gray-700"><span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span> {formatDate(order.due_date)}</p>
                         {order.worker_id && getWorkerName(order.worker_id) && (
                           <p className="text-sm text-gray-600"><span className="font-medium">{isArabic ? 'العامل:' : 'Worker:'}</span> {getWorkerName(order.worker_id)}</p>
                         )}
                         <p className="text-xs text-gray-400 flex items-center gap-1 pt-1">
                           <CalendarDays className="w-3.5 h-3.5" />
-                          {isArabic ? 'تم الإبلاغ:' : 'Notified:'} {formatDateTime(order.second_proof_completed_at)}
+                          {isCompletion
+                            ? `${isArabic ? 'اكتمل:' : 'Completed:'} ${formatDateTime(order.completion_notified_at || order.worker_completed_at)}`
+                            : `${isArabic ? 'تم الإبلاغ:' : 'Notified:'} ${formatDateTime(order.second_proof_completed_at)}`}
                         </p>
                       </div>
                     </div>
@@ -513,12 +604,14 @@ export default function NotificationsPage() {
                         <Printer className="w-5 h-5" />
                         {isOrderPrinted(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
                       </button>
-                      {/* زر الواتساب الخاص برسالة البروفا الثانية */}
+                      {/* زر الواتساب — رسالة الجاهزية للاستلام (اكتمال) أو جهوزية البروفا الثانية */}
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleSendSecondProofWhatsApp(order) }}
+                        onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(order) }}
                         disabled={sendingWhatsAppId === order.id}
                         className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200 disabled:opacity-50"
-                        title={isArabic ? 'إرسال رسالة جهوزية البروفا الثانية' : 'Send second-proof-ready message'}
+                        title={isCompletion
+                          ? (isArabic ? 'إرسال رسالة الجاهزية للاستلام (يُخفي الإشعار)' : 'Send ready-for-pickup message (auto-hides)')
+                          : (isArabic ? 'إرسال رسالة جهوزية البروفا الثانية' : 'Send second-proof-ready message')}
                       >
                         {sendingWhatsAppId === order.id
                           ? <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />

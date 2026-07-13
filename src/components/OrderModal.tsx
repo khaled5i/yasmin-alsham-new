@@ -42,6 +42,9 @@ import { useOrderStore } from '@/store/orderStore' // إضافة
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions' // إضافة
 import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast' // إضافة
+import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
+import RemainingPaymentWarningModal, { type RemainingPaymentMethod } from '@/components/RemainingPaymentWarningModal'
+import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
@@ -224,6 +227,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   // حالات تعديل الحالة (للمدير فقط)
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const [showDeliverWarning, setShowDeliverWarning] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
   const handleStatusChange = async (updates: { status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'; is_pre_booking?: boolean; needs_review?: boolean; has_alterations?: boolean }) => {
@@ -239,6 +243,45 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       }
       toast.success('تم تحديث الحالة')
       setShowStatusDropdown(false)
+    } catch {
+      toast.error('فشل تحديث الحالة')
+    } finally {
+      setIsUpdatingStatus(false)
+    }
+  }
+
+  // طلب التسليم: نافذة الدفعة المتبقية إجبارية عند وجود متبقٍ، وإلا تسليم مباشر
+  const requestDeliver = () => {
+    if (!order) return
+    setShowStatusDropdown(false)
+    const price = Number(order.price) || 0
+    const paid = Number(order.paid_amount) || 0
+    const remaining =
+      (order as any).remaining_amount != null
+        ? Number((order as any).remaining_amount)
+        : Math.max(0, price - paid)
+    if (remaining > 0) {
+      setShowDeliverWarning(true)
+    } else {
+      void performDeliver(false)
+    }
+  }
+
+  // تنفيذ التسليم موحّداً: لقطة العربون + طريقة دفع المتبقي + إرسال «مبلغ الشبكة» تلقائياً
+  const performDeliver = async (markAsPaid: boolean, remainingMethod?: RemainingPaymentMethod) => {
+    if (!order) return
+    setShowDeliverWarning(false)
+    setIsUpdatingStatus(true)
+    try {
+      const base = fullOrder || initialOrder || order
+      const updates = buildDeliveryUpdates(base, { markAsPaid, remainingMethod })
+      await orderService.update(order.id, updates)
+      await updateOrder(order.id, updates)
+      setFullOrder({ ...base, ...updates } as Order)
+      toast.success('تم تسليم الطلب')
+      setShowStatusDropdown(false)
+      // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
+      void autoSendOnDelivery({ ...base, ...updates, id: order.id }, user?.role)
     } catch {
       toast.error('فشل تحديث الحالة')
     } finally {
@@ -1136,7 +1179,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                             ] as const).map(s => (
                               <button
                                 key={s.value}
-                                onClick={() => handleStatusChange({ status: s.value })}
+                                onClick={() => s.value === 'delivered' ? requestDeliver() : handleStatusChange({ status: s.value })}
                                 className={`w-full text-right px-3 py-2 text-sm ${s.color} ${s.bg} flex items-center gap-2 transition-colors`}
                               >
                                 {order.status === s.value && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
@@ -1254,6 +1297,27 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       <p className="text-xs sm:text-base font-semibold text-blue-600 truncate">{order.paid_amount || 0} {t('sar')}</p>
                     </div>
                   )}
+
+                  {/* تفصيل المدفوع: كاش / شبكة - للمدراء فقط */}
+                  {user?.role === 'admin' && (Number(order.paid_amount) || 0) > 0 && (() => {
+                    const bd = computePaymentBreakdown(order as any)
+                    return (
+                      <div className="col-span-3 sm:col-span-2 lg:col-span-3 bg-white p-2 sm:p-3 rounded-lg">
+                        <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-1">
+                          <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                          <span className="text-xs sm:text-sm font-medium truncate">تفصيل المدفوع:</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-lg">
+                            كاش: {bd.cashTotal.toFixed(2)} {t('sar')}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg">
+                            شبكة: {bd.networkTotal.toFixed(2)} {t('sar')}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
                 )}
               </div>
@@ -2363,6 +2427,19 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       </div>,
       document.body
     )}
+
+    {/* نافذة الدفعة المتبقية (إجبارية عند التسليم مع وجود متبقٍ) — تحدّد طريقة دفع المتبقي */}
+    <RemainingPaymentWarningModal
+      isOpen={showDeliverWarning}
+      remainingAmount={
+        (order as any)?.remaining_amount != null
+          ? Number((order as any).remaining_amount)
+          : Math.max(0, (Number(order?.price) || 0) - (Number(order?.paid_amount) || 0))
+      }
+      onMarkAsPaid={(method) => performDeliver(true, method)}
+      onIgnore={() => performDeliver(false)}
+      onCancel={() => setShowDeliverWarning(false)}
+    />
   </>
   )
 }

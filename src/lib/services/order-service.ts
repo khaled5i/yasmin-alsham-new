@@ -41,6 +41,9 @@ const ORDER_LIST_COLUMNS = [
   'remaining_amount',
   'payment_status',
   'payment_method',
+  // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
+  'remaining_payment_method',
+  'deposit_amount',
   'order_received_date',
   'status',
   'due_date',
@@ -63,6 +66,10 @@ const ORDER_LIST_COLUMNS = [
   'second_proof_completed_at',
   'second_proof_whatsapp_sent',
   'second_proof_dismissed',
+  // إشعارات اكتمال الطلب (migration 68)
+  'completion_notified',
+  'completion_notified_at',
+  'completion_dismissed',
   'has_alterations',   // migration 34
   'alteration_count',  // migration 34
   'design_thumbnail',           // عمود مستقل (migration 32)
@@ -85,7 +92,11 @@ const ORDER_LIST_COLUMNS = [
   'worker_rating',
   'worker_notes',
   // إظهار التقييم للعامل (migration 44)
-  'worker_rating_visible'
+  'worker_rating_visible',
+  // الربط مع الأستاذ للمحاسبة (migration 64)
+  'alostaz_invoice_id',
+  'alostaz_invoice_code',
+  'alostaz_sync_status'
 ].join(',')
 
 /**
@@ -124,6 +135,10 @@ export interface Order {
   second_proof_completed_at?: string | null
   second_proof_whatsapp_sent?: boolean
   second_proof_dismissed?: boolean
+  // إشعارات اكتمال الطلب (migration 68)
+  completion_notified?: boolean
+  completion_notified_at?: string | null
+  completion_dismissed?: boolean
   // تتبع التعديلات (migration 34)
   has_alterations: boolean
   alteration_count: number
@@ -144,6 +159,9 @@ export interface Order {
   remaining_amount: number
   payment_status: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
+  // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
+  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | null
+  deposit_amount?: number | null
   order_received_date?: string
   status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date: string
@@ -168,6 +186,10 @@ export interface Order {
   worker_notes?: string | null
   // إظهار التقييم للعامل (migration 44)
   worker_rating_visible?: boolean
+  // الربط مع الأستاذ للمحاسبة (migration 64)
+  alostaz_invoice_id?: number | null
+  alostaz_invoice_code?: string | null
+  alostaz_sync_status?: 'sent' | 'failed' | null
   // ملخص التصميم الصوتي (migration 50)
   design_summary_notes?: Array<{
     id: string
@@ -199,6 +221,9 @@ export interface CreateOrderData {
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
+  // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
+  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | null
+  deposit_amount?: number | null
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date: string
@@ -318,11 +343,19 @@ export interface UpdateOrderData {
   second_proof_completed_at?: string | null
   second_proof_whatsapp_sent?: boolean
   second_proof_dismissed?: boolean
+  // إشعارات اكتمال الطلب (migration 68)
+  completion_notified?: boolean
+  completion_notified_at?: string | null
+  completion_dismissed?: boolean
+  admin_confirmed?: boolean
   fabric_type?: string | null
   price?: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
+  // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
+  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | null
+  deposit_amount?: number | null
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date?: string
@@ -492,6 +525,9 @@ export const orderService = {
         paid_amount: orderData.paid_amount || 0,
         payment_status: orderData.payment_status || 'unpaid',
         payment_method: orderData.payment_method || 'cash',
+        // فصل طريقة الدفع (migration 67): العربون = ما دُفع عند الإنشاء بطريقة payment_method
+        remaining_payment_method: orderData.remaining_payment_method ?? null,
+        deposit_amount: orderData.deposit_amount ?? orderData.paid_amount ?? 0,
         order_received_date: orderData.order_received_date || new Date().toISOString().split('T')[0],
         status: orderData.status || 'pending',
         due_date: orderData.due_date,
@@ -630,6 +666,7 @@ export const orderService = {
     monthFilter?: string  // 'YYYY-MM' — filter by worker_completed_at month
     unratedOnly?: boolean  // only orders with no worker_rating and no worker_price
     secondProofCompleted?: boolean  // إشعارات البروفا الثانية: العامل أبلغ بالجهوزية ولم يُخفِها المدير (migration 54)
+    completionPending?: boolean  // إشعارات اكتمال الطلب: طلب اكتمل حديثاً ولم تُرسَل رسالة الجاهزية ولم يُخفِه المدير (migration 68)
     orderBy?: string       // column to order by (default: 'created_at')
     orderAscending?: boolean  // sort direction (default: false = descending)
   }): Promise<{ data: Order[]; error: string | null; total?: number }> {
@@ -724,6 +761,16 @@ export const orderService = {
         query = query
           .eq('second_proof_completed', true)
           .or('second_proof_dismissed.is.null,second_proof_dismissed.eq.false')
+      }
+
+      // إشعارات اكتمال الطلب: طلب اكتمل حديثاً (completion_notified) ولم تُرسَل رسالة الجاهزية
+      // (admin_confirmed = false → الإخفاء التلقائي عند إرسال واتساب) ولم يُخفِه المدير يدوياً.
+      if (filters?.completionPending) {
+        query = query
+          .eq('status', 'completed')
+          .eq('completion_notified', true)
+          .or('admin_confirmed.is.null,admin_confirmed.eq.false')
+          .or('completion_dismissed.is.null,completion_dismissed.eq.false')
       }
 
       // Unrated filter: no worker_rating (null or 0) AND no worker_price (null or 0)
@@ -933,22 +980,35 @@ export const orderService = {
         finalUpdates.admin_completed_at = nowIso
       }
 
-      // عند تحويل حالة الطلب إلى "مكتمل" نحفظ توقيت التغيير بالضبط في worker_completed_at
-      // كأن العامل هو من أنهى الطلب (وليس مدير النظام)، ما لم يكن للعامل توقيت إنهاء فعلي مسبق.
-      if (updates.status === 'completed' && !finalUpdates.worker_completed_at) {
+      // عند تحويل حالة الطلب إلى "مكتمل": نضبط توقيت الإنهاء في worker_completed_at كأن
+      // العامل هو من أنهى الطلب، ونُفعّل إشعار الاكتمال — مرة واحدة عند الانتقال الفعلي فقط.
+      if (updates.status === 'completed') {
+        let existingStatus: string | null = null
         let existingWorkerCompletedAt: string | null = null
         try {
           const { data: existing } = await supabase
             .from('orders')
-            .select('worker_completed_at')
+            .select('status, worker_completed_at')
             .eq('id', id)
             .single()
+          existingStatus = existing?.status ?? null
           existingWorkerCompletedAt = existing?.worker_completed_at ?? null
         } catch (e) {
-          // في حال فشل الجلب نكمل بدون طمس أي قيمة (نضبط التوقيت كاحتياط)
+          // في حال فشل الجلب نكمل بأمان (نضبط التوقيت كاحتياط)
         }
-        if (!existingWorkerCompletedAt) {
+
+        // توقيت الإنهاء، ما لم يُمرَّر صراحةً أو يوجد مسبقاً
+        if (!finalUpdates.worker_completed_at && !existingWorkerCompletedAt) {
           finalUpdates.worker_completed_at = nowIso
+        }
+
+        // إشعار الاكتمال (migration 68): يُفعَّل فقط عند الانتقال الفعلي إلى "مكتمل"
+        // (وليس عند تعديل طلب مكتمل مسبقاً) حتى لا نُعيد إظهار إشعار سبق إخفاؤه/إرساله.
+        if (existingStatus !== 'completed') {
+          if (finalUpdates.completion_notified === undefined) finalUpdates.completion_notified = true
+          if (finalUpdates.completion_notified_at === undefined) finalUpdates.completion_notified_at = nowIso
+          // إعادة ضبط الإخفاء عند اكتمال جديد (مثلاً بعد إرجاع الطلب لحالة سابقة ثم إكماله مجدداً)
+          if (finalUpdates.completion_dismissed === undefined) finalUpdates.completion_dismissed = false
         }
       }
 

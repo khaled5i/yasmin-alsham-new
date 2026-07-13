@@ -9,7 +9,8 @@ import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
-import RemainingPaymentWarningModal from '@/components/RemainingPaymentWarningModal'
+import RemainingPaymentWarningModal, { type RemainingPaymentMethod } from '@/components/RemainingPaymentWarningModal'
+import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
 import CartoonGridModal from '@/components/CartoonGridModal'
 import {
   ArrowRight,
@@ -250,24 +251,14 @@ export default function CompletedOrdersPage() {
     await deliverOrder(orderId, false)
   }
 
-  const deliverOrder = async (orderId: string, markAsPaid: boolean) => {
+  const deliverOrder = async (orderId: string, markAsPaid: boolean, remainingMethod?: RemainingPaymentMethod) => {
     setIsProcessing(true)
     try {
       // الحصول على بيانات الطلب قبل التحديث
       const order = orders.find(o => o.id === orderId)
 
-      const updates: any = {
-        status: 'delivered',
-        delivery_date: new Date().toISOString()
-      }
-
-      // إذا تم اختيار "تم الدفع"، تحديث المبلغ المدفوع
-      if (markAsPaid) {
-        if (order) {
-          updates.paid_amount = order.price
-          updates.payment_status = 'paid'
-        }
-      }
+      // تحديثات موحّدة: لقطة العربون + طريقة دفع المتبقي عند markAsPaid
+      const updates = buildDeliveryUpdates(order, { markAsPaid, remainingMethod })
 
       const result = await updateOrder(orderId, updates)
       if (result.success) {
@@ -275,6 +266,9 @@ export default function CompletedOrdersPage() {
         setTimeout(() => setDeliverySuccess(false), 3000)
         setShowPaymentWarning(false)
         setOrderToDeliver(null)
+
+        // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
+        void autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
 
         // إرسال رسالة واتساب تلقائياً بعد التسليم
         if (order && order.client_phone && order.client_phone.trim() !== '') {
@@ -875,9 +869,9 @@ export default function CompletedOrdersPage() {
           setShowPaymentWarning(false)
           setOrderToDeliver(null)
         }}
-        onMarkAsPaid={() => {
+        onMarkAsPaid={(method) => {
           if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, true)
+            deliverOrder(orderToDeliver.id, true, method)
           }
         }}
         onIgnore={() => {

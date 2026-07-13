@@ -329,6 +329,16 @@ function isMissingBuyerColumns(error: { code?: string; message?: string } | null
   )
 }
 
+// هل الخطأ ناتج عن عمود fabric_items غير موجود بعد (لم تُطبَّق الهجرة 69)؟
+function isMissingFabricItemsColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    error.code === 'PGRST204' ||
+    error.code === '42703' ||
+    (error.message?.includes('fabric_items') ?? false)
+  )
+}
+
 export async function createIncome(input: CreateIncomeInput): Promise<Income | null> {
   if (!isSupabaseConfigured()) {
     console.warn('⚠️ Supabase not configured')
@@ -363,9 +373,21 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
     if (error && isMissingFabricImagesColumn(error)) {
       console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
       const { fabric_images: _omit, ...withoutImages } = payload
+      payload = withoutImages
       ;({ data, error } = await supabase
         .from('income')
-        .insert(withoutImages)
+        .insert(payload)
+        .select()
+        .single())
+    }
+
+    // توافق تدريجي: إذا لم يُطبَّق عمود fabric_items بعد، أعد المحاولة بدونه
+    if (error && isMissingFabricItemsColumn(error)) {
+      console.warn('⚠️ income.fabric_items column missing. Please run migrations/69-income-fabric-items.sql')
+      const { fabric_items: _omit, ...withoutItems } = payload
+      ;({ data, error } = await supabase
+        .from('income')
+        .insert(withoutItems)
         .select()
         .single())
     }
@@ -419,9 +441,22 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
     if (error && isMissingFabricImagesColumn(error)) {
       console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
       const { fabric_images: _omit, ...withoutImages } = payload
+      payload = withoutImages
       ;({ data, error } = await supabase
         .from('income')
-        .update(withoutImages)
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single())
+    }
+
+    // توافق تدريجي: إذا لم يُطبَّق عمود fabric_items بعد، أعد المحاولة بدونه
+    if (error && isMissingFabricItemsColumn(error)) {
+      console.warn('⚠️ income.fabric_items column missing. Please run migrations/69-income-fabric-items.sql')
+      const { fabric_items: _omit, ...withoutItems } = payload
+      ;({ data, error } = await supabase
+        .from('income')
+        .update(withoutItems)
         .eq('id', id)
         .select()
         .single())

@@ -38,7 +38,8 @@ import {
   Wrench,
   Bell,
   Zap,
-  Wallet
+  Wallet,
+  ShoppingBag
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 
@@ -61,13 +62,24 @@ function DashboardContent() {
   const loadNotificationsCount = useCallback(async () => {
     if (user?.role !== 'admin') return
     try {
-      const { data } = await orderService.getAll({
-        secondProofCompleted: true,
-        noPagination: true,
-        orderBy: 'second_proof_completed_at',
-        orderAscending: false,
-      })
-      setNotificationsCount((data || []).filter(o => o.second_proof_whatsapp_sent !== true).length)
+      const [secondProof, completion] = await Promise.all([
+        orderService.getAll({
+          secondProofCompleted: true,
+          noPagination: true,
+          orderBy: 'second_proof_completed_at',
+          orderAscending: false,
+        }),
+        orderService.getAll({
+          completionPending: true,
+          noPagination: true,
+          orderBy: 'completion_notified_at',
+          orderAscending: false,
+        }),
+      ])
+      // إشعارات البروفا الثانية غير المُرسَلة + كل إشعارات الاكتمال (إرسال الواتساب يُخفيها)
+      const secondProofNew = (secondProof.data || []).filter(o => o.second_proof_whatsapp_sent !== true).length
+      const completionNew = (completion.data || []).length
+      setNotificationsCount(secondProofNew + completionNew)
     } catch {
       // تجاهل أخطاء جلب العدّاد
     }
@@ -735,6 +747,14 @@ function DashboardContent() {
                     <Wallet className="w-6 h-6 text-amber-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-amber-800">{isArabic ? 'رواتب العمال' : 'Worker Salaries'}</span>
                   </Link>
+
+                  <Link
+                    href="/dashboard/accounting/fabrics/income"
+                    className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <ShoppingBag className="w-6 h-6 text-rose-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
+                  </Link>
                 </div>
               </motion.div>
             )}
@@ -903,6 +923,14 @@ function DashboardContent() {
                   >
                     <Wallet className="w-6 h-6 text-amber-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-amber-800">{isArabic ? 'رواتب العمال' : 'Worker Salaries'}</span>
+                  </Link>
+
+                  <Link
+                    href="/dashboard/accounting/fabrics/income"
+                    className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <ShoppingBag className="w-6 h-6 text-rose-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
                   </Link>
                 </div>
               </motion.div>

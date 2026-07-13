@@ -64,6 +64,13 @@ export interface CreateExpenseInput {
 // طريقة الدفع
 export type PaymentMethod = 'cash' | 'network'
 
+// بند قماش واحد داخل مبيعة أقمشة (تدعم عدّة أقمشة في مبيعة واحدة)
+export interface FabricSaleItem {
+  inventory_id?: string | null   // معرّف صنف المخزون المطابق (للمرجع)
+  name: string                   // اسم القماش (يُطابَق به منتج الأستاذ)
+  quantity_meters?: number | null // الكمية بالمتر لهذا القماش
+}
+
 export interface Income {
   id: string
   branch: BranchType
@@ -72,7 +79,8 @@ export interface Income {
   customer_name: string
   description: string
   amount: number
-  quantity_meters?: number | null // الكمية بالمتر (اختياري)
+  quantity_meters?: number | null // الكمية بالمتر (الإجمالي الكلّي عند تعدّد الأقمشة)
+  fabric_items?: FabricSaleItem[] | null // بنود القماش المتعدّدة [{name, quantity_meters}] — NULL = قماش واحد
   payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
   customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)
@@ -82,6 +90,12 @@ export interface Income {
   date: string
   is_automatic: boolean   // هل تم إضافته تلقائياً من الطلبات
   created_at: string
+  // ── الربط مع الأستاذ للمحاسبة (فرع الأقمشة) ──
+  alostaz_customer_id?: number | null      // معرّف العميل (partner) في الأستاذ
+  alostaz_invoice_id?: number | null       // معرّف الفاتورة في الأستاذ (وجوده = أُرسِلت)
+  alostaz_invoice_code?: string | null     // رقم الفاتورة النصّي في الأستاذ
+  alostaz_sync_status?: string | null      // 'sent' | 'failed' | null
+  alostaz_synced_at?: string | null        // وقت آخر مزامنة
 }
 
 export interface CreateIncomeInput {
@@ -91,7 +105,8 @@ export interface CreateIncomeInput {
   customer_name: string
   description?: string
   amount: number
-  quantity_meters?: number | null // الكمية بالمتر (اختياري)
+  quantity_meters?: number | null // الكمية بالمتر (الإجمالي الكلّي عند تعدّد الأقمشة)
+  fabric_items?: FabricSaleItem[] | null // بنود القماش المتعدّدة [{name, quantity_meters}]
   payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
   customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)

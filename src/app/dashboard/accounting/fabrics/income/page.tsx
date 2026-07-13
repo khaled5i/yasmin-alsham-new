@@ -26,17 +26,28 @@ import {
   ChevronDown,
   Images,
   Printer,
-  Send
+  Send,
+  Calculator,
+  CheckCircle2,
+  Loader,
+  UserRound
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
+import toast from 'react-hot-toast'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import ImageUpload from '@/components/ImageUpload'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
-import type { Income, CreateIncomeInput } from '@/types/simple-accounting'
+import type { Income, CreateIncomeInput, FabricSaleItem } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
 import { printFabricSaleReceipt } from '@/lib/print-fabric-receipt'
 import { queueFabricReceiptPrint } from '@/lib/services/print-job-service'
+import {
+  sendFabricInvoiceToAlostaz,
+  getFabricsAutoSendEnabled,
+  setFabricsAutoSendEnabled
+} from '@/lib/services/alostaz-client'
+import { useAuthStore } from '@/store/authStore'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
 type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
@@ -143,6 +154,8 @@ function SourceStatCard({
 }
 
 function FabricsIncomeContent() {
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
   const [income, setIncome] = useState<Income[]>([])
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -157,7 +170,9 @@ function FabricsIncomeContent() {
   const [isMobile, setIsMobile] = useState(false)
 
   // حقول النموذج (مشتركة بين الإضافة والتعديل)
-  const [selectedInventoryId, setSelectedInventoryId] = useState('')
+  // أسطر الأقمشة: كل سطر قماش من المخزون + كميته بالمتر (تدعم عدّة أقمشة في مبيعة واحدة)
+  type FabricLine = { inventory_id: string; quantity_meters: string }
+  const [fabricLines, setFabricLines] = useState<FabricLine[]>([{ inventory_id: '', quantity_meters: '' }])
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
@@ -165,8 +180,16 @@ function FabricsIncomeContent() {
   const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
   const [otherSourceText, setOtherSourceText] = useState('')
   const [fabricImages, setFabricImages] = useState<string[]>([])
-  // رقم هاتف العميل (اختياري — لا يمنع حفظ المبيعة)
+  // اسم العميل ورقم هاتفه (اختياريان — لا يمنعان حفظ المبيعة)
+  const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
+
+  // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
+  const [sendingId, setSendingId] = useState<string | null>(null)
+  const [sentMap, setSentMap] = useState<Record<string, { code?: string }>>({})
+  // مفتاح الإرسال التلقائي (يُرسِل كل فاتورة شبكة جديدة تلقائياً عند إنشائها)
+  const [autoSend, setAutoSend] = useState(false)
+  const [autoSendBusy, setAutoSendBusy] = useState(false)
 
   useEffect(() => {
     loadAll()
@@ -179,6 +202,13 @@ function FabricsIncomeContent() {
     const isIpadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1
     setIsMobile(isMobileUA || isIpadOS)
   }, [])
+
+  // تحميل حالة «الإرسال التلقائي» للمحاسبة (للمدير فقط)
+  useEffect(() => {
+    if (isAdmin) {
+      getFabricsAutoSendEnabled().then(setAutoSend).catch(() => {})
+    }
+  }, [isAdmin])
 
   const loadAll = async () => {
     setLoading(true)
@@ -197,7 +227,7 @@ function FabricsIncomeContent() {
   }
 
   const resetForm = () => {
-    setSelectedInventoryId('')
+    setFabricLines([{ inventory_id: '', quantity_meters: '' }])
     setAmount('')
     setDescription('')
     setDate(new Date().toISOString().split('T')[0])
@@ -205,17 +235,26 @@ function FabricsIncomeContent() {
     setCustomerSource('')
     setOtherSourceText('')
     setFabricImages([])
+    setBuyerName('')
     setBuyerPhone('')
   }
 
-  const selectedItem = inventoryItems.find((it) => it.id === selectedInventoryId)
+  // ── إدارة أسطر الأقمشة المتعدّدة ──────────────────────────────
+  const getInventoryItem = (id: string) => inventoryItems.find((it) => it.id === id)
+  const addFabricLine = () =>
+    setFabricLines((ls) => [...ls, { inventory_id: '', quantity_meters: '' }])
+  const removeFabricLine = (idx: number) =>
+    setFabricLines((ls) => (ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls))
+  const updateFabricLine = (idx: number, patch: Partial<FabricLine>) =>
+    setFabricLines((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
 
-  // هل القماش المختار من نوع "شك"؟ (يُظهر خيار رفع صور القماش)
+  // هل القماش من نوع "شك"؟ (يُظهر خيار رفع صور القماش)
   const isShekFabric = (item?: FabricInventoryItem | null): boolean => {
     if (!item) return false
     return `${item.name ?? ''} ${item.fabric_type ?? ''}`.includes('شك')
   }
-  const showFabricImages = isShekFabric(selectedItem)
+  // تُعرض صور القماش إذا كان أيّ قماش مختار من نوع "شك"
+  const showFabricImages = fabricLines.some((l) => isShekFabric(getInventoryItem(l.inventory_id)))
 
   // بعد الحفظ: الكمبيوتر يطبع الفاتورة محلياً، الجوال يرسلها لطابور محطة الطباعة
   const printOrQueueReceipt = async (rec: Income) => {
@@ -234,8 +273,29 @@ function FabricsIncomeContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // بناء بنود القماش المختارة (كل قماش له صنف من المخزون + كميته بالمتر)
+    const items: FabricSaleItem[] = fabricLines
+      .filter((l) => l.inventory_id)
+      .map((l) => {
+        const it = getInventoryItem(l.inventory_id)
+        const q = parseFloat(l.quantity_meters)
+        return {
+          inventory_id: l.inventory_id,
+          name: it?.name ?? '-',
+          quantity_meters: Number.isFinite(q) && q > 0 ? q : null,
+        }
+      })
+
     // التحقق من الحقول الإجبارية (نفس الحقول في الإضافة والتعديل)
-    if (!selectedInventoryId || !amount) return
+    if (items.length === 0) {
+      alert('يرجى اختيار قماش واحد على الأقل')
+      return
+    }
+    if (items.some((it) => it.quantity_meters == null)) {
+      alert('يرجى إدخال الكمية بالمتر لكل قماش')
+      return
+    }
+    if (!amount) return
     if (!paymentMethod) {
       alert('يرجى اختيار طريقة الدفع (كاش أو شبكة)')
       return
@@ -251,21 +311,30 @@ function FabricsIncomeContent() {
         ? 'ياسمين الشام'
         : otherSourceText.trim() || 'مصدر آخر'
 
+    // الاسم الأساسي = أول قماش (توافقاً مع العرض/الإحصائيات)؛ الأمتار = مجموع كل الأقمشة
+    const fabricNames = items.map((it) => it.name).join('، ')
+    const totalMeters = items.reduce((s, it) => s + (it.quantity_meters || 0), 0)
+
+    // الحقول المشتركة بين الإضافة والتعديل
+    const commonFields = {
+      customer_name: items[0].name,
+      description: description || fabricNames,
+      amount: amt,
+      quantity_meters: totalMeters > 0 ? totalMeters : null,
+      fabric_items: items,
+      payment_method: paymentMethod,
+      customer_source: resolvedSource,
+      fabric_images: showFabricImages ? fabricImages : [],
+      buyer_name: buyerName.trim() || null,
+      buyer_phone: buyerPhone.trim() || null,
+      date,
+    }
+
     if (isEditing && editingId) {
       // تعديل سجل موجود
       setSaving(true)
       try {
-        const result = await updateIncome(editingId, {
-          customer_name: selectedItem?.name ?? '-',
-          description: description || selectedItem?.name || '',
-          amount: amt,
-          payment_method: paymentMethod,
-          customer_source: resolvedSource,
-          fabric_images: showFabricImages ? fabricImages : [],
-          buyer_name: null,
-          buyer_phone: buyerPhone.trim() || null,
-          date
-        })
+        const result = await updateIncome(editingId, commonFields)
         if (result) {
           setIncome(income.map((it) => (it.id === editingId ? result : it)))
           await printOrQueueReceipt(result)
@@ -288,20 +357,14 @@ function FabricsIncomeContent() {
       const payload: CreateIncomeInput = {
         branch: 'fabrics',
         category: 'fabric_sale',
-        customer_name: selectedItem?.name ?? '-',
-        description: description || selectedItem?.name || '',
-        amount: amt,
-        payment_method: paymentMethod,
-        customer_source: resolvedSource,
-        fabric_images: showFabricImages ? fabricImages : [],
-        buyer_name: null,
-        buyer_phone: buyerPhone.trim() || null,
-        date
+        ...commonFields,
       }
       const result = await createIncome(payload)
       if (result) {
         setIncome([result, ...income])
         await printOrQueueReceipt(result)
+        // الإرسال التلقائي للمحاسبة (الشبكة فقط، عند تفعيل المفتاح)
+        await maybeAutoSendFabricInvoice(result)
       }
       setShowModal(false)
       resetForm()
@@ -315,13 +378,33 @@ function FabricsIncomeContent() {
   const handleEdit = (item: Income) => {
     setIsEditing(true)
     setEditingId(item.id)
-    // ربط القماش الحالي بالمخزون
-    const matched = inventoryItems.find((inv) => inv.name === item.customer_name)
-    setSelectedInventoryId(matched?.id ?? '')
+    // تحميل أسطر الأقمشة: من fabric_items إن وُجدت، وإلا سطر واحد من القماش القديم
+    if (item.fabric_items && item.fabric_items.length > 0) {
+      setFabricLines(
+        item.fabric_items.map((fi) => {
+          const matched =
+            (fi.inventory_id ? inventoryItems.find((inv) => inv.id === fi.inventory_id) : null) ||
+            inventoryItems.find((inv) => inv.name === fi.name)
+          return {
+            inventory_id: matched?.id ?? '',
+            quantity_meters: fi.quantity_meters != null ? String(fi.quantity_meters) : '',
+          }
+        })
+      )
+    } else {
+      const matched = inventoryItems.find((inv) => inv.name === item.customer_name)
+      setFabricLines([
+        {
+          inventory_id: matched?.id ?? '',
+          quantity_meters: item.quantity_meters != null ? String(item.quantity_meters) : '',
+        },
+      ])
+    }
     setAmount(item.amount.toString())
     setDescription(item.description || '')
     setDate(item.date)
     setFabricImages(item.fabric_images ?? [])
+    setBuyerName(item.buyer_name ?? '')
     setBuyerPhone(item.buyer_phone ?? '')
     setPaymentMethod((item.payment_method as 'cash' | 'network') || '')
     // مصدر الزبونة: تحويل القيمة المخزّنة إلى خيار النموذج
@@ -349,6 +432,80 @@ function FabricsIncomeContent() {
       }
     } catch {
       alert('❌ حدث خطأ أثناء الحذف')
+    }
+  }
+
+  // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
+  const isSent = (item: Income) => !!item.alostaz_invoice_id || !!sentMap[item.id]
+  const getSentCode = (item: Income) => item.alostaz_invoice_code || sentMap[item.id]?.code
+
+  // تحديث السجل محلياً بعد إرسال فعلي (وضع الفواتير الحقيقية)
+  const markIncomeSent = (id: string, invoiceId?: number, code?: string) => {
+    setSentMap((prev) => ({ ...prev, [id]: { code } }))
+    setIncome((prev) =>
+      prev.map((it) =>
+        it.id === id
+          ? { ...it, alostaz_invoice_id: invoiceId ?? it.alostaz_invoice_id, alostaz_invoice_code: code ?? it.alostaz_invoice_code }
+          : it
+      )
+    )
+  }
+
+  // إرسال فاتورة مبيعة واحدة إلى الأستاذ (يدوي — يعمل للكاش والشبكة)
+  const handleSendToAccounting = async (item: Income) => {
+    if (sendingId) return
+    setSendingId(item.id)
+    const res = await sendFabricInvoiceToAlostaz(item.id)
+    setSendingId(null)
+
+    if (res.success) {
+      // تحويل الزر إلى علامة صح في الحالتين (مسودة/حقيقية) لمعرفة أنها أُرسِلت
+      markIncomeSent(item.id, res.invoice_id, res.invoice_code)
+      if (res.isDraft) {
+        toast(`مسودة اختبار أُنشئت في الأستاذ${res.invoice_code ? ' — ' + res.invoice_code : ''}. تحقّق منها ثم احذفها.`, { icon: '🧪', duration: 6000 })
+      } else if (res.alreadySent) {
+        toast('هذه الفاتورة مُرسَلة مسبقاً إلى المحاسبة')
+      } else {
+        toast.success(`تم إرسال الفاتورة للمحاسبة${res.invoice_code ? ' — ' + res.invoice_code : ''}`)
+        if (res.warning) toast(res.warning, { icon: '⚠️' })
+      }
+    } else {
+      toast.error(res.error || 'فشل إرسال الفاتورة للمحاسبة')
+    }
+  }
+
+  // تفعيل/إيقاف الإرسال التلقائي (يُرسِل كل فاتورة شبكة جديدة تلقائياً عند إنشائها)
+  const handleToggleAutoSend = async () => {
+    if (autoSendBusy) return
+    const next = !autoSend
+    setAutoSend(next) // تفاؤلي
+    setAutoSendBusy(true)
+    const { error } = await setFabricsAutoSendEnabled(next)
+    setAutoSendBusy(false)
+    if (error) {
+      setAutoSend(!next) // تراجع عند الفشل
+      toast.error('تعذّر تحديث الإعداد: ' + error)
+    } else {
+      toast.success(next ? 'تم تفعيل الإرسال التلقائي لكل فواتير الشبكة' : 'تم إيقاف الإرسال التلقائي')
+    }
+  }
+
+  // الإرسال التلقائي عند إنشاء مبيعة جديدة (الشبكة فقط — الكاش لا يُرسَل تلقائياً)
+  const maybeAutoSendFabricInvoice = async (rec: Income) => {
+    if (!isAdmin || !autoSend) return
+    if (rec.payment_method !== 'network') return
+    const res = await sendFabricInvoiceToAlostaz(rec.id)
+    if (res.success) {
+      // تحويل الزر إلى علامة صح في الحالتين (مسودة/حقيقية)
+      markIncomeSent(rec.id, res.invoice_id, res.invoice_code)
+      if (res.isDraft) {
+        toast(`مسودة اختبار أُنشئت في الأستاذ${res.invoice_code ? ' — ' + res.invoice_code : ''}. تحقّق منها ثم احذفها.`, { icon: '🧪', duration: 6000 })
+      } else {
+        toast.success(`تم إرسال الفاتورة للمحاسبة تلقائياً${res.invoice_code ? ' — ' + res.invoice_code : ''}`)
+        if (res.warning) toast(res.warning, { icon: '⚠️' })
+      }
+    } else {
+      toast.error('تعذّر الإرسال التلقائي للمحاسبة: ' + (res.error || ''))
     }
   }
 
@@ -652,6 +809,39 @@ function FabricsIncomeContent() {
           </div>
         </motion.div>
 
+        {/* مفتاح الإرسال التلقائي للمحاسبة (الأستاذ) — للمدير فقط */}
+        {isAdmin && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="mb-6"
+          >
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center shrink-0">
+                  <Calculator className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-800 text-sm">الإرسال التلقائي للمحاسبة (الأستاذ)</p>
+                  <p className="text-xs text-gray-500">عند التفعيل تُرسَل فاتورة كل مبيعة شبكة جديدة تلقائياً بمجرد إنشائها (الكاش يُرسَل يدوياً)</p>
+                </div>
+              </div>
+              <button
+                onClick={handleToggleAutoSend}
+                disabled={autoSendBusy}
+                role="switch"
+                aria-checked={autoSend}
+                dir="ltr"
+                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${autoSend ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                title={autoSend ? 'إيقاف الإرسال التلقائي' : 'تفعيل الإرسال التلقائي'}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSend ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {/* List */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -667,7 +857,17 @@ function FabricsIncomeContent() {
               <p className="text-gray-500">لا توجد مبيعات</p>
             </div>
           ) : (
-            filteredIncome.map((item, index) => (
+            filteredIncome.map((item, index) => {
+              // بنود القماش (قد تكون عدّة أقمشة في مبيعة واحدة)
+              const fabricItems = item.fabric_items ?? []
+              const isMultiFabric = fabricItems.length > 1
+              const titleName =
+                fabricItems.length > 0
+                  ? fabricItems.map((f) => f.name).join('، ')
+                  : item.customer_name && item.customer_name !== '-'
+                    ? item.customer_name
+                    : item.description || 'مبيعة قماش'
+              return (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0, x: -20 }}
@@ -681,17 +881,27 @@ function FabricsIncomeContent() {
                       <Boxes className="w-6 h-6 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="font-bold text-gray-900">
-                        {item.customer_name && item.customer_name !== '-'
-                          ? item.customer_name
-                          : item.description || 'مبيعة قماش'}
-                      </p>
-                      {item.description && item.customer_name !== item.description && (
+                      <p className="font-bold text-gray-900">{titleName}</p>
+                      {item.description && item.description !== titleName && (
                         <p className="text-sm text-gray-500">{item.description}</p>
+                      )}
+                      {/* تفصيل كميات الأقمشة عند تعدّدها */}
+                      {isMultiFabric && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                          {fabricItems.map((f, i) => (
+                            <span key={i} className="flex items-center gap-1 text-xs text-blue-600">
+                              <Ruler className="w-3 h-3" />
+                              <span>
+                                {f.name}
+                                {f.quantity_meters != null ? ` — ${f.quantity_meters} م` : ''}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
                       )}
                       <div className="flex items-center flex-wrap gap-2 mt-1">
                         <p className="text-xs text-gray-400">{formatDate(item.date)}</p>
-                        {item.quantity_meters && (
+                        {!isMultiFabric && item.quantity_meters && (
                           <>
                             <span className="text-xs text-gray-300">•</span>
                             <div className="flex items-center gap-1 text-xs text-blue-600">
@@ -722,13 +932,35 @@ function FabricsIncomeContent() {
                   <div className="flex items-center gap-3">
                     <div className="text-left">
                       <p className="text-lg font-bold text-emerald-600">{formatCurrency(item.amount)}</p>
-                      {item.quantity_meters && item.quantity_meters > 0 && (
+                      {!isMultiFabric && item.quantity_meters && item.quantity_meters > 0 && (
                         <p className="text-xs text-gray-500 mt-1">
                           {formatCurrency(item.amount / item.quantity_meters)}/م
                         </p>
                       )}
                     </div>
                     <div className="flex gap-2">
+                      {/* إرسال للمحاسبة (الأستاذ) — للمدير فقط */}
+                      {isAdmin && (
+                        isSent(item) ? (
+                          <div
+                            className="p-2 text-emerald-600 rounded-lg border border-emerald-100 bg-emerald-50 cursor-default"
+                            title={`تم الإرسال للمحاسبة${getSentCode(item) ? ' — ' + getSentCode(item) : ''}`}
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleSendToAccounting(item)}
+                            disabled={sendingId === item.id}
+                            className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-emerald-100"
+                            title="إرسال للمحاسبة (الأستاذ)"
+                          >
+                            {sendingId === item.id
+                              ? <Loader className="w-4 h-4 animate-spin" />
+                              : <Calculator className="w-4 h-4" />}
+                          </button>
+                        )
+                      )}
                       {isMobile ? (
                         <button
                           onClick={async () => {
@@ -775,7 +1007,8 @@ function FabricsIncomeContent() {
                   </div>
                 </div>
               </motion.div>
-            ))
+              )
+            })
           )}
         </motion.div>
 
@@ -812,10 +1045,10 @@ function FabricsIncomeContent() {
                   {/* نموذج موحّد للإضافة والتعديل */}
                   {(
                     <>
-                      {/* اختيار القماش من المخزون */}
+                      {/* اختيار الأقمشة من المخزون (قماش متعدد: قماش + كمية بالمتر لكل سطر) */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          القماش *
+                          الأقمشة والكمية *
                         </label>
                         {inventoryItems.length === 0 ? (
                           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
@@ -828,22 +1061,62 @@ function FabricsIncomeContent() {
                             </span>
                           </div>
                         ) : (
-                          <select
-                            value={selectedInventoryId}
-                            onChange={(e) => setSelectedInventoryId(e.target.value)}
-                            dir="rtl"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white text-base text-right truncate"
-                            required
-                          >
-                            <option value="">اختر القماش...</option>
-                            {inventoryItems.map((it) => (
-                              <option key={it.id} value={it.id}>
-                                {it.name}
-                                {it.fabric_type ? ` — ${it.fabric_type}` : ''}
-                                {' '}— الرصيد {it.current_quantity} {it.unit === 'meter' ? 'م' : 'ق'}
-                              </option>
-                            ))}
-                          </select>
+                          <>
+                            <div className="space-y-2">
+                              {fabricLines.map((line, idx) => (
+                                <div key={idx} className="flex gap-2 items-center">
+                                  <select
+                                    value={line.inventory_id}
+                                    onChange={(e) => updateFabricLine(idx, { inventory_id: e.target.value })}
+                                    dir="rtl"
+                                    className="flex-1 min-w-0 px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white text-sm text-right truncate"
+                                    required={idx === 0}
+                                  >
+                                    <option value="">اختر القماش...</option>
+                                    {inventoryItems.map((it) => (
+                                      <option key={it.id} value={it.id}>
+                                        {it.name}
+                                        {it.fabric_type ? ` — ${it.fabric_type}` : ''}
+                                        {' '}— الرصيد {it.current_quantity} {it.unit === 'meter' ? 'م' : 'ق'}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <div className="relative w-24 shrink-0">
+                                    <input
+                                      type="number"
+                                      value={line.quantity_meters}
+                                      onChange={(e) => updateFabricLine(idx, { quantity_meters: e.target.value })}
+                                      className="w-full pl-7 pr-2 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
+                                      placeholder="الكمية"
+                                      min="0"
+                                      step="0.01"
+                                    />
+                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                                      م
+                                    </span>
+                                  </div>
+                                  {fabricLines.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFabricLine(idx)}
+                                      className="p-2 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
+                                      title="حذف هذا القماش"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={addFabricLine}
+                              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800"
+                            >
+                              <Plus className="w-4 h-4" />
+                              إضافة قماش
+                            </button>
+                          </>
                         )}
                       </div>
 
@@ -863,9 +1136,9 @@ function FabricsIncomeContent() {
                         </div>
                       )}
 
-                      {/* المبلغ */}
+                      {/* المبلغ الإجمالي للمبيعة كلها */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ (ر.س) *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ الإجمالي (ر.س) *</label>
                         <input
                           type="number"
                           value={amount}
@@ -942,6 +1215,21 @@ function FabricsIncomeContent() {
                             placeholder="اكتب اسم المصدر (اختياري)..."
                           />
                         )}
+                      </div>
+
+                      {/* اسم العميل (اختياري) */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">اسم العميل (اختياري)</label>
+                        <div className="relative">
+                          <UserRound className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={buyerName}
+                            onChange={(e) => setBuyerName(e.target.value)}
+                            className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                            placeholder="اسم العميل..."
+                          />
+                        </div>
                       </div>
 
                       {/* رقم هاتف العميل (اختياري) */}

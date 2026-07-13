@@ -24,7 +24,26 @@
       "Bash(wc -l \"c:\\\\Users\\\\khale\\\\OneDrive\\\\yasmin-alsham-main \\(1\\)\\\\src\\\\app\\\\dashboard\\\\orders\\\\page.tsx\")",
       "Bash(echo \"build-exit:$?\")",
       "Bash(sort -t- -k1 -n)",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(echo '=== GET /branches \\(X-Locale: ar\\) ===')",
+      "Bash(curl -s -w '\\\\n[HTTP %{http_code}]\\\\n' -X GET https://yasminalsham.alostaz.io/b/api/branches -H 'Authorization: Bearer 2|KiC8QWxEcnilz76Sq8BbjRb9hRqWwQXHCBoliaeLed6d74da' -H 'Accept: application/json' -H 'Content-Type: application/json' -H 'X-Locale: ar')",
+      "Bash(curl -s -H 'Accept: application/json' -H 'Referer: https://api.developers.alostaz.io/' https://documenter.gw.postman.com/api/collections/view/2sB3QMLUUo -o C:/Users/khale/AppData/Local/Temp/claude/c--Users-khale-OneDrive-yasmin-alsham-main--1-/936c09b4-51e3-4664-81b8-3ecbae4629a7/scratchpad/alostaz_collection.json)",
+      "Bash(curl -s -w '\\\\n[HTTP %{http_code}]\\\\n' -X POST https://yasminalsham.alostaz.io/b/api/partners -H 'Authorization: Bearer 2|KiC8QWxEcnilz76Sq8BbjRb9hRqWwQXHCBoliaeLed6d74da' -H 'Accept: application/json' -H 'Content-Type: application/json' -H 'X-Locale: en' -H 'X-API-Version: 1' -H 'X-Branch-Id: 1' -d '{\"type\":\"client\",\"name\":\"شركة النخبة للاستشارات\",\"nature\":\"company\",\"tax_number\":\"399999999900003\",\"company_register\":\"123456\",\"contacts\":[{\"phone\":\"+966550000001\",\"address_line_1\":\"25 شارع الملك فهد\",\"address_line_2\":\"\",\"city\":\"الرياض\",\"state\":\"\",\"district\":\"النخيل\",\"country\":\"SA\"}]}')",
+      "Bash(curl -s -w '\\\\n[HTTP %{http_code}]\\\\n' -X POST https://yasminalsham.alostaz.io/b/api/partners -H 'Authorization: Bearer 2|KiC8QWxEcnilz76Sq8BbjRb9hRqWwQXHCBoliaeLed6d74da' -H 'Accept: application/json' -H 'Content-Type: application/json' -H 'X-Locale: ar' -H 'X-API-Version: 1' -H 'X-Branch-Id: 1' -d '{\"type\":\"client\",\"name\":\"عميل تجريبي\",\"nature\":\"individual\"}')",
+      "Bash(git ls-files *)",
+      "Bash(cat)",
+      "Bash(tee /tmp/tsc_out.txt)",
+      "Read(//tmp/**)",
+      "Bash(cd \"c:/Users/khale/OneDrive/yasmin-alsham-main \\(1\\)\" && grep -E \"error TS\" /tmp/tsc_out.txt | grep -E \"alostaz|api/alostaz|fabrics/income|simple-accounting|store/authStore\" ; echo \"=== count in touched files above \\(empty = clean\\) ===\")",
+      "Bash(tee /tmp/tsc2.txt)",
+      "Bash(tee /tmp/tsc3.txt)",
+      "Bash(tee /tmp/tsc5.txt)",
+      "Bash(awk -F: '$1 > 1200 && $1 < 1270')",
+      "Bash(awk -F: '$1 > 1100 && $1 < 1270')",
+      "Bash(awk -F: '$1 > 1030 && $1 < 1100')",
+      "Bash(awk -F: '$1 > 990 && $1 < 1300')",
+      "Bash(grep -n \"OrderModal\\\\|DeleteOrderModal\\\\|lightbox\\\\|createPortal\\\\|</div>\\\\s*$\\\\|^  \\)\\\\|^}\" \"src/app/dashboard/delivered-orders/page.tsx\")",
+      "Bash(grep -iA3 \"typescript\\\\|eslint\")"
     ]
   }
 }

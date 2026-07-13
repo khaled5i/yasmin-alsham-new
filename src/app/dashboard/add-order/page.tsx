@@ -43,7 +43,9 @@ import {
   Play,
   Pause,
   Trash2,
-  Loader2
+  Loader2,
+  Banknote,
+  CreditCard
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
@@ -57,6 +59,14 @@ const FORM_STORAGE_KEY = 'add-order-form-draft'
 const DESIGN_COMMENTS_STORAGE_KEY = 'add-order-design-comments-v1'
 const DESIGN_SUMMARY_STORAGE_KEY = 'add-order-design-summary-v1'
 const DESIGN_ACTIVE_VIEW_STORAGE_KEY = 'add-order-design-active-view'
+
+// نسبة ضريبة القيمة المضافة (15%)
+const VAT_RATE = 0.15
+const roundMoney = (n: number) => Math.round(n * 100) / 100
+// السعر شامل الضريبة انطلاقاً من السعر الأساسي
+const addVat = (base: number) => roundMoney(base * (1 + VAT_RATE))
+// السعر الأساسي (غير شامل الضريبة) انطلاقاً من السعر النهائي شامل الضريبة
+const removeVat = (withTax: number) => roundMoney(withTax / (1 + VAT_RATE))
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
 
@@ -87,8 +97,9 @@ interface FormDataType {
   description: string
   fabric: string
   price: string
+  priceWithTax: string
   paidAmount: string
-  paymentMethod: 'cash' | 'card'
+  paymentMethod: 'cash' | 'card' | null
   orderReceivedDate: string
   assignedWorker: string
   dueDate: string
@@ -123,8 +134,9 @@ const getInitialFormData = (): FormDataType => ({
   description: '',
   fabric: '',
   price: '',
+  priceWithTax: '',
   paidAmount: '',
-  paymentMethod: 'cash',
+  paymentMethod: null,
   orderReceivedDate: new Date().toISOString().split('T')[0],
   assignedWorker: '',
   dueDate: '',
@@ -519,18 +531,42 @@ function AddOrderContent() {
     }
   }, [formData.designSummaryNotes.length, highlightSummary])
 
-  // حساب المبلغ المتبقي
+  // السعر النهائي المعتمد في كل الحسابات هو السعر شامل الضريبة
+  // (يُشتق من السعر الأساسي عند غيابه للتوافق مع المسودات القديمة)
+  const finalPrice = useMemo(() => {
+    if (formData.priceWithTax !== '') return Number(formData.priceWithTax) || 0
+    return addVat(Number(formData.price) || 0)
+  }, [formData.priceWithTax, formData.price])
+
+  // حساب المبلغ المتبقي (من السعر شامل الضريبة)
   const remainingAmount = useMemo(() => {
-    const price = Number(formData.price) || 0
     const paidAmount = Number(formData.paidAmount) || 0
-    return Math.max(0, price - paidAmount)
-  }, [formData.price, formData.paidAmount])
+    return Math.max(0, finalPrice - paidAmount)
+  }, [finalPrice, formData.paidAmount])
 
   // معالجة تغيير الحقول
   const handleInputChange = useCallback((field: string, value: string | string[] | null) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
+    }))
+  }, [setFormData])
+
+  // تغيير السعر الأساسي → يُحدّث تلقائياً السعر شامل الضريبة (+15%)
+  const handlePriceChange = useCallback((value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      price: value,
+      priceWithTax: value === '' ? '' : String(addVat(Number(value) || 0))
+    }))
+  }, [setFormData])
+
+  // تغيير السعر شامل الضريبة يدوياً → حساب عكسي للسعر الأساسي (−15%)
+  const handlePriceWithTaxChange = useCallback((value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      priceWithTax: value,
+      price: value === '' ? '' : String(removeVat(Number(value) || 0))
     }))
   }, [setFormData])
 
@@ -722,6 +758,12 @@ function AddOrderContent() {
       return
     }
 
+    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
+    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
+      setSaveError('يرجى تحديد طريقة دفع العربون')
+      return
+    }
+
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
 
@@ -747,7 +789,7 @@ function AddOrderContent() {
       }))
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
-      const price = Number(formData.price)
+      const price = finalPrice
       const paidAmount = Number(formData.paidAmount) || 0
 
       // استخدام الصورة المحفوظة في localStorage (base64) أو تحويل ملف الصورة
@@ -919,7 +961,7 @@ function AddOrderContent() {
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
         price: price,
-        payment_method: formData.paymentMethod as 'cash' | 'card',
+        payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
@@ -1002,6 +1044,12 @@ function AddOrderContent() {
       return
     }
 
+    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
+    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
+      setSaveError('يرجى تحديد طريقة دفع العربون')
+      return
+    }
+
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
 
@@ -1027,7 +1075,7 @@ function AddOrderContent() {
       }))
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
-      const price = Number(formData.price)
+      const price = finalPrice
       const paidAmount = Number(formData.paidAmount) || 0
 
       // استخدام الصورة المحفوظة في localStorage (base64) أو تحويل ملف الصورة
@@ -1092,7 +1140,7 @@ function AddOrderContent() {
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
         price: price,
-        payment_method: formData.paymentMethod as 'cash' | 'card',
+        payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
@@ -1188,6 +1236,12 @@ function AddOrderContent() {
       return
     }
 
+    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
+    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
+      setSaveError('يرجى تحديد طريقة دفع العربون')
+      return
+    }
+
     isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
@@ -1199,7 +1253,7 @@ function AddOrderContent() {
         transcription: vn.transcription, translatedText: vn.translatedText, translationLanguage: vn.translationLanguage
       }))
 
-      const price = Number(formData.price)
+      const price = finalPrice
       const paidAmount = Number(formData.paidAmount) || 0
 
       let customDesignImageBase64: string | undefined = undefined
@@ -1246,7 +1300,7 @@ function AddOrderContent() {
         measurements: {},
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: price, payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
@@ -1311,6 +1365,12 @@ function AddOrderContent() {
       return
     }
 
+    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
+    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
+      setSaveError('يرجى تحديد طريقة دفع العربون')
+      return
+    }
+
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
 
@@ -1327,7 +1387,7 @@ function AddOrderContent() {
         transcription: vn.transcription, translatedText: vn.translatedText, translationLanguage: vn.translationLanguage
       }))
 
-      const price = Number(formData.price)
+      const price = finalPrice
       const paidAmount = Number(formData.paidAmount) || 0
 
       let customDesignImageBase64: string | undefined = undefined
@@ -1373,7 +1433,7 @@ function AddOrderContent() {
         measurements: {},
         // عمود مستقل (migration 36)
         design_links: formData.designLinks.trim() || undefined,
-        price: price, payment_method: formData.paymentMethod as 'cash' | 'card',
+        price: price, payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
@@ -1598,17 +1658,31 @@ function AddOrderContent() {
 
                 {/* الصف الثالث: السعر | الدفعة المستلمة | الدفعة المتبقية */}
 
-                {/* 7. السعر */}
+                {/* 7. السعر (غير شامل الضريبة) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {t('price_sar')} <span className="text-red-500">*</span>
                   </label>
                   <NumericInput
                     value={formData.price}
-                    onChange={(value) => handleInputChange('price', value)}
+                    onChange={handlePriceChange}
                     type="price"
                     placeholder="0"
                     required
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {/* 7.1 السعر شامل الضريبة (السعر النهائي المعتمد) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    السعر شامل الضريبة (15%)
+                  </label>
+                  <NumericInput
+                    value={formData.priceWithTax}
+                    onChange={handlePriceWithTaxChange}
+                    type="price"
+                    placeholder="0"
                     disabled={isSubmitting}
                   />
                 </div>
@@ -1619,9 +1693,9 @@ function AddOrderContent() {
                   <NumericInput
                     value={formData.paidAmount}
                     onChange={(value) => {
-                      const effectivePrice = Number(formData.price) || 0
+                      const effectivePrice = finalPrice
                       const paid = Number(value) || 0
-                      // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
+                      // التحقق من أن الدفعة المستلمة لا تتجاوز السعر النهائي (شامل الضريبة)
                       if (paid > effectivePrice) {
                         toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
                           icon: '⚠️',
@@ -1633,7 +1707,7 @@ function AddOrderContent() {
                     type="price"
                     label={t('paid_amount')}
                     placeholder="0"
-                    disabled={isSubmitting || !formData.price}
+                    disabled={isSubmitting || !formData.priceWithTax}
                   />
                 </div>
 
@@ -1643,7 +1717,7 @@ function AddOrderContent() {
                     {t('remaining_amount')}
                   </label>
                   <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
-                    {(Math.max(0, (Number(formData.price) || 0) - (Number(formData.paidAmount) || 0))).toFixed(2)} {t('sar')}
+                    {(Math.max(0, finalPrice - (Number(formData.paidAmount) || 0))).toFixed(2)} {t('sar')}
                   </div>
                 </div>
 
@@ -1663,86 +1737,7 @@ function AddOrderContent() {
                 </div>
 
 
-                {/* 11.1 هل يوجد بروفا ثانية؟ */}
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    هل يوجد بروفا ثانية؟ <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="hasSecondProof"
-                        value="yes"
-                        checked={formData.hasSecondProof === 'yes'}
-                        onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
-                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
-                        disabled={isSubmitting}
-                      />
-                      <span className="text-gray-700 font-medium">نعم</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="hasSecondProof"
-                        value="no"
-                        checked={formData.hasSecondProof === 'no'}
-                        onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
-                        className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
-                        disabled={isSubmitting}
-                      />
-                      <span className="text-gray-700 font-medium">لا</span>
-                    </label>
-                  </div>
-
-                  {/* زر تعديل تاريخ البروفا الثانية - يظهر فقط عند اختيار "نعم" */}
-                  {formData.hasSecondProof === 'yes' && (() => {
-                    // التاريخ الافتراضي: قبل تاريخ التسليم الحقيقي للزبون بثلاثة أيام (= due_date - 1)
-                    // مع تفادي يوم الجمعة (المحل مغلق) فيُزاح للخميس → العميل − 4
-                    const effectiveSecondProofDate =
-                      formData.secondProofDate || (formData.dueDate ? computeSecondProofDateFromCustomer(formData.dueDate) : '')
-                    return (
-                      <div className="mt-3">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <div className="text-sm text-gray-600">
-                            موعد البروفا الثانية:{' '}
-                            <span className="font-semibold text-amber-700">
-                              {effectiveSecondProofDate
-                                ? formatGregorianDate(effectiveSecondProofDate, 'ar-SA-u-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' })
-                                : 'حدد موعد التسليم أولاً'}
-                            </span>
-                          </div>
-                          {formData.dueDate && (
-                            <button
-                              type="button"
-                              onClick={() => setShowSecondProofCalendar((prev) => !prev)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors"
-                              disabled={isSubmitting}
-                            >
-                              <Calendar className="w-3.5 h-3.5" />
-                              تعديل التاريخ
-                            </button>
-                          )}
-                        </div>
-                        {showSecondProofCalendar && formData.dueDate && (
-                          <div className="mt-2">
-                            <DatePickerForSecondProof
-                              selectedDate={effectiveSecondProofDate}
-                              onChange={(date) => {
-                                handleInputChange('secondProofDate', date)
-                                setShowSecondProofCalendar(false)
-                              }}
-                              minDate={new Date()}
-                              autoOpen
-                              onClose={() => setShowSecondProofCalendar(false)}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
-                </div>
-                {/* 12. تحديد العامل المسؤول - يظهر فقط لمدير الورشة */}
+                {/* 11. تحديد العامل المسؤول - يظهر فقط لمدير الورشة */}
                 {workerType === 'workshop_manager' && (
                   <div className="col-span-2 sm:col-span-1">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1763,6 +1758,132 @@ function AddOrderContent() {
                     </select>
                   </div>
                 )}
+
+                {/* الصف الأخير: أسئلة الخيارات (طريقة دفع العربون | هل يوجد بروفا ثانية) */}
+                <div className="col-span-2 sm:col-span-3">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
+
+                    {/* 12. طريقة دفع العربون (كاش / شبكة) - بدون اختيار افتراضي */}
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        طريقة دفع العربون
+                      </label>
+                      <div className="flex flex-wrap gap-x-6 gap-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value="cash"
+                            checked={formData.paymentMethod === 'cash'}
+                            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+                            className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="flex items-center gap-1.5 text-gray-700 font-medium">
+                            <Banknote className="w-4 h-4 text-green-600" />
+                            كاش
+                          </span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value="card"
+                            checked={formData.paymentMethod === 'card'}
+                            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+                            className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="flex items-center gap-1.5 text-gray-700 font-medium">
+                            <CreditCard className="w-4 h-4 text-blue-600" />
+                            شبكة
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* 13. هل يوجد بروفا ثانية؟ */}
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        هل يوجد بروفا ثانية؟ <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex flex-wrap gap-x-6 gap-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="hasSecondProof"
+                            value="yes"
+                            checked={formData.hasSecondProof === 'yes'}
+                            onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
+                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="text-gray-700 font-medium">نعم</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="hasSecondProof"
+                            value="no"
+                            checked={formData.hasSecondProof === 'no'}
+                            onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
+                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="text-gray-700 font-medium">لا</span>
+                        </label>
+                      </div>
+
+                      {/* زر تعديل تاريخ البروفا الثانية - يظهر فقط عند اختيار "نعم" */}
+                      {formData.hasSecondProof === 'yes' && (() => {
+                        // التاريخ الافتراضي: قبل تاريخ التسليم الحقيقي للزبون بثلاثة أيام (= due_date - 1)
+                        // مع تفادي يوم الجمعة (المحل مغلق) فيُزاح للخميس → العميل − 4
+                        const effectiveSecondProofDate =
+                          formData.secondProofDate || (formData.dueDate ? computeSecondProofDateFromCustomer(formData.dueDate) : '')
+                        return (
+                          <div className="mt-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <div className="text-sm text-gray-600">
+                                موعد البروفا الثانية:{' '}
+                                <span className="font-semibold text-amber-700">
+                                  {effectiveSecondProofDate
+                                    ? formatGregorianDate(effectiveSecondProofDate, 'ar-SA-u-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' })
+                                    : 'حدد موعد التسليم أولاً'}
+                                </span>
+                              </div>
+                              {formData.dueDate && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSecondProofCalendar((prev) => !prev)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors"
+                                  disabled={isSubmitting}
+                                >
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  تعديل التاريخ
+                                </button>
+                              )}
+                            </div>
+                            {showSecondProofCalendar && formData.dueDate && (
+                              <div className="mt-2">
+                                <DatePickerForSecondProof
+                                  selectedDate={effectiveSecondProofDate}
+                                  onChange={(date) => {
+                                    handleInputChange('secondProofDate', date)
+                                    setShowSecondProofCalendar(false)
+                                  }}
+                                  minDate={new Date()}
+                                  autoOpen
+                                  onClose={() => setShowSecondProofCalendar(false)}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </div>
+
+                  </div>
+                </div>
               </div>
             </div>
 

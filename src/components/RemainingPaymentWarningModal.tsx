@@ -1,13 +1,17 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { AlertTriangle, X, CheckCircle, XCircle, Ban } from 'lucide-react'
+import { AlertTriangle, X, CheckCircle, XCircle, Ban, Banknote, CreditCard } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
+
+export type RemainingPaymentMethod = 'cash' | 'card'
 
 interface RemainingPaymentWarningModalProps {
   isOpen: boolean
   remainingAmount: number
-  onMarkAsPaid: () => void
+  /** تُستدعى عند «تم الدفع» مع طريقة دفع المتبقي المختارة (كاش/شبكة) */
+  onMarkAsPaid: (method: RemainingPaymentMethod) => void
   onIgnore: () => void
   onCancel: () => void
 }
@@ -20,6 +24,12 @@ export default function RemainingPaymentWarningModal({
   onCancel
 }: RemainingPaymentWarningModalProps) {
   const { t } = useTranslation()
+
+  // طريقة دفع المتبقي (كاش افتراضياً) — تُعاد للوضع الافتراضي عند كل فتح
+  const [method, setMethod] = useState<RemainingPaymentMethod>('cash')
+  useEffect(() => {
+    if (isOpen) setMethod('cash')
+  }, [isOpen])
 
   return (
     <AnimatePresence>
@@ -92,15 +102,48 @@ export default function RemainingPaymentWarningModal({
                 </p>
               </div>
 
+              {/* اختيار طريقة دفع المتبقي (كاش / شبكة) */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2 text-center">
+                  طريقة دفع المبلغ المتبقي
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMethod('cash')}
+                    className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-semibold transition-all ${
+                      method === 'cash'
+                        ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <Banknote className="w-5 h-5" />
+                    <span>كاش</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMethod('card')}
+                    className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-semibold transition-all ${
+                      method === 'card'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <CreditCard className="w-5 h-5" />
+                    <span>شبكة</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="space-y-3">
                 {/* Mark as Paid Button */}
                 <button
-                  onClick={onMarkAsPaid}
+                  onClick={() => onMarkAsPaid(method)}
                   className="w-full flex items-center justify-center space-x-2 space-x-reverse bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
                 >
                   <CheckCircle className="w-5 h-5" />
-                  <span>{t('mark_as_paid') || 'تم الدفع - تحديث المبلغ'}</span>
+                  <span>{t('mark_as_paid') || 'تم الدفع - تحديث المبلغ'} ({method === 'cash' ? 'كاش' : 'شبكة'})</span>
                 </button>
 
                 {/* Ignore Button */}

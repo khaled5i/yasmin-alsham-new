@@ -41,20 +41,41 @@ function invoiceNumberLabel(item: Income): string {
 // - المسار المباشر (زر الطباعة على الكاشير): autoPrint=true → يطبع ويغلق النافذة.
 // - محطة الطباعة عن بُعد: autoPrint=false → المحطة ترسمه في iframe وتستدعي print() بنفسها.
 export function buildFabricSaleReceiptHtml(item: Income, opts: { autoPrint?: boolean } = {}): string {
-  const fabricName =
-    item.customer_name && item.customer_name !== '-' ? item.customer_name : item.description || 'قماش'
-  const pricePerMeter =
-    item.quantity_meters && item.quantity_meters > 0 ? item.amount / item.quantity_meters : null
+  // بنود القماش: قد تكون عدّة أقمشة في مبيعة واحدة (fabric_items)
+  const fabricItems = Array.isArray(item.fabric_items)
+    ? item.fabric_items.filter((f) => f && f.name)
+    : []
 
-  const rows: string[] = [row('القماش', escapeHtml(fabricName))]
+  const rows: string[] = []
 
   // (الملاحظات لا تُطبع في الإيصال عمداً — بطلب المستخدم)
-  if (item.quantity_meters) {
-    rows.push(row('الكمية', `${item.quantity_meters} م`))
+  if (fabricItems.length > 1) {
+    // عدّة أقمشة: بند مستقل لكل قماش (الاسم مقابل كميته بالمتر) + إجمالي الأمتار
+    for (const f of fabricItems) {
+      const qtyLabel = f.quantity_meters != null ? `${f.quantity_meters} م` : ''
+      rows.push(row(escapeHtml(f.name), qtyLabel))
+    }
+    const totalMeters = fabricItems.reduce((s, f) => s + (Number(f.quantity_meters) || 0), 0)
+    if (totalMeters > 0) {
+      rows.push(row('إجمالي الأمتار', `${totalMeters} م`))
+    }
+  } else {
+    // قماش واحد (من fabric_items[0] إن وُجد، وإلا الحقول القديمة)
+    const only = fabricItems[0]
+    const fabricName =
+      only?.name ||
+      (item.customer_name && item.customer_name !== '-' ? item.customer_name : item.description || 'قماش')
+    const qty = only?.quantity_meters ?? item.quantity_meters ?? null
+    const pricePerMeter = qty && qty > 0 ? item.amount / qty : null
+    rows.push(row('القماش', escapeHtml(fabricName)))
+    if (qty) {
+      rows.push(row('الكمية', `${qty} م`))
+    }
+    if (pricePerMeter !== null) {
+      rows.push(row('سعر المتر', formatCurrency(pricePerMeter)))
+    }
   }
-  if (pricePerMeter !== null) {
-    rows.push(row('سعر المتر', formatCurrency(pricePerMeter)))
-  }
+
   if (item.payment_method) {
     rows.push(row('طريقة الدفع', item.payment_method === 'cash' ? 'كاش' : 'شبكة'))
   }
