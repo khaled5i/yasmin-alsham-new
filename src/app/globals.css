@@ -46,6 +46,7 @@ body {
 
 /* إخفاء شريط التمرير مع إظهاره عند الحاجة */
 html {
+  scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: rgba(219, 39, 119, 0.3) transparent;
 }
@@ -1085,5 +1086,11 @@ textarea:focus-visible {
     object-fit: contain;
     max-width: none;
     max-height: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }

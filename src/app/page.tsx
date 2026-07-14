@@ -1,73 +1,66 @@
-'use client'
+import type { Metadata } from 'next'
+import { IBM_Plex_Sans_Arabic, Noto_Naskh_Arabic } from 'next/font/google'
+import HomeAnalytics from '@/components/home/HomeAnalytics'
+import HomeHeader from '@/components/home/HomeHeader'
+import HomeFooter from '@/components/home/HomeFooter'
+import FeaturedFabricStore from '@/components/home/FeaturedFabricStore'
+import {
+  BusinessGateway,
+  CinematicHero,
+  FabricTransition,
+  TailoringStory,
+  TrustStrip,
+} from '@/components/home/HomeSections'
+import styles from '@/components/home/home.module.css'
 
-import { useEffect } from 'react'
-import Header from '@/components/Header'
-import Hero from '@/components/Hero'
-import ReadyDesigns from '@/components/ReadyDesigns'
-import FeaturedFabrics from '@/components/FeaturedFabrics'
-import Footer from '@/components/Footer'
-import ScrollToTop from '@/components/ScrollToTop'
+const homeSans = IBM_Plex_Sans_Arabic({
+  variable: '--font-home-sans',
+  subsets: ['arabic', 'latin'],
+  weight: ['400', '500', '600'],
+  display: 'swap',
+})
+
+const homeDisplay = Noto_Naskh_Arabic({
+  variable: '--font-home-display',
+  subsets: ['arabic'],
+  weight: ['500', '600', '700'],
+  display: 'swap',
+})
+
+export const metadata: Metadata = {
+  title: 'ياسمين الشام | تفصيل فساتين ومتجر أقمشة في الخبر',
+  description:
+    'اكتشفي تفصيل ياسمين الشام وتصفحي تشكيلة الأقمشة المختارة لفساتين السهرة والمناسبات في الخبر.',
+  alternates: { canonical: '/' },
+  openGraph: {
+    title: 'ياسمين الشام | من القماش… نصنع حكايتك',
+    description: 'تفصيل يليق بك، وأقمشة اختيرت لتبدأ منها كل التفاصيل.',
+    url: '/',
+    images: [
+      {
+        url: '/media/home/hero-desktop.webp',
+        width: 1600,
+        height: 900,
+        alt: 'فستان سهرة في مشغل ياسمين الشام',
+      },
+    ],
+  },
+}
 
 export default function Home() {
-  // إضافة class "scrolling" عند التمرير على الموبايل
-  useEffect(() => {
-    let scrollTimeout: NodeJS.Timeout
-
-    const handleScroll = () => {
-      const container = document.getElementById('main-scroll-container')
-      if (container && window.innerWidth < 1024) {
-        container.classList.add('scrolling')
-        document.documentElement.classList.add('scrolling')
-        document.body.classList.add('scrolling')
-
-        clearTimeout(scrollTimeout)
-        scrollTimeout = setTimeout(() => {
-          container.classList.remove('scrolling')
-          document.documentElement.classList.remove('scrolling')
-          document.body.classList.remove('scrolling')
-        }, 1000)
-      }
-    }
-
-    const container = document.getElementById('main-scroll-container')
-    if (container) {
-      container.addEventListener('scroll', handleScroll)
-    }
-
-    return () => {
-      if (container) {
-        container.removeEventListener('scroll', handleScroll)
-      }
-      clearTimeout(scrollTimeout)
-    }
-  }, [])
-
   return (
-    <div className="min-h-screen overflow-x-hidden">
-      <Header />
-      {/* Snap Scroll Container للموبايل فقط */}
-      <main
-        id="main-scroll-container"
-        className="
-          lg:block
-          max-lg:h-[100dvh] max-lg:overflow-y-auto max-lg:overflow-x-hidden max-lg:snap-y max-lg:snap-mandatory
-          max-lg:scroll-smooth max-lg:overscroll-none
-        "
-        style={{
-          // @ts-ignore - Custom CSS properties for smooth snap
-          scrollBehavior: 'smooth',
-          scrollSnapStop: 'always',
-        }}
-      >
-        <Hero />
-        <ReadyDesigns />
-        <FeaturedFabrics />
-        {/* Footer داخل الـ snap على الموبايل */}
-        <div className="max-lg:snap-start lg:block">
-          <Footer />
-        </div>
+    <div className={`${styles.homeShell} ${homeSans.variable} ${homeDisplay.variable}`}>
+      <HomeAnalytics />
+      <HomeHeader />
+      <main>
+        <CinematicHero />
+        <BusinessGateway />
+        <TailoringStory />
+        <FabricTransition />
+        <FeaturedFabricStore />
+        <TrustStrip />
       </main>
-      <ScrollToTop />
+      <HomeFooter />
     </div>
   )
 }
