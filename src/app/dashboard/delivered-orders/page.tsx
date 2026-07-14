@@ -20,7 +20,8 @@ import {
   CheckCircle2,
   Calculator,
   Banknote,
-  CreditCard
+  CreditCard,
+  Printer
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast' // Import toast
@@ -35,6 +36,12 @@ import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 import { sendInvoiceToAlostaz, getAutoSendEnabled, setAutoSendEnabled } from '@/lib/services/alostaz-client'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
+import {
+  createTailoringReceiptPayload,
+  isFullyNetworkPaid,
+} from '@/lib/print-tailoring-receipt'
+import { queueTailoringReceiptPrint } from '@/lib/services/print-job-service'
+import type { Order } from '@/lib/services/order-service'
 
 const PAGE_SIZE = 50
 
@@ -60,6 +67,7 @@ export default function DeliveredOrdersPage() {
 
   // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
   const [sendingId, setSendingId] = useState<string | null>(null)
+  const [printingId, setPrintingId] = useState<string | null>(null)
   const [sentMap, setSentMap] = useState<Record<string, { code?: string }>>({})
   const [autoSend, setAutoSend] = useState(false)
   const [autoSendBusy, setAutoSendBusy] = useState(false)
@@ -172,8 +180,33 @@ export default function DeliveredOrdersPage() {
   }
 
   // هل أُرسِل الطلب للمحاسبة؟ (من قاعدة البيانات أو من الحالة المحلية)
-  const isOrderSent = (order: any) => !!order.alostaz_invoice_id || !!sentMap[order.id]
-  const getSentCode = (order: any) => order.alostaz_invoice_code || sentMap[order.id]?.code
+  const isOrderSent = (order: Order) => !!order.alostaz_invoice_id || !!sentMap[order.id]
+  const getSentCode = (order: Order) => order.alostaz_invoice_code || sentMap[order.id]?.code
+
+  // إعادة طباعة إيصال الطلب بنفس قواعد الطباعة التلقائية، دون تغيير بيانات الطلب.
+  const handlePrintReceipt = async (order: Order, event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (printingId) return
+
+    setPrintingId(order.id)
+    try {
+      const receipt = createTailoringReceiptPayload(order, getSentCode(order))
+      await queueTailoringReceiptPrint(receipt)
+      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى الطابعة`, { icon: '🧾' })
+
+      if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
+        toast('رقم فاتورة الأستاذ غير محفوظ لهذا الطلب؛ سيُستخدم الرقم المحلي في الإيصال.', {
+          icon: '⚠️',
+          duration: 5000,
+        })
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error || '')
+      toast.error('تعذّر إرسال الإيصال إلى محطة الطباعة: ' + message)
+    } finally {
+      setPrintingId(null)
+    }
+  }
 
   // Separate effect for permission-based redirect (runs in parallel)
   useEffect(() => {
@@ -546,6 +579,21 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                     </div>
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={(event) => { void handlePrintReceipt(order, event) }}
+                  disabled={printingId !== null}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-900 transition hover:border-amber-400 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  title="طباعة إيصال الطلب على الطابعة الحرارية"
+                >
+                  {printingId === order.id ? (
+                    <Loader className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Printer className="h-4 w-4" />
+                  )}
+                  <span>{printingId === order.id ? 'جارٍ إرسال الإيصال...' : 'طباعة الإيصال'}</span>
+                </button>
 
                 {/* Footer - Price */}
                 {workerType !== 'workshop_manager' && (

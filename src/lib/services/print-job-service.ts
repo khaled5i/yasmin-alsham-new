@@ -7,15 +7,16 @@
 
 import { supabase } from '@/lib/supabase'
 import type { Income } from '@/types/simple-accounting'
+import type { TailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
 
 export type PrintJobStatus = 'pending' | 'printing' | 'done' | 'error'
 
-export interface PrintJob {
+export interface PrintJob<TPayload = Income> {
   id: string
   branch: string
   job_type: string
   income_id: string | null
-  payload: Income
+  payload: TPayload
   status: PrintJobStatus
   error_message: string | null
   printed_at: string | null
@@ -23,6 +24,7 @@ export interface PrintJob {
 }
 
 const FABRICS_BRANCH = 'fabrics'
+const TAILORING_BRANCH = 'tailoring'
 
 /**
  * إرسال طلب طباعة فاتورة بيع قماش إلى الطابور (يُستدعى من الجوال/صفحة المبيعات).
@@ -39,8 +41,23 @@ export async function queueFabricReceiptPrint(item: Income): Promise<void> {
   if (error) throw error
 }
 
+/** إرسال إيصال طلب تفصيل إلى محطة الطابعة عند تحويل الطلب إلى «تم التسليم». */
+export async function queueTailoringReceiptPrint(payload: TailoringReceiptPayload): Promise<void> {
+  const { error } = await supabase.from('print_jobs').insert({
+    branch: TAILORING_BRANCH,
+    job_type: 'tailoring_order_receipt',
+    // العمود مرجع عام للسجل في طابور الطباعة؛ لا يوجد عليه قيد مفتاح أجنبي.
+    income_id: payload.order_id,
+    payload,
+    status: 'pending',
+  })
+  if (error) throw error
+}
+
 /** جلب الطلبات المعلّقة بالترتيب (تُستدعى عند بدء تشغيل المحطة + بعد كل حدث Realtime). */
-export async function getPendingPrintJobs(branch: string = FABRICS_BRANCH): Promise<PrintJob[]> {
+export async function getPendingPrintJobs<TPayload = Income>(
+  branch: string = FABRICS_BRANCH
+): Promise<PrintJob<TPayload>[]> {
   const { data, error } = await supabase
     .from('print_jobs')
     .select('*')
@@ -48,7 +65,7 @@ export async function getPendingPrintJobs(branch: string = FABRICS_BRANCH): Prom
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
   if (error) throw error
-  return (data ?? []) as PrintJob[]
+  return (data ?? []) as PrintJob<TPayload>[]
 }
 
 /**
@@ -56,7 +73,7 @@ export async function getPendingPrintJobs(branch: string = FABRICS_BRANCH): Prom
  * الشرط `.eq('status', 'pending')` في UPDATE ذرّي على مستوى الصف في Postgres،
  * فلو فُتحت المحطة على جهازين لن ينجح إلا واحد؛ الخاسر يحصل على null (لا طباعة مزدوجة).
  */
-export async function claimPrintJob(id: string): Promise<PrintJob | null> {
+export async function claimPrintJob<TPayload = Income>(id: string): Promise<PrintJob<TPayload> | null> {
   const { data, error } = await supabase
     .from('print_jobs')
     .update({ status: 'printing' })
@@ -65,7 +82,7 @@ export async function claimPrintJob(id: string): Promise<PrintJob | null> {
     .select()
     .maybeSingle()
   if (error) throw error
-  return (data as PrintJob) ?? null
+  return (data as PrintJob<TPayload>) ?? null
 }
 
 /** إنهاء الطلب بنجاح. */

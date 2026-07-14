@@ -10,6 +10,12 @@
 
 import toast from 'react-hot-toast'
 import { getAutoSendEnabled, sendInvoiceToAlostaz } from './alostaz-client'
+import {
+  createTailoringReceiptPayload,
+  isFullyNetworkPaid,
+  type TailoringReceiptOrder,
+} from '@/lib/print-tailoring-receipt'
+import { queueTailoringReceiptPrint } from './print-job-service'
 
 export type RemainingMethod = 'cash' | 'card'
 
@@ -20,16 +26,29 @@ export interface DeliveryUpdateOptions {
   remainingMethod?: RemainingMethod | null
 }
 
+interface DeliveryOrder extends TailoringReceiptOrder {
+  alostaz_invoice_id?: number | null
+}
+
+interface DeliveryUpdates {
+  status: 'delivered'
+  delivery_date: string
+  deposit_amount: number
+  paid_amount?: number
+  payment_status?: 'paid'
+  remaining_payment_method?: RemainingMethod
+}
+
 /**
  * يبني حِزمة تحديثات تحويل الطلب إلى «تم التسليم».
  * - يثبّت deposit_amount (لقطة العربون = ما دُفع قبل التسليم) لتفصيل الكاش/الشبكة لاحقاً.
  * - عند markAsPaid: paid_amount = السعر الكامل، والحالة «مدفوع»، مع تسجيل طريقة دفع المتبقي.
  */
-export function buildDeliveryUpdates(order: any, opts: DeliveryUpdateOptions) {
+export function buildDeliveryUpdates(order: DeliveryOrder | null | undefined, opts: DeliveryUpdateOptions) {
   const price = Number(order?.price) || 0
   const preDeliveryPaid = Number(order?.paid_amount) || 0
 
-  const updates: any = {
+  const updates: DeliveryUpdates = {
     status: 'delivered',
     delivery_date: new Date().toISOString(),
     // العربون = deposit_amount المحفوظ (منذ الإنشاء) أو لقطة المدفوع قبل التسليم (طلبات قديمة)
@@ -54,31 +73,51 @@ export function buildDeliveryUpdates(order: any, opts: DeliveryUpdateOptions) {
  *
  * يُمرَّر الطلب بعد دمج تحديثات التسليم كي يعكس paid_amount/طريقة المتبقي الجديدة.
  */
-export async function autoSendOnDelivery(order: any, userRole?: string): Promise<void> {
-  try {
-    if (userRole !== 'admin') return
-    if (!order?.id || order.alostaz_invoice_id) return
+export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined, userRole?: string): Promise<void> {
+  if (!order?.id) return
 
-    const enabled = await getAutoSendEnabled()
-    if (!enabled) return
+  let accountingInvoiceCode = String(order.alostaz_invoice_code || '').trim()
 
-    const res = await sendInvoiceToAlostaz(order.id, { auto: true })
+  // نحافظ على السلوك المحاسبي الحالي (مبلغ الشبكة فقط، وللمدير عند تفعيل الإرسال).
+  // عند الدفع شبكة بالكامل ننتظر النتيجة هنا كي يحمل الإيصال نفس رقم فاتورة الأستاذ.
+  if (userRole === 'admin' && !order.alostaz_invoice_id) {
+    try {
+      const enabled = await getAutoSendEnabled()
+      if (enabled) {
+        const res = await sendInvoiceToAlostaz(order.id, { auto: true })
+        accountingInvoiceCode = String(res.invoice_code || accountingInvoiceCode).trim()
 
-    if (res.skipped) return // لا مبلغ شبكة → لا فاتورة (صامت)
-
-    if (res.success && res.isDraft) {
-      toast(
-        `مسودة اختبار أُنشئت في الأستاذ${res.invoice_code ? ' — ' + res.invoice_code : ''}`,
-        { icon: '🧪' }
-      )
-    } else if (res.success && !res.alreadySent) {
-      toast.success(
-        `تم إرسال مبلغ الشبكة للمحاسبة تلقائياً${res.invoice_code ? ' — ' + res.invoice_code : ''}`
-      )
-    } else if (!res.success) {
-      toast.error('تعذّر الإرسال التلقائي للمحاسبة: ' + (res.error || ''))
+        if (res.success && res.isDraft) {
+          toast(
+            `مسودة اختبار أُنشئت في الأستاذ${res.invoice_code ? ' — ' + res.invoice_code : ''}`,
+            { icon: '🧪' }
+          )
+        } else if (res.success && !res.alreadySent && !res.skipped) {
+          toast.success(
+            `تم إرسال مبلغ الشبكة للمحاسبة تلقائياً${res.invoice_code ? ' — ' + res.invoice_code : ''}`
+          )
+        } else if (!res.success) {
+          toast.error('تعذّر الإرسال التلقائي للمحاسبة: ' + (res.error || ''))
+        }
+      }
+    } catch {
+      // فشل المحاسبة لا يلغي التسليم ولا يمنع طباعة إيصال إجمالي الطلب.
     }
-  } catch {
-    /* صامت */
+  }
+
+  try {
+    const receipt = createTailoringReceiptPayload(order, accountingInvoiceCode)
+    await queueTailoringReceiptPrint(receipt)
+    toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى الطابعة`, { icon: '🧾' })
+
+    if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
+      toast('تعذّر جلب رقم فاتورة الأستاذ؛ أُرسل رقم محلي مرتبط بالطلب إلى الطباعة.', {
+        icon: '⚠️',
+        duration: 5000,
+      })
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || '')
+    toast.error('تم التسليم، لكن تعذّر إرسال الإيصال إلى محطة الطباعة: ' + message)
   }
 }
