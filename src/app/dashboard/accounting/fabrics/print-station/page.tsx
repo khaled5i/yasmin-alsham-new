@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { supabase } from '@/lib/supabase'
-import { buildFabricSaleReceiptHtml } from '@/lib/print-fabric-receipt'
+import { buildFabricSaleReceiptHtml, getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
 import {
   getPendingPrintJobs,
   claimPrintJob,
@@ -98,8 +98,11 @@ function printReceiptViaIframe(job: PrintJob): Promise<void> {
 }
 
 function jobLabel(job: PrintJob): string {
-  const inv = job.payload?.invoice_number
-  if (inv != null) return `فاتورة #${inv}`
+  try {
+    return `فاتورة ${getFabricReceiptNumber(job.payload)}`
+  } catch {
+    // طلب قديم أُرسل للطابور قبل وصول رقم الأستاذ.
+  }
   const name = job.payload?.customer_name || job.payload?.description
   return name ? `فاتورة: ${name}` : 'فاتورة قماش'
 }

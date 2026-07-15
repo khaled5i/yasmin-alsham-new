@@ -40,7 +40,7 @@ import ImageUpload from '@/components/ImageUpload'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput, FabricSaleItem } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
-import { printFabricSaleReceipt } from '@/lib/print-fabric-receipt'
+import { getFabricReceiptNumber, printFabricSaleReceipt } from '@/lib/print-fabric-receipt'
 import { queueFabricReceiptPrint } from '@/lib/services/print-job-service'
 import {
   sendFabricInvoiceToAlostaz,
@@ -257,16 +257,28 @@ function FabricsIncomeContent() {
   const showFabricImages = fabricLines.some((l) => isShekFabric(getInventoryItem(l.inventory_id)))
 
   // بعد الحفظ: الكمبيوتر يطبع الفاتورة محلياً، الجوال يرسلها لطابور محطة الطباعة
-  const printOrQueueReceipt = async (rec: Income) => {
+  const printOrQueueReceipt = async (rec: Income, afterSave = true) => {
     try {
-      if (isMobile) {
-        await queueFabricReceiptPrint(rec)
-        alert('✅ تم الحفظ وأُرسلت الفاتورة للطباعة على الكاشير')
-      } else {
-        printFabricSaleReceipt(rec)
+      // الشبكة: ننتظر رقم الأستاذ أولاً عند تفعيل الإرسال التلقائي.
+      // التحقق الصريح يمنع وضع رقم الكاش المحلي على فاتورة شبكة.
+      const recordWithKnownCode: Income = {
+        ...rec,
+        alostaz_invoice_code: rec.alostaz_invoice_code || sentMap[rec.id]?.code || null,
       }
-    } catch {
-      alert('⚠️ تم الحفظ لكن تعذّرت الطباعة')
+      const printableRecord = await maybeAutoSendFabricInvoice(recordWithKnownCode)
+      getFabricReceiptNumber(printableRecord)
+
+      if (isMobile) {
+        await queueFabricReceiptPrint(printableRecord)
+        alert(afterSave
+          ? '✅ تم الحفظ وأُرسلت الفاتورة للطباعة على الكاشير'
+          : '✅ أُرسلت الفاتورة إلى محطة الطباعة على الكاشير')
+      } else {
+        printFabricSaleReceipt(printableRecord)
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error || '')
+      alert(`${afterSave ? '⚠️ تم الحفظ لكن تعذّرت الطباعة' : '❌ تعذّرت الطباعة'}${message ? `\n${message}` : ''}`)
     }
   }
 
@@ -363,8 +375,6 @@ function FabricsIncomeContent() {
       if (result) {
         setIncome([result, ...income])
         await printOrQueueReceipt(result)
-        // الإرسال التلقائي للمحاسبة (الشبكة فقط، عند تفعيل المفتاح)
-        await maybeAutoSendFabricInvoice(result)
       }
       setShowModal(false)
       resetForm()
@@ -491,9 +501,10 @@ function FabricsIncomeContent() {
   }
 
   // الإرسال التلقائي عند إنشاء مبيعة جديدة (الشبكة فقط — الكاش لا يُرسَل تلقائياً)
-  const maybeAutoSendFabricInvoice = async (rec: Income) => {
-    if (!isAdmin || !autoSend) return
-    if (rec.payment_method !== 'network') return
+  async function maybeAutoSendFabricInvoice(rec: Income): Promise<Income> {
+    if (rec.payment_method !== 'network' || rec.alostaz_invoice_code) return rec
+    if (!isAdmin || !autoSend) return rec
+
     const res = await sendFabricInvoiceToAlostaz(rec.id)
     if (res.success) {
       // تحويل الزر إلى علامة صح في الحالتين (مسودة/حقيقية)
@@ -504,9 +515,15 @@ function FabricsIncomeContent() {
         toast.success(`تم إرسال الفاتورة للمحاسبة تلقائياً${res.invoice_code ? ' — ' + res.invoice_code : ''}`)
         if (res.warning) toast(res.warning, { icon: '⚠️' })
       }
+      return {
+        ...rec,
+        alostaz_invoice_id: res.invoice_id ?? rec.alostaz_invoice_id,
+        alostaz_invoice_code: res.invoice_code ?? rec.alostaz_invoice_code,
+      }
     } else {
       toast.error('تعذّر الإرسال التلقائي للمحاسبة: ' + (res.error || ''))
     }
+    return rec
   }
 
   const filteredIncome = income.filter((item) => {
@@ -963,14 +980,7 @@ function FabricsIncomeContent() {
                       )}
                       {isMobile ? (
                         <button
-                          onClick={async () => {
-                            try {
-                              await queueFabricReceiptPrint(item)
-                              alert('✅ أُرسلت الفاتورة إلى محطة الطباعة على الكاشير')
-                            } catch {
-                              alert('❌ تعذّر إرسال الفاتورة للطباعة، تحقق من الاتصال')
-                            }
-                          }}
+                          onClick={() => { void printOrQueueReceipt(item, false) }}
                           className="p-2 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
                           title="إرسال للطباعة على الكاشير"
                         >
@@ -978,7 +988,7 @@ function FabricsIncomeContent() {
                         </button>
                       ) : (
                         <button
-                          onClick={() => printFabricSaleReceipt(item)}
+                          onClick={() => { void printOrQueueReceipt(item, false) }}
                           className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                           title="طباعة محلية"
                         >
