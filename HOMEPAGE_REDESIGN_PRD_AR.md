@@ -859,6 +859,47 @@ A cinematic vertical luxury couture atelier film, 9:16 composition designed for 
 text, letters, logo, watermark, subtitles, distorted hands, extra fingers, deformed sewing tools, warped mannequin, plastic fabric, excessive glitter, fantasy particles, neon colors, purple gradient, fast cuts, camera shake, busy background, visible face, bridal veil, low resolution, oversharpening, flicker, abrupt loop
 ```
 
+#### النسخة الاحترافية المطوّرة — Hero الجوال
+
+**الهدف الإنتاجي:** إنشاء خلفية افتتاحية رأسية تقرأ بوضوح خلف النص العربي والأزرار، وتمنح إحساس دار أزياء حرفية خلال الثواني الأولى من دون أن تنافس محتوى الواجهة.
+
+**Prompt الاحترافي:**
+
+```text
+Create a production-ready cinematic vertical homepage hero film for “Yasmin Al-Sham,” a refined contemporary Damascus couture atelier. Format: true native 9:16 vertical composition, 1080x1920 delivery framing, 24 fps, exactly 10 seconds, silent, seamless loop, designed specifically as a full-screen mobile website background behind live Arabic HTML typography and CTA buttons.
+
+VISUAL NARRATIVE AND TIMING:
+0.0–2.0 seconds — Begin with an extreme macro view of warm ivory silk moving in one slow, controlled wave under soft directional window light. The textile must show authentic fibers, fine weave, natural weight, subtle tension, and physically believable folds. The opening movement should be calm enough to serve as the visual anchor for a seamless loop.
+2.0–4.0 seconds — Use a refined match cut through a fabric fold into a close macro shot of a single deep-burgundy couture thread passing cleanly through ivory fabric. Show only the thread, needle, fabric, and a small section of the machine mechanism; avoid visible hands unless they are perfectly natural and anatomically correct. The stitch line must be straight, precise, and professionally finished.
+4.0–6.5 seconds — Transition through the burgundy thread into a close inspection of restrained hand-finished embroidery and subtle beadwork. The detailing should feel expensive and artisanal, never glittery, bridal, costume-like, or excessive. Preserve realistic scale, consistent motifs, stable bead placement, and believable textile physics.
+6.5–9.0 seconds — Slowly reveal a finished modest evening gown on a professional dress form inside a warm contemporary atelier. The gown should have an elegant structured silhouette, refined coverage, sophisticated tailoring, and restrained dusty-rose or warm-ivory detailing. Keep the dress form slightly above center and slightly left of the mobile frame so it does not collide with the Arabic content area.
+9.0–10.0 seconds — Let a foreground fold of warm ivory silk pass gently across the lens and return the composition, lighting direction, fabric position, and motion to the same visual state as the first frame, creating a clean seamless loop without a visible cut.
+
+COMPOSITION FOR THE LIVE WEBSITE UI:
+- Reserve the top 12–14% as a calm, low-detail zone for the transparent mobile header.
+- Keep the lower 38–42%, especially the lower-right and center-right areas, visually quiet, darker, and low contrast for the Arabic headline, supporting sentence, and two CTA buttons.
+- Do not place the gown, embroidery focal point, sewing needle, high-contrast highlights, or fast movement behind the lower-third text-safe zone.
+- Maintain useful visual information around the center and upper-left while allowing object-fit: cover to crop up to 6% from any edge on smaller devices.
+- Keep all essential objects inside the central 82% safe area.
+
+ART DIRECTION:
+Contemporary Damascus atelier warmth without literal arches, mosaics, tourist motifs, or ornate palace decoration. Editorial luxury fashion campaign, quiet confidence, intimate craftsmanship, timeless and tactile. Palette: deep wine and burgundy shadows (#3B1018 and #6B1726), warm ivory (#F6F0E8), restrained dusty rose (#C98E94), sand (#D8C5AE), and no more than a trace of muted antique gold (#B99A68). Soft side light, gentle falloff, controlled highlights, rich but natural blacks, subtle cinematic grain, premium realistic color grade, stable white balance, realistic materials, no artificial glossy skin or plastic textile appearance.
+
+CAMERA AND MOTION:
+Use a stabilized slow macro slider and very gentle dolly movement. Simulate high-end 50mm and 85mm macro fashion cinematography with controlled shallow depth of field that still preserves important textile detail. Motion must remain graceful and readable at mobile size. No handheld movement, no aggressive rack focus, no rapid edits, no dramatic zoom, no floating particles. Ensure temporal consistency across every frame: the mannequin, stitch line, bead pattern, room geometry, fabric color, and light direction must not morph or drift.
+
+OUTPUT CONSTRAINTS:
+No generated text, no Arabic or Latin letters, no signage, no logo, no monogram, no watermark, no subtitles, no audio, no visible brand name. Do not bake the website headline, buttons, gradient, or interface elements into the video. Provide a clean master suitable for later H.264 MP4 and VP9 WebM compression, with enough tonal detail to remain readable beneath a dark HTML gradient overlay.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+any text, Arabic letters, Latin letters, typography, logo, monogram, signage, watermark, subtitles, UI elements, buttons, visible brand name, readable sewing-machine label, face, eyes, visible model, exposed body, bridal veil, wedding scene, crown, fantasy palace, literal Damascus landmarks, mosaic overload, ornamental clutter, purple-magenta gradient, neon colors, bright cyan, excessive gold, glitter storm, sparkles, floating dust particles, smoke, fog, liquid fabric, metallic foil fabric, plastic satin, cheap polyester shine, rubber texture, low-detail textile, changing embroidery pattern, crawling beadwork, duplicated beads, melting thread, broken needle, bent sewing machine, impossible stitch direction, malformed mannequin, asymmetric dress form, extra limbs, distorted fingers, extra fingers, disembodied hands, abrupt cuts, fast montage, camera shake, whip pan, crash zoom, aggressive rack focus, heavy motion blur, flicker, exposure pumping, white-balance shift, color breathing, temporal morphing, unstable room geometry, oversharpening, crushed blacks, clipped highlights, low resolution, compression artifacts, noisy shadows, frame interpolation artifacts, abrupt loop, mismatched first and last frame
+```
+
+**إعدادات مقترحة:** استخدم Seed ثابتًا عند توفره، وولّد 3–4 محاولات، واختر النسخة التي تحافظ على منطقة النص السفلية هادئة وعلى تطابق أول وآخر إطار.
+
 ### 22.3 Prompt 02 — Hero لسطح المكتب
 
 **الاستخدام:** Banner افتتاحي عريض.  
@@ -870,6 +911,48 @@ A wide cinematic luxury couture atelier campaign, 16:9, composed for a premium f
 ```
 
 **Negative Prompt:** استخدم Negative Prompt الخاص بالفيديو الأول.
+
+#### النسخة الاحترافية المطوّرة — Hero سطح المكتب
+
+**الهدف الإنتاجي:** إنتاج Banner عريض يضع الحرفة والفستان في الجهة اليسرى، ويترك الجهة اليمنى مساحة هادئة ومظلمة نسبيًا للنص العربي والأزرار في التخطيط الفعلي للموقع.
+
+**Prompt الاحترافي:**
+
+```text
+Create a production-ready wide cinematic homepage hero film for “Yasmin Al-Sham,” a premium contemporary Damascus couture atelier. Format: native 16:9 landscape composition, 1920x1080 master framing, 24 fps, exactly 10 seconds, silent, seamless loop, built specifically as a full-bleed desktop website background behind live right-aligned Arabic HTML typography and CTA buttons.
+
+CORE COMPOSITION:
+- Place the finished modest couture gown and the most recognizable atelier subject in the left third of the frame, never in the right-side text area.
+- Use the center-left region for macro craftsmanship details, flowing fabric, the cutting table, and transitions.
+- Reserve the rightmost 40–44% of the frame as intentional negative space: low-detail warm atelier wall, softly shadowed ivory fabric, or deep-wine tonal falloff suitable for a large Arabic headline, supporting copy, and buttons.
+- Keep the top 12% calm for the transparent desktop header and navigation.
+- Keep all essential visual subjects inside the central 86% so responsive object-fit: cover may crop the outer edges without losing the dress or craftsmanship.
+- No high-contrast lamp, embroidery highlight, hand, needle, or moving fabric may pass behind the right-side text-safe zone.
+
+VISUAL SEQUENCE:
+0.0–2.0 seconds — Open with a wide, quiet atelier composition. A modest finished evening gown stands on a professional dress form in the left third. Warm ivory architecture and deep-burgundy shadows establish a refined, contemporary atmosphere. The right side remains calm and darker, with subtle texture but no subject.
+2.0–4.0 seconds — A slow dolly reveals ivory and dusty-rose fabric being shaped across a cutting table in the center-left. The cloth moves with authentic weight and friction, without floating or behaving like liquid. Use a gentle fold passing through the foreground as a natural transition.
+4.0–6.0 seconds — Move into precise macro couture details: a deep-burgundy thread forming a clean seam, a restrained embroidery motif, and a careful fabric drape. Maintain professional tool geometry and continuous material identity. Keep these close details entirely on the left half.
+6.0–8.5 seconds — Return gradually to the wider composition, revealing the finished gown again with soft side light tracing the silhouette. The right-side negative space remains stable and readable throughout.
+8.5–10.0 seconds — Use the same foreground fabric movement and camera position as the opening to return to an identical first-frame composition, exposure, color balance, and subject placement for a seamless loop.
+
+ART DIRECTION:
+Luxury editorial fashion cinematography with contemporary Damascus warmth expressed through material, restraint, light, and craftsmanship rather than literal historic decoration. Deep wine (#3B1018), burgundy (#6B1726), warm ivory (#F6F0E8), dusty rose (#C98E94), sand (#D8C5AE), and very restrained muted antique gold (#B99A68). Soft directional daylight, subtle tungsten warmth in practical lights, tactile realistic textiles, controlled highlights, gentle shadow detail, elegant tonal separation, subtle film grain, no glossy commercial showroom look.
+
+CAMERA AND TEMPORAL QUALITY:
+Slow stabilized dolly and macro slider movement only. Premium 35mm wide editorial framing transitioning to 85mm macro detail, with natural perspective and moderate depth separation. Keep the horizon and architecture stable. No fast cuts, no sweeping crane move, no dramatic zoom, no orbit around the mannequin. Preserve complete temporal consistency: dress silhouette, embroidery motif, thread color, dress-form proportions, lamps, walls, table edges, reflections, and lighting direction must not morph between frames.
+
+WEBSITE-SPECIFIC OUTPUT:
+The video must remain visually balanced when covered by a subtle HTML grain layer and a dark right-side gradient. Do not generate any title, Arabic calligraphy, English letters, logo, monogram, watermark, signage, subtitle, audio, CTA, interface control, or embedded graphic. The film should function as atmospheric background media, not as a self-contained advertisement. Deliver a clean high-quality master suitable for H.264 MP4 and VP9 WebM compression.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+text, Arabic letters, English letters, logo, monogram, signage, watermark, subtitles, interface, buttons, centered subject blocking copy, gown on the right side, busy right-side background, bright right-side lamp behind text, high-contrast embroidery behind text, object crossing the text-safe zone, visible face, fashion model, exposed body, bridal veil, wedding stage, palace interior, literal Syrian monument, mosaic wall, baroque overload, excessive ornament, purple gradient, neon lighting, excessive pink, excessive gold, glitter, particles, smoke, fog, liquid cloth, levitating fabric, plastic textile, metallic foil, incorrect fabric weight, changing dress design, changing sleeve length, morphing mannequin, warped architecture, crooked cutting table, duplicated tools, bent scissors, broken needle, extra hands, extra fingers, malformed fingers, floating hand, unreadable fake labels, fast cuts, camera shake, whip pan, orbit shot, aggressive zoom, flicker, exposure pumping, color shift, unstable shadows, moving walls, crawling embroidery, texture swimming, frame blending, ghosting, oversharpening, crushed shadows, blown highlights, low resolution, compression blocks, abrupt loop, unmatched opening and closing frames
+```
+
+**إعدادات مقترحة:** ولّد النسخة الأفقية مستقلة عن الجوال، وثبّت موضع الفستان في الثلث الأيسر، ثم اختبر لقطة ثابتة من الفيديو مع العنوان العربي قبل اعتماد النتيجة.
 
 ### 22.4 Prompt 03 — فيلم الحرفة في قسم التفصيل
 
@@ -887,6 +970,47 @@ An intimate couture craftsmanship film focused on precise dressmaking details. M
 extra fingers, distorted hands, unsafe scissor position, warped needle, messy workspace, text, logo, watermark, cheap polyester shine, harsh light, fast motion, jump cuts, glitter effects, fantasy particles, visible face, mannequin deformation, flicker
 ```
 
+#### النسخة الاحترافية المطوّرة — فيلم الحرفة
+
+**الهدف الإنتاجي:** تقديم دليل بصري هادئ ومقنع على جودة التنفيذ، مع إبقاء أسفل اليمين صالحًا لعبارة «لا نتبع التفاصيل… نصنعها» وأعلى اليسار صالحًا للتسمية العمودية داخل لوحة الحرفة.
+
+**Prompt الاحترافي:**
+
+```text
+Create an intimate, production-ready couture craftsmanship film for the tailoring-story section of a premium Arabic fashion website. Primary format: 4:5 portrait, 1080x1350, 24 fps, exactly 8 seconds, silent, loop-friendly. Optional alternate master: 16:9 using the same art direction but independently composed. The film will appear inside a large editorial panel with live Arabic text over the lower-right corner and a small vertical label at the upper-left.
+
+WEBSITE COMPOSITION AND SAFE AREAS:
+- Keep the lower-right 34% dark, calm, and low-detail for a large two-line Arabic statement.
+- Keep the upper-left 12% free from hands, tools, bright highlights, or critical detail for a vertical label.
+- Place the active craft action across the center-left and upper-middle of the frame.
+- Keep hands and tools inside the central 76% to survive responsive cropping.
+- The visual hierarchy must read immediately on a phone: one clear action at a time, large textile detail, restrained background.
+
+SHOT FLOW:
+0.0–1.5 seconds — Macro view of tailor’s chalk drawing one precise, continuous guideline across warm-ivory fabric on a clean professional cutting table. Show authentic chalk dust in a restrained, realistic amount. The line must remain straight and stable.
+1.5–3.0 seconds — A pair of professional tailoring shears makes one slow, safe, controlled cut exactly along the chalk line. Show only one anatomically correct hand if needed, with natural grip, correct finger count, realistic wrist posture, and safe blade orientation. The cut edge must remain clean and physically consistent.
+3.0–4.5 seconds — Match cut to a sewing-machine needle forming a precise seam with deep-burgundy thread. The presser foot, feed dogs, needle, fabric movement, and stitch direction must operate mechanically correctly. The stitch length and thread path must stay consistent across frames.
+4.5–6.0 seconds — Close inspection of restrained bead embroidery and lining finish. One natural hand gently checks the beadwork once; beads and motifs remain fixed, symmetrical where appropriate, and securely attached.
+6.0–7.5 seconds — Fabric is carefully draped on a professional dress form in the center-left, revealing a refined section of a modest evening-gown silhouette. End by returning through an ivory fabric fold that visually matches the opening textile position for a soft loop.
+
+ART DIRECTION AND REALISM:
+Authentic working couture atelier, immaculate but lived-in, never sterile and never messy. Deep wine and burgundy accents, warm ivory fabric, dusty-rose undertones, sand-colored work surface, tiny muted-gold highlights only in metal tools. Soft directional side light with subtle practical warmth, realistic skin tone if a hand appears, accurate textile weight, visible weave, natural seam tension, controlled shallow depth of field, cinematic editorial framing, calm deliberate pace. The result should communicate patience, accuracy, and hand-finished quality rather than generic luxury decoration.
+
+CAMERA:
+Stabilized macro slider, 85–100mm macro lens look, moderate depth of field so the working point and nearby textile remain legible. Use match cuts motivated by the burgundy thread or ivory fold. No handheld shake, no rapid montage, no extreme slow-motion artifacts, no focus hunting. Maintain consistent table geometry, tool shape, hand anatomy, fabric identity, embroidery pattern, and lighting direction.
+
+OUTPUT RESTRICTIONS:
+No face, no customer identity, no body, no spoken dialogue, no audio, no generated text, no logo, no watermark, no brand signage. Do not include booking imagery, measuring-session signage, price tags, product labels, interface graphics, or decorative particles. Keep the footage suitable beneath a dark lower gradient added by the website.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+text, letters, logo, watermark, subtitles, price tag, booking sign, visible face, customer, full person, exposed body, extra hands, extra fingers, missing fingers, fused fingers, elongated fingers, reversed wrist, disembodied hand, changing hand anatomy, unsafe scissor handling, scissors cutting toward hand, bent scissors, duplicated scissors, warped needle, multiple needles, broken presser foot, impossible machine motion, thread passing through solid metal, reversed stitch direction, floating chalk, excessive chalk dust, crooked seam, changing stitch length, crawling embroidery, duplicated beads, melting beads, inconsistent fabric pattern, liquid fabric, plastic fabric, cheap polyester shine, messy floor, dirty table, cluttered workshop, fantasy atelier, glitter, sparks, floating particles, harsh top light, neon color, purple gradient, flicker, exposure pumping, focus breathing, focus hunting, camera shake, jump cuts, fast motion, warped dress form, changing mannequin proportions, oversharpening, low resolution, temporal morphing, compression artifacts, abrupt ending
+```
+
+**إعدادات مقترحة:** إذا فشلت الأداة في الحفاظ على اليد والأدوات، أنشئ كل لقطة على حدة لمدة 1.5–2 ثانية ثم اجمعها في المونتاج بدل توليد التسلسل كاملًا دفعة واحدة.
+
 ### 22.5 Prompt 04 — لحظة كشف الفستان النهائي
 
 **الاستخدام:** صورة متحركة كبيرة قبل معرض الأعمال أو داخله.  
@@ -896,6 +1020,46 @@ extra fingers, distorted hands, unsafe scissor position, warped needle, messy wo
 ```text
 A refined reveal of a finished modest couture evening gown on a dress form in a warm contemporary atelier. Start with an extreme close-up of hand-finished embroidery and subtle beadwork, then slowly pull back to reveal the full elegant silhouette. The gown uses dusty rose and warm ivory tones with restrained detailing, realistic fabric weight and folds, premium tailoring, clean hem and precise structure. Soft window light with deep burgundy shadows, muted antique gold accents in the room, editorial luxury fashion campaign, calm stabilized camera, no person, no face, no text, no logo, no watermark, 24 fps, 6 seconds.
 ```
+
+#### النسخة الاحترافية المطوّرة — كشف الفستان النهائي
+
+**الهدف الإنتاجي:** لقطة تحريرية عمودية تصلح كبطل بصري قبل معرض الأعمال أو كعمل مميز داخله، وتعرض جودة القصّة والتشطيب من التفاصيل إلى الصورة الكاملة من دون قص الحاشية أو تشويه المانيكان.
+
+**Prompt الاحترافي:**
+
+```text
+Create a production-ready editorial reveal of one finished modest couture evening gown for the tailoring showcase of a premium Arabic fashion atelier website. Format: native 4:5 portrait, 1080x1350, with an optional independently composed 9:16 version, 24 fps, exactly 6 seconds, silent, elegant and loop-friendly. The dress must remain the same garment in every frame with no change in color, neckline, sleeves, embroidery, silhouette, hem, or construction.
+
+SHOT DESIGN:
+0.0–1.6 seconds — Begin on an extreme macro detail of hand-finished embroidery at the bodice or cuff. Show fine thread tension, restrained beadwork, clean lining, precise edge finishing, and authentic fabric weave. The motif must be elegant and consistent, not overly ornate.
+1.6–3.2 seconds — Execute a very slow stabilized pull-back, revealing the relationship between embroidery, seam construction, structured waist, and the drape of the skirt. The transition must be continuous with no morphing or hidden garment swap.
+3.2–5.4 seconds — Complete the reveal of the full modest evening-gown silhouette on a professional dress form. Use refined coverage, a structured modest neckline, elegant long or three-quarter sleeves if visible, balanced proportions, natural fabric weight, precise waist construction, clean hem, and restrained dusty-rose with warm-ivory detailing. The entire dress, including the hem and a small breathing margin below it, must remain inside frame.
+5.4–6.0 seconds — Hold the final silhouette long enough to read clearly, while a soft foreground fold or controlled light falloff prepares a transition back to the opening macro texture if the clip is looped.
+
+COMPOSITION FOR THE SHOWCASE:
+- Center the dress form slightly left of center to create subtle editorial asymmetry.
+- Keep the upper-right 20% calm for an optional live title or gallery indicator.
+- Preserve at least 8% safe margin around the shoulders, sleeves, widest skirt point, and hem.
+- Use a clean atelier background with architectural lines that frame the gown without competing with it.
+- The final wide view must remain legible when cropped into both a large 4:5 feature tile and a narrower mobile carousel card.
+
+ART DIRECTION:
+Contemporary Damascus atelier expressed through warm materiality and restraint: warm ivory walls, deep-burgundy shadow accents, dusty-rose couture textile, sand-toned floor, and minimal muted-antique-gold metal details. Soft window light from one side, delicate rim light separating the silhouette, natural shadow detail, subtle cinematic grain, realistic textile response, editorial luxury photography, quiet confidence. Avoid bridal styling, princess fantasy, costume drama, excessive sparkle, and generic pink showroom aesthetics.
+
+CAMERA AND CONSISTENCY:
+Use a stabilized 85mm fashion-editorial lens look with a slow optical or physical pull-back, no digital zoom. Maintain straight vertical architecture, realistic perspective, stable dress-form proportions, and consistent light direction. The embroidery pattern, bead count, seam placement, fabric color, sleeve construction, dress-form neck, and room geometry must remain temporally identical throughout.
+
+OUTPUT RESTRICTIONS:
+No person, no model, no face, no customer, no text, no letters, no logo, no watermark, no signage, no price, no audio, no UI, no generated brand mark. Deliver a clean master suitable for extracting a matching WebP poster and for later web compression.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+text, Arabic letters, Latin letters, logo, watermark, signage, price, visible person, model, face, skin, exposed body, bridal veil, wedding bouquet, crown, tiara, princess costume, ball-room fantasy, excessive train, exaggerated corset, transparent bodice, plunging neckline, sleeveless revealing dress, inconsistent modesty, changing neckline, changing sleeves, changing gown color, shifting embroidery, crawling beads, duplicated motifs, disappearing seam, asymmetric accidental construction, warped hem, cropped hem, cropped shoulder, floating dress, malformed mannequin, human-shaped mannequin face, extra torso, tilted dress form, plastic satin, metallic foil, liquid folds, weightless fabric, excessive glitter, sparkle particles, harsh spotlight, neon pink, purple gradient, busy background, crooked architecture, camera shake, fast zoom, jump cut, hidden garment swap, temporal morphing, exposure flicker, color shift, focus hunting, oversharpening, low resolution, compression artifacts, abrupt ending
+```
+
+**إعدادات مقترحة:** استخدم صورة مرجعية للفستان الحقيقي عندما يكون الهدف عرض عمل منفذ؛ وإذا كان الفستان مولدًا بالكامل فيجب اعتباره مادة دعائية لا توثيقًا لعمل حقيقي.
 
 ### 22.6 Prompt 05 — انتقال القماش بين القسمين
 
@@ -914,6 +1078,48 @@ Extreme macro cinematic study of luxurious fabric moving like a slow wave under 
 liquid, smoke, plastic, metallic foil, excessive sparkle, fantasy particles, text, logo, watermark, harsh reflections, neon colors, fast wave, camera shake, flicker, low texture detail
 ```
 
+#### النسخة الاحترافية المطوّرة — انتقال القماش بين القسمين
+
+**الهدف الإنتاجي:** إنشاء توقيع بصري يربط عالم التفصيل الداكن بعالم متجر الأقمشة العاجي، مع مركز هادئ للنص وحلقة قابلة للتكرار فعليًا من دون اختلاف لوني مفاجئ بين أول وآخر إطار.
+
+**Prompt الاحترافي:**
+
+```text
+Create a production-ready full-width macro textile transition film connecting a deep-burgundy couture story section to a warm-ivory fabric-store section on a premium Arabic fashion website. Produce two independently composed masters: native 16:9 at 1920x1080 for desktop and native 9:16 at 1080x1920 for mobile. Duration exactly 6 seconds, 24 fps, silent, perfectly seamless loop. This is an abstract but physically realistic study of fabric only—no people, no tools, no garments, no objects.
+
+LOOP-SAFE VISUAL STRUCTURE:
+The first and last frames must be visually identical: the same diagonal two-tone fold, with deep burgundy velvet occupying the upper-left and outer edges while warm-ivory silk emerges softly through the lower-right. Maintain identical fold geometry, lighting angle, camera position, exposure, and color distribution at the loop boundary.
+
+0.0–1.5 seconds — Begin on the established two-tone fold. A single slow wave travels through deep-burgundy velvet from the upper-left toward the center. Show dense realistic velvet pile, soft directional highlights, deep controlled shadows, and natural inertia.
+1.5–3.5 seconds — The moving fold turns over naturally and reveals warm-ivory silk beneath it, with only a restrained dusty-rose undertone appearing along the transition edge. The center becomes calmer and lighter, visually suggesting the move from atelier storytelling into the fabric store. The transformation must happen through physical folding and changing surface orientation, not through color morphing, smoke, liquid, or a digital dissolve.
+3.5–5.0 seconds — The ivory silk settles into a broad, quiet surface while a burgundy edge remains visible as the visual link between both sections. Soft side light travels once across the weave, revealing authentic fibers without harsh specular glare.
+5.0–6.0 seconds — A returning outer fold recreates the exact opening two-tone arrangement and motion direction, completing a seamless cyclic movement. The return must feel like the same fabric wave continuing, not like reverse playback or a visible reset.
+
+COMPOSITION FOR WEBSITE TEXT:
+- Reserve the central 54–60% as a low-detail, low-contrast text-safe zone for the centered Arabic sentence “كل فستان استثنائي يبدأ بقماش استثنائي,” which will be added in HTML.
+- Keep the most active folds and brightest highlights near the outer thirds.
+- For 16:9, allow safe cropping of 7% at the left and right edges.
+- For 9:16, keep the central message area calm from approximately 28% to 66% of frame height and avoid a strong fold directly behind the text.
+- The lower 18% should gradually feel warmer and lighter so the next ivory store section follows naturally, while the exact first/last frame remains loop-compatible.
+
+MATERIAL AND ART DIRECTION:
+Hyper-realistic burgundy velvet and warm-ivory silk with clearly distinct material behavior: velvet absorbs light with a dense soft pile; silk carries a restrained directional sheen and fine weave. Palette limited to deep wine (#3B1018), burgundy (#6B1726), warm ivory (#F6F0E8), and a very subtle dusty rose (#C98E94). Minimal, tactile, premium editorial fashion campaign, soft lateral studio light, fine shadow detail, elegant tonal transitions, subtle cinematic grain. No decorative objects and no artificial particles.
+
+CAMERA AND MOTION:
+Locked or near-locked macro camera with an 85–100mm macro-lens look. Movement comes primarily from one physically believable fabric wave and a very subtle light travel. No pan, orbit, zoom, handheld movement, or changing focal length. Maintain stable weave density, fiber direction, fold topology, material identity, and color across every frame. The center must remain readable beneath a soft HTML gradient.
+
+OUTPUT RESTRICTIONS:
+No text, no letters, no logo, no watermark, no brand mark, no subtitles, no audio, no garment, no hand, no sewing tool, no jewelry, no UI. Deliver clean masters suitable for extracting a matching static WebP poster and for H.264 MP4 and VP9 WebM compression.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+text, Arabic letters, Latin letters, logo, watermark, brand mark, subtitle, garment, dress, mannequin, hand, person, tool, needle, scissors, jewelry, beads, sequins, decorative object, liquid, water, paint, ink, smoke, fog, cloud, fire, metallic foil, plastic sheet, rubber, leather, fur, excessive sparkle, glitter, fantasy particles, neon colors, cyan, violet, purple gradient, harsh reflections, blown highlights, black crushed shadows, low texture detail, fake fibers, changing weave, crawling texture, velvet turning into silk by color morph, digital dissolve, melting material, weightless cloth, floating fabric, multiple chaotic waves, fast motion, reverse-playback look, camera shake, zoom, pan, orbit, focus hunting, shallow focus hiding the weave, flicker, exposure pumping, white-balance shift, unstable fold geometry, temporal morphing, ghosting, frame interpolation artifacts, center clutter, bright highlight behind text, low resolution, oversharpening, compression blocks, visible loop seam, mismatched first and last frame, abrupt color jump
+```
+
+**إعدادات مقترحة:** استخدم إطار البداية نفسه كمرجع لإطار النهاية إن كانت الأداة تدعم Keyframes، واختبر الحلقة بتكرار الفيديو ثلاث مرات متتالية قبل اعتماده.
+
 ### 22.7 Prompt 06 — Banner حملة متجر الأقمشة
 
 **الاستخدام:** Banner «تشكيلة المناسبات».  
@@ -923,6 +1129,48 @@ liquid, smoke, plastic, metallic foil, excessive sparkle, fantasy particles, tex
 ```text
 A premium fabric collection campaign displayed as an elegant editorial still life in motion. Several luxurious fabrics arranged in sculptural flowing folds: warm ivory embroidered tulle, deep burgundy satin, dusty rose chiffon, and a restrained muted-gold beaded textile. Slow light travels across the textures while the fabrics move almost imperceptibly from a soft studio breeze. Clean warm ivory background, sophisticated composition, high-end fashion material campaign, realistic embroidery and weave, calm negative space on the right for Arabic campaign title and CTA, no people, no text, no brand, no logo, no watermark, stabilized camera, 24 fps, 6 to 8 seconds.
 ```
+
+#### النسخة الاحترافية المطوّرة — Banner حملة الأقمشة
+
+**الهدف الإنتاجي:** إنتاج لحظة حملة تجارية كبيرة بعد بطاقات المنتجات، مع ترتيب الخامات في أعلى ويسار المشهد وإبقاء أسفل اليمين صالحًا لعنوان الحملة والوصف والرابط في التخطيط الفعلي.
+
+**Prompt الاحترافي:**
+
+```text
+Create a production-ready premium fabric-collection campaign film for a full-width banner on an Arabic luxury textile-store website. Produce two independently composed versions: native 16:9 at 1920x1080 for desktop and native 4:5 at 1080x1350 for mobile. Duration exactly 8 seconds, 24 fps, silent, loop-friendly. The film must function behind live right-aligned Arabic HTML campaign copy placed in the lower-right corner.
+
+PRODUCT-STILL-LIFE COMPOSITION:
+- Arrange four distinct luxury textiles as a sculptural editorial still life concentrated in the upper-left and center-left: warm-ivory embroidered tulle, deep-burgundy satin, dusty-rose chiffon, and one restrained muted-gold beaded textile.
+- Preserve clear physical separation between the materials so viewers can recognize differences in transparency, weave, drape, embroidery, sheen, and weight.
+- Reserve the lower-right 38% as calm, darker, low-detail negative space for the Arabic eyebrow, campaign title, one-line description, and CTA link.
+- Keep the top 12% visually quiet enough for responsive cropping and avoid placing the brightest highlight at either edge.
+- For the 4:5 version, stack the fabrics diagonally from upper-left to center while protecting the lower-right copy area; do not crop an existing 16:9 composition.
+
+MOTION PLAN:
+0.0–2.0 seconds — Establish the complete still life with a slow, almost imperceptible camera push. The textiles rest naturally with believable gravity and contact shadows.
+2.0–5.5 seconds — A broad, soft band of side light travels once from left to center, revealing each material in sequence: the fine embroidery and transparency of ivory tulle, the deep controlled sheen of burgundy satin, the airy layered drape of dusty-rose chiffon, and the restrained sparkle of muted-gold beadwork. Fabric movement should be minimal—only a slight edge response to a gentle studio breeze, never enough to alter the arrangement.
+5.5–8.0 seconds — The light and tiny fabric motion settle back toward the opening state, returning to the same composition and tonal balance for a smooth loop.
+
+MATERIAL ACCURACY:
+Every textile must behave according to its real properties. Tulle is fine, semi-transparent, and embroidered with stable motifs. Satin is heavier with broad, controlled highlights, not mirror-like. Chiffon is lightweight and layered but not smoky or liquid. Beaded textile has physically attached, consistently placed beadwork with restrained muted-gold reflection. No material may change color, pattern, transparency, or weave during the clip.
+
+ART DIRECTION:
+High-end editorial material campaign, contemporary and warm rather than bridal or decorative. Clean warm-ivory studio environment, deep-wine shadow accents, dusty rose used as a secondary tone, muted gold below 5% of visible area. Soft directional key light, large diffused fill, realistic contact shadows, controlled highlights, subtle grain, accurate color, premium tactile detail. Elegant asymmetry and generous breathing room, no generic ecommerce tabletop layout.
+
+CAMERA AND CONSISTENCY:
+Use a stabilized 70–85mm editorial still-life lens look with a very slow dolly-in of no more than 2–3%. No orbit, no top-down spin, no rapid parallax, no abrupt rack focus. Maintain stable embroidery patterns, bead placement, fabric edges, shadow direction, background color, and arrangement across all frames. Keep the lower-right copy-safe zone visually stable throughout.
+
+OUTPUT RESTRICTIONS:
+No person, no hand, no model, no mannequin, no dress, no product label, no price, no text, no Arabic or Latin letters, no logo, no watermark, no brand signage, no UI, no button, no audio. Do not bake in the campaign title or CTA. Deliver a clean master suitable for a matching WebP poster and web compression.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+text, Arabic letters, Latin letters, logo, watermark, price tag, product label, button, UI, person, hand, face, model, mannequin, finished dress, wedding scene, bridal styling, bouquet, crown, fantasy palace, excessive decoration, generic ecommerce product grid, symmetrical catalog layout, cluttered lower-right area, subject behind copy, bright highlight behind text, excessive gold, gold covering large area, glitter storm, sequins everywhere, floating particles, smoke, fog, liquid chiffon, plastic satin, metallic foil, rubber fabric, fake tulle, changing embroidery, crawling pattern, duplicated beads, disappearing beads, unstable transparency, changing color, magenta cast, purple gradient, neon colors, harsh light, clipped highlights, crushed shadows, fabric levitation, chaotic wind, fast movement, orbit camera, spinning tabletop, rapid zoom, camera shake, focus hunting, flicker, exposure pumping, unstable shadows, temporal morphing, low resolution, oversharpening, compression artifacts, abrupt loop
+```
+
+**إعدادات مقترحة:** اعتمد نسخة الأقمشة كحملة مزاجية لا كمرجع لمنتج بعينه؛ صور المنتجات وأسعارها في البطاقات يجب أن تبقى مأخوذة من الأقمشة الحقيقية.
 
 ### 22.8 Prompt 07 — حلقة زخرفية للخيط
 
@@ -934,6 +1182,44 @@ A premium fabric collection campaign displayed as an elegant editorial still lif
 A single deep burgundy couture thread moves gracefully across a warm ivory background, forming one elegant flowing curve inspired by the silhouette of a long evening gown without forming any logo or letters, then relaxing back into its starting position. Minimal luxury motion design, precise smooth path, soft realistic thread fibers, subtle shadow, no particles, no text, no logo, no watermark, centered composition, seamless loop, 3 to 4 seconds.
 ```
 
+#### النسخة الاحترافية المطوّرة — حلقة الخيط الزخرفية
+
+**الهدف الإنتاجي:** عنصر موشن صغير وهادئ يربط مراحل التفصيل بصريًا من دون أن يبدو شعارًا أو حرفًا أو زخرفة جاهزة، ويعمل فوق الخلفية العاجية من دون جذب الانتباه بعيدًا عن النص.
+
+**Prompt الاحترافي:**
+
+```text
+Create a minimal production-ready couture-thread motion loop for a refined Arabic fashion website. Format: native 1:1 square, 1080x1080 master, 24 fps, exactly 4 seconds, silent, perfectly seamless. Preferred output: true transparent alpha background if the generation tool and export pipeline support clean alpha; otherwise use one perfectly uniform warm-ivory background (#F6F0E8) with no texture, vignette, or color variation.
+
+ANIMATION:
+Begin with one continuous deep-burgundy couture thread (#6B1726) resting in a gentle horizontal curve across the central area. The thread must have realistic fine fibers, consistent thickness, a subtle soft contact shadow, and no visible needle.
+
+0.0–1.2 seconds — The right end lifts slightly and travels in one smooth, controlled motion, as if guided by a precise invisible hand outside the frame. The rest of the thread responds with believable tension and drag.
+1.2–2.6 seconds — The moving thread forms one elegant open S-curve loosely inspired by the long flow and waist transition of an evening-gown silhouette. It must remain an abstract curve only: never a recognizable dress drawing, logo, monogram, Arabic letter, Latin letter, number, heart, flower, crown, or infinity symbol.
+2.6–4.0 seconds — The curve relaxes along the same physical path into the exact opening position, with identical thread placement, tension, shadow, and end orientation for a seamless loop. The return should feel like natural thread relaxation, not reversed footage.
+
+COMPOSITION:
+- Keep the entire thread inside the central 78% safe area with at least 11% clear margin on every side.
+- Use only one thread and one continuous unbroken line.
+- Limit the maximum height of the curve to approximately 42% of frame height so surrounding process text remains dominant.
+- Keep motion slow and readable at small display sizes between 120 and 320 CSS pixels.
+- No end of the thread may leave the frame, point directly at UI text, or create a closed emblem shape.
+
+LOOK AND MOTION QUALITY:
+Quiet refined minimalism, accurate couture-thread fibers, matte deep-burgundy color, subtle realistic shadow, precise spline-like motion with organic inertia and no mechanical bounce. The thread must not stretch, split, multiply, melt, glow, sparkle, or change thickness. Background or alpha must remain perfectly stable across frames. Use gentle ease-in-out timing and preserve full temporal consistency.
+
+OUTPUT RESTRICTIONS:
+No text, no calligraphy, no letters, no numbers, no logo, no brand mark, no watermark, no particles, no needle, no hand, no fabric, no decorative border, no audio. Deliver a clean master that can be exported as WebM with alpha when supported, or as a standard video over the exact ivory website background.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+text, Arabic calligraphy, Arabic letter, Latin letter, number, logo, monogram, brand mark, signature, watermark, dress icon, literal gown outline, heart, infinity symbol, flower, rose, crown, star, bow, closed emblem, multiple threads, braided thread, rope, cable, wire, ribbon, yarn ball, needle, pin, scissors, hand, fabric background, textured background, gradient background, vignette, background color shift, visible alpha fringe, white halo, black halo, hard shadow, glowing thread, neon burgundy, glitter, sparkles, particles, dust, smoke, liquid motion, melting thread, stretching thread, changing thickness, broken thread, disappearing end, thread leaving frame, tangled knot, chaotic motion, bounce, overshoot, jitter, camera movement, zoom, rotation of canvas, flicker, temporal morphing, low resolution, jagged edges, compression artifacts, mismatched first and last frame, visible loop seam
+```
+
+**إعدادات مقترحة:** اختبر العنصر بالحجم الذي سيظهر به فعليًا، لأن التفاصيل الدقيقة جدًا التي تبدو جميلة عند 1080px قد تختفي كليًا داخل الواجهة.
+
 ### 22.9 Prompt 08 — فيديو Macro اختياري لبطاقات الأقمشة
 
 **الاستخدام:** فيديو قصير لمنتج قماش عند عدم توفر تصوير حقيقي.  
@@ -942,6 +1228,67 @@ A single deep burgundy couture thread moves gracefully across a warm ivory backg
 ```text
 Product-accurate macro video of [FABRIC TYPE AND COLOR], showing the real weave, embroidery pattern and transparency under neutral soft studio light. A gloved hand gently lifts one edge once to demonstrate drape and weight, then releases it. Static camera, clean warm-white background, true-to-life color, no color shifts, no added decoration, no text, no logo, no watermark, no face, 4:5 composition, 4 to 5 seconds, 24 fps.
 ```
+
+#### النسخة الاحترافية المطوّرة — فيديو Macro لبطاقة قماش
+
+**الهدف الإنتاجي:** إنشاء فيديو منتج قصير داخل بطاقة 4:5 يوضح اللون والنقشة والشفافية والانسياب بدقة، مع إلزام الأداة بالصورة المرجعية وعدم اختراع تفاصيل تجارية غير موجودة.
+
+**بيانات يجب تعبئتها قبل الاستخدام:**
+
+```text
+[FABRIC COMMERCIAL NAME]
+[FABRIC TYPE]
+[EXACT COLOR NAME]
+[REFERENCE COLOR VALUE OR LAB/RGB IF AVAILABLE]
+[WEAVE OR EMBROIDERY DESCRIPTION]
+[TRANSPARENCY: opaque / semi-sheer / sheer]
+[WEIGHT: light / medium / heavy]
+[SURFACE: matte / low sheen / satin sheen]
+[REFERENCE IMAGE OR REAL PRODUCT VIDEO]
+```
+
+**Prompt الاحترافي:**
+
+```text
+Create a product-accurate macro demonstration video of [FABRIC COMMERCIAL NAME], a [FABRIC TYPE] in [EXACT COLOR NAME], using the supplied real reference image or reference footage as the single authoritative source for color, weave, embroidery, motif scale, transparency, sheen, and edge finish. Format: native 4:5 portrait, 1080x1350, 24 fps, exactly 5 seconds, silent, static camera, loop-friendly. This video will fill the media area of an ecommerce fabric card; all product name, category, price, discount, and availability information will appear below it as live HTML and must not be generated inside the video.
+
+ACCURACY REQUIREMENTS:
+- Match the reference color under neutral lighting without warming, cooling, saturating, or beautifying it. Target [REFERENCE COLOR VALUE OR LAB/RGB IF AVAILABLE] when supplied.
+- Reproduce the exact weave or embroidery described as [WEAVE OR EMBROIDERY DESCRIPTION], at the same motif scale, repeat spacing, density, thread color, and orientation as the reference.
+- Preserve the real transparency level: [TRANSPARENCY], the real weight: [WEIGHT], and the real surface response: [SURFACE].
+- Do not add beads, sequins, metallic thread, lace, print, border, gradient, sparkle, or decorative motif that is not visible in the reference.
+- If the model cannot reproduce the product accurately, produce no final commercial asset; the result must be treated only as a placeholder pending comparison with the real fabric.
+
+SHOT AND ACTION:
+0.0–1.0 seconds — Start on the fabric resting naturally across a clean warm-white seamless surface. Show a representative area of the weave or embroidery in clear focus. The initial state must be suitable as the card poster.
+1.0–3.2 seconds — One clean neutral-gray or white cotton-gloved hand enters slowly from the side edge, gently lifts one corner only once by approximately 8–12 centimeters, and holds briefly to demonstrate authentic drape, weight, reverse-side appearance, and transparency. The grip must be anatomically correct and must not cover the representative motif.
+3.2–4.5 seconds — The hand releases the edge once. The fabric falls and settles naturally according to its stated weight, without bouncing unnaturally, changing pattern, or floating.
+4.5–5.0 seconds — The hand exits completely and the fabric returns as closely as physically possible to the opening resting composition for a soft loop.
+
+COMPOSITION FOR THE PRODUCT CARD:
+- Fill the frame with the real fabric while preserving a small warm-white border or background area sufficient to read the edge and transparency.
+- Keep the representative weave or embroidery centered inside the central 70% safe area.
+- Do not place a hand or fold over the most important motif for more than one second.
+- Keep all important detail visible after object-fit: cover and allow up to 5% crop on every edge.
+- Use moderate depth of field so both the lifted edge and the central surface retain useful product information; avoid cinematic blur that hides texture.
+
+LIGHTING AND CAMERA:
+Use color-controlled neutral studio light around 5000–5600K, high color-rendering quality, soft diffused key light at approximately 45 degrees, gentle neutral fill, and no colored practical lights. Lock exposure, white balance, focus, and camera position. Use an 85–100mm macro-lens look with realistic perspective and no wide-angle distortion. Include subtle contact shadows and accurate highlights appropriate to the material, with no clipping or crushed dark detail.
+
+TEMPORAL CONSISTENCY:
+The fabric color, motif, weave, transparency, edge, and background must remain identical in every frame. The glove must remain one consistent hand with correct anatomy. No pattern crawling, color breathing, motif regeneration, texture swimming, changing transparency, or geometry morphing is permitted.
+
+OUTPUT RESTRICTIONS:
+No text, no numbers, no price, no Arabic or Latin letters, no logo, no watermark, no label, no packaging, no ruler, no face, no skin, no jewelry, no nail polish, no decorative props, no audio. Deliver a clean master suitable for H.264 MP4, VP9 WebM, and extraction of a matching WebP poster.
+```
+
+**Negative Prompt الاحترافي:**
+
+```text
+wrong color, color shift, warmer color, cooler color, increased saturation, beautified color, inaccurate white balance, changing color between frames, invented weave, invented pattern, altered motif scale, altered repeat spacing, added embroidery, removed embroidery, added lace, added beads, added sequins, added metallic thread, added glitter, added print, added border, added gradient, changing transparency, fake transparency, changing sheen, plastic surface, metallic foil, liquid fabric, smoke-like chiffon, incorrect weight, floating cloth, unrealistic bounce, texture swimming, crawling pattern, temporal morphing, duplicated motif, broken repeat, blurred product detail, excessive shallow depth of field, overexposure, crushed shadows, harsh reflection, colored lighting, mixed lighting, dirty background, clutter, props, flowers, scissors, ruler, label, packaging, text, Arabic letters, Latin letters, price, logo, watermark, bare hand, skin, nail polish, rings, bracelet, extra fingers, missing fingers, fused fingers, distorted glove, multiple hands, hand covering motif, camera movement, zoom, pan, focus hunting, exposure pumping, flicker, low resolution, oversharpening, compression artifacts, visible loop jump
+```
+
+**إعدادات مقترحة:** لا يعتمد هذا الفيديو للبيع إلا بعد عرضه بجانب القماش الحقيقي تحت إضاءة محايدة وموافقة المسؤول عن المنتج على اللون والنقشة والشفافية.
 
 **تنبيه:** لا يعتمد هذا البرومبت لتمثيل منتج حقيقي للبيع إلا بعد مقارنة الفيديو بالقماش الفعلي والتأكد من دقة اللون والنقشة والشفافية.
 
@@ -1525,4 +1872,3 @@ HomePage
 - يتم قياس الأداء وتوثيق نتائجه.
 - تسجل أحداث التحليلات من دون بيانات شخصية.
 - يراجع مالك المشروع النصوص والصور وأرقام التواصل ويعتمدها قبل النشر.
-

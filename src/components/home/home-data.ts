@@ -21,9 +21,8 @@ export const homeMedia = {
   hero: {
     mobilePoster: '/media/home/hero-mobile.webp',
     desktopPoster: '/media/home/hero-desktop.webp',
-    // تضاف النسخ النهائية هنا بعد إنتاجها من برومبتات الـPRD.
-    mobileVideo: undefined as string | undefined,
-    desktopVideo: undefined as string | undefined,
+    mobileVideo: '/media/home/hero-mobile.mp4',
+    desktopVideo: '/media/home/hero-desktop.mp4',
   },
   craftPoster: '/media/home/craft-poster.webp',
   transitionPoster: '/media/home/fabric-transition.webp',
@@ -93,4 +92,3 @@ export const tailoringShowcase: TailoringShowcaseItem[] = [
     isActive: true,
   },
 ]
-

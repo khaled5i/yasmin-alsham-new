@@ -20,7 +20,7 @@ export default function ResponsiveHeroMedia({
   const videoRef = useRef<HTMLVideoElement>(null)
   const watchedHalf = useRef(false)
   const started = useRef(false)
-  const [canUseVideo, setCanUseVideo] = useState(false)
+  const [videoSrc, setVideoSrc] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
@@ -31,17 +31,39 @@ export default function ResponsiveHeroMedia({
       connection?: { saveData?: boolean }
     }).connection
 
-    if (!reducedMotion && !connection?.saveData) setCanUseVideo(true)
+    if (reducedMotion || connection?.saveData) return
+
+    const desktopMedia = window.matchMedia('(min-width: 768px)')
+    const selectVideo = () => {
+      const nextVideo = desktopMedia.matches
+        ? (desktopVideo ?? mobileVideo)
+        : (mobileVideo ?? desktopVideo)
+
+      setVideoSrc(nextVideo ?? null)
+    }
+
+    selectVideo()
+    desktopMedia.addEventListener('change', selectVideo)
+
+    return () => desktopMedia.removeEventListener('change', selectVideo)
   }, [desktopVideo, mobileVideo])
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !canUseVideo) return
+    if (!video || !videoSrc) return
+
+    setIsReady(false)
+    started.current = false
+    watchedHalf.current = false
+
+    const playVideo = () => {
+      video.play().catch(() => undefined)
+    }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          video.play().catch(() => undefined)
+          playVideo()
         } else {
           video.pause()
         }
@@ -50,8 +72,15 @@ export default function ResponsiveHeroMedia({
     )
 
     observer.observe(video)
-    return () => observer.disconnect()
-  }, [canUseVideo])
+    window.addEventListener('pointerdown', playVideo, { once: true, passive: true })
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('pointerdown', playVideo)
+    }
+  }, [videoSrc])
+
+  const videoVariant = videoSrc === desktopVideo ? 'desktop' : 'mobile'
 
   return (
     <div className={styles.heroMedia} aria-hidden="true">
@@ -67,21 +96,24 @@ export default function ResponsiveHeroMedia({
         />
       </picture>
 
-      {canUseVideo && (mobileVideo || desktopVideo) ? (
+      {videoSrc ? (
         <video
+          key={videoSrc}
           ref={videoRef}
+          src={videoSrc}
           className={`${styles.heroVideo} ${isReady ? styles.heroVideoReady : ''}`}
+          autoPlay
           muted
           loop
           playsInline
           preload="metadata"
-          onCanPlay={() => setIsReady(true)}
-          onError={() => setCanUseVideo(false)}
+          onPlaying={() => setIsReady(true)}
+          onError={() => setVideoSrc(null)}
           onPlay={() => {
             if (started.current) return
             started.current = true
             trackHomeEvent('hero_video_start', {
-              variant: desktopVideo && windowWidthIsDesktop() ? 'desktop' : 'mobile',
+              variant: videoVariant,
             })
           }}
           onTimeUpdate={(event) => {
@@ -89,18 +121,11 @@ export default function ResponsiveHeroMedia({
             if (watchedHalf.current || !video.duration || video.currentTime < video.duration / 2) return
             watchedHalf.current = true
             trackHomeEvent('hero_video_50', {
-              variant: desktopVideo && windowWidthIsDesktop() ? 'desktop' : 'mobile',
+              variant: videoVariant,
             })
           }}
-        >
-          {desktopVideo ? <source media="(min-width: 768px)" src={desktopVideo} type="video/mp4" /> : null}
-          {mobileVideo ? <source src={mobileVideo} type="video/mp4" /> : null}
-        </video>
+        />
       ) : null}
     </div>
   )
-}
-
-function windowWidthIsDesktop() {
-  return typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
 }
