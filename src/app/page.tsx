@@ -9,7 +9,6 @@ import {
   CinematicHero,
   FabricTransition,
   TailoringStory,
-  TrustStrip,
 } from '@/components/home/HomeSections'
 import styles from '@/components/home/home.module.css'
 
@@ -58,7 +57,6 @@ export default function Home() {
         <TailoringStory />
         <FabricTransition />
         <FeaturedFabricStore />
-        <TrustStrip />
       </main>
       <HomeFooter />
     </div>

@@ -1,5 +1,4 @@
 import Image from 'next/image'
-import Link from 'next/link'
 import { ArrowDown, ArrowLeft, MessageCircle } from 'lucide-react'
 import ResponsiveHeroMedia from './ResponsiveHeroMedia'
 import TailoringShowcase from './TailoringShowcase'
@@ -98,28 +97,6 @@ export function BusinessGateway() {
 }
 
 export function TailoringStory() {
-  const valuePoints = [
-    {
-      title: 'تصميم يراعي شخصيتك',
-      text: 'نتعامل مع كل فستان كعمل مستقل، يبدأ من ذوقك والمناسبة.',
-    },
-    {
-      title: 'تنفيذ دقيق',
-      text: 'اهتمام بالقصّة والبطانة والقص والتشطيب في كل مرحلة.',
-    },
-    {
-      title: 'اختيار متكامل',
-      text: 'يمكن أن تبدأ الفكرة من تشكيلة الأقمشة المتوفرة لدينا.',
-    },
-  ]
-
-  const processSteps = [
-    ['الفكرة', 'نفهم الشكل المطلوب والمناسبة وتفضيلاتك.'],
-    ['القماش والتفاصيل', 'نختار الخامة واللون والتطريز المناسب.'],
-    ['التنفيذ', 'يبدأ القص والخياطة وضبط كل تفصيل.'],
-    ['اللمسة الأخيرة', 'نراجع التشطيب ونظهر الفستان بصورته النهائية.'],
-  ]
-
   return (
     <section id="tailoring" className={styles.tailoringSection} aria-labelledby="tailoring-title">
       <div className={styles.sectionContainer}>
@@ -142,36 +119,6 @@ export function TailoringStory() {
           <span className={styles.craftShade} />
           <p>لا نتبع التفاصيل…<br /><strong>نصنعها.</strong></p>
           <small>الحرفة في كل مرحلة</small>
-        </div>
-
-        <ol className={styles.valuePoints}>
-          {valuePoints.map((point, index) => (
-            <li key={point.title}>
-              <span>0{index + 1}</span>
-              <div>
-                <h3>{point.title}</h3>
-                <p>{point.text}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-
-        <div className={styles.processBlock}>
-          <div className={styles.processIntro}>
-            <p className={styles.sectionEyebrow}>من الفكرة إلى الفستان</p>
-            <h3>أربع مراحل،<br />واهتمام واحد.</h3>
-          </div>
-          <ol className={styles.processList}>
-            {processSteps.map(([title, description], index) => (
-              <li key={title}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <div>
-                  <h4>{title}</h4>
-                  <p>{description}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
         </div>
 
         <div className={styles.showcaseHeader}>
@@ -222,16 +169,3 @@ export function FabricTransition() {
     </section>
   )
 }
-
-export function TrustStrip() {
-  return (
-    <section className={styles.trustStrip} aria-label="ما نعتني به">
-      <div>
-        <p><span>01</span>تفصيل بعناية في كل مرحلة.</p>
-        <p><span>02</span>أقمشة مختارة للمناسبات.</p>
-        <p><span>03</span>تواصل مباشر عبر واتساب.</p>
-      </div>
-    </section>
-  )
-}
-

@@ -629,93 +629,12 @@
   writing-mode: vertical-rl;
 }
 
-.valuePoints {
-  display: grid;
-  margin: 72px 0 0;
-  padding: 0;
-  list-style: none;
-  border-top: 1px solid rgba(216, 197, 174, 0.22);
-}
-
-.valuePoints li {
-  display: grid;
-  grid-template-columns: 46px 1fr;
-  gap: 12px;
-  padding: 28px 0;
-  border-bottom: 1px solid rgba(216, 197, 174, 0.22);
-}
-
-.valuePoints li > span {
-  color: var(--gold);
-  font-size: 0.7rem;
-  letter-spacing: 0.1em;
-}
-
-.valuePoints h3 {
-  font-family: var(--font-home-display), serif;
-  font-size: clamp(1.65rem, 5vw, 2.5rem);
-  font-weight: 600;
-}
-
-.valuePoints p {
-  max-width: 520px;
-  margin-top: 8px !important;
-  color: rgba(246, 240, 232, 0.65);
-  line-height: 1.85;
-}
-
-.processBlock {
-  display: grid;
-  gap: 42px;
-  margin-top: 96px;
-  padding: 56px 24px;
-  color: var(--charcoal);
-  background: var(--ivory);
-}
-
-.processIntro h3,
 .showcaseHeader h3 {
   margin-top: 10px !important;
   font-family: var(--font-home-display), serif;
   font-size: clamp(2.2rem, 7vw, 4.5rem);
   font-weight: 600;
   line-height: 1.13;
-}
-
-.processList {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.processList li {
-  display: grid;
-  grid-template-columns: 42px 1fr;
-  gap: 14px;
-  padding: 22px 0;
-  border-top: 1px solid rgba(107, 23, 38, 0.18);
-}
-
-.processList li:last-child {
-  border-bottom: 1px solid rgba(107, 23, 38, 0.18);
-}
-
-.processList li > span {
-  color: var(--wine);
-  font-size: 0.68rem;
-}
-
-.processList h4 {
-  font-family: var(--font-home-display), serif;
-  font-size: 1.45rem;
-  font-weight: 600;
-}
-
-.processList p {
-  max-width: 510px;
-  margin-top: 6px !important;
-  color: rgba(33, 27, 25, 0.68);
-  line-height: 1.75;
 }
 
 .showcaseHeader {
@@ -1369,40 +1288,6 @@
   width: 18px;
 }
 
-/* Trust and footer */
-.trustStrip {
-  padding: 0 16px 96px;
-  background: var(--ivory-soft);
-}
-
-.trustStrip > div {
-  display: grid;
-  width: min(100%, 1280px);
-  margin-inline: auto;
-  border-block: 1px solid rgba(107, 23, 38, 0.18);
-}
-
-.trustStrip p {
-  display: grid;
-  grid-template-columns: 34px 1fr;
-  gap: 8px;
-  padding: 20px 0;
-  font-family: var(--font-home-display), serif;
-  font-size: 1.12rem;
-  font-weight: 600;
-  border-bottom: 1px solid rgba(107, 23, 38, 0.12);
-}
-
-.trustStrip p:last-child {
-  border-bottom: 0;
-}
-
-.trustStrip span {
-  color: var(--gold);
-  font-family: var(--font-home-sans), sans-serif;
-  font-size: 0.65rem;
-}
-
 .homeFooter {
   padding: 78px 20px 24px;
   color: var(--ivory);
@@ -1638,32 +1523,6 @@
     bottom: 48px;
   }
 
-  .valuePoints {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .valuePoints li {
-    grid-template-columns: 40px 1fr;
-    padding: 34px 22px;
-    border-left: 1px solid rgba(216, 197, 174, 0.22);
-  }
-
-  .valuePoints li:first-child {
-    padding-right: 0;
-  }
-
-  .valuePoints li:last-child {
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .processBlock {
-    grid-template-columns: 0.9fr 1.1fr;
-    gap: 70px;
-    margin-top: 140px;
-    padding: 84px 64px;
-  }
-
   .showcaseHeader {
     margin-top: 150px;
   }
@@ -1743,25 +1602,6 @@
 
   .campaignContent {
     inset: auto 52px 50px;
-  }
-
-  .trustStrip > div {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .trustStrip p {
-    padding: 28px 24px;
-    border-left: 1px solid rgba(107, 23, 38, 0.12);
-    border-bottom: 0;
-  }
-
-  .trustStrip p:first-child {
-    padding-right: 0;
-  }
-
-  .trustStrip p:last-child {
-    padding-left: 0;
-    border-left: 0;
   }
 
   .footerTop {
