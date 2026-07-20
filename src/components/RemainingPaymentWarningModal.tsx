@@ -25,10 +25,10 @@ export default function RemainingPaymentWarningModal({
 }: RemainingPaymentWarningModalProps) {
   const { t } = useTranslation()
 
-  // طريقة دفع المتبقي (كاش افتراضياً) — تُعاد للوضع الافتراضي عند كل فتح
-  const [method, setMethod] = useState<RemainingPaymentMethod>('cash')
+  // لا توجد طريقة دفع افتراضية؛ يجب أن يختار المستخدم الطريقة عند كل فتح
+  const [method, setMethod] = useState<RemainingPaymentMethod | null>(null)
   useEffect(() => {
-    if (isOpen) setMethod('cash')
+    if (isOpen) setMethod(null)
   }, [isOpen])
 
   return (
@@ -111,6 +111,7 @@ export default function RemainingPaymentWarningModal({
                   <button
                     type="button"
                     onClick={() => setMethod('cash')}
+                    aria-pressed={method === 'cash'}
                     className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-semibold transition-all ${
                       method === 'cash'
                         ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
@@ -123,6 +124,7 @@ export default function RemainingPaymentWarningModal({
                   <button
                     type="button"
                     onClick={() => setMethod('card')}
+                    aria-pressed={method === 'card'}
                     className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 font-semibold transition-all ${
                       method === 'card'
                         ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
@@ -139,11 +141,20 @@ export default function RemainingPaymentWarningModal({
               <div className="space-y-3">
                 {/* Mark as Paid Button */}
                 <button
-                  onClick={() => onMarkAsPaid(method)}
-                  className="w-full flex items-center justify-center space-x-2 space-x-reverse bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                  type="button"
+                  onClick={() => method && onMarkAsPaid(method)}
+                  disabled={!method}
+                  className={`w-full flex items-center justify-center space-x-2 space-x-reverse font-semibold py-4 px-6 rounded-xl transition-all duration-300 ${
+                    method
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02]'
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none'
+                  }`}
                 >
                   <CheckCircle className="w-5 h-5" />
-                  <span>{t('mark_as_paid') || 'تم الدفع - تحديث المبلغ'} ({method === 'cash' ? 'كاش' : 'شبكة'})</span>
+                  <span>
+                    {t('mark_as_paid') || 'تم الدفع - تحديث المبلغ'}
+                    {method ? ` (${method === 'cash' ? 'كاش' : 'شبكة'})` : ''}
+                  </span>
                 </button>
 
                 {/* Ignore Button */}

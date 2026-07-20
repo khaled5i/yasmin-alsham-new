@@ -6,7 +6,8 @@
  * ⚠️ التوكن السرّي لا يوضع هنا إطلاقاً — يُقرأ من متغيّر البيئة
  *    ALOSTAZ_API_TOKEN داخل مسار الـ API الخادمي فقط (لا يصل للمتصفح).
  *
- * ملاحظة النطاق: الربط مخصّص لفرع التفصيل (الفساتين) فقط.
+ * جميع الفواتير الخارجية تُسجَّل على الفرع الرئيسي «ياسمين الشام» في الأستاذ.
+ * يبقى فصل أقسام التفصيل والأقمشة داخل الموقع وقاعدة بياناته كما هو.
  */
 
 /** رابط قاعدة الـ API (غير سرّي). يمكن تجاوزه عبر متغيّر بيئة. */
@@ -52,23 +53,6 @@ export const ALOSTAZ_INVOICE_STATUS: 'issued' | 'draft' =
  */
 export const ALOSTAZ_FABRICS_INVOICE_STATUS: 'issued' | 'draft' =
   process.env.ALOSTAZ_FABRICS_INVOICE_STATUS === 'issued' ? 'issued' : 'draft'
-
-/**
- * فرع الأقمشة في الأستاذ = «بروكار الشرقية» (منفصل عن فرع التفصيل «ياسمين الشام»).
- * يُكتشف معرّف الفرع تلقائياً بمطابقة هذا الاسم عبر GET /branches، ثم يُجلب
- * مستودعه وخزائنه ديناميكياً. لتثبيت الأرقام يدوياً استخدم متغيّرات البيئة:
- *   ALOSTAZ_FABRICS_BRANCH_ID / _STOREHOUSE_ID / _TREASURY_CASH / _TREASURY_BANK / _PARTNER_LIST_ID
- */
-export const ALOSTAZ_FABRICS_BRANCH_NAME =
-  process.env.ALOSTAZ_FABRICS_BRANCH_NAME || 'بروكار'
-
-/**
- * اسم مستودع الأقمشة في الأستاذ («مستودع بروكار الشرقية»). يُطابَق بهذا الاسم
- * لاختيار المستودع الصحيح ضمن الفرع. الافتراضي نفس اسم الفرع (بروكار).
- * لتثبيت رقم المستودع مباشرةً استخدم ALOSTAZ_FABRICS_STOREHOUSE_ID.
- */
-export const ALOSTAZ_FABRICS_STOREHOUSE_NAME =
-  process.env.ALOSTAZ_FABRICS_STOREHOUSE_NAME || ALOSTAZ_FABRICS_BRANCH_NAME
 
 /**
  * ضريبة فواتير الأقمشة — الضرائب عادةً على مستوى الشركة، فالافتراضي نفس ضريبة

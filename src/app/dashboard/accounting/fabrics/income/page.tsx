@@ -40,7 +40,7 @@ import ImageUpload from '@/components/ImageUpload'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput, FabricSaleItem } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
-import { getFabricReceiptNumber, printFabricSaleReceipt } from '@/lib/print-fabric-receipt'
+import { getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
 import { queueFabricReceiptPrint } from '@/lib/services/print-job-service'
 import {
   sendFabricInvoiceToAlostaz,
@@ -166,9 +166,6 @@ function FabricsIncomeContent() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showStats, setShowStats] = useState(false)
-  // نوع الجهاز: في الجوال نعرض زر «إرسال» للطابور، وفي الكمبيوتر زر «طباعة محلية»
-  const [isMobile, setIsMobile] = useState(false)
-
   // حقول النموذج (مشتركة بين الإضافة والتعديل)
   // أسطر الأقمشة: كل سطر قماش من المخزون + كميته بالمتر (تدعم عدّة أقمشة في مبيعة واحدة)
   type FabricLine = { inventory_id: string; quantity_meters: string }
@@ -193,14 +190,6 @@ function FabricsIncomeContent() {
 
   useEffect(() => {
     loadAll()
-  }, [])
-
-  // كشف الجوال مرة واحدة بعد التحميل (يتجنّب اختلاف SSR)
-  useEffect(() => {
-    const ua = navigator.userAgent || ''
-    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua)
-    const isIpadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1
-    setIsMobile(isMobileUA || isIpadOS)
   }, [])
 
   // تحميل حالة «الإرسال التلقائي» للمحاسبة (للمدير فقط)
@@ -256,8 +245,8 @@ function FabricsIncomeContent() {
   // تُعرض صور القماش إذا كان أيّ قماش مختار من نوع "شك"
   const showFabricImages = fabricLines.some((l) => isShekFabric(getInventoryItem(l.inventory_id)))
 
-  // بعد الحفظ: الكمبيوتر يطبع الفاتورة محلياً، الجوال يرسلها لطابور محطة الطباعة
-  const printOrQueueReceipt = async (rec: Income, afterSave = true) => {
+  // بعد الحفظ أو عند إعادة الطباعة: أرسل الفاتورة دائماً إلى محطة طباعة الأقمشة.
+  const sendReceiptToPrintStation = async (rec: Income, afterSave = true) => {
     try {
       // الشبكة: ننتظر رقم الأستاذ أولاً عند تفعيل الإرسال التلقائي.
       // التحقق الصريح يمنع وضع رقم الكاش المحلي على فاتورة شبكة.
@@ -268,14 +257,10 @@ function FabricsIncomeContent() {
       const printableRecord = await maybeAutoSendFabricInvoice(recordWithKnownCode)
       getFabricReceiptNumber(printableRecord)
 
-      if (isMobile) {
-        await queueFabricReceiptPrint(printableRecord)
-        alert(afterSave
-          ? '✅ تم الحفظ وأُرسلت الفاتورة للطباعة على الكاشير'
-          : '✅ أُرسلت الفاتورة إلى محطة الطباعة على الكاشير')
-      } else {
-        printFabricSaleReceipt(printableRecord)
-      }
+      await queueFabricReceiptPrint(printableRecord)
+      alert(afterSave
+        ? '✅ تم الحفظ وأُرسلت الفاتورة للطباعة على الكاشير'
+        : '✅ أُرسلت الفاتورة إلى محطة الطباعة على الكاشير')
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error || '')
       alert(`${afterSave ? '⚠️ تم الحفظ لكن تعذّرت الطباعة' : '❌ تعذّرت الطباعة'}${message ? `\n${message}` : ''}`)
@@ -349,7 +334,7 @@ function FabricsIncomeContent() {
         const result = await updateIncome(editingId, commonFields)
         if (result) {
           setIncome(income.map((it) => (it.id === editingId ? result : it)))
-          await printOrQueueReceipt(result)
+          await sendReceiptToPrintStation(result)
         }
         setShowModal(false)
         setIsEditing(false)
@@ -374,7 +359,7 @@ function FabricsIncomeContent() {
       const result = await createIncome(payload)
       if (result) {
         setIncome([result, ...income])
-        await printOrQueueReceipt(result)
+        await sendReceiptToPrintStation(result)
       }
       setShowModal(false)
       resetForm()
@@ -978,23 +963,13 @@ function FabricsIncomeContent() {
                           </button>
                         )
                       )}
-                      {isMobile ? (
-                        <button
-                          onClick={() => { void printOrQueueReceipt(item, false) }}
-                          className="p-2 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
-                          title="إرسال للطباعة على الكاشير"
-                        >
-                          <Send className="w-4 h-4" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => { void printOrQueueReceipt(item, false) }}
-                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                          title="طباعة محلية"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => { void sendReceiptToPrintStation(item, false) }}
+                        className="p-2 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
+                        title="إرسال للطباعة على الكاشير"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
                       {!item.is_automatic && (
                         <>
                           <button
@@ -1290,8 +1265,8 @@ function FabricsIncomeContent() {
                     {saving
                       ? 'جاري الحفظ...'
                       : isEditing
-                        ? (isMobile ? 'تحديث وإرسال' : 'تحديث وطباعة')
-                        : (isMobile ? 'حفظ وإرسال' : 'حفظ وطباعة')}
+                        ? 'تحديث وإرسال'
+                        : 'حفظ وإرسال'}
                   </button>
                 </form>
               </motion.div>

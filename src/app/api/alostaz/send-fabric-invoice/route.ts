@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { createInvoiceForFabricSale, createProduct, getFabricsBranchContext } from '@/lib/services/alostaz-service'
 
@@ -13,35 +13,47 @@ import { createInvoiceForFabricSale, createProduct, getFabricsBranchContext } fr
  * - يحدّث سجل المبيعة بمعرّف الفاتورة/العميل وحالة المزامنة.
  */
 
-// عميل Admin (Service Role) لقراءة/تحديث السجلات بتجاوز RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
+// عميل Admin (Service Role) لقراءة/تحديث السجلات بتجاوز RLS — يُنشأ عند الطلب فقط.
+let supabaseAdmin: SupabaseClient | null = null
+
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+  }
+  return supabaseAdmin
+}
 
 /**
  * إيجاد/إنشاء منتج القماش في الأستاذ:
  *  - نطابق صنف المخزون بالاسم (income.customer_name يخزّن اسم القماش).
- *  - إن كان للصنف alostaz_product_id نستخدمه، وإلا ننشئ المنتج ونحفظ المعرّف.
+ *  - نستخدم alostaz_product_id فقط إن كان تابعاً لفرع ياسمين الشام الرئيسي.
+ *  - الربط القديم بفرع الأقمشة السابق يُستبدل تلقائياً عند أول إرسال.
  *  - إن لم يوجد صنف مطابق (اسم غير مسجّل) ننشئ منتجاً بالاسم دون حفظ.
  */
 async function resolveFabricProductId(fabricName: string): Promise<number> {
   const name = String(fabricName || '').trim()
+  const admin = getSupabaseAdmin()
+  const ctx = await getFabricsBranchContext()
 
   // صنف المخزون المطابق بالاسم (إن وُجد)
-  const { data: invItem } = await supabaseAdmin
+  const { data: invItem } = await admin
     .from('fabric_inventory')
-    .select('id, name, cost_per_unit, sale_price_per_unit, alostaz_product_id')
+    .select('*')
     .eq('name', name)
     .maybeSingle()
 
-  if (invItem?.alostaz_product_id) {
+  if (
+    invItem?.alostaz_product_id &&
+    Number(invItem.alostaz_product_branch_id) === ctx.branchId
+  ) {
     return Number(invItem.alostaz_product_id)
   }
 
-  // إنشاء المنتج في الأستاذ ضمن فرع الأقمشة (بروكار الشرقية) مع تتبّع المخزون
-  const ctx = await getFabricsBranchContext()
+  // إنشاء المنتج في الأستاذ ضمن فرع ياسمين الشام مع تتبّع المخزون
   const productId = await createProduct(invItem?.name || name || 'قماش', {
     branchId: ctx.branchId,
     supportsInventory: true,
@@ -51,10 +63,19 @@ async function resolveFabricProductId(fabricName: string): Promise<number> {
 
   // حفظ المعرّف على صنف المخزون لإعادة استخدامه (إن وُجد الصنف)
   if (invItem?.id) {
-    await supabaseAdmin
+    const { error: updateError } = await admin
       .from('fabric_inventory')
-      .update({ alostaz_product_id: productId })
+      .update({
+        alostaz_product_id: productId,
+        alostaz_product_branch_id: ctx.branchId,
+      })
       .eq('id', invItem.id)
+
+    if (updateError) {
+      throw new Error(
+        `أُنشئ منتج القماش في الأستاذ، لكن تعذّر حفظ ربطه بالفرع الرئيسي: ${updateError.message}`
+      )
+    }
   }
 
   return productId
@@ -94,7 +115,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 3) جلب سجل المبيعة (نستخدم * ليشمل fabric_items بأمان حتى قبل تطبيق الهجرة 69)
-    const { data: income, error: incomeError } = await supabaseAdmin
+    const admin = getSupabaseAdmin()
+    const { data: income, error: incomeError } = await admin
       .from('income')
       .select('*')
       .eq('id', incomeId)
@@ -189,7 +211,7 @@ export async function POST(request: NextRequest) {
       })
     } catch (err: any) {
       // تسجيل حالة الفشل (بدون معرّف فاتورة → يمكن إعادة المحاولة)
-      await supabaseAdmin
+      await admin
         .from('income')
         .update({ alostaz_sync_status: 'failed', alostaz_synced_at: new Date().toISOString() })
         .eq('id', incomeId)
@@ -210,7 +232,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 6) حفظ النتيجة على المبيعة
-    const { error: updateError } = await supabaseAdmin
+    const { error: updateError } = await admin
       .from('income')
       .update({
         alostaz_customer_id: result.customer_id,

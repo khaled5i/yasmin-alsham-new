@@ -4,8 +4,8 @@
  * ⚠️ خادمية فقط (server-only): تُستخدم داخل مسار API فقط لأنها تقرأ
  *    التوكن السرّي من process.env.ALOSTAZ_API_TOKEN. لا تستوردها في كود المتصفح.
  *
- * تتولّى: بناء الترويسات + إيجاد/إنشاء العميل + إنشاء الفاتورة من طلب مسلّم.
- * النطاق: فرع التفصيل (الفساتين) فقط.
+ * تتولّى: بناء الترويسات + إيجاد/إنشاء العميل + إنشاء فواتير التفصيل والأقمشة.
+ * كل الفواتير الخارجية تُوجَّه إلى الفرع الرئيسي، مع بقاء الفصل الداخلي في الموقع.
  */
 
 import {
@@ -21,8 +21,6 @@ import {
   ALOSTAZ_TREASURY_BANK,
   ALOSTAZ_INVOICE_STATUS,
   ALOSTAZ_FABRICS_INVOICE_STATUS,
-  ALOSTAZ_FABRICS_BRANCH_NAME,
-  ALOSTAZ_FABRICS_STOREHOUSE_NAME,
   ALOSTAZ_FABRICS_VAT_TAX_ID,
   ALOSTAZ_QUANTITY_SCALE,
   toHalalas,
@@ -266,7 +264,7 @@ export async function createInvoiceForOrder(
   }
 }
 
-// ── سياق فرع الأقمشة (بروكار الشرقية) في الأستاذ ──────────────
+// ── سياق الأقمشة في الفرع الرئيسي «ياسمين الشام» في الأستاذ ───
 
 export interface AlostazBranchContext {
   branchId: number
@@ -276,80 +274,20 @@ export interface AlostazBranchContext {
   partnerListId: number
 }
 
-/** تطبيع استجابات الأستاذ إلى مصفوفة (تتعامل مع {data:[...]} أو المصفوفة المباشرة). */
-function toList(res: any): any[] {
-  if (Array.isArray(res?.data)) return res.data
-  if (Array.isArray(res)) return res
-  return []
-}
-
-// تخزين مؤقت لسياق الفرع طوال عمر عملية الخادم (يُمسح بإعادة النشر)
-let fabricsBranchCtxCache: AlostazBranchContext | null = null
-
 /**
- * تحديد سياق فرع الأقمشة (بروكار الشرقية) في الأستاذ:
- *   معرّف الفرع + مستودعه + خزائنه (نقد/بنك) + قائمة الشركاء.
- * يُكتشف الفرع تلقائياً بمطابقة الاسم، ثم يُجلب مستودعه وخزائنه ضمن ترويسة ذلك الفرع.
- * يمكن تثبيت أي رقم عبر متغيّرات البيئة لتجاوز الاكتشاف التلقائي.
+ * سياق إرسال فواتير الأقمشة إلى الأستاذ.
+ * نستخدم عمداً نفس الفرع والمستودع والخزائن وقائمة الشركاء الخاصة بياسمين الشام،
+ * حتى لا يحتاج الحساب الخارجي إلى فرع ثانٍ. هذا لا يغيّر قيمة branch المحلية
+ * ولا فصل الحسابات أو تصميم الفواتير داخل الموقع.
  */
 export async function getFabricsBranchContext(): Promise<AlostazBranchContext> {
-  if (fabricsBranchCtxCache) return fabricsBranchCtxCache
-
-  // 1) معرّف الفرع (بروكار الشرقية)
-  let branchId = Number(process.env.ALOSTAZ_FABRICS_BRANCH_ID) || 0
-  if (!branchId) {
-    const branches = toList(await alostazFetch('/branches'))
-    const match = branches.find((b: any) =>
-      String(b?.name || '').includes(ALOSTAZ_FABRICS_BRANCH_NAME)
-    )
-    if (!match?.id) {
-      throw new Error(
-        `تعذّر إيجاد فرع «${ALOSTAZ_FABRICS_BRANCH_NAME}» في الأستاذ. تأكد من اسم الفرع أو اضبط ALOSTAZ_FABRICS_BRANCH_ID.`
-      )
-    }
-    branchId = Number(match.id)
+  return {
+    branchId: ALOSTAZ_BRANCH_ID,
+    storehouseId: ALOSTAZ_STOREHOUSE_ID,
+    treasuryCash: ALOSTAZ_TREASURY_CASH,
+    treasuryBank: ALOSTAZ_TREASURY_BANK,
+    partnerListId: ALOSTAZ_PARTNER_LIST_ID,
   }
-  const branchHeaders = { 'X-Branch-Id': String(branchId) }
-
-  // 2) المستودع الخاص بالفرع — يُفضَّل «مستودع بروكار الشرقية» بمطابقة الاسم
-  let storehouseId = Number(process.env.ALOSTAZ_FABRICS_STOREHOUSE_ID) || 0
-  if (!storehouseId) {
-    const items = toList(await alostazFetch('/storehouses', { headers: branchHeaders }))
-    const scoped = items.filter((s: any) => s?.branch_id == null || Number(s.branch_id) === branchId)
-    const pool = scoped.length ? scoped : items
-    // الأولوية للمستودع الذي يحمل اسم بروكار (ضمن الفرع أولاً ثم عموماً)
-    const byName =
-      pool.find((s: any) => String(s?.name || '').includes(ALOSTAZ_FABRICS_STOREHOUSE_NAME)) ||
-      items.find((s: any) => String(s?.name || '').includes(ALOSTAZ_FABRICS_STOREHOUSE_NAME))
-    const pick = byName || pool[0]
-    if (!pick?.id) {
-      throw new Error('تعذّر إيجاد مستودع لفرع الأقمشة في الأستاذ. اضبط ALOSTAZ_FABRICS_STOREHOUSE_ID.')
-    }
-    storehouseId = Number(pick.id)
-  }
-
-  // 3) الخزائن (نقد/بنك) الخاصة بالفرع
-  let treasuryCash = Number(process.env.ALOSTAZ_FABRICS_TREASURY_CASH) || 0
-  let treasuryBank = Number(process.env.ALOSTAZ_FABRICS_TREASURY_BANK) || 0
-  if (!treasuryCash || !treasuryBank) {
-    const items = toList(await alostazFetch('/treasuries', { headers: branchHeaders }))
-    const scoped = items.filter((t: any) => t?.branch_id == null || Number(t.branch_id) === branchId)
-    const pool = scoped.length ? scoped : items
-    const isCash = (t: any) => /safe|cash|نقد/i.test(`${t?.type ?? ''} ${t?.name ?? ''}`)
-    const isBank = (t: any) => /bank|بنك|شبك/i.test(`${t?.type ?? ''} ${t?.name ?? ''}`)
-    if (!treasuryCash) treasuryCash = Number((pool.find(isCash) || pool[0])?.id) || 0
-    if (!treasuryBank) {
-      treasuryBank = Number((pool.find(isBank) || pool.find(isCash) || pool[0])?.id) || treasuryCash
-    }
-    if (!treasuryCash) treasuryCash = treasuryBank
-  }
-
-  // 4) قائمة الشركاء (غالباً على مستوى الشركة — الافتراضي 1)
-  const partnerListId =
-    Number(process.env.ALOSTAZ_FABRICS_PARTNER_LIST_ID) || ALOSTAZ_PARTNER_LIST_ID
-
-  fabricsBranchCtxCache = { branchId, storehouseId, treasuryCash, treasuryBank, partnerListId }
-  return fabricsBranchCtxCache
 }
 
 // ── منتجات الأقمشة ───────────────────────────────────────────
@@ -357,8 +295,8 @@ export async function getFabricsBranchContext(): Promise<AlostazBranchContext> {
 /**
  * إنشاء منتج قماش في الأستاذ وإرجاع معرّفه.
  * منتجات الأقمشة تُنشأ «مع تتبّع المخزون» (supports_inventory=1) لتُخزَّن في
- * مستودع بروكار الشرقية، ولذلك يشترط الأستاذ سعر الشراء وسعر البيع للوحدة.
- * الأسعار تُرسَل بالهللات (×100). branchId ينشئ المنتج ضمن فرع الأقمشة.
+ * مستودع ياسمين الشام الرئيسي، ولذلك يشترط الأستاذ سعر الشراء وسعر البيع للوحدة.
+ * الأسعار تُرسَل بالهللات (×100). branchId ينشئ المنتج ضمن الفرع الرئيسي.
  */
 export async function createProduct(
   name: string,
@@ -370,6 +308,13 @@ export async function createProduct(
   }
 ): Promise<number> {
   const headers = opts?.branchId ? { 'X-Branch-Id': String(opts.branchId) } : undefined
+  // الأستاذ يرفض إنشاء أي وحدة منتج إذا كان سعر الشراء أو البيع أقل من هللة واحدة.
+  // بعض أصناف المخزون القديمة لا تحتوي سعراً، لذلك نرسل 1 هللة كحد تقني أدنى.
+  // هذا السعر الافتراضي خاص ببطاقة المنتج فقط؛ سعر بند الفاتورة الفعلي يُرسل لاحقاً
+  // من قيمة المبيعة ولا يتأثر بهذا الحد الأدنى.
+  const purchasePriceHalalas = Math.max(1, toHalalas(opts?.purchasePrice))
+  const salePriceHalalas = Math.max(1, toHalalas(opts?.salePrice))
+
   const created = await alostazFetch('/products', {
     method: 'POST',
     ...(headers ? { headers } : {}),
@@ -379,8 +324,8 @@ export async function createProduct(
       units: [
         {
           content: 1,
-          purchase_price: toHalalas(opts?.purchasePrice ?? 0),
-          sale_price: toHalalas(opts?.salePrice ?? 0),
+          purchase_price: purchasePriceHalalas,
+          sale_price: salePriceHalalas,
         },
       ],
     }),
@@ -431,7 +376,7 @@ export interface AlostazFabricSaleInput {
 export async function createInvoiceForFabricSale(
   input: AlostazFabricSaleInput
 ): Promise<AlostazInvoiceResult> {
-  // كل نداءات فرع الأقمشة تُوجَّه لفرع بروكار الشرقية
+  // فواتير الأقمشة تُوجَّه إلى نفس فرع ياسمين الشام المستخدم لفواتير التفصيل.
   const ctx = await getFabricsBranchContext()
   const branchHeaders = { 'X-Branch-Id': String(ctx.branchId) }
 

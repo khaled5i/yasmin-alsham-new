@@ -1,21 +1,28 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { createProduct, getFabricsBranchContext } from '@/lib/services/alostaz-service'
 
 /**
- * مسار خادمي لإضافة صنف مخزون قماش كمنتج في تطبيق الأستاذ (فرع بروكار الشرقية).
+ * مسار خادمي لإضافة صنف مخزون قماش كمنتج في تطبيق الأستاذ (فرع ياسمين الشام).
  * ─────────────────────────────────────────────────────────────
  * يُستدعى عند إضافة صنف جديد للمخزون في الموقع، فيُنشئ المنتج المقابل في الأستاذ
  * ويحفظ alostaz_product_id على الصنف لإعادة استخدامه في الفواتير لاحقاً.
  * - للمدير فقط (يحمل التوكن السرّي في الخادم).
- * - idempotent: إن كان للصنف معرّف منتج مسبقاً لا يُعاد الإنشاء.
+ * - idempotent: يُعاد استخدام المعرّف فقط إذا كان تابعاً للفرع الرئيسي الحالي.
  */
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
+let supabaseAdmin: SupabaseClient | null = null
+
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+  }
+  return supabaseAdmin
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,9 +58,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 3) جلب الصنف
-    const { data: item, error: itemError } = await supabaseAdmin
+    const admin = getSupabaseAdmin()
+    const { data: item, error: itemError } = await admin
       .from('fabric_inventory')
-      .select('id, name, cost_per_unit, sale_price_per_unit, alostaz_product_id')
+      .select('*')
       .eq('id', inventoryItemId)
       .single()
 
@@ -61,18 +69,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'صنف المخزون غير موجود' }, { status: 404 })
     }
 
-    // 4) منع الإنشاء المكرر
-    if (item.alostaz_product_id) {
+    // 4) منع الإنشاء المكرر داخل الفرع الرئيسي فقط.
+    // المعرّفات القديمة بلا branch_id تعود لفرع الأقمشة الخارجي السابق ولا تُستخدم.
+    const ctx = await getFabricsBranchContext()
+    if (
+      item.alostaz_product_id &&
+      Number(item.alostaz_product_branch_id) === ctx.branchId
+    ) {
       return NextResponse.json({
         data: { alreadySynced: true, product_id: item.alostaz_product_id },
         error: null,
       })
     }
 
-    // 5) إنشاء المنتج في الأستاذ ضمن فرع الأقمشة، ثم حفظ المعرّف
+    // 5) إنشاء المنتج في الأستاذ ضمن فرع ياسمين الشام، ثم حفظ المعرّف وسياق الفرع
     let productId: number
     try {
-      const ctx = await getFabricsBranchContext()
       productId = await createProduct(item.name || 'قماش', {
         branchId: ctx.branchId,
         supportsInventory: true,
@@ -83,9 +95,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: err?.message || 'فشل إضافة المنتج للأستاذ' }, { status: 502 })
     }
 
-    const { error: updateError } = await supabaseAdmin
+    const { error: updateError } = await admin
       .from('fabric_inventory')
-      .update({ alostaz_product_id: productId })
+      .update({
+        alostaz_product_id: productId,
+        alostaz_product_branch_id: ctx.branchId,
+      })
       .eq('id', item.id)
 
     if (updateError) {

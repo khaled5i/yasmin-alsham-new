@@ -97,7 +97,7 @@ export async function sendFabricInvoiceToAlostaz(incomeId: string): Promise<Send
   }
 }
 
-/** إضافة صنف مخزون كمنتج في الأستاذ (فرع بروكار الشرقية) — أفضل جهد، لا يوقف حفظ المخزون. */
+/** إضافة صنف مخزون كمنتج في الأستاذ (فرع ياسمين الشام الرئيسي) — أفضل جهد، لا يوقف حفظ المخزون. */
 export async function syncFabricProductToAlostaz(
   inventoryItemId: string
 ): Promise<{ success: boolean; product_id?: number; error?: string }> {
