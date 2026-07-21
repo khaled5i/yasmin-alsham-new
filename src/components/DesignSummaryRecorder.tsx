@@ -1,23 +1,33 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff } from 'lucide-react'
-import { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Mic, MicOff, X } from 'lucide-react'
+import type { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
 import { pickSupportedMimeType } from '@/lib/audio-utils'
 
 interface Props {
-  notes: DesignSummaryNote[]
-  onNotesChange: (notes: DesignSummaryNote[]) => void
+  onRecordingComplete: (note: DesignSummaryNote) => void
   disabled?: boolean
+  mode?: 'add' | 'replace'
+  onCancel?: () => void
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'خطأ غير متوقع'
 }
 
 /**
- * زر مستقل لإضافة تسجيل صوتي جديد إلى ملخص التصميم.
- * يستخدم نفس مسار ملخص التصميم في InteractiveImageAnnotation:
- * تسجيل عبر MediaRecorder ثم تحويل الملف إلى نص عبر Soniox async (لدقة أعلى).
+ * مسجّل مستقل لإضافة تسجيل إلى ملخص التصميم أو تسجيل بديل عنه.
+ * لا يغيّر قائمة الملخصات بنفسه؛ يعيد التسجيل المكتمل للمكوّن الأب حتى يقرر
+ * إن كان سيضيفه أو يستبدل به تسجيلًا موجودًا.
  */
-export default function DesignSummaryRecorder({ notes, onNotesChange, disabled = false }: Props) {
+export default function DesignSummaryRecorder({
+  onRecordingComplete,
+  disabled = false,
+  mode = 'add',
+  onCancel
+}: Props) {
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -25,64 +35,81 @@ export default function DesignSummaryRecorder({ notes, onNotesChange, disabled =
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
-  const mimeTypeRef = useRef<string>('audio/webm')
-  const startTimeRef = useRef<number>(0)
+  const mimeTypeRef = useRef('audio/webm')
+  const startTimeRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  // مرآة لأحدث قائمة ملاحظات لقراءتها داخل دوال async (تجنّب القيم القديمة)
-  const notesRef = useRef<DesignSummaryNote[]>(notes)
-  useEffect(() => { notesRef.current = notes }, [notes])
+  const discardRecordingRef = useRef(false)
+  const isUnmountingRef = useRef(false)
 
-  const stopTimer = () => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-  }
-
-  const cleanupStream = () => {
-    streamRef.current?.getTracks().forEach(track => track.stop())
-    streamRef.current = null
-  }
-
-  useEffect(() => {
-    return () => {
-      stopTimer()
-      cleanupStream()
-    }
+  const stopTimer = useCallback(() => {
+    if (!timerRef.current) return
+    clearInterval(timerRef.current)
+    timerRef.current = null
   }, [])
 
-  // عند انتهاء التسجيل: حفظ الصوت كملاحظة فقط.
-  // التحويل إلى نص يتولّاه DesignSummarySection لأي ملاحظة بلا نص، حتى يعمل
-  // التحويل أيضاً عند إعادة فتح الطلب على تسجيل لم يكتمل تحويله سابقاً.
+  const cleanupStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach(track => track.stop())
+    streamRef.current = null
+  }, [])
+
   const finalizeRecording = useCallback(() => {
     const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current })
     chunksRef.current = []
-    if (blob.size === 0) return
+    if (blob.size === 0) {
+      setError('لم يتم التقاط صوت. حاول التسجيل مرة أخرى.')
+      return
+    }
 
-    const duration = Math.round((Date.now() - startTimeRef.current) / 1000)
-    const noteId = `summary_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
-
+    const duration = Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000))
+    const noteId = `summary_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     const reader = new FileReader()
+
     reader.onloadend = () => {
-      const base64 = reader.result as string
-      const newNote: DesignSummaryNote = {
+      if (isUnmountingRef.current) return
+      if (typeof reader.result !== 'string') {
+        setError('تعذّر تجهيز التسجيل للحفظ.')
+        return
+      }
+
+      onRecordingComplete({
         id: noteId,
-        data: base64,
+        data: reader.result,
         timestamp: Date.now(),
         duration,
         transcription: undefined
-      }
-      onNotesChange([...notesRef.current, newNote])
+      })
+    }
+    reader.onerror = () => {
+      if (!isUnmountingRef.current) setError('تعذّر قراءة التسجيل الصوتي.')
     }
     reader.readAsDataURL(blob)
-  }, [onNotesChange])
+  }, [onRecordingComplete])
+
+  useEffect(() => {
+    // React Strict Mode يشغّل دورة setup/cleanup إضافية في التطوير.
+    isUnmountingRef.current = false
+    return () => {
+      isUnmountingRef.current = true
+      discardRecordingRef.current = true
+      stopTimer()
+
+      const recorder = mediaRecorderRef.current
+      if (recorder && recorder.state !== 'inactive') recorder.stop()
+      cleanupStream()
+    }
+  }, [cleanupStream, stopTimer])
 
   const startRecording = async () => {
     setError(null)
+    discardRecordingRef.current = false
+
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError('المتصفح لا يدعم تسجيل الصوت. يرجى استخدام متصفح حديث مثل Chrome أو Safari')
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        setError('المتصفح لا يدعم تسجيل الصوت. يرجى استخدام متصفح حديث مثل Chrome أو Safari.')
         return
       }
-      if (typeof window !== 'undefined' && !window.isSecureContext) {
-        setError('تسجيل الصوت يتطلب اتصالاً آمناً (HTTPS)')
+      if (!window.isSecureContext) {
+        setError('تسجيل الصوت يتطلب اتصالًا آمنًا (HTTPS).')
         return
       }
 
@@ -90,23 +117,29 @@ export default function DesignSummaryRecorder({ notes, onNotesChange, disabled =
       streamRef.current = stream
 
       const mimeType = pickSupportedMimeType()
-      mimeTypeRef.current = mimeType
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+      mimeTypeRef.current = mimeType || 'audio/webm'
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
       mediaRecorderRef.current = recorder
       chunksRef.current = []
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
+      recorder.ondataavailable = event => {
+        if (event.data.size > 0) chunksRef.current.push(event.data)
       }
       recorder.onstop = () => {
         stopTimer()
         cleanupStream()
-        setIsRecording(false)
-        setRecordingTime(0)
-        finalizeRecording()
+        mediaRecorderRef.current = null
+
+        if (!isUnmountingRef.current) {
+          setIsRecording(false)
+          setRecordingTime(0)
+        }
+
+        if (!discardRecordingRef.current && !isUnmountingRef.current) finalizeRecording()
+        discardRecordingRef.current = false
       }
       recorder.onerror = () => {
-        setError('حدث خطأ أثناء التسجيل')
+        setError('حدث خطأ أثناء التسجيل. حاول مرة أخرى.')
       }
 
       startTimeRef.current = Date.now()
@@ -116,59 +149,84 @@ export default function DesignSummaryRecorder({ notes, onNotesChange, disabled =
       timerRef.current = setInterval(() => {
         setRecordingTime(Math.round((Date.now() - startTimeRef.current) / 1000))
       }, 1000)
-    } catch (err: any) {
+    } catch (recordingError: unknown) {
       cleanupStream()
-      setError(`فشل بدء التسجيل: ${err?.message || 'خطأ غير متوقع'}`)
+      setError(`فشل بدء التسجيل: ${getErrorMessage(recordingError)}`)
     }
   }
 
   const stopRecording = () => {
     const recorder = mediaRecorderRef.current
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop()
-    }
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
   }
 
-  return (
-    <div className="relative flex items-center gap-2">
-      <motion.button
-        type="button"
-        onClick={isRecording ? stopRecording : startRecording}
-        disabled={disabled}
-        whileTap={{ scale: 0.95 }}
-        className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium shadow-sm transition-all ${
-          isRecording
-            ? 'bg-red-500 text-white ring-2 ring-red-300'
-            : disabled
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-              : 'bg-white text-teal-600 hover:bg-teal-50 border border-teal-300'
-        }`}
-        title={isRecording ? 'إيقاف التسجيل' : 'إضافة تسجيل صوتي جديد'}
-      >
-        {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-        <span>{isRecording ? 'إيقاف' : 'تسجيل جديد'}</span>
-        {isRecording && (
-          <span className="font-mono text-xs">
-            {`${Math.floor(recordingTime / 60)}:${String(recordingTime % 60).padStart(2, '0')}`}
-          </span>
-        )}
-      </motion.button>
+  const discardRecording = () => {
+    discardRecordingRef.current = true
+    stopRecording()
+  }
 
-      {isRecording && (
-        <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
-      )}
+  const idleLabel = mode === 'replace' ? 'ابدأ التسجيل البديل' : 'تسجيل صوت جديد'
+
+  return (
+    <div className="flex flex-col items-start gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <motion.button
+          type="button"
+          onClick={isRecording ? stopRecording : startRecording}
+          disabled={disabled}
+          whileTap={{ scale: 0.96 }}
+          className={`flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-semibold shadow-sm transition-all ${
+            isRecording
+              ? 'bg-red-500 text-white ring-4 ring-red-100'
+              : disabled
+                ? 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400'
+                : 'border border-teal-300 bg-white text-teal-700 hover:border-teal-400 hover:bg-teal-50'
+          }`}
+          title={isRecording ? 'إنهاء التسجيل وحفظه' : idleLabel}
+        >
+          {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          <span>{isRecording ? 'إنهاء وحفظ' : idleLabel}</span>
+          {isRecording ? (
+            <span className="font-mono text-xs" dir="ltr">
+              {`${Math.floor(recordingTime / 60)}:${String(recordingTime % 60).padStart(2, '0')}`}
+            </span>
+          ) : null}
+        </motion.button>
+
+        {isRecording ? (
+          <button
+            type="button"
+            onClick={discardRecording}
+            className="flex items-center gap-1 rounded-full px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+          >
+            <X className="h-3.5 w-3.5" />
+            <span>إلغاء التسجيل</span>
+          </button>
+        ) : onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-full px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
+          >
+            إلغاء التعديل
+          </button>
+        ) : null}
+
+        {isRecording ? <span className="h-2.5 w-2.5 flex-shrink-0 animate-pulse rounded-full bg-red-500" /> : null}
+      </div>
 
       <AnimatePresence>
-        {error && (
-          <motion.span
+        {error ? (
+          <motion.p
+            role="alert"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="absolute top-full right-0 mt-1 text-xs text-red-500 whitespace-nowrap"
+            className="max-w-sm text-right text-xs leading-5 text-red-600"
           >
             {error}
-          </motion.span>
-        )}
+          </motion.p>
+        ) : null}
       </AnimatePresence>
     </div>
   )

@@ -701,7 +701,7 @@ function OrdersPageInner() {
       const result = await updateOrder(orderId, updates)
       if (result.success) {
         // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
-        void autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
+        await autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
         toast.success(isArabic ? 'تم تسليم الطلب' : 'Order delivered', { icon: '✓' })
       } else {
         toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
@@ -733,7 +733,8 @@ function OrdersPageInner() {
         setShowPaymentWarning(false)
         setOrderToDeliver(null)
         // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
-        void autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
+        // ننتظر الطباعة قبل فتح واتساب كي لا يوقف أندرويد الاتصال المحلي عند مغادرة التطبيق.
+        await autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
         if (order && order.client_phone) {
           sendDeliveredWhatsApp(order.client_name, order.client_phone)
         }

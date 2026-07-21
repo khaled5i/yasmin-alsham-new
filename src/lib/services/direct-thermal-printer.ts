@@ -1,0 +1,434 @@
+import {
+  buildTailoringReceiptHtml,
+  type TailoringReceiptPayload,
+} from '@/lib/print-tailoring-receipt'
+
+const STORAGE_KEY = 'yasmin-alsham:direct-printer:v1'
+const PRINTER_WRITE_PATH = '/write.html'
+const PRINT_WIDTH_DOTS = 576
+const PRINT_TIMEOUT_MS = 8_000
+const MAX_RECEIPT_HEIGHT_DOTS = 2_600
+
+export const DEFAULT_DIRECT_PRINTER_IP = '192.168.100.105'
+
+export interface DirectPrinterConfig {
+  enabled: boolean
+  ipAddress: string
+  model: 'TA POS TA-900UWB'
+  lastTestedAt: string | null
+}
+
+export type DirectPrinterErrorCode =
+  | 'not-configured'
+  | 'invalid-address'
+  | 'unsupported-browser'
+  | 'render-failed'
+  | 'connection-failed'
+
+export class DirectPrinterError extends Error {
+  constructor(
+    public readonly code: DirectPrinterErrorCode,
+    message: string,
+    options?: { cause?: unknown }
+  ) {
+    super(message, options)
+    this.name = 'DirectPrinterError'
+  }
+}
+
+const DEFAULT_CONFIG: DirectPrinterConfig = {
+  enabled: false,
+  ipAddress: DEFAULT_DIRECT_PRINTER_IP,
+  model: 'TA POS TA-900UWB',
+  lastTestedAt: null,
+}
+
+function isBrowser(): boolean {
+  return typeof window !== 'undefined' && typeof document !== 'undefined'
+}
+
+function isPrivateIpv4(value: string): boolean {
+  const match = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (!match) return false
+
+  const octets = match.slice(1).map(Number)
+  if (octets.some((octet) => octet < 0 || octet > 255)) return false
+
+  const [first, second] = octets
+  return (
+    first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  )
+}
+
+export function normalizePrinterIp(value: string): string {
+  return value.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
+}
+
+export function validatePrinterIp(value: string): string {
+  const normalized = normalizePrinterIp(value)
+  if (!isPrivateIpv4(normalized)) {
+    throw new DirectPrinterError(
+      'invalid-address',
+      'أدخل عنوانًا محليًا صحيحًا للطابعة، مثل 192.168.100.105.'
+    )
+  }
+  return normalized
+}
+
+export function getDirectPrinterConfig(): DirectPrinterConfig {
+  if (!isBrowser()) return DEFAULT_CONFIG
+
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    if (!stored) return DEFAULT_CONFIG
+
+    const parsed = JSON.parse(stored) as Partial<DirectPrinterConfig>
+    const ipAddress = validatePrinterIp(parsed.ipAddress || DEFAULT_DIRECT_PRINTER_IP)
+
+    return {
+      enabled: parsed.enabled === true,
+      ipAddress,
+      model: 'TA POS TA-900UWB',
+      lastTestedAt: typeof parsed.lastTestedAt === 'string' ? parsed.lastTestedAt : null,
+    }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
+export function saveDirectPrinterConfig(
+  update: Partial<Pick<DirectPrinterConfig, 'enabled' | 'ipAddress' | 'lastTestedAt'>>
+): DirectPrinterConfig {
+  if (!isBrowser()) {
+    throw new DirectPrinterError('unsupported-browser', 'إعداد الطابعة متاح من المتصفح فقط.')
+  }
+
+  const current = getDirectPrinterConfig()
+  const next: DirectPrinterConfig = {
+    ...current,
+    ...update,
+    ipAddress: validatePrinterIp(update.ipAddress ?? current.ipAddress),
+    model: 'TA POS TA-900UWB',
+  }
+
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  window.dispatchEvent(new CustomEvent('direct-printer-config-changed', { detail: next }))
+  return next
+}
+
+export function isDirectPrinterEnabled(): boolean {
+  return getDirectPrinterConfig().enabled
+}
+
+function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  let totalLength = 0
+  for (const part of parts) totalLength += part.length
+
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  for (const part of parts) {
+    result.set(part, offset)
+    offset += part.length
+  }
+  return result
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  const hex = new Array<string>(bytes.length)
+  for (let index = 0; index < bytes.length; index += 1) {
+    hex[index] = bytes[index].toString(16).padStart(2, '0')
+  }
+  return hex.join('')
+}
+
+function trimCanvasBottom(source: HTMLCanvasElement, bottomPadding = 36): HTMLCanvasElement {
+  const context = source.getContext('2d', { willReadFrequently: true })
+  if (!context) return source
+
+  const { width, height } = source
+  const image = context.getImageData(0, 0, width, height)
+  let lastInkRow = -1
+
+  for (let y = height - 1; y >= 0 && lastInkRow < 0; y -= 1) {
+    const rowStart = y * width * 4
+    for (let x = 0; x < width; x += 1) {
+      const offset = rowStart + x * 4
+      const alpha = image.data[offset + 3]
+      const red = image.data[offset]
+      const green = image.data[offset + 1]
+      const blue = image.data[offset + 2]
+      if (alpha > 16 && (red < 245 || green < 245 || blue < 245)) {
+        lastInkRow = y
+        break
+      }
+    }
+  }
+
+  if (lastInkRow < 0) return source
+  const targetHeight = Math.min(height, lastInkRow + 1 + bottomPadding)
+  if (targetHeight >= height) return source
+
+  const trimmed = document.createElement('canvas')
+  trimmed.width = width
+  trimmed.height = targetHeight
+  const trimmedContext = trimmed.getContext('2d')
+  if (!trimmedContext) return source
+  trimmedContext.fillStyle = '#ffffff'
+  trimmedContext.fillRect(0, 0, width, targetHeight)
+  trimmedContext.drawImage(source, 0, 0, width, targetHeight, 0, 0, width, targetHeight)
+  return trimmed
+}
+
+async function renderReceiptCanvas(payload: TailoringReceiptPayload): Promise<HTMLCanvasElement> {
+  if (!isBrowser()) {
+    throw new DirectPrinterError('unsupported-browser', 'الطباعة المباشرة متاحة من المتصفح فقط.')
+  }
+
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.style.cssText = [
+    'position:fixed',
+    'left:-10000px',
+    'top:0',
+    'width:80mm',
+    'height:1200px',
+    'border:0',
+    'background:#fff',
+    'pointer-events:none',
+  ].join(';')
+
+  try {
+    const loaded = new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(
+        () => reject(new Error('انتهت مهلة تجهيز الإيصال.')),
+        PRINT_TIMEOUT_MS
+      )
+      iframe.onload = () => {
+        window.clearTimeout(timeout)
+        resolve()
+      }
+      iframe.onerror = () => {
+        window.clearTimeout(timeout)
+        reject(new Error('تعذّر تجهيز إطار الإيصال.'))
+      }
+    })
+
+    iframe.srcdoc = buildTailoringReceiptHtml(payload)
+    document.body.appendChild(iframe)
+    await loaded
+
+    const frameDocument = iframe.contentDocument
+    if (!frameDocument?.body) throw new Error('تعذّر الوصول إلى محتوى الإيصال.')
+
+    if (frameDocument.fonts?.ready) await frameDocument.fonts.ready
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()))
+    })
+
+    const body = frameDocument.body
+    const cssWidth = Math.max(1, Math.ceil(body.getBoundingClientRect().width))
+    const cssHeight = Math.max(1, Math.ceil(body.scrollHeight))
+    iframe.style.height = `${cssHeight}px`
+
+    const html2canvas = (await import('html2canvas')).default
+    const rendered = await html2canvas(body, {
+      backgroundColor: '#ffffff',
+      logging: false,
+      useCORS: false,
+      scale: PRINT_WIDTH_DOTS / cssWidth,
+      width: cssWidth,
+      height: cssHeight,
+      windowWidth: Math.max(cssWidth, frameDocument.documentElement.scrollWidth),
+      windowHeight: cssHeight,
+    })
+
+    let canvas = rendered
+    if (rendered.width !== PRINT_WIDTH_DOTS) {
+      const resized = document.createElement('canvas')
+      resized.width = PRINT_WIDTH_DOTS
+      resized.height = Math.max(1, Math.round(rendered.height * (PRINT_WIDTH_DOTS / rendered.width)))
+      const resizedContext = resized.getContext('2d')
+      if (!resizedContext) throw new Error('تعذّر ضبط عرض الإيصال الحراري.')
+      resizedContext.fillStyle = '#ffffff'
+      resizedContext.fillRect(0, 0, resized.width, resized.height)
+      resizedContext.imageSmoothingEnabled = true
+      resizedContext.imageSmoothingQuality = 'high'
+      resizedContext.drawImage(rendered, 0, 0, resized.width, resized.height)
+      canvas = resized
+    }
+
+    canvas = trimCanvasBottom(canvas)
+    if (canvas.height > MAX_RECEIPT_HEIGHT_DOTS) {
+      throw new Error('الإيصال أطول من الحد الذي تدعمه الطباعة المباشرة.')
+    }
+    return canvas
+  } catch (error) {
+    if (error instanceof DirectPrinterError) throw error
+    throw new DirectPrinterError('render-failed', 'تعذّر تحويل الإيصال إلى صورة حرارية.', {
+      cause: error,
+    })
+  } finally {
+    iframe.remove()
+  }
+}
+
+function renderConnectionTestCanvas(ipAddress: string): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = PRINT_WIDTH_DOTS
+  canvas.height = 330
+
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new DirectPrinterError('render-failed', 'تعذّر تجهيز ورقة اختبار الطابعة.')
+  }
+
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.strokeStyle = '#000000'
+  context.lineWidth = 3
+  context.strokeRect(18, 18, canvas.width - 36, canvas.height - 36)
+  context.fillStyle = '#000000'
+  context.textAlign = 'center'
+  context.direction = 'rtl'
+
+  context.font = '900 42px Tahoma, sans-serif'
+  context.fillText('ياسمين الشام', canvas.width / 2, 82)
+  context.font = '700 31px Tahoma, sans-serif'
+  context.fillText('تم ربط الطابعة بنجاح', canvas.width / 2, 142)
+  context.font = '600 22px Tahoma, sans-serif'
+  context.fillText('TA POS TA-900UWB', canvas.width / 2, 194)
+  context.direction = 'ltr'
+  context.font = '700 24px monospace'
+  context.fillText(ipAddress, canvas.width / 2, 238)
+  context.font = '500 18px sans-serif'
+  context.fillText(new Date().toLocaleString('ar-SA-u-nu-latn'), canvas.width / 2, 278)
+
+  return canvas
+}
+
+function canvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) {
+    throw new DirectPrinterError('render-failed', 'تعذّر قراءة صورة الإيصال.')
+  }
+
+  const width = PRINT_WIDTH_DOTS
+  const height = canvas.height
+  const bytesPerRow = Math.ceil(width / 8)
+  const raster = new Uint8Array(bytesPerRow * height)
+  const pixels = context.getImageData(0, 0, width, height).data
+
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * bytesPerRow
+    const pixelRowOffset = y * width * 4
+    for (let x = 0; x < width; x += 1) {
+      const pixelOffset = pixelRowOffset + x * 4
+      const alpha = pixels[pixelOffset + 3] / 255
+      const red = pixels[pixelOffset]
+      const green = pixels[pixelOffset + 1]
+      const blue = pixels[pixelOffset + 2]
+      const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) * alpha + 255 * (1 - alpha)
+      if (luminance < 205) {
+        raster[rowOffset + Math.floor(x / 8)] |= 0x80 >> (x % 8)
+      }
+    }
+  }
+
+  const header = new Uint8Array([
+    0x1d,
+    0x76,
+    0x30,
+    0x00,
+    bytesPerRow & 0xff,
+    (bytesPerRow >> 8) & 0xff,
+    height & 0xff,
+    (height >> 8) & 0xff,
+  ])
+
+  return concatBytes(header, raster)
+}
+
+function buildPrintJob(canvas: HTMLCanvasElement): Uint8Array {
+  const initializeAndAlign = new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x00])
+  const raster = canvasToEscPosRaster(canvas)
+  const feedAndCut = new Uint8Array([0x1b, 0x64, 0x04, 0x1d, 0x56, 0x00])
+  return concatBytes(initializeAndAlign, raster, feedAndCut)
+}
+
+async function postEscPosBytes(ipAddress: string, bytes: Uint8Array): Promise<void> {
+  if (!isBrowser() || typeof window.fetch !== 'function') {
+    throw new DirectPrinterError(
+      'unsupported-browser',
+      'هذا المتصفح لا يدعم الاتصال المباشر بالطابعة.'
+    )
+  }
+  if (!window.isSecureContext) {
+    throw new DirectPrinterError(
+      'unsupported-browser',
+      'يجب فتح الموقع عبر HTTPS حتى يسمح Chrome بالوصول إلى الطابعة.'
+    )
+  }
+
+  const ip = validatePrinterIp(ipAddress)
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), PRINT_TIMEOUT_MS)
+  const body = new URLSearchParams({ data_hex: bytesToHex(bytes) })
+  const request: RequestInit & { targetAddressSpace?: 'local' } = {
+    method: 'POST',
+    mode: 'no-cors',
+    cache: 'no-store',
+    credentials: 'omit',
+    referrerPolicy: 'no-referrer',
+    body,
+    signal: controller.signal,
+    targetAddressSpace: 'local',
+  }
+
+  try {
+    await window.fetch(`http://${ip}${PRINTER_WRITE_PATH}`, request)
+  } catch (error) {
+    const timedOut = error instanceof DOMException && error.name === 'AbortError'
+    throw new DirectPrinterError(
+      'connection-failed',
+      timedOut
+        ? 'انتهت مهلة الاتصال بالطابعة. تأكد أن الهاتف والطابعة على شبكة الواي فاي نفسها.'
+        : 'تعذّر الوصول إلى الطابعة. اسمح لـChrome بالوصول إلى الشبكة المحلية وتأكد من اتصال الواي فاي.',
+      { cause: error }
+    )
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinterConfig> {
+  const ip = validatePrinterIp(ipAddress)
+  if (!isBrowser()) {
+    throw new DirectPrinterError('unsupported-browser', 'اختبار الطابعة متاح من المتصفح فقط.')
+  }
+
+  if (document.fonts?.ready) await document.fonts.ready
+  const testCanvas = renderConnectionTestCanvas(ip)
+  await postEscPosBytes(ip, buildPrintJob(testCanvas))
+
+  return saveDirectPrinterConfig({
+    enabled: true,
+    ipAddress: ip,
+    lastTestedAt: new Date().toISOString(),
+  })
+}
+
+export async function printTailoringReceiptDirect(payload: TailoringReceiptPayload): Promise<void> {
+  const config = getDirectPrinterConfig()
+  if (!config.enabled) {
+    throw new DirectPrinterError(
+      'not-configured',
+      'الطباعة المباشرة غير مفعّلة على هذا الجهاز.'
+    )
+  }
+
+  const canvas = await renderReceiptCanvas(payload)
+  await postEscPosBytes(config.ipAddress, buildPrintJob(canvas))
+}
+

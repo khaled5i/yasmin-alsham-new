@@ -175,6 +175,9 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [customDesignImage, setCustomDesignImage] = useState<string | null>(null)
   const [savedDesignComments, setSavedDesignComments] = useState<SavedDesignComment[]>([])
   const [designSummaryNotes, setDesignSummaryNotes] = useState<DesignSummaryNote[]>([])
+  const [designSummarySaveStatus, setDesignSummarySaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const designSummarySaveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const designSummarySaveVersionRef = useRef(0)
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null)
   const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null)
   const [translatingAnnotationId, setTranslatingAnnotationId] = useState<string | null>(null)
@@ -191,8 +194,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     return view === 'back' ? '/back2.png' : '/front2.png'
   }, [customDesignImage])
 
-  // المدير فقط يمكنه تعديل ملخص التصميم وإضافة تسجيلات صوتية من صفحة عرض التفاصيل
-  const isManager = user?.role === 'admin'
+  // أدوات إضافة/استبدال/حذف صوت الملخص تخص مدير الورشة وحده.
+  // الخياط والعامل العادي (وكذلك أي دور آخر) يشاهدان التسجيلات فقط.
+  const canManageDesignSummary =
+    user?.role === 'worker' && workerType === 'workshop_manager'
 
   // في صفحة العمال فقط: قسم معلومات الطلب وقسم المقاسات يصبحان قائمتين منسدلتين،
   // مع نقل قسم المقاسات إلى أسفل الصفحة. لا يتغيّر محتوى القسمين إطلاقاً.
@@ -202,14 +207,39 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
   // تحديث ملخص التصميم (تعديل النص/حذف/تسجيل جديد) مع الحفظ المباشر في قاعدة البيانات
   const handleDesignSummaryNotesChange = useCallback((notes: DesignSummaryNote[]) => {
+    if (!canManageDesignSummary) return
     setDesignSummaryNotes(notes)
-    if (!order?.id) return
-    updateOrder(order.id, { design_summary_notes: notes }).then((res) => {
-      if (!res.success) {
-        toast.error(res.error || 'تعذّر حفظ ملخص التصميم')
-      }
+    const orderId = order?.id
+    if (!orderId) return
+
+    const saveVersion = ++designSummarySaveVersionRef.current
+    setDesignSummarySaveStatus('saving')
+
+    // تسلسل عمليات الحفظ يمنع وصول حفظ قديم بعد تحويل الصوت إلى نص وطمس النص الجديد.
+    const saveOperation = designSummarySaveQueueRef.current.then(async () => {
+      const result = await updateOrder(orderId, { design_summary_notes: notes })
+      if (!result.success) throw new Error(result.error || 'تعذّر حفظ ملخص التصميم')
     })
-  }, [order?.id, updateOrder])
+
+    designSummarySaveQueueRef.current = saveOperation.catch(() => undefined)
+    void saveOperation
+      .then(() => {
+        if (saveVersion === designSummarySaveVersionRef.current) {
+          setDesignSummarySaveStatus('saved')
+        }
+      })
+      .catch((error: unknown) => {
+        if (saveVersion === designSummarySaveVersionRef.current) {
+          setDesignSummarySaveStatus('error')
+        }
+        toast.error(error instanceof Error ? error.message : 'تعذّر حفظ ملخص التصميم')
+      })
+  }, [canManageDesignSummary, order?.id, updateOrder])
+
+  useEffect(() => {
+    designSummarySaveVersionRef.current += 1
+    setDesignSummarySaveStatus('idle')
+  }, [order?.id])
 
   // حالات تحويل الصورة إلى كرتون
   const [isConvertingToCartoon, setIsConvertingToCartoon] = useState(false)
@@ -281,7 +311,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       toast.success('تم تسليم الطلب')
       setShowStatusDropdown(false)
       // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
-      void autoSendOnDelivery({ ...base, ...updates, id: order.id }, user?.role)
+      await autoSendOnDelivery({ ...base, ...updates, id: order.id }, user?.role)
     } catch {
       toast.error('فشل تحديث الحالة')
     } finally {
@@ -1813,13 +1843,14 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               )}
 
               {/* ملخص التصميم الصوتي */}
-              {/* المدير: تعديل النص المحوّل + إضافة تسجيل جديد (مطابق لصفحة تعديل الطلب).
-                  باقي المستخدمين: عرض فقط ويظهر القسم فقط عند وجود تسجيلات. */}
-              {isManager ? (
+              {/* مدير الورشة وحده: إضافة/استبدال/حذف الصوت وتعديل النص المحوّل.
+                  الخياطون والعمال العاديون وبقية الأدوار: عرض فقط عند وجود تسجيلات. */}
+              {canManageDesignSummary ? (
                 <DesignSummarySection
                   notes={designSummaryNotes}
                   onNotesChange={handleDesignSummaryNotesChange}
                   allowRecording
+                  saveStatus={designSummarySaveStatus}
                 />
               ) : designSummaryNotes.length > 0 ? (
                 <DesignSummarySection

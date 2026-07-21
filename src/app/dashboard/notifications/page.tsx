@@ -11,7 +11,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { orderService, type Order } from '@/lib/services/order-service'
 import { shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
-import { sendSecondProofReadyWhatsApp, sendReadyForPickupWhatsApp } from '@/utils/whatsapp'
+import { sendDeliveredWhatsApp, sendSecondProofReadyWhatsApp, sendReadyForPickupWhatsApp } from '@/utils/whatsapp'
 import OrderModal from '@/components/OrderModal'
 import EditOrderModal from '@/components/EditOrderModal'
 import MeasurementsModal from '@/components/MeasurementsModal'
@@ -32,14 +32,16 @@ import {
   Filter,
   ArrowDownUp,
   Zap,
-  Inbox
+  Inbox,
+  Truck
 } from 'lucide-react'
 
 // أقسام الإشعارات — مصمَّمة لتقبل أنواعاً جديدة مستقبلاً (طلبات تحتاج مراجعة، إلخ)
-type NotificationCategory = 'second_proof' | 'completion'
+type NotificationCategory = 'second_proof' | 'completion' | 'delivery'
 const NOTIFICATION_CATEGORIES: { key: NotificationCategory; labelAr: string; labelEn: string; icon: typeof BellRing }[] = [
   { key: 'second_proof', labelAr: 'البروفا الثانية', labelEn: 'Second Proof', icon: BellRing },
   { key: 'completion', labelAr: 'اكتمال الطلب', labelEn: 'Order Completed', icon: PackageCheck },
+  { key: 'delivery', labelAr: 'الطلبات المُسلَّمة', labelEn: 'Delivered Orders', icon: Truck },
 ]
 
 type SortOption = 'newest' | 'oldest' | 'priority'
@@ -51,18 +53,22 @@ export default function NotificationsPage() {
   const { t, isArabic } = useTranslation()
   const router = useRouter()
 
-  // قائمتان منفصلتان لكل نوع إشعار (لعرض عدّادات دقيقة على أزرار الفلترة)
+  // قائمة منفصلة لكل نوع إشعار (لعرض عدّادات دقيقة على أزرار الفلترة)
   const [secondProofOrders, setSecondProofOrders] = useState<Order[]>([])
   const [completionOrders, setCompletionOrders] = useState<Order[]>([])
+  const [deliveryOrders, setDeliveryOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [category, setCategory] = useState<NotificationCategory>('second_proof')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
 
   // القائمة النشطة + مُحدّثها حسب القسم المختار
   const isCompletion = category === 'completion'
-  const orders = isCompletion ? completionOrders : secondProofOrders
+  const isDelivery = category === 'delivery'
+  const isSecondProof = category === 'second_proof'
+  const orders = isCompletion ? completionOrders : isDelivery ? deliveryOrders : secondProofOrders
   const updateActiveOrders = (updater: (prev: Order[]) => Order[]) => {
     if (isCompletion) setCompletionOrders(updater)
+    else if (isDelivery) setDeliveryOrders(updater)
     else setSecondProofOrders(updater)
   }
 
@@ -96,7 +102,7 @@ export default function NotificationsPage() {
   const loadNotifications = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [secondProof, completion] = await Promise.all([
+      const [secondProof, completion, delivery] = await Promise.all([
         orderService.getAll({
           secondProofCompleted: true,
           noPagination: true,
@@ -109,9 +115,16 @@ export default function NotificationsPage() {
           orderBy: 'completion_notified_at',
           orderAscending: false,
         }),
+        orderService.getAll({
+          deliveryPending: true,
+          noPagination: true,
+          orderBy: 'delivery_notified_at',
+          orderAscending: false,
+        }),
       ])
       setSecondProofOrders(secondProof.data || [])
       setCompletionOrders(completion.data || [])
+      setDeliveryOrders(delivery.data || [])
     } finally {
       setIsLoading(false)
     }
@@ -173,7 +186,9 @@ export default function NotificationsPage() {
   // توقيت الإنجاز المعتمد للترتيب يختلف حسب نوع الإشعار
   const getSortTimestamp = (o: any) => isCompletion
     ? (o.completion_notified_at || o.worker_completed_at || o.created_at)
-    : (o.second_proof_completed_at || o.created_at)
+    : isDelivery
+      ? (o.delivery_notified_at || o.delivery_date || o.created_at)
+      : (o.second_proof_completed_at || o.created_at)
 
   const sortedOrders = [...orders].sort((a, b) => {
     if (sortBy === 'priority') {
@@ -267,9 +282,59 @@ export default function NotificationsPage() {
     }
   }
 
+  // ============ إجراءات إشعارات تسليم الطلب ============
+  // فتح رسالة "تم التسليم" وتسجيل فتحها؛ يبقى الإشعار حتى يُخفيه المدير يدوياً.
+  const handleSendDeliveryWhatsApp = async (order: any) => {
+    if (!order?.client_phone || order.client_phone.trim() === '') {
+      toast.error(isArabic ? 'لا يوجد رقم هاتف للزبونة' : 'Client phone is missing', { icon: '⚠️' })
+      return
+    }
+    setSendingWhatsAppId(order.id)
+    try {
+      sendDeliveredWhatsApp(order.client_name, order.client_phone)
+      if (order.delivery_whatsapp_sent !== true) {
+        const result = await updateOrder(order.id, { delivery_whatsapp_sent: true })
+        if (!result.success) {
+          toast.error(result.error || (isArabic ? 'تعذّر تسجيل إرسال الرسالة' : 'Could not mark message as sent'), { icon: '✗' })
+          return
+        }
+        setDeliveryOrders(prev => prev.map(o => o.id === order.id ? { ...o, delivery_whatsapp_sent: true } : o))
+      }
+      toast.success(isArabic ? 'تم فتح واتساب لإرسال رسالة التسليم والتقييم' : 'WhatsApp opened (delivery and review message)', { icon: '📱', duration: 3000 })
+    } catch {
+      toast.error(isArabic ? 'حدث خطأ أثناء فتح واتساب' : 'Failed to open WhatsApp', { icon: '⚠️' })
+    } finally {
+      setSendingWhatsAppId(null)
+    }
+  }
+
+  // إخفاء إشعار التسليم يدوياً بعد الانتهاء منه.
+  const handleDismissDelivery = async (order: any) => {
+    setDismissingId(order.id)
+    try {
+      const result = await updateOrder(order.id, { delivery_dismissed: true })
+      if (result.success) {
+        setDeliveryOrders(prev => prev.filter(o => o.id !== order.id))
+        toast.success(isArabic ? 'تم إخفاء الإشعار' : 'Notification hidden', { icon: '✓' })
+      } else {
+        toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
+      }
+    } finally {
+      setDismissingId(null)
+    }
+  }
+
   // اختيار المُعالِج المناسب حسب القسم النشط
-  const handleSendWhatsApp = (order: any) => isCompletion ? handleSendCompletionWhatsApp(order) : handleSendSecondProofWhatsApp(order)
-  const handleDismiss = (order: any) => isCompletion ? handleDismissCompletion(order) : handleDismissSecondProof(order)
+  const handleSendWhatsApp = (order: any) => isCompletion
+    ? handleSendCompletionWhatsApp(order)
+    : isDelivery
+      ? handleSendDeliveryWhatsApp(order)
+      : handleSendSecondProofWhatsApp(order)
+  const handleDismiss = (order: any) => isCompletion
+    ? handleDismissCompletion(order)
+    : isDelivery
+      ? handleDismissDelivery(order)
+      : handleDismissSecondProof(order)
 
   const handleViewOrder = (order: any) => { setSelectedOrder(order); setShowViewModal(true) }
   const handleEditOrder = (order: any) => { setSelectedOrder(order); setShowEditModal(true) }
@@ -402,10 +467,15 @@ export default function NotificationsPage() {
   // عدد الإشعارات الجديدة (لم تُرسَل رسالتها بعد) عبر كل الأقسام
   const secondProofNewCount = secondProofOrders.filter(o => o.second_proof_whatsapp_sent !== true).length
   const completionNewCount = completionOrders.length  // كل إشعارات الاكتمال تُعدّ جديدة (إرسال الواتساب يُخفيها)
-  const newCount = secondProofNewCount + completionNewCount
+  const deliveryNewCount = deliveryOrders.filter(o => o.delivery_whatsapp_sent !== true).length
+  const newCount = secondProofNewCount + completionNewCount + deliveryNewCount
 
   // عدّاد يظهر على زر فلترة كل قسم
-  const categoryCount = (key: NotificationCategory) => key === 'completion' ? completionOrders.length : secondProofOrders.length
+  const categoryCount = (key: NotificationCategory) => key === 'completion'
+    ? completionOrders.length
+    : key === 'delivery'
+      ? deliveryOrders.length
+      : secondProofOrders.length
 
   if (authLoading || !user) {
     return (
@@ -493,7 +563,7 @@ export default function NotificationsPage() {
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 bg-white"
               >
-                <option value="newest">{isArabic ? 'الأحدث أولاً (تاريخ الإنجاز)' : 'Newest first (completion date)'}</option>
+                <option value="newest">{isArabic ? 'الأحدث أولاً (تاريخ الإشعار)' : 'Newest first (notification date)'}</option>
                 <option value="oldest">{isArabic ? 'الأقدم أولاً' : 'Oldest first'}</option>
                 <option value="priority">{isArabic ? 'حسب الأولوية' : 'By priority'}</option>
               </select>
@@ -514,14 +584,18 @@ export default function NotificationsPage() {
             <p className="text-gray-500">
               {isCompletion
                 ? (isArabic ? 'ستظهر هنا الطلبات التي تُحدَّد كمكتملة' : 'Orders marked as completed will appear here')
-                : (isArabic ? 'ستظهر هنا الطلبات التي يبلّغ العمال بجهوزية بروفتها الثانية' : 'Orders flagged by workers as second-proof-ready will appear here')}
+                : isDelivery
+                  ? (isArabic ? 'ستظهر هنا الطلبات فور تحويلها إلى تم التسليم' : 'Orders will appear here as soon as they are marked delivered')
+                  : (isArabic ? 'ستظهر هنا الطلبات التي يبلّغ العمال بجهوزية بروفتها الثانية' : 'Orders flagged by workers as second-proof-ready will appear here')}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {sortedOrders.map((order, index) => {
-              // حالة "أُرسِلت الرسالة" تخصّ البروفا الثانية فقط (إشعار الاكتمال يُخفى عند الإرسال)
-              const isSent = !isCompletion && order.second_proof_whatsapp_sent === true
+              // إشعار الاكتمال يُخفى عند الإرسال، بينما البروفا والتسليم يبقيان مع علامة صح حتى الإخفاء اليدوي.
+              const isSent = isDelivery
+                ? order.delivery_whatsapp_sent === true
+                : isSecondProof && order.second_proof_whatsapp_sent === true
               return (
                 <motion.div
                   key={order.id}
@@ -529,7 +603,7 @@ export default function NotificationsPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: Math.min(index, 6) * 0.06 }}
                   className={`bg-white rounded-xl border p-5 shadow-sm hover:shadow-lg transition-all ${
-                    isSent ? 'border-green-200' : (isCompletion ? 'border-emerald-200' : 'border-amber-200')
+                    isSent ? 'border-green-200' : (isCompletion ? 'border-emerald-200' : isDelivery ? 'border-sky-200' : 'border-amber-200')
                   }`}
                 >
                   {/* شارة الإشعار + وقت الإنجاز */}
@@ -538,6 +612,13 @@ export default function NotificationsPage() {
                       <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                         <PackageCheck className="w-3.5 h-3.5" />
                         {isArabic ? 'الطلب مكتمل — جاهز للتسليم' : 'Order Completed — Ready'}
+                      </div>
+                    ) : isDelivery ? (
+                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        isSent ? 'bg-green-100 text-green-700' : 'bg-sky-100 text-sky-700'
+                      }`}>
+                        <Truck className="w-3.5 h-3.5" />
+                        {isArabic ? 'تم تسليم الطلب' : 'Order Delivered'}
                       </div>
                     ) : (
                       <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
@@ -566,13 +647,20 @@ export default function NotificationsPage() {
                       )}
                       <div className="space-y-1 mt-1">
                         <p className="text-sm text-gray-600"><span className="font-medium">{isArabic ? 'الهاتف:' : 'Phone:'}</span> <span dir="ltr">{order.client_phone}</span></p>
-                        {!isCompletion && (
+                        {isSecondProof && (
                           <p className="text-sm text-yellow-700">
                             <span className="font-semibold">{isArabic ? 'البروفا الثانية:' : 'Second Proof:'}</span>{' '}
                             {formatDate(order.second_proof_date || (order.due_date ? shiftDate(order.due_date, -1) : null))}
                           </p>
                         )}
-                        <p className="text-sm text-gray-700"><span className="font-semibold">{isArabic ? 'التسليم:' : 'Delivery:'}</span> {formatDate(order.due_date)}</p>
+                        <p className="text-sm text-gray-700">
+                          <span className="font-semibold">
+                            {isDelivery
+                              ? (isArabic ? 'موعد التسليم الفعلي:' : 'Delivered on:')
+                              : (isArabic ? 'التسليم:' : 'Delivery:')}
+                          </span>{' '}
+                          {formatDate(isDelivery ? order.delivery_date : order.due_date)}
+                        </p>
                         {order.worker_id && getWorkerName(order.worker_id) && (
                           <p className="text-sm text-gray-600"><span className="font-medium">{isArabic ? 'العامل:' : 'Worker:'}</span> {getWorkerName(order.worker_id)}</p>
                         )}
@@ -580,7 +668,9 @@ export default function NotificationsPage() {
                           <CalendarDays className="w-3.5 h-3.5" />
                           {isCompletion
                             ? `${isArabic ? 'اكتمل:' : 'Completed:'} ${formatDateTime(order.completion_notified_at || order.worker_completed_at)}`
-                            : `${isArabic ? 'تم الإبلاغ:' : 'Notified:'} ${formatDateTime(order.second_proof_completed_at)}`}
+                            : isDelivery
+                              ? `${isArabic ? 'تم التسليم:' : 'Delivered:'} ${formatDateTime(order.delivery_notified_at || order.delivery_date)}`
+                              : `${isArabic ? 'تم الإبلاغ:' : 'Notified:'} ${formatDateTime(order.second_proof_completed_at)}`}
                         </p>
                       </div>
                     </div>
@@ -604,14 +694,16 @@ export default function NotificationsPage() {
                         <Printer className="w-5 h-5" />
                         {isOrderPrinted(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
                       </button>
-                      {/* زر الواتساب — رسالة الجاهزية للاستلام (اكتمال) أو جهوزية البروفا الثانية */}
+                      {/* زر الواتساب — رسالة الجاهزية أو البروفا الثانية أو التسليم والتقييم */}
                       <button
                         onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(order) }}
                         disabled={sendingWhatsAppId === order.id}
                         className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200 disabled:opacity-50"
                         title={isCompletion
                           ? (isArabic ? 'إرسال رسالة الجاهزية للاستلام (يُخفي الإشعار)' : 'Send ready-for-pickup message (auto-hides)')
-                          : (isArabic ? 'إرسال رسالة جهوزية البروفا الثانية' : 'Send second-proof-ready message')}
+                          : isDelivery
+                            ? (isArabic ? 'إرسال رسالة تم التسليم وطلب التقييم' : 'Send delivered and review message')
+                            : (isArabic ? 'إرسال رسالة جهوزية البروفا الثانية' : 'Send second-proof-ready message')}
                       >
                         {sendingWhatsAppId === order.id
                           ? <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />

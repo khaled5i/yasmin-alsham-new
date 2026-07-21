@@ -34,13 +34,14 @@ import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
+import DirectPrinterSetup from '@/components/DirectPrinterSetup'
 import { sendInvoiceToAlostaz, getAutoSendEnabled, setAutoSendEnabled } from '@/lib/services/alostaz-client'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import {
   createTailoringReceiptPayload,
   isFullyNetworkPaid,
 } from '@/lib/print-tailoring-receipt'
-import { queueTailoringReceiptPrint } from '@/lib/services/print-job-service'
+import { dispatchTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
 import type { Order } from '@/lib/services/order-service'
 
 const PAGE_SIZE = 50
@@ -191,8 +192,18 @@ export default function DeliveredOrdersPage() {
     setPrintingId(order.id)
     try {
       const receipt = createTailoringReceiptPayload(order, getSentCode(order))
-      await queueTailoringReceiptPrint(receipt)
-      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى الطابعة`, { icon: '🧾' })
+      const printResult = await dispatchTailoringReceiptPrint(receipt)
+
+      if (printResult.destination === 'direct') {
+        toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
+      } else if (printResult.directError) {
+        toast('تعذّرت الطباعة المباشرة؛ أُرسل الإيصال إلى المحطة الاحتياطية.', {
+          icon: '⚠️',
+          duration: 5500,
+        })
+      } else {
+        toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })
+      }
 
       if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
         toast('رقم فاتورة الأستاذ غير محفوظ لهذا الطلب؛ سيُستخدم الرقم المحلي في الإيصال.', {
@@ -202,7 +213,7 @@ export default function DeliveredOrdersPage() {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error || '')
-      toast.error('تعذّر إرسال الإيصال إلى محطة الطباعة: ' + message)
+      toast.error('تعذّرت طباعة الإيصال: ' + message)
     } finally {
       setPrintingId(null)
     }
@@ -404,6 +415,10 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
         </div>
 
 
+      </div>
+
+      <div className="mx-auto max-w-7xl">
+        <DirectPrinterSetup />
       </div>
 
       {/* مفتاح الإرسال التلقائي للمحاسبة (للمدير فقط) */}

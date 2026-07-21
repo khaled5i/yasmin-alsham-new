@@ -57,13 +57,13 @@ function DashboardContent() {
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [showOrderSearchModal, setShowOrderSearchModal] = useState(false)
 
-  // عدد إشعارات البروفا الثانية الجديدة (مُبلَّغ عنها ولم تُرسَل رسالتها بعد) — للمدير
+  // عدد الإشعارات الجديدة عبر أقسام البروفا والاكتمال والتسليم — للمدير
   const [notificationsCount, setNotificationsCount] = useState(0)
 
   const loadNotificationsCount = useCallback(async () => {
     if (user?.role !== 'admin') return
     try {
-      const [secondProof, completion] = await Promise.all([
+      const [secondProof, completion, delivery] = await Promise.all([
         orderService.getAll({
           secondProofCompleted: true,
           noPagination: true,
@@ -76,11 +76,18 @@ function DashboardContent() {
           orderBy: 'completion_notified_at',
           orderAscending: false,
         }),
+        orderService.getAll({
+          deliveryPending: true,
+          noPagination: true,
+          orderBy: 'delivery_notified_at',
+          orderAscending: false,
+        }),
       ])
-      // إشعارات البروفا الثانية غير المُرسَلة + كل إشعارات الاكتمال (إرسال الواتساب يُخفيها)
+      // البروفا والتسليم غير المُرسَلين + كل إشعارات الاكتمال (إرسال الواتساب يُخفيها)
       const secondProofNew = (secondProof.data || []).filter(o => o.second_proof_whatsapp_sent !== true).length
       const completionNew = (completion.data || []).length
-      setNotificationsCount(secondProofNew + completionNew)
+      const deliveryNew = (delivery.data || []).filter(o => o.delivery_whatsapp_sent !== true).length
+      setNotificationsCount(secondProofNew + completionNew + deliveryNew)
     } catch {
       // تجاهل أخطاء جلب العدّاد
     }

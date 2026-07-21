@@ -15,7 +15,7 @@ import {
   isFullyNetworkPaid,
   type TailoringReceiptOrder,
 } from '@/lib/print-tailoring-receipt'
-import { queueTailoringReceiptPrint } from './print-job-service'
+import { dispatchTailoringReceiptPrint } from './tailoring-receipt-printer'
 
 export type RemainingMethod = 'cash' | 'card'
 
@@ -107,8 +107,18 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
 
   try {
     const receipt = createTailoringReceiptPayload(order, accountingInvoiceCode)
-    await queueTailoringReceiptPrint(receipt)
-    toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى الطابعة`, { icon: '🧾' })
+    const printResult = await dispatchTailoringReceiptPrint(receipt)
+
+    if (printResult.destination === 'direct') {
+      toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
+    } else if (printResult.directError) {
+      toast(
+        `تعذّرت الطباعة المباشرة؛ أُرسل إيصال الطلب ${receipt.order_number} إلى المحطة الاحتياطية.`,
+        { icon: '⚠️', duration: 5500 }
+      )
+    } else {
+      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })
+    }
 
     if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
       toast('تعذّر جلب رقم فاتورة الأستاذ؛ أُرسل رقم محلي مرتبط بالطلب إلى الطباعة.', {
@@ -118,6 +128,6 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error || '')
-    toast.error('تم التسليم، لكن تعذّر إرسال الإيصال إلى محطة الطباعة: ' + message)
+    toast.error('تم التسليم، لكن تعذّرت طباعة الإيصال: ' + message)
   }
 }

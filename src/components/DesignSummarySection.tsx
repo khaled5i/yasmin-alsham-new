@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Play, Pause, Trash2, Loader2, Pencil, Check, X } from 'lucide-react'
-import { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
+import { AlertCircle, Check, Loader2, Mic, Pause, Pencil, Play, RefreshCw, Trash2, X } from 'lucide-react'
+import type { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
 import DesignSummaryRecorder from '@/components/DesignSummaryRecorder'
 import { recordingBlobToWav, cleanTranscriptText } from '@/lib/audio-utils'
 
@@ -11,8 +11,14 @@ interface Props {
   notes: DesignSummaryNote[]
   onNotesChange: (notes: DesignSummaryNote[]) => void
   readOnly?: boolean
-  /** إظهار زر "تسجيل صوتي جديد" أعلى القسم (للمدير فقط) */
+  /** إظهار أدوات إضافة التسجيل واستبداله (لمدير الورشة في نافذة الطلب). */
   allowRecording?: boolean
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error'
+}
+
+interface AudioEntry {
+  audio: HTMLAudioElement
+  objectUrl: string
 }
 
 function formatTime(seconds: number) {
@@ -28,11 +34,18 @@ function formatDate(ts: number) {
   })
 }
 
-export default function DesignSummarySection({ notes, onNotesChange, readOnly = false, allowRecording = false }: Props) {
+export default function DesignSummarySection({
+  notes,
+  onNotesChange,
+  readOnly = false,
+  allowRecording = false,
+  saveStatus = 'idle'
+}: Props) {
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [replacingId, setReplacingId] = useState<string | null>(null)
   const [draftText, setDraftText] = useState('')
-  const audioRefsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
+  const audioRefsRef = useRef<Map<string, AudioEntry>>(new Map())
 
   // مرآة لأحدث قائمة ملاحظات لقراءتها داخل دوال التحويل غير المتزامنة
   const notesRef = useRef<DesignSummaryNote[]>(notes)
@@ -43,7 +56,34 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
   // معرّفات الملاحظات التي حاولنا تحويلها بالفعل (لتجنّب التكرار)
   const transcribeAttemptedRef = useRef<Set<string>>(new Set())
 
+  const releaseAudio = useCallback((noteId: string) => {
+    const entry = audioRefsRef.current.get(noteId)
+    if (!entry) return
+    entry.audio.pause()
+    URL.revokeObjectURL(entry.objectUrl)
+    audioRefsRef.current.delete(noteId)
+  }, [])
+
+  useEffect(() => {
+    const currentIds = new Set(notes.map(note => note.id))
+    for (const noteId of audioRefsRef.current.keys()) {
+      if (!currentIds.has(noteId)) releaseAudio(noteId)
+    }
+  }, [notes, releaseAudio])
+
+  useEffect(() => {
+    const audioEntries = audioRefsRef.current
+    return () => {
+      for (const entry of audioEntries.values()) {
+        entry.audio.pause()
+        URL.revokeObjectURL(entry.objectUrl)
+      }
+      audioEntries.clear()
+    }
+  }, [])
+
   const startEditing = (note: DesignSummaryNote) => {
+    setReplacingId(null)
     setEditingId(note.id)
     setDraftText(note.transcription || '')
   }
@@ -56,18 +96,19 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
   const saveEditing = (noteId: string) => {
     const trimmed = draftText.trim()
     onNotesChange(
-      notes.map(n => (n.id === noteId ? { ...n, transcription: trimmed } : n))
+      notesRef.current.map(note => (note.id === noteId ? { ...note, transcription: trimmed } : note))
     )
     setEditingId(null)
     setDraftText('')
   }
 
   const base64ToBlob = (base64: string): Blob => {
-    const b64 = base64.split(',')[1]
-    const bytes = atob(b64)
+    const [header, encodedData] = base64.includes(',') ? base64.split(',', 2) : ['', base64]
+    const mimeType = header.match(/^data:([^;]+)/)?.[1] || 'audio/webm'
+    const bytes = atob(encodedData)
     const arr = new Uint8Array(bytes.length)
     for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
-    return new Blob([arr], { type: 'audio/webm' })
+    return new Blob([arr], { type: mimeType })
   }
 
   // تحويل تسجيل إلى نص من بياناته الصوتية المخزّنة (base64) وتحديث الملاحظة.
@@ -122,34 +163,59 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
   }, [notes, allowRecording, readOnly])
 
   const togglePlayback = (note: DesignSummaryNote) => {
-    // stop any current
     if (playingId && playingId !== note.id) {
-      audioRefsRef.current.get(playingId)?.pause()
+      audioRefsRef.current.get(playingId)?.audio.pause()
     }
 
-    let audio = audioRefsRef.current.get(note.id)
-    if (!audio) {
+    let entry = audioRefsRef.current.get(note.id)
+    if (!entry) {
       const blob = base64ToBlob(note.data)
-      audio = new Audio(URL.createObjectURL(blob))
+      const objectUrl = URL.createObjectURL(blob)
+      const audio = new Audio(objectUrl)
       audio.onended = () => setPlayingId(null)
-      audioRefsRef.current.set(note.id, audio)
+      entry = { audio, objectUrl }
+      audioRefsRef.current.set(note.id, entry)
     }
 
     if (playingId === note.id) {
-      audio.pause()
+      entry.audio.pause()
       setPlayingId(null)
     } else {
-      audio.play()
       setPlayingId(note.id)
+      void entry.audio.play().catch(error => {
+        console.error('Summary playback failed:', error)
+        setPlayingId(null)
+      })
     }
   }
 
   const deleteNote = (noteId: string) => {
-    const audio = audioRefsRef.current.get(noteId)
-    if (audio) { audio.pause(); audioRefsRef.current.delete(noteId) }
+    if (!window.confirm('هل تريد حذف هذا التسجيل الصوتي من ملخص التصميم؟')) return
+    releaseAudio(noteId)
     if (playingId === noteId) setPlayingId(null)
-    onNotesChange(notes.filter(n => n.id !== noteId))
+    if (replacingId === noteId) setReplacingId(null)
+    onNotesChange(notesRef.current.filter(note => note.id !== noteId))
   }
+
+  const addRecording = useCallback((note: DesignSummaryNote) => {
+    onNotesChange([...notesRef.current, note])
+  }, [onNotesChange])
+
+  const startReplacing = (noteId: string) => {
+    releaseAudio(noteId)
+    if (playingId === noteId) setPlayingId(null)
+    setEditingId(null)
+    setDraftText('')
+    setReplacingId(noteId)
+  }
+
+  const replaceRecording = useCallback((replacement: DesignSummaryNote) => {
+    if (!replacingId) return
+    onNotesChange(
+      notesRef.current.map(note => (note.id === replacingId ? replacement : note))
+    )
+    setReplacingId(null)
+  }, [onNotesChange, replacingId])
 
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-teal-100">
@@ -160,15 +226,37 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
           <span className="text-sm font-normal text-gray-500 mr-1">({notes.length})</span>
         </h3>
 
-        {/* زر إضافة تسجيل صوتي جديد (للمدير فقط) */}
+        {/* أدوات الإضافة والحفظ لا تُمرّر إلا لمدير الورشة في نافذة الطلب. */}
         {allowRecording && !readOnly && (
-          <DesignSummaryRecorder notes={notes} onNotesChange={onNotesChange} />
+          <DesignSummaryRecorder onRecordingComplete={addRecording} />
         )}
       </div>
 
+      {saveStatus !== 'idle' ? (
+        <div
+          aria-live="polite"
+          className={`mb-4 flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+            saveStatus === 'error'
+              ? 'bg-red-50 text-red-700'
+              : saveStatus === 'saved'
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-teal-50 text-teal-700'
+          }`}
+        >
+          {saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {saveStatus === 'saved' ? <Check className="h-3.5 w-3.5" /> : null}
+          {saveStatus === 'error' ? <AlertCircle className="h-3.5 w-3.5" /> : null}
+          <span>
+            {saveStatus === 'saving' ? 'جارٍ حفظ ملخص التصميم...' : null}
+            {saveStatus === 'saved' ? 'تم حفظ ملخص التصميم' : null}
+            {saveStatus === 'error' ? 'تعذّر حفظ آخر تعديل' : null}
+          </span>
+        </div>
+      ) : null}
+
       {notes.length === 0 && allowRecording && !readOnly && (
         <p className="text-sm text-gray-400 text-center py-4">
-          لا توجد تسجيلات بعد. اضغط على "تسجيل جديد" لإضافة ملخص صوتي.
+          لا توجد تسجيلات بعد. اضغط على زر تسجيل صوت جديد لإضافة ملخص صوتي.
         </p>
       )}
 
@@ -252,10 +340,23 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
                       </span>
                     )}
                   </div>
+
+                  {replacingId === note.id ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/80 p-3">
+                      <p className="mb-2 text-xs font-semibold text-amber-800">
+                        سجّل الصوت البديل. سيبقى التسجيل الحالي محفوظًا حتى تنهي التسجيل الجديد.
+                      </p>
+                      <DesignSummaryRecorder
+                        mode="replace"
+                        onRecordingComplete={replaceRecording}
+                        onCancel={() => setReplacingId(null)}
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* أزرار التحكم */}
-                {editingId !== note.id && (
+                {editingId !== note.id && replacingId !== note.id && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       type="button"
@@ -275,11 +376,23 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
 
                     {!readOnly && (
                       <>
+                        {allowRecording ? (
+                          <button
+                            type="button"
+                            onClick={() => startReplacing(note.id)}
+                            className="rounded-lg p-2 text-amber-700 transition-colors hover:bg-amber-100"
+                            title="تعديل الصوت بتسجيل بديل"
+                            aria-label="تعديل الصوت بتسجيل بديل"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => startEditing(note)}
                           className="p-2 text-teal-700 hover:bg-teal-100 rounded-lg transition-colors"
-                          title="تعديل النص"
+                          title="تعديل النص المحوّل"
+                          aria-label="تعديل النص المحوّل"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
@@ -287,7 +400,8 @@ export default function DesignSummarySection({ notes, onNotesChange, readOnly = 
                           type="button"
                           onClick={() => deleteNote(note.id)}
                           className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
-                          title="حذف"
+                          title="حذف التسجيل الصوتي"
+                          aria-label="حذف التسجيل الصوتي"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

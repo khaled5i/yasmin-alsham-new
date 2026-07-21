@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
+import DirectPrinterSetup from '@/components/DirectPrinterSetup'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import { formatGregorianDate } from '@/lib/date-utils'
@@ -280,7 +281,8 @@ export default function WorkerCompletedOrdersPage() {
         setOrderToDeliver(null)
 
         // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
-        void autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
+        // ننتظر الطباعة قبل فتح واتساب؛ انتقال أندرويد إلى الخلفية قد يوقف طلب الطابعة المحلي.
+        await autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
 
         // إرسال رسالة واتساب تلقائياً بعد التسليم
         if (order && order.client_phone && order.client_phone.trim() !== '') {
@@ -420,6 +422,8 @@ export default function WorkerCompletedOrdersPage() {
             </div>
           </div>
         </motion.div>
+
+        <DirectPrinterSetup />
 
         {/* البحث والفلاتر - تصميم محسّن */}
         <motion.div
