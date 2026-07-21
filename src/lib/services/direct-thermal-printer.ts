@@ -360,6 +360,21 @@ interface PrintBridgeHealth {
   printerPort: number
 }
 
+async function getLoopbackPermissionState(): Promise<PermissionState | null> {
+  if (!isBrowser() || !window.navigator.permissions?.query) return null
+
+  for (const name of ['loopback-network', 'local-network-access'] as const) {
+    try {
+      const status = await window.navigator.permissions.query({ name } as PermissionDescriptor)
+      return status.state
+    } catch {
+      // Older Chrome versions do not expose these permission names.
+    }
+  }
+
+  return null
+}
+
 async function fetchPrintBridgeHealth(): Promise<PrintBridgeHealth> {
   if (!isBrowser() || typeof window.fetch !== 'function') {
     throw new DirectPrinterError(
@@ -370,13 +385,15 @@ async function fetchPrintBridgeHealth(): Promise<PrintBridgeHealth> {
 
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), PRINT_TIMEOUT_MS)
-  const request: RequestInit & { targetAddressSpace?: 'local' } = {
+  // The bridge is bound to 127.0.0.1, so Chrome 145+ requires the
+  // loopback-network permission (separate from the LAN permission).
+  const request: RequestInit & { targetAddressSpace?: 'loopback' } = {
     method: 'GET',
     mode: 'cors',
     cache: 'no-store',
     credentials: 'omit',
     signal: controller.signal,
-    targetAddressSpace: 'local',
+    targetAddressSpace: 'loopback',
   }
 
   try {
@@ -394,9 +411,12 @@ async function fetchPrintBridgeHealth(): Promise<PrintBridgeHealth> {
     return health
   } catch (error) {
     if (error instanceof DirectPrinterError) throw error
+    const permissionState = await getLoopbackPermissionState()
     throw new DirectPrinterError(
       'bridge-unavailable',
-      'جسر الطباعة غير متاح. ثبّت «جسر طباعة ياسمين الشام» وافتحه ثم شغّل الخدمة.',
+      permissionState === 'denied'
+        ? 'Chrome يمنع الوصول إلى جسر الطباعة. افتح إعدادات هذا الموقع، واسمح بالوصول إلى أجهزة الشبكة المحلية، ثم أعد المحاولة.'
+        : 'جسر الطباعة غير متاح. افتح تطبيق «جسر طباعة ياسمين الشام» وشغّل الخدمة، ثم اسمح لـ Chrome بالوصول إلى أجهزة الشبكة المحلية.',
       { cause: error }
     )
   } finally {
@@ -422,7 +442,7 @@ async function postEscPosBytes(ipAddress: string, bytes: Uint8Array): Promise<vo
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS)
   const body = new Uint8Array(bytes).buffer
-  const request: RequestInit & { targetAddressSpace?: 'local' } = {
+  const request: RequestInit & { targetAddressSpace?: 'loopback' } = {
     method: 'POST',
     mode: 'cors',
     cache: 'no-store',
@@ -434,7 +454,7 @@ async function postEscPosBytes(ipAddress: string, bytes: Uint8Array): Promise<vo
     },
     body,
     signal: controller.signal,
-    targetAddressSpace: 'local',
+    targetAddressSpace: 'loopback',
   }
 
   try {
