@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   Loader2,
   Printer,
   RadioTower,
@@ -14,6 +15,7 @@ import toast from 'react-hot-toast'
 import {
   DEFAULT_DIRECT_PRINTER_IP,
   getDirectPrinterConfig,
+  PRINT_BRIDGE_APK_PATH,
   saveDirectPrinterConfig,
   testDirectPrinter,
   type DirectPrinterConfig,
@@ -45,7 +47,7 @@ export default function DirectPrinterSetup() {
   const handleTest = async () => {
     if (testState === 'testing') return
     setTestState('testing')
-    setMessage('سيطلب Chrome السماح بالوصول إلى الشبكة المحلية إن كانت هذه أول مرة.')
+    setMessage('يتم الآن فحص جسر الطباعة ثم إرسال ورقة اختبار حقيقية عبر TCP 9100.')
 
     try {
       const next = await testDirectPrinter(ipAddress)
@@ -105,11 +107,11 @@ export default function DirectPrinterSetup() {
                 }`}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-400' : 'bg-stone-500'}`} />
-                {enabled ? 'متصلة مباشرة' : 'تحتاج ربطًا مرة واحدة'}
+                {enabled ? 'متصلة عبر الجسر' : 'تحتاج تثبيت الجسر مرة واحدة'}
               </span>
             </div>
             <p className="max-w-2xl text-sm leading-6 text-stone-300">
-              TA POS TA-900UWB · تطبع تلقائيًا من هذا الجهاز عند تسليم الطلب، دون كمبيوتر أو محطة مفتوحة.
+              TA POS TA-900UWB · تطبع تلقائيًا من نسخة Chrome عبر جسر أندرويد خفيف، دون كمبيوتر أو محطة مفتوحة.
             </p>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-stone-400">
               <span className="inline-flex items-center gap-1.5">
@@ -118,13 +120,23 @@ export default function DirectPrinterSetup() {
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <RadioTower className="h-3.5 w-3.5 text-amber-300" />
-                إذن الشبكة المحلية يُمنح مرة واحدة
+                جسر الطباعة يعمل في خلفية الهاتف
               </span>
             </div>
           </div>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white/[0.06] p-3.5 backdrop-blur-sm">
+          {!enabled ? (
+            <a
+              href={PRINT_BRIDGE_APK_PATH}
+              download
+              className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-amber-300/35 bg-amber-300/10 px-3 py-2.5 text-xs font-black text-amber-200 transition hover:bg-amber-300/20 focus:outline-none focus:ring-2 focus:ring-amber-300/40"
+            >
+              <Download className="h-4 w-4" />
+              تنزيل جسر الطباعة لأندرويد APK
+            </a>
+          ) : null}
           <label htmlFor="direct-printer-ip" className="mb-1.5 block text-xs font-bold text-stone-300">
             عنوان الطابعة الثابت
           </label>
@@ -178,7 +190,7 @@ export default function DirectPrinterSetup() {
               ) : enabled ? (
                 <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               ) : null}
-              <span>{message || (enabled ? 'الطباعة التلقائية جاهزة على هذا الجهاز.' : 'اضغط مرة واحدة ثم اختر «سماح» في Chrome.')}</span>
+              <span>{message || (enabled ? 'الطباعة التلقائية جاهزة على هذا الجهاز.' : 'نزّل الجسر وافتحه وشغّل الخدمة، ثم اضغط «ربط واختبار».')}</span>
             </p>
             {enabled ? (
               <button
@@ -196,4 +208,3 @@ export default function DirectPrinterSetup() {
     </section>
   )
 }
-

@@ -3,13 +3,15 @@ import {
   type TailoringReceiptPayload,
 } from '@/lib/print-tailoring-receipt'
 
-const STORAGE_KEY = 'yasmin-alsham:direct-printer:v1'
-const PRINTER_WRITE_PATH = '/write.html'
+const STORAGE_KEY = 'yasmin-alsham:direct-printer:v2'
+const PRINT_BRIDGE_ORIGIN = 'http://127.0.0.1:19281'
 const PRINT_WIDTH_DOTS = 576
 const PRINT_TIMEOUT_MS = 8_000
+const BRIDGE_TIMEOUT_MS = 20_000
 const MAX_RECEIPT_HEIGHT_DOTS = 2_600
 
 export const DEFAULT_DIRECT_PRINTER_IP = '192.168.100.105'
+export const PRINT_BRIDGE_APK_PATH = '/downloads/yasmin-print-bridge.apk'
 
 export interface DirectPrinterConfig {
   enabled: boolean
@@ -22,6 +24,7 @@ export type DirectPrinterErrorCode =
   | 'not-configured'
   | 'invalid-address'
   | 'unsupported-browser'
+  | 'bridge-unavailable'
   | 'render-failed'
   | 'connection-failed'
 
@@ -133,14 +136,6 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
     offset += part.length
   }
   return result
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  const hex = new Array<string>(bytes.length)
-  for (let index = 0; index < bytes.length; index += 1) {
-    hex[index] = bytes[index].toString(16).padStart(2, '0')
-  }
-  return hex.join('')
 }
 
 function trimCanvasBottom(source: HTMLCanvasElement, bottomPadding = 36): HTMLCanvasElement {
@@ -357,44 +352,120 @@ function buildPrintJob(canvas: HTMLCanvasElement): Uint8Array {
   return concatBytes(initializeAndAlign, raster, feedAndCut)
 }
 
+interface PrintBridgeHealth {
+  ok: boolean
+  service: string
+  version: string
+  printerIp: string
+  printerPort: number
+}
+
+async function fetchPrintBridgeHealth(): Promise<PrintBridgeHealth> {
+  if (!isBrowser() || typeof window.fetch !== 'function') {
+    throw new DirectPrinterError(
+      'unsupported-browser',
+      'هذا المتصفح لا يدعم الاتصال بجسر الطباعة.'
+    )
+  }
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), PRINT_TIMEOUT_MS)
+  const request: RequestInit & { targetAddressSpace?: 'local' } = {
+    method: 'GET',
+    mode: 'cors',
+    cache: 'no-store',
+    credentials: 'omit',
+    signal: controller.signal,
+    targetAddressSpace: 'local',
+  }
+
+  try {
+    const response = await window.fetch(`${PRINT_BRIDGE_ORIGIN}/health`, request)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const health = await response.json() as PrintBridgeHealth
+    if (!health.ok || health.service !== 'yasmin-print-bridge') {
+      throw new Error('Unexpected print bridge response')
+    }
+    console.info('[direct-printer] bridge ready', {
+      version: health.version,
+      printerIp: health.printerIp,
+      printerPort: health.printerPort,
+    })
+    return health
+  } catch (error) {
+    if (error instanceof DirectPrinterError) throw error
+    throw new DirectPrinterError(
+      'bridge-unavailable',
+      'جسر الطباعة غير متاح. ثبّت «جسر طباعة ياسمين الشام» وافتحه ثم شغّل الخدمة.',
+      { cause: error }
+    )
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
 async function postEscPosBytes(ipAddress: string, bytes: Uint8Array): Promise<void> {
   if (!isBrowser() || typeof window.fetch !== 'function') {
     throw new DirectPrinterError(
       'unsupported-browser',
-      'هذا المتصفح لا يدعم الاتصال المباشر بالطابعة.'
+      'هذا المتصفح لا يدعم الاتصال بجسر الطباعة.'
     )
   }
   if (!window.isSecureContext) {
     throw new DirectPrinterError(
       'unsupported-browser',
-      'يجب فتح الموقع عبر HTTPS حتى يسمح Chrome بالوصول إلى الطابعة.'
+      'يجب فتح الموقع عبر HTTPS حتى يسمح Chrome بالوصول إلى جسر الطباعة.'
     )
   }
 
   const ip = validatePrinterIp(ipAddress)
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), PRINT_TIMEOUT_MS)
-  const body = new URLSearchParams({ data_hex: bytesToHex(bytes) })
+  const timeout = window.setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS)
+  const body = new Uint8Array(bytes).buffer
   const request: RequestInit & { targetAddressSpace?: 'local' } = {
     method: 'POST',
-    mode: 'no-cors',
+    mode: 'cors',
     cache: 'no-store',
     credentials: 'omit',
     referrerPolicy: 'no-referrer',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'X-Printer-IP': ip,
+    },
     body,
     signal: controller.signal,
     targetAddressSpace: 'local',
   }
 
   try {
-    await window.fetch(`http://${ip}${PRINTER_WRITE_PATH}`, request)
+    console.info('[direct-printer] sending print job to Android bridge', {
+      printerIp: ip,
+      bytes: bytes.byteLength,
+    })
+    const response = await window.fetch(`${PRINT_BRIDGE_ORIGIN}/print`, request)
+    if (!response.ok) {
+      const result = await response.json().catch(() => null) as { error?: string } | null
+      if (response.status === 502 || result?.error === 'printer_unreachable') {
+        throw new DirectPrinterError(
+          'connection-failed',
+          `جسر الطباعة يعمل، لكن تعذّر الوصول إلى الطابعة ${ip}:9100.`
+        )
+      }
+      throw new Error(`Print bridge returned HTTP ${response.status}`)
+    }
+    console.info('[direct-printer] Android bridge accepted print job', {
+      printerIp: ip,
+      bytes: bytes.byteLength,
+    })
   } catch (error) {
+    if (error instanceof DirectPrinterError) throw error
+    console.error('[direct-printer] Android bridge request failed', error)
     const timedOut = error instanceof DOMException && error.name === 'AbortError'
     throw new DirectPrinterError(
-      'connection-failed',
+      'bridge-unavailable',
       timedOut
-        ? 'انتهت مهلة الاتصال بالطابعة. تأكد أن الهاتف والطابعة على شبكة الواي فاي نفسها.'
-        : 'تعذّر الوصول إلى الطابعة. اسمح لـChrome بالوصول إلى الشبكة المحلية وتأكد من اتصال الواي فاي.',
+        ? 'انتهت مهلة جسر الطباعة. افتح تطبيق الجسر وتأكد أن خدمته تعمل.'
+        : 'تعذّر الوصول إلى جسر الطباعة. افتح تطبيق الجسر وشغّل الخدمة ثم اسمح لـChrome بالوصول المحلي.',
       { cause: error }
     )
   } finally {
@@ -408,6 +479,7 @@ export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinte
     throw new DirectPrinterError('unsupported-browser', 'اختبار الطابعة متاح من المتصفح فقط.')
   }
 
+  await fetchPrintBridgeHealth()
   if (document.fonts?.ready) await document.fonts.ready
   const testCanvas = renderConnectionTestCanvas(ip)
   await postEscPosBytes(ip, buildPrintJob(testCanvas))
@@ -431,4 +503,3 @@ export async function printTailoringReceiptDirect(payload: TailoringReceiptPaylo
   const canvas = await renderReceiptCanvas(payload)
   await postEscPosBytes(config.ipAddress, buildPrintJob(canvas))
 }
-

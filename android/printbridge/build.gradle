@@ -1,0 +1,37 @@
+apply plugin: 'com.android.application'
+
+if (project.hasProperty('printBridgeBuildDir')) {
+    layout.buildDirectory = file(project.property('printBridgeBuildDir'))
+}
+
+android {
+    namespace = "com.yasminalsham.printbridge"
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId "com.yasminalsham.printbridge"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            // Internal distribution: release optimizations with the workstation's stable debug key.
+            // Replace with a dedicated private signing config before any public-store release.
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    implementation "androidx.core:core:$androidxCoreVersion"
+}
