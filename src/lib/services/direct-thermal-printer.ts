@@ -223,19 +223,23 @@ async function renderReceiptCanvas(payload: TailoringReceiptPayload): Promise<HT
     })
 
     const body = frameDocument.body
-    const cssWidth = Math.max(1, Math.ceil(body.getBoundingClientRect().width))
-    const cssHeight = Math.max(1, Math.ceil(body.scrollHeight))
+    const page = frameDocument.documentElement
+    // Capture the complete 80mm page, not the centered 72mm body. Capturing
+    // only the body scales away its safety margins and pushes RTL text into
+    // the printer's non-printable right edge.
+    const cssWidth = Math.max(1, Math.ceil(page.getBoundingClientRect().width))
+    const cssHeight = Math.max(1, Math.ceil(Math.max(body.scrollHeight, page.scrollHeight)))
     iframe.style.height = `${cssHeight}px`
 
     const html2canvas = (await import('html2canvas')).default
-    const rendered = await html2canvas(body, {
+    const rendered = await html2canvas(page, {
       backgroundColor: '#ffffff',
       logging: false,
       useCORS: false,
       scale: PRINT_WIDTH_DOTS / cssWidth,
       width: cssWidth,
       height: cssHeight,
-      windowWidth: Math.max(cssWidth, frameDocument.documentElement.scrollWidth),
+      windowWidth: Math.max(cssWidth, page.scrollWidth),
       windowHeight: cssHeight,
     })
 
