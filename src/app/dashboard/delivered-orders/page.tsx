@@ -348,13 +348,17 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50 p-4 md:p-8">
       {/* رأس الصفحة */}
       <div className="max-w-7xl mx-auto mb-8">
-        <button
-          onClick={() => router.push(getDashboardRoute())}
-          className="mb-6 flex items-center space-x-2 space-x-reverse text-purple-600 hover:text-purple-800 transition-colors"
-        >
-          <ArrowRight className="w-5 h-5" />
-          <span>العودة إلى لوحة التحكم</span>
-        </button>
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <button
+            onClick={() => router.push(getDashboardRoute())}
+            aria-label="العودة إلى لوحة التحكم"
+            className="flex items-center space-x-2 space-x-reverse text-purple-600 hover:text-purple-800 transition-colors"
+          >
+            <ArrowRight className="w-5 h-5" />
+            <span className="hidden sm:inline">العودة إلى لوحة التحكم</span>
+          </button>
+          <DirectPrinterSetup />
+        </div>
 
         <div className="flex items-center space-x-4 space-x-reverse mb-6">
           <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
@@ -415,10 +419,6 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
         </div>
 
 
-      </div>
-
-      <div className="mx-auto max-w-7xl">
-        <DirectPrinterSetup />
       </div>
 
       {/* مفتاح الإرسال التلقائي للمحاسبة (للمدير فقط) */}

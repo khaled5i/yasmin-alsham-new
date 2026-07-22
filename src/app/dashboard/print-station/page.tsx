@@ -232,9 +232,9 @@ function TailoringPrintStation() {
             </div>
           </div>
           <Link
-            href="/dashboard/completed-orders"
+            href="/dashboard"
             className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-stone-300 bg-white/70 text-stone-700 transition hover:-translate-x-0.5 hover:bg-white"
-            title="العودة إلى الطلبات المكتملة"
+            title="العودة إلى الشاشة الرئيسية"
           >
             <ArrowRight className="h-5 w-5" />
           </Link>
@@ -332,7 +332,7 @@ function TailoringPrintStation() {
 
 export default function PrintStationPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute requiredPermission="canAccessOrders" allowAdmin={true}>
       <TailoringPrintStation />
     </ProtectedWorkerRoute>
   )

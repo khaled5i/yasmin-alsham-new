@@ -27,6 +27,22 @@ function formatDate(value: string): string {
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
 }
 
+function formatPrintTimestamp(value: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(value)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value || ''
+
+  return `${part('year')}/${part('month')}/${part('day')} - ${part('hour')}:${part('minute')}`
+}
+
 function getLocalCashNumber(item: Income): string {
   const date = new Date(item.date)
   const year = Number.isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear()
@@ -110,7 +126,12 @@ export function buildFabricSaleReceiptHtml(
 ): string {
   const receiptNumber = getFabricReceiptNumber(item)
   const lines = buildReceiptLines(item)
-  const vatIncluded = (Number(item.amount || 0) * 15) / 115
+  const total = Math.max(0, Number(item.amount) || 0)
+  const priceBeforeTax = total / 1.15
+  const vatAmount = total - priceBeforeTax
+  const paidAmount = total
+  const remainingAmount = 0
+  const printedAt = formatPrintTimestamp()
   const customerName = item.buyer_name?.trim() || 'عميل'
   const paymentLabel = item.payment_method === 'network' ? 'شبكة' : 'كاش'
   const rows = lines.map((line) => `
@@ -161,7 +182,9 @@ export function buildFabricSaleReceiptHtml(
   .address { margin: 0.5mm auto 2mm; max-width: 66mm; font-size: 11.5px; line-height: 1.3; overflow-wrap: anywhere; }
   .title { margin: 2.5mm 0 0; font-size: 21px; font-weight: 900; }
   .invoice-code { margin: 0; direction: ltr; font-size: 18px; font-weight: 900; letter-spacing: 0.1px; }
-  .date { margin: 2mm 0 4mm; direction: ltr; font-size: 17px; font-weight: 900; }
+  .date { margin: 1.2mm 0 0; font-size: 12px; font-weight: 700; }
+  .date:last-child { margin-bottom: 4mm; }
+  .date-value { direction: ltr; unicode-bidi: isolate; }
   .meta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2mm; margin: 0 0 3mm; font-size: 11.5px; }
   .meta span { min-width: 0; overflow-wrap: anywhere; }
   .meta .payment { white-space: nowrap; text-align: left; }
@@ -180,7 +203,11 @@ export function buildFabricSaleReceiptHtml(
   .summary-row .value { min-width: 0; text-align: left; direction: ltr; font-size: 12.5px; white-space: nowrap; }
   .summary-row.total .label, .summary-row.total .value { font-size: 15px; font-weight: 900; }
   .currency { display: inline-block; direction: rtl; font-size: 11px; margin-inline-start: 1mm; }
-  .notes { min-height: 18mm; padding: 4mm 0.6mm 0; font-size: 14px; font-weight: 900; }
+  .policies { margin-top: 3mm; padding: 2.5mm 0.6mm 0; border-top: 0.45mm solid #000; }
+  .policies h2 { margin: 0 0 1mm; text-align: center; font-size: 14px; font-weight: 900; }
+  .policies .intro { margin: 0 0 1mm; font-size: 10.5px; font-weight: 700; line-height: 1.5; }
+  .policies ol { margin: 0; padding-inline-start: 5mm; }
+  .policies li { margin: 0 0 0.8mm; padding-inline-start: 0.5mm; font-size: 10px; font-weight: 700; line-height: 1.45; }
   .feed { height: 15mm; }
 </style>
 </head>
@@ -191,7 +218,8 @@ export function buildFabricSaleReceiptHtml(
     <p class="address">${SHOP_ADDRESS}</p>
     <h1 class="title">فاتورة ضريبية مبسطة</h1>
     <p class="invoice-code">${escapeHtml(receiptNumber)}</p>
-    <p class="date">${formatDate(item.date)}</p>
+    <p class="date">تاريخ الفاتورة: <span class="date-value">${formatDate(item.date)}</span></p>
+    <p class="date">تاريخ ووقت الطباعة: <span class="date-value">${printedAt}</span></p>
   </header>
 
   <div class="meta">
@@ -214,27 +242,42 @@ export function buildFabricSaleReceiptHtml(
   <hr class="rule" style="margin-top: 0">
 
   <div class="summary-row">
-    <span class="label">المجموع</span>
-    <span class="value">${formatMoney(item.amount)}</span>
+    <span class="label">السعر (غير شامل الضريبة)</span>
+    <span class="value">${formatMoney(priceBeforeTax)}</span>
   </div>
   <hr class="dash">
   <div class="summary-row">
-    <span class="label">القيمة المضافة 15% (شاملة)</span>
-    <span class="value">${formatMoney(vatIncluded)}</span>
+    <span class="label">الضريبة</span>
+    <span class="value">${formatMoney(vatAmount)}</span>
   </div>
   <hr class="dash">
   <div class="summary-row total">
     <span class="label">الإجمالي <span class="currency">(ر.س)</span></span>
-    <span class="value">${formatMoney(item.amount)}</span>
+    <span class="value">${formatMoney(total)}</span>
   </div>
   <hr class="dash">
   <div class="summary-row total">
-    <span class="label">المستحق <span class="currency">(ر.س)</span></span>
-    <span class="value">${formatMoney(item.amount)}</span>
+    <span class="label">إجمالي المدفوع <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(paidAmount)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row total">
+    <span class="label">الباقي <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(remainingAmount)}</span>
   </div>
   <hr class="dash">
 
-  <section class="notes">ملاحظات</section>
+  <section class="policies" aria-label="سياسة الاسترجاع والاستبدال">
+    <h2>سياسة الاسترجاع والاستبدال</h2>
+    <p class="intro">البضاعة غير المقصوصة يمكن استرجاعها خلال 24 ساعة أو استبدالها خلال 3 أيام، بالشروط التالية:</p>
+    <ol>
+      <li>إحضار أصل الفاتورة.</li>
+      <li>عدم استخدام البضاعة المراد إرجاعها أو استبدالها.</li>
+      <li>عدم وجود عيوب بالبضاعة بعد البيع.</li>
+      <li>المبلغ المدفوع بشبكات الدفع الإلكتروني يُسترجع بتحويله إلى حساب العميل خلال مدة أقصاها 48 ساعة.</li>
+      <li>البضاعة المقصوصة لا تُرد ولا تُستبدل.</li>
+    </ol>
+  </section>
   <div class="feed"></div>
   ${autoPrintScript}
 </body>

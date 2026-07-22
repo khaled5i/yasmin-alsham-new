@@ -59,6 +59,22 @@ function formatReceiptDate(value: string): string {
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
 }
 
+function formatPrintTimestamp(value: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(value)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value || ''
+
+  return `${part('year')}/${part('month')}/${part('day')} - ${part('hour')}:${part('minute')}`
+}
+
 /**
  * الرقم المحلي يطابق بنية أرقام الأستاذ، لكن تسلسله مأخوذ من رقم الطلب.
  * لذلك يبقى قابلاً للتتبّع حتى عندما لا تمثل فاتورة الأستاذ إجمالي الطلب
@@ -118,7 +134,16 @@ export function createTailoringReceiptPayload(
 
 /** مستند الإيصال الحراري الكامل، بعرض 80mm وإجمالي الطلب دون ربطه بمبلغ المحاسبة. */
 export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): string {
-  const vatIncluded = (payload.total * 15) / 115
+  const total = Math.max(0, Number(payload.total) || 0)
+  const priceBeforeTax = total / 1.15
+  const vatAmount = total - priceBeforeTax
+  const paidAmount = Math.max(
+    0,
+    Number(payload.paid_amount) ||
+      (Number(payload.cash_amount) || 0) + (Number(payload.network_amount) || 0)
+  )
+  const remainingAmount = Math.max(0, total - paidAmount)
+  const printedAt = formatPrintTimestamp()
   const invoiceCode = escapeHtml(payload.invoice_code)
   const orderNumber = escapeHtml(payload.order_number)
   const customerName = escapeHtml(payload.customer_name)
@@ -155,7 +180,9 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
   .address { margin: 0.5mm auto 2mm; max-width: 66mm; font-size: 11.5px; line-height: 1.3; overflow-wrap: anywhere; }
   .title { margin: 2.5mm 0 0; font-size: 21px; font-weight: 900; }
   .invoice-code { margin: 0; direction: ltr; font-size: 19px; font-weight: 900; letter-spacing: 0.2px; }
-  .date { margin: 2mm 0 4mm; direction: ltr; font-size: 17px; font-weight: 900; }
+  .date { margin: 1.2mm 0 0; font-size: 12px; font-weight: 700; }
+  .date:last-child { margin-bottom: 4mm; }
+  .date-value { direction: ltr; unicode-bidi: isolate; }
   .meta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2mm; margin: 0 0 3mm; font-size: 11.5px; }
   .meta span { min-width: 0; overflow-wrap: anywhere; }
   .meta .order { direction: rtl; white-space: nowrap; text-align: left; }
@@ -174,7 +201,9 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
   .summary-row .value { min-width: 0; text-align: left; direction: ltr; font-size: 12.5px; white-space: nowrap; }
   .summary-row.total .label, .summary-row.total .value { font-size: 15px; font-weight: 900; }
   .currency { display: inline-block; direction: rtl; font-size: 11px; margin-inline-start: 1mm; }
-  .notes { min-height: 18mm; padding: 4mm 0.6mm 0; font-size: 14px; font-weight: 900; }
+  .policies { margin-top: 3mm; padding: 2.5mm 0.6mm 0; border-top: 0.45mm solid #000; }
+  .policies h2 { margin: 0 0 1.5mm; text-align: center; font-size: 14px; font-weight: 900; }
+  .policies p { margin: 0 0 1.5mm; font-size: 10.5px; font-weight: 700; line-height: 1.55; }
   .feed { height: 15mm; }
 </style>
 </head>
@@ -185,7 +214,8 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <p class="address">${COMPANY_ADDRESS}</p>
     <h1 class="title">فاتورة ضريبية مبسطة</h1>
     <p class="invoice-code">${invoiceCode}</p>
-    <p class="date">${formatReceiptDate(payload.delivered_at)}</p>
+    <p class="date">تاريخ الفاتورة: <span class="date-value">${formatReceiptDate(payload.delivered_at)}</span></p>
+    <p class="date">تاريخ ووقت الطباعة: <span class="date-value">${printedAt}</span></p>
   </header>
 
   <div class="meta">
@@ -206,36 +236,46 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <tbody>
       <tr>
         <td class="description">${itemDescription}</td>
-        <td class="price">${formatMoney(payload.total)}</td>
+        <td class="price">${formatMoney(total)}</td>
         <td class="quantity">1</td>
-        <td class="line-total">${formatMoney(payload.total)}</td>
+        <td class="line-total">${formatMoney(total)}</td>
       </tr>
     </tbody>
   </table>
   <hr class="rule" style="margin-top: 0">
 
   <div class="summary-row">
-    <span class="label">المجموع</span>
-    <span class="value">${formatMoney(payload.total)}</span>
+    <span class="label">السعر (غير شامل الضريبة)</span>
+    <span class="value">${formatMoney(priceBeforeTax)}</span>
   </div>
   <hr class="dash">
   <div class="summary-row">
-    <span class="label">القيمة المضافة 15% (شاملة)</span>
-    <span class="value">${formatMoney(vatIncluded)}</span>
+    <span class="label">الضريبة</span>
+    <span class="value">${formatMoney(vatAmount)}</span>
   </div>
   <hr class="dash">
   <div class="summary-row total">
     <span class="label">الإجمالي <span class="currency">(ر.س)</span></span>
-    <span class="value">${formatMoney(payload.total)}</span>
+    <span class="value">${formatMoney(total)}</span>
   </div>
   <hr class="dash">
   <div class="summary-row total">
-    <span class="label">المستحق <span class="currency">(ر.س)</span></span>
-    <span class="value">${formatMoney(payload.total)}</span>
+    <span class="label">إجمالي المدفوع <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(paidAmount)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row total">
+    <span class="label">الباقي <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(remainingAmount)}</span>
   </div>
   <hr class="dash">
 
-  <section class="notes">ملاحظات</section>
+  <section class="policies" aria-label="سياسات المتجر">
+    <h2>سياسات المتجر</h2>
+    <p>الطلبات المفصّلة حسب المقاس لا تُسترجع ولا تُستبدل بعد بدء التنفيذ، إلا عند وجود عيب أو مخالفة للمواصفات المتفق عليها.</p>
+    <p>أي تعديل بعد اعتماد التصميم قد يترتب عليه رسوم إضافية وتأخير في التسليم.</p>
+    <p>المتجر غير مسؤول عن الفستان في حالة التأخر عن استلام الطلب خلال مدة أقصاها 14 يومًا.</p>
+  </section>
   <div class="feed"></div>
 </body>
 </html>`

@@ -39,8 +39,7 @@ import {
   Bell,
   Zap,
   Wallet,
-  ShoppingBag,
-  Printer
+  ShoppingBag
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 
@@ -642,14 +641,6 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
                   </Link>
 
-                  <Link
-                    href="/dashboard/print-station"
-                    className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Printer className="w-6 h-6 text-amber-700 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-amber-900">{isArabic ? 'محطة طباعة الإيصالات' : 'Receipt Print Station'}</span>
-                  </Link>
-
                   {/* مركز الإشعارات - آخر بطاقة */}
                   <Link
                     href="/dashboard/notifications"
@@ -825,14 +816,6 @@ function DashboardContent() {
                   >
                     <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
-                  </Link>
-
-                  <Link
-                    href="/dashboard/print-station"
-                    className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Printer className="w-6 h-6 text-amber-700 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-amber-900">{isArabic ? 'محطة طباعة الإيصالات' : 'Receipt Print Station'}</span>
                   </Link>
 
                   {/* مركز الإشعارات - آخر بطاقة */}

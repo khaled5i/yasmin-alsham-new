@@ -42,7 +42,6 @@ import { useAppResume } from '@/hooks/useAppResume'
 import { orderService } from '@/lib/services/order-service'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
-import DirectPrinterSetup from '@/components/DirectPrinterSetup'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
@@ -463,8 +462,6 @@ export default function CompletedOrdersPage() {
             </div>
           </div>
         </motion.div>
-
-        <DirectPrinterSetup />
 
         {/* البحث والفلاتر - تصميم محسّن */}
         <motion.div

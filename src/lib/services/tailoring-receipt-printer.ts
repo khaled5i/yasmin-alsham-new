@@ -1,7 +1,9 @@
 import type { TailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
 import {
+  DirectPrinterError,
   getDirectPrinterConfig,
   printTailoringReceiptDirect,
+  saveDirectPrinterConfig,
 } from './direct-thermal-printer'
 import { queueTailoringReceiptPrint } from './print-job-service'
 
@@ -26,6 +28,16 @@ export async function dispatchTailoringReceiptPrint(
       return { destination: 'direct' }
     } catch (error) {
       const directError = error instanceof Error ? error.message : String(error || '')
+      if (
+        error instanceof DirectPrinterError &&
+        (error.code === 'bridge-unavailable' || error.code === 'connection-failed')
+      ) {
+        try {
+          saveDirectPrinterConfig({ enabled: false })
+        } catch {
+          // لا نسمح لفشل حفظ الحالة المحلية بمنع إرسال الإيصال إلى المحطة الاحتياطية.
+        }
+      }
       await queueTailoringReceiptPrint(payload)
       return { destination: 'station', directError }
     }
@@ -34,4 +46,3 @@ export async function dispatchTailoringReceiptPrint(
   await queueTailoringReceiptPrint(payload)
   return { destination: 'station' }
 }
-

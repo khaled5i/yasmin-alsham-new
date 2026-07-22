@@ -38,7 +38,6 @@ import {
 } from 'lucide-react'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
-import DirectPrinterSetup from '@/components/DirectPrinterSetup'
 import VoiceNotes from '@/components/VoiceNotes'
 import { sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
 import { formatGregorianDate } from '@/lib/date-utils'
@@ -422,8 +421,6 @@ export default function WorkerCompletedOrdersPage() {
             </div>
           </div>
         </motion.div>
-
-        <DirectPrinterSetup />
 
         {/* البحث والفلاتر - تصميم محسّن */}
         <motion.div
