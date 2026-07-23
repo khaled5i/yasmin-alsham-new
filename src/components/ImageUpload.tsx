@@ -12,6 +12,7 @@ import ImageCropRotateModal from '@/components/ImageCropRotateModal'
 interface ImageUploadProps {
   images: string[]
   onImagesChange: (images: string[]) => void
+  onPrimaryThumbnailChange?: (thumbnailUrl: string | null) => void
   maxImages?: number
   useSupabaseStorage?: boolean // استخدام Supabase Storage أو base64
   acceptVideo?: boolean
@@ -34,6 +35,7 @@ const getFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModifie
 export default function ImageUpload({
   images,
   onImagesChange,
+  onPrimaryThumbnailChange,
   maxImages = 999,
   useSupabaseStorage = true,
   acceptVideo = true,
@@ -130,6 +132,7 @@ export default function ImageUpload({
     }, 180_000)
 
     const newImages: string[] = []
+    const newThumbnails: string[] = []
     const pendingErrors: string[] = []
     const progressMap = new Map<string, FileProgress>()
 
@@ -146,7 +149,7 @@ export default function ImageUpload({
     setUploadProgress(progressMap)
 
     try {
-      const uploadSingleFile = async (file: File): Promise<{ url?: string; error?: string }> => {
+      const uploadSingleFile = async (file: File): Promise<{ url?: string; thumbnailUrl?: string; error?: string }> => {
         if (uploadAbortController.signal.aborted) {
           return { error: `${file.name}: تم إلغاء الرفع` }
         }
@@ -182,7 +185,7 @@ export default function ImageUpload({
             return { error: `${file.name}: ${error}` }
           }
 
-          if (data) return { url: data.url }
+          if (data) return { url: data.url, thumbnailUrl: data.thumbnailUrl }
           return {}
         }
 
@@ -228,6 +231,7 @@ export default function ImageUpload({
 
           if (result.value.url) {
             newImages.push(result.value.url)
+            newThumbnails.push(result.value.thumbnailUrl || result.value.url)
           }
         })
 
@@ -238,6 +242,9 @@ export default function ImageUpload({
 
       if (newImages.length > 0) {
         onImagesChange([...images, ...newImages])
+        if (images.length === 0) {
+          onPrimaryThumbnailChange?.(newThumbnails[0] || null)
+        }
       }
 
       if (pendingErrors.length > 0) {
@@ -278,6 +285,7 @@ export default function ImageUpload({
   const removeImage = (index: number) => {
     const newImages = images.filter((_, i) => i !== index)
     onImagesChange(newImages)
+    if (index === 0) onPrimaryThumbnailChange?.(null)
   }
 
   const handleImageDragStart = (e: React.DragEvent, index: number) => {
@@ -306,6 +314,7 @@ export default function ImageUpload({
     const [removed] = newImages.splice(draggedIndex, 1)
     newImages.splice(index, 0, removed)
     onImagesChange(newImages)
+    if (index === 0 || draggedIndex === 0) onPrimaryThumbnailChange?.(null)
     setDraggedIndex(null)
     setDragOverIndex(null)
   }
@@ -325,16 +334,20 @@ export default function ImageUpload({
       const file = new File([blob], `edited-${Date.now()}.jpg`, { type: 'image/jpeg' })
 
       let newUrl: string
+      let newThumbnailUrl: string | null = null
       if (useSupabaseStorage) {
         const { data, error } = await imageService.uploadImage(file, () => {})
         if (error || !data?.url) throw new Error(error || 'فشل رفع الصورة')
         newUrl = data.url
+        newThumbnailUrl = data.thumbnailUrl
       } else {
         newUrl = dataUrl
+        newThumbnailUrl = dataUrl
       }
 
       const newImages = images.map((img, i) => (i === editingIndex ? newUrl : img))
       onImagesChange(newImages)
+      if (editingIndex === 0) onPrimaryThumbnailChange?.(newThumbnailUrl)
     } catch (err) {
       console.error('Error saving edited image:', err)
       setErrors(prev => [...prev, 'فشل حفظ الصورة المعدلة'])
@@ -342,7 +355,7 @@ export default function ImageUpload({
       setEditUploading(false)
       setEditingIndex(null)
     }
-  }, [editingIndex, images, onImagesChange, useSupabaseStorage])
+  }, [editingIndex, images, onImagesChange, onPrimaryThumbnailChange, useSupabaseStorage])
 
   // دالة للصق الصور من الحافظة
   const handlePaste = async (e: ClipboardEvent) => {
@@ -778,7 +791,7 @@ export default function ImageUpload({
                     exit={{ opacity: 0, scale: 0.8 }}
                     className={`relative group ${isDragging ? 'opacity-40' : ''} ${isDragTarget ? 'ring-2 ring-pink-400 ring-offset-2 rounded-lg scale-105' : ''} transition-transform`}
                     draggable
-                    onDragStart={(e) => handleImageDragStart(e, index)}
+                    onDragStartCapture={(e) => handleImageDragStart(e, index)}
                     onDragOver={(e) => handleImageDragOver(e, index)}
                     onDrop={(e) => handleImageDrop(e, index)}
                     onDragEnd={handleImageDragEnd}

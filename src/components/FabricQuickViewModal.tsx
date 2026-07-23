@@ -79,7 +79,8 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
   }
 
   const finalPrice = getFinalPrice(fabric)
-  const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabric.name}`
+  const fabricLabel = fabric.name || fabric.fabric_code || 'قماش'
+  const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabricLabel}`
   const whatsappLink = `https://wa.me/966502901534?text=${encodeURIComponent(whatsappMessage)}`
 
   return (
@@ -162,7 +163,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                       ) : (isExternalImage || isBase64) ? (
                         <Image
                           src={currentImage}
-                          alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
+                          alt={`${fabricLabel} - صورة ${currentImageIndex + 1}`}
                           fill
                           className="object-contain"
                           quality={90}
@@ -170,7 +171,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                       ) : (
                         <img
                           src={currentImage}
-                          alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
+                          alt={`${fabricLabel} - صورة ${currentImageIndex + 1}`}
                           className="w-full h-full object-contain"
                         />
                       )}
@@ -218,10 +219,19 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                     {fabric.category}
                   </div>
 
-                  {/* الاسم */}
-                  <h2 id="quick-view-title" className="text-2xl md:text-3xl font-bold text-gray-800 mb-3">
-                    {fabric.name}
-                  </h2>
+                  {fabric.name && (
+                    <h2 id="quick-view-title" className="text-2xl md:text-3xl font-bold text-gray-800 mb-3">
+                      {fabric.name}
+                    </h2>
+                  )}
+                  {fabric.fabric_code && (
+                    <p dir="ltr" className="mb-2 text-right font-mono text-sm font-bold tracking-wide text-teal-700">
+                      {fabric.fabric_code}
+                    </p>
+                  )}
+                  {fabric.show_stock_quantity && (
+                    <p className="mb-3 text-sm font-bold text-teal-700">المتوفر: {fabric.stock_quantity} متر</p>
+                  )}
 
                   {/* السعر وحالة التوفر */}
                   <div className="mb-6">
@@ -383,23 +393,6 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                       </div>
                     )}
 
-                    {/* تعليمات العناية */}
-                    {fabric.care_instructions && fabric.care_instructions.length > 0 && (
-                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
-                          تعليمات العناية
-                        </h4>
-                        <ul className="space-y-1">
-                          {fabric.care_instructions.map((instruction, index) => (
-                            <li key={index} className="text-gray-700 flex items-start gap-2">
-                              <span className="text-pink-500 mt-1">•</span>
-                              <span>{instruction}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                   </div>
 
                   {/* الأزرار */}

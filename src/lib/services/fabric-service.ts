@@ -13,9 +13,9 @@ import { supabase, isSupabaseConfigured, ensureValidSession } from '@/lib/supaba
 
 export interface Fabric {
   id: string
-  name: string
+  name: string | null
   name_en?: string | null
-  description: string
+  description: string | null
   description_en?: string | null
   category: string
   type?: string | null
@@ -50,14 +50,20 @@ export interface Fabric {
   rating: number
   reviews_count: number
   country_of_origin?: string | null
+  fabric_code?: string | null
+  inventory_item_id?: string | null
+  inventory_color_id?: string | null
+  is_manually_hidden?: boolean
+  show_stock_quantity?: boolean
+  deleted_at?: string | null
   created_at: string
   updated_at: string
 }
 
 export interface CreateFabricData {
-  name: string
+  name?: string | null
   name_en?: string
-  description: string
+  description?: string | null
   description_en?: string
   category: string
   type?: string
@@ -90,13 +96,13 @@ export interface CreateFabricData {
 }
 
 export interface UpdateFabricData {
-  name?: string
+  name?: string | null
   name_en?: string
-  description?: string
+  description?: string | null
   description_en?: string
   category?: string
   type?: string
-  price_per_meter?: number
+  price_per_meter?: number | null
   original_price_per_meter?: number
   is_on_sale?: boolean
   discount_percentage?: number
@@ -122,6 +128,15 @@ export interface UpdateFabricData {
   features?: string[]
   tags?: string[]
   country_of_origin?: string
+  is_manually_hidden?: boolean
+  deleted_at?: string | null
+}
+
+export interface FabricTypeCode {
+  id: string
+  fabric_type: string
+  type_code: string
+  last_sequence: number
 }
 
 // ============================================================================
@@ -139,6 +154,8 @@ export const fabricService = {
     is_on_sale?: boolean
     min_price?: number
     max_price?: number
+    include_inactive?: boolean
+    include_deleted?: boolean
   }): Promise<{ data: Fabric[] | null; error: string | null }> {
     try {
       console.log('🔍 جلب الأقمشة من Supabase...')
@@ -153,6 +170,14 @@ export const fabricService = {
         .from('fabrics')
         .select('*')
         .order('created_at', { ascending: false })
+
+      if (!filters?.include_inactive) {
+        query = query.eq('is_active', true)
+      }
+
+      if (!filters?.include_deleted) {
+        query = query.is('deleted_at', null)
+      }
 
       // تطبيق الفلاتر
       if (filters?.category) {
@@ -374,10 +399,24 @@ export const fabricService = {
 
       await ensureValidSession()
 
-      const { error } = await supabase
+      const { data: current, error: fetchError } = await supabase
         .from('fabrics')
-        .delete()
+        .select('inventory_item_id')
         .eq('id', id)
+        .single()
+
+      if (fetchError) return { error: fetchError.message }
+
+      // البطاقة القادمة من المخزون تُحذف من المتجر منطقياً فقط، ويبقى المخزون سليماً.
+      // أما البطاقة المنشأة يدوياً داخل المتجر فيمكن حذفها نهائياً.
+      const operation = current?.inventory_item_id
+        ? supabase
+            .from('fabrics')
+            .update({ deleted_at: new Date().toISOString(), is_active: false, is_available: false })
+            .eq('id', id)
+        : supabase.from('fabrics').delete().eq('id', id)
+
+      const { error } = await operation
 
       if (error) {
         console.error('❌ خطأ في حذف القماش:', {
@@ -394,6 +433,20 @@ export const fabricService = {
     } catch (error: any) {
       console.error('❌ خطأ غير متوقع في حذف القماش:', error)
       return { error: error.message }
+    }
+  },
+
+  async getTypeCodes(): Promise<{ data: FabricTypeCode[] | null; error: string | null }> {
+    try {
+      const { data, error } = await supabase
+        .from('fabric_type_codes')
+        .select('id,fabric_type,type_code,last_sequence')
+        .order('fabric_type', { ascending: true })
+
+      if (error) return { data: null, error: error.message }
+      return { data: data ?? [], error: null }
+    } catch (error) {
+      return { data: null, error: error instanceof Error ? error.message : 'فشل تحميل أنواع الأقمشة' }
     }
   },
 
@@ -510,4 +563,3 @@ export const fabricService = {
     }
   }
 }
-

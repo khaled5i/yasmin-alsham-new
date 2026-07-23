@@ -195,7 +195,7 @@ function FabricCard({ fabric, index }: { fabric: Fabric; index: number }) {
           <FabricMedia
             src={media.src}
             poster={media.poster}
-            alt={`${fabric.name} من تشكيلة أقمشة ياسمين الشام`}
+            alt={`${fabric.name || fabric.category || 'قماش'} من تشكيلة أقمشة ياسمين الشام`}
             priority={index === 0}
           />
           {hasDiscount ? <span className={styles.discountBadge}>خصم {fabric.discount_percentage}%</span> : null}
@@ -206,9 +206,9 @@ function FabricCard({ fabric, index }: { fabric: Fabric; index: number }) {
         </div>
         <div className={styles.fabricCardBody}>
           <p>{fabric.category}</p>
-          <h3>{fabric.name}</h3>
+          <h3>{fabric.name || 'قماش'}</h3>
           <div className={styles.fabricPrice}>
-            {fabric.price_per_meter > 0 ? (
+            {(fabric.price_per_meter ?? 0) > 0 ? (
               <>
                 <strong>{formatFabricPrice(finalPrice)}</strong>
                 {hasDiscount ? <del>{formatFabricPrice(fabric.price_per_meter)}</del> : null}
@@ -229,9 +229,10 @@ function FabricCard({ fabric, index }: { fabric: Fabric; index: number }) {
 
 function getFabricMedia(fabric: Fabric) {
   const mediaItems = [...(fabric.images || []), fabric.image_url].filter(Boolean)
-  const primary = mediaItems[0] || FALLBACK_IMAGE
+  const originalPrimary = mediaItems[0] || FALLBACK_IMAGE
   const imagePoster =
-    fabric.thumbnail_image || mediaItems.find((item) => !isVideoFile(item)) || FALLBACK_IMAGE
+    mediaItems.find((item) => !isVideoFile(item)) || fabric.thumbnail_image || FALLBACK_IMAGE
+  const primary = originalPrimary
 
   return { src: primary, poster: imagePoster }
 }
@@ -249,4 +250,3 @@ function FabricSkeletons() {
     </div>
   )
 }
-

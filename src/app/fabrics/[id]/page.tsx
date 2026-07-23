@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Ruler, Palette, Sparkles, Info, MessageCircle } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, MessageCircle } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
 import { isVideoFile } from '@/lib/utils/media'
 
@@ -102,7 +102,8 @@ export default function FabricDetailPage() {
   const finalPrice = getFinalPrice(fabric)
 
   // رابط واتساب للاستفسار
-  const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabric.name}`
+  const fabricLabel = fabric.name || fabric.fabric_code || 'قماش'
+  const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabricLabel}`
   const whatsappLink = `https://wa.me/966502901534?text=${encodeURIComponent(whatsappMessage)}`
 
   return (
@@ -143,7 +144,7 @@ export default function FabricDetailPage() {
               ) : (
                 <Image
                   src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
-                  alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
+                  alt={`${fabricLabel} - صورة ${currentImageIndex + 1}`}
                   fill
                   sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover transition-transform duration-300"
@@ -193,7 +194,7 @@ export default function FabricDetailPage() {
                       ) : (
                         <Image
                           src={image}
-                          alt={`${fabric.name} - صورة ${index + 1}`}
+                          alt={`${fabricLabel} - صورة ${index + 1}`}
                           fill
                           sizes="(max-width: 768px) 80px, 96px"
                           className="object-cover"
@@ -214,8 +215,22 @@ export default function FabricDetailPage() {
           <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="space-y-6">
             <div>
               <span className="bg-gradient-to-r from-pink-100 to-rose-100 text-pink-700 px-3 py-1 rounded-full text-sm font-medium">{fabric.category}</span>
-              <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mt-4 mb-4">{fabric.name}</h1>
-              <p className="text-lg text-gray-600 leading-relaxed whitespace-pre-wrap">{fabric.description}</p>
+              {fabric.name && (
+                <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mt-4 mb-4">{fabric.name}</h1>
+              )}
+              {fabric.fabric_code && (
+                <p dir="ltr" className="mt-4 text-right font-mono text-lg font-bold tracking-wider text-teal-700">
+                  {fabric.fabric_code}
+                </p>
+              )}
+              {fabric.description && (
+                <p className="mt-3 text-lg text-gray-600 leading-relaxed whitespace-pre-wrap">{fabric.description}</p>
+              )}
+              {fabric.show_stock_quantity && (
+                <p className="mt-3 inline-flex rounded-full bg-teal-50 px-4 py-2 text-sm font-bold text-teal-700">
+                  الكمية المتوفرة: {fabric.stock_quantity} متر
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -255,52 +270,6 @@ export default function FabricDetailPage() {
               </div>
             )}
 
-            {/* المواصفات الفنية - يظهر فقط إذا كان هناك بيانات */}
-            {(fabric.width_cm || fabric.fabric_weight || fabric.transparency_level || fabric.elasticity) && (
-              <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-pink-100 shadow-lg space-y-4">
-                <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                  <Info className="w-5 h-5 text-pink-600" />
-                  المواصفات الفنية
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  {fabric.width_cm && (
-                    <div className="flex items-center gap-2">
-                      <Ruler className="w-4 h-4 text-pink-600" />
-                      <span className="text-sm text-gray-600">العرض:</span>
-                      <span className="font-bold text-gray-800">{fabric.width_cm} سم</span>
-                    </div>
-                  )}
-                  {fabric.fabric_weight && (
-                    <div>
-                      <span className="text-sm text-gray-600">الوزن:</span>
-                      <span className="font-bold text-gray-800 mr-2">{fabric.fabric_weight}</span>
-                    </div>
-                  )}
-                  {fabric.transparency_level && (
-                    <div>
-                      <span className="text-sm text-gray-600">الشفافية:</span>
-                      <span className="font-bold text-gray-800 mr-2">{fabric.transparency_level}</span>
-                    </div>
-                  )}
-                  {fabric.elasticity && (
-                    <div>
-                      <span className="text-sm text-gray-600">المرونة:</span>
-                      <span className="font-bold text-gray-800 mr-2">{fabric.elasticity}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {fabric.care_instructions && (
-              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
-                <h3 className="text-lg font-bold text-blue-800 mb-3 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" />
-                  تعليمات العناية
-                </h3>
-                <p className="text-blue-700 leading-relaxed">{fabric.care_instructions}</p>
-              </div>
-            )}
 
             {/* زر الاستفسار عبر الواتساب */}
             <a
@@ -338,7 +307,7 @@ export default function FabricDetailPage() {
             ) : (
               <Image
                 src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
-                alt={`${fabric.name} - صورة ${currentImageIndex + 1}`}
+                alt={`${fabricLabel} - صورة ${currentImageIndex + 1}`}
                 fill
                 sizes="100vw"
                 className="object-contain"

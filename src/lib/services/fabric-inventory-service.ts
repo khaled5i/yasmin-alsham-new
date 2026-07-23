@@ -21,6 +21,11 @@ export interface FabricInventoryItem {
   created_at: string
   updated_at: string
   created_by: string | null
+  images?: string[]
+  thumbnail_image: string | null
+  type_code: string | null
+  base_fabric_code: string | null
+  has_color_variants: boolean
   // ألوان محملة بشكل منفصل
   colors?: FabricInventoryColor[]
 }
@@ -34,6 +39,7 @@ export interface FabricInventoryColor {
   notes: string | null
   created_at: string
   created_by: string | null
+  fabric_code: string | null
 }
 
 export interface FabricInventoryMovement {
@@ -53,14 +59,18 @@ export interface FabricInventoryMovement {
 }
 
 export interface CreateInventoryItemInput {
-  name: string
+  name?: string
   fabric_type?: string
+  type_code?: string
   unit: InventoryUnit
   cost_per_unit?: number
   sale_price_per_unit?: number
   supplier_id?: string
   supplier_name?: string
   notes?: string
+  images: string[]
+  thumbnail_image?: string
+  has_color_variants?: boolean
 }
 
 export interface CreateColorInput {
@@ -87,7 +97,7 @@ export async function getInventoryItems(): Promise<FabricInventoryItem[]> {
   const { data, error } = await supabase
     .from('fabric_inventory')
     .select('*')
-    .order('name', { ascending: true })
+    .order('created_at', { ascending: false })
 
   if (error) throw error
   return data ?? []
@@ -200,6 +210,23 @@ export async function createInventoryItem(
 
   if (error) throw error
   return data
+}
+
+export interface FabricTypeCodeOption {
+  id: string
+  fabric_type: string
+  type_code: string
+  last_sequence: number
+}
+
+export async function getFabricTypeCodes(): Promise<FabricTypeCodeOption[]> {
+  const { data, error } = await supabase
+    .from('fabric_type_codes')
+    .select('id,fabric_type,type_code,last_sequence')
+    .order('fabric_type', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
 }
 
 export async function addMovement(input: CreateMovementInput): Promise<FabricInventoryMovement> {

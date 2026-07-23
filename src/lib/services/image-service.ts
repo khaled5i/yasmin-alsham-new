@@ -14,11 +14,11 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 const MAX_IMAGE_FILE_SIZE = 25 * 1024 * 1024
 const MAX_VIDEO_FILE_SIZE = 50 * 1024 * 1024
-const TARGET_SIZE = 4 * 1024 * 1024
-const COMPRESSION_THRESHOLD = 3 * 1024 * 1024
-const THUMBNAIL_WIDTH = 300
-const THUMBNAIL_HEIGHT = 400
-const THUMBNAIL_QUALITY = 0.75
+const TARGET_SIZE = 1.5 * 1024 * 1024
+const COMPRESSION_THRESHOLD = 1 * 1024 * 1024
+const THUMBNAIL_WIDTH = 720
+const THUMBNAIL_HEIGHT = 960
+const THUMBNAIL_QUALITY = 0.82
 const MAX_IMAGE_DIMENSION = 1920
 const MOBILE_MAX_IMAGE_DIMENSION = 1440
 const MAX_RETRIES = 2
@@ -100,7 +100,7 @@ function generateFileName(originalName: string, mimeType: string): string {
 }
 
 function getThumbnailFileName(mainFileName: string): string {
-  return `thumb_${mainFileName.replace(/\.[^.]+$/, '')}.jpg`
+  return `thumb_${mainFileName.replace(/\.[^.]+$/, '')}.webp`
 }
 
 function encodePathForStorage(path: string): string {
@@ -321,21 +321,20 @@ async function compressImage(
   throwIfAborted(signal)
   onProgress?.(40)
 
-  // Compress to JPEG
+  // WebP gives fabric photos a better quality/size balance than JPEG.
   let compressed: Blob
   if (blob.size <= COMPRESSION_THRESHOLD) {
-    compressed = await canvasToBlob(canvas, 'image/jpeg', 0.82)
-    if (compressed.size > blob.size) compressed = blob
+    compressed = await canvasToBlob(canvas, 'image/webp', 0.86)
   } else {
-    const firstPass = await canvasToBlob(canvas, 'image/jpeg', 0.75)
+    const firstPass = await canvasToBlob(canvas, 'image/webp', 0.82)
     throwIfAborted(signal)
     onProgress?.(55)
     if (firstPass.size <= TARGET_SIZE) {
       compressed = firstPass
     } else {
       const ratio = TARGET_SIZE / firstPass.size
-      const adjustedQuality = Math.max(0.25, Math.min(0.7, 0.75 * ratio * 0.9))
-      compressed = await canvasToBlob(canvas, 'image/jpeg', adjustedQuality)
+      const adjustedQuality = Math.max(0.55, Math.min(0.8, 0.82 * ratio * 0.95))
+      compressed = await canvasToBlob(canvas, 'image/webp', adjustedQuality)
     }
   }
   onProgress?.(70)
@@ -348,7 +347,7 @@ async function compressImage(
   const thumbCtx = thumbCanvas.getContext('2d')
   if (!thumbCtx) throw new Error('فشل إنشاء سياق الصورة المصغرة')
   drawCenterCrop(thumbCtx, canvas, width, height, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
-  const thumbnail = await canvasToBlob(thumbCanvas, 'image/jpeg', THUMBNAIL_QUALITY)
+  const thumbnail = await canvasToBlob(thumbCanvas, 'image/webp', THUMBNAIL_QUALITY)
   throwIfAborted(signal)
 
   releaseCanvas(canvas)
@@ -384,7 +383,7 @@ async function createVideoThumbnail(file: File): Promise<Blob> {
           throw new Error('تعذر إنشاء صورة مصغرة للفيديو')
         }
         drawCenterCrop(ctx, video, video.videoWidth, video.videoHeight, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
-        const thumbnail = await canvasToBlob(canvas, 'image/jpeg', THUMBNAIL_QUALITY)
+        const thumbnail = await canvasToBlob(canvas, 'image/webp', THUMBNAIL_QUALITY)
         releaseCanvas(canvas)
         cleanup()
         resolve(thumbnail)
@@ -486,7 +485,7 @@ async function buildUploadHeaders(): Promise<{ authorization: string; apikey: st
  *
  * CRITICAL: Uses FormData instead of raw binary body.
  * The Supabase storage-js official client wraps Blob uploads in FormData:
- *   formData.append('cacheControl', '3600')
+ *   formData.append('cacheControl', '31536000')
  *   formData.append('', blob)
  *
  * This is essential for Android Capacitor WebView because:
@@ -514,7 +513,7 @@ async function uploadBlobToStorage(
   // Build FormData exactly like Supabase's official storage-js client.
   // Key '' (empty string) is what the Supabase server expects for the file field.
   const formData = new FormData()
-  formData.append('cacheControl', '3600')
+  formData.append('cacheControl', '31536000')
   formData.append('', freshBlob, 'file')
 
   const controller = new AbortController()
@@ -589,7 +588,7 @@ async function uploadImageToStorage(
   // Upload thumbnail
   onProgress?.('thumb', false)
   await uploadWithRetry(
-    () => uploadBlobToStorage(thumbnailPath, thumbnailBlob, 'image/jpeg', signal),
+    () => uploadBlobToStorage(thumbnailPath, thumbnailBlob, thumbnailBlob.type || 'image/webp', signal),
     MAX_RETRIES, BASE_RETRY_DELAY_MS, signal
   )
   onProgress?.('thumb', true)
@@ -778,7 +777,8 @@ export const imageService = {
 
       const newThumb = getThumbnailFileName(fileName)
       const legacyThumb = `thumb_${fileName}`
-      const thumbsToRemove = newThumb === legacyThumb ? [newThumb] : [newThumb, legacyThumb]
+      const legacyJpegThumb = `thumb_${fileName.replace(/\.[^.]+$/, '')}.jpg`
+      const thumbsToRemove = Array.from(new Set([newThumb, legacyThumb, legacyJpegThumb]))
 
       await supabase.storage
         .from(STORAGE_BUCKET)

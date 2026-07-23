@@ -19,9 +19,12 @@ import {
   Package,
   Palette,
   Check,
-  UserPlus
+  UserPlus,
+  Hash,
+  Image as ImageIcon
 } from 'lucide-react'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
+import ImageUpload from '@/components/ImageUpload'
 import {
   getInventoryItems,
   createInventoryItem,
@@ -31,6 +34,7 @@ import {
   addMovement,
   deleteMovement,
   getColors,
+  getFabricTypeCodes,
   createColor,
   deleteColor,
   type FabricInventoryItem,
@@ -40,9 +44,11 @@ import {
   type InventoryUnit,
   type MovementType
 } from '@/lib/services/fabric-inventory-service'
+import type { FabricTypeCodeOption } from '@/lib/services/fabric-inventory-service'
 import { getSuppliers, createSupplier, type Supplier } from '@/lib/services/supplier-service'
 import { syncFabricProductToAlostaz } from '@/lib/services/alostaz-client'
 import { useAuthStore } from '@/store/authStore'
+import { formatFabricCodePreview, normalizeFabricTypeCode, suggestFabricTypeCode } from '@/lib/fabric-codes'
 
 // ─── ألوان سريعة للاختيار ──────────────────────────────────────────────────
 const PRESET_COLORS = [
@@ -114,7 +120,8 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
         current_quantity: 0,
         notes: null,
         created_at: new Date().toISOString(),
-        created_by: null
+        created_by: null,
+        fabric_code: null
       }
       onChange([...colors, temp])
     }
@@ -221,26 +228,32 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
 interface ItemModalProps {
   item: FabricInventoryItem | null
   suppliers: Supplier[]
+  typeCodes: FabricTypeCodeOption[]
   onClose: () => void
   onSave: (item: FabricInventoryItem) => void
   onSupplierCreated: (supplier: Supplier) => void
 }
 
-function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: ItemModalProps) {
+function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCreated }: ItemModalProps) {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'admin'
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<CreateInventoryItemInput>({
     name: item?.name ?? '',
     fabric_type: item?.fabric_type ?? '',
+    type_code: item?.type_code ?? '',
     unit: item?.unit ?? 'meter',
     cost_per_unit: item?.cost_per_unit ?? undefined,
     sale_price_per_unit: item?.sale_price_per_unit ?? undefined,
     supplier_id: item?.supplier_id ?? undefined,
     supplier_name: item?.supplier_name ?? undefined,
-    notes: item?.notes ?? ''
+    notes: item?.notes ?? '',
+    images: item?.images ?? [],
+    thumbnail_image: item?.thumbnail_image ?? undefined,
+    has_color_variants: item?.has_color_variants ?? false
   })
   const [initialQty, setInitialQty] = useState('')
+  const [initialColorQuantities, setInitialColorQuantities] = useState<Record<string, string>>({})
   const [colors, setColors] = useState<FabricInventoryColor[]>(item?.colors ?? [])
   const [loadingColors, setLoadingColors] = useState(!!item)
 
@@ -251,6 +264,23 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
   const [newSupplierName, setNewSupplierName] = useState('')
   const [newSupplierPhone, setNewSupplierPhone] = useState('')
   const [savingSupplier, setSavingSupplier] = useState(false)
+
+  const selectedType = typeCodes.find(
+    option => option.fabric_type.trim().toLowerCase() === form.fabric_type?.trim().toLowerCase()
+  )
+  const nextSequence = (selectedType?.last_sequence ?? 0) + 1
+  const codePreview = formatFabricCodePreview(form.type_code || suggestFabricTypeCode(form.fabric_type ?? ''), nextSequence)
+
+  const handleFabricTypeChange = (fabricType: string) => {
+    const existing = typeCodes.find(
+      option => option.fabric_type.trim().toLowerCase() === fabricType.trim().toLowerCase()
+    )
+    setForm(previous => ({
+      ...previous,
+      fabric_type: fabricType,
+      type_code: existing?.type_code ?? suggestFabricTypeCode(fabricType)
+    }))
+  }
 
   useEffect(() => {
     if (item) {
@@ -285,7 +315,14 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name) return
+    if (!form.fabric_type?.trim()) {
+      alert('يرجى اختيار نوع القماش أو إضافة نوع جديد')
+      return
+    }
+    if (form.images.length === 0) {
+      alert('صورة القماش مطلوبة')
+      return
+    }
     // سعر الشراء وسعر البيع إلزاميان (لازمان لتتبّع المخزون في الأستاذ)
     if (form.cost_per_unit == null || form.sale_price_per_unit == null) {
       alert('يرجى إدخال سعر الشراء وسعر البيع')
@@ -295,6 +332,9 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
     try {
       const payload: CreateInventoryItemInput = {
         ...form,
+        name: form.name || form.type_code || form.fabric_type,
+        type_code: normalizeFabricTypeCode(form.type_code || suggestFabricTypeCode(form.fabric_type)),
+        has_color_variants: colors.length > 0,
         supplier_id: form.supplier_id || undefined,
         supplier_name: form.supplier_name || undefined,
         fabric_type: form.fabric_type || undefined,
@@ -312,18 +352,29 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
           syncFabricProductToAlostaz(result.id).catch(() => {})
         }
         // حفظ الألوان المؤقتة
-        const savedColors: FabricInventoryColor[] = []
-        for (const c of colors) {
-          const sc = await createColor({
+        const savedColors = await Promise.all(colors.map(async c => {
+          const savedColor = await createColor({
             inventory_item_id: result.id,
             color_name: c.color_name,
             color_hex: c.color_hex ?? undefined
           })
-          savedColors.push(sc)
-        }
-        // إضافة الكمية الابتدائية إن وُجدت
-        const qty = parseFloat(initialQty)
-        if (qty > 0) {
+          const colorQuantity = parseFloat(initialColorQuantities[c.id] ?? '')
+          if (colorQuantity > 0) {
+            await addMovement({
+              inventory_item_id: result.id,
+              color_id: savedColor.id,
+              movement_type: 'in',
+              quantity: colorQuantity,
+              cost_per_unit: payload.cost_per_unit,
+              description: `رصيد ابتدائي - ${savedColor.color_name}`,
+              date: new Date().toISOString().split('T')[0]
+            })
+          }
+          return { ...savedColor, current_quantity: colorQuantity > 0 ? colorQuantity : 0 }
+        }))
+
+        const qty = colors.length === 0 ? parseFloat(initialQty) : 0
+        if (qty > 0 && savedColors.length === 0) {
           await addMovement({
             inventory_item_id: result.id,
             movement_type: 'in',
@@ -332,10 +383,11 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
             description: 'رصيد ابتدائي',
             date: new Date().toISOString().split('T')[0]
           })
-          result = { ...result, current_quantity: qty, colors: savedColors }
-        } else {
-          result = { ...result, colors: savedColors }
         }
+        const totalInitialQuantity = savedColors.length > 0
+          ? savedColors.reduce((sum, color) => sum + color.current_quantity, 0)
+          : Math.max(0, qty || 0)
+        result = { ...result, current_quantity: totalInitialQuantity, colors: savedColors }
       }
       onSave(result)
     } catch {
@@ -370,27 +422,72 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">اسم القماش *</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              placeholder="مثال: ساتان سادة"
-              required
-            />
+          <div className="rounded-2xl border border-teal-100 bg-teal-50/70 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-teal-900 mb-2">
+              <Hash className="w-4 h-4" /> رقم القماش
+            </div>
+            <div dir="ltr" className="font-mono text-2xl font-black tracking-wider text-teal-800">
+              {item?.base_fabric_code || item?.colors?.[0]?.fabric_code || codePreview}
+            </div>
+            <p className="text-xs text-teal-700 mt-2">
+              الرقم النهائي يُحجز عند الحفظ. كل لون سيحصل على رقم تسلسلي مستقل.
+            </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">النوع</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">نوع القماش *</label>
             <input
               type="text"
               value={form.fabric_type ?? ''}
-              onChange={e => setForm({ ...form, fabric_type: e.target.value })}
+              onChange={e => handleFabricTypeChange(e.target.value)}
+              list="fabric-type-options"
               className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              placeholder="مثال: شيفون، ساتان، قطن..."
+              placeholder="اختر نوعاً سابقاً أو اكتب نوعاً جديداً"
+              required
             />
+            <datalist id="fabric-type-options">
+              {typeCodes.map(option => (
+                <option key={option.id} value={option.fabric_type}>{option.type_code}</option>
+              ))}
+            </datalist>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">الحروف التعريفية *</label>
+            <input
+              dir="ltr"
+              type="text"
+              value={form.type_code ?? ''}
+              onChange={e => setForm({ ...form, type_code: normalizeFabricTypeCode(e.target.value) })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent font-mono uppercase"
+              placeholder="SAT"
+              maxLength={8}
+              required
+              disabled={Boolean(selectedType)}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              {selectedType
+                ? `هذا النوع يستخدم الرمز ${selectedType.type_code} لضمان تسلسل موحّد.`
+                : 'تم اقتراح الحروف تلقائياً ويمكنك تعديلها قبل الحفظ.'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <ImageIcon className="w-4 h-4 text-teal-600" /> صورة القماش *
+            </label>
+            <ImageUpload
+              images={form.images}
+              onImagesChange={images => setForm(previous => ({ ...previous, images }))}
+              onPrimaryThumbnailChange={thumbnail_image => setForm(previous => ({
+                ...previous,
+                thumbnail_image: thumbnail_image || undefined
+              }))}
+              maxImages={5}
+              useSupabaseStorage
+              acceptVideo={false}
+            />
+            <p className="text-xs text-gray-400 mt-2">تُضغط الصور وتُرفع بصيغة محسّنة تلقائياً.</p>
           </div>
 
           {/* قسم الألوان */}
@@ -407,12 +504,40 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
             {loadingColors ? (
               <div className="text-sm text-gray-400 py-2">جاري التحميل...</div>
             ) : (
-              <ColorManager
-                colors={colors}
-                onChange={setColors}
-                isEditing={!!item}
-                itemId={item?.id}
-              />
+              <>
+                <ColorManager
+                  colors={colors}
+                  onChange={setColors}
+                  isEditing={!!item}
+                  itemId={item?.id}
+                />
+                {!item && colors.length > 0 && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {colors.map((color, index) => (
+                      <label key={color.id} className="flex items-center gap-2 rounded-xl bg-gray-50 p-2 text-sm">
+                        <span className="flex-1 min-w-0">
+                          <span className="block truncate">كمية {color.color_name}</span>
+                          <span dir="ltr" className="block text-right font-mono text-[10px] font-bold text-teal-700">
+                            {formatFabricCodePreview(form.type_code || 'FB', nextSequence + index)}
+                          </span>
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={initialColorQuantities[color.id] ?? ''}
+                          onChange={event => setInitialColorQuantities(previous => ({
+                            ...previous,
+                            [color.id]: event.target.value
+                          }))}
+                          className="w-24 rounded-lg border border-gray-200 px-2 py-1"
+                          placeholder="0"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -465,7 +590,7 @@ function ItemModal({ item, suppliers, onClose, onSave, onSupplierCreated }: Item
             </div>
           </div>
 
-          {!item && (
+          {!item && colors.length === 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 الكمية الابتدائية — اختياري
@@ -961,11 +1086,23 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
       <div className="p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shrink-0">
-              <Boxes className="w-6 h-6 text-white" />
-            </div>
+            {item.images?.[0] ? (
+              <img
+                src={item.thumbnail_image || item.images[0]}
+                alt={item.fabric_type || 'قماش'}
+                loading="lazy"
+                decoding="async"
+                className="w-12 h-12 rounded-xl object-cover shrink-0 bg-gray-100"
+              />
+            ) : (
+              <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shrink-0">
+                <Boxes className="w-6 h-6 text-white" />
+              </div>
+            )}
             <div className="min-w-0">
-              <p className="font-bold text-gray-900 truncate">{item.name}</p>
+              <p dir="ltr" className="font-mono font-bold text-gray-900 truncate text-right">
+                {item.base_fabric_code || item.colors?.[0]?.fabric_code || item.name}
+              </p>
               <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                 {item.fabric_type && (
                   <span className="text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
@@ -976,6 +1113,11 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
                   <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Palette className="w-3 h-3" />
                     {colors.length} {colors.length === 1 ? 'لون' : 'ألوان'}
+                  </span>
+                )}
+                {(!item.fabric_type || !item.images?.length) && (
+                  <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                    يحتاج نوعاً وصورة للربط
                   </span>
                 )}
               </div>
@@ -1060,6 +1202,9 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
                           style={{ backgroundColor: c.color_hex ?? '#e5e7eb' }}
                         />
                         <span className="text-xs text-gray-700 truncate flex-1">{c.color_name}</span>
+                        {c.fabric_code && (
+                          <span dir="ltr" className="text-[10px] font-mono text-teal-700 shrink-0">{c.fabric_code}</span>
+                        )}
                         <span className="text-xs font-bold text-gray-900 shrink-0">{c.current_quantity}</span>
                       </div>
                     ))}
@@ -1122,6 +1267,7 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
 function FabricsInventoryContent() {
   const [items, setItems] = useState<FabricInventoryItem[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [typeCodes, setTypeCodes] = useState<FabricTypeCodeOption[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -1141,9 +1287,10 @@ function FabricsInventoryContent() {
   const loadAll = async () => {
     setLoading(true)
     try {
-      const [itemsData, suppliersData] = await Promise.all([
+      const [itemsData, suppliersData, typeCodeData] = await Promise.all([
         getInventoryItems(),
-        getSuppliers('fabrics')
+        getSuppliers('fabrics'),
+        getFabricTypeCodes().catch(() => [])
       ])
       // تحميل الألوان لكل صنف
       const itemsWithColors = await Promise.all(
@@ -1154,6 +1301,7 @@ function FabricsInventoryContent() {
       )
       setItems(itemsWithColors)
       setSuppliers(suppliersData)
+      setTypeCodes(typeCodeData)
     } catch {
       alert('❌ خطأ في تحميل البيانات')
     } finally {
@@ -1169,6 +1317,7 @@ function FabricsInventoryContent() {
     }
     setShowItemModal(false)
     setEditingItem(null)
+    getFabricTypeCodes().then(setTypeCodes).catch(() => {})
   }
 
   const handleSupplierCreated = (supplier: Supplier) => {
@@ -1210,9 +1359,12 @@ function FabricsInventoryContent() {
     const matchSearch =
       !q ||
       it.name.toLowerCase().includes(q) ||
+      (it.base_fabric_code?.toLowerCase().includes(q) ?? false) ||
       (it.fabric_type?.toLowerCase().includes(q) ?? false) ||
       (it.supplier_name?.toLowerCase().includes(q) ?? false) ||
-      (it.colors?.some(c => c.color_name.toLowerCase().includes(q)) ?? false)
+      (it.colors?.some(c =>
+        c.color_name.toLowerCase().includes(q) || c.fabric_code?.toLowerCase().includes(q)
+      ) ?? false)
     const matchType = !typeFilter || it.fabric_type === typeFilter
     return matchSearch && matchType
   })
@@ -1276,7 +1428,7 @@ function FabricsInventoryContent() {
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="بحث بالاسم أو النوع أو اللون أو المورد..."
+                placeholder="بحث برقم القماش أو النوع أو اللون أو المورد..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
@@ -1349,6 +1501,7 @@ function FabricsInventoryContent() {
           <ItemModal
             item={editingItem}
             suppliers={suppliers}
+            typeCodes={typeCodes}
             onClose={() => {
               setShowItemModal(false)
               setEditingItem(null)

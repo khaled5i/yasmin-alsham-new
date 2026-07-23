@@ -27,7 +27,6 @@ import type { Expense, CreateExpenseInput, PaymentMethod, ExpenseCashSource } fr
 import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
 import {
   getInventoryItems,
-  createInventoryItem,
   addMovement,
   type FabricInventoryItem
 } from '@/lib/services/fabric-inventory-service'
@@ -50,7 +49,6 @@ function FabricsPurchasesContent() {
   // حقول ربط المخزون
   const [addToInventory, setAddToInventory] = useState(false)
   const [inventoryItemId, setInventoryItemId] = useState('')
-  const [inventoryNewName, setInventoryNewName] = useState('')
   const [inventoryQuantity, setInventoryQuantity] = useState('')
   const [formData, setFormData] = useState<Partial<CreateExpenseInput>>({
     branch: 'fabrics',
@@ -110,7 +108,6 @@ function FabricsPurchasesContent() {
     setCashSource('')
     setAddToInventory(false)
     setInventoryItemId('')
-    setInventoryNewName('')
     setInventoryQuantity('')
   }
 
@@ -130,8 +127,8 @@ function FabricsPurchasesContent() {
 
     // التحقق من حقول المخزون إذا كان الربط مفعلاً
     if (!isEditing && addToInventory) {
-      if (!inventoryItemId && !inventoryNewName.trim()) {
-        alert('يرجى اختيار صنف من المخزون أو كتابة اسم صنف جديد')
+      if (!inventoryItemId) {
+        alert('أنشئ القماش أولاً من صفحة المخزون مع صورته ونوعه، ثم اختره هنا')
         return
       }
       if (!inventoryQuantity || parseFloat(inventoryQuantity) <= 0) {
@@ -169,16 +166,6 @@ function FabricsPurchasesContent() {
             const costUnit = formData.amount && qty > 0
               ? formData.amount / qty
               : undefined
-
-            if (!targetItemId && inventoryNewName.trim()) {
-              const newItem = await createInventoryItem({
-                name: inventoryNewName.trim(),
-                unit: 'meter',
-                cost_per_unit: costUnit,
-              })
-              setInventoryItems((prev) => [newItem, ...prev])
-              targetItemId = newItem.id
-            }
 
             if (targetItemId) {
               await addMovement({
@@ -667,7 +654,6 @@ function FabricsPurchasesContent() {
                             setAddToInventory(e.target.checked)
                             if (!e.target.checked) {
                               setInventoryItemId('')
-                              setInventoryNewName('')
                               setInventoryQuantity('')
                             }
                           }}
@@ -680,17 +666,16 @@ function FabricsPurchasesContent() {
                         <div className="mt-3 space-y-3">
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">
-                              اختر صنفاً موجوداً أو أضف جديداً
+                              اختر صنفاً موجوداً
                             </label>
                             <select
                               value={inventoryItemId}
                               onChange={(e) => {
                                 setInventoryItemId(e.target.value)
-                                if (e.target.value) setInventoryNewName('')
                               }}
                               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 bg-white"
                             >
-                              <option value="">— صنف جديد —</option>
+                              <option value="">— اختر من المخزون —</option>
                               {inventoryItems.map((it) => (
                                 <option key={it.id} value={it.id}>{it.name}</option>
                               ))}
@@ -698,15 +683,9 @@ function FabricsPurchasesContent() {
                           </div>
 
                           {!inventoryItemId && (
-                            <div>
-                              <input
-                                type="text"
-                                value={inventoryNewName}
-                                onChange={(e) => setInventoryNewName(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
-                                placeholder="اسم الصنف الجديد..."
-                              />
-                            </div>
+                            <p className="text-xs text-teal-700">
+                              إضافة صنف جديد تتم من صفحة المخزون لأن النوع والصورة ورقم القماش مطلوبة.
+                            </p>
                           )}
 
                           <div>

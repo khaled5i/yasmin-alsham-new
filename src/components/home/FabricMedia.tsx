@@ -1,8 +1,7 @@
 'use client'
 
-import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
-import { isVideoFile } from '@/lib/utils/media'
+import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/utils/media'
 import styles from './home.module.css'
 
 type FabricMediaProps = {
@@ -41,24 +40,46 @@ export default function FabricMedia({ src, poster, alt, priority = false }: Fabr
   }, [reduceMotion])
 
   if (!isVideo || reduceMotion || failed) {
+    const originalImage = failed ? FALLBACK_IMAGE : isVideo ? poster || FALLBACK_IMAGE : src || FALLBACK_IMAGE
+    const imageSrc = getSupabaseImageUrl(originalImage, {
+      width: 960,
+      height: 1200,
+      quality: 82,
+    })
+    const imageSrcSet = getSupabaseImageSrcSet(originalImage, [
+      { width: 480, height: 600 },
+      { width: 720, height: 900 },
+      { width: 960, height: 1200 },
+    ])
+
     return (
-      <Image
-        src={failed ? FALLBACK_IMAGE : isVideo ? poster || FALLBACK_IMAGE : src || FALLBACK_IMAGE}
+      <img
+        src={imageSrc}
+        srcSet={imageSrcSet}
         alt={alt}
-        fill
         sizes="(max-width: 767px) 80vw, (max-width: 1199px) 44vw, 25vw"
+        width={960}
+        height={1200}
         className={styles.fabricMedia}
         onError={() => setFailed(true)}
-        priority={priority}
+        loading={priority ? 'eager' : 'lazy'}
+        fetchPriority={priority ? 'high' : 'auto'}
+        decoding="async"
       />
     )
   }
+
+  const videoPoster = getSupabaseImageUrl(poster || FALLBACK_IMAGE, {
+    width: 960,
+    height: 1200,
+    quality: 82,
+  })
 
   return (
     <video
       ref={videoRef}
       src={src}
-      poster={poster || FALLBACK_IMAGE}
+      poster={videoPoster}
       className={styles.fabricMedia}
       muted
       loop
@@ -69,4 +90,3 @@ export default function FabricMedia({ src, poster, alt, priority = false }: Fabr
     />
   )
 }
-

@@ -12,13 +12,13 @@ import { isSupabaseConfigured } from '@/lib/supabase'
 // نوع القماش المستخدم في التطبيق
 export interface Fabric {
   id: string
-  name: string
+  name: string | null
   name_en?: string | null
-  description: string
+  description: string | null
   description_en?: string | null
   category: string
   type?: string | null
-  price_per_meter: number
+  price_per_meter: number | null
   original_price_per_meter?: number | null
   is_on_sale: boolean
   discount_percentage: number
@@ -49,13 +49,20 @@ export interface Fabric {
   rating: number
   reviews_count: number
   country_of_origin?: string | null
+  fabric_code?: string | null
+  inventory_item_id?: string | null
+  inventory_color_id?: string | null
+  is_manually_hidden?: boolean
+  show_stock_quantity?: boolean
+  deleted_at?: string | null
   created_at: string
   updated_at: string
 }
 
 // تحويل من نوع Supabase إلى نوع التطبيق
 const convertSupabaseFabric = (fabric: SupabaseFabric): Fabric => ({
-  ...fabric
+  ...fabric,
+  price_per_meter: fabric.price_per_meter ?? null
 })
 
 // تعريف حالة الفلاتر
@@ -195,7 +202,7 @@ export const useFabricStore = create<FabricStoreState>()(
           // فلتر السعر
           if (filters.priceRange) {
             const { min, max } = filters.priceRange
-            if (fabric.price_per_meter < min || fabric.price_per_meter > max) return false
+            if (fabric.price_per_meter == null || fabric.price_per_meter < min || fabric.price_per_meter > max) return false
           }
 
           // فلتر التوفر
@@ -214,10 +221,11 @@ export const useFabricStore = create<FabricStoreState>()(
           // فلتر البحث
           if (filters.searchQuery) {
             const query = filters.searchQuery.toLowerCase()
-            const matchesName = fabric.name.toLowerCase().includes(query)
+            const matchesName = fabric.name?.toLowerCase().includes(query)
             const matchesDescription = fabric.description?.toLowerCase().includes(query)
             const matchesCategory = fabric.category.toLowerCase().includes(query)
-            if (!matchesName && !matchesDescription && !matchesCategory) return false
+            const matchesCode = fabric.fabric_code?.toLowerCase().includes(query)
+            if (!matchesName && !matchesDescription && !matchesCategory && !matchesCode) return false
           }
 
           return true
@@ -229,13 +237,13 @@ export const useFabricStore = create<FabricStoreState>()(
             case 'newest':
               return b.created_at.localeCompare(a.created_at)
             case 'price-high':
-              return b.price_per_meter - a.price_per_meter
+              return (b.price_per_meter ?? 0) - (a.price_per_meter ?? 0)
             case 'price-low':
-              return a.price_per_meter - b.price_per_meter
+              return (a.price_per_meter ?? 0) - (b.price_per_meter ?? 0)
             case 'popular':
               return b.orders_count - a.orders_count
             case 'name':
-              return a.name.localeCompare(b.name, 'ar')
+              return (a.name || a.fabric_code || '').localeCompare(b.name || b.fabric_code || '', 'ar')
             default:
               return 0
           }
@@ -274,7 +282,8 @@ export const formatFabricPrice = (pricePerMeter: number | null | undefined): str
 }
 
 // دالة مساعدة للحصول على السعر النهائي (بعد التخفيض)
-export const getFinalPrice = (fabric: Fabric): number => {
+export const getFinalPrice = (fabric: Fabric): number | null => {
+  if (fabric.price_per_meter == null) return null
   if (fabric.is_on_sale && fabric.discount_percentage > 0) {
     return fabric.price_per_meter * (1 - fabric.discount_percentage / 100)
   }
@@ -291,4 +300,3 @@ export const getUniqueColors = (fabrics: Fabric[]): string[] => {
   const allColors = fabrics.flatMap(f => f.available_colors)
   return [...new Set(allColors)]
 }
-

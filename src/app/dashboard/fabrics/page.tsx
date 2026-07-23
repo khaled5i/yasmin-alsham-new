@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from 'framer-motion'
-import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2, Eye, EyeOff, Database, Hash } from 'lucide-react'
 import ImageUpload from '@/components/ImageUpload'
 import Link from 'next/link'
 import { fabricService, Fabric, UpdateFabricData, CreateFabricData } from '@/lib/services/fabric-service'
@@ -44,7 +44,7 @@ function FabricsAdminContent() {
     setIsLoading(true)
     setError(null)
     try {
-      const { data, error } = await fabricService.getAll()
+      const { data, error } = await fabricService.getAll({ include_inactive: true })
       if (error) {
         console.error('❌ خطأ في تحميل الأقمشة:', error)
         setError(error)
@@ -92,6 +92,10 @@ function FabricsAdminContent() {
 
   const handleSave = async () => {
     if (!editingId) return
+    if (!editData.images || editData.images.length === 0) {
+      setError('صورة القماش مطلوبة')
+      return
+    }
     setIsLoading(true)
     setError(null)
 
@@ -104,17 +108,14 @@ function FabricsAdminContent() {
         : null
 
       const updates: UpdateFabricData = {
-        name: editData.name,
-        description: editData.description,
+        name: editData.name?.trim() || null,
+        description: editData.description?.trim() || null,
         price_per_meter: priceValue as any, // استخدام null بدلاً من undefined لحذف القيمة
         images: editData.images,
         image_url: editData.images?.[0],
+        thumbnail_image: editData.thumbnail_image || editData.images?.[0],
         available_colors: editData.available_colors,
         category: editData.category,
-        width_cm: editData.width_cm,
-        fabric_weight: editData.fabric_weight,
-        transparency_level: editData.transparency_level,
-        elasticity: editData.elasticity,
         care_instructions: editData.care_instructions,
         is_available: editData.is_available,
         is_featured: editData.is_featured,
@@ -201,10 +202,6 @@ function FabricsAdminContent() {
   }
 
   const handleCreateFabric = async () => {
-    if (!newFabricData.description?.trim()) {
-      setError('يرجى إدخال وصف القماش')
-      return
-    }
     // السعر اختياري - إذا تم إدخاله يجب أن يكون صحيح
     if (newFabricData.price_per_meter && newFabricData.price_per_meter <= 0) {
       setError('يرجى إدخال سعر صحيح أو اتركه فارغاً')
@@ -220,17 +217,14 @@ function FabricsAdminContent() {
 
     try {
       const createData: CreateFabricData = {
-        name: newFabricData.name!,
-        description: newFabricData.description!,
+        name: newFabricData.name?.trim() || null,
+        description: newFabricData.description?.trim() || null,
         price_per_meter: newFabricData.price_per_meter && newFabricData.price_per_meter > 0 ? newFabricData.price_per_meter : undefined,
         images: newFabricData.images!,
         image_url: newFabricData.images![0],
+        thumbnail_image: newFabricData.thumbnail_image || newFabricData.images![0],
         available_colors: newFabricData.available_colors || [],
         category: newFabricData.category || 'حرير',
-        width_cm: newFabricData.width_cm,
-        fabric_weight: newFabricData.fabric_weight,
-        transparency_level: newFabricData.transparency_level,
-        elasticity: newFabricData.elasticity,
         care_instructions: newFabricData.care_instructions,
         is_available: newFabricData.is_available ?? true,
         is_featured: newFabricData.is_featured ?? false,
@@ -307,6 +301,28 @@ function FabricsAdminContent() {
     }
   }
 
+  const handleVisibility = async (fabric: Fabric) => {
+    const shouldShow = Boolean(fabric.is_manually_hidden)
+    if (shouldShow && fabric.inventory_item_id && fabric.stock_quantity <= 0) {
+      setError('لا يمكن إظهار هذا القماش لأن كميته في المخزون منتهية')
+      return
+    }
+
+    setIsLoading(true)
+    setError(null)
+    const { data, error } = await fabricService.update(fabric.id, {
+      is_manually_hidden: !shouldShow,
+      is_active: shouldShow,
+      is_available: shouldShow ? fabric.stock_quantity > 0 || !fabric.inventory_item_id : fabric.is_available
+    })
+    if (error) {
+      setError(error)
+    } else if (data) {
+      setFabrics(previous => previous.map(current => current.id === data.id ? data : current))
+    }
+    setIsLoading(false)
+  }
+
   const fabricCategories = ['حرير', 'شيفون', 'ساتان', 'دانتيل', 'تول', 'قطن', 'كريب', 'أورجانزا', 'مخمل', 'جاكار', 'تفتا', 'جورجيت']
 
   // تحديد مسار العودة حسب نوع المستخدم
@@ -372,6 +388,14 @@ function FabricsAdminContent() {
           </div>
         )}
 
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-teal-100 bg-teal-50/80 p-4 text-sm text-teal-900">
+          <Database className="mt-0.5 h-5 w-5 shrink-0" />
+          <p>
+            الأقمشة المرتبطة تُنشأ وتُحدّث من المخزون تلقائياً. يمكنك هنا إثراء البطاقة بالاسم والوصف،
+            أو إخفاءها وحذفها من المتجر من دون التأثير على سجل المخزون.
+          </p>
+        </div>
+
         {/* نموذج إضافة قماش جديد */}
         {isAddingNew && (
           <motion.div
@@ -399,7 +423,7 @@ function FabricsAdminContent() {
                 </div>
 
                 <div>
-                  <label className="block font-medium mb-2 text-gray-700">الفئة *</label>
+                  <label className="block font-medium mb-2 text-gray-700">نوع القماش</label>
                   <input
                     type="text"
                     value={newFabricData.category || ''}
@@ -412,7 +436,7 @@ function FabricsAdminContent() {
 
               {/* الوصف */}
               <div>
-                <label className="block font-medium mb-2 text-gray-700">الوصف *</label>
+                <label className="block font-medium mb-2 text-gray-700">الوصف (اختياري)</label>
                 <textarea
                   value={newFabricData.description || ''}
                   onChange={(e) => handleNewFabricChange('description', e.target.value)}
@@ -422,8 +446,8 @@ function FabricsAdminContent() {
                 />
               </div>
 
-              {/* السعر والعرض */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* السعر */}
+              <div>
                 <div>
                   <label className="block font-medium mb-2 text-gray-700">السعر بالمتر (ريال)</label>
                   <input
@@ -435,62 +459,6 @@ function FabricsAdminContent() {
                     step="0.01"
                     placeholder="اختياري"
                   />
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">العرض (سم)</label>
-                  <input
-                    type="number"
-                    value={newFabricData.width_cm || ''}
-                    onChange={(e) => handleNewFabricChange('width_cm', parseFloat(e.target.value))}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    min="0"
-                    placeholder="مثال: 150"
-                  />
-                </div>
-              </div>
-
-              {/* الوزن والشفافية والمرونة */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">الوزن</label>
-                  <select
-                    value={newFabricData.fabric_weight || ''}
-                    onChange={(e) => handleNewFabricChange('fabric_weight', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="">اختر الوزن</option>
-                    <option value="خفيف جداً">خفيف جداً</option>
-                    <option value="خفيف">خفيف</option>
-                    <option value="متوسط">متوسط</option>
-                    <option value="ثقيل">ثقيل</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">الشفافية</label>
-                  <select
-                    value={newFabricData.transparency_level || ''}
-                    onChange={(e) => handleNewFabricChange('transparency_level', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="">اختر مستوى الشفافية</option>
-                    <option value="شفاف">شفاف</option>
-                    <option value="شبه شفاف">شبه شفاف</option>
-                    <option value="معتم">معتم</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">المرونة</label>
-                  <select
-                    value={newFabricData.elasticity || ''}
-                    onChange={(e) => handleNewFabricChange('elasticity', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="">اختر المرونة</option>
-                    <option value="غير مطاطي">غير مطاطي</option>
-                    <option value="مطاطي قليلاً">مطاطي قليلاً</option>
-                    <option value="مطاطي">مطاطي</option>
-                    <option value="مطاطي جداً">مطاطي جداً</option>
-                  </select>
                 </div>
               </div>
 
@@ -537,8 +505,10 @@ function FabricsAdminContent() {
                 <ImageUpload
                   images={newFabricData.images || []}
                   onImagesChange={(images) => handleNewFabricChange('images', images)}
+                  onPrimaryThumbnailChange={(thumbnail) => handleNewFabricChange('thumbnail_image', thumbnail)}
                   maxImages={5}
                   useSupabaseStorage={true}
+                  acceptVideo={false}
                 />
               </div>
 
@@ -648,7 +618,7 @@ function FabricsAdminContent() {
                   />
                 </div>
                 <div>
-                  <label className="block font-medium mb-2 text-gray-700">الفئة *</label>
+                  <label className="block font-medium mb-2 text-gray-700">نوع القماش</label>
                   <input
                     type="text"
                     value={editData.category || ''}
@@ -661,7 +631,7 @@ function FabricsAdminContent() {
 
               {/* الوصف */}
               <div>
-                <label className="block font-medium mb-2 text-gray-700">الوصف *</label>
+                <label className="block font-medium mb-2 text-gray-700">الوصف (اختياري)</label>
                 <textarea
                   value={editData.description || ''}
                   onChange={(e) => handleEditChange('description', e.target.value)}
@@ -671,8 +641,8 @@ function FabricsAdminContent() {
                 />
               </div>
 
-              {/* السعر والعرض */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* السعر */}
+              <div>
                 <div>
                   <label className="block font-medium mb-2 text-gray-700">السعر بالمتر (ريال)</label>
                   <input
@@ -684,62 +654,6 @@ function FabricsAdminContent() {
                     step="0.01"
                     placeholder="اختياري"
                   />
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">العرض (سم)</label>
-                  <input
-                    type="number"
-                    value={editData.width_cm || ''}
-                    onChange={(e) => handleEditChange('width_cm', parseFloat(e.target.value))}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                    min="0"
-                    placeholder="مثال: 150"
-                  />
-                </div>
-              </div>
-
-              {/* الوزن والشفافية والمرونة */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">الوزن</label>
-                  <select
-                    value={editData.fabric_weight || ''}
-                    onChange={(e) => handleEditChange('fabric_weight', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="">اختر الوزن</option>
-                    <option value="خفيف جداً">خفيف جداً</option>
-                    <option value="خفيف">خفيف</option>
-                    <option value="متوسط">متوسط</option>
-                    <option value="ثقيل">ثقيل</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">الشفافية</label>
-                  <select
-                    value={editData.transparency_level || ''}
-                    onChange={(e) => handleEditChange('transparency_level', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="">اختر مستوى الشفافية</option>
-                    <option value="شفاف">شفاف</option>
-                    <option value="شبه شفاف">شبه شفاف</option>
-                    <option value="معتم">معتم</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium mb-2 text-gray-700">المرونة</label>
-                  <select
-                    value={editData.elasticity || ''}
-                    onChange={(e) => handleEditChange('elasticity', e.target.value)}
-                    className="block w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-pink-400 focus:border-transparent"
-                  >
-                    <option value="">اختر المرونة</option>
-                    <option value="غير مطاطي">غير مطاطي</option>
-                    <option value="مطاطي قليلاً">مطاطي قليلاً</option>
-                    <option value="مطاطي">مطاطي</option>
-                    <option value="مطاطي جداً">مطاطي جداً</option>
-                  </select>
                 </div>
               </div>
 
@@ -786,8 +700,10 @@ function FabricsAdminContent() {
                 <ImageUpload
                   images={editData.images || []}
                   onImagesChange={(images) => handleEditChange('images', images)}
+                  onPrimaryThumbnailChange={(thumbnail) => handleEditChange('thumbnail_image', thumbnail)}
                   maxImages={5}
                   useSupabaseStorage={true}
+                  acceptVideo={false}
                 />
               </div>
 
@@ -883,14 +799,18 @@ function FabricsAdminContent() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: index * 0.05 }}
-                className="bg-white rounded-xl shadow-lg overflow-hidden border border-pink-100 hover:shadow-xl transition-shadow duration-300 flex flex-col min-h-[480px]"
+                className={`bg-white rounded-xl shadow-lg overflow-hidden border hover:shadow-xl transition-shadow duration-300 flex flex-col min-h-[480px] ${
+                  fabric.is_active ? 'border-pink-100' : 'border-gray-200 opacity-75'
+                }`}
               >
                 {/* صورة القماش */}
                 {fabric.images && fabric.images.length > 0 && (
                   <div className="relative h-48 overflow-hidden flex-shrink-0">
                     <img
-                      src={fabric.images[0]}
-                      alt={fabric.name}
+                      src={fabric.thumbnail_image || fabric.images[0]}
+                      alt={fabric.name || fabric.fabric_code || 'قماش'}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                     {fabric.is_on_sale && (
@@ -903,22 +823,41 @@ function FabricsAdminContent() {
                         ⭐ مميز
                       </div>
                     )}
+                    {!fabric.is_active && (
+                      <div className="absolute inset-0 bg-gray-950/45 flex items-center justify-center">
+                        <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-gray-800">
+                          {fabric.is_manually_hidden ? 'مخفي يدوياً' : 'غير ظاهر في المتجر'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* محتوى البطاقة */}
                 <div className="p-4 flex flex-col flex-1">
-                  <h3 className="text-lg font-bold text-gray-800 mb-2">{fabric.name}</h3>
-                  <p className="text-gray-600 text-sm mb-3 line-clamp-2">{fabric.description}</p>
+                  {fabric.fabric_code && (
+                    <div dir="ltr" className="mb-2 flex items-center justify-end gap-1 font-mono text-sm font-bold text-teal-700">
+                      <Hash className="h-4 w-4" /> {fabric.fabric_code}
+                    </div>
+                  )}
+                  {fabric.name && <h3 className="text-lg font-bold text-gray-800 mb-2">{fabric.name}</h3>}
+                  {fabric.description && <p className="text-gray-600 text-sm mb-3 line-clamp-2">{fabric.description}</p>}
+                  {fabric.inventory_item_id && (
+                    <p className="mb-3 flex items-center gap-1 text-xs font-medium text-teal-700">
+                      <Database className="h-3.5 w-3.5" /> مرتبط بالمخزون
+                    </p>
+                  )}
 
                   {/* الفئة والسعر */}
                   <div className="flex flex-wrap gap-2 mb-3">
                     <span className="bg-pink-100 text-pink-700 px-3 py-1 rounded-full text-xs font-medium">
                       {fabric.category}
                     </span>
-                    <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-medium">
-                      {fabric.price_per_meter} ريال/متر
-                    </span>
+                    {fabric.price_per_meter != null && (
+                      <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-medium">
+                        {fabric.price_per_meter} ريال/متر
+                      </span>
+                    )}
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                       }`}>
                       {fabric.is_available ? '✓ متوفر' : '✗ غير متوفر'}
@@ -945,7 +884,7 @@ function FabricsAdminContent() {
                   )}
 
                   {/* الأزرار - مثبتة في الأسفل */}
-                  <div className="flex gap-2 mt-auto pt-3">
+                  <div className="grid grid-cols-2 gap-2 mt-auto pt-3">
                     <button
                       onClick={() => startEdit(fabric)}
                       disabled={editingId !== null || isAddingNew}
@@ -955,9 +894,17 @@ function FabricsAdminContent() {
                       <span>تعديل</span>
                     </button>
                     <button
+                      onClick={() => handleVisibility(fabric)}
+                      disabled={editingId !== null || isAddingNew || isLoading}
+                      className="flex items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50"
+                    >
+                      {fabric.is_manually_hidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                      <span>{fabric.is_manually_hidden ? 'إظهار' : 'إخفاء'}</span>
+                    </button>
+                    <button
                       onClick={() => setDeleteConfirmId(fabric.id)}
                       disabled={editingId !== null || isAddingNew}
-                      className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="col-span-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="w-4 h-4" />
                       <span>حذف</span>
@@ -985,7 +932,9 @@ function FabricsAdminContent() {
                 <h3 className="text-xl font-bold text-gray-800">تأكيد الحذف</h3>
               </div>
               <p className="text-gray-600 mb-6">
-                هل أنت متأكد من حذف هذا القماش؟ لا يمكن التراجع عن هذا الإجراء.
+                {fabrics.find(fabric => fabric.id === deleteConfirmId)?.inventory_item_id
+                  ? 'سيُحذف القماش من المتجر فقط، وسيبقى سجل المخزون وكمياته كما هي.'
+                  : 'هل أنت متأكد من حذف هذا القماش من المتجر؟ لا يمكن التراجع عن هذا الإجراء.'}
               </p>
               <div className="flex gap-3">
                 <button

@@ -3,13 +3,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2 } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
 import FabricSortOptions from '@/components/FabricSortOptions'
 
 import dynamic from 'next/dynamic'
-import { isVideoFile } from '@/lib/utils/media'
+import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/utils/media'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
@@ -278,7 +277,26 @@ export default function FabricsPage() {
                 {displayedFabrics.map((fabric, index) => {
                   const fabricImages = fabric.images || []
                   const currentIndex = currentImageIndexes[fabric.id] || 0
-                  const currentImage = fabricImages[currentIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'
+                  const originalImage = fabricImages[currentIndex]
+                    || fabric.image_url
+                    || fabric.thumbnail_image
+                    || '/wedding-dress-1.jpg.jpg'
+                  const currentImageIsVideo = isVideoFile(originalImage)
+                  const currentImage = currentImageIsVideo
+                    ? originalImage
+                    : getSupabaseImageUrl(originalImage, {
+                      width: 720,
+                      height: 1280,
+                      quality: 82,
+                    })
+                  const currentImageSrcSet = currentImageIsVideo
+                    ? undefined
+                    : getSupabaseImageSrcSet(originalImage, [
+                      { width: 360, height: 640 },
+                      { width: 540, height: 960 },
+                      { width: 720, height: 1280 },
+                    ])
+                  const fallbackImage = fabric.thumbnail_image || originalImage
                   const finalPrice = getFinalPrice(fabric)
 
                   return (
@@ -292,7 +310,7 @@ export default function FabricsPage() {
                       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
                         <Link href={`/fabrics/${fabric.id}`}>
                           <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
-                            {isVideoFile(currentImage) ? (
+                            {currentImageIsVideo ? (
                               <video
                                 src={currentImage}
                                 muted
@@ -302,8 +320,23 @@ export default function FabricsPage() {
                             ) : (
                               <img
                                 src={currentImage}
-                                alt={`${fabric.name} - صورة ${currentIndex + 1}`}
+                                srcSet={currentImageSrcSet}
+                                sizes={isSingleColumn
+                                  ? '(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), (max-width: 1279px) calc(33vw - 2rem), 300px'
+                                  : '(max-width: 639px) calc(50vw - 1.5rem), (max-width: 1023px) calc(50vw - 2rem), (max-width: 1279px) calc(33vw - 2rem), 300px'}
+                                alt={`${fabric.name || fabric.category || 'قماش'} - صورة ${currentIndex + 1}`}
+                                width={720}
+                                height={1280}
+                                loading={index < 4 ? 'eager' : 'lazy'}
+                                fetchPriority={index === 0 ? 'high' : 'auto'}
+                                decoding="async"
                                 className="w-full h-full object-cover transition-opacity duration-300"
+                                onError={(event) => {
+                                  if (event.currentTarget.dataset.fallbackApplied) return
+                                  event.currentTarget.dataset.fallbackApplied = 'true'
+                                  event.currentTarget.removeAttribute('srcset')
+                                  event.currentTarget.src = fallbackImage
+                                }}
                               />
                             )}
 
@@ -356,14 +389,20 @@ export default function FabricsPage() {
                           </div>
                         </Link>
 
-                        {/* اسم القماش - يظهر فقط إذا كان هناك اسم */}
-                        {fabric.name && (
-                          <div className="p-3">
+                        {(fabric.name || fabric.show_stock_quantity) && (
+                          <div className="p-3 space-y-1.5">
                             <Link href={`/fabrics/${fabric.id}`}>
                               <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
-                                <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center">
-                                  {fabric.name}
-                                </h3>
+                                {fabric.name && (
+                                  <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center">
+                                    {fabric.name}
+                                  </h3>
+                                )}
+                                {fabric.show_stock_quantity && (
+                                  <p className="text-center text-xs font-medium text-gray-500">
+                                    المتوفر: {fabric.stock_quantity} متر
+                                  </p>
+                                )}
                               </div>
                             </Link>
                           </div>

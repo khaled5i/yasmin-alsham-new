@@ -39,7 +39,9 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
   // حساب نطاق السعر من الأقمشة
   useEffect(() => {
     if (fabrics.length > 0) {
-      const prices = fabrics.map(f => f.price_per_meter)
+      const prices = fabrics
+        .map(f => f.price_per_meter)
+        .filter((price): price is number => price != null)
       const minPrice = Math.min(...prices, 0)
       const maxPrice = Math.max(...prices, 1000)
       setPriceRange([minPrice, maxPrice])
@@ -358,4 +360,3 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
     </AnimatePresence>
   )
 }
-
