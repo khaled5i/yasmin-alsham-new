@@ -7,30 +7,24 @@ import {
   ArrowRight,
   Truck,
   Calendar,
-  User,
-  Clock,
-  Phone,
   X,
   Package,
   Trash2,
-  Wrench,
   MessageCircle, // Import MessageCircle
   Loader,
-  Send,
   CheckCircle2,
   Calculator,
   Banknote,
   CreditCard,
   Printer
 } from 'lucide-react'
-import Link from 'next/link'
 import toast from 'react-hot-toast' // Import toast
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { useTranslation } from '@/hooks/useTranslation'
-import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
+import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
@@ -57,9 +51,9 @@ export default function DeliveredOrdersPage() {
 
   // Delete modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [orderToDelete, setOrderToDelete] = useState<any>(null)
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null)
 
-  const [selectedOrder, setSelectedOrder] = useState<any>(null)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
@@ -73,7 +67,7 @@ export default function DeliveredOrdersPage() {
   const [autoSend, setAutoSend] = useState(false)
   const [autoSendBusy, setAutoSendBusy] = useState(false)
   // الطلب المطروح عليه سؤال «ماذا نُرسِل؟» عند وجود كاش وشبكة معاً (الزر اليدوي)
-  const [sendChoiceOrder, setSendChoiceOrder] = useState<any>(null)
+  const [sendChoiceOrder, setSendChoiceOrder] = useState<Order | null>(null)
 
   // OPTIMIZATION: Load data immediately, don't wait for permissions
   useEffect(() => {
@@ -84,14 +78,26 @@ export default function DeliveredOrdersPage() {
     }
     // دائماً نبدأ من الصفحة الأولى عند التحميل الأولي
     setCurrentPage(0)
-    loadOrders({ status: 'delivered', page: 0, pageSize: PAGE_SIZE })
+    loadOrders({
+      status: 'delivered',
+      page: 0,
+      pageSize: PAGE_SIZE,
+      orderBy: 'delivery_notified_at',
+      orderAscending: false,
+    })
     loadWorkers()
   }, [user, authLoading, router, loadOrders, loadWorkers])
 
   // تحميل المزيد عند تغيير currentPage (يُفعَّل من IntersectionObserver)
   useEffect(() => {
     if (currentPage === 0) return
-    loadMoreOrders({ status: 'delivered', page: currentPage, pageSize: PAGE_SIZE })
+    loadMoreOrders({
+      status: 'delivered',
+      page: currentPage,
+      pageSize: PAGE_SIZE,
+      orderBy: 'delivery_notified_at',
+      orderAscending: false,
+    })
   }, [currentPage, loadMoreOrders])
 
   // IntersectionObserver: عند الوصول لآخر العناصر يتم تحميل الدفعة التالية
@@ -116,7 +122,13 @@ export default function DeliveredOrdersPage() {
   useAppResume(() => {
     if (!user) return
     setCurrentPage(0)
-    loadOrders({ status: 'delivered', page: 0, pageSize: PAGE_SIZE })
+    loadOrders({
+      status: 'delivered',
+      page: 0,
+      pageSize: PAGE_SIZE,
+      orderBy: 'delivery_notified_at',
+      orderAscending: false,
+    })
     loadWorkers()
   })
 
@@ -129,7 +141,7 @@ export default function DeliveredOrdersPage() {
 
   // إرسال فاتورة الطلب إلى الأستاذ للمحاسبة (الزر اليدوي)
   // عند وجود كاش وشبكة معاً نسأل ماذا نُرسِل؛ خلاف ذلك نُرسِل المتاح مباشرة.
-  const handleSendToAccounting = async (order: any, e: React.MouseEvent) => {
+  const handleSendToAccounting = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation()
     if (sendingId) return
     const bd = computePaymentBreakdown(order)
@@ -141,7 +153,7 @@ export default function DeliveredOrdersPage() {
   }
 
   // تنفيذ الإرسال اليدوي بالوضع المختار: 'both' (كاش+شبكة) | 'cash' | 'network'
-  const performManualSend = async (order: any, mode: 'both' | 'cash' | 'network') => {
+  const performManualSend = async (order: Order, mode: 'both' | 'cash' | 'network') => {
     setSendChoiceOrder(null)
     if (sendingId) return
     setSendingId(order.id)
@@ -262,14 +274,37 @@ export default function DeliveredOrdersPage() {
     })
   }
 
+  const formatDateTime = (dateString: string) => {
+    return formatGregorianDate(dateString, 'ar-SA-u-nu-latn', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Riyadh'
+    })
+  }
+
+  const formatActualDeliveryDate = (order: Order) => {
+    if (order.delivery_notified_at) {
+      return formatDateTime(order.delivery_notified_at)
+    }
+
+    if (order.delivery_date) {
+      return `${formatDate(order.delivery_date)} — ${isArabic ? 'الوقت غير مسجل' : 'Time not recorded'}`
+    }
+
+    return isArabic ? 'غير مسجل' : 'Not recorded'
+  }
+
   // View Order
-  const handleViewOrder = (order: any) => {
+  const handleViewOrder = (order: Order) => {
     setSelectedOrder(order)
     setShowViewModal(true)
   }
 
   // Send Thank You WhatsApp Message
-  const handleSendThankYouMessage = (order: any) => {
+  const handleSendThankYouMessage = (order: Order) => {
     if (!order.client_phone) {
       toast.error('لا يوجد رقم هاتف للعميل')
       return
@@ -294,7 +329,7 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
   }
 
   // Delete Order Handlers
-  const handleDeleteOrder = (order: any, e: React.MouseEvent) => {
+  const handleDeleteOrder = (order: Order, e: React.MouseEvent) => {
     e.stopPropagation()
     setOrderToDelete(order)
     setDeleteModalOpen(true)
@@ -463,14 +498,17 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
           </motion.div>
         ) : (
           <div className={deliveredOrders.length === 0 ? "space-y-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}>
-            {deliveredOrders.map((order, index) => (
-              <motion.div
-                key={order.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
-              >
+            {deliveredOrders.map((order, index) => {
+              const paymentBreakdown = computePaymentBreakdown(order)
+
+              return (
+                <motion.div
+                  key={order.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: index * 0.1 }}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
+                >
                 {/* Container for Main Content (Left) and Actions (Right) */}
                 <div className="flex items-start justify-between mb-2">
                   {/* Left Side: Info & Details */}
@@ -503,21 +541,13 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                         </p>
                       )}
                       <div className="flex flex-col gap-1">
-                        {order.proof_delivery_date && (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">{order.has_second_proof ? (isArabic ? 'موعد البروفة الأولى:' : 'First Proof Date:') : (t('proof_delivery_date') || (isArabic ? 'موعد البروفة:' : 'Proof Date:'))}</span>{' '}
-                            {formatDate(order.proof_delivery_date)}
-                          </p>
-                        )}
-                        {order.has_second_proof && order.due_date && (
-                          <p className="text-sm text-yellow-700">
-                            <span className="font-medium">{isArabic ? 'موعد البروفا الثانية:' : 'Second Proof:'}</span>{' '}
-                            {formatDate(shiftDate(order.due_date, -1))}
-                          </p>
-                        )}
                         <p className="text-sm text-gray-600">
-                          <span className="font-medium">{t('delivered_date') || (isArabic ? 'تاريخ التسليم:' : 'Delivered Date:')}</span>{' '}
+                          <span className="font-medium">{isArabic ? 'تاريخ التسليم:' : 'Delivery Date:'}</span>{' '}
                           {formatDate(order.due_date)}
+                        </p>
+                        <p className="text-sm text-purple-700">
+                          <span className="font-medium">{isArabic ? 'تاريخ التسليم الفعلي:' : 'Actual Delivery Date:'}</span>{' '}
+                          {formatActualDeliveryDate(order)}
                         </p>
                       </div>
                       {order.worker_id && (
@@ -558,19 +588,24 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                           >
                             {sendingId === order.id
                               ? <Loader className="w-4 h-4 animate-spin" />
-                              : <Send className="w-4 h-4" />}
+                              : <Calculator className="w-4 h-4" />}
                           </button>
                         )
                       )}
 
-                      <Link
-                        href={`/dashboard/alterations/add?orderId=${order.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
-                        title={t('request_alteration') || 'طلب تعديل'}
+                      <button
+                        type="button"
+                        onClick={(event) => { void handlePrintReceipt(order, event) }}
+                        disabled={printingId !== null}
+                        className="p-2 text-gray-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-amber-100"
+                        title="طباعة إيصال الطلب على الطابعة الحرارية"
                       >
-                        <Wrench className="w-4 h-4" />
-                      </Link>
+                        {printingId === order.id ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Printer className="w-4 h-4" />
+                        )}
+                      </button>
 
                       <button
                         onClick={(e) => {
@@ -595,41 +630,49 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={(event) => { void handlePrintReceipt(order, event) }}
-                  disabled={printingId !== null}
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-900 transition hover:border-amber-400 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  title="طباعة إيصال الطلب على الطابعة الحرارية"
-                >
-                  {printingId === order.id ? (
-                    <Loader className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Printer className="h-4 w-4" />
-                  )}
-                  <span>{printingId === order.id ? 'جارٍ إرسال الإيصال...' : 'طباعة الإيصال'}</span>
-                </button>
-
-                {/* Footer - Price */}
                 {workerType !== 'workshop_manager' && (
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 mt-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
-                    <div>
-                      <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {order.price?.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
-                      </p>
+                  <>
+                    <div className="grid grid-cols-2 gap-2 pt-4 border-t border-gray-200 mt-4">
+                      <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
+                        <Banknote className="w-4 h-4 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium">{isArabic ? 'الكاش المدفوع' : 'Cash Paid'}</p>
+                          <p className="text-sm font-bold">
+                            {paymentBreakdown.cashTotal.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-blue-800">
+                        <CreditCard className="w-4 h-4 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium">{isArabic ? 'الشبكة المدفوعة' : 'Network Paid'}</p>
+                          <p className="text-sm font-bold">
+                            {paymentBreakdown.networkTotal.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    {/* For delivered orders, it's usually paid, but we can check paid_amount if available or assume price */}
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500">{t('paid') || (isArabic ? 'المدفوع' : 'Paid')}</p>
-                      <p className="text-sm font-semibold text-green-600">
-                        {(order.paid_amount || order.price || 0).toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
-                      </p>
+
+                    {/* Footer - Price */}
+                    <div className="flex items-center justify-between mt-3 cursor-pointer" onClick={() => handleViewOrder(order)}>
+                      <div>
+                        <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {order.price?.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">{t('paid') || (isArabic ? 'المدفوع' : 'Paid')}</p>
+                        <p className="text-sm font-semibold text-green-600">
+                          {(order.paid_amount || order.price || 0).toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
-              </motion.div>
-            ))}
+                </motion.div>
+              )
+            })}
           </div>
         )}
       </div>

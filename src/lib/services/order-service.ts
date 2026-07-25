@@ -41,8 +41,12 @@ const ORDER_LIST_COLUMNS = [
   'remaining_amount',
   'payment_status',
   'payment_method',
+  'pre_delivery_cash_amount',
+  'pre_delivery_network_amount',
   // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
   'remaining_payment_method',
+  'remaining_cash_amount',
+  'remaining_network_amount',
   'deposit_amount',
   'order_received_date',
   'status',
@@ -169,8 +173,12 @@ export interface Order {
   remaining_amount: number
   payment_status: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
+  pre_delivery_cash_amount?: number | null
+  pre_delivery_network_amount?: number | null
   // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
-  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | null
+  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | 'split' | null
+  remaining_cash_amount?: number | null
+  remaining_network_amount?: number | null
   deposit_amount?: number | null
   order_received_date?: string
   status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
@@ -231,8 +239,12 @@ export interface CreateOrderData {
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
+  pre_delivery_cash_amount?: number | null
+  pre_delivery_network_amount?: number | null
   // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
-  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | null
+  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | 'split' | null
+  remaining_cash_amount?: number | null
+  remaining_network_amount?: number | null
   deposit_amount?: number | null
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
@@ -368,8 +380,12 @@ export interface UpdateOrderData {
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
+  pre_delivery_cash_amount?: number | null
+  pre_delivery_network_amount?: number | null
   // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
-  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | null
+  remaining_payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check' | 'split' | null
+  remaining_cash_amount?: number | null
+  remaining_network_amount?: number | null
   deposit_amount?: number | null
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
@@ -540,8 +556,12 @@ export const orderService = {
         paid_amount: orderData.paid_amount || 0,
         payment_status: orderData.payment_status || 'unpaid',
         payment_method: orderData.payment_method || 'cash',
+        pre_delivery_cash_amount: orderData.pre_delivery_cash_amount ?? null,
+        pre_delivery_network_amount: orderData.pre_delivery_network_amount ?? null,
         // فصل طريقة الدفع (migration 67): العربون = ما دُفع عند الإنشاء بطريقة payment_method
         remaining_payment_method: orderData.remaining_payment_method ?? null,
+        remaining_cash_amount: orderData.remaining_cash_amount ?? null,
+        remaining_network_amount: orderData.remaining_network_amount ?? null,
         deposit_amount: orderData.deposit_amount ?? orderData.paid_amount ?? 0,
         order_received_date: orderData.order_received_date || new Date().toISOString().split('T')[0],
         status: orderData.status || 'pending',

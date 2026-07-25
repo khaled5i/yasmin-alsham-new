@@ -54,7 +54,7 @@ import {
   BellRing
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
-import RemainingPaymentWarningModal, { type RemainingPaymentMethod } from '@/components/RemainingPaymentWarningModal'
+import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
 
 const PAGE_SIZE = 50
@@ -374,6 +374,12 @@ function OrdersPageInner() {
     if (updates.is_printed !== undefined) supabaseUpdates.is_printed = updates.is_printed
     if (updates.whatsapp_sent !== undefined) supabaseUpdates.whatsapp_sent = updates.whatsapp_sent
     if (updates.paid_amount !== undefined) supabaseUpdates.paid_amount = updates.paid_amount
+    if (updates.pre_delivery_cash_amount !== undefined) {
+      supabaseUpdates.pre_delivery_cash_amount = updates.pre_delivery_cash_amount
+    }
+    if (updates.pre_delivery_network_amount !== undefined) {
+      supabaseUpdates.pre_delivery_network_amount = updates.pre_delivery_network_amount
+    }
 
     if (updates.payment_method !== undefined) supabaseUpdates.payment_method = updates.payment_method
     else if (updates.paymentMethod !== undefined) supabaseUpdates.payment_method = updates.paymentMethod
@@ -722,12 +728,12 @@ function OrdersPageInner() {
     await handleDeliverOrder(order.id)
   }
 
-  const deliverOrderWithPaidStatus = async (orderId: string, markAsPaid: boolean, remainingMethod?: RemainingPaymentMethod) => {
+  const deliverOrderWithPaidStatus = async (orderId: string, markAsPaid: boolean, remainingPayment?: RemainingPaymentDetails) => {
     setIsProcessing(true)
     try {
       const order = orderToDeliver
       // تحديثات موحّدة: لقطة العربون + طريقة دفع المتبقي عند markAsPaid
-      const updates = buildDeliveryUpdates(order, { markAsPaid, remainingMethod })
+      const updates = buildDeliveryUpdates(order, { markAsPaid, remainingPayment })
       const result = await updateOrder(orderId, updates)
       if (result.success) {
         setShowPaymentWarning(false)
@@ -1793,7 +1799,7 @@ function OrdersPageInner() {
           isOpen={showPaymentWarning}
           remainingAmount={orderToDeliver?.remaining_amount || 0}
           onCancel={() => { setShowPaymentWarning(false); setOrderToDeliver(null) }}
-          onMarkAsPaid={(method) => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, true, method) }}
+          onMarkAsPaid={(payment) => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, true, payment) }}
           onIgnore={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, false) }}
         />
 

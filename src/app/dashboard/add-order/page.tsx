@@ -483,6 +483,36 @@ function AddOrderContent() {
   const isSubmittingRef = useRef(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // التحقق الموحّد من الحقول الإجبارية في قسم المعلومات الأساسية.
+  // عند وجود نقص، نُعيد المستخدم إلى أعلى الصفحة حيث يوجد القسم.
+  const requireBasicInformation = useCallback((): boolean => {
+    let errorMessage: string | null = null
+
+    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
+      errorMessage = t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة'
+    } else if (!formData.hasSecondProof) {
+      errorMessage = 'يرجى تحديد هل يوجد بروفا ثانية أم لا'
+    } else if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
+      errorMessage = 'يرجى تحديد طريقة دفع العربون'
+    }
+
+    if (!errorMessage) return true
+
+    setSaveError(errorMessage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    return false
+  }, [
+    formData.clientName,
+    formData.clientPhone,
+    formData.dueDate,
+    formData.hasSecondProof,
+    formData.paidAmount,
+    formData.paymentMethod,
+    formData.price,
+    t
+  ])
+
   // إظهار تقويم تعديل موعد البروفا الثانية عند الضغط على زر "تعديل التاريخ"
   const [showSecondProofCalendar, setShowSecondProofCalendar] = useState(false)
   // إبراز زر ملخص التصميم بسهم متحرك عند محاولة الحفظ بدون ملخص
@@ -491,13 +521,26 @@ function AddOrderContent() {
   const summaryErrorPendingRef = useRef(false)
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // التحقق من وجود ملخص التصميم (إجباري لكل أنواع الحفظ عدا الحجز المسبق)
+  // يوجد محتوى في قسم تعليقات التصميم عند وجود تعليق أو رسم، سواء كان حالياً أو محفوظاً.
+  const hasDesignComments = useMemo(() => (
+    formData.imageAnnotations.length > 0 ||
+    formData.imageDrawings.length > 0 ||
+    formData.savedDesignComments.some(
+      comment => (comment.annotations?.length ?? 0) > 0 || (comment.drawings?.length ?? 0) > 0
+    )
+  ), [
+    formData.imageAnnotations.length,
+    formData.imageDrawings.length,
+    formData.savedDesignComments
+  ])
+
+  // ملخص التصميم إجباري فقط عند وجود تعليقات على التصميم (عدا الحجز المسبق).
   const requireDesignSummary = useCallback((): boolean => {
-    if (formData.designSummaryNotes.length > 0) return true
+    if (!hasDesignComments || formData.designSummaryNotes.length > 0) return true
     setSaveError('يرجى إضافة ملخص للتصميم')
     summaryErrorPendingRef.current = true
     return false
-  }, [formData.designSummaryNotes.length])
+  }, [formData.designSummaryNotes.length, hasDesignComments])
 
   // منع الحفظ أثناء وجود تسجيل صوتي جارٍ أو تحويل صوت→نص لم يكتمل بعد.
   // الحفظ في هذه اللحظة يخزّن الملاحظة بدون نص (تظهر "جاري التحويل" للأبد في صفحة الطلب)
@@ -543,6 +586,9 @@ function AddOrderContent() {
     const paidAmount = Number(formData.paidAmount) || 0
     return Math.max(0, finalPrice - paidAmount)
   }, [finalPrice, formData.paidAmount])
+
+  // لا يمكن اختيار طريقة دفع عربون ما لم تكن هناك دفعة مستلمة فعلية.
+  const hasReceivedDeposit = (Number(formData.paidAmount) || 0) > 0
 
   // معالجة تغيير الحقول
   const handleInputChange = useCallback((field: string, value: string | string[] | null) => {
@@ -747,22 +793,7 @@ function AddOrderContent() {
 
     if (isSubmittingRef.current) return
 
-    // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
-    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
-      return
-    }
-
-    if (!formData.hasSecondProof) {
-      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
-      return
-    }
-
-    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
-    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
-      setSaveError('يرجى تحديد طريقة دفع العربون')
-      return
-    }
+    if (!requireBasicInformation()) return
 
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
@@ -1025,30 +1056,7 @@ function AddOrderContent() {
 
     if (isSubmittingRef.current) return
 
-    // التحقق من وجود رقم الهاتف
-    if (!formData.clientPhone || formData.clientPhone.trim() === '') {
-      toast.error('يجب إدخال رقم هاتف العميل لإرسال رسالة واتساب', {
-        icon: '⚠️',
-      })
-      return
-    }
-
-    // التحقق من الحقول المطلوبة (رقم الطلب اختياري - سيتم توليده تلقائياً)
-    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
-      return
-    }
-
-    if (!formData.hasSecondProof) {
-      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
-      return
-    }
-
-    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
-    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
-      setSaveError('يرجى تحديد طريقة دفع العربون')
-      return
-    }
+    if (!requireBasicInformation()) return
 
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
@@ -1226,21 +1234,7 @@ function AddOrderContent() {
 
     if (isSubmittingRef.current) return
 
-    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
-      return
-    }
-
-    if (!formData.hasSecondProof) {
-      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
-      return
-    }
-
-    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
-    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
-      setSaveError('يرجى تحديد طريقة دفع العربون')
-      return
-    }
+    if (!requireBasicInformation()) return
 
     isSubmittingRef.current = true
     setIsSubmitting(true)
@@ -1354,22 +1348,7 @@ function AddOrderContent() {
 
     if (isSubmittingRef.current) return
 
-    // التحقق من الحقول المطلوبة
-    if (!formData.clientName || !formData.clientPhone || !formData.dueDate || !formData.price) {
-      setSaveError(t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة')
-      return
-    }
-
-    if (!formData.hasSecondProof) {
-      setSaveError('يرجى تحديد هل يوجد بروفا ثانية أم لا')
-      return
-    }
-
-    // عند وجود دفعة عربون يجب تحديد طريقة دفعها (لا يوجد اختيار افتراضي)
-    if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
-      setSaveError('يرجى تحديد طريقة دفع العربون')
-      return
-    }
+    if (!requireBasicInformation()) return
 
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
@@ -1557,7 +1536,7 @@ function AddOrderContent() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="max-w-4xl mx-auto"
         >
-          <form onSubmit={handleSubmit} className="space-y-8">
+          <form onSubmit={handleSubmit} className="space-y-8" noValidate>
             {/* المعلومات الأساسية */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
               <div className="flex items-center justify-between mb-6">
@@ -1702,7 +1681,16 @@ function AddOrderContent() {
                         })
                         return
                       }
-                      handleInputChange('paidAmount', value)
+                      setFormData(prev => ({
+                        ...prev,
+                        paidAmount: value,
+                        // مسح طريقة الدفع عند تفريغ الدفعة، وعدم استعادة اختيار قديم
+                        // تلقائياً عند إدخال أول دفعة جديدة.
+                        paymentMethod:
+                          paid > 0 && (Number(prev.paidAmount) || 0) > 0
+                            ? prev.paymentMethod
+                            : null
+                      }))
                     }}
                     type="price"
                     label={t('paid_amount')}
@@ -1764,35 +1752,43 @@ function AddOrderContent() {
                   <div className="grid grid-cols-2 gap-3 sm:gap-4">
 
                     {/* 12. طريقة دفع العربون (كاش / شبكة) - بدون اختيار افتراضي */}
-                    <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+                    <div className={`rounded-xl border p-3 sm:p-4 transition-colors ${
+                      hasReceivedDeposit
+                        ? 'border-gray-200 bg-gray-50/70'
+                        : 'border-gray-200 bg-gray-100/80'
+                    }`}>
                       <label className="block text-sm font-medium text-gray-700 mb-3">
                         طريقة دفع العربون
                       </label>
                       <div className="flex flex-wrap gap-x-6 gap-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer">
+                        <label className={`flex items-center gap-2 ${
+                          hasReceivedDeposit ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                        }`}>
                           <input
                             type="radio"
                             name="paymentMethod"
                             value="cash"
-                            checked={formData.paymentMethod === 'cash'}
+                            checked={hasReceivedDeposit && formData.paymentMethod === 'cash'}
                             onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                            className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500 cursor-pointer"
-                            disabled={isSubmitting}
+                            className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500 disabled:cursor-not-allowed"
+                            disabled={isSubmitting || !hasReceivedDeposit}
                           />
                           <span className="flex items-center gap-1.5 text-gray-700 font-medium">
                             <Banknote className="w-4 h-4 text-green-600" />
                             كاش
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
+                        <label className={`flex items-center gap-2 ${
+                          hasReceivedDeposit ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                        }`}>
                           <input
                             type="radio"
                             name="paymentMethod"
                             value="card"
-                            checked={formData.paymentMethod === 'card'}
+                            checked={hasReceivedDeposit && formData.paymentMethod === 'card'}
                             onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                            className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer"
-                            disabled={isSubmitting}
+                            className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:cursor-not-allowed"
+                            disabled={isSubmitting || !hasReceivedDeposit}
                           />
                           <span className="flex items-center gap-1.5 text-gray-700 font-medium">
                             <CreditCard className="w-4 h-4 text-blue-600" />
@@ -1800,6 +1796,11 @@ function AddOrderContent() {
                           </span>
                         </label>
                       </div>
+                      {!hasReceivedDeposit && (
+                        <p className="mt-2 text-xs text-gray-500">
+                          أدخل قيمة الدفعة المستلمة أولاً لاختيار طريقة الدفع
+                        </p>
+                      )}
                     </div>
 
                     {/* 13. هل يوجد بروفا ثانية؟ */}

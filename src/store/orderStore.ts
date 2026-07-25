@@ -51,6 +51,8 @@ interface OrderState {
     pageSize?: number
     lightweight?: boolean
     noPagination?: boolean
+    orderBy?: string
+    orderAscending?: boolean
   }) => Promise<void>
 
   loadMoreOrders: (filters?: {
@@ -61,6 +63,8 @@ interface OrderState {
     page?: number
     pageSize?: number
     lightweight?: boolean
+    orderBy?: string
+    orderAscending?: boolean
   }) => Promise<void>
 
   loadOrderById: (id: string) => Promise<void>

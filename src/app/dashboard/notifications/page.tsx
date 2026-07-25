@@ -406,6 +406,12 @@ export default function NotificationsPage() {
     if (updates.is_printed !== undefined) supabaseUpdates.is_printed = updates.is_printed
     if (updates.whatsapp_sent !== undefined) supabaseUpdates.whatsapp_sent = updates.whatsapp_sent
     if (updates.paid_amount !== undefined) supabaseUpdates.paid_amount = updates.paid_amount
+    if (updates.pre_delivery_cash_amount !== undefined) {
+      supabaseUpdates.pre_delivery_cash_amount = updates.pre_delivery_cash_amount
+    }
+    if (updates.pre_delivery_network_amount !== undefined) {
+      supabaseUpdates.pre_delivery_network_amount = updates.pre_delivery_network_amount
+    }
     if (updates.payment_method !== undefined) supabaseUpdates.payment_method = updates.payment_method
     else if (updates.paymentMethod !== undefined) supabaseUpdates.payment_method = updates.paymentMethod
     if (updates.status) supabaseUpdates.status = updates.status

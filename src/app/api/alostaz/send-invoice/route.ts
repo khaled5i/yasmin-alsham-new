@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select(
-        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, remaining_payment_method, deposit_amount, due_date, status, alostaz_invoice_id, alostaz_invoice_code'
+        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, alostaz_invoice_id, alostaz_invoice_code'
       )
       .eq('id', orderId)
       .single()

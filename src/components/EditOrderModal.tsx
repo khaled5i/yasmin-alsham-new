@@ -14,7 +14,11 @@ import {
   Ruler,
   MessageCircle,
   Download,
-  BookMarked
+  BookMarked,
+  Banknote,
+  CreditCard,
+  PlusCircle,
+  WalletCards
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
 import { shiftDate, DUE_DATE_BACKDATE_DAYS } from '@/lib/date-utils'
@@ -82,6 +86,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
     price: '',
     paidAmount: '',
     paymentMethod: 'cash' as 'cash' | 'card',
+    preDeliveryCashAmount: 0,
+    preDeliveryNetworkAmount: 0,
     orderReceivedDate: '',
     dueDate: '',
     proofDeliveryDate: '',
@@ -107,6 +113,9 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [showAddPaymentModal, setShowAddPaymentModal] = useState(false)
+  const [newPaymentAmount, setNewPaymentAmount] = useState('')
+  const [newPaymentMethod, setNewPaymentMethod] = useState<'cash' | 'card' | null>(null)
 
   // Fetch full order data when opened with lightweight-loaded order
   useEffect(() => {
@@ -155,6 +164,22 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         []
       // custom_design_image: أولاً من العمود المستقل (migration 33)، ثم fallback لـ measurements
       const customImage = orderAny.custom_design_image || measurements?.custom_design_image || null
+      const currentPaidAmount = Number(order.paid_amount) || 0
+      const storedPreDeliveryCash = Math.max(0, Number(order.pre_delivery_cash_amount) || 0)
+      const storedPreDeliveryNetwork = Math.max(0, Number(order.pre_delivery_network_amount) || 0)
+      const hasValidStoredPreDeliveryAmounts =
+        (order.pre_delivery_cash_amount != null ||
+          order.pre_delivery_network_amount != null)
+          ? Math.abs(storedPreDeliveryCash + storedPreDeliveryNetwork - currentPaidAmount) < 0.005
+          : false
+      const normalizedPaymentMethod: 'cash' | 'card' =
+        order.payment_method === 'cash' ? 'cash' : 'card'
+      const preDeliveryCashAmount = hasValidStoredPreDeliveryAmounts
+        ? storedPreDeliveryCash
+        : normalizedPaymentMethod === 'cash' ? currentPaidAmount : 0
+      const preDeliveryNetworkAmount = hasValidStoredPreDeliveryAmounts
+        ? storedPreDeliveryNetwork
+        : normalizedPaymentMethod === 'card' ? currentPaidAmount : 0
 
       // تحميل slot الأمام بشكل افتراضي، أو أول slot موجود
       const frontSlot = savedComments.find((c: SavedDesignComment) => {
@@ -187,8 +212,10 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         description: order.description || '',
         fabric: order.fabric || '',
         price: order.price.toString(),
-        paidAmount: (order.paid_amount || 0).toString(),
-        paymentMethod: (order.payment_method || 'cash') as 'cash' | 'card',
+        paidAmount: currentPaidAmount.toString(),
+        paymentMethod: normalizedPaymentMethod,
+        preDeliveryCashAmount,
+        preDeliveryNetworkAmount,
         orderReceivedDate: order.order_received_date || new Date().toISOString().split('T')[0],
         // للطلبات الجديدة نستخدم customer_due_date مباشرةً؛ للطلبات القديمة نُبقي السلوك السابق (due_date + 2)
         dueDate: order.customer_due_date || shiftDate(order.due_date, DUE_DATE_BACKDATE_DAYS),
@@ -204,6 +231,9 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         // ملخص التصميم الصوتي (migration 50): من العمود المستقل، ثم fallback لـ measurements
         designSummaryNotes: (orderAny.design_summary_notes?.length ? orderAny.design_summary_notes : null) || measurements?.design_summary_notes || []
       })
+      setShowAddPaymentModal(false)
+      setNewPaymentAmount('')
+      setNewPaymentMethod(null)
 
       // نحفظ نسخة من التعليقات بدون compositeImage لأنها كبيرة ولا تفيد في المقارنة
       const commentsForComparison = savedComments.map((c: any) => {
@@ -236,6 +266,87 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
     const paidAmount = Number(formData.paidAmount) || 0
     return Math.max(0, price - paidAmount)
   }, [formData.price, formData.paidAmount])
+  const hasReceivedPayment = (Number(formData.paidAmount) || 0) > 0
+  const parsedNewPaymentAmount =
+    Math.round(((Number(newPaymentAmount) || 0) + Number.EPSILON) * 100) / 100
+  const previewPaidTotal =
+    Math.round((((Number(formData.paidAmount) || 0) + parsedNewPaymentAmount) + Number.EPSILON) * 100) / 100
+
+  const handlePaidAmountChange = useCallback((value: string) => {
+    const price = Number(formData.price) || 0
+    const paid = Number(value) || 0
+    if (paid > price) {
+      toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
+        icon: '⚠️',
+      })
+      return
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      paidAmount: value,
+      preDeliveryCashAmount: prev.paymentMethod === 'cash' ? paid : 0,
+      preDeliveryNetworkAmount: prev.paymentMethod === 'card' ? paid : 0,
+    }))
+  }, [formData.price])
+
+  const handlePaymentMethodChange = useCallback((method: 'cash' | 'card') => {
+    setFormData(prev => {
+      const paid = Number(prev.paidAmount) || 0
+      return {
+        ...prev,
+        paymentMethod: method,
+        preDeliveryCashAmount: method === 'cash' ? paid : 0,
+        preDeliveryNetworkAmount: method === 'card' ? paid : 0,
+      }
+    })
+  }, [])
+
+  const openAddPaymentModal = useCallback(() => {
+    if (remainingAmount <= 0) {
+      toast.error('تم دفع كامل قيمة الطلب ولا توجد دفعة متبقية')
+      return
+    }
+    setNewPaymentAmount('')
+    setNewPaymentMethod(null)
+    setShowAddPaymentModal(true)
+  }, [remainingAmount])
+
+  const confirmAddPayment = useCallback(() => {
+    const amount = Math.round(((Number(newPaymentAmount) || 0) + Number.EPSILON) * 100) / 100
+    if (amount <= 0) {
+      toast.error('يرجى إدخال قيمة الدفعة الجديدة')
+      return
+    }
+    if (!newPaymentMethod) {
+      toast.error('يرجى تحديد طريقة دفع الدفعة الجديدة')
+      return
+    }
+    if (amount > remainingAmount) {
+      toast.error('الدفعة الجديدة لا يمكن أن تتجاوز المبلغ المتبقي')
+      return
+    }
+    const paymentMethod = newPaymentMethod
+
+    setFormData(prev => {
+      const currentPaid = Number(prev.paidAmount) || 0
+      const nextPaid = Math.round((currentPaid + amount + Number.EPSILON) * 100) / 100
+      return {
+        ...prev,
+        paidAmount: nextPaid.toFixed(2),
+        paymentMethod: currentPaid <= 0 ? paymentMethod : prev.paymentMethod,
+        preDeliveryCashAmount:
+          prev.preDeliveryCashAmount + (paymentMethod === 'cash' ? amount : 0),
+        preDeliveryNetworkAmount:
+          prev.preDeliveryNetworkAmount + (paymentMethod === 'card' ? amount : 0),
+      }
+    })
+
+    setShowAddPaymentModal(false)
+    setNewPaymentAmount('')
+    setNewPaymentMethod(null)
+    toast.success('تمت إضافة الدفعة إلى إجمالي المدفوع')
+  }, [newPaymentAmount, newPaymentMethod, remainingAmount])
 
   // معالجة تغيير الحقول
   const handleInputChange = useCallback((field: string, value: string | string[] | DesignSummaryNote[] | null) => {
@@ -575,6 +686,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
           custom_design_image: customDesignImageBase64,  // عمود مستقل (migration 33)
         }),
         paid_amount: paidAmount,
+        pre_delivery_cash_amount: formData.preDeliveryCashAmount,
+        pre_delivery_network_amount: formData.preDeliveryNetworkAmount,
         updated_at: new Date().toISOString()
       })
 
@@ -728,6 +841,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
           custom_design_image: customDesignImageBase64,  // عمود مستقل (migration 33)
         }),
         paid_amount: paidAmount,
+        pre_delivery_cash_amount: formData.preDeliveryCashAmount,
+        pre_delivery_network_amount: formData.preDeliveryNetworkAmount,
         updated_at: new Date().toISOString()
       })
 
@@ -923,22 +1038,24 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
 
                     {/* 8. الدفعة المستلمة */}
                     <div>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          {t('paid_amount')}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={openAddPaymentModal}
+                          disabled={isSubmitting || !formData.price || remainingAmount <= 0}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-pink-600 transition-colors hover:text-pink-700 disabled:cursor-not-allowed disabled:text-gray-400"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                          <span>إضافة دفعة جديدة</span>
+                        </button>
+                      </div>
                       <NumericInput
                         value={formData.paidAmount}
-                        onChange={(value) => {
-                          const price = Number(formData.price) || 0
-                          const paid = Number(value) || 0
-                          // التحقق من أن الدفعة المستلمة لا تتجاوز السعر
-                          if (paid > price) {
-                            toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
-                              icon: '⚠️',
-                            })
-                            return
-                          }
-                          handleInputChange('paidAmount', value)
-                        }}
+                        onChange={handlePaidAmountChange}
                         type="price"
-                        label={t('paid_amount')}
                         placeholder="0"
                         disabled={isSubmitting || !formData.price}
                       />
@@ -954,36 +1071,103 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                       </div>
                     </div>
 
-                    {/* 10. هل يوجد بروفا ثانية؟ */}
-                    <div className="col-span-2 sm:col-span-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-3">
-                        هل يوجد بروفا ثانية؟ <span className="text-red-500">*</span>
-                      </label>
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="hasSecondProofEdit"
-                            value="yes"
-                            checked={formData.hasSecondProof === 'yes'}
-                            onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
-                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
-                            disabled={isSubmitting}
-                          />
-                          <span className="text-gray-700 font-medium">نعم</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="hasSecondProofEdit"
-                            value="no"
-                            checked={formData.hasSecondProof === 'no'}
-                            onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
-                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
-                            disabled={isSubmitting}
-                          />
-                          <span className="text-gray-700 font-medium">لا</span>
-                        </label>
+                    {/* الصف الأخير: طريقة الدفع | هل يوجد بروفا ثانية */}
+                    <div className="col-span-2 sm:col-span-3">
+                      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                        {/* 10. طريقة دفع الدفعة المستلمة */}
+                        <div className={`rounded-xl border p-3 sm:p-4 transition-colors ${
+                          hasReceivedPayment
+                            ? 'border-gray-200 bg-gray-50/70'
+                            : 'border-gray-200 bg-gray-100/80'
+                        }`}>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            طريقة دفع الدفعة المستلمة
+                          </label>
+                          <div className="flex flex-wrap gap-x-6 gap-y-2">
+                            <label className={`flex items-center gap-2 ${
+                              hasReceivedPayment ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                            }`}>
+                              <input
+                                type="radio"
+                                name="paymentMethodEdit"
+                                value="cash"
+                                checked={hasReceivedPayment && formData.paymentMethod === 'cash'}
+                                onChange={() => handlePaymentMethodChange('cash')}
+                                className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500 disabled:cursor-not-allowed"
+                                disabled={isSubmitting || !hasReceivedPayment}
+                              />
+                              <span className="flex items-center gap-1.5 text-gray-700 font-medium">
+                                <Banknote className="w-4 h-4 text-green-600" />
+                                كاش
+                              </span>
+                            </label>
+                            <label className={`flex items-center gap-2 ${
+                              hasReceivedPayment ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                            }`}>
+                              <input
+                                type="radio"
+                                name="paymentMethodEdit"
+                                value="card"
+                                checked={hasReceivedPayment && formData.paymentMethod === 'card'}
+                                onChange={() => handlePaymentMethodChange('card')}
+                                className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:cursor-not-allowed"
+                                disabled={isSubmitting || !hasReceivedPayment}
+                              />
+                              <span className="flex items-center gap-1.5 text-gray-700 font-medium">
+                                <CreditCard className="w-4 h-4 text-blue-600" />
+                                شبكة
+                              </span>
+                            </label>
+                          </div>
+                          {!hasReceivedPayment ? (
+                            <p className="mt-2 text-xs text-gray-500">
+                              أدخل قيمة الدفعة المستلمة أولاً لاختيار طريقة الدفع
+                            </p>
+                          ) : null}
+                          <p className="mt-3 border-t border-gray-200 pt-3 text-xs text-gray-600">
+                            <span className="font-medium">توزيع المدفوع الحالي: </span>
+                            <span className="font-semibold text-green-700">
+                              كاش {formData.preDeliveryCashAmount.toFixed(2)} {t('sar')}
+                            </span>
+                            <span className="mx-1.5 text-gray-400">•</span>
+                            <span className="font-semibold text-blue-700">
+                              شبكة {formData.preDeliveryNetworkAmount.toFixed(2)} {t('sar')}
+                            </span>
+                          </p>
+                        </div>
+
+                        {/* 11. هل يوجد بروفا ثانية؟ */}
+                        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            هل يوجد بروفا ثانية؟ <span className="text-red-500">*</span>
+                          </label>
+                          <div className="flex flex-wrap gap-x-6 gap-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="hasSecondProofEdit"
+                                value="yes"
+                                checked={formData.hasSecondProof === 'yes'}
+                                onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
+                                className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                                disabled={isSubmitting}
+                              />
+                              <span className="text-gray-700 font-medium">نعم</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="hasSecondProofEdit"
+                                value="no"
+                                checked={formData.hasSecondProof === 'no'}
+                                onChange={(e) => handleInputChange('hasSecondProof', e.target.value)}
+                                className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                                disabled={isSubmitting}
+                              />
+                              <span className="text-gray-700 font-medium">لا</span>
+                            </label>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1160,6 +1344,163 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAddPaymentModal ? (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+              onClick={() => setShowAddPaymentModal(false)}
+            />
+            <motion.form
+              initial={{ opacity: 0, scale: 0.94, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 18 }}
+              onSubmit={(event) => {
+                event.preventDefault()
+                confirmAddPayment()
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-payment-title"
+              className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            >
+              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-5 text-white">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-white/15 p-2.5">
+                      <WalletCards className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 id="add-payment-title" className="text-lg font-bold">إضافة دفعة جديدة</h3>
+                      <p className="mt-0.5 text-xs text-emerald-50">
+                        ستُضاف إلى إجمالي المبلغ المدفوع
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPaymentModal(false)}
+                    aria-label="إغلاق"
+                    className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-5 p-5">
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-center">
+                  <div>
+                    <p className="text-xs text-gray-500">المدفوع حاليًا</p>
+                    <p className="mt-1 font-bold text-gray-800" dir="ltr">
+                      {(Number(formData.paidAmount) || 0).toFixed(2)} {t('sar')}
+                    </p>
+                  </div>
+                  <div className="border-r border-gray-200">
+                    <p className="text-xs text-gray-500">المتبقي</p>
+                    <p className="mt-1 font-bold text-orange-600" dir="ltr">
+                      {remainingAmount.toFixed(2)} {t('sar')}
+                    </p>
+                  </div>
+                </div>
+
+                <NumericInput
+                  id="new-payment-amount"
+                  value={newPaymentAmount}
+                  onChange={setNewPaymentAmount}
+                  type="price"
+                  label="مقدار الدفعة الجديدة"
+                  placeholder="0.00"
+                />
+
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-gray-700">طريقة دفع الدفعة</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setNewPaymentMethod('cash')}
+                      aria-pressed={newPaymentMethod === 'cash'}
+                      className={`flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 font-semibold transition-all ${
+                        newPaymentMethod === 'cash'
+                          ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
+                          : 'border-gray-200 text-gray-600 hover:border-green-300'
+                      }`}
+                    >
+                      <Banknote className="h-5 w-5" />
+                      <span>كاش</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewPaymentMethod('card')}
+                      aria-pressed={newPaymentMethod === 'card'}
+                      className={`flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 font-semibold transition-all ${
+                        newPaymentMethod === 'card'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
+                          : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                      }`}
+                    >
+                      <CreditCard className="h-5 w-5" />
+                      <span>شبكة</span>
+                    </button>
+                  </div>
+                </div>
+
+                {parsedNewPaymentAmount > 0 ? (
+                  <div className={`rounded-xl border p-3 ${
+                    parsedNewPaymentAmount <= remainingAmount
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : 'border-red-200 bg-red-50'
+                  }`}>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="font-medium text-gray-600">إجمالي المدفوع بعد الإضافة</span>
+                      <span className={`font-bold ${
+                        parsedNewPaymentAmount <= remainingAmount ? 'text-emerald-700' : 'text-red-700'
+                      }`} dir="ltr">
+                        {previewPaidTotal.toFixed(2)} {t('sar')}
+                      </span>
+                    </div>
+                    {parsedNewPaymentAmount > remainingAmount ? (
+                      <p className="mt-2 text-center text-xs font-medium text-red-600">
+                        قيمة الدفعة أكبر من المبلغ المتبقي
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <p className="text-center text-xs text-gray-500">
+                  بعد الإضافة اضغط «تحديث الطلب» لحفظ الدفعة في الطلب.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 border-t border-gray-100 bg-gray-50 p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPaymentModal(false)}
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-700 transition hover:bg-gray-100"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    parsedNewPaymentAmount <= 0 ||
+                    parsedNewPaymentAmount > remainingAmount ||
+                    !newPaymentMethod
+                  }
+                  className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
+                >
+                  <PlusCircle className="h-5 w-5" />
+                  <span>إضافة الدفعة</span>
+                </button>
+              </div>
+            </motion.form>
+          </div>
+        ) : null}
       </AnimatePresence>
 
       {/* مودال رسالة النجاح - تصميم مطابق لصفحة الأقمشة */}

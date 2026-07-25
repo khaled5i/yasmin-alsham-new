@@ -9,7 +9,7 @@ import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
-import RemainingPaymentWarningModal, { type RemainingPaymentMethod } from '@/components/RemainingPaymentWarningModal'
+import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
 import {
   ArrowRight,
@@ -263,14 +263,14 @@ export default function WorkerCompletedOrdersPage() {
     await deliverOrder(orderId, false)
   }
 
-  const deliverOrder = async (orderId: string, markAsPaid: boolean, remainingMethod?: RemainingPaymentMethod) => {
+  const deliverOrder = async (orderId: string, markAsPaid: boolean, remainingPayment?: RemainingPaymentDetails) => {
     setIsProcessing(true)
     try {
       // الحصول على بيانات الطلب قبل التحديث
       const order = orders.find(o => o.id === orderId)
 
       // تحديثات موحّدة: لقطة العربون + طريقة دفع المتبقي عند markAsPaid
-      const updates = buildDeliveryUpdates(order, { markAsPaid, remainingMethod })
+      const updates = buildDeliveryUpdates(order, { markAsPaid, remainingPayment })
 
       const result = await updateOrder(orderId, updates)
       if (result.success) {
@@ -747,9 +747,9 @@ export default function WorkerCompletedOrdersPage() {
       <RemainingPaymentWarningModal
         isOpen={showPaymentWarning}
         remainingAmount={orderToDeliver?.remaining_amount || 0}
-        onMarkAsPaid={(method) => {
+        onMarkAsPaid={(payment) => {
           if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, true, method)
+            deliverOrder(orderToDeliver.id, true, payment)
           }
         }}
         onIgnore={() => {

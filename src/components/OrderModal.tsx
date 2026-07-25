@@ -43,7 +43,7 @@ import { useWorkerPermissions } from '@/hooks/useWorkerPermissions' // إضاف�
 import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast' // إضافة
 import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
-import RemainingPaymentWarningModal, { type RemainingPaymentMethod } from '@/components/RemainingPaymentWarningModal'
+import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
@@ -298,13 +298,13 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   }
 
   // تنفيذ التسليم موحّداً: لقطة العربون + طريقة دفع المتبقي + إرسال «مبلغ الشبكة» تلقائياً
-  const performDeliver = async (markAsPaid: boolean, remainingMethod?: RemainingPaymentMethod) => {
+  const performDeliver = async (markAsPaid: boolean, remainingPayment?: RemainingPaymentDetails) => {
     if (!order) return
     setShowDeliverWarning(false)
     setIsUpdatingStatus(true)
     try {
       const base = fullOrder || initialOrder || order
-      const updates = buildDeliveryUpdates(base, { markAsPaid, remainingMethod })
+      const updates = buildDeliveryUpdates(base, { markAsPaid, remainingPayment })
       await orderService.update(order.id, updates)
       await updateOrder(order.id, updates)
       setFullOrder({ ...base, ...updates } as Order)
@@ -2467,7 +2467,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           ? Number((order as any).remaining_amount)
           : Math.max(0, (Number(order?.price) || 0) - (Number(order?.paid_amount) || 0))
       }
-      onMarkAsPaid={(method) => performDeliver(true, method)}
+      onMarkAsPaid={(payment) => performDeliver(true, payment)}
       onIgnore={() => performDeliver(false)}
       onCancel={() => setShowDeliverWarning(false)}
     />
