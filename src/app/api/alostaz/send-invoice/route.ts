@@ -189,10 +189,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 6) إنشاء الفاتورة في الأستاذ
-    //    ⚠️ مؤقت (وضع تجريب): كل الإرسال — اليدوي والتلقائي — يُنشئ «مسودة» فقط.
-    //    المسودات قابلة للحذف، لا تستهلك رقم الفوترة. للانتقال إلى الفواتير الحقيقية:
-    //    احذف forceStatus كي تتبع ALOSTAZ_INVOICE_STATUS (وحينها تُسجَّل الدفعات المقسّمة).
+    // 6) إنشاء فاتورة حقيقية صادرة في الأستاذ مع تسجيل الدفعات المقسّمة.
     let result
     try {
       result = await createInvoiceForOrder(
@@ -206,7 +203,7 @@ export async function POST(request: NextRequest) {
           payment_method: 'card',
           due_date: order.due_date,
         },
-        { forceStatus: 'draft', payments: invoicePayments }
+        { payments: invoicePayments }
       )
     } catch (err: any) {
       const outcomeUnknown = isAlostazInvoiceOutcomeUnknown(err)

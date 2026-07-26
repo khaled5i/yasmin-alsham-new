@@ -36,23 +36,13 @@ export const ALOSTAZ_API_VERSION = '1'
 export const ALOSTAZ_LOCALE = 'ar'
 
 /**
- * حالة الفاتورة عند الإنشاء:
- *  - 'issued' (الافتراضي) = فاتورة نهائية حقيقية (تستهلك رقم الفوترة الإلكترونية، لا تُحذف).
- *  - 'draft'  = وضع اختبار: مسودة قابلة للحذف، لا تستهلك الرقم، وبلا دفعات (الأستاذ يمنع
- *               الدفعات على المسودة). في هذا الوضع لا نُعلّم الطلب كـ«مُرسَل».
- * يُضبط عبر متغيّر البيئة ALOSTAZ_INVOICE_STATUS=draft للاختبار، ثم يُزال/يُجعل issued للإنتاج.
+ * فواتير التفصيل تُنشأ كفواتير نهائية حقيقية.
+ * لا نسمح لمتغيّر بيئة قديم بإعادة الموقع المنشور إلى وضع المسودة بالخطأ.
  */
-export const ALOSTAZ_INVOICE_STATUS: 'issued' | 'draft' =
-  process.env.ALOSTAZ_INVOICE_STATUS === 'draft' ? 'draft' : 'issued'
+export const ALOSTAZ_INVOICE_STATUS: 'issued' | 'draft' = 'issued'
 
-/**
- * حالة فواتير فرع الأقمشة عند الإنشاء — مستقلّة عن فرع التفصيل.
- * الافتراضي «مسودة» (draft) لأن الربط ما زال في مرحلة التجربة: كل الفواتير
- * تُنشأ كمسودات قابلة للحذف ولا تستهلك رقم الفوترة الإلكترونية. للانتقال إلى
- * الفواتير الحقيقية بعد انتهاء التجربة اضبط ALOSTAZ_FABRICS_INVOICE_STATUS=issued.
- */
-export const ALOSTAZ_FABRICS_INVOICE_STATUS: 'issued' | 'draft' =
-  process.env.ALOSTAZ_FABRICS_INVOICE_STATUS === 'issued' ? 'issued' : 'draft'
+/** فواتير الأقمشة تُنشأ كذلك كفواتير نهائية حقيقية. */
+export const ALOSTAZ_FABRICS_INVOICE_STATUS: 'issued' | 'draft' = 'issued'
 
 /**
  * ضريبة فواتير الأقمشة — الضرائب عادةً على مستوى الشركة، فالافتراضي نفس ضريبة

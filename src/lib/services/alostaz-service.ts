@@ -203,12 +203,10 @@ function treasuryForPaymentMethod(method?: string | null): number {
  * إنشاء فاتورة مبيعات في الأستاذ من طلب مسلّم.
  * - المبلغ الكامل = price، والمدفوع = paid_amount (العربون).
  * - منتج ثابت «أجرة تفصيل فستان»، بدون ضريبة.
- * - opts.forceStatus: يتجاوز ALOSTAZ_INVOICE_STATUS (يُستخدم لفرض «مسودة» على الإرسال التلقائي).
  */
 export async function createInvoiceForOrder(
   order: AlostazOrderInput,
   opts?: {
-    forceStatus?: 'issued' | 'draft'
     /** دفعات صريحة (كاش/شبكة) بدل الدفعة الواحدة الافتراضية — تسمح بتقسيم كاش+شبكة */
     payments?: Array<{ amount: number; method: 'cash' | 'card' }>
   }
@@ -223,7 +221,7 @@ export async function createInvoiceForOrder(
 
   const lineDescription = order.description?.trim() || 'أجرة تفصيل فستان'
 
-  const invoiceStatus = opts?.forceStatus ?? ALOSTAZ_INVOICE_STATUS
+  const invoiceStatus = ALOSTAZ_INVOICE_STATUS
   const isDraft = invoiceStatus === 'draft'
   const paid = Number(order.paid_amount) || 0
 
