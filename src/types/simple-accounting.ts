@@ -94,7 +94,7 @@ export interface Income {
   alostaz_customer_id?: number | null      // معرّف العميل (partner) في الأستاذ
   alostaz_invoice_id?: number | null       // معرّف الفاتورة في الأستاذ (وجوده = أُرسِلت)
   alostaz_invoice_code?: string | null     // رقم الفاتورة النصّي في الأستاذ
-  alostaz_sync_status?: string | null      // 'sent' | 'failed' | null
+  alostaz_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
   alostaz_synced_at?: string | null        // وقت آخر مزامنة
 }
 

@@ -161,6 +161,10 @@ export default function DeliveredOrdersPage() {
     setSendingId(null)
 
     if (res.success) {
+      if (res.inProgress) {
+        toast('الفاتورة قيد الإرسال بالفعل؛ تم منع محاولة مكررة.', { icon: '🛡️' })
+        return
+      }
       // يُعلَّم الطلب كمُرسَل حتى في وضع المسودة (منع إعادة الإرسال)
       setSentMap(prev => ({ ...prev, [order.id]: { code: res.invoice_code } }))
       if (res.alreadySent) {

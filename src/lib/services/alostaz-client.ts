@@ -12,6 +12,8 @@ export interface SendInvoiceResult {
   invoice_id?: number
   invoice_code?: string
   alreadySent?: boolean
+  /** طلب آخر حجز إرسال الفاتورة نفسها بالفعل؛ لا تبدأ محاولة ثانية. */
+  inProgress?: boolean
   isDraft?: boolean
   /** تُرفَع في الوضع التلقائي عندما لا يوجد مبلغ شبكة → لا تُنشأ فاتورة */
   skipped?: boolean
@@ -53,6 +55,7 @@ export async function sendInvoiceToAlostaz(
       invoice_id: result?.data?.invoice_id,
       invoice_code: result?.data?.invoice_code,
       alreadySent: result?.data?.alreadySent,
+      inProgress: result?.data?.inProgress,
       isDraft: result?.data?.draft,
       skipped: result?.data?.skipped,
       warning: result?.warning,
@@ -89,6 +92,7 @@ export async function sendFabricInvoiceToAlostaz(incomeId: string): Promise<Send
       invoice_id: result?.data?.invoice_id,
       invoice_code: result?.data?.invoice_code,
       alreadySent: result?.data?.alreadySent,
+      inProgress: result?.data?.inProgress,
       isDraft: result?.data?.draft,
       warning: result?.warning,
     }
@@ -157,7 +161,7 @@ export async function setAutoSendEnabled(enabled: boolean): Promise<{ error: str
 // ── الإرسال التلقائي لفواتير الأقمشة (مفتاح منفصل عن التفصيل) ──
 const FABRICS_AUTO_SEND_KEY = 'alostaz_fabrics_auto_send'
 
-/** قراءة حالة «الإرسال التلقائي» لفواتير الأقمشة (افتراضياً متوقّف). */
+/** قراءة حالة «الإرسال التلقائي» لفواتير الأقمشة (افتراضياً مفعّل ما لم يُوقَف صراحة). */
 export async function getFabricsAutoSendEnabled(): Promise<boolean> {
   try {
     const { data, error } = await supabase
@@ -166,7 +170,7 @@ export async function getFabricsAutoSendEnabled(): Promise<boolean> {
       .eq('key', FABRICS_AUTO_SEND_KEY)
       .maybeSingle()
     if (error) return false
-    return !!(data?.value?.enabled)
+    return data?.value?.enabled !== false
   } catch {
     return false
   }

@@ -143,7 +143,9 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
         const res = await sendInvoiceToAlostaz(order.id, { auto: true })
         accountingInvoiceCode = String(res.invoice_code || accountingInvoiceCode).trim()
 
-        if (res.success && res.isDraft) {
+        if (res.success && res.inProgress) {
+          // استدعاء تسليم آخر سبق وحجز إرسال الفاتورة؛ لا نعرض نجاحاً مكرراً.
+        } else if (res.success && res.isDraft) {
           toast(
             `مسودة اختبار أُنشئت في الأستاذ${res.invoice_code ? ' — ' + res.invoice_code : ''}`,
             { icon: '🧪' }

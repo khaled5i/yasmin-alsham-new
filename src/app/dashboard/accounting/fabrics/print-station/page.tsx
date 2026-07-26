@@ -19,10 +19,16 @@ import {
   AlertTriangle,
   RefreshCw,
   Clock,
+  ShieldCheck,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { supabase } from '@/lib/supabase'
 import { buildFabricSaleReceiptHtml, getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
+import {
+  getFabricsAutoSendEnabled,
+  setFabricsAutoSendEnabled,
+} from '@/lib/services/alostaz-client'
 import {
   getPendingPrintJobs,
   claimPrintJob,
@@ -30,6 +36,7 @@ import {
   markPrintJobError,
   type PrintJob,
 } from '@/lib/services/print-job-service'
+import { useAuthStore } from '@/store/authStore'
 
 type ConnectionStatus = 'connecting' | 'live' | 'error'
 
@@ -108,11 +115,15 @@ function jobLabel(job: PrintJob): string {
 }
 
 function PrintStationInner() {
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
   const [connection, setConnection] = useState<ConnectionStatus>('connecting')
   const [pendingCount, setPendingCount] = useState(0)
   const [lastPrintedAt, setLastPrintedAt] = useState<number | null>(null)
   const [totalPrinted, setTotalPrinted] = useState(0)
   const [log, setLog] = useState<LogEntry[]>([])
+  const [autoSend, setAutoSend] = useState(true)
+  const [autoSendBusy, setAutoSendBusy] = useState(false)
 
   // حراسة التسلسل: طلب واحد قيد المعالجة في كل مرة، مع إعادة تشغيل إن وصل حدث جديد أثناء المعالجة
   const processingRef = useRef(false)
@@ -121,6 +132,41 @@ function PrintStationInner() {
   const addLog = useCallback((entry: LogEntry) => {
     setLog((prev) => [entry, ...prev].slice(0, 20))
   }, [])
+
+  useEffect(() => {
+    let active = true
+    getFabricsAutoSendEnabled()
+      .then((enabled) => {
+        if (active) setAutoSend(enabled)
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const handleToggleAutoSend = async () => {
+    if (!isAdmin || autoSendBusy) return
+
+    const next = !autoSend
+    setAutoSend(next)
+    setAutoSendBusy(true)
+    const { error } = await setFabricsAutoSendEnabled(next)
+    setAutoSendBusy(false)
+
+    if (error) {
+      setAutoSend(!next)
+      toast.error('تعذّر تحديث إعداد الإرسال التلقائي: ' + error)
+      return
+    }
+
+    toast.success(
+      next
+        ? 'تم تفعيل الإرسال التلقائي لفواتير الشبكة'
+        : 'تم إيقاف الإرسال التلقائي لفواتير الشبكة'
+    )
+  }
 
   const processQueue = useCallback(async () => {
     if (processingRef.current) {
@@ -235,6 +281,64 @@ function PrintStationInner() {
         <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl mb-4 font-medium ${statusBadge.cls}`}>
           <StatusIcon className={`w-5 h-5 ${statusBadge.spin ? 'animate-spin' : ''}`} />
           <span>{statusBadge.text}</span>
+        </div>
+
+        {/* التحكم المحصور داخل محطة الطباعة */}
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                  autoSend
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-800">
+                  الإرسال التلقائي للمحاسبة
+                </p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                  {autoSend
+                    ? 'مفعّل — تُرسل مبيعات الشبكة الجديدة إلى الأستاذ تلقائياً.'
+                    : 'متوقف — لن تُرسل المبيعات الجديدة حتى إعادة التفعيل.'}
+                </p>
+              </div>
+            </div>
+
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={handleToggleAutoSend}
+                disabled={autoSendBusy}
+                role="switch"
+                aria-checked={autoSend}
+                aria-label="الإرسال التلقائي لفواتير الأقمشة"
+                dir="ltr"
+                className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60 ${
+                  autoSend ? 'bg-emerald-600' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                    autoSend ? 'translate-x-7' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            ) : (
+              <span
+                className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${
+                  autoSend
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                {autoSend ? 'مفعّل' : 'متوقف'}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* بطاقات مؤشرات */}

@@ -30,7 +30,8 @@ import {
   Calculator,
   CheckCircle2,
   Loader,
-  UserRound
+  UserRound,
+  AlertTriangle
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -44,9 +45,9 @@ import { getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
 import { queueFabricReceiptPrint } from '@/lib/services/print-job-service'
 import {
   sendFabricInvoiceToAlostaz,
-  getFabricsAutoSendEnabled,
-  setFabricsAutoSendEnabled
+  getFabricsAutoSendEnabled
 } from '@/lib/services/alostaz-client'
+import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
@@ -184,20 +185,54 @@ function FabricsIncomeContent() {
   // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
   const [sendingId, setSendingId] = useState<string | null>(null)
   const [sentMap, setSentMap] = useState<Record<string, { code?: string }>>({})
-  // مفتاح الإرسال التلقائي (يُرسِل كل فاتورة شبكة جديدة تلقائياً عند إنشائها)
-  const [autoSend, setAutoSend] = useState(false)
-  const [autoSendBusy, setAutoSendBusy] = useState(false)
 
   useEffect(() => {
     loadAll()
   }, [])
 
-  // تحميل حالة «الإرسال التلقائي» للمحاسبة (للمدير فقط)
+  // مزامنة حالة إرسال الفاتورة لحظياً بين الهواتف المفتوحة على الصفحة.
   useEffect(() => {
-    if (isAdmin) {
-      getFabricsAutoSendEnabled().then(setAutoSend).catch(() => {})
+    const channel = supabase
+      .channel('fabrics_income_alostaz_sync')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'income',
+          filter: 'branch=eq.fabrics',
+        },
+        (payload) => {
+          const updated = payload.new as Partial<Income> & { id?: string }
+          if (!updated.id) return
+
+          setIncome((prev) =>
+            prev.map((item) =>
+              item.id === updated.id
+                ? {
+                    ...item,
+                    alostaz_customer_id:
+                      updated.alostaz_customer_id ?? item.alostaz_customer_id,
+                    alostaz_invoice_id:
+                      updated.alostaz_invoice_id ?? item.alostaz_invoice_id,
+                    alostaz_invoice_code:
+                      updated.alostaz_invoice_code ?? item.alostaz_invoice_code,
+                    alostaz_sync_status:
+                      updated.alostaz_sync_status ?? item.alostaz_sync_status,
+                    alostaz_synced_at:
+                      updated.alostaz_synced_at ?? item.alostaz_synced_at,
+                  }
+                : item
+            )
+          )
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
     }
-  }, [isAdmin])
+  }, [])
 
   const loadAll = async () => {
     setLoading(true)
@@ -454,6 +489,10 @@ function FabricsIncomeContent() {
     setSendingId(null)
 
     if (res.success) {
+      if (res.inProgress) {
+        toast('هذه الفاتورة قيد الإرسال من جهاز آخر؛ تم منع محاولة مكررة.', { icon: '🛡️' })
+        return
+      }
       // تحويل الزر إلى علامة صح في الحالتين (مسودة/حقيقية) لمعرفة أنها أُرسِلت
       markIncomeSent(item.id, res.invoice_id, res.invoice_code)
       if (res.isDraft) {
@@ -469,29 +508,22 @@ function FabricsIncomeContent() {
     }
   }
 
-  // تفعيل/إيقاف الإرسال التلقائي (يُرسِل كل فاتورة شبكة جديدة تلقائياً عند إنشائها)
-  const handleToggleAutoSend = async () => {
-    if (autoSendBusy) return
-    const next = !autoSend
-    setAutoSend(next) // تفاؤلي
-    setAutoSendBusy(true)
-    const { error } = await setFabricsAutoSendEnabled(next)
-    setAutoSendBusy(false)
-    if (error) {
-      setAutoSend(!next) // تراجع عند الفشل
-      toast.error('تعذّر تحديث الإعداد: ' + error)
-    } else {
-      toast.success(next ? 'تم تفعيل الإرسال التلقائي لكل فواتير الشبكة' : 'تم إيقاف الإرسال التلقائي')
-    }
-  }
-
   // الإرسال التلقائي عند إنشاء مبيعة جديدة (الشبكة فقط — الكاش لا يُرسَل تلقائياً)
   async function maybeAutoSendFabricInvoice(rec: Income): Promise<Income> {
     if (rec.payment_method !== 'network' || rec.alostaz_invoice_code) return rec
-    if (!isAdmin || !autoSend) return rec
+    if (!isAdmin) return rec
+
+    // نقرأ الإعداد عند كل فاتورة، كي يطبَّق الإيقاف من محطة الطباعة فوراً
+    // حتى لو كانت صفحة المبيعات مفتوحة مسبقاً على هاتف آخر.
+    const autoSendEnabled = await getFabricsAutoSendEnabled()
+    if (!autoSendEnabled) return rec
 
     const res = await sendFabricInvoiceToAlostaz(rec.id)
     if (res.success) {
+      if (res.inProgress) {
+        toast('الفاتورة قيد الإرسال من جهاز آخر؛ تم منع محاولة مكررة.', { icon: '🛡️' })
+        return rec
+      }
       // تحويل الزر إلى علامة صح في الحالتين (مسودة/حقيقية)
       markIncomeSent(rec.id, res.invoice_id, res.invoice_code)
       if (res.isDraft) {
@@ -811,39 +843,6 @@ function FabricsIncomeContent() {
           </div>
         </motion.div>
 
-        {/* مفتاح الإرسال التلقائي للمحاسبة (الأستاذ) — للمدير فقط */}
-        {isAdmin && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="mb-6"
-          >
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center shrink-0">
-                  <Calculator className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-800 text-sm">الإرسال التلقائي للمحاسبة (الأستاذ)</p>
-                  <p className="text-xs text-gray-500">عند التفعيل تُرسَل فاتورة كل مبيعة شبكة جديدة تلقائياً بمجرد إنشائها (الكاش يُرسَل يدوياً)</p>
-                </div>
-              </div>
-              <button
-                onClick={handleToggleAutoSend}
-                disabled={autoSendBusy}
-                role="switch"
-                aria-checked={autoSend}
-                dir="ltr"
-                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${autoSend ? 'bg-emerald-500' : 'bg-gray-300'}`}
-                title={autoSend ? 'إيقاف الإرسال التلقائي' : 'تفعيل الإرسال التلقائي'}
-              >
-                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSend ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-          </motion.div>
-        )}
-
         {/* List */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -949,6 +948,20 @@ function FabricsIncomeContent() {
                             title={`تم الإرسال للمحاسبة${getSentCode(item) ? ' — ' + getSentCode(item) : ''}`}
                           >
                             <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                        ) : item.alostaz_sync_status === 'sending' ? (
+                          <div
+                            className="p-2 text-sky-600 rounded-lg border border-sky-100 bg-sky-50 cursor-wait"
+                            title="الفاتورة قيد الإرسال من جهاز آخر"
+                          >
+                            <Loader className="w-4 h-4 animate-spin" />
+                          </div>
+                        ) : item.alostaz_sync_status === 'review_required' ? (
+                          <div
+                            className="p-2 text-amber-700 rounded-lg border border-amber-200 bg-amber-50 cursor-default"
+                            title="توقفت إعادة الإرسال للحماية من التكرار؛ راجع تطبيق الأستاذ"
+                          >
+                            <AlertTriangle className="w-4 h-4" />
                           </div>
                         ) : (
                           <button

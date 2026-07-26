@@ -46,6 +46,24 @@ export interface AlostazInvoiceResult {
   is_draft: boolean
 }
 
+class AlostazRequestError extends Error {
+  constructor(
+    message: string,
+    readonly invoiceOutcomeUnknown: boolean = false
+  ) {
+    super(message)
+    this.name = 'AlostazRequestError'
+  }
+}
+
+/**
+ * Returns true when an invoice POST may have reached Alostaz but its response
+ * was not confirmed. Retrying automatically could create a duplicate invoice.
+ */
+export function isAlostazInvoiceOutcomeUnknown(error: unknown): boolean {
+  return error instanceof AlostazRequestError && error.invoiceOutcomeUnknown
+}
+
 /** الحصول على التوكن السرّي أو رمي خطأ واضح. */
 function getToken(): string {
   const token = process.env.ALOSTAZ_API_TOKEN
@@ -72,11 +90,16 @@ function alostazHeaders(): Record<string, string> {
 /** نداء منخفض المستوى للأستاذ مع معالجة أخطاء موحّدة. */
 async function alostazFetch(path: string, init?: RequestInit): Promise<any> {
   const url = `${ALOSTAZ_BASE_URL}${path}`
+  const isInvoiceCreation =
+    path === '/invoices' && String(init?.method || 'GET').toUpperCase() === 'POST'
   let res: Response
   try {
     res = await fetch(url, { ...init, headers: { ...alostazHeaders(), ...(init?.headers || {}) } })
   } catch (err: any) {
-    throw new Error(`تعذّر الاتصال بخادم الأستاذ: ${err?.message || err}`)
+    throw new AlostazRequestError(
+      `تعذّر الاتصال بخادم الأستاذ: ${err?.message || err}`,
+      isInvoiceCreation
+    )
   }
 
   const text = await res.text()
@@ -92,7 +115,10 @@ async function alostazFetch(path: string, init?: RequestInit): Promise<any> {
       (body && (body.message || body.error)) ||
       (typeof body === 'string' ? body : '') ||
       `HTTP ${res.status}`
-    throw new Error(`الأستاذ رفض الطلب (${res.status}): ${msg}`)
+    throw new AlostazRequestError(
+      `الأستاذ رفض الطلب (${res.status}): ${msg}`,
+      isInvoiceCreation && res.status >= 500
+    )
   }
 
   return body
@@ -253,7 +279,10 @@ export async function createInvoiceForOrder(
   })
 
   if (!created?.id) {
-    throw new Error('فشل إنشاء الفاتورة في الأستاذ (لم يُرجَع معرّف).')
+    throw new AlostazRequestError(
+      'فشل إنشاء الفاتورة في الأستاذ (لم يُرجَع معرّف).',
+      true
+    )
   }
 
   return {
@@ -443,7 +472,10 @@ export async function createInvoiceForFabricSale(
   })
 
   if (!created?.id) {
-    throw new Error('فشل إنشاء فاتورة القماش في الأستاذ (لم يُرجَع معرّف).')
+    throw new AlostazRequestError(
+      'فشل إنشاء فاتورة القماش في الأستاذ (لم يُرجَع معرّف).',
+      true
+    )
   }
 
   return {

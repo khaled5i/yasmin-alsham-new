@@ -207,7 +207,7 @@ export interface Order {
   // الربط مع الأستاذ للمحاسبة (migration 64)
   alostaz_invoice_id?: number | null
   alostaz_invoice_code?: string | null
-  alostaz_sync_status?: 'sent' | 'failed' | null
+  alostaz_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
   // ملخص التصميم الصوتي (migration 50)
   design_summary_notes?: Array<{
     id: string

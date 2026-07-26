@@ -1,6 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { createInvoiceForFabricSale, createProduct, getFabricsBranchContext } from '@/lib/services/alostaz-service'
+import {
+  createInvoiceForFabricSale,
+  createProduct,
+  getFabricsBranchContext,
+  isAlostazInvoiceOutcomeUnknown,
+} from '@/lib/services/alostaz-service'
 
 /**
  * مسار خادمي لإرسال فاتورة مبيعة قماش إلى تطبيق الأستاذ للمحاسبة.
@@ -142,14 +148,81 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 5) تجهيز بنود القماش (قماش واحد أو أكثر) + إنشاء الفاتورة في الأستاذ
+    // 5) حجز الإرسال ذرياً قبل أي اتصال ينشئ الفاتورة في الأستاذ.
+    // يفوز استدعاء واحد فقط حتى لو ضغط جهازان في اللحظة نفسها.
+    const syncAttemptToken = randomUUID()
+    const { data: claimedIncome, error: claimError } = await admin
+      .from('income')
+      .update({
+        alostaz_sync_status: 'sending',
+        alostaz_sync_token: syncAttemptToken,
+        alostaz_sync_error: null,
+        alostaz_synced_at: new Date().toISOString(),
+      })
+      .eq('id', incomeId)
+      .eq('branch', 'fabrics')
+      .is('alostaz_invoice_id', null)
+      .or('alostaz_sync_status.is.null,alostaz_sync_status.eq.failed')
+      .select('id')
+      .maybeSingle()
+
+    if (claimError) {
+      return NextResponse.json(
+        { error: 'تعذّر حجز إرسال فاتورة القماش بأمان: ' + claimError.message },
+        { status: 500 }
+      )
+    }
+
+    if (!claimedIncome) {
+      const { data: latestIncome, error: latestError } = await admin
+        .from('income')
+        .select('alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status')
+        .eq('id', incomeId)
+        .single()
+
+      if (latestError || !latestIncome) {
+        return NextResponse.json(
+          { error: 'تعذّر التحقق من حالة إرسال فاتورة القماش' },
+          { status: 500 }
+        )
+      }
+
+      if (latestIncome.alostaz_invoice_id) {
+        return NextResponse.json({
+          data: {
+            alreadySent: true,
+            invoice_id: latestIncome.alostaz_invoice_id,
+            invoice_code: latestIncome.alostaz_invoice_code,
+          },
+          error: null,
+        })
+      }
+
+      if (latestIncome.alostaz_sync_status === 'review_required') {
+        return NextResponse.json(
+          {
+            error:
+              'توقّفت إعادة الإرسال لحماية فاتورة القماش من التكرار. يجب مراجعة تطبيق الأستاذ أولاً.',
+          },
+          { status: 409 }
+        )
+      }
+
+      return NextResponse.json({
+        data: { inProgress: true },
+        error: null,
+      })
+    }
+
+    // 6) تجهيز بنود القماش (قماش واحد أو أكثر) + إنشاء الفاتورة في الأستاذ
     let result
     try {
       // بنود القماش: من fabric_items إن وُجدت، وإلا بند واحد من القماش القديم
       type SaleItem = { name: string; quantity_meters: number | null }
+      type StoredFabricItem = { name?: unknown; quantity_meters?: unknown }
       const rawItems: SaleItem[] =
         Array.isArray(income.fabric_items) && income.fabric_items.length > 0
-          ? income.fabric_items.map((f: any) => ({
+          ? income.fabric_items.map((f: StoredFabricItem) => ({
               name: String(f?.name || income.customer_name || 'قماش'),
               quantity_meters: f?.quantity_meters != null ? Number(f.quantity_meters) : null,
             }))
@@ -209,46 +282,67 @@ export async function POST(request: NextRequest) {
         date: income.date,
         lines,
       })
-    } catch (err: any) {
-      // تسجيل حالة الفشل (بدون معرّف فاتورة → يمكن إعادة المحاولة)
-      await admin
+    } catch (err: unknown) {
+      const outcomeUnknown = isAlostazInvoiceOutcomeUnknown(err)
+      const errorMessage =
+        err instanceof Error ? err.message : 'فشل إرسال الفاتورة للأستاذ'
+      const { error: failureUpdateError } = await admin
         .from('income')
-        .update({ alostaz_sync_status: 'failed', alostaz_synced_at: new Date().toISOString() })
+        .update({
+          alostaz_sync_status: outcomeUnknown ? 'review_required' : 'failed',
+          alostaz_sync_error: errorMessage,
+          alostaz_synced_at: new Date().toISOString(),
+        })
         .eq('id', incomeId)
-      return NextResponse.json({ error: err?.message || 'فشل إرسال الفاتورة للأستاذ' }, { status: 502 })
-    }
+        .eq('alostaz_sync_token', syncAttemptToken)
+        .eq('alostaz_sync_status', 'sending')
 
-    // وضع الاختبار (مسودة): لا نُعلّم المبيعة كـ«مُرسَلة» حتى يبقى الإرسال الحقيقي متاحاً لاحقاً
-    if (result.is_draft) {
-      return NextResponse.json({
-        data: {
-          invoice_id: result.invoice_id,
-          invoice_code: result.invoice_code,
-          customer_id: result.customer_id,
-          draft: true,
+      if (failureUpdateError) {
+        console.error('Failed to persist fabric invoice failure state:', failureUpdateError)
+      }
+
+      return NextResponse.json(
+        {
+          error: outcomeUnknown
+            ? `${errorMessage} — أوقفت إعادة المحاولة تلقائياً لمنع تكرار الفاتورة، ويلزم التحقق من الأستاذ.`
+            : errorMessage,
         },
-        error: null,
-      })
+        { status: 502 }
+      )
     }
 
-    // 6) حفظ النتيجة على المبيعة
-    const { error: updateError } = await admin
-      .from('income')
-      .update({
-        alostaz_customer_id: result.customer_id,
-        alostaz_invoice_id: result.invoice_id,
-        alostaz_invoice_code: result.invoice_code,
-        alostaz_sync_status: 'sent',
-        alostaz_synced_at: new Date().toISOString(),
-      })
-      .eq('id', incomeId)
+    // 7) حفظ النتيجة حتى للمسودة؛ وجود المعرّف هو مصدر الحقيقة المشترك
+    // بين جميع الأجهزة ويمنع ظهور زر إرسال جديد على هاتف آخر.
+    let updateError: { message: string } | null = null
+    let finalized = false
+    for (let attempt = 0; attempt < 3 && !finalized; attempt++) {
+      const { data: finalizedIncome, error } = await admin
+        .from('income')
+        .update({
+          alostaz_customer_id: result.customer_id,
+          alostaz_invoice_id: result.invoice_id,
+          alostaz_invoice_code: result.invoice_code,
+          alostaz_sync_status: 'sent',
+          alostaz_sync_error: null,
+          alostaz_synced_at: new Date().toISOString(),
+        })
+        .eq('id', incomeId)
+        .eq('alostaz_sync_token', syncAttemptToken)
+        .select('id')
+        .maybeSingle()
 
-    if (updateError) {
+      updateError = error
+      finalized = !!finalizedIncome
+    }
+
+    if (updateError || !finalized) {
       // الفاتورة أُنشئت في الأستاذ لكن فشل حفظ المرجع محلياً — نُبلّغ بذلك
       return NextResponse.json(
         {
           data: { invoice_id: result.invoice_id, invoice_code: result.invoice_code },
-          warning: 'أُنشئت الفاتورة في الأستاذ لكن تعذّر حفظ المرجع محلياً: ' + updateError.message,
+          warning:
+            'أُنشئت الفاتورة في الأستاذ لكن تعذّر حفظ المرجع محلياً. أُبقي حجز الحماية فعالاً لمنع إعادة إرسالها.' +
+            (updateError?.message ? ' ' + updateError.message : ''),
           error: null,
         },
         { status: 200 }
@@ -260,11 +354,15 @@ export async function POST(request: NextRequest) {
         invoice_id: result.invoice_id,
         invoice_code: result.invoice_code,
         customer_id: result.customer_id,
+        draft: result.is_draft,
       },
       error: null,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ send-fabric-invoice error:', error)
-    return NextResponse.json({ error: error?.message || 'حدث خطأ غير متوقع' }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'حدث خطأ غير متوقع' },
+      { status: 500 }
+    )
   }
 }
