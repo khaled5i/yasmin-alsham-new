@@ -125,21 +125,21 @@ export async function POST(request: NextRequest) {
     // 5) حجز الإرسال بشكل ذري قبل الاتصال بالأستاذ.
     // لا يكفي فحص alostaz_invoice_id أعلاه: قد يقرأ طلبان متزامنان القيمة NULL.
     // التحديث الشرطي أدناه يُقفل صف الطلب، ولذلك يفوز طلب واحد فقط بالحجز.
+    // Keep this as a count-only PATCH. PostgREST v14 miscompiles this OR filter
+    // when UPDATE is chained with select()/return=representation.
     const syncAttemptToken = randomUUID()
     const syncStartedAt = new Date().toISOString()
-    const { data: claimedOrder, error: claimError } = await supabaseAdmin
+    const { count: claimedOrderCount, error: claimError } = await supabaseAdmin
       .from('orders')
       .update({
         alostaz_sync_status: 'sending',
         alostaz_sync_token: syncAttemptToken,
         alostaz_sync_error: null,
         alostaz_synced_at: syncStartedAt,
-      })
+      }, { count: 'exact' })
       .eq('id', orderId)
       .is('alostaz_invoice_id', null)
       .or('alostaz_sync_status.is.null,alostaz_sync_status.eq.failed')
-      .select('id')
-      .maybeSingle()
 
     if (claimError) {
       return NextResponse.json(
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!claimedOrder) {
+    if (claimedOrderCount !== 1) {
       const { data: latestOrder, error: latestError } = await supabaseAdmin
         .from('orders')
         .select('alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status')

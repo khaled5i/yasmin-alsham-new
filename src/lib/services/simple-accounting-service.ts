@@ -339,16 +339,75 @@ function isMissingFabricItemsColumn(error: { code?: string; message?: string } |
   )
 }
 
+function isNetworkFetchError(error: { message?: string } | Error | null | undefined): boolean {
+  const message = error?.message || ''
+  return /failed to fetch|networkerror|load failed|fetch failed/i.test(message)
+}
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+
+/**
+ * عند انقطاع رد POST قد تكون المبيعة حُفظت فعلاً في قاعدة البيانات.
+ * نبحث بالمعرّف الثابت بدل إعادة INSERT قد ينشئ فاتورة مكررة.
+ */
+async function recoverCreatedIncome(id: string): Promise<Income | null> {
+  const delays = [200, 500, 1000]
+
+  for (const delay of delays) {
+    await wait(delay)
+
+    try {
+      const { data, error } = await supabase
+        .from('income')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle()
+
+      if (data) return data
+      if (error && !isNetworkFetchError(error)) {
+        console.error('Error confirming created income:', error.message || error)
+        return null
+      }
+    } catch (error) {
+      if (!isNetworkFetchError(error instanceof Error ? error : null)) {
+        console.error('Error confirming created income:', error)
+        return null
+      }
+    }
+  }
+
+  return null
+}
+
 export async function createIncome(input: CreateIncomeInput): Promise<Income | null> {
   if (!isSupabaseConfigured()) {
     console.warn('⚠️ Supabase not configured')
     return null
   }
 
+  const incomeId = input.id || globalThis.crypto.randomUUID()
+  let payload: Record<string, unknown> = {
+    ...input,
+    id: incomeId,
+    is_automatic: input.is_automatic ?? false
+  }
+
   try {
-    let payload: Record<string, any> = {
-      ...input,
-      is_automatic: input.is_automatic ?? false
+    // إعادة الضغط على الحفظ بعد انقطاع الشبكة تستخدم المعرّف نفسه:
+    // إن كانت المحاولة السابقة نجحت نعيد سجلها ولا ننشئ فاتورة ثانية.
+    if (input.id) {
+      const { data: existing, error: lookupError } = await supabase
+        .from('income')
+        .select('*')
+        .eq('id', incomeId)
+        .maybeSingle()
+
+      if (existing) return existing
+      if (lookupError && !isNetworkFetchError(lookupError)) {
+        console.error('Error checking existing income:', lookupError.message || lookupError)
+        return null
+      }
     }
 
     let { data, error } = await supabase
@@ -360,7 +419,9 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
     // توافق تدريجي: إذا لم يُطبَّق عمودا buyer_name/buyer_phone بعد، أعد المحاولة بدونهما
     if (error && isMissingBuyerColumns(error)) {
       console.warn('⚠️ income.buyer_name/buyer_phone columns missing. Please run migrations/61-income-buyer-info.sql')
-      const { buyer_name: _n, buyer_phone: _p, ...withoutBuyer } = payload
+      const withoutBuyer = { ...payload }
+      delete withoutBuyer.buyer_name
+      delete withoutBuyer.buyer_phone
       payload = withoutBuyer
       ;({ data, error } = await supabase
         .from('income')
@@ -372,7 +433,8 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_images بعد، أعد المحاولة بدونه
     if (error && isMissingFabricImagesColumn(error)) {
       console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
-      const { fabric_images: _omit, ...withoutImages } = payload
+      const withoutImages = { ...payload }
+      delete withoutImages.fabric_images
       payload = withoutImages
       ;({ data, error } = await supabase
         .from('income')
@@ -384,12 +446,27 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_items بعد، أعد المحاولة بدونه
     if (error && isMissingFabricItemsColumn(error)) {
       console.warn('⚠️ income.fabric_items column missing. Please run migrations/69-income-fabric-items.sql')
-      const { fabric_items: _omit, ...withoutItems } = payload
+      const withoutItems = { ...payload }
+      delete withoutItems.fabric_items
       ;({ data, error } = await supabase
         .from('income')
         .insert(withoutItems)
         .select()
         .single())
+    }
+
+    if (error && isNetworkFetchError(error)) {
+      const recovered = await recoverCreatedIncome(incomeId)
+      if (recovered) {
+        console.warn('⚠️ تم حفظ المبيعة رغم انقطاع رد الشبكة، واستُعيدت بأمان دون تكرار')
+        return recovered
+      }
+    }
+
+    // إذا كانت محاولة سابقة بالمعرّف نفسه قد نجحت، استعد سجلها بدل اعتبارها فشلاً.
+    if (error?.code === '23505' && error.message?.includes('income_pkey')) {
+      const recovered = await recoverCreatedIncome(incomeId)
+      if (recovered) return recovered
     }
 
     if (error) {
@@ -403,6 +480,13 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
 
     return data
   } catch (err) {
+    if (isNetworkFetchError(err instanceof Error ? err : null)) {
+      const recovered = await recoverCreatedIncome(incomeId)
+      if (recovered) {
+        console.warn('⚠️ تم حفظ المبيعة رغم انقطاع رد الشبكة، واستُعيدت بأمان دون تكرار')
+        return recovered
+      }
+    }
     console.error('Error creating income:', err)
     return null
   }
@@ -415,7 +499,7 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
   }
 
   try {
-    let payload: Record<string, any> = { ...input }
+    let payload: Record<string, unknown> = { ...input }
 
     let { data, error } = await supabase
       .from('income')
@@ -427,7 +511,9 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
     // توافق تدريجي: إذا لم يُطبَّق عمودا buyer_name/buyer_phone بعد، أعد المحاولة بدونهما
     if (error && isMissingBuyerColumns(error)) {
       console.warn('⚠️ income.buyer_name/buyer_phone columns missing. Please run migrations/61-income-buyer-info.sql')
-      const { buyer_name: _n, buyer_phone: _p, ...withoutBuyer } = payload
+      const withoutBuyer = { ...payload }
+      delete withoutBuyer.buyer_name
+      delete withoutBuyer.buyer_phone
       payload = withoutBuyer
       ;({ data, error } = await supabase
         .from('income')
@@ -440,7 +526,8 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_images بعد، أعد المحاولة بدونه
     if (error && isMissingFabricImagesColumn(error)) {
       console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
-      const { fabric_images: _omit, ...withoutImages } = payload
+      const withoutImages = { ...payload }
+      delete withoutImages.fabric_images
       payload = withoutImages
       ;({ data, error } = await supabase
         .from('income')
@@ -453,7 +540,8 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_items بعد، أعد المحاولة بدونه
     if (error && isMissingFabricItemsColumn(error)) {
       console.warn('⚠️ income.fabric_items column missing. Please run migrations/69-income-fabric-items.sql')
-      const { fabric_items: _omit, ...withoutItems } = payload
+      const withoutItems = { ...payload }
+      delete withoutItems.fabric_items
       ;({ data, error } = await supabase
         .from('income')
         .update(withoutItems)

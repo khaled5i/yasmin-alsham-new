@@ -150,21 +150,21 @@ export async function POST(request: NextRequest) {
 
     // 5) حجز الإرسال ذرياً قبل أي اتصال ينشئ الفاتورة في الأستاذ.
     // يفوز استدعاء واحد فقط حتى لو ضغط جهازان في اللحظة نفسها.
+    // Keep this as a count-only PATCH. PostgREST v14 miscompiles this OR filter
+    // when UPDATE is chained with select()/return=representation.
     const syncAttemptToken = randomUUID()
-    const { data: claimedIncome, error: claimError } = await admin
+    const { count: claimedIncomeCount, error: claimError } = await admin
       .from('income')
       .update({
         alostaz_sync_status: 'sending',
         alostaz_sync_token: syncAttemptToken,
         alostaz_sync_error: null,
         alostaz_synced_at: new Date().toISOString(),
-      })
+      }, { count: 'exact' })
       .eq('id', incomeId)
       .eq('branch', 'fabrics')
       .is('alostaz_invoice_id', null)
       .or('alostaz_sync_status.is.null,alostaz_sync_status.eq.failed')
-      .select('id')
-      .maybeSingle()
 
     if (claimError) {
       return NextResponse.json(
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!claimedIncome) {
+    if (claimedIncomeCount !== 1) {
       const { data: latestIncome, error: latestError } = await admin
         .from('income')
         .select('alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status')

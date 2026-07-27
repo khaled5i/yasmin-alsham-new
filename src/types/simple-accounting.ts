@@ -99,6 +99,8 @@ export interface Income {
 }
 
 export interface CreateIncomeInput {
+  /** معرّف ثابت لمحاولة الإنشاء لمنع التكرار إذا انقطع رد الشبكة بعد الحفظ */
+  id?: string
   branch: BranchType
   category?: string       // فئة المبيعة (اختياري)
   order_id?: string

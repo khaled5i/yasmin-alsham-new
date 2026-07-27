@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
@@ -181,6 +181,8 @@ function FabricsIncomeContent() {
   // اسم العميل ورقم هاتفه (اختياريان — لا يمنعان حفظ المبيعة)
   const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
+  // يبقى ثابتاً عند فشل الشبكة حتى تكون إعادة الحفظ آمنة ولا تنشئ مبيعة مكررة.
+  const pendingIncomeIdRef = useRef<string | null>(null)
 
   // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
   const [sendingId, setSendingId] = useState<string | null>(null)
@@ -251,6 +253,7 @@ function FabricsIncomeContent() {
   }
 
   const resetForm = () => {
+    pendingIncomeIdRef.current = null
     setFabricLines([{ inventory_id: '', quantity_meters: '' }])
     setAmount('')
     setDescription('')
@@ -370,6 +373,9 @@ function FabricsIncomeContent() {
         if (result) {
           setIncome(income.map((it) => (it.id === editingId ? result : it)))
           await sendReceiptToPrintStation(result)
+        } else {
+          alert('❌ تعذّر تأكيد حفظ التعديل. بقي النموذج مفتوحاً؛ تحقق من الاتصال ثم أعد المحاولة.')
+          return
         }
         setShowModal(false)
         setIsEditing(false)
@@ -386,7 +392,10 @@ function FabricsIncomeContent() {
     // إضافة جديدة
     setSaving(true)
     try {
+      const incomeId = pendingIncomeIdRef.current || globalThis.crypto.randomUUID()
+      pendingIncomeIdRef.current = incomeId
       const payload: CreateIncomeInput = {
+        id: incomeId,
         branch: 'fabrics',
         category: 'fabric_sale',
         ...commonFields,
@@ -395,6 +404,11 @@ function FabricsIncomeContent() {
       if (result) {
         setIncome([result, ...income])
         await sendReceiptToPrintStation(result)
+      } else {
+        alert(
+          '⚠️ تعذّر تأكيد نتيجة الحفظ بسبب الاتصال. بقي النموذج مفتوحاً، وإعادة الضغط على الحفظ آمنة ولن تنشئ فاتورة مكررة.'
+        )
+        return
       }
       setShowModal(false)
       resetForm()
