@@ -175,8 +175,8 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
       toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
     } else if (printResult.directError) {
       toast(
-        `تعذّرت الطباعة المباشرة؛ أُرسل إيصال الطلب ${receipt.order_number} إلى المحطة الاحتياطية.`,
-        { icon: '⚠️', duration: 5500 }
+        `تعذّرت الطباعة المباشرة؛ أُرسل إيصال الطلب ${receipt.order_number} إلى المحطة الاحتياطية. السبب: ${printResult.directError}`,
+        { icon: '⚠️', duration: 8000 }
       )
     } else {
       toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })

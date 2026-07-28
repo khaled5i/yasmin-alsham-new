@@ -8,7 +8,9 @@ const PRINT_BRIDGE_ORIGIN = 'http://127.0.0.1:19281'
 const PRINT_WIDTH_DOTS = 576
 const PRINT_TIMEOUT_MS = 8_000
 const BRIDGE_TIMEOUT_MS = 20_000
-const MAX_RECEIPT_HEIGHT_DOTS = 2_600
+const MAX_RECEIPT_HEIGHT_DOTS = 5_500
+// تقسيم الصورة يمنع بقاء طلب واحد كبير داخل جسر أندرويد حتى انتهاء مهلة الاتصال.
+const RASTER_CHUNK_HEIGHT_DOTS = 512
 
 export const DEFAULT_DIRECT_PRINTER_IP = '192.168.100.105'
 export const PRINT_BRIDGE_APK_PATH = '/downloads/yasmin-print-bridge.apk'
@@ -273,59 +275,34 @@ async function renderReceiptCanvas(payload: TailoringReceiptPayload): Promise<HT
     return canvas
   } catch (error) {
     if (error instanceof DirectPrinterError) throw error
-    throw new DirectPrinterError('render-failed', 'تعذّر تحويل الإيصال إلى صورة حرارية.', {
-      cause: error,
-    })
+    const detail = error instanceof Error && error.message
+      ? ` السبب: ${error.message}`
+      : ''
+    throw new DirectPrinterError(
+      'render-failed',
+      `تعذّر تحويل الإيصال إلى صورة حرارية.${detail}`,
+      { cause: error }
+    )
   } finally {
     iframe.remove()
   }
 }
 
-function renderConnectionTestCanvas(ipAddress: string): HTMLCanvasElement {
-  const canvas = document.createElement('canvas')
-  canvas.width = PRINT_WIDTH_DOTS
-  canvas.height = 330
-
-  const context = canvas.getContext('2d')
-  if (!context) {
-    throw new DirectPrinterError('render-failed', 'تعذّر تجهيز ورقة اختبار الطابعة.')
-  }
-
-  context.fillStyle = '#ffffff'
-  context.fillRect(0, 0, canvas.width, canvas.height)
-  context.strokeStyle = '#000000'
-  context.lineWidth = 3
-  context.strokeRect(18, 18, canvas.width - 36, canvas.height - 36)
-  context.fillStyle = '#000000'
-  context.textAlign = 'center'
-  context.direction = 'rtl'
-
-  context.font = '900 42px Tahoma, sans-serif'
-  context.fillText('ياسمين الشام', canvas.width / 2, 82)
-  context.font = '700 31px Tahoma, sans-serif'
-  context.fillText('تم ربط الطابعة بنجاح', canvas.width / 2, 142)
-  context.font = '600 22px Tahoma, sans-serif'
-  context.fillText('TA POS TA-900UWB', canvas.width / 2, 194)
-  context.direction = 'ltr'
-  context.font = '700 24px monospace'
-  context.fillText(ipAddress, canvas.width / 2, 238)
-  context.font = '500 18px sans-serif'
-  context.fillText(new Date().toLocaleString('ar-SA-u-nu-latn'), canvas.width / 2, 278)
-
-  return canvas
-}
-
-function canvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
+function canvasToEscPosRaster(
+  canvas: HTMLCanvasElement,
+  startY = 0,
+  rasterHeight = canvas.height
+): Uint8Array {
   const context = canvas.getContext('2d', { willReadFrequently: true })
   if (!context) {
     throw new DirectPrinterError('render-failed', 'تعذّر قراءة صورة الإيصال.')
   }
 
   const width = PRINT_WIDTH_DOTS
-  const height = canvas.height
+  const height = Math.min(rasterHeight, canvas.height - startY)
   const bytesPerRow = Math.ceil(width / 8)
   const raster = new Uint8Array(bytesPerRow * height)
-  const pixels = context.getImageData(0, 0, width, height).data
+  const pixels = context.getImageData(0, startY, width, height).data
 
   for (let y = 0; y < height; y += 1) {
     const rowOffset = y * bytesPerRow
@@ -357,18 +334,33 @@ function canvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
   return concatBytes(header, raster)
 }
 
-function buildPrintJob(
+function buildPrintJobChunks(
   canvas: HTMLCanvasElement,
   options: TailoringDirectPrintOptions = {}
-): Uint8Array {
+): Uint8Array[] {
   const initializeAndAlign = new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x00])
   // ESC p m t1 t2 — نبضة على pin 2: تشغيل 50ms ثم انتظار 500ms.
   const cashDrawerKick = options.openCashDrawer
     ? new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa])
     : new Uint8Array()
-  const raster = canvasToEscPosRaster(canvas)
   const feedAndCut = new Uint8Array([0x1b, 0x64, 0x04, 0x1d, 0x56, 0x00])
-  return concatBytes(initializeAndAlign, cashDrawerKick, raster, feedAndCut)
+  const chunks: Uint8Array[] = []
+
+  for (let startY = 0; startY < canvas.height; startY += RASTER_CHUNK_HEIGHT_DOTS) {
+    const height = Math.min(RASTER_CHUNK_HEIGHT_DOTS, canvas.height - startY)
+    const isFirst = startY === 0
+    const isLast = startY + height >= canvas.height
+    const raster = canvasToEscPosRaster(canvas, startY, height)
+
+    chunks.push(concatBytes(
+      isFirst ? initializeAndAlign : new Uint8Array(),
+      isFirst ? cashDrawerKick : new Uint8Array(),
+      raster,
+      isLast ? feedAndCut : new Uint8Array()
+    ))
+  }
+
+  return chunks
 }
 
 interface PrintBridgeHealth {
@@ -512,6 +504,23 @@ async function postEscPosBytes(ipAddress: string, bytes: Uint8Array): Promise<vo
   }
 }
 
+async function postCanvasPrintJob(
+  ipAddress: string,
+  canvas: HTMLCanvasElement,
+  options: TailoringDirectPrintOptions = {}
+): Promise<void> {
+  const chunks = buildPrintJobChunks(canvas, options)
+  console.info('[direct-printer] sending raster chunks', {
+    chunks: chunks.length,
+    height: canvas.height,
+  })
+
+  // يجب أن تبقى الدفعات متسلسلة كي لا تتغير مواضع أجزاء الإيصال على الورق.
+  for (const chunk of chunks) {
+    await postEscPosBytes(ipAddress, chunk)
+  }
+}
+
 export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinterConfig> {
   const ip = validatePrinterIp(ipAddress)
   if (!isBrowser()) {
@@ -520,8 +529,20 @@ export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinte
 
   await fetchPrintBridgeHealth()
   if (document.fonts?.ready) await document.fonts.ready
-  const testCanvas = renderConnectionTestCanvas(ip)
-  await postEscPosBytes(ip, buildPrintJob(testCanvas, { openCashDrawer: true }))
+  const testCanvas = await renderReceiptCanvas({
+    order_id: 'printer-test',
+    order_number: 'TEST',
+    invoice_code: 'PRINTER-TEST',
+    invoice_code_source: 'local',
+    customer_name: 'اختبار الطابعة',
+    item_description: 'اختبار طباعة إيصال التفصيل',
+    total: 115,
+    paid_amount: 115,
+    cash_amount: 115,
+    network_amount: 0,
+    delivered_at: new Date().toISOString(),
+  })
+  await postCanvasPrintJob(ip, testCanvas, { openCashDrawer: true })
 
   return saveDirectPrinterConfig({
     enabled: true,
@@ -542,9 +563,10 @@ export async function printTailoringReceiptDirect(
     )
   }
 
+  await fetchPrintBridgeHealth()
   const canvas = await renderReceiptCanvas(payload)
   const openCashDrawer =
     options.openCashDrawer === true &&
     Math.max(0, Number(payload.cash_amount) || 0) >= 0.005
-  await postEscPosBytes(config.ipAddress, buildPrintJob(canvas, { openCashDrawer }))
+  await postCanvasPrintJob(config.ipAddress, canvas, { openCashDrawer })
 }
