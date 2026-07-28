@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle,
+  Banknote,
   CheckCircle2,
   Download,
   Loader2,
   Printer,
   RadioTower,
   ReceiptText,
-  RefreshCw,
   Unplug,
   Wifi,
   X,
@@ -26,6 +26,94 @@ import {
 } from '@/lib/services/direct-thermal-printer'
 
 type TestState = 'idle' | 'testing' | 'success' | 'error'
+
+function printBrowserTestPage(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof document === 'undefined') {
+      reject(new Error('اختبار الطباعة من المتصفح غير متاح على هذا الجهاز.'))
+      return
+    }
+
+    let settled = false
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute('aria-hidden', 'true')
+    iframe.style.cssText = [
+      'position:fixed',
+      'left:-10000px',
+      'top:0',
+      'width:80mm',
+      'height:160mm',
+      'border:0',
+      'background:#fff',
+    ].join(';')
+
+    const cleanup = () => {
+      window.setTimeout(() => iframe.remove(), 1500)
+    }
+    const finish = (error?: unknown) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      cleanup()
+      if (error) reject(error instanceof Error ? error : new Error(String(error)))
+      else resolve()
+    }
+    const timeout = window.setTimeout(
+      () => finish(new Error('انتهت مهلة فتح نافذة الطباعة.')),
+      12_000
+    )
+
+    iframe.onload = () => {
+      window.setTimeout(() => {
+        try {
+          const frameWindow = iframe.contentWindow
+          if (!frameWindow) throw new Error('تعذّر الوصول إلى نافذة الطباعة.')
+          frameWindow.focus()
+          frameWindow.print()
+          finish()
+        } catch (error) {
+          finish(error)
+        }
+      }, 250)
+    }
+
+    iframe.srcdoc = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>اختبار طابعة التفصيل</title>
+  <style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; }
+    body {
+      width: 72mm;
+      margin: 0 auto;
+      padding: 7mm 2mm 14mm;
+      color: #111;
+      background: #fff;
+      font-family: Tahoma, "Segoe UI", sans-serif;
+      text-align: center;
+    }
+    h1 { margin: 0 0 3mm; font-size: 21px; }
+    p { margin: 2mm 0; font-size: 13px; font-weight: 700; }
+    .rule { margin: 5mm 0; border: 0; border-top: 2px dashed #111; }
+    .status { font-size: 18px; font-weight: 900; }
+    .time { direction: ltr; font-family: monospace; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>ياسمين الشام</h1>
+  <p class="status">اختبار طابعة إيصالات التفصيل</p>
+  <hr class="rule">
+  <p>إذا ظهرت هذه الورقة فالطباعة من الكمبيوتر تعمل بنجاح.</p>
+  <p>يُفتح الدرج إذا كان تعريف الطابعة في ويندوز مضبوطاً لفتحه عند بدء الطباعة.</p>
+  <hr class="rule">
+  <p class="time">${new Date().toLocaleString('ar-SA-u-nu-latn')}</p>
+</body>
+</html>`
+    document.body.appendChild(iframe)
+  })
+}
 
 export default function DirectPrinterSetup() {
   const [config, setConfig] = useState<DirectPrinterConfig | null>(null)
@@ -62,22 +150,32 @@ export default function DirectPrinterSetup() {
   const handleTest = async () => {
     if (testState === 'testing') return
     setTestState('testing')
-    setMessage('يتم الآن فحص جسر الطباعة ثم إرسال ورقة اختبار حقيقية عبر TCP 9100.')
+    const isAndroid = /Android/i.test(window.navigator.userAgent)
+    setMessage(
+      isAndroid
+        ? 'يتم الآن فحص جسر الطباعة ثم طباعة ورقة اختبار وفتح الدرج.'
+        : 'يتم الآن فتح طباعة ورقة الاختبار من الكمبيوتر.'
+    )
 
     try {
+      if (!isAndroid) {
+        await printBrowserTestPage()
+        setTestState('success')
+        setMessage(
+          'أُرسلت ورقة الاختبار من الكمبيوتر. فتح الدرج يعتمد على إعداد تعريف الطابعة في ويندوز.'
+        )
+        toast.success('تم إرسال ورقة اختبار الطابعة من الكمبيوتر', { icon: '🖨️' })
+        return
+      }
+
       const next = await testDirectPrinter(ipAddress)
       setConfig(next)
       setIpAddress(next.ipAddress)
       setTestState('success')
-      setMessage('أُرسلت ورقة الاختبار. أصبحت الطباعة التلقائية مفعّلة على هذا الجهاز.')
-      toast.success('تم ربط الطابعة وتفعيل الطباعة المباشرة', { icon: '🧾' })
+      setMessage('طُبعت ورقة الاختبار وأُرسل أمر فتح الدرج. أصبحت الطباعة التلقائية مفعّلة.')
+      toast.success('تم اختبار الطباعة وفتح الدرج', { icon: '🧾' })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'تعذّر اختبار الطابعة.'
-      try {
-        setConfig(saveDirectPrinterConfig({ enabled: false, ipAddress }))
-      } catch {
-        // رسالة التحقق الأصلية أدق من خطأ حفظ الإعداد المحلي.
-      }
       setTestState('error')
       setMessage(errorMessage)
       toast.error(errorMessage)
@@ -107,6 +205,21 @@ export default function DirectPrinterSetup() {
 
       <button
         type="button"
+        onClick={() => { void handleTest() }}
+        disabled={testState === 'testing'}
+        className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-300 px-3 py-2 text-xs font-black text-stone-950 shadow-sm transition hover:border-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
+        aria-label="اختبار طباعة إيصال وفتح درج النقود"
+      >
+        {testState === 'testing' ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Banknote className="h-4 w-4" />
+        )}
+        <span>{testState === 'testing' ? 'جارٍ الاختبار' : 'اختبار الطباعة والدرج'}</span>
+      </button>
+
+      <button
+        type="button"
         onClick={() => setIsOpen(true)}
         className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-bold text-stone-700 shadow-sm transition hover:border-stone-300 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-300"
         aria-haspopup="dialog"
@@ -119,22 +232,6 @@ export default function DirectPrinterSetup() {
           aria-hidden="true"
         />
       </button>
-
-      {config !== null && !enabled ? (
-        <button
-          type="button"
-          onClick={() => { void handleTest() }}
-          disabled={testState === 'testing'}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-black text-white shadow-md shadow-rose-200 transition hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
-        >
-          {testState === 'testing' ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          {testState === 'testing' ? 'جاري الاتصال' : 'إعادة الاتصال'}
-        </button>
-      ) : null}
 
       {isOpen ? (
         <div
@@ -189,7 +286,8 @@ export default function DirectPrinterSetup() {
                     </span>
                   </div>
                   <p className="max-w-2xl text-sm leading-6 text-stone-300">
-                    TA POS TA-900UWB · تطبع تلقائيًا من نسخة Chrome عبر جسر أندرويد خفيف، دون كمبيوتر أو محطة مفتوحة.
+                    TA POS TA-900UWB · على أندرويد تُختبر الطباعة وفتحة الدرج عبر الجسر،
+                    وعلى الكمبيوتر تُستخدم طباعة المتصفح وتعريف الطابعة في ويندوز.
                   </p>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-stone-400">
                     <span className="inline-flex items-center gap-1.5">
@@ -198,7 +296,7 @@ export default function DirectPrinterSetup() {
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                       <RadioTower className="h-3.5 w-3.5 text-amber-300" />
-                      جسر الطباعة يعمل في خلفية الهاتف
+                      اختبار الكمبيوتر لا يحتاج تثبيت جسر إضافي
                     </span>
                   </div>
                 </div>

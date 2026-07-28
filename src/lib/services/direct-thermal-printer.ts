@@ -521,7 +521,7 @@ export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinte
   await fetchPrintBridgeHealth()
   if (document.fonts?.ready) await document.fonts.ready
   const testCanvas = renderConnectionTestCanvas(ip)
-  await postEscPosBytes(ip, buildPrintJob(testCanvas))
+  await postEscPosBytes(ip, buildPrintJob(testCanvas, { openCashDrawer: true }))
 
   return saveDirectPrinterConfig({
     enabled: true,

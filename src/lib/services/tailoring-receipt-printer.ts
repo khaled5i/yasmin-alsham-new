@@ -1,9 +1,7 @@
 import type { TailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
 import {
-  DirectPrinterError,
   getDirectPrinterConfig,
   printTailoringReceiptDirect,
-  saveDirectPrinterConfig,
   type TailoringDirectPrintOptions,
 } from './direct-thermal-printer'
 import { queueTailoringReceiptPrint } from './print-job-service'
@@ -30,16 +28,8 @@ export async function dispatchTailoringReceiptPrint(
       return { destination: 'direct' }
     } catch (error) {
       const directError = error instanceof Error ? error.message : String(error || '')
-      if (
-        error instanceof DirectPrinterError &&
-        (error.code === 'bridge-unavailable' || error.code === 'connection-failed')
-      ) {
-        try {
-          saveDirectPrinterConfig({ enabled: false })
-        } catch {
-          // لا نسمح لفشل حفظ الحالة المحلية بمنع إرسال الإيصال إلى المحطة الاحتياطية.
-        }
-      }
+      // الانقطاع المؤقت لا يلغي إعداد الطابعة المحفوظ. نرسل الإيصال إلى
+      // المحطة الاحتياطية الآن، ثم نحاول الاتصال المباشر مجدداً في الطباعة التالية.
       await queueTailoringReceiptPrint(payload)
       return { destination: 'station', directError }
     }
