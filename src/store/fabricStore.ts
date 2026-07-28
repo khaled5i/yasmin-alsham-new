@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-service'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { formatFabricNumber } from '@/lib/fabric-number-format'
 
 // ============================================
 // تعريف الأنواع (Types)
@@ -278,7 +279,7 @@ export const useFabricStore = create<FabricStoreState>()(
 // دالة مساعدة لتنسيق السعر
 export const formatFabricPrice = (pricePerMeter: number | null | undefined): string => {
   if (pricePerMeter == null) return 'السعر عند الطلب'
-  return `${pricePerMeter.toLocaleString('en')} ريال/متر`
+  return `${formatFabricNumber(pricePerMeter)} ريال/متر`
 }
 
 // دالة مساعدة للحصول على السعر النهائي (بعد التخفيض)

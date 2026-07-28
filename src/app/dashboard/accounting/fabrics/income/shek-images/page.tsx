@@ -16,6 +16,7 @@ import {
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getFabricSaleImages } from '@/lib/services/simple-accounting-service'
 import type { Income } from '@/types/simple-accounting'
+import { formatFabricCurrency as formatCurrency } from '@/lib/fabric-number-format'
 
 interface GalleryImage {
   url: string
@@ -46,9 +47,6 @@ function ShekImagesContent() {
     }
     load()
   }, [])
-
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('ar-SA-u-nu-latn').format(n) + ' ر.س'
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })

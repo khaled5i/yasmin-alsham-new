@@ -21,6 +21,7 @@ import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
+import { formatFabricCurrency as formatCurrency } from '@/lib/fabric-number-format'
 
 function FabricsFixedExpensesContent() {
   const todayISO = new Date().toISOString().split('T')[0]
@@ -179,10 +180,6 @@ function FabricsFixedExpensesContent() {
   const categoryOptions = categoriesToOptions(categories)
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
-  }
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('ar-SA-u-nu-latn', {

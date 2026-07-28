@@ -49,6 +49,11 @@ import {
 } from '@/lib/services/alostaz-client'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import {
+  formatFabricCurrency as formatCurrency,
+  formatFabricNumber,
+  roundFabricNumber,
+} from '@/lib/fabric-number-format'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
 type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
@@ -313,7 +318,7 @@ function FabricsIncomeContent() {
       .filter((l) => l.inventory_id)
       .map((l) => {
         const it = getInventoryItem(l.inventory_id)
-        const q = parseFloat(l.quantity_meters)
+        const q = roundFabricNumber(parseFloat(l.quantity_meters))
         return {
           inventory_id: l.inventory_id,
           name: it?.name ?? '-',
@@ -340,7 +345,7 @@ function FabricsIncomeContent() {
       return
     }
 
-    const amt = parseFloat(amount)
+    const amt = roundFabricNumber(parseFloat(amount))
     const resolvedSource =
       customerSource === 'yasmin_alsham'
         ? 'ياسمين الشام'
@@ -348,7 +353,9 @@ function FabricsIncomeContent() {
 
     // الاسم الأساسي = أول قماش (توافقاً مع العرض/الإحصائيات)؛ الأمتار = مجموع كل الأقمشة
     const fabricNames = items.map((it) => it.name).join('، ')
-    const totalMeters = items.reduce((s, it) => s + (it.quantity_meters || 0), 0)
+    const totalMeters = roundFabricNumber(
+      items.reduce((s, it) => s + (it.quantity_meters || 0), 0)
+    )
 
     // الحقول المشتركة بين الإضافة والتعديل
     const commonFields = {
@@ -642,9 +649,6 @@ function FabricsIncomeContent() {
     }
   }
 
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('ar-SA-u-nu-latn').format(n) + ' ر.س'
-
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })
 
@@ -908,7 +912,7 @@ function FabricsIncomeContent() {
                               <Ruler className="w-3 h-3" />
                               <span>
                                 {f.name}
-                                {f.quantity_meters != null ? ` — ${f.quantity_meters} م` : ''}
+                                {f.quantity_meters != null ? ` — ${formatFabricNumber(f.quantity_meters)} م` : ''}
                               </span>
                             </span>
                           ))}
@@ -921,7 +925,7 @@ function FabricsIncomeContent() {
                             <span className="text-xs text-gray-300">•</span>
                             <div className="flex items-center gap-1 text-xs text-blue-600">
                               <Ruler className="w-3 h-3" />
-                              <span>{item.quantity_meters} متر</span>
+                              <span>{formatFabricNumber(item.quantity_meters)} متر</span>
                             </div>
                           </>
                         )}
@@ -1089,7 +1093,7 @@ function FabricsIncomeContent() {
                                       <option key={it.id} value={it.id}>
                                         {it.name}
                                         {it.fabric_type ? ` — ${it.fabric_type}` : ''}
-                                        {' '}— الرصيد {it.current_quantity} {it.unit === 'meter' ? 'م' : 'ق'}
+                                        {' '}— الرصيد {formatFabricNumber(it.current_quantity)} {it.unit === 'meter' ? 'م' : 'ق'}
                                       </option>
                                     ))}
                                   </select>

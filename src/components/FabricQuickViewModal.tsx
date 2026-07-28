@@ -7,6 +7,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Fabric, formatFabricPrice, getFinalPrice } from '@/store/fabricStore'
 import { isVideoFile } from '@/lib/utils/media'
+import { formatFabricNumber } from '@/lib/fabric-number-format'
 
 interface FabricQuickViewModalProps {
   fabric: Fabric | null
@@ -230,7 +231,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                     </p>
                   )}
                   {fabric.show_stock_quantity && (
-                    <p className="mb-3 text-sm font-bold text-teal-700">المتوفر: {fabric.stock_quantity} متر</p>
+                    <p className="mb-3 text-sm font-bold text-teal-700">المتوفر: {formatFabricNumber(fabric.stock_quantity)} متر</p>
                   )}
 
                   {/* السعر وحالة التوفر */}

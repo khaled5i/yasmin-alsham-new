@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { supabase } from '@/lib/supabase'
+import { roundFabricNumber } from '@/lib/fabric-number-format'
 
 export type InventoryUnit = 'meter' | 'piece'
 export type MovementType = 'in' | 'out'
@@ -191,16 +192,23 @@ function isMissingSalePriceColumn(error: { code?: string; message?: string } | n
 export async function createInventoryItem(
   input: CreateInventoryItemInput
 ): Promise<FabricInventoryItem> {
+  const normalizedInput = {
+    ...input,
+    cost_per_unit: input.cost_per_unit == null ? undefined : roundFabricNumber(input.cost_per_unit),
+    sale_price_per_unit:
+      input.sale_price_per_unit == null ? undefined : roundFabricNumber(input.sale_price_per_unit),
+  }
   let { data, error } = await supabase
     .from('fabric_inventory')
-    .insert([{ ...input }])
+    .insert([normalizedInput])
     .select()
     .single()
 
   // توافق تدريجي: إذا لم يُطبَّق عمود sale_price_per_unit بعد، أعد المحاولة بدونه
   if (error && isMissingSalePriceColumn(error)) {
     console.warn('⚠️ fabric_inventory.sale_price_per_unit column missing. Please run migrations/66-fabric-inventory-sale-price.sql')
-    const { sale_price_per_unit: _omit, ...withoutSale } = input
+    const withoutSale = { ...normalizedInput }
+    delete withoutSale.sale_price_per_unit
     ;({ data, error } = await supabase
       .from('fabric_inventory')
       .insert([{ ...withoutSale }])
@@ -232,6 +240,9 @@ export async function getFabricTypeCodes(): Promise<FabricTypeCodeOption[]> {
 export async function addMovement(input: CreateMovementInput): Promise<FabricInventoryMovement> {
   const payload = {
     ...input,
+    quantity: roundFabricNumber(input.quantity),
+    cost_per_unit:
+      input.cost_per_unit == null ? undefined : roundFabricNumber(input.cost_per_unit),
     date: input.date ?? new Date().toISOString().split('T')[0]
   }
 
@@ -251,9 +262,15 @@ export async function updateInventoryItem(
   id: string,
   input: Partial<CreateInventoryItemInput>
 ): Promise<FabricInventoryItem> {
+  const normalizedInput = {
+    ...input,
+    cost_per_unit: input.cost_per_unit == null ? undefined : roundFabricNumber(input.cost_per_unit),
+    sale_price_per_unit:
+      input.sale_price_per_unit == null ? undefined : roundFabricNumber(input.sale_price_per_unit),
+  }
   let { data, error } = await supabase
     .from('fabric_inventory')
-    .update({ ...input })
+    .update(normalizedInput)
     .eq('id', id)
     .select()
     .single()
@@ -261,7 +278,8 @@ export async function updateInventoryItem(
   // توافق تدريجي: إذا لم يُطبَّق عمود sale_price_per_unit بعد، أعد المحاولة بدونه
   if (error && isMissingSalePriceColumn(error)) {
     console.warn('⚠️ fabric_inventory.sale_price_per_unit column missing. Please run migrations/66-fabric-inventory-sale-price.sql')
-    const { sale_price_per_unit: _omit, ...withoutSale } = input
+    const withoutSale = { ...normalizedInput }
+    delete withoutSale.sale_price_per_unit
     ;({ data, error } = await supabase
       .from('fabric_inventory')
       .update({ ...withoutSale })

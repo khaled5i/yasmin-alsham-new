@@ -1799,8 +1799,16 @@ function OrdersPageInner() {
           isOpen={showPaymentWarning}
           remainingAmount={orderToDeliver?.remaining_amount || 0}
           onCancel={() => { setShowPaymentWarning(false); setOrderToDeliver(null) }}
-          onMarkAsPaid={(payment) => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, true, payment) }}
-          onIgnore={() => { if (orderToDeliver) deliverOrderWithPaidStatus(orderToDeliver.id, false) }}
+          onMarkAsPaid={(payment) => {
+            if (orderToDeliver) {
+              return deliverOrderWithPaidStatus(orderToDeliver.id, true, payment)
+            }
+          }}
+          onIgnore={() => {
+            if (orderToDeliver) {
+              return deliverOrderWithPaidStatus(orderToDeliver.id, false)
+            }
+          }}
         />
 
         {/* تحذير وجود بروفا ثانية عند بدء العمل */}

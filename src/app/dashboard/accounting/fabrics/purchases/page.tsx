@@ -30,6 +30,10 @@ import {
   addMovement,
   type FabricInventoryItem
 } from '@/lib/services/fabric-inventory-service'
+import {
+  formatFabricCurrency as formatCurrency,
+  roundFabricNumber,
+} from '@/lib/fabric-number-format'
 
 function FabricsPurchasesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -162,7 +166,7 @@ function FabricsPurchasesContent() {
           // ربط المخزون تلقائياً
           if (addToInventory) {
             let targetItemId = inventoryItemId
-            const qty = parseFloat(inventoryQuantity)
+            const qty = roundFabricNumber(parseFloat(inventoryQuantity))
             const costUnit = formData.amount && qty > 0
               ? formData.amount / qty
               : undefined
@@ -258,10 +262,6 @@ function FabricsPurchasesContent() {
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0)
   const cashTotal = filteredExpenses.filter(i => i.payment_method === 'cash').reduce((s, i) => s + i.amount, 0)
   const networkTotal = filteredExpenses.filter(i => i.payment_method === 'network').reduce((s, i) => s + i.amount, 0)
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
-  }
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('ar-SA-u-nu-latn', {

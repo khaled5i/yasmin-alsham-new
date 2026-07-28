@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   Banknote,
   CheckCircle,
   CreditCard,
+  LoaderCircle,
   Split,
   X,
   XCircle,
@@ -26,12 +27,13 @@ export type {
 interface RemainingPaymentWarningModalProps {
   isOpen: boolean
   remainingAmount: number
-  onMarkAsPaid: (payment: RemainingPaymentDetails) => void
-  onIgnore: () => void
+  onMarkAsPaid: (payment: RemainingPaymentDetails) => void | Promise<void>
+  onIgnore: () => void | Promise<void>
   onCancel: () => void
 }
 
 const MONEY_TOLERANCE = 0.005
+type SubmissionAction = 'paid' | 'ignore'
 
 function parseAmount(value: string): number {
   const amount = Number(value)
@@ -53,6 +55,8 @@ export default function RemainingPaymentWarningModal({
   const [method, setMethod] = useState<RemainingPaymentMethod | null>(null)
   const [cashAmount, setCashAmount] = useState('')
   const [networkAmount, setNetworkAmount] = useState('')
+  const [submittingAction, setSubmittingAction] = useState<SubmissionAction | null>(null)
+  const isSubmittingRef = useRef(false)
 
   const normalizedRemaining = roundMoney(Math.max(0, Number(remainingAmount) || 0))
   const parsedCash = roundMoney(parseAmount(cashAmount))
@@ -92,6 +96,8 @@ export default function RemainingPaymentWarningModal({
   }, [isOpen])
 
   const selectMethod = (nextMethod: RemainingPaymentMethod) => {
+    if (isSubmittingRef.current) return
+
     setMethod(nextMethod)
     if (nextMethod !== 'split') {
       setCashAmount('')
@@ -99,32 +105,59 @@ export default function RemainingPaymentWarningModal({
     }
   }
 
+  const runSubmission = async (
+    action: SubmissionAction,
+    submit: () => void | Promise<void>,
+  ) => {
+    // The ref closes the same-render gap before React applies the disabled state.
+    if (isSubmittingRef.current) return
+
+    isSubmittingRef.current = true
+    setSubmittingAction(action)
+    try {
+      await submit()
+    } finally {
+      isSubmittingRef.current = false
+      setSubmittingAction(null)
+    }
+  }
+
   const submitPayment = () => {
-    if (!method || !canSubmit) return
+    if (!method || !canSubmit || isSubmittingRef.current) return
 
     if (method === 'cash') {
-      onMarkAsPaid({
-        method,
-        cashAmount: normalizedRemaining,
-        networkAmount: 0,
-      })
+      void runSubmission('paid', () =>
+        onMarkAsPaid({
+          method,
+          cashAmount: normalizedRemaining,
+          networkAmount: 0,
+        }),
+      )
       return
     }
 
     if (method === 'card') {
-      onMarkAsPaid({
-        method,
-        cashAmount: 0,
-        networkAmount: normalizedRemaining,
-      })
+      void runSubmission('paid', () =>
+        onMarkAsPaid({
+          method,
+          cashAmount: 0,
+          networkAmount: normalizedRemaining,
+        }),
+      )
       return
     }
 
-    onMarkAsPaid({
-      method,
-      cashAmount: Number(parsedCash.toFixed(2)),
-      networkAmount: Number(parsedNetwork.toFixed(2)),
-    })
+    void runSubmission('paid', () =>
+      onMarkAsPaid({
+        method,
+        cashAmount: Number(parsedCash.toFixed(2)),
+        networkAmount: Number(parsedNetwork.toFixed(2)),
+      }),
+    )
+  }
+
+  const ignoreAndDeliver = () => {
+    void runSubmission('ignore', onIgnore)
   }
 
   return (
@@ -136,7 +169,7 @@ export default function RemainingPaymentWarningModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={onCancel}
+            onClick={submittingAction ? undefined : onCancel}
           />
 
           <motion.div
@@ -161,8 +194,9 @@ export default function RemainingPaymentWarningModal({
                 <button
                   type="button"
                   onClick={onCancel}
+                  disabled={submittingAction !== null}
                   aria-label={t('cancel') || (isArabic ? 'إلغاء' : 'Cancel')}
-                  className="rounded-lg p-1 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                  className="rounded-lg p-1 text-white/80 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -331,41 +365,67 @@ export default function RemainingPaymentWarningModal({
                 <button
                   type="button"
                   onClick={submitPayment}
-                  disabled={!canSubmit}
+                  disabled={!canSubmit || submittingAction !== null}
+                  aria-busy={submittingAction === 'paid'}
                   className={`flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 font-semibold transition-all duration-300 ${
-                    canSubmit
+                    canSubmit && !submittingAction
                       ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg hover:from-green-600 hover:to-emerald-700 hover:shadow-xl'
                       : 'cursor-not-allowed bg-gray-200 text-gray-500'
                   }`}
                 >
-                  <CheckCircle className="h-5 w-5" />
+                  {submittingAction === 'paid' ? (
+                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-5 w-5" />
+                  )}
                   <span>
-                    {t('mark_as_paid') || (isArabic ? 'تم الدفع - تحديث المبلغ' : 'Mark as paid')}
-                    {method
-                      ? ` (${
-                          method === 'cash'
-                            ? isArabic ? 'كاش' : 'Cash'
-                            : method === 'card'
-                              ? isArabic ? 'شبكة' : 'Network'
-                              : isArabic ? 'كاش وشبكة بنفس الوقت' : 'Cash & network'
-                        })`
-                      : ''}
+                    {submittingAction === 'paid'
+                      ? isArabic
+                        ? 'جارٍ تحديث الدفع وتسليم الطلب...'
+                        : 'Updating payment and delivering...'
+                      : (
+                        <>
+                          {t('mark_as_paid') || (isArabic ? 'تم الدفع - تحديث المبلغ' : 'Mark as paid')}
+                          {method
+                            ? ` (${
+                                method === 'cash'
+                                  ? isArabic ? 'كاش' : 'Cash'
+                                  : method === 'card'
+                                    ? isArabic ? 'شبكة' : 'Network'
+                                    : isArabic ? 'كاش وشبكة بنفس الوقت' : 'Cash & network'
+                              })`
+                            : ''}
+                        </>
+                      )}
                   </span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={onIgnore}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-500 px-6 py-4 font-semibold text-white shadow-md transition-all duration-300 hover:bg-gray-600 hover:shadow-lg"
+                  onClick={ignoreAndDeliver}
+                  disabled={submittingAction !== null}
+                  aria-busy={submittingAction === 'ignore'}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-500 px-6 py-4 font-semibold text-white shadow-md transition-all duration-300 hover:bg-gray-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Ban className="h-5 w-5" />
-                  <span>{t('ignore_and_deliver') || (isArabic ? 'تجاهل وتسليم الطلب' : 'Ignore and deliver')}</span>
+                  {submittingAction === 'ignore' ? (
+                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Ban className="h-5 w-5" />
+                  )}
+                  <span>
+                    {submittingAction === 'ignore'
+                      ? isArabic
+                        ? 'جارٍ تسليم الطلب...'
+                        : 'Delivering order...'
+                      : t('ignore_and_deliver') || (isArabic ? 'تجاهل وتسليم الطلب' : 'Ignore and deliver')}
+                  </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={onCancel}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 px-6 py-4 font-semibold text-white shadow-md transition-all duration-300 hover:bg-red-600 hover:shadow-lg"
+                  disabled={submittingAction !== null}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 px-6 py-4 font-semibold text-white shadow-md transition-all duration-300 hover:bg-red-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <XCircle className="h-5 w-5" />
                   <span>{t('cancel') || (isArabic ? 'إلغاء' : 'Cancel')}</span>

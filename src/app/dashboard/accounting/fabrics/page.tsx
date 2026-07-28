@@ -26,6 +26,7 @@ import { getFinancialSummary, setCashBoxBalance } from '@/lib/services/simple-ac
 import type { FinancialSummary } from '@/types/simple-accounting'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { formatFabricCurrency as formatCurrency } from '@/lib/fabric-number-format'
 
 // ============================================================================
 // أقسام المحاسبة
@@ -171,10 +172,6 @@ function FabricsAccountingContent() {
     } finally {
       setSavingCashBox(false)
     }
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA-u-nu-latn').format(amount) + ' ر.س'
   }
 
   // تحديد مسار العودة حسب نوع المستخدم

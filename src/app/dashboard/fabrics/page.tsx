@@ -9,6 +9,7 @@ import { fabricService, Fabric, UpdateFabricData, CreateFabricData } from '@/lib
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { formatFabricNumber } from '@/lib/fabric-number-format'
 
 function FabricsAdminContent() {
   const { user } = useAuthStore()
@@ -855,7 +856,7 @@ function FabricsAdminContent() {
                     </span>
                     {fabric.price_per_meter != null && (
                       <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-medium">
-                        {fabric.price_per_meter} ريال/متر
+                        {formatFabricNumber(fabric.price_per_meter)} ريال/متر
                       </span>
                     )}
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'

@@ -8,6 +8,7 @@ import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, MessageCircle } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
 import { isVideoFile } from '@/lib/utils/media'
+import { formatFabricNumber } from '@/lib/fabric-number-format'
 
 export default function FabricDetailPage() {
   const params = useParams()
@@ -228,7 +229,7 @@ export default function FabricDetailPage() {
               )}
               {fabric.show_stock_quantity && (
                 <p className="mt-3 inline-flex rounded-full bg-teal-50 px-4 py-2 text-sm font-bold text-teal-700">
-                  الكمية المتوفرة: {fabric.stock_quantity} متر
+                  الكمية المتوفرة: {formatFabricNumber(fabric.stock_quantity)} متر
                 </p>
               )}
             </div>

@@ -76,6 +76,59 @@ export function toHalalas(sar: number | null | undefined): number {
   return Math.round((Number(sar) || 0) * ALOSTAZ_PRICE_SCALE)
 }
 
+export interface AlostazExactLinePricing {
+  /** الكمية بمقياس الأستاذ (×1000). */
+  unitQuantity: number
+  /** سعر الوحدة بالهللات. */
+  unitPrice: number
+  /** خصم فرق التقريب بالهللات، ويُحذف من الطلب عندما يكون صفراً. */
+  roundingDiscount: number
+  /** إجمالي البند المطلوب بالهللات بعد الخصم. */
+  targetAmount: number
+}
+
+/**
+ * يبني سعراً صحيحاً يقبله الأستاذ مع المحافظة على إجمالي البند الأصلي.
+ *
+ * الأستاذ يقبل سعر الوحدة بالهللات كعدد صحيح، لذلك قد يختلف ناتج
+ * (الكمية × السعر المقرّب) عن إجمالي الموقع ببضع هللات. نقرّب سعر الوحدة
+ * للأعلى ثم نعيد الفرق كخصم ثابت على البند، فتظل كمية المخزون حقيقية
+ * ويصبح صافي البند مطابقاً تماماً للمبلغ المطلوب.
+ */
+export function toExactAlostazLinePricing(
+  amountSar: number | null | undefined,
+  quantity: number | null | undefined
+): AlostazExactLinePricing {
+  const normalizedQuantity = Number(quantity) > 0 ? Number(quantity) : 1
+  const unitQuantity = Math.max(1, Math.round(normalizedQuantity * ALOSTAZ_QUANTITY_SCALE))
+  const targetAmount = Math.max(0, toHalalas(amountSar))
+
+  if (targetAmount === 0) {
+    return {
+      unitQuantity,
+      unitPrice: 0,
+      roundingDiscount: 0,
+      targetAmount,
+    }
+  }
+
+  // التقريب للأعلى يضمن ألا يصبح إجمالي الأستاذ أقل من إجمالي الموقع؛
+  // أي زيادة صحيحة بالهللات تُزال عبر discount_amount على البند.
+  const unitPrice = Math.ceil(
+    (targetAmount * ALOSTAZ_QUANTITY_SCALE) / unitQuantity
+  )
+  const calculatedAmount = Math.round(
+    (unitQuantity * unitPrice) / ALOSTAZ_QUANTITY_SCALE
+  )
+
+  return {
+    unitQuantity,
+    unitPrice,
+    roundingDiscount: Math.max(0, calculatedAmount - targetAmount),
+    targetAmount,
+  }
+}
+
 /**
  * تطبيع رقم الهاتف للمقارنة (لإيجاد العميل بدون تكرار):
  * يُبقي الأرقام فقط، ويزيل مقدّمة الدولة 966 والصفر البادئ،

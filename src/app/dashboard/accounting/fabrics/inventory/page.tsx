@@ -49,6 +49,11 @@ import { getSuppliers, createSupplier, type Supplier } from '@/lib/services/supp
 import { syncFabricProductToAlostaz } from '@/lib/services/alostaz-client'
 import { useAuthStore } from '@/store/authStore'
 import { formatFabricCodePreview, normalizeFabricTypeCode, suggestFabricTypeCode } from '@/lib/fabric-codes'
+import {
+  formatFabricCurrency,
+  formatFabricNumber,
+  roundFabricNumber,
+} from '@/lib/fabric-number-format'
 
 // ─── ألوان سريعة للاختيار ──────────────────────────────────────────────────
 const PRESET_COLORS = [
@@ -160,7 +165,7 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
               )}
               <span className="text-gray-700">{c.color_name}</span>
               {isEditing && c.current_quantity > 0 && (
-                <span className="text-xs text-teal-600 font-medium">({c.current_quantity})</span>
+                <span className="text-xs text-teal-600 font-medium">({formatFabricNumber(c.current_quantity)})</span>
               )}
               <button
                 type="button"
@@ -332,6 +337,8 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
     try {
       const payload: CreateInventoryItemInput = {
         ...form,
+        cost_per_unit: roundFabricNumber(form.cost_per_unit),
+        sale_price_per_unit: roundFabricNumber(form.sale_price_per_unit),
         name: form.name || form.type_code || form.fabric_type,
         type_code: normalizeFabricTypeCode(form.type_code || suggestFabricTypeCode(form.fabric_type)),
         has_color_variants: colors.length > 0,
@@ -358,7 +365,7 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
             color_name: c.color_name,
             color_hex: c.color_hex ?? undefined
           })
-          const colorQuantity = parseFloat(initialColorQuantities[c.id] ?? '')
+          const colorQuantity = roundFabricNumber(parseFloat(initialColorQuantities[c.id] ?? ''))
           if (colorQuantity > 0) {
             await addMovement({
               inventory_item_id: result.id,
@@ -373,7 +380,7 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
           return { ...savedColor, current_quantity: colorQuantity > 0 ? colorQuantity : 0 }
         }))
 
-        const qty = colors.length === 0 ? parseFloat(initialQty) : 0
+        const qty = colors.length === 0 ? roundFabricNumber(parseFloat(initialQty)) : 0
         if (qty > 0 && savedColors.length === 0) {
           await addMovement({
             inventory_item_id: result.id,
@@ -766,7 +773,7 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const qty = parseFloat(quantity)
+    const qty = roundFabricNumber(parseFloat(quantity))
     if (!qty || qty <= 0) return
 
     if (!isIn && qty > currentQty) {
@@ -780,7 +787,7 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
         inventory_item_id: item.id,
         movement_type: type,
         quantity: qty,
-        cost_per_unit: costPerUnit ? parseFloat(costPerUnit) : undefined,
+        cost_per_unit: costPerUnit ? roundFabricNumber(parseFloat(costPerUnit)) : undefined,
         description: description || undefined,
         color_id: selectedColorId || undefined,
         date
@@ -873,7 +880,7 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
                       />
                     )}
                     {c.color_name}
-                    <span className="text-xs opacity-75">({c.current_quantity})</span>
+                    <span className="text-xs opacity-75">({formatFabricNumber(c.current_quantity)})</span>
                   </button>
                 ))}
               </div>
@@ -1032,8 +1039,8 @@ function MovementsHistoryModal({ item, onClose }: MovementsHistoryModalProps) {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">
-                        {mv.movement_type === 'in' ? '+' : '-'}{mv.quantity} {unitLabel}
-                        {mv.cost_per_unit ? <span className="text-gray-500 mr-2 text-xs">({mv.cost_per_unit} ر.س/{unitLabel})</span> : null}
+                        {mv.movement_type === 'in' ? '+' : '-'}{formatFabricNumber(mv.quantity)} {unitLabel}
+                        {mv.cost_per_unit ? <span className="text-gray-500 mr-2 text-xs">({formatFabricNumber(mv.cost_per_unit)} ر.س/{unitLabel})</span> : null}
                       </p>
                       {mv.color_name && (
                         <p className="text-xs text-teal-600 font-medium">🎨 {mv.color_name}</p>
@@ -1127,7 +1134,7 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
                   {colors.map(c => (
                     <div
                       key={c.id}
-                      title={`${c.color_name}: ${c.current_quantity} ${unitLabel}`}
+                      title={`${c.color_name}: ${formatFabricNumber(c.current_quantity)} ${unitLabel}`}
                       className="w-4 h-4 rounded-full border border-gray-200 shrink-0 cursor-default"
                       style={{ backgroundColor: c.color_hex ?? '#e5e7eb' }}
                     />
@@ -1139,7 +1146,7 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
 
           <div className="flex items-center gap-2 shrink-0 mr-2">
             <div className="text-left">
-              <p className="text-2xl font-bold text-gray-900">{item.current_quantity}</p>
+              <p className="text-2xl font-bold text-gray-900">{formatFabricNumber(item.current_quantity)}</p>
               <p className="text-xs text-gray-400">{unitLabel}</p>
             </div>
             <button
@@ -1205,7 +1212,7 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
                         {c.fabric_code && (
                           <span dir="ltr" className="text-[10px] font-mono text-teal-700 shrink-0">{c.fabric_code}</span>
                         )}
-                        <span className="text-xs font-bold text-gray-900 shrink-0">{c.current_quantity}</span>
+                        <span className="text-xs font-bold text-gray-900 shrink-0">{formatFabricNumber(c.current_quantity)}</span>
                       </div>
                     ))}
                   </div>
@@ -1216,13 +1223,13 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
                 {item.cost_per_unit != null && (
                   <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-gray-500 text-xs mb-1">سعر الشراء</p>
-                    <p className="font-bold text-gray-800">{item.cost_per_unit} ر.س/{unitLabel}</p>
+                    <p className="font-bold text-gray-800">{formatFabricNumber(item.cost_per_unit)} ر.س/{unitLabel}</p>
                   </div>
                 )}
                 {totalValue != null && (
                   <div className="bg-teal-50 rounded-xl p-3">
                     <p className="text-teal-600 text-xs mb-1">إجمالي القيمة</p>
-                    <p className="font-bold text-teal-700">{totalValue.toFixed(2)} ر.س</p>
+                    <p className="font-bold text-teal-700">{formatFabricCurrency(totalValue)}</p>
                   </div>
                 )}
                 {item.supplier_name && (
@@ -1410,7 +1417,7 @@ function FabricsInventoryContent() {
             <p className="text-slate-300 mb-1 text-sm">إجمالي قيمة المخزون</p>
             <p className="text-2xl font-bold">
               {totalValue > 0
-                ? new Intl.NumberFormat('ar-SA-u-nu-latn').format(totalValue) + ' ر.س'
+                ? formatFabricCurrency(totalValue)
                 : '—'}
             </p>
           </div>

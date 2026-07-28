@@ -9,6 +9,7 @@ import FabricSortOptions from '@/components/FabricSortOptions'
 
 import dynamic from 'next/dynamic'
 import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/utils/media'
+import { formatFabricNumber } from '@/lib/fabric-number-format'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
@@ -400,7 +401,7 @@ export default function FabricsPage() {
                                 )}
                                 {fabric.show_stock_quantity && (
                                   <p className="text-center text-xs font-medium text-gray-500">
-                                    المتوفر: {fabric.stock_quantity} متر
+                                    المتوفر: {formatFabricNumber(fabric.stock_quantity)} متر
                                   </p>
                                 )}
                               </div>

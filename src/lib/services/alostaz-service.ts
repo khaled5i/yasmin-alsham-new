@@ -24,6 +24,7 @@ import {
   ALOSTAZ_FABRICS_VAT_TAX_ID,
   ALOSTAZ_QUANTITY_SCALE,
   toHalalas,
+  toExactAlostazLinePricing,
   normalizePhone,
 } from '../alostaz-config'
 
@@ -394,7 +395,7 @@ export interface AlostazFabricSaleInput {
 
 /**
  * إنشاء فاتورة مبيعات قماش في الأستاذ (تدعم عدّة أقمشة كبنود مستقلة).
- * - كل بند يُرسَل بكميته الفعلية بالمتر (unit_quantity) وسعر المتر (unit_price = إجمالي البند ÷ الكمية).
+ * - كل بند يُرسَل بكميته الفعلية بالمتر، مع خصم فرق التقريب عند الحاجة حتى يطابق صافي البند إجمالي الموقع.
  * - المبالغ شاملة الضريبة (ضريبة القيمة المضافة الشاملة id 2 — تُستخرج من داخل السعر).
  * - المنتجات = الأقمشة من المخزون (product_id يُحضَّر لكل بند في مسار الـ API).
  * - البيع نقدي/شبكة يُدفع بالكامل عند البيع، فالدفعة = إجمالي كل البنود (في الوضع الحقيقي فقط).
@@ -419,8 +420,8 @@ export async function createInvoiceForFabricSale(
 
   const isDraft = ALOSTAZ_FABRICS_INVOICE_STATUS === 'draft'
   const lines = (input.lines || []).filter((l) => l && Number(l.amount) >= 0)
-  // إجمالي الفاتورة = مجموع بنود القماش
-  const amount = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  // نجمع بالهللات لتفادي أي فرق إضافي ناتج من الفاصلة العائمة في JavaScript.
+  const amountHalalas = lines.reduce((sum, line) => sum + toHalalas(line.amount), 0)
   // الخزنة حسب طريقة الدفع ضمن خزائن هذا الفرع
   const treasuryId =
     input.payment_method && input.payment_method !== 'cash' ? ctx.treasuryBank : ctx.treasuryCash
@@ -440,24 +441,27 @@ export async function createInvoiceForFabricSale(
     line_items: lines.map((l) => {
       // الكمية الفعلية بالمتر (المقياس ×1000)؛ إن غابت الكمية نعتمد الكمية 1
       const qty = Number(l.quantity_meters) > 0 ? Number(l.quantity_meters) : 1
-      const unitPricePerMeter = (Number(l.amount) || 0) / qty
+      const pricing = toExactAlostazLinePricing(l.amount, qty)
       return {
         product_id: l.product_id,
         storehouse_id: ctx.storehouseId,
         description: l.description?.trim() || 'بيع قماش',
-        unit_quantity: Math.round(qty * ALOSTAZ_QUANTITY_SCALE),
-        unit_price: toHalalas(unitPricePerMeter),
+        unit_quantity: pricing.unitQuantity,
+        unit_price: pricing.unitPrice,
         unit_content: 1,
+        ...(pricing.roundingDiscount > 0
+          ? { discount_amount: pricing.roundingDiscount }
+          : {}),
         ...(ALOSTAZ_FABRICS_VAT_TAX_ID ? { taxes: [{ id: ALOSTAZ_FABRICS_VAT_TAX_ID }] } : {}),
       }
     }),
   }
 
   // الدفعة الكاملة تُضاف في الوضع الحقيقي فقط — الأستاذ يمنع الدفعات على المسودة
-  if (!isDraft && amount > 0) {
+  if (!isDraft && amountHalalas > 0) {
     body.payments = [
       {
-        amount: toHalalas(amount),
+        amount: amountHalalas,
         treasury_id: treasuryId,
       },
     ]

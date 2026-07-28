@@ -872,12 +872,12 @@ export default function CompletedOrdersPage() {
         }}
         onMarkAsPaid={(payment) => {
           if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, true, payment)
+            return deliverOrder(orderToDeliver.id, true, payment)
           }
         }}
         onIgnore={() => {
           if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, false)
+            return deliverOrder(orderToDeliver.id, false)
           }
         }}
       />

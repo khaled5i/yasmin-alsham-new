@@ -749,12 +749,12 @@ export default function WorkerCompletedOrdersPage() {
         remainingAmount={orderToDeliver?.remaining_amount || 0}
         onMarkAsPaid={(payment) => {
           if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, true, payment)
+            return deliverOrder(orderToDeliver.id, true, payment)
           }
         }}
         onIgnore={() => {
           if (orderToDeliver) {
-            deliverOrder(orderToDeliver.id, false)
+            return deliverOrder(orderToDeliver.id, false)
           }
         }}
         onCancel={() => {
