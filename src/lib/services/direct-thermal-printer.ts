@@ -20,6 +20,14 @@ export interface DirectPrinterConfig {
   lastTestedAt: string | null
 }
 
+export interface TailoringDirectPrintOptions {
+  /**
+   * يرسل نبضة ESC/POS إلى منفذ درج النقود في الطابعة.
+   * يتحقق مسار الطباعة أيضاً من وجود مبلغ كاش فعلي في الإيصال قبل إرسالها.
+   */
+  openCashDrawer?: boolean
+}
+
 export type DirectPrinterErrorCode =
   | 'not-configured'
   | 'invalid-address'
@@ -349,11 +357,18 @@ function canvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
   return concatBytes(header, raster)
 }
 
-function buildPrintJob(canvas: HTMLCanvasElement): Uint8Array {
+function buildPrintJob(
+  canvas: HTMLCanvasElement,
+  options: TailoringDirectPrintOptions = {}
+): Uint8Array {
   const initializeAndAlign = new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x00])
+  // ESC p m t1 t2 — نبضة على pin 2: تشغيل 50ms ثم انتظار 500ms.
+  const cashDrawerKick = options.openCashDrawer
+    ? new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa])
+    : new Uint8Array()
   const raster = canvasToEscPosRaster(canvas)
   const feedAndCut = new Uint8Array([0x1b, 0x64, 0x04, 0x1d, 0x56, 0x00])
-  return concatBytes(initializeAndAlign, raster, feedAndCut)
+  return concatBytes(initializeAndAlign, cashDrawerKick, raster, feedAndCut)
 }
 
 interface PrintBridgeHealth {
@@ -515,7 +530,10 @@ export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinte
   })
 }
 
-export async function printTailoringReceiptDirect(payload: TailoringReceiptPayload): Promise<void> {
+export async function printTailoringReceiptDirect(
+  payload: TailoringReceiptPayload,
+  options: TailoringDirectPrintOptions = {}
+): Promise<void> {
   const config = getDirectPrinterConfig()
   if (!config.enabled) {
     throw new DirectPrinterError(
@@ -525,5 +543,8 @@ export async function printTailoringReceiptDirect(payload: TailoringReceiptPaylo
   }
 
   const canvas = await renderReceiptCanvas(payload)
-  await postEscPosBytes(config.ipAddress, buildPrintJob(canvas))
+  const openCashDrawer =
+    options.openCashDrawer === true &&
+    Math.max(0, Number(payload.cash_amount) || 0) >= 0.005
+  await postEscPosBytes(config.ipAddress, buildPrintJob(canvas, { openCashDrawer }))
 }

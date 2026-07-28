@@ -165,7 +165,11 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
 
   try {
     const receipt = createTailoringReceiptPayload(order, accountingInvoiceCode)
-    const printResult = await dispatchTailoringReceiptPrint(receipt)
+    // فتح الدرج محصور في الطباعة التلقائية لحظة تسليم طلب التفصيل.
+    // إعادة الطباعة اليدوية وبقية الأقسام لا تمرر هذا الخيار.
+    const printResult = await dispatchTailoringReceiptPrint(receipt, {
+      openCashDrawer: receipt.cash_amount >= 0.005,
+    })
 
     if (printResult.destination === 'direct') {
       toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })

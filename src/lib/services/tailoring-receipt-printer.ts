@@ -4,6 +4,7 @@ import {
   getDirectPrinterConfig,
   printTailoringReceiptDirect,
   saveDirectPrinterConfig,
+  type TailoringDirectPrintOptions,
 } from './direct-thermal-printer'
 import { queueTailoringReceiptPrint } from './print-job-service'
 
@@ -19,12 +20,13 @@ export interface TailoringPrintDispatchResult {
  * عند عدم الربط أو فشل الشبكة يبقى طابور المحطة احتياطياً حتى لا يضيع الإيصال.
  */
 export async function dispatchTailoringReceiptPrint(
-  payload: TailoringReceiptPayload
+  payload: TailoringReceiptPayload,
+  options: TailoringDirectPrintOptions = {}
 ): Promise<TailoringPrintDispatchResult> {
   const config = getDirectPrinterConfig()
   if (config.enabled) {
     try {
-      await printTailoringReceiptDirect(payload)
+      await printTailoringReceiptDirect(payload, options)
       return { destination: 'direct' }
     } catch (error) {
       const directError = error instanceof Error ? error.message : String(error || '')
