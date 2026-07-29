@@ -212,6 +212,8 @@ export default function DeliveredOrdersPage() {
 
       if (printResult.destination === 'direct') {
         toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
+      } else if (printResult.destination === 'browser') {
+        toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى طابعة الكمبيوتر`, { icon: '🖨️' })
       } else if (printResult.directError) {
         toast('تعذّرت الطباعة المباشرة؛ أُرسل الإيصال إلى المحطة الاحتياطية.', {
           icon: '⚠️',

@@ -7,10 +7,12 @@ const STORAGE_KEY = 'yasmin-alsham:direct-printer:v2'
 const PRINT_BRIDGE_ORIGIN = 'http://127.0.0.1:19281'
 const PRINT_WIDTH_DOTS = 576
 const PRINT_TIMEOUT_MS = 8_000
-const BRIDGE_TIMEOUT_MS = 20_000
+// يجب أن تكون مهلة المتصفح أطول من مهلة مهمة الجسر (20 ثانية) كي نستقبل
+// نتيجة الجسر بدلاً من تصنيف انتهاء مهلة المتصفح خطأً كأن الجسر غير متاح.
+const BRIDGE_TIMEOUT_MS = 30_000
 const MAX_RECEIPT_HEIGHT_DOTS = 5_500
-// تقسيم الصورة يمنع بقاء طلب واحد كبير داخل جسر أندرويد حتى انتهاء مهلة الاتصال.
-const RASTER_CHUNK_HEIGHT_DOTS = 512
+const BRIDGE_HEALTH_CACHE_MS = 60_000
+const BRIDGE_HEALTH_RETRY_DELAYS_MS = [0, 200, 500] as const
 
 export const DEFAULT_DIRECT_PRINTER_IP = '192.168.100.105'
 export const PRINT_BRIDGE_APK_PATH = '/downloads/yasmin-print-bridge.apk'
@@ -288,21 +290,17 @@ async function renderReceiptCanvas(payload: TailoringReceiptPayload): Promise<HT
   }
 }
 
-function canvasToEscPosRaster(
-  canvas: HTMLCanvasElement,
-  startY = 0,
-  rasterHeight = canvas.height
-): Uint8Array {
+function canvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
   const context = canvas.getContext('2d', { willReadFrequently: true })
   if (!context) {
     throw new DirectPrinterError('render-failed', 'تعذّر قراءة صورة الإيصال.')
   }
 
   const width = PRINT_WIDTH_DOTS
-  const height = Math.min(rasterHeight, canvas.height - startY)
+  const height = canvas.height
   const bytesPerRow = Math.ceil(width / 8)
   const raster = new Uint8Array(bytesPerRow * height)
-  const pixels = context.getImageData(0, startY, width, height).data
+  const pixels = context.getImageData(0, 0, width, height).data
 
   for (let y = 0; y < height; y += 1) {
     const rowOffset = y * bytesPerRow
@@ -334,33 +332,18 @@ function canvasToEscPosRaster(
   return concatBytes(header, raster)
 }
 
-function buildPrintJobChunks(
+function buildPrintJob(
   canvas: HTMLCanvasElement,
   options: TailoringDirectPrintOptions = {}
-): Uint8Array[] {
+): Uint8Array {
   const initializeAndAlign = new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x00])
   // ESC p m t1 t2 — نبضة على pin 2: تشغيل 50ms ثم انتظار 500ms.
   const cashDrawerKick = options.openCashDrawer
     ? new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa])
     : new Uint8Array()
+  const raster = canvasToEscPosRaster(canvas)
   const feedAndCut = new Uint8Array([0x1b, 0x64, 0x04, 0x1d, 0x56, 0x00])
-  const chunks: Uint8Array[] = []
-
-  for (let startY = 0; startY < canvas.height; startY += RASTER_CHUNK_HEIGHT_DOTS) {
-    const height = Math.min(RASTER_CHUNK_HEIGHT_DOTS, canvas.height - startY)
-    const isFirst = startY === 0
-    const isLast = startY + height >= canvas.height
-    const raster = canvasToEscPosRaster(canvas, startY, height)
-
-    chunks.push(concatBytes(
-      isFirst ? initializeAndAlign : new Uint8Array(),
-      isFirst ? cashDrawerKick : new Uint8Array(),
-      raster,
-      isLast ? feedAndCut : new Uint8Array()
-    ))
-  }
-
-  return chunks
+  return concatBytes(initializeAndAlign, cashDrawerKick, raster, feedAndCut)
 }
 
 interface PrintBridgeHealth {
@@ -371,12 +354,16 @@ interface PrintBridgeHealth {
   printerPort: number
 }
 
+let cachedBridgeHealth: { value: PrintBridgeHealth; expiresAt: number } | null = null
+
 async function getLoopbackPermissionState(): Promise<PermissionState | null> {
   if (!isBrowser() || !window.navigator.permissions?.query) return null
 
   for (const name of ['loopback-network', 'local-network-access'] as const) {
     try {
-      const status = await window.navigator.permissions.query({ name } as PermissionDescriptor)
+      const status = await window.navigator.permissions.query(
+        { name } as unknown as PermissionDescriptor
+      )
       return status.state
     } catch {
       // Older Chrome versions do not expose these permission names.
@@ -433,6 +420,33 @@ async function fetchPrintBridgeHealth(): Promise<PrintBridgeHealth> {
   } finally {
     window.clearTimeout(timeout)
   }
+}
+
+function waitForBridgeRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs))
+}
+
+async function ensurePrintBridgeHealth(force = false): Promise<PrintBridgeHealth> {
+  if (!force && cachedBridgeHealth && cachedBridgeHealth.expiresAt > Date.now()) {
+    return cachedBridgeHealth.value
+  }
+
+  let lastError: unknown
+  for (const delayMs of BRIDGE_HEALTH_RETRY_DELAYS_MS) {
+    if (delayMs > 0) await waitForBridgeRetry(delayMs)
+    try {
+      const health = await fetchPrintBridgeHealth()
+      cachedBridgeHealth = {
+        value: health,
+        expiresAt: Date.now() + BRIDGE_HEALTH_CACHE_MS,
+      }
+      return health
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError
 }
 
 async function postEscPosBytes(ipAddress: string, bytes: Uint8Array): Promise<void> {
@@ -509,16 +523,20 @@ async function postCanvasPrintJob(
   canvas: HTMLCanvasElement,
   options: TailoringDirectPrintOptions = {}
 ): Promise<void> {
-  const chunks = buildPrintJobChunks(canvas, options)
-  console.info('[direct-printer] sending raster chunks', {
-    chunks: chunks.length,
+  const bytes = buildPrintJob(canvas, options)
+  console.info('[direct-printer] sending receipt raster', {
+    bytes: bytes.byteLength,
     height: canvas.height,
   })
+  await postEscPosBytes(ipAddress, bytes)
+}
 
-  // يجب أن تبقى الدفعات متسلسلة كي لا تتغير مواضع أجزاء الإيصال على الورق.
-  for (const chunk of chunks) {
-    await postEscPosBytes(ipAddress, chunk)
-  }
+/** يبدأ فحص الجسر فور حدث المستخدم ويحفظ نجاحه لفترة قصيرة لمسار التسليم. */
+export async function prepareDirectPrinterConnection(): Promise<void> {
+  if (!isBrowser()) return
+  const config = getDirectPrinterConfig()
+  if (!config.enabled) return
+  await ensurePrintBridgeHealth()
 }
 
 export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinterConfig> {
@@ -527,7 +545,7 @@ export async function testDirectPrinter(ipAddress: string): Promise<DirectPrinte
     throw new DirectPrinterError('unsupported-browser', 'اختبار الطابعة متاح من المتصفح فقط.')
   }
 
-  await fetchPrintBridgeHealth()
+  await ensurePrintBridgeHealth(true)
   if (document.fonts?.ready) await document.fonts.ready
   const testCanvas = await renderReceiptCanvas({
     order_id: 'printer-test',
@@ -563,7 +581,7 @@ export async function printTailoringReceiptDirect(
     )
   }
 
-  await fetchPrintBridgeHealth()
+  await ensurePrintBridgeHealth()
   const canvas = await renderReceiptCanvas(payload)
   const openCashDrawer =
     options.openCashDrawer === true &&

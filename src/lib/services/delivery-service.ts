@@ -121,6 +121,43 @@ export function buildDeliveryUpdates(order: DeliveryOrder | null | undefined, op
   return updates
 }
 
+async function printDeliveredOrderReceipt(
+  order: DeliveryOrder,
+  accountingInvoiceCode: string
+): Promise<void> {
+  try {
+    const receipt = createTailoringReceiptPayload(order, accountingInvoiceCode)
+    // فتح الدرج محصور في الطباعة التلقائية لحظة تسليم طلب التفصيل.
+    // إعادة الطباعة اليدوية وبقية الأقسام لا تمرر هذا الخيار.
+    const printResult = await dispatchTailoringReceiptPrint(receipt, {
+      openCashDrawer: receipt.cash_amount >= 0.005,
+    })
+
+    if (printResult.destination === 'direct') {
+      toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
+    } else if (printResult.destination === 'browser') {
+      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى طابعة الكمبيوتر`, { icon: '🖨️' })
+    } else if (printResult.directError) {
+      toast(
+        `تعذّرت الطباعة المباشرة؛ أُرسل إيصال الطلب ${receipt.order_number} إلى المحطة الاحتياطية. السبب: ${printResult.directError}`,
+        { icon: '⚠️', duration: 8000 }
+      )
+    } else {
+      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })
+    }
+
+    if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
+      toast('تعذّر جلب رقم فاتورة الأستاذ؛ أُرسل رقم محلي مرتبط بالطلب إلى الطباعة.', {
+        icon: '⚠️',
+        duration: 5000,
+      })
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || '')
+    toast.error('تم التسليم، لكن تعذّرت طباعة الإيصال: ' + message)
+  }
+}
+
 /**
  * إرسال «مبلغ الشبكة فقط» تلقائياً إلى المحاسبة بعد التسليم (إن كان الإرسال التلقائي مفعّلاً).
  * - للمدير فقط، وللطلبات غير المُرسَلة مسبقاً.
@@ -133,6 +170,14 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
   if (!order?.id) return
 
   let accountingInvoiceCode = String(order.alostaz_invoice_code || '').trim()
+  const fullyNetworkPaid = isFullyNetworkPaid(order)
+
+  // وجود أي كاش يعني أن رقم الإيصال محلي، لذلك لا نؤخر الطباعة وفتح الدرج
+  // بانتظار اتصال المحاسبة. هذا يحافظ أيضاً على اتصال جسر أندرويد الذي جرى
+  // تحضيره فور ضغطة زر التسليم.
+  if (!fullyNetworkPaid) {
+    await printDeliveredOrderReceipt(order, accountingInvoiceCode)
+  }
 
   // نحافظ على السلوك المحاسبي الحالي (مبلغ الشبكة فقط، وللمدير عند تفعيل الإرسال).
   // عند الدفع شبكة بالكامل ننتظر النتيجة هنا كي يحمل الإيصال نفس رقم فاتورة الأستاذ.
@@ -163,33 +208,8 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
     }
   }
 
-  try {
-    const receipt = createTailoringReceiptPayload(order, accountingInvoiceCode)
-    // فتح الدرج محصور في الطباعة التلقائية لحظة تسليم طلب التفصيل.
-    // إعادة الطباعة اليدوية وبقية الأقسام لا تمرر هذا الخيار.
-    const printResult = await dispatchTailoringReceiptPrint(receipt, {
-      openCashDrawer: receipt.cash_amount >= 0.005,
-    })
-
-    if (printResult.destination === 'direct') {
-      toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
-    } else if (printResult.directError) {
-      toast(
-        `تعذّرت الطباعة المباشرة؛ أُرسل إيصال الطلب ${receipt.order_number} إلى المحطة الاحتياطية. السبب: ${printResult.directError}`,
-        { icon: '⚠️', duration: 8000 }
-      )
-    } else {
-      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })
-    }
-
-    if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
-      toast('تعذّر جلب رقم فاتورة الأستاذ؛ أُرسل رقم محلي مرتبط بالطلب إلى الطباعة.', {
-        icon: '⚠️',
-        duration: 5000,
-      })
-    }
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error || '')
-    toast.error('تم التسليم، لكن تعذّرت طباعة الإيصال: ' + message)
+  // الدفع شبكة بالكامل يحتاج رقم فاتورة الأستاذ، لذا يُطبع بعد محاولة المحاسبة.
+  if (fullyNetworkPaid) {
+    await printDeliveredOrderReceipt(order, accountingInvoiceCode)
   }
 }

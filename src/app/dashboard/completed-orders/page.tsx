@@ -11,6 +11,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
+import { prepareTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
 import CartoonGridModal from '@/components/CartoonGridModal'
 import {
   ArrowRight,
@@ -252,6 +253,8 @@ export default function CompletedOrdersPage() {
   }
 
   const deliverOrder = async (orderId: string, markAsPaid: boolean, remainingPayment?: RemainingPaymentDetails) => {
+    // نبدأ إذن/فحص شبكة الجسر مباشرة من نقرة المستخدم قبل أي انتظار خارجي.
+    const printerPreparation = prepareTailoringReceiptPrint()
     setIsProcessing(true)
     try {
       // الحصول على بيانات الطلب قبل التحديث
@@ -269,6 +272,7 @@ export default function CompletedOrdersPage() {
 
         // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
         // ننتظر الطباعة قبل فتح واتساب؛ انتقال أندرويد إلى الخلفية قد يوقف طلب الطابعة المحلي.
+        await printerPreparation
         await autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
 
         // إرسال رسالة واتساب تلقائياً بعد التسليم
