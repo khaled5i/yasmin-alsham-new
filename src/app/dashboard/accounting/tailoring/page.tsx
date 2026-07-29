@@ -14,7 +14,8 @@ import {
   Home,
   Users,
   ChevronLeft,
-  Settings
+  Settings,
+  WalletCards
 } from 'lucide-react'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
 import type { FinancialSummary } from '@/types/simple-accounting'
@@ -26,6 +27,14 @@ import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 // ============================================================================
 
 const sections = [
+  {
+    id: 'cash-box',
+    name: 'الصندوق',
+    description: 'رصيد الكاش، حركات الطلبات وعمليات السحب',
+    icon: WalletCards,
+    href: '/dashboard/accounting/tailoring/cash-box',
+    color: 'from-amber-500 to-orange-600'
+  },
   {
     id: 'income',
     name: 'الواردات',
@@ -80,7 +89,7 @@ function TailoringAccountingContent() {
 
   const isAccountant = user?.role === 'worker' && workerType === 'accountant'
   const visibleSections = isAccountant
-    ? sections.filter((section) => section.id === 'materials')
+    ? sections.filter((section) => section.id === 'materials' || section.id === 'cash-box')
     : sections
 
   useEffect(() => {

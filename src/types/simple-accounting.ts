@@ -134,7 +134,53 @@ export interface FinancialSummary {
   totalSalaries: number         // إجمالي الرواتب
   totalExpenses: number         // إجمالي المصروفات
   netProfit: number             // صافي الربح
-  cashBoxBalance: number        // رصيد الصندوق = المبيعات الكاش - المشتريات من الصندوق
+  cashBoxBalance: number        // رصيد الصندوق = كاش الطلبات والواردات - حركات الخروج والسحب
+}
+
+// ============================================================================
+// صندوق النقد
+// ============================================================================
+
+export type CashBoxTransactionType =
+  | 'order_deposit'
+  | 'order_delivery'
+  | 'cash_income'
+  | 'box_expense'
+  | 'balance_adjustment'
+  | 'withdrawal'
+
+export interface CashBoxTransaction {
+  transaction_id: string
+  transaction_type: CashBoxTransactionType
+  /** موجبة للوارد وسالبة للصادر */
+  amount: number
+  occurred_at: string
+  title: string
+  description: string
+  actor_name?: string | null
+  reference_id?: string | null
+}
+
+export interface CashBoxWithdrawal {
+  id: string
+  branch: BranchType
+  amount: number
+  reason: string
+  balance_before: number
+  balance_after: number
+  created_by_name: string
+  created_at: string
+}
+
+export interface CreateCashBoxWithdrawalInput {
+  branch: BranchType
+  amount: number
+  reason: string
+}
+
+export interface CreateCashBoxWithdrawalResult {
+  withdrawal: CashBoxWithdrawal
+  newBalance: number
 }
 
 // ============================================================================

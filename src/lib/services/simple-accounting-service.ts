@@ -11,7 +11,10 @@ import type {
   CreateExpenseInput,
   Income,
   CreateIncomeInput,
-  FinancialSummary
+  FinancialSummary,
+  CashBoxTransaction,
+  CreateCashBoxWithdrawalInput,
+  CreateCashBoxWithdrawalResult
 } from '@/types/simple-accounting'
 
 const ONE_TIME_RECURRENCE: ExpenseRecurrenceType = 'one_time'
@@ -872,6 +875,26 @@ export async function getCashBoxAdjustmentsTotal(branch: BranchType, asOfDate?: 
  * بدون asOfDate يُرجِع الرصيد الحيّ الحالي (كامل التاريخ).
  */
 export async function getCashBoxBalance(branch: BranchType, asOfDate?: string): Promise<number> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase.rpc('get_cash_box_balance', {
+        p_branch: branch,
+        p_as_of: asOfDate || null
+      })
+
+      if (!error) {
+        return Number(data) || 0
+      }
+
+      // التوافق مع البيئات التي لم تُطبّق فيها هجرة صندوق التفصيل بعد.
+      if (error.code !== '42883' && error.code !== 'PGRST202') {
+        console.error('Error fetching cash box balance RPC:', error.message || error)
+      }
+    } catch (err) {
+      console.error('Error fetching cash box balance RPC:', err)
+    }
+  }
+
   const [cashIncome, boxPurchases, adjustments] = await Promise.all([
     getAllTimeCashIncome(branch, asOfDate),
     getAllTimeBoxPurchases(branch, asOfDate),
@@ -879,6 +902,103 @@ export async function getCashBoxBalance(branch: BranchType, asOfDate?: string): 
   ])
 
   return cashIncome - boxPurchases + adjustments
+}
+
+/**
+ * سجل حركات الصندوق الموحد: كاش الطلبات عند الإنشاء والتسليم، الواردات،
+ * المصروفات من الصندوق، التعديلات، وعمليات السحب.
+ */
+export async function getCashBoxTransactions(
+  branch: BranchType,
+  limit = 100
+): Promise<CashBoxTransaction[]> {
+  if (!isSupabaseConfigured()) return []
+
+  try {
+    const { data, error } = await supabase.rpc('get_cash_box_transactions', {
+      p_branch: branch,
+      p_limit: Math.max(1, Math.min(limit, 200))
+    })
+
+    if (error) {
+      if (error.code === '42883' || error.code === 'PGRST202') {
+        throw new Error('سجل الصندوق غير مفعّل في قاعدة البيانات بعد.')
+      }
+      throw new Error(error.message || 'تعذّر تحميل سجل الصندوق.')
+    }
+
+    return ((data || []) as Array<Record<string, unknown>>).map((row) => ({
+      transaction_id: String(row.transaction_id || ''),
+      transaction_type: row.transaction_type as CashBoxTransaction['transaction_type'],
+      amount: Number(row.amount) || 0,
+      occurred_at: String(row.occurred_at || ''),
+      title: String(row.title || ''),
+      description: String(row.description || ''),
+      actor_name: row.actor_name ? String(row.actor_name) : null,
+      reference_id: row.reference_id ? String(row.reference_id) : null
+    }))
+  } catch (err) {
+    console.error('Error fetching cash box transactions:', err)
+    throw err instanceof Error ? err : new Error('تعذّر تحميل سجل الصندوق.')
+  }
+}
+
+/**
+ * ينفذ السحب داخل قاعدة البيانات كعملية ذرية؛ لا يمكن أن يصبح الرصيد سالباً
+ * حتى عند ضغط الزر من جهازين في الوقت نفسه.
+ */
+export async function withdrawFromCashBox(
+  input: CreateCashBoxWithdrawalInput
+): Promise<CreateCashBoxWithdrawalResult> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('قاعدة البيانات غير متصلة. تعذّر حفظ عملية السحب.')
+  }
+
+  const amount = Math.round((Number(input.amount) + Number.EPSILON) * 100) / 100
+  const reason = input.reason.trim()
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('أدخل قيمة سحب صحيحة أكبر من صفر.')
+  }
+  if (reason.length < 3 || reason.length > 500) {
+    throw new Error('سبب السحب يجب أن يكون بين 3 و500 حرف.')
+  }
+
+  const { data, error } = await supabase.rpc('withdraw_from_cash_box', {
+    p_branch: input.branch,
+    p_amount: amount,
+    p_reason: reason
+  })
+
+  if (error) {
+    if (error.code === '42883' || error.code === 'PGRST202') {
+      throw new Error('ميزة السحب غير مفعّلة في قاعدة البيانات بعد.')
+    }
+    throw new Error(error.message || 'تعذّر حفظ عملية السحب.')
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null
+  if (!row?.withdrawal_id) {
+    throw new Error('لم تُرجع قاعدة البيانات تأكيد عملية السحب.')
+  }
+
+  const balanceBefore = Number(row.balance_before) || 0
+  const balanceAfter = Number(row.balance_after) || 0
+  const createdAt = String(row.created_at || new Date().toISOString())
+
+  return {
+    withdrawal: {
+      id: String(row.withdrawal_id),
+      branch: input.branch,
+      amount,
+      reason,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      created_by_name: String(row.created_by_name || 'مستخدم النظام'),
+      created_at: createdAt
+    },
+    newBalance: balanceAfter
+  }
 }
 
 /**

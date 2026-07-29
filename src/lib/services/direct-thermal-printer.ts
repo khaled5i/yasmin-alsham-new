@@ -588,3 +588,24 @@ export async function printTailoringReceiptDirect(
     Math.max(0, Number(payload.cash_amount) || 0) >= 0.005
   await postCanvasPrintJob(config.ipAddress, canvas, { openCashDrawer })
 }
+
+/**
+ * يرسل نبضة فتح الدرج فقط من دون طباعة إيصال أو تغذية ورق.
+ * يُستخدم بعد نجاح حفظ عملية سحب الصندوق.
+ */
+export async function openCashDrawerDirect(): Promise<void> {
+  const config = getDirectPrinterConfig()
+  if (!config.enabled) {
+    throw new DirectPrinterError(
+      'not-configured',
+      'الطباعة المباشرة غير مفعّلة على هذا الجهاز.'
+    )
+  }
+
+  await ensurePrintBridgeHealth()
+  const initializeAndKick = new Uint8Array([
+    0x1b, 0x40,
+    0x1b, 0x70, 0x00, 0x19, 0xfa,
+  ])
+  await postEscPosBytes(config.ipAddress, initializeAndKick)
+}
