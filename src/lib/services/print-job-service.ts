@@ -23,6 +23,26 @@ export interface PrintJob<TPayload = Income> {
   created_at: string
 }
 
+export interface EnqueueTailoringPrintJobResult {
+  job_id: string
+  status: string
+  deduplicated: boolean
+}
+
+export interface QueueTailoringPrintOptions {
+  jobType?: 'tailoring_order_receipt' | 'tailoring_cash_drawer_open'
+  incomeId?: string | null
+  openCashDrawer?: boolean
+  reprintOf?: string | null
+  /**
+   * Automatic receipts use a deterministic key. Intentional reprints append
+   * a fresh UUID so every click creates one new job while the RPC itself stays
+   * idempotent if the same request is retried.
+   */
+  forceNewJob?: boolean
+  idempotencyKey?: string
+}
+
 const FABRICS_BRANCH = 'fabrics'
 const TAILORING_BRANCH = 'tailoring'
 
@@ -41,17 +61,97 @@ export async function queueFabricReceiptPrint(item: Income): Promise<void> {
   if (error) throw error
 }
 
-/** إرسال إيصال طلب تفصيل إلى محطة الطابعة عند تحويل الطلب إلى «تم التسليم». */
-export async function queueTailoringReceiptPrint(payload: TailoringReceiptPayload): Promise<void> {
-  const { error } = await supabase.from('print_jobs').insert({
-    branch: TAILORING_BRANCH,
-    job_type: 'tailoring_order_receipt',
-    // العمود مرجع عام للسجل في طابور الطباعة؛ لا يوجد عليه قيد مفتاح أجنبي.
-    income_id: payload.order_id,
-    payload,
-    status: 'pending',
+function createRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function buildTailoringIdempotencyKey(
+  payload: TailoringReceiptPayload,
+  options: QueueTailoringPrintOptions
+): string {
+  if (options.idempotencyKey) return options.idempotencyKey
+
+  const jobType = options.jobType ?? 'tailoring_order_receipt'
+  const receiptType = payload.receipt_type ?? 'delivery'
+  const entityId = options.incomeId ?? payload.order_id
+  const stableKey = `${TAILORING_BRANCH}:${jobType}:${entityId}:${receiptType}:v1`
+
+  return options.forceNewJob
+    ? `${stableKey}:request:${createRequestId()}`
+    : stableKey
+}
+
+function normalizeEnqueueResult(data: unknown): EnqueueTailoringPrintJobResult {
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row || typeof row !== 'object') {
+    throw new Error('لم تُرجع محطة الطباعة معرّف مهمة صالحًا.')
+  }
+
+  const result = row as Record<string, unknown>
+  if (typeof result.job_id !== 'string' || result.job_id.length === 0) {
+    throw new Error('لم تُرجع محطة الطباعة معرّف مهمة صالحًا.')
+  }
+
+  return {
+    job_id: result.job_id,
+    status: typeof result.status === 'string' ? result.status : 'pending',
+    // Accept `created` during the rolling migration while keeping the public
+    // web contract expressed as `deduplicated`.
+    deduplicated:
+      result.deduplicated === true ||
+      (typeof result.created === 'boolean' && result.created === false),
+  }
+}
+
+/**
+ * يرسل أمر تفصيل إلى RPC ذرّي. لا يفتح المتصفح أو جسر localhost إطلاقًا.
+ * المفتاح الثابت يمنع تكرار الطباعة التلقائية، بينما forceNewJob مخصص
+ * لإعادة الطباعة اليدوية المقصودة.
+ */
+export async function enqueueTailoringPrintJob<TPayload extends object>(
+  payload: TPayload,
+  options: QueueTailoringPrintOptions
+): Promise<EnqueueTailoringPrintJobResult> {
+  const receiptPayload = payload as unknown as TailoringReceiptPayload
+  const jobType = options.jobType ?? 'tailoring_order_receipt'
+  const incomeId = options.incomeId ?? receiptPayload.order_id ?? null
+  const idempotencyKey = buildTailoringIdempotencyKey(receiptPayload, {
+    ...options,
+    jobType,
+    incomeId,
   })
+
+  const { data, error } = await supabase.rpc('enqueue_tailoring_print_job', {
+    p_job_type: jobType,
+    p_income_id: incomeId,
+    p_payload: payload,
+    p_idempotency_key: idempotencyKey,
+    p_open_cash_drawer: options.openCashDrawer === true,
+    p_reprint_of: options.reprintOf ?? null,
+  })
+
   if (error) throw error
+  return normalizeEnqueueResult(data)
+}
+
+/** إرسال إيصال طلب تفصيل إلى محطة الطابعة. */
+export async function queueTailoringReceiptPrint(
+  payload: TailoringReceiptPayload,
+  options: Omit<QueueTailoringPrintOptions, 'jobType' | 'incomeId'> = {}
+): Promise<EnqueueTailoringPrintJobResult> {
+  return enqueueTailoringPrintJob(payload, {
+    ...options,
+    jobType: 'tailoring_order_receipt',
+    incomeId: payload.order_id,
+    // لا يُفتح الدرج إن لم يحتو الإيصال مبلغ كاش فعليًا.
+    openCashDrawer:
+      options.openCashDrawer === true &&
+      Math.max(0, Number(payload.cash_amount) || 0) >= 0.005,
+  })
 }
 
 /** جلب الطلبات المعلّقة بالترتيب (تُستدعى عند بدء تشغيل المحطة + بعد كل حدث Realtime). */

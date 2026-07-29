@@ -1,5 +1,4 @@
 <resources>
-    <string name="app_name">جسر طباعة ياسمين الشام</string>
-    <string name="notification_channel">خدمة طباعة الإيصالات</string>
+    <string name="app_name">محطة طباعة ياسمين الشام</string>
+    <string name="notification_channel">محطة طباعة التفصيل</string>
 </resources>
-

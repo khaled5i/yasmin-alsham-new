@@ -43,7 +43,6 @@ import {
 } from '@/lib/services/simple-accounting-service'
 import {
   dispatchCashDrawerOpen,
-  prepareCashDrawerOpen,
   type CashDrawerWithdrawalVoucher,
 } from '@/lib/services/cash-drawer-service'
 import type {
@@ -388,9 +387,6 @@ function CashBoxContent() {
 
   const handleWithdrawal = async (amount: number, reason: string) => {
     setSubmitting(true)
-    const printerPreparation = prepareCashDrawerOpen().catch((error) => {
-      console.warn('[cash-box] printer warm-up failed', error)
-    })
 
     try {
       const result = await withdrawFromCashBox({
@@ -429,12 +425,8 @@ function CashBoxContent() {
       )
 
       try {
-        const destination = await dispatchCashDrawerOpen(voucher, printerPreparation)
-        if (destination === 'direct') {
-          toast.success('تم إرسال أمر فتح الدرج إلى الطابعة', { icon: '🗄️' })
-        } else {
-          toast.success('تم إرسال سند السحب إلى الطابعة لفتح الدرج', { icon: '🖨️' })
-        }
+        await dispatchCashDrawerOpen(voucher)
+        toast.success('تمت إضافة أمر فتح الدرج إلى محطة طباعة التفصيل', { icon: '🗄️' })
       } catch (drawerError) {
         setDrawerRetry(voucher)
         toast.error(
@@ -453,10 +445,9 @@ function CashBoxContent() {
     if (!drawerRetry || retryingDrawer) return
     setRetryingDrawer(true)
     try {
-      const preparation = prepareCashDrawerOpen().catch(() => undefined)
-      await dispatchCashDrawerOpen(drawerRetry, preparation)
+      await dispatchCashDrawerOpen(drawerRetry)
       setDrawerRetry(null)
-      toast.success('تم إرسال أمر فتح الدرج إلى الطابعة')
+      toast.success('تمت إعادة إرسال أمر فتح الدرج إلى محطة طباعة التفصيل')
     } catch (error) {
       toast.error(getErrorMessage(error))
     } finally {

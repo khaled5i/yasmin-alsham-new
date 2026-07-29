@@ -208,20 +208,13 @@ export default function DeliveredOrdersPage() {
     setPrintingId(order.id)
     try {
       const receipt = createTailoringReceiptPayload(order, getSentCode(order))
-      const printResult = await dispatchTailoringReceiptPrint(receipt)
-
-      if (printResult.destination === 'direct') {
-        toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
-      } else if (printResult.destination === 'browser') {
-        toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى طابعة الكمبيوتر`, { icon: '🖨️' })
-      } else if (printResult.directError) {
-        toast('تعذّرت الطباعة المباشرة؛ أُرسل الإيصال إلى المحطة الاحتياطية.', {
-          icon: '⚠️',
-          duration: 5500,
-        })
-      } else {
-        toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })
-      }
+      await dispatchTailoringReceiptPrint(receipt, {
+        // كل ضغطة هنا إعادة طباعة مقصودة، لذلك تحصل على مهمة جديدة بمفتاح UUID.
+        forceNewJob: true,
+      })
+      toast.success(`أُضيفت إعادة طباعة الطلب ${receipt.order_number} إلى طابور الطباعة`, {
+        icon: '🧾',
+      })
 
       if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
         toast('رقم فاتورة الأستاذ غير محفوظ لهذا الطلب؛ سيُستخدم الرقم المحلي في الإيصال.', {

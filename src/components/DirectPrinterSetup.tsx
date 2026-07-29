@@ -1,145 +1,67 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle,
-  Banknote,
   CheckCircle2,
   Download,
-  Loader2,
-  Printer,
   RadioTower,
   ReceiptText,
-  Unplug,
-  Wifi,
+  Settings2,
+  ShieldCheck,
+  Smartphone,
+  WifiOff,
   X,
 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { useAuthStore } from '@/store/authStore'
 import {
-  DEFAULT_DIRECT_PRINTER_IP,
-  getDirectPrinterConfig,
-  PRINT_BRIDGE_APK_PATH,
-  saveDirectPrinterConfig,
-  testDirectPrinter,
-  type DirectPrinterConfig,
-} from '@/lib/services/direct-thermal-printer'
+  getTailoringPrintStationOverview,
+  type TailoringPrintStationOverview,
+} from '@/lib/services/tailoring-print-station-service'
 
-type TestState = 'idle' | 'testing' | 'success' | 'error'
+const PRINT_STATION_APK_PATH = '/downloads/yasmin-print-bridge.apk'
 
-function printBrowserTestPage(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof document === 'undefined') {
-      reject(new Error('اختبار الطباعة من المتصفح غير متاح على هذا الجهاز.'))
-      return
-    }
-
-    let settled = false
-    const iframe = document.createElement('iframe')
-    iframe.setAttribute('aria-hidden', 'true')
-    iframe.style.cssText = [
-      'position:fixed',
-      'left:-10000px',
-      'top:0',
-      'width:80mm',
-      'height:160mm',
-      'border:0',
-      'background:#fff',
-    ].join(';')
-
-    const cleanup = () => {
-      window.setTimeout(() => iframe.remove(), 1500)
-    }
-    const finish = (error?: unknown) => {
-      if (settled) return
-      settled = true
-      window.clearTimeout(timeout)
-      cleanup()
-      if (error) reject(error instanceof Error ? error : new Error(String(error)))
-      else resolve()
-    }
-    const timeout = window.setTimeout(
-      () => finish(new Error('انتهت مهلة فتح نافذة الطباعة.')),
-      12_000
-    )
-
-    iframe.onload = () => {
-      window.setTimeout(() => {
-        try {
-          const frameWindow = iframe.contentWindow
-          if (!frameWindow) throw new Error('تعذّر الوصول إلى نافذة الطباعة.')
-          frameWindow.focus()
-          frameWindow.print()
-          finish()
-        } catch (error) {
-          finish(error)
-        }
-      }, 250)
-    }
-
-    iframe.srcdoc = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <title>اختبار طابعة التفصيل</title>
-  <style>
-    @page { size: 80mm auto; margin: 0; }
-    * { box-sizing: border-box; }
-    body {
-      width: 72mm;
-      margin: 0 auto;
-      padding: 7mm 2mm 14mm;
-      color: #111;
-      background: #fff;
-      font-family: Tahoma, "Segoe UI", sans-serif;
-      text-align: center;
-    }
-    h1 { margin: 0 0 3mm; font-size: 21px; }
-    p { margin: 2mm 0; font-size: 13px; font-weight: 700; }
-    .rule { margin: 5mm 0; border: 0; border-top: 2px dashed #111; }
-    .status { font-size: 18px; font-weight: 900; }
-    .time { direction: ltr; font-family: monospace; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <h1>ياسمين الشام</h1>
-  <p class="status">اختبار طابعة إيصالات التفصيل</p>
-  <hr class="rule">
-  <p>إذا ظهرت هذه الورقة فالطباعة من الكمبيوتر تعمل بنجاح.</p>
-  <p>يُفتح الدرج إذا كان تعريف الطابعة في ويندوز مضبوطاً لفتحه عند بدء الطباعة.</p>
-  <hr class="rule">
-  <p class="time">${new Date().toLocaleString('ar-SA-u-nu-latn')}</p>
-</body>
-</html>`
-    document.body.appendChild(iframe)
-  })
+function activeStationName(overview: TailoringPrintStationOverview | null): string | null {
+  if (!overview?.lease) return null
+  if (new Date(overview.lease.lease_expires_at).getTime() <= Date.now()) return null
+  return overview.stations.find((station) => station.id === overview.lease?.station_id)?.name ?? null
 }
 
+/**
+ * Kept under its historical export name so existing dashboard call sites do
+ * not churn. It now describes and monitors the central station system; it
+ * never probes localhost and never stores a printer IP on the employee phone.
+ */
 export default function DirectPrinterSetup() {
-  const [config, setConfig] = useState<DirectPrinterConfig | null>(null)
-  const [ipAddress, setIpAddress] = useState(DEFAULT_DIRECT_PRINTER_IP)
-  const [testState, setTestState] = useState<TestState>('idle')
-  const [message, setMessage] = useState('')
+  const user = useAuthStore((state) => state.user)
+  const isAdmin = user?.role === 'admin'
   const [isOpen, setIsOpen] = useState(false)
+  const [overview, setOverview] = useState<TailoringPrintStationOverview | null>(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const stored = getDirectPrinterConfig()
-    setConfig(stored)
-    setIpAddress(stored.ipAddress)
+    if (!isOpen || !isAdmin) return
 
-    const handleConfigChange = (event: Event) => {
-      const next = (event as CustomEvent<DirectPrinterConfig>).detail
-      if (!next) return
-      setConfig(next)
-      setIpAddress(next.ipAddress)
+    let active = true
+    void getTailoringPrintStationOverview()
+      .then((result) => {
+        if (!active) return
+        setOverview(result)
+        setError('')
+      })
+      .catch((loadError) => {
+        if (!active) return
+        setError(loadError instanceof Error ? loadError.message : 'تعذّر قراءة حالة المحطات.')
+      })
+
+    return () => {
+      active = false
     }
-    window.addEventListener('direct-printer-config-changed', handleConfigChange)
-    return () => window.removeEventListener('direct-printer-config-changed', handleConfigChange)
-  }, [])
+  }, [isAdmin, isOpen])
 
   useEffect(() => {
     if (!isOpen) return
-
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setIsOpen(false)
     }
@@ -147,88 +69,36 @@ export default function DirectPrinterSetup() {
     return () => document.removeEventListener('keydown', handleEscape)
   }, [isOpen])
 
-  const handleTest = async () => {
-    if (testState === 'testing') return
-    setTestState('testing')
-    const isAndroid = /Android/i.test(window.navigator.userAgent)
-    setMessage(
-      isAndroid
-        ? 'يتم الآن فحص جسر الطباعة ثم طباعة ورقة اختبار وفتح الدرج.'
-        : 'يتم الآن فتح طباعة ورقة الاختبار من الكمبيوتر.'
-    )
-
-    try {
-      if (!isAndroid) {
-        await printBrowserTestPage()
-        setTestState('success')
-        setMessage(
-          'أُرسلت ورقة الاختبار من الكمبيوتر. فتح الدرج يعتمد على إعداد تعريف الطابعة في ويندوز.'
-        )
-        toast.success('تم إرسال ورقة اختبار الطابعة من الكمبيوتر', { icon: '🖨️' })
-        return
-      }
-
-      const next = await testDirectPrinter(ipAddress)
-      setConfig(next)
-      setIpAddress(next.ipAddress)
-      setTestState('success')
-      setMessage('طُبعت ورقة الاختبار وأُرسل أمر فتح الدرج. أصبحت الطباعة التلقائية مفعّلة.')
-      toast.success('تم اختبار الطباعة وفتح الدرج', { icon: '🧾' })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'تعذّر اختبار الطابعة.'
-      setTestState('error')
-      setMessage(errorMessage)
-      toast.error(errorMessage)
-    }
-  }
-
-  const handleDisable = () => {
-    const next = saveDirectPrinterConfig({ enabled: false, ipAddress })
-    setConfig(next)
-    setTestState('idle')
-    setMessage('تم إيقاف الطباعة المباشرة على هذا الجهاز؛ ستُستخدم محطة الطباعة الاحتياطية.')
-    toast.success('تم إيقاف الطباعة المباشرة')
-  }
-
-  const enabled = config?.enabled === true
+  const activeName = useMemo(() => activeStationName(overview), [overview])
+  const queuedCount = overview?.queue.pending ?? 0
+  const statusDotClass = activeName
+    ? 'bg-emerald-500'
+    : overview || error
+      ? 'bg-amber-400'
+      : 'bg-stone-400'
 
   return (
     <div dir="rtl" className="flex flex-wrap items-center justify-end gap-2">
       <Link
         href="/dashboard/print-station"
-        aria-label="فتح محطة إيصالات التفصيل"
+        aria-label="فتح إدارة محطات طباعة التفصيل"
         className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
       >
-        <ReceiptText className="h-4 w-4" />
-        <span className="hidden sm:inline">محطة الإيصالات</span>
+        <RadioTower className="h-4 w-4" />
+        <span className="hidden sm:inline">محطات الطباعة</span>
       </Link>
-
-      <button
-        type="button"
-        onClick={() => { void handleTest() }}
-        disabled={testState === 'testing'}
-        className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-300 px-3 py-2 text-xs font-black text-stone-950 shadow-sm transition hover:border-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
-        aria-label="اختبار طباعة إيصال وفتح درج النقود"
-      >
-        {testState === 'testing' ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Banknote className="h-4 w-4" />
-        )}
-        <span>{testState === 'testing' ? 'جارٍ الاختبار' : 'اختبار الطباعة والدرج'}</span>
-      </button>
 
       <button
         type="button"
         onClick={() => setIsOpen(true)}
         className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-bold text-stone-700 shadow-sm transition hover:border-stone-300 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-300"
         aria-haspopup="dialog"
-        aria-label="فتح إعدادات طابعة إيصالات التفصيل"
+        aria-label="عرض حالة نظام طباعة إيصالات التفصيل"
       >
-        <Printer className="h-4 w-4" />
-        <span className="hidden sm:inline">طابعة إيصالات التفصيل</span>
+        <ReceiptText className="h-4 w-4" />
+        <span className="hidden sm:inline">طباعة التفصيل</span>
         <span
-          className={`h-2 w-2 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-rose-500'}`}
+          className={`h-2 w-2 rounded-full ${statusDotClass}`}
           aria-hidden="true"
         />
       </button>
@@ -244,145 +114,95 @@ export default function DirectPrinterSetup() {
           <section
             role="dialog"
             aria-modal="true"
-            aria-labelledby="direct-printer-title"
-            className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-stone-700 bg-stone-950 text-stone-50 shadow-[0_24px_80px_rgba(28,25,23,0.4)]"
+            aria-labelledby="print-station-system-title"
+            className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-stone-700 bg-stone-950 text-stone-50 shadow-[0_24px_80px_rgba(28,25,23,0.45)]"
           >
-            <div
-              className="pointer-events-none absolute inset-0 opacity-[0.08]"
-              style={{
-                backgroundImage:
-                  'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.9) 1px, transparent 0)',
-                backgroundSize: '18px 18px',
-              }}
-            />
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="absolute left-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/10 text-stone-200 transition hover:bg-white/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
-              aria-label="إغلاق إعدادات الطابعة"
+              className="absolute left-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/10 text-stone-200 transition hover:bg-white/20"
+              aria-label="إغلاق"
             >
               <X className="h-5 w-5" />
             </button>
 
-            <div className="relative grid gap-5 p-5 pt-16 sm:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)] sm:p-6 sm:pt-6">
+            <div className="border-b border-white/10 bg-amber-300/[0.08] p-6">
               <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-amber-300/30 bg-amber-300/10 text-amber-300">
-                  <Printer className="h-6 w-6" />
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-300 text-stone-950">
+                  <RadioTower className="h-6 w-6" />
                 </div>
                 <div className="min-w-0">
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <h2 id="direct-printer-title" className="text-lg font-black tracking-tight">
-                      طابعة إيصالات التفصيل
-                    </h2>
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
-                        enabled
-                          ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                          : 'border-rose-400/30 bg-rose-400/10 text-rose-200'
-                      }`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                      {enabled ? 'متصلة عبر الجسر' : 'الاتصال مقطوع'}
-                    </span>
-                  </div>
-                  <p className="max-w-2xl text-sm leading-6 text-stone-300">
-                    TA POS TA-900UWB · على أندرويد تُختبر الطباعة وفتحة الدرج عبر الجسر،
-                    وعلى الكمبيوتر تُستخدم طباعة المتصفح وتعريف الطابعة في ويندوز.
+                  <p className="text-xs font-black tracking-[0.17em] text-amber-300">QUEUE-FIRST</p>
+                  <h2 id="print-station-system-title" className="mt-1 text-xl font-black">
+                    نظام محطة طباعة التفصيل
+                  </h2>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-stone-300">
+                    كل هاتف يرسل الفاتورة إلى طابور آمن فقط. التابلت النشط يتولى الطباعة،
+                    ويستلم التابلت الاحتياطي تلقائيًا إذا انقطع الأول.
                   </p>
-                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-stone-400">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Wifi className="h-3.5 w-3.5 text-amber-300" />
-                      الهاتف والطابعة على نفس Wi‑Fi
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <RadioTower className="h-3.5 w-3.5 text-amber-300" />
-                      اختبار الكمبيوتر لا يحتاج تثبيت جسر إضافي
-                    </span>
-                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  <Smartphone className="mb-3 h-5 w-5 text-amber-300" />
+                  <p className="text-xs text-stone-400">المحطات المقترنة</p>
+                  <p className="mt-1 text-2xl font-black tabular-nums">
+                    {isAdmin ? overview?.stations.length ?? '—' : '2'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  {activeName ? (
+                    <CheckCircle2 className="mb-3 h-5 w-5 text-emerald-300" />
+                  ) : (
+                    <WifiOff className="mb-3 h-5 w-5 text-rose-300" />
+                  )}
+                  <p className="text-xs text-stone-400">المحطة النشطة</p>
+                  <p className="mt-1 truncate text-sm font-black">{isAdmin ? activeName || 'لا توجد' : 'تلقائية'}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  <ReceiptText className="mb-3 h-5 w-5 text-sky-300" />
+                  <p className="text-xs text-stone-400">في الانتظار</p>
+                  <p className="mt-1 text-2xl font-black tabular-nums">{isAdmin ? queuedCount : '—'}</p>
                 </div>
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/[0.06] p-3.5 backdrop-blur-sm">
-                {!enabled ? (
-                  <a
-                    href={PRINT_BRIDGE_APK_PATH}
-                    download
-                    className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-amber-300/35 bg-amber-300/10 px-3 py-2.5 text-xs font-black text-amber-200 transition hover:bg-amber-300/20 focus:outline-none focus:ring-2 focus:ring-amber-300/40"
-                  >
-                    <Download className="h-4 w-4" />
-                    تنزيل جسر الطباعة لأندرويد APK
-                  </a>
-                ) : null}
-                <label htmlFor="direct-printer-ip" className="mb-1.5 block text-xs font-bold text-stone-300">
-                  عنوان الطابعة الثابت
-                </label>
-                <div className="flex gap-2" dir="ltr">
-                  <input
-                    id="direct-printer-ip"
-                    type="text"
-                    inputMode="decimal"
-                    value={ipAddress}
-                    onChange={(event) => {
-                      setIpAddress(event.target.value)
-                      setTestState('idle')
-                      setMessage('')
-                    }}
-                    disabled={testState === 'testing'}
-                    className="min-w-0 flex-1 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2.5 font-mono text-sm text-white outline-none transition focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20 disabled:opacity-60"
-                    aria-describedby="direct-printer-message"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => { void handleTest() }}
-                    disabled={testState === 'testing'}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-300 px-4 py-2.5 text-sm font-black text-stone-950 transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-stone-950 disabled:cursor-wait disabled:opacity-60"
-                  >
-                    {testState === 'testing' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : enabled ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      <Wifi className="h-4 w-4" />
-                    )}
-                    <span>{testState === 'testing' ? 'جارٍ الربط' : enabled ? 'إعادة الاختبار' : 'ربط واختبار'}</span>
-                  </button>
+              {error ? (
+                <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-xs leading-5 text-rose-200">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {error}
                 </div>
+              ) : null}
 
-                <div className="mt-2.5 flex min-h-5 items-start justify-between gap-3">
-                  <p
-                    id="direct-printer-message"
-                    role="status"
-                    aria-live="polite"
-                    className={`flex items-start gap-1.5 text-[11px] leading-5 ${
-                      testState === 'error'
-                        ? 'text-rose-300'
-                        : testState === 'success' || enabled
-                          ? 'text-emerald-300'
-                          : 'text-stone-400'
-                    }`}
+              <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-100">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+                <p>
+                  لا تثبّت تطبيق المحطة على كل هاتف. يثبت فقط على تابلتي الاستقبال،
+                  ولا يلزم إبقاء موقع ياسمين الشام مفتوحًا عليهما.
+                </p>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                {isAdmin ? (
+                  <Link
+                    href="/dashboard/print-station"
+                    onClick={() => setIsOpen(false)}
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-3 text-sm font-black text-stone-950 transition hover:bg-amber-200"
                   >
-                    {testState === 'error' ? (
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    ) : enabled ? (
-                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    ) : null}
-                    <span>
-                      {message || (enabled
-                        ? 'الطباعة التلقائية جاهزة على هذا الجهاز.'
-                        : 'نزّل الجسر وافتحه وشغّل الخدمة، ثم اضغط «ربط واختبار».')}
-                    </span>
-                  </p>
-                  {enabled ? (
-                    <button
-                      type="button"
-                      onClick={handleDisable}
-                      className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold text-stone-400 transition hover:text-rose-300"
-                    >
-                      <Unplug className="h-3.5 w-3.5" />
-                      إيقاف
-                    </button>
-                  ) : null}
-                </div>
+                    <Settings2 className="h-4 w-4" />
+                    إدارة الرئيسي والاحتياطي
+                  </Link>
+                ) : null}
+                <a
+                  href={PRINT_STATION_APK_PATH}
+                  download
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm font-black text-stone-200 transition hover:bg-white/10"
+                >
+                  <Download className="h-4 w-4" />
+                  تنزيل تطبيق المحطة للتابلت
+                </a>
               </div>
             </div>
           </section>

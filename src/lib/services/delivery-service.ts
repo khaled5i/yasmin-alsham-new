@@ -129,22 +129,12 @@ async function printDeliveredOrderReceipt(
     const receipt = createTailoringReceiptPayload(order, accountingInvoiceCode)
     // فتح الدرج محصور في الطباعة التلقائية لحظة تسليم طلب التفصيل.
     // إعادة الطباعة اليدوية وبقية الأقسام لا تمرر هذا الخيار.
-    const printResult = await dispatchTailoringReceiptPrint(receipt, {
+    await dispatchTailoringReceiptPrint(receipt, {
       openCashDrawer: receipt.cash_amount >= 0.005,
     })
-
-    if (printResult.destination === 'direct') {
-      toast.success(`طُبع إيصال الطلب ${receipt.order_number} مباشرة`, { icon: '🧾' })
-    } else if (printResult.destination === 'browser') {
-      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى طابعة الكمبيوتر`, { icon: '🖨️' })
-    } else if (printResult.directError) {
-      toast(
-        `تعذّرت الطباعة المباشرة؛ أُرسل إيصال الطلب ${receipt.order_number} إلى المحطة الاحتياطية. السبب: ${printResult.directError}`,
-        { icon: '⚠️', duration: 8000 }
-      )
-    } else {
-      toast.success(`أُرسل إيصال الطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })
-    }
+    toast.success(`أُضيف إيصال الطلب ${receipt.order_number} إلى طابور الطباعة`, {
+      icon: '🧾',
+    })
 
     if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
       toast('تعذّر جلب رقم فاتورة الأستاذ؛ أُرسل رقم محلي مرتبط بالطلب إلى الطباعة.', {

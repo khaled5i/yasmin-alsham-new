@@ -7,6 +7,8 @@
 
 import { supabase } from '../supabase'
 
+const TAILORING_INVOICE_TIMEOUT_MS = 15_000
+
 export interface SendInvoiceResult {
   success: boolean
   invoice_id?: number
@@ -36,6 +38,12 @@ export async function sendInvoiceToAlostaz(
       return { success: false, error: 'الجلسة منتهية — يرجى إعادة تسجيل الدخول' }
     }
 
+    const controller = new AbortController()
+    const timeoutId = globalThis.setTimeout(
+      () => controller.abort(),
+      TAILORING_INVOICE_TIMEOUT_MS
+    )
+
     const res = await fetch('/api/alostaz/send-invoice', {
       method: 'POST',
       headers: {
@@ -43,7 +51,8 @@ export async function sendInvoiceToAlostaz(
         Authorization: `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({ orderId, auto: !!opts?.auto, mode: opts?.mode }),
-    })
+      signal: controller.signal,
+    }).finally(() => globalThis.clearTimeout(timeoutId))
 
     const result = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -61,6 +70,12 @@ export async function sendInvoiceToAlostaz(
       warning: result?.warning,
     }
   } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'انتهت مهلة الاتصال بالمحاسبة؛ ستستمر طباعة الإيصال برقم الطلب المحلي',
+      }
+    }
     return { success: false, error: err?.message || 'خطأ غير متوقع' }
   }
 }

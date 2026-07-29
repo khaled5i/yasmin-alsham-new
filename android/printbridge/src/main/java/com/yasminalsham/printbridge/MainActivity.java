@@ -7,14 +7,13 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
+import android.provider.Settings;
 import android.text.InputType;
 import android.text.method.DigitsKeyListener;
 import android.view.Gravity;
@@ -28,32 +27,41 @@ import android.widget.Toast;
 
 import androidx.core.content.ContextCompat;
 
-@SuppressLint("SetTextI18n") // Internal Arabic-only setup utility; strings are intentionally not localized.
+import com.yasminalsham.printbridge.config.StationPreferences;
+import com.yasminalsham.printbridge.model.StationStatus;
+
+@SuppressLint("SetTextI18n")
 public final class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
 
+    private StationPreferences preferences;
+    private EditText pairingCodeInput;
     private EditText printerIpInput;
-    private TextView statusText;
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private TextView roleText;
+    private TextView detailText;
+    private TextView countersText;
+    private TextView pairingStateText;
 
-    private final BroadcastReceiver resultReceiver = new BroadcastReceiver() {
+    private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            boolean success = intent.getBooleanExtra(PrintBridgeService.EXTRA_SUCCESS, false);
+            refreshStatus();
             String message = intent.getStringExtra(PrintBridgeService.EXTRA_MESSAGE);
-            statusText.setText(success ? "الخدمة جاهزة والطابعة متصلة" : "تعذّر اختبار الطابعة");
-            statusText.setTextColor(Color.parseColor(success ? "#047857" : "#BE123C"));
-            Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+            if (message != null && !message.trim().isEmpty()) {
+                detailText.setText(message);
+            }
         }
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        preferences = new StationPreferences(this);
         getWindow().getDecorView().setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         setContentView(buildContentView());
-        registerResultReceiver();
+        registerStatusReceiver();
         requestNotificationPermissionIfNeeded();
+        if (preferences.isEnabled()) startServiceAction(PrintBridgeService.ACTION_START);
         refreshStatus();
     }
 
@@ -65,102 +73,238 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        unregisterReceiver(resultReceiver);
+        try {
+            unregisterReceiver(statusReceiver);
+        } catch (IllegalArgumentException ignored) {
+        }
         super.onDestroy();
     }
 
     private View buildContentView() {
-        int padding = dp(24);
+        int padding = dp(22);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(padding, padding, padding, padding);
-        content.setGravity(Gravity.CENTER_HORIZONTAL);
         content.setBackgroundColor(Color.parseColor("#FAFAF9"));
 
-        TextView title = new TextView(this);
-        title.setText("جسر طباعة ياسمين الشام");
-        title.setTextSize(25);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setTextColor(Color.parseColor("#1C1917"));
+        TextView title = text("محطة طباعة ياسمين الشام", 26, true, "#1C1917");
         title.setGravity(Gravity.CENTER);
-        content.addView(title, matchWrap(0, dp(12)));
+        content.addView(title, params(0, dp(8)));
 
-        TextView description = new TextView(this);
-        description.setText("يعمل هذا الجسر في الخلفية ويرسل إيصالات نسخة Chrome مباشرة إلى الطابعة عبر الشبكة، دون كمبيوتر أو محطة طباعة.");
-        description.setTextSize(16);
-        description.setTextColor(Color.parseColor("#57534E"));
-        description.setGravity(Gravity.CENTER);
-        description.setLineSpacing(0, 1.25f);
-        content.addView(description, matchWrap(0, dp(28)));
+        TextView subtitle = text(
+                "محطة التفصيل الدائمة · رئيسية واحتياطية تلقائيًا",
+                15,
+                false,
+                "#57534E"
+        );
+        subtitle.setGravity(Gravity.CENTER);
+        content.addView(subtitle, params(0, dp(22)));
 
-        TextView ipLabel = new TextView(this);
-        ipLabel.setText("عنوان الطابعة الثابت");
-        ipLabel.setTextSize(14);
-        ipLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        ipLabel.setTextColor(Color.parseColor("#292524"));
-        content.addView(ipLabel, matchWrap(0, dp(8)));
+        LinearLayout statusCard = new LinearLayout(this);
+        statusCard.setOrientation(LinearLayout.VERTICAL);
+        statusCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        statusCard.setBackgroundColor(Color.WHITE);
+
+        roleText = text("", 20, true, "#1C1917");
+        roleText.setGravity(Gravity.CENTER);
+        statusCard.addView(roleText, params(0, dp(5)));
+        detailText = text("", 14, false, "#57534E");
+        detailText.setGravity(Gravity.CENTER);
+        statusCard.addView(detailText, params(0, dp(7)));
+        countersText = text("", 13, true, "#78716C");
+        countersText.setGravity(Gravity.CENTER);
+        statusCard.addView(countersText, params(0, 0));
+        content.addView(statusCard, params(0, dp(22)));
+
+        pairingStateText = text("", 13, true, "#57534E");
+        content.addView(pairingStateText, params(0, dp(7)));
+
+        TextView pairingLabel = text("رمز ربط المحطة", 14, true, "#292524");
+        content.addView(pairingLabel, params(0, dp(6)));
+
+        pairingCodeInput = new EditText(this);
+        pairingCodeInput.setHint("station_uuid.secret");
+        pairingCodeInput.setTextDirection(View.TEXT_DIRECTION_LTR);
+        pairingCodeInput.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        pairingCodeInput.setSingleLine(true);
+        pairingCodeInput.setInputType(
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD
+        );
+        pairingCodeInput.setPadding(dp(14), dp(10), dp(14), dp(10));
+        content.addView(pairingCodeInput, params(0, dp(16)));
+
+        TextView ipLabel = text("عنوان الطابعة الثابت", 14, true, "#292524");
+        content.addView(ipLabel, params(0, dp(6)));
 
         printerIpInput = new EditText(this);
-        printerIpInput.setText(getPreferences().getString(PrintBridgeService.PREF_PRINTER_IP, PrintBridgeService.DEFAULT_PRINTER_IP));
+        printerIpInput.setText(preferences.getPrinterIp());
         printerIpInput.setTextDirection(View.TEXT_DIRECTION_LTR);
         printerIpInput.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-        printerIpInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        printerIpInput.setInputType(
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+        );
         printerIpInput.setKeyListener(DigitsKeyListener.getInstance("0123456789."));
         printerIpInput.setTextSize(18);
         printerIpInput.setSingleLine(true);
         printerIpInput.setPadding(dp(14), dp(10), dp(14), dp(10));
-        content.addView(printerIpInput, matchWrap(0, dp(18)));
+        content.addView(printerIpInput, params(0, dp(16)));
 
-        Button startButton = new Button(this);
-        startButton.setText("تشغيل الخدمة واختبار الطابعة");
-        startButton.setTextSize(16);
-        startButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        startButton.setOnClickListener(view -> startAndTestBridge());
-        content.addView(startButton, matchWrap(0, dp(10)));
+        Button saveButton = new Button(this);
+        saveButton.setText("حفظ وتشغيل المحطة");
+        saveButton.setTextSize(16);
+        saveButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        saveButton.setOnClickListener(view -> saveAndStart());
+        content.addView(saveButton, params(0, dp(9)));
 
         Button stopButton = new Button(this);
-        stopButton.setText("إيقاف خدمة الطباعة");
-        stopButton.setOnClickListener(view -> stopBridge());
-        content.addView(stopButton, matchWrap(0, dp(22)));
+        stopButton.setText("إيقاف المحطة مؤقتًا");
+        stopButton.setOnClickListener(view -> stopStation());
+        content.addView(stopButton, params(0, dp(9)));
 
-        statusText = new TextView(this);
-        statusText.setTextSize(15);
-        statusText.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        statusText.setGravity(Gravity.CENTER);
-        content.addView(statusText, matchWrap(0, dp(16)));
+        Button unpairButton = new Button(this);
+        unpairButton.setText("إلغاء ربط هذا التابلت");
+        unpairButton.setOnClickListener(view -> unpairStation());
+        content.addView(unpairButton, params(0, dp(9)));
 
-        TextView details = new TextView(this);
-        details.setText("بعد ظهور ورقة الاختبار، ارجع إلى تطبيق ياسمين الشام المثبت من Chrome واضغط «ربط واختبار».\n\nالخدمة المحلية: 127.0.0.1:19281\nمنفذ الطابعة: 9100");
-        details.setTextSize(13);
-        details.setTextColor(Color.parseColor("#78716C"));
-        details.setGravity(Gravity.CENTER);
-        details.setLineSpacing(0, 1.25f);
-        content.addView(details, matchWrap(0, 0));
+        Button batteryButton = new Button(this);
+        batteryButton.setText("فتح إعدادات البطارية");
+        batteryButton.setOnClickListener(view -> openBatterySettings());
+        content.addView(batteryButton, params(0, dp(20)));
+
+        TextView notes = text(
+                "اترك التابلت موصولًا بالشاحن وعلى شبكة Wi‑Fi الخاصة بالطابعة، "
+                        + "واستثنِ التطبيق من تحسين البطارية. لا يحتاج الموقع أو Chrome "
+                        + "إلى الاتصال المباشر بهذه المحطة؛ جميع الفواتير تمر عبر الطابور الآمن.\n\n"
+                        + "الخدمة التشخيصية فقط: 127.0.0.1:19281/health\n"
+                        + "الطباعة المحلية /print معطّلة في هذا الإصدار.",
+                13,
+                false,
+                "#78716C"
+        );
+        notes.setGravity(Gravity.CENTER);
+        notes.setLineSpacing(0, 1.25f);
+        content.addView(notes, params(0, 0));
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.addView(content);
         return scrollView;
     }
 
-    private void startAndTestBridge() {
+    private void saveAndStart() {
         String printerIp = printerIpInput.getText().toString().trim();
-        if (!PrintBridgeService.isPrivateIpv4(printerIp)) {
-            printerIpInput.setError("أدخل عنواناً محلياً صحيحاً، مثل 192.168.100.105");
+        if (!StationPreferences.isPrivateIpv4(printerIp)) {
+            printerIpInput.setError("أدخل عنوانًا محليًا صحيحًا مثل 192.168.100.105");
             return;
         }
 
-        getPreferences().edit().putString(PrintBridgeService.PREF_PRINTER_IP, printerIp).apply();
-        startServiceAction(PrintBridgeService.ACTION_START);
-        statusText.setText("جارٍ تشغيل الخدمة واختبار الطابعة...");
-        statusText.setTextColor(Color.parseColor("#B45309"));
-        handler.postDelayed(() -> startServiceAction(PrintBridgeService.ACTION_TEST), 450);
+        StationPreferences.PairingCredentials current = preferences.getCredentials();
+        String pairingCode = pairingCodeInput.getText().toString().trim();
+        if (pairingCode.isEmpty() && current == null) {
+            pairingCodeInput.setError("أدخل رمز الربط الصادر من لوحة الإدارة");
+            return;
+        }
+
+        try {
+            if (!pairingCode.isEmpty()) preferences.savePairingCode(pairingCode);
+            preferences.savePrinterIp(printerIp);
+            preferences.setEnabled(true);
+            pairingCodeInput.setText("");
+            startServiceAction(PrintBridgeService.ACTION_CONFIG_CHANGED);
+            Toast.makeText(this, "تم حفظ إعدادات المحطة", Toast.LENGTH_SHORT).show();
+            refreshStatus();
+        } catch (Exception error) {
+            pairingCodeInput.setError("رمز الربط غير صالح أو تعذّر حفظه بأمان");
+        }
     }
 
-    private void stopBridge() {
+    private void stopStation() {
         Intent intent = new Intent(this, PrintBridgeService.class);
         intent.setAction(PrintBridgeService.ACTION_STOP);
         startService(intent);
-        handler.postDelayed(this::refreshStatus, 250);
+        preferences.setEnabled(false);
+        roleText.postDelayed(this::refreshStatus, 300);
+    }
+
+    private void unpairStation() {
+        Intent intent = new Intent(this, PrintBridgeService.class);
+        intent.setAction(PrintBridgeService.ACTION_UNPAIR);
+        startService(intent);
+        pairingCodeInput.setText("");
+        Toast.makeText(this, "تم إلغاء ربط هذا التابلت", Toast.LENGTH_SHORT).show();
+        roleText.postDelayed(this::refreshStatus, 350);
+    }
+
+    private void openBatterySettings() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            startActivity(intent);
+        } catch (RuntimeException error) {
+            Intent fallback = new Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName())
+            );
+            startActivity(fallback);
+        }
+    }
+
+    private void refreshStatus() {
+        StationStatus status = PrintBridgeService.getLastStatus();
+        boolean serviceRunning = PrintBridgeService.isRunning();
+        StationPreferences.PairingCredentials credentials = preferences.getCredentials();
+
+        if (!serviceRunning) {
+            roleText.setText("المحطة متوقفة");
+            roleText.setTextColor(Color.parseColor("#78716C"));
+            detailText.setText("اضغط «حفظ وتشغيل المحطة» لتشغيلها");
+        } else {
+            switch (status.role) {
+                case ACTIVE:
+                    roleText.setText("المحطة الرئيسية ACTIVE");
+                    roleText.setTextColor(Color.parseColor("#047857"));
+                    detailText.setText(
+                            status.printerReachable
+                                    ? "الطابعة متصلة وجاهزة لاستقبال الفواتير"
+                                    : "المحطة نشطة لكن الطابعة غير متاحة"
+                    );
+                    break;
+                case STANDBY:
+                    roleText.setText("المحطة الاحتياطية STANDBY");
+                    roleText.setTextColor(Color.parseColor("#B45309"));
+                    detailText.setText("تراقب المحطة الرئيسية وستستلم العمل تلقائيًا عند انقطاعها");
+                    break;
+                case UNPAIRED:
+                    roleText.setText("غير مرتبطة");
+                    roleText.setTextColor(Color.parseColor("#BE123C"));
+                    detailText.setText("أدخل رمز الربط الصادر من لوحة الإدارة");
+                    break;
+                case OFFLINE:
+                    roleText.setText("الاتصال غير متاح");
+                    roleText.setTextColor(Color.parseColor("#BE123C"));
+                    detailText.setText(status.lastError);
+                    break;
+                case STOPPED:
+                default:
+                    roleText.setText("جارٍ تشغيل المحطة");
+                    roleText.setTextColor(Color.parseColor("#57534E"));
+                    detailText.setText("يتم الآن الاتصال بخدمة الطباعة");
+                    break;
+            }
+        }
+
+        countersText.setText(
+                "بانتظار الطباعة: " + status.pendingCount
+                        + "   ·   غير مؤكدة: " + status.unknownCount
+                        + "   ·   الطابعة: " + (status.printerReachable ? "متصلة" : "غير متصلة")
+        );
+        if (credentials == null) {
+            pairingStateText.setText("هذا التابلت غير مربوط بمحطة");
+        } else {
+            String id = credentials.stationId;
+            String shortId = id.length() > 13
+                    ? id.substring(0, 8) + "…" + id.substring(id.length() - 4)
+                    : id;
+            pairingStateText.setText("مربوط بالمحطة: " + shortId);
+        }
     }
 
     private void startServiceAction(String action) {
@@ -173,34 +317,36 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void refreshStatus() {
-        boolean running = PrintBridgeService.isRunning();
-        statusText.setText(running ? "خدمة الطباعة تعمل" : "خدمة الطباعة متوقفة");
-        statusText.setTextColor(Color.parseColor(running ? "#047857" : "#78716C"));
-    }
-
-    private void registerResultReceiver() {
-        IntentFilter filter = new IntentFilter(PrintBridgeService.ACTION_RESULT);
+    private void registerStatusReceiver() {
         ContextCompat.registerReceiver(
                 this,
-                resultReceiver,
-                filter,
+                statusReceiver,
+                new IntentFilter(PrintBridgeService.ACTION_STATUS),
                 ContextCompat.RECEIVER_NOT_EXPORTED
         );
     }
 
     private void requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_REQUEST);
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    NOTIFICATION_PERMISSION_REQUEST
+            );
         }
     }
 
-    private SharedPreferences getPreferences() {
-        return getSharedPreferences(PrintBridgeService.PREFS_NAME, MODE_PRIVATE);
+    private TextView text(String value, float size, boolean bold, String color) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(Color.parseColor(color));
+        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return view;
     }
 
-    private LinearLayout.LayoutParams matchWrap(int topMargin, int bottomMargin) {
+    private LinearLayout.LayoutParams params(int topMargin, int bottomMargin) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
