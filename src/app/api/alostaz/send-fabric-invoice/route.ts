@@ -12,7 +12,7 @@ import {
  * مسار خادمي لإرسال فاتورة مبيعة قماش إلى تطبيق الأستاذ للمحاسبة.
  * ─────────────────────────────────────────────────────────────
  * - التوكن السرّي (ALOSTAZ_API_TOKEN) يبقى هنا في الخادم ولا يصل للمتصفح.
- * - يتحقق أن المستخدم مدير (admin) قبل التنفيذ.
+ * - يتحقق أن المستخدم مدير نظام أو عامل مخوّل بالوصول المحاسبي قبل التنفيذ.
  * - يجهّز منتج القماش في الأستاذ (يُنشأ مرة واحدة ويُخزَّن alostaz_product_id
  *   على صنف المخزون المطابق بالاسم) ثم يُعيد استخدامه لاحقاً.
  * - يمنع الإرسال المكرر (idempotent) عبر عمود income.alostaz_invoice_id.
@@ -89,7 +89,7 @@ async function resolveFabricProductId(fabricName: string): Promise<number> {
 
 export async function POST(request: NextRequest) {
   try {
-    // 1) التحقق من الجلسة والصلاحية (مدير فقط)
+    // 1) التحقق من الجلسة والصلاحية
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
       return NextResponse.json({ error: 'غير مصرّح - لا يوجد ترويسة مصادقة' }, { status: 401 })
@@ -105,13 +105,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'غير مصرّح - توكن غير صالح' }, { status: 401 })
     }
 
-    const { data: userData } = await supabase
+    // نستخدم عميل الخادم بعد التحقق من التوكن حتى لا يعتمد قرار الصلاحية على
+    // سياسات القراءة العامة في users/workers. المفتاح السري لا يغادر الخادم.
+    const admin = getSupabaseAdmin()
+    const { data: userData, error: userError } = await admin
       .from('users')
-      .select('role')
+      .select('role, is_active')
       .eq('id', user.id)
       .single()
-    if (userData?.role !== 'admin') {
-      return NextResponse.json({ error: 'غير مسموح - للمدير فقط' }, { status: 403 })
+
+    if (userError || !userData?.is_active) {
+      return NextResponse.json({ error: 'غير مسموح - الحساب غير نشط أو غير موجود' }, { status: 403 })
+    }
+
+    let canSendFabricInvoice = userData.role === 'admin'
+    if (userData.role === 'worker') {
+      const { data: workerData, error: workerError } = await admin
+        .from('workers')
+        .select('worker_type')
+        .eq('user_id', user.id)
+        .single()
+
+      if (!workerError) {
+        canSendFabricInvoice = [
+          'fabric_store_manager',
+          'accountant',
+          'general_manager',
+        ].includes(workerData?.worker_type)
+      }
+    }
+
+    if (!canSendFabricInvoice) {
+      return NextResponse.json(
+        { error: 'غير مسموح - لا تملك صلاحية إرسال فواتير الأقمشة للمحاسبة' },
+        { status: 403 }
+      )
     }
 
     // 2) قراءة معرّف المبيعة
@@ -121,7 +149,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 3) جلب سجل المبيعة (نستخدم * ليشمل fabric_items بأمان حتى قبل تطبيق الهجرة 69)
-    const admin = getSupabaseAdmin()
     const { data: income, error: incomeError } = await admin
       .from('income')
       .select('*')

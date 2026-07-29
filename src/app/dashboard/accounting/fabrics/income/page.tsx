@@ -49,6 +49,7 @@ import {
 } from '@/lib/services/alostaz-client'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import {
   formatFabricCurrency as formatCurrency,
   formatFabricNumber,
@@ -162,6 +163,8 @@ function SourceStatCard({
 function FabricsIncomeContent() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'admin'
+  const { permissions } = useWorkerPermissions()
+  const canSendToAccounting = isAdmin || !!permissions?.canAccessAccounting
   const [income, setIncome] = useState<Income[]>([])
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -532,7 +535,7 @@ function FabricsIncomeContent() {
   // الإرسال التلقائي عند إنشاء مبيعة جديدة (الشبكة فقط — الكاش لا يُرسَل تلقائياً)
   async function maybeAutoSendFabricInvoice(rec: Income): Promise<Income> {
     if (rec.payment_method !== 'network' || rec.alostaz_invoice_code) return rec
-    if (!isAdmin) return rec
+    if (!canSendToAccounting) return rec
 
     // نقرأ الإعداد عند كل فاتورة، كي يطبَّق الإيقاف من محطة الطباعة فوراً
     // حتى لو كانت صفحة المبيعات مفتوحة مسبقاً على هاتف آخر.
@@ -958,8 +961,8 @@ function FabricsIncomeContent() {
                       )}
                     </div>
                     <div className="flex gap-2">
-                      {/* إرسال للمحاسبة (الأستاذ) — للمدير فقط */}
-                      {isAdmin && (
+                      {/* إرسال للمحاسبة (الأستاذ) — لمدير النظام والعامل المخوّل محاسبياً */}
+                      {canSendToAccounting && (
                         isSent(item) ? (
                           <div
                             className="p-2 text-emerald-600 rounded-lg border border-emerald-100 bg-emerald-50 cursor-default"
