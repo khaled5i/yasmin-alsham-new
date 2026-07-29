@@ -12,6 +12,7 @@ export interface TailoringReceiptPayload {
   order_number: string
   invoice_code: string
   invoice_code_source: 'alostaz' | 'local'
+  receipt_type?: 'delivery' | 'preliminary'
   customer_name: string
   item_description: string
   total: number
@@ -28,6 +29,7 @@ export interface TailoringReceiptOrder extends OrderPaymentInput {
   client_name?: string | null
   description?: string | null
   delivery_date?: string | null
+  created_at?: string | null
 }
 
 function escapeHtml(value: unknown): string {
@@ -121,6 +123,7 @@ export function createTailoringReceiptPayload(
       ? accountingCode
       : buildLocalTailoringInvoiceCode(String(order?.order_number || order?.id || ''), deliveredAt),
     invoice_code_source: useAccountingCode ? 'alostaz' : 'local',
+    receipt_type: 'delivery',
     customer_name: String(order?.client_name || 'عميل'),
     // بند واضح وثابت كما في نموذج الإيصال؛ ملاحظات التصميم الداخلية لا تُطبع.
     item_description: 'أجرة تفصيل فستان',
@@ -129,6 +132,32 @@ export function createTailoringReceiptPayload(
     cash_amount: breakdown.cashTotal,
     network_amount: breakdown.networkTotal,
     delivered_at: deliveredAt,
+  }
+}
+
+/**
+ * يبني فاتورة الطلب المبدئية عند التسجيل دون الرجوع إلى نظام المحاسبة.
+ * رقم الفاتورة يساوي رقم الطلب حرفياً، وتفصيل الكاش/الشبكة مأخوذ من دفعة العربون.
+ */
+export function createPreliminaryTailoringReceiptPayload(
+  order: TailoringReceiptOrder
+): TailoringReceiptPayload {
+  const orderNumber = String(order?.order_number || order?.id || '')
+  const breakdown = computePaymentBreakdown(order)
+
+  return {
+    order_id: String(order?.id || ''),
+    order_number: orderNumber,
+    invoice_code: orderNumber,
+    invoice_code_source: 'local',
+    receipt_type: 'preliminary',
+    customer_name: String(order?.client_name || 'عميل'),
+    item_description: 'أجرة تفصيل فستان',
+    total: Number(order?.price) || 0,
+    paid_amount: Number(order?.paid_amount) || 0,
+    cash_amount: breakdown.cashTotal,
+    network_amount: breakdown.networkTotal,
+    delivered_at: String(order?.created_at || new Date().toISOString()),
   }
 }
 
@@ -148,6 +177,8 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
   const orderNumber = escapeHtml(payload.order_number)
   const customerName = escapeHtml(payload.customer_name)
   const itemDescription = escapeHtml(payload.item_description)
+  const documentTitle =
+    payload.receipt_type === 'preliminary' ? 'فاتورة مبدئية' : 'فاتورة ضريبية مبسطة'
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -212,7 +243,7 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <p class="brand">${COMPANY_NAME}</p>
     <p class="legal-name">${LEGAL_NAME}</p>
     <p class="address">${COMPANY_ADDRESS}</p>
-    <h1 class="title">فاتورة ضريبية مبسطة</h1>
+    <h1 class="title">${documentTitle}</h1>
     <p class="invoice-code">${invoiceCode}</p>
     <p class="date">تاريخ الفاتورة: <span class="date-value">${formatReceiptDate(payload.delivered_at)}</span></p>
     <p class="date">تاريخ ووقت الطباعة: <span class="date-value">${printedAt}</span></p>

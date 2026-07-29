@@ -53,6 +53,11 @@ import PrintOrderModal from '@/components/PrintOrderModal'
 import DesignSummarySection from '@/components/DesignSummarySection'
 import { Order } from '@/lib/services/order-service'
 import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
+import { createPreliminaryTailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
+import {
+  dispatchTailoringReceiptPrint,
+  prepareTailoringReceiptPrint,
+} from '@/lib/services/tailoring-receipt-printer'
 
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
@@ -69,6 +74,36 @@ const addVat = (base: number) => roundMoney(base * (1 + VAT_RATE))
 const removeVat = (withTax: number) => roundMoney(withTax / (1 + VAT_RATE))
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
+
+async function printNewOrderPreliminaryReceipt(
+  order: Order,
+  printerPreparation: Promise<void>
+): Promise<void> {
+  try {
+    await printerPreparation
+    const receipt = createPreliminaryTailoringReceiptPayload(order)
+    const printResult = await dispatchTailoringReceiptPrint(receipt, {
+      // لا يُرسل أمر فتح الدرج إلا عند وجود مبلغ كاش فعلي في الدفعة.
+      openCashDrawer: receipt.cash_amount >= 0.005,
+    })
+
+    if (printResult.destination === 'direct') {
+      toast.success(`طُبعت الفاتورة المبدئية للطلب ${receipt.order_number}`, { icon: '🧾' })
+    } else if (printResult.destination === 'browser') {
+      toast.success(`أُرسلت الفاتورة المبدئية للطلب ${receipt.order_number} إلى الطابعة`, { icon: '🖨️' })
+    } else if (printResult.directError) {
+      toast(
+        `تعذّرت الطباعة المباشرة؛ أُرسلت الفاتورة المبدئية للطلب ${receipt.order_number} إلى محطة الطباعة الاحتياطية.`,
+        { icon: '⚠️', duration: 6000 }
+      )
+    } else {
+      toast.success(`أُرسلت الفاتورة المبدئية للطلب ${receipt.order_number} إلى محطة الطباعة`, { icon: '🧾' })
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || '')
+    toast.error(`تم حفظ الطلب، لكن تعذّرت طباعة الفاتورة المبدئية${message ? `: ${message}` : ''}`)
+  }
+}
 
 // ضغط صورة data URL لتناسب حد localStorage (تصغير + JPEG جودة منخفضة)
 
@@ -798,6 +833,8 @@ function AddOrderContent() {
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
 
+    // نبدأ فحص جسر الطباعة من ضغطة الحفظ نفسها قبل انتظار حفظ الطلب.
+    const printerPreparation = prepareTailoringReceiptPrint()
     isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
@@ -1026,6 +1063,10 @@ function AddOrderContent() {
 
       console.log('✅ Order created successfully:', result.data?.id)
 
+      if (result.data) {
+        await printNewOrderPreliminaryReceipt(result.data, printerPreparation)
+      }
+
       // مسح البيانات المحفوظة من localStorage بعد النجاح
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
@@ -1061,6 +1102,7 @@ function AddOrderContent() {
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
 
+    const printerPreparation = prepareTailoringReceiptPrint()
     isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
@@ -1179,6 +1221,10 @@ function AddOrderContent() {
 
       console.log('✅ Order created successfully:', result.data?.id)
 
+      if (result.data) {
+        await printNewOrderPreliminaryReceipt(result.data, printerPreparation)
+      }
+
       // مسح البيانات المحفوظة من localStorage بعد النجاح
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
@@ -1236,6 +1282,7 @@ function AddOrderContent() {
 
     if (!requireBasicInformation()) return
 
+    const printerPreparation = prepareTailoringReceiptPrint()
     isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
@@ -1321,6 +1368,10 @@ function AddOrderContent() {
         return
       }
 
+      if (result.data) {
+        await printNewOrderPreliminaryReceipt(result.data, printerPreparation)
+      }
+
       clearSavedData()
       localStorage.removeItem(DESIGN_COMMENTS_STORAGE_KEY)
       localStorage.removeItem(DESIGN_SUMMARY_STORAGE_KEY)
@@ -1353,6 +1404,7 @@ function AddOrderContent() {
     if (!requireDesignSummary()) return
     if (!requireTranscriptionDone()) return
 
+    const printerPreparation = prepareTailoringReceiptPrint()
     isSubmittingRef.current = true
     setIsSubmitting(true)
     setSaveError(null)
@@ -1437,6 +1489,10 @@ function AddOrderContent() {
       if (!result.success) {
         setSaveError(result.error || t('order_add_error') || 'حدث خطأ أثناء إضافة الطلب')
         return
+      }
+
+      if (result.data) {
+        await printNewOrderPreliminaryReceipt(result.data, printerPreparation)
       }
 
       clearSavedData()
