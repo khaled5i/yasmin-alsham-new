@@ -39,7 +39,8 @@ import {
   Bell,
   Zap,
   Wallet,
-  ShoppingBag
+  ShoppingBag,
+  WalletCards
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 
@@ -748,6 +749,14 @@ function DashboardContent() {
 
                 <div className="grid gap-4 grid-cols-2">
                   <Link
+                    href="/dashboard/accounting/tailoring/cash-box"
+                    className="p-4 bg-gradient-to-r from-stone-50 to-amber-100 rounded-lg border border-amber-300 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <WalletCards className="w-6 h-6 text-amber-700 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-amber-900">{isArabic ? 'الصندوق' : 'Cash Box'}</span>
+                  </Link>
+
+                  <Link
                     href="/dashboard/accounting/tailoring/salaries"
                     className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
                   >
@@ -924,6 +933,14 @@ function DashboardContent() {
                 </h3>
 
                 <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
+                  <Link
+                    href="/dashboard/accounting/tailoring/cash-box"
+                    className="p-4 bg-gradient-to-r from-stone-50 to-amber-100 rounded-lg border border-amber-300 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <WalletCards className="w-6 h-6 text-amber-700 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-amber-900">{isArabic ? 'الصندوق' : 'Cash Box'}</span>
+                  </Link>
+
                   <Link
                     href="/dashboard/accounting/tailoring/salaries"
                     className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
