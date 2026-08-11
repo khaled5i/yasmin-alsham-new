@@ -1,15 +1,7 @@
 import type { Metadata } from 'next'
 import { IBM_Plex_Sans_Arabic, Noto_Naskh_Arabic } from 'next/font/google'
 import HomeAnalytics from '@/components/home/HomeAnalytics'
-import HomeHeader from '@/components/home/HomeHeader'
-import HomeFooter from '@/components/home/HomeFooter'
-import FeaturedFabricStore from '@/components/home/FeaturedFabricStore'
-import {
-  BusinessGateway,
-  CinematicHero,
-  FabricTransition,
-  TailoringStory,
-} from '@/components/home/HomeSections'
+import HomeExperience from '@/components/home/HomeExperience'
 import styles from '@/components/home/home.module.css'
 
 const homeSans = IBM_Plex_Sans_Arabic({
@@ -50,15 +42,7 @@ export default function Home() {
   return (
     <div className={`${styles.homeShell} ${homeSans.variable} ${homeDisplay.variable}`}>
       <HomeAnalytics />
-      <HomeHeader />
-      <main>
-        <CinematicHero />
-        <BusinessGateway />
-        <TailoringStory />
-        <FabricTransition />
-        <FeaturedFabricStore />
-      </main>
-      <HomeFooter />
+      <HomeExperience />
     </div>
   )
 }

@@ -558,6 +558,86 @@
   transform: scale(1.035);
 }
 
+.experiencePanel {
+  position: relative;
+  min-height: 100svh;
+  scroll-margin-top: 72px;
+  animation: sectionReveal 560ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+.experiencePanel:focus {
+  outline: none;
+}
+
+.sectionToolbar {
+  padding: calc(86px + env(safe-area-inset-top, 0px)) 0 18px;
+  color: var(--charcoal);
+  background: var(--ivory-soft);
+  border-bottom: 1px solid rgba(107, 23, 38, 0.1);
+}
+
+.sectionToolbarInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: min(100% - 32px, 1280px);
+  margin-inline: auto;
+}
+
+.sectionBackButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 9px 15px;
+  color: var(--wine);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--white);
+  border: 1px solid rgba(107, 23, 38, 0.24);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(47, 12, 20, 0.06);
+  transition: color 200ms ease, background-color 200ms ease, transform 200ms ease;
+}
+
+.sectionBackButton:hover {
+  color: var(--white);
+  background: var(--wine);
+  transform: translateX(3px);
+}
+
+.sectionBackButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sectionContext {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: left;
+}
+
+.sectionContext small {
+  color: rgba(33, 27, 25, 0.54);
+  font-size: 0.62rem;
+}
+
+.sectionContext strong {
+  overflow: hidden;
+  color: var(--wine);
+  font-family: var(--font-home-display), serif;
+  font-size: clamp(1.05rem, 4vw, 1.45rem);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Tailoring */
 .tailoringSection {
   padding: 112px 0 0;
@@ -1424,6 +1504,162 @@
   to { background-position: -20% 0; }
 }
 
+@keyframes sectionReveal {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 767px) {
+  .gatewayGrid {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    align-items: end;
+    gap: 8px;
+    width: calc(100% - 16px);
+  }
+
+  .gatewayCard {
+    min-height: min(52svh, 500px);
+    border-radius: 14px;
+  }
+
+  .gatewayTailoring {
+    min-height: min(58svh, 560px);
+  }
+
+  .gatewayFabrics {
+    min-height: min(51svh, 490px);
+  }
+
+  .gatewayNumber {
+    top: 12px;
+    left: 12px;
+    font-size: 0.58rem;
+  }
+
+  .gatewayContent {
+    inset: auto 12px 16px;
+  }
+
+  .gatewayContent small {
+    margin-bottom: 6px;
+    font-size: 0.54rem;
+    letter-spacing: 0.03em;
+  }
+
+  .gatewayContent strong {
+    font-size: clamp(1.2rem, 6.2vw, 1.65rem);
+    line-height: 1.13;
+  }
+
+  .gatewayContent > span {
+    display: -webkit-box;
+    margin-top: 8px;
+    overflow: hidden;
+    font-size: 0.64rem;
+    line-height: 1.65;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .gatewayContent em {
+    gap: 5px;
+    margin-top: 12px;
+    font-size: 0.67rem;
+  }
+
+  .gatewayContent em svg {
+    width: 13px;
+  }
+
+  .homeFooter {
+    padding: 52px 12px 18px;
+  }
+
+  .footerTop {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.76fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+  }
+
+  .footerBrand p {
+    font-size: clamp(1.28rem, 5.5vw, 1.65rem);
+    line-height: 1.08;
+  }
+
+  .footerBrand small {
+    margin-top: 6px;
+    font-size: 0.4rem;
+    letter-spacing: 0.12em;
+  }
+
+  .footerBrand span {
+    margin-top: 14px;
+    font-size: 0.65rem;
+    line-height: 1.65;
+  }
+
+  .footerNav,
+  .footerContact {
+    gap: 6px;
+  }
+
+  .footerNav > p,
+  .footerContact > p {
+    margin-bottom: 4px !important;
+    font-size: 0.56rem;
+    letter-spacing: 0.03em;
+  }
+
+  .footerNav a,
+  .footerContact a {
+    gap: 4px;
+    min-width: 0;
+    min-height: 27px;
+    font-size: clamp(0.6rem, 2.7vw, 0.72rem);
+    line-height: 1.5;
+  }
+
+  .footerContact svg {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+  }
+
+  .footerBottom {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    margin-top: 34px;
+    padding-top: 16px;
+    font-size: 0.58rem;
+  }
+
+  .footerBottom > div:not(.socialLinks) {
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .socialLinks {
+    gap: 5px;
+  }
+
+  .socialLinks a {
+    width: 32px;
+    height: 32px;
+    font-size: 0.58rem;
+  }
+
+  .socialLinks svg {
+    width: 14px;
+  }
+}
+
 @media (min-width: 640px) {
   .sectionContainer,
   .heroContent,
@@ -1488,6 +1724,15 @@
 
   .gatewaySection {
     padding-block: 126px 142px;
+  }
+
+  .sectionToolbar {
+    padding-top: calc(102px + env(safe-area-inset-top, 0px));
+    padding-bottom: 22px;
+  }
+
+  .sectionToolbarInner {
+    width: min(100% - 64px, 1280px);
   }
 
   .gatewayGrid {

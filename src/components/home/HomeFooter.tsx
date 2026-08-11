@@ -1,9 +1,14 @@
 import Link from 'next/link'
 import { Instagram, MapPin, MessageCircle, Phone } from 'lucide-react'
 import { tailoringWhatsAppUrl } from './home-data'
+import type { HomeSectionKey } from './HomeSections'
 import styles from './home.module.css'
 
-export default function HomeFooter() {
+type HomeFooterProps = {
+  onSelectSection: (section: HomeSectionKey) => void
+}
+
+export default function HomeFooter({ onSelectSection }: HomeFooterProps) {
   return (
     <footer className={styles.homeFooter}>
       <div className={styles.footerTop}>
@@ -15,7 +20,15 @@ export default function HomeFooter() {
 
         <nav className={styles.footerNav} aria-label="روابط الموقع">
           <p>استكشفي</p>
-          <a href="#tailoring">التفصيل</a>
+          <a
+            href="#tailoring"
+            onClick={(event) => {
+              event.preventDefault()
+              onSelectSection('tailoring')
+            }}
+          >
+            التفصيل
+          </a>
           <Link href="/fabrics">متجر الأقمشة</Link>
           <Link href="/location">الموقع والخريطة</Link>
         </nav>

@@ -6,7 +6,13 @@ import TrackedLink from './TrackedLink'
 import { homeMedia, tailoringShowcase, tailoringWhatsAppUrl } from './home-data'
 import styles from './home.module.css'
 
-export function CinematicHero() {
+export type HomeSectionKey = 'tailoring' | 'fabrics'
+
+type SectionSelectionProps = {
+  onSelectSection: (section: HomeSectionKey) => void
+}
+
+export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
   return (
     <section id="top" className={styles.heroSection} aria-labelledby="home-hero-title">
       <ResponsiveHeroMedia {...homeMedia.hero} />
@@ -23,6 +29,10 @@ export function CinematicHero() {
             className={styles.primaryButton}
             eventName="hero_cta_click"
             eventProperties={{ destination: 'tailoring' }}
+            onClick={(event) => {
+              event.preventDefault()
+              onSelectSection('tailoring')
+            }}
           >
             اكتشفي التفصيل
             <ArrowDown aria-hidden="true" />
@@ -32,6 +42,10 @@ export function CinematicHero() {
             className={styles.secondaryButton}
             eventName="hero_cta_click"
             eventProperties={{ destination: 'fabrics' }}
+            onClick={(event) => {
+              event.preventDefault()
+              onSelectSection('fabrics')
+            }}
           >
             تسوّقي الأقمشة
           </TrackedLink>
@@ -46,7 +60,7 @@ export function CinematicHero() {
   )
 }
 
-export function BusinessGateway() {
+export function BusinessGateway({ onSelectSection }: SectionSelectionProps) {
   return (
     <section id="business-gateway" className={styles.gatewaySection} aria-labelledby="gateway-title">
       <div className={styles.gatewayIntro}>
@@ -56,12 +70,19 @@ export function BusinessGateway() {
       </div>
 
       <div className={styles.gatewayGrid}>
-        <a href="#tailoring" className={`${styles.gatewayCard} ${styles.gatewayTailoring}`}>
+        <a
+          href="#tailoring"
+          className={`${styles.gatewayCard} ${styles.gatewayTailoring}`}
+          onClick={(event) => {
+            event.preventDefault()
+            onSelectSection('tailoring')
+          }}
+        >
           <Image
             src={homeMedia.craftPoster}
             alt="فستان سهرة منفذ بعناية داخل المشغل"
             fill
-            sizes="(max-width: 767px) 92vw, 54vw"
+            sizes="(max-width: 767px) 54vw, 54vw"
             className={styles.gatewayImage}
           />
           <span className={styles.gatewayOverlay} />
@@ -74,12 +95,19 @@ export function BusinessGateway() {
           </span>
         </a>
 
-        <a href="#fabrics" className={`${styles.gatewayCard} ${styles.gatewayFabrics}`}>
+        <a
+          href="#fabrics"
+          className={`${styles.gatewayCard} ${styles.gatewayFabrics}`}
+          onClick={(event) => {
+            event.preventDefault()
+            onSelectSection('fabrics')
+          }}
+        >
           <Image
             src={homeMedia.transitionPoster}
             alt="تفاصيل قماش فاخر وتطريز ناعم"
             fill
-            sizes="(max-width: 767px) 92vw, 42vw"
+            sizes="(max-width: 767px) 46vw, 42vw"
             className={styles.gatewayImage}
           />
           <span className={styles.gatewayOverlay} />
@@ -98,7 +126,7 @@ export function BusinessGateway() {
 
 export function TailoringStory() {
   return (
-    <section id="tailoring" className={styles.tailoringSection} aria-labelledby="tailoring-title">
+    <section className={styles.tailoringSection} aria-labelledby="tailoring-title">
       <div className={styles.sectionContainer}>
         <header className={styles.tailoringHeader}>
           <div>

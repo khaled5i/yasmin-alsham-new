@@ -78,7 +78,7 @@ export default function FeaturedFabricStore() {
   const showLoading = !hasRequested || isLoading
 
   return (
-    <section id="fabrics" className={styles.fabricStoreSection} aria-labelledby="fabrics-title">
+    <section className={styles.fabricStoreSection} aria-labelledby="fabrics-title">
       <div className={styles.sectionContainer}>
         <div className={styles.fabricStoreHeader}>
           <div>
