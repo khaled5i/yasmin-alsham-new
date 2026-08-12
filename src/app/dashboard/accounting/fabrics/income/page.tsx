@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
   ArrowLeft,
   TrendingUp,
   Search,
-  Calendar,
   Plus,
   X,
   Receipt,
@@ -31,13 +30,17 @@ import {
   CheckCircle2,
   Loader,
   UserRound,
-  AlertTriangle
+  AlertTriangle,
+  LockKeyhole
 } from 'lucide-react'
-import DatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
 import toast from 'react-hot-toast'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import ImageUpload from '@/components/ImageUpload'
+import ReportPeriodPicker, {
+  computePresetRange,
+  type DateFilter,
+  type DateRange,
+} from '@/components/ReportPeriodPicker'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput, FabricSaleItem } from '@/types/simple-accounting'
 import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
@@ -67,6 +70,9 @@ const ACCENT_CLASSES: Record<StatAccent, { box: string; icon: string; total: str
   teal: { box: 'bg-teal-50 border-teal-100', icon: 'text-teal-600', total: 'text-teal-700' },
   purple: { box: 'bg-purple-50 border-purple-100', icon: 'text-purple-600', total: 'text-purple-700' }
 }
+
+const toLocalDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
 function StatCard({
   icon: Icon,
@@ -163,13 +169,19 @@ function SourceStatCard({
 function FabricsIncomeContent() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'admin'
-  const { permissions } = useWorkerPermissions()
+  const {
+    permissions,
+    workerType,
+    isLoading: workerPermissionsLoading,
+  } = useWorkerPermissions()
   const canSendToAccounting = isAdmin || !!permissions?.canAccessAccounting
+  const isFabricStoreManager = user?.role === 'worker' && workerType === 'fabric_store_manager'
   const [income, setIncome] = useState<Income[]>([])
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState<Date | null>(new Date())
+  const [selectedPeriod, setSelectedPeriod] = useState<DateRange>('month')
+  const [periodRange, setPeriodRange] = useState<DateFilter>(() => computePresetRange('month'))
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -313,6 +325,20 @@ function FabricsIncomeContent() {
     }
   }
 
+  const isSent = (item: Income) =>
+    !!item.alostaz_invoice_id ||
+    !!item.alostaz_invoice_code?.trim() ||
+    item.alostaz_sync_status === 'sent' ||
+    !!sentMap[item.id]
+
+  const isLockedForFabricStoreManager = (item: Income) =>
+    isFabricStoreManager && item.payment_method === 'network' && isSent(item)
+
+  const handleApplyPeriod = (period: DateRange, range: DateFilter) => {
+    setSelectedPeriod(period)
+    setPeriodRange(range)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -376,12 +402,18 @@ function FabricsIncomeContent() {
     }
 
     if (isEditing && editingId) {
+      const currentItem = income.find((item) => item.id === editingId)
+      if (currentItem && isLockedForFabricStoreManager(currentItem)) {
+        toast.error('لا يمكن لمدير متجر الأقمشة تعديل مبيعة شبكة أُرسلت إلى المحاسبة')
+        return
+      }
+
       // تعديل سجل موجود
       setSaving(true)
       try {
         const result = await updateIncome(editingId, commonFields)
         if (result) {
-          setIncome(income.map((it) => (it.id === editingId ? result : it)))
+          setIncome((current) => current.map((it) => (it.id === editingId ? result : it)))
           await sendReceiptToPrintStation(result)
         } else {
           alert('❌ تعذّر تأكيد حفظ التعديل. بقي النموذج مفتوحاً؛ تحقق من الاتصال ثم أعد المحاولة.')
@@ -412,7 +444,7 @@ function FabricsIncomeContent() {
       }
       const result = await createIncome(payload)
       if (result) {
-        setIncome([result, ...income])
+        setIncome((current) => [result, ...current])
         await sendReceiptToPrintStation(result)
       } else {
         alert(
@@ -430,6 +462,11 @@ function FabricsIncomeContent() {
   }
 
   const handleEdit = (item: Income) => {
+    if (isLockedForFabricStoreManager(item)) {
+      toast.error('لا يمكن لمدير متجر الأقمشة تعديل مبيعة شبكة أُرسلت إلى المحاسبة')
+      return
+    }
+
     setIsEditing(true)
     setEditingId(item.id)
     // تحميل أسطر الأقمشة: من fabric_items إن وُجدت، وإلا سطر واحد من القماش القديم
@@ -475,12 +512,17 @@ function FabricsIncomeContent() {
     setShowModal(true)
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (item: Income) => {
+    if (isLockedForFabricStoreManager(item)) {
+      toast.error('لا يمكن لمدير متجر الأقمشة حذف مبيعة شبكة أُرسلت إلى المحاسبة')
+      return
+    }
+
     if (!confirm('هل أنت متأكد من حذف هذه المبيعة؟')) return
     try {
-      const success = await deleteIncome(id)
+      const success = await deleteIncome(item.id)
       if (success) {
-        setIncome(income.filter((it) => it.id !== id))
+        setIncome((current) => current.filter((it) => it.id !== item.id))
       } else {
         alert('❌ فشل الحذف')
       }
@@ -490,7 +532,6 @@ function FabricsIncomeContent() {
   }
 
   // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
-  const isSent = (item: Income) => !!item.alostaz_invoice_id || !!sentMap[item.id]
   const getSentCode = (item: Income) => item.alostaz_invoice_code || sentMap[item.id]?.code
 
   // تحديث السجل محلياً بعد إرسال فعلي (وضع الفواتير الحقيقية)
@@ -567,90 +608,94 @@ function FabricsIncomeContent() {
     return rec
   }
 
-  const filteredIncome = income.filter((item) => {
-    const q = searchQuery.toLowerCase()
-    const matchSearch =
-      !q ||
-      item.customer_name?.toLowerCase().includes(q) ||
-      item.description?.toLowerCase().includes(q) ||
-      item.buyer_phone?.toLowerCase().includes(q)
+  const filteredIncome = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    const startDateKey = toLocalDateKey(periodRange.startDate)
+    const endDateKey = toLocalDateKey(periodRange.endDate)
 
-    let matchDate = true
-    if (dateFilter) {
-      const d = new Date(item.date)
-      matchDate =
-        d.getMonth() === dateFilter.getMonth() &&
-        d.getFullYear() === dateFilter.getFullYear()
+    return income.filter((item) => {
+      const matchSearch =
+        !q ||
+        item.customer_name?.toLowerCase().includes(q) ||
+        item.description?.toLowerCase().includes(q) ||
+        item.buyer_phone?.toLowerCase().includes(q)
+      const saleDateKey = item.date.slice(0, 10)
+      const matchDate = saleDateKey >= startDateKey && saleDateKey <= endDateKey
+
+      return matchSearch && matchDate
+    })
+  }, [income, periodRange, searchQuery])
+
+  // الإحصائيات والإجمالي يتبعان الفترة والبحث، ولا يعاد حسابهما أثناء تعبئة النموذج.
+  const { totalIncome, breakdown } = useMemo(() => {
+    const inventoryByName = new Map(inventoryItems.map((it) => [it.name, it]))
+    const classifyFabric = (item: Income): 'shek' | 'plain' | 'other' => {
+      const inv = item.customer_name ? inventoryByName.get(item.customer_name) : undefined
+      const text = `${inv?.name ?? item.customer_name ?? ''} ${inv?.fabric_type ?? ''}`
+      if (text.includes('شك')) return 'shek'
+      if (text.includes('سادة')) return 'plain'
+      return 'other'
     }
-    return matchSearch && matchDate
-  })
 
-  const totalIncome = filteredIncome.reduce((sum, it) => sum + it.amount, 0)
-
-  // ─── إحصائيات المبيعات (تتبع نفس الفلترة الحالية: الشهر/البحث) ───
-  // تصنيف نوع القماش (شك / سادة) بالاعتماد على بيانات المخزون
-  const inventoryByName = new Map(inventoryItems.map((it) => [it.name, it]))
-  const classifyFabric = (item: Income): 'shek' | 'plain' | 'other' => {
-    const inv = item.customer_name ? inventoryByName.get(item.customer_name) : undefined
-    const text = `${inv?.name ?? item.customer_name ?? ''} ${inv?.fabric_type ?? ''}`
-    if (text.includes('شك')) return 'shek'
-    if (text.includes('سادة')) return 'plain'
-    return 'other'
-  }
-
-  const emptyStat = () => ({ count: 0, total: 0 })
-  // إحصائية مصدر مفصّلة حسب نوع القماش (سادة / شك) + إجمالي المصدر
-  const emptySourceStat = () => ({
-    plain: emptyStat(),
-    shek: emptyStat(),
-    count: 0,
-    total: 0
-  })
-  const breakdown = {
-    yasmin: emptySourceStat(),
-    otherSource: emptySourceStat(),
-    network: emptyStat(),
-    cash: emptyStat(),
-    plain: emptyStat(),
-    shek: emptyStat()
-  }
-  for (const it of filteredIncome) {
-    const fab = classifyFabric(it)
-    // حسب مصدر الزبونة (مع تفصيل نوع القماش داخل كل مصدر)
-    let sourceBucket: ReturnType<typeof emptySourceStat> | null = null
-    if (it.customer_source === 'ياسمين الشام') {
-      sourceBucket = breakdown.yasmin
-    } else if (it.customer_source) {
-      sourceBucket = breakdown.otherSource
+    const emptyStat = () => ({ count: 0, total: 0 })
+    const emptySourceStat = () => ({
+      plain: emptyStat(),
+      shek: emptyStat(),
+      count: 0,
+      total: 0
+    })
+    const nextBreakdown = {
+      yasmin: emptySourceStat(),
+      otherSource: emptySourceStat(),
+      network: emptyStat(),
+      cash: emptyStat(),
+      plain: emptyStat(),
+      shek: emptyStat()
     }
-    if (sourceBucket) {
-      sourceBucket.count++
-      sourceBucket.total += it.amount
-      if (fab === 'plain') {
-        sourceBucket.plain.count++
-        sourceBucket.plain.total += it.amount
-      } else if (fab === 'shek') {
-        sourceBucket.shek.count++
-        sourceBucket.shek.total += it.amount
+
+    let nextTotalIncome = 0
+    for (const item of filteredIncome) {
+      nextTotalIncome += item.amount
+      const fabricKind = classifyFabric(item)
+      let sourceBucket: ReturnType<typeof emptySourceStat> | null = null
+
+      if (item.customer_source === 'ياسمين الشام') {
+        sourceBucket = nextBreakdown.yasmin
+      } else if (item.customer_source) {
+        sourceBucket = nextBreakdown.otherSource
+      }
+
+      if (sourceBucket) {
+        sourceBucket.count++
+        sourceBucket.total += item.amount
+        if (fabricKind === 'plain') {
+          sourceBucket.plain.count++
+          sourceBucket.plain.total += item.amount
+        } else if (fabricKind === 'shek') {
+          sourceBucket.shek.count++
+          sourceBucket.shek.total += item.amount
+        }
+      }
+
+      if (item.payment_method === 'network') {
+        nextBreakdown.network.count++
+        nextBreakdown.network.total += item.amount
+      } else if (item.payment_method === 'cash') {
+        nextBreakdown.cash.count++
+        nextBreakdown.cash.total += item.amount
+      }
+
+      if (fabricKind === 'plain') {
+        nextBreakdown.plain.count++
+        nextBreakdown.plain.total += item.amount
+      } else if (fabricKind === 'shek') {
+        nextBreakdown.shek.count++
+        nextBreakdown.shek.total += item.amount
       }
     }
-    // حسب طريقة الدفع
-    if (it.payment_method === 'network') {
-      breakdown.network.count++
-      breakdown.network.total += it.amount
-    } else if (it.payment_method === 'cash') {
-      breakdown.cash.count++
-      breakdown.cash.total += it.amount
-    }
-    // حسب نوع القماش
-    if (fab === 'plain') {
-      breakdown.plain.count++
-      breakdown.plain.total += it.amount
-    } else if (fab === 'shek') {
-      breakdown.shek.count++
-      breakdown.shek.total += it.amount
-    }
-  }
+
+    return { totalIncome: nextTotalIncome, breakdown: nextBreakdown }
+  }, [filteredIncome, inventoryItems])
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -835,19 +880,13 @@ function FabricsIncomeContent() {
                 className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
               />
             </div>
-            <div className="flex gap-2">
-              <div className="relative">
-                <DatePicker
-                  selected={dateFilter}
-                  onChange={(d: Date | null) => setDateFilter(d)}
-                  dateFormat="yyyy/MM"
-                  showMonthYearPicker
-                  placeholderText="اختر الشهر"
-                  className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-right"
-                  isClearable
-                />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-              </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <ReportPeriodPicker
+                period={selectedPeriod}
+                range={periodRange}
+                onApply={handleApplyPeriod}
+                className="w-full sm:w-auto justify-center"
+              />
               <button
                 onClick={() => {
                   setIsEditing(false)
@@ -883,6 +922,9 @@ function FabricsIncomeContent() {
               // بنود القماش (قد تكون عدّة أقمشة في مبيعة واحدة)
               const fabricItems = item.fabric_items ?? []
               const isMultiFabric = fabricItems.length > 1
+              const mutationPermissionPending =
+                user?.role === 'worker' && (workerPermissionsLoading || !workerType)
+              const mutationLocked = isLockedForFabricStoreManager(item)
               const titleName =
                 fabricItems.length > 0
                   ? fabricItems.map((f) => f.name).join('، ')
@@ -1005,7 +1047,22 @@ function FabricsIncomeContent() {
                         <Send className="w-4 h-4" />
                       </button>
                       {!item.is_automatic && (
-                        <>
+                        mutationPermissionPending ? (
+                          <div
+                            className="p-2 text-gray-400 rounded-lg border border-gray-100 bg-gray-50"
+                            title="جاري التحقق من الصلاحيات"
+                          >
+                            <Loader className="w-4 h-4 animate-spin" />
+                          </div>
+                        ) : mutationLocked ? (
+                          <div
+                            className="p-2 text-amber-700 rounded-lg border border-amber-200 bg-amber-50 cursor-default"
+                            title="مبيعة شبكة مرسلة للمحاسبة — التعديل والحذف متاحان للإدارة فقط"
+                          >
+                            <LockKeyhole className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <>
                           <button
                             onClick={() => handleEdit(item)}
                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -1014,13 +1071,14 @@ function FabricsIncomeContent() {
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDelete(item.id)}
+                            onClick={() => handleDelete(item)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="حذف"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
-                        </>
+                          </>
+                        )
                       )}
                     </div>
                   </div>

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { orderService, Order } from '@/lib/services/order-service'
+import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import { getExpenses } from '@/lib/services/simple-accounting-service'
 import { getWorkerPayrollMonthsInRange } from '@/lib/services/worker-payroll-service'
 import type { Expense } from '@/types/simple-accounting'
@@ -99,10 +100,53 @@ interface CustomMetricDef {
   label: string
   isMoney: boolean
   isAverage?: boolean
-  // created: يُحسب حسب تاريخ إنشاء الطلب | completed: حسب تاريخ الإنجاز
-  basis: 'created' | 'completed'
+  // created: تاريخ الإنشاء | completed: تاريخ الإنجاز | payment: تاريخ حركة الدفع
+  basis: 'created' | 'completed' | 'payment'
   color: string // gradient classes للأعمدة
-  compute: (orders: Order[]) => number
+  compute: (orders: Order[], range: DateFilter) => number
+}
+
+const isInDateRange = (dateString: string | null | undefined, range: DateFilter): boolean => {
+  if (!dateString) return false
+  const date = new Date(dateString)
+  return !Number.isNaN(date.getTime()) && date >= range.startDate && date <= range.endDate
+}
+
+/**
+ * التحصيل داخل فترة = العربون المسجل مع الطلب خلال الفترة
+ * + الدفعة المتبقية المستلمة عند تسليم الطلب خلال الفترة.
+ */
+const getCollectedPaymentTotals = (orders: Order[], range: DateFilter) => {
+  const totals = orders.reduce(
+    (result, order) => {
+      const payment = computePaymentBreakdown(order)
+
+      if (isInDateRange(order.created_at, range)) {
+        result.cash += payment.preDeliveryCash
+        result.network += payment.preDeliveryNetwork
+        result.expected += payment.preDeliveryCash + payment.preDeliveryNetwork
+      }
+
+      if (order.status === 'delivered' && isInDateRange(order.delivery_date, range)) {
+        result.cash += payment.remainingCash
+        result.network += payment.remainingNetwork
+        result.expected += Math.max(0, Number(order.price || 0) - payment.depositAmount)
+      }
+
+      return result
+    },
+    { cash: 0, network: 0, expected: 0 }
+  )
+
+  const cash = Number(totals.cash.toFixed(2))
+  const network = Number(totals.network.toFixed(2))
+
+  return {
+    cash,
+    network,
+    expected: Number(totals.expected.toFixed(2)),
+    total: Number((cash + network).toFixed(2)),
+  }
 }
 
 const CUSTOM_METRICS: CustomMetricDef[] = [
@@ -142,9 +186,9 @@ const CUSTOM_METRICS: CustomMetricDef[] = [
     key: 'paidAmount',
     label: 'المبالغ المحصلة',
     isMoney: true,
-    basis: 'created',
+    basis: 'payment',
     color: 'from-emerald-400 to-green-600',
-    compute: (o) => o.reduce((s, x) => s + Number(x.paid_amount || 0), 0),
+    compute: (o, range) => getCollectedPaymentTotals(o, range).total,
   },
   {
     key: 'avgOrderValue',
@@ -263,11 +307,6 @@ export default function ReportsPage() {
     }
   }
 
-  const isInDateRange = (dateString: string, range: DateFilter): boolean => {
-    const date = new Date(dateString)
-    return date >= range.startDate && date <= range.endDate
-  }
-
   // ============================================================================
   // Data Calculations - Memoized for Performance
   // ============================================================================
@@ -309,7 +348,7 @@ export default function ReportsPage() {
   // ============================================================================
 
   const comprehensiveStats = useMemo(() => {
-    const { currentOrders, previousOrders, completedOrdersInPeriod } = filteredData
+    const { currentOrders, previousOrders, completedOrdersInPeriod, dateRange } = filteredData
 
     // Orders Statistics
     const currentRevenue = currentOrders
@@ -381,13 +420,11 @@ export default function ReportsPage() {
       ? Number((((uniqueCustomers - previousUniqueCustomers) / previousUniqueCustomers) * 100).toFixed(1))
       : 0
 
-    // Payment Statistics — يشمل الدفعات المسبقة من طلبات الحجز + باقي الطلبات
-    const totalPaid = currentOrders.reduce((sum, o) => sum + Number(o.paid_amount || 0), 0)
-    const totalDue = currentRevenue - totalPaid
-    // نسبة التحصيل من إجمالي قيمة جميع الطلبات (ليس فقط المكتملة)
-    const totalAllOrdersValueForRate = currentOrders.reduce((sum, o) => sum + Number(o.price || 0), 0)
-    const paymentCollectionRate = totalAllOrdersValueForRate > 0
-      ? Number(((totalPaid / totalAllOrdersValueForRate) * 100).toFixed(1))
+    // العربونات المسجلة خلال الفترة + المتبقي المستلم عند التسليم خلال الفترة.
+    const collectedPayments = getCollectedPaymentTotals(orders, dateRange)
+    const totalPaid = collectedPayments.total
+    const paymentCollectionRate = collectedPayments.expected > 0
+      ? Number(((totalPaid / collectedPayments.expected) * 100).toFixed(1))
       : 0
 
     // Total value of all orders regardless of status or payment
@@ -403,7 +440,8 @@ export default function ReportsPage() {
       previousRevenue,
       revenueChange,
       totalPaid,
-      totalDue,
+      cashPaid: collectedPayments.cash,
+      networkPaid: collectedPayments.network,
       paymentCollectionRate,
       totalAllOrdersValue,
       totalAllOrdersValueChange,
@@ -423,7 +461,7 @@ export default function ReportsPage() {
       uniqueCustomers,
       customerGrowth
     }
-  }, [filteredData])
+  }, [filteredData, orders])
 
   // حسابات مصروفات التفصيل المفلترة بالتاريخ
   const tailoringExpensesStats = useMemo(() => {
@@ -599,13 +637,20 @@ export default function ReportsPage() {
       }
     }
 
-    // إسناد الطلبات لكل فترة حسب أساس المؤشر (تاريخ الإنشاء أو الإنجاز)
+    // إسناد الطلبات لكل فترة حسب أساس المؤشر (الإنشاء أو الإنجاز أو حركة الدفع)
     const assign = (rangeStart: Date, rangeEnd: Date): Order[] => {
+      const range = { startDate: rangeStart, endDate: rangeEnd }
       if (def.basis === 'created') {
         return orders.filter(o => {
           const d = new Date(o.created_at)
           return d >= rangeStart && d <= rangeEnd
         })
+      }
+      if (def.basis === 'payment') {
+        return orders.filter(o =>
+          isInDateRange(o.created_at, range) ||
+          (o.status === 'delivered' && isInDateRange(o.delivery_date, range))
+        )
       }
       return orders.filter(o => {
         if (o.status !== 'completed' && o.status !== 'delivered') return false
@@ -618,11 +663,11 @@ export default function ReportsPage() {
 
     const buckets = rawBuckets.map(b => ({
       label: b.label,
-      value: def.compute(assign(b.start, b.end)),
+      value: def.compute(assign(b.start, b.end), { startDate: b.start, endDate: b.end }),
     }))
 
     const sum = buckets.reduce((s, b) => s + b.value, 0)
-    const overallValue = def.compute(assign(start, end))
+    const overallValue = def.compute(assign(start, end), { startDate: start, endDate: end })
     const nBuckets = buckets.length
     const bucketAverage = nBuckets > 0 ? Math.round(sum / nBuckets) : 0
     const peak = buckets.reduce<{ label: string; value: number } | null>(
@@ -887,6 +932,10 @@ export default function ReportsPage() {
             </div>
             <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-0.5 sm:mb-1 leading-tight">{comprehensiveStats.totalPaid.toLocaleString('en-US')} ر.س</h3>
             <p className="text-xs sm:text-sm text-gray-600 leading-tight">المبالغ المحصلة</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] sm:text-xs font-medium">
+              <span className="text-emerald-700">كاش: {comprehensiveStats.cashPaid.toLocaleString('en-US')} ر.س</span>
+              <span className="text-sky-700">شبكة: {comprehensiveStats.networkPaid.toLocaleString('en-US')} ر.س</span>
+            </div>
           </div>
 
           {/* Total Orders Value (regardless of payment) */}
