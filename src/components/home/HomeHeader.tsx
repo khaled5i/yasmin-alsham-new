@@ -6,13 +6,9 @@ import {
   HelpCircle,
   Menu,
   MessageCircle,
-  Palette,
-  Scissors,
   Search,
   Share2,
   Sparkles,
-  Users,
-  Wand2,
   X,
 } from 'lucide-react'
 import { tailoringWhatsAppUrl } from './home-data'
@@ -26,16 +22,7 @@ const navItems = [
 ] satisfies Array<{ label: string; href: string; section: HomeSectionKey }>
 
 const serviceItems = [
-  { label: 'الفساتين الجاهزة', href: '/designs', icon: Palette },
-  { label: 'احجزي دورك', href: '/queue', icon: Users },
   { label: 'تتبع الطلب', href: '/track-order', icon: Search },
-  { label: 'الأقمشة', href: '/fabrics', icon: Scissors },
-  {
-    label: 'مصمم ياسمين الشام الذكي',
-    href: 'https://yasmin-alsham-ai.com',
-    icon: Wand2,
-    external: true,
-  },
   { label: 'خدماتنا', href: '/services', icon: Sparkles },
   { label: 'الأسئلة الشائعة', href: '/faq', icon: HelpCircle },
   { label: 'تواصل معنا', href: '/social', icon: Share2 },
@@ -195,35 +182,17 @@ export default function HomeHeader({ forceSolid = false, onSelectHome, onSelectS
 
       <nav id="home-navigation-menu" className={styles.menuPanel} aria-label="روابط وخدمات ياسمين الشام">
         <div className={styles.menuPanelInner}>
-          <div className={styles.mobilePrimaryLinks}>
-            {navItems.map((item, index) => (
-              <a
-                key={item.href}
-                href={item.href}
-                onClick={(event) => {
-                  event.preventDefault()
-                  closeMenu()
-                  onSelectSection(item.section)
-                }}
-              >
-                <span>0{index + 1}</span>
-                {item.label}
-              </a>
-            ))}
-          </div>
-
           <div className={styles.menuPanelHeading}>
             <p>روابط وخدمات</p>
             <span>كل ما تحتاجينه في مكان واحد</span>
           </div>
 
           <div className={styles.serviceMenuGrid}>
-            {serviceItems.map(({ label, href, icon: Icon, external }) => (
+            {serviceItems.map(({ label, href, icon: Icon }) => (
               <a
                 key={href}
                 href={href}
                 onClick={closeMenu}
-                {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
               >
                 <Icon aria-hidden="true" />
                 <span>{label}</span>

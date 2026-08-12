@@ -27,6 +27,7 @@ import UnifiedNotesInput from './UnifiedNotesInput'
 import NumericInput from './NumericInput'
 import DatePickerWithStats from './DatePickerWithStats'
 import DatePickerForProof from './DatePickerForProof'
+import DatePickerForSecondProof from './DatePickerForSecondProof'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef, DesignSummaryNote } from './InteractiveImageAnnotation'
 import DesignSummarySection from './DesignSummarySection'
 import { Order, orderService } from '@/lib/services/order-service'
@@ -57,7 +58,7 @@ interface EditOrderModalProps {
   workers: WorkerWithUser[]
   isOpen: boolean
   onClose: () => void
-  onSave: (orderId: string, updates: any) => void
+  onSave: (orderId: string, updates: any) => Promise<boolean>
 }
 
 export default function EditOrderModal({ order: initialOrder, isOpen, onClose, onSave }: EditOrderModalProps) {
@@ -91,6 +92,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
     orderReceivedDate: '',
     dueDate: '',
     proofDeliveryDate: '',
+    secondProofDate: '',
     notes: '',
     voiceNotes: [] as Array<{
       id: string
@@ -220,6 +222,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         // للطلبات الجديدة نستخدم customer_due_date مباشرةً؛ للطلبات القديمة نُبقي السلوك السابق (due_date + 2)
         dueDate: order.customer_due_date || shiftDate(order.due_date, DUE_DATE_BACKDATE_DAYS),
         proofDeliveryDate: order.proof_delivery_date || '',
+        secondProofDate: order.second_proof_date || '',
         notes: order.notes || '',
         voiceNotes: voiceNotesData,
         images: order.images || [],
@@ -654,7 +657,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         : undefined
 
       // تحديث الطلب
-      onSave(order.id, {
+      const saveSucceeded = await onSave(order.id, {
         ...(clearReview ? { needs_review: false } : {}),
         ...(clearPreBooking ? { is_pre_booking: false } : {}),
         measurements: order.measurements || {},
@@ -673,6 +676,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : null,
+        // إبقاء NULL للطلبات القديمة إن لم يُعدّل الموعد؛ عندها يستمر العرض المحسوب القديم.
+        second_proof_date: formData.hasSecondProof === 'yes' ? (formData.secondProofDate || null) : null,
         notes: formData.notes || null,
         // إرسال مصفوفة فارغة إذا تم حذف جميع العناصر (للتأكد من حفظ الحذف في قاعدة البيانات)
         voice_notes: voiceNotesData,
@@ -690,6 +695,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         pre_delivery_network_amount: formData.preDeliveryNetworkAmount,
         updated_at: new Date().toISOString()
       })
+
+      if (!saveSucceeded) {
+        setSaveError(t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب')
+        return
+      }
 
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 1200)
@@ -811,7 +821,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         : undefined
 
       // تحديث الطلب
-      onSave(order.id, {
+      const saveSucceeded = await onSave(order.id, {
         measurements: order.measurements || {},
         // ملخص التصميم الصوتي - عمود مستقل (migration 50)
         design_summary_notes: formData.designSummaryNotes,
@@ -828,6 +838,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : null,
+        // إبقاء NULL للطلبات القديمة إن لم يُعدّل الموعد؛ عندها يستمر العرض المحسوب القديم.
+        second_proof_date: formData.hasSecondProof === 'yes' ? (formData.secondProofDate || null) : null,
         notes: formData.notes || null,
         // إرسال مصفوفة فارغة إذا تم حذف جميع العناصر (للتأكد من حفظ الحذف في قاعدة البيانات)
         voice_notes: voiceNotesData,
@@ -846,6 +858,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         updated_at: new Date().toISOString()
       })
 
+      if (!saveSucceeded) {
+        setSaveError(t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب')
+        return
+      }
+
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 1200)
 
@@ -858,6 +875,9 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
           proofDeliveryDate: formData.proofDeliveryDate || undefined,
           dueDate: formData.dueDate,
           hasSecondProof: formData.hasSecondProof === 'yes',
+          secondProofDate: formData.hasSecondProof === 'yes'
+            ? (formData.secondProofDate || shiftDate(formData.dueDate, -(DUE_DATE_BACKDATE_DAYS + 1)))
+            : undefined,
           totalPrice: price,
           remainingAmount: Math.max(0, price - paidAmount)
         })
@@ -966,8 +986,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {isArabic
-                          ? (order?.has_second_proof ? 'موعد تسليم البروفا الأولى' : 'موعد تسليم البروفا')
-                          : (order?.has_second_proof ? 'First Proof Delivery Date' : 'Proof Delivery Date')}
+                          ? (formData.hasSecondProof === 'yes' ? 'موعد تسليم البروفا الأولى' : 'موعد تسليم البروفا')
+                          : (formData.hasSecondProof === 'yes' ? 'First Proof Delivery Date' : 'Proof Delivery Date')}
                       </label>
                       <DatePickerForProof
                         selectedDate={formData.proofDeliveryDate}
@@ -1167,6 +1187,29 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                               <span className="text-gray-700 font-medium">لا</span>
                             </label>
                           </div>
+
+                          {formData.hasSecondProof === 'yes' && (
+                            <div className="mt-4 border-t border-amber-200 pt-4">
+                              <label className="block text-sm font-medium text-amber-800 mb-2">
+                                {isArabic ? 'موعد تسليم البروفا الثانية' : 'Second Proof Delivery Date'}
+                              </label>
+                              <DatePickerForSecondProof
+                                selectedDate={
+                                  formData.secondProofDate ||
+                                  (formData.dueDate
+                                    ? shiftDate(formData.dueDate, -(DUE_DATE_BACKDATE_DAYS + 1))
+                                    : '')
+                                }
+                                onChange={(date) => handleInputChange('secondProofDate', date)}
+                                minDate={new Date()}
+                              />
+                              <p className="mt-1.5 text-xs text-amber-700">
+                                {isArabic
+                                  ? 'يمكن تعديل هذا الموعد بشكل مستقل عن موعد التسليم النهائي.'
+                                  : 'This date can be changed independently from the final delivery date.'}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1322,7 +1365,6 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                   {/* زر تحديث الطلب العادي */}
                   <button
                     type="submit"
-                    onClick={handleSubmit}
                     disabled={isSubmitting}
                     className="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg hover:from-pink-600 hover:to-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse font-medium shadow-lg"
                   >

@@ -400,8 +400,20 @@ function OrdersPageInner() {
     if (updates.due_date) supabaseUpdates.due_date = updates.due_date
     else if (updates.dueDate) supabaseUpdates.due_date = updates.dueDate
 
+    if (updates.customer_due_date !== undefined) {
+      supabaseUpdates.customer_due_date = updates.customer_due_date || null
+    }
+
     if (updates.proof_delivery_date !== undefined) {
       supabaseUpdates.proof_delivery_date = updates.proof_delivery_date || null
+    }
+
+    if (updates.has_second_proof !== undefined) {
+      supabaseUpdates.has_second_proof = updates.has_second_proof
+    }
+
+    if (updates.second_proof_date !== undefined) {
+      supabaseUpdates.second_proof_date = updates.second_proof_date || null
     }
 
     // الملاحظات الإضافية
@@ -523,14 +535,15 @@ function OrdersPageInner() {
       toast.success(t('order_updated_success') || 'تم تحديث الطلب بنجاح', {
         icon: '✓',
       })
+      setShowEditModal(false)
+      setSelectedOrder(null)
+      return true
     } else {
       toast.error(result.error || t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب', {
         icon: '✗',
       })
+      return false
     }
-
-    setShowEditModal(false)
-    setSelectedOrder(null)
   }
 
   // إغلاق النوافذ
@@ -830,6 +843,7 @@ function OrdersPageInner() {
         // للطلبات الجديدة: التاريخ الحقيقي للزبون من customer_due_date (migration 49)
         dueDate: order.customer_due_date || shiftDate(order.due_date, 2),
         hasSecondProof: order.has_second_proof === true,
+        secondProofDate: order.second_proof_date || undefined,
         totalPrice,
         paidAmount,
         remainingAmount: Math.max(0, totalPrice - paidAmount)

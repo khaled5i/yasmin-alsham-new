@@ -189,29 +189,6 @@
   padding-block: 12px 24px;
 }
 
-.mobilePrimaryLinks {
-  display: grid;
-}
-
-.mobilePrimaryLinks a {
-  display: flex;
-  align-items: center;
-  min-height: 56px;
-  color: var(--charcoal);
-  font-family: var(--font-home-display), serif;
-  font-size: 1.35rem;
-  font-weight: 600;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(107, 23, 38, 0.12);
-}
-
-.mobilePrimaryLinks a span {
-  width: 44px;
-  color: var(--gold);
-  font-family: var(--font-home-sans), sans-serif;
-  font-size: 0.66rem;
-}
-
 .menuPanelHeading {
   display: flex;
   align-items: flex-end;
@@ -1966,10 +1943,6 @@
   .menuPanelInner {
     width: 100%;
     padding: 20px;
-  }
-
-  .mobilePrimaryLinks {
-    display: none;
   }
 
   .menuPanelHeading {
