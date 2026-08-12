@@ -5,12 +5,14 @@
  *    التوكن السرّي من process.env.ALOSTAZ_API_TOKEN. لا تستوردها في كود المتصفح.
  *
  * تتولّى: بناء الترويسات + إيجاد/إنشاء العميل + إنشاء فواتير التفصيل والأقمشة.
- * كل الفواتير الخارجية تُوجَّه إلى الفرع الرئيسي، مع بقاء الفصل الداخلي في الموقع.
+ * فواتير التفصيل تُوجَّه إلى «ياسمين الشام للخياطة»، وفواتير الأقمشة إلى
+ * «بروكار الشرقية»، مع بقاء الفصل الداخلي في الموقع.
  */
 
 import {
   ALOSTAZ_BASE_URL,
   ALOSTAZ_BRANCH_ID,
+  ALOSTAZ_FABRICS_BRANCH_ID,
   ALOSTAZ_PARTNER_LIST_ID,
   ALOSTAZ_STOREHOUSE_ID,
   ALOSTAZ_SERVICE_PRODUCT_ID,
@@ -292,7 +294,7 @@ export async function createInvoiceForOrder(
   }
 }
 
-// ── سياق الأقمشة في الفرع الرئيسي «ياسمين الشام» في الأستاذ ───
+// ── سياق الأقمشة في فرع «بروكار الشرقية» في الأستاذ ────────────
 
 export interface AlostazBranchContext {
   branchId: number
@@ -304,13 +306,13 @@ export interface AlostazBranchContext {
 
 /**
  * سياق إرسال فواتير الأقمشة إلى الأستاذ.
- * نستخدم عمداً نفس الفرع والمستودع والخزائن وقائمة الشركاء الخاصة بياسمين الشام،
- * حتى لا يحتاج الحساب الخارجي إلى فرع ثانٍ. هذا لا يغيّر قيمة branch المحلية
- * ولا فصل الحسابات أو تصميم الفواتير داخل الموقع.
+ * نغيّر معرّف الفرع الخارجي فقط إلى «بروكار الشرقية». تبقى معرّفات المستودع
+ * والخزائن وقائمة الشركاء كما هي لأنها متاحة لهذا الفرع في حساب الأستاذ، كما لا
+ * تتغيّر قيمة branch المحلية ولا بنية الفاتورة أو فصل الحسابات داخل الموقع.
  */
 export async function getFabricsBranchContext(): Promise<AlostazBranchContext> {
   return {
-    branchId: ALOSTAZ_BRANCH_ID,
+    branchId: ALOSTAZ_FABRICS_BRANCH_ID,
     storehouseId: ALOSTAZ_STOREHOUSE_ID,
     treasuryCash: ALOSTAZ_TREASURY_CASH,
     treasuryBank: ALOSTAZ_TREASURY_BANK,
@@ -323,8 +325,8 @@ export async function getFabricsBranchContext(): Promise<AlostazBranchContext> {
 /**
  * إنشاء منتج قماش في الأستاذ وإرجاع معرّفه.
  * منتجات الأقمشة تُنشأ «مع تتبّع المخزون» (supports_inventory=1) لتُخزَّن في
- * مستودع ياسمين الشام الرئيسي، ولذلك يشترط الأستاذ سعر الشراء وسعر البيع للوحدة.
- * الأسعار تُرسَل بالهللات (×100). branchId ينشئ المنتج ضمن الفرع الرئيسي.
+ * المستودع الرئيسي، ولذلك يشترط الأستاذ سعر الشراء وسعر البيع للوحدة.
+ * الأسعار تُرسَل بالهللات (×100). branchId ينشئ المنتج ضمن الفرع المحدد.
  */
 export async function createProduct(
   name: string,
@@ -404,7 +406,7 @@ export interface AlostazFabricSaleInput {
 export async function createInvoiceForFabricSale(
   input: AlostazFabricSaleInput
 ): Promise<AlostazInvoiceResult> {
-  // فواتير الأقمشة تُوجَّه إلى نفس فرع ياسمين الشام المستخدم لفواتير التفصيل.
+  // فواتير الأقمشة تُوجَّه إلى فرع «بروكار الشرقية» فقط.
   const ctx = await getFabricsBranchContext()
   const branchHeaders = { 'X-Branch-Id': String(ctx.branchId) }
 

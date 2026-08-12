@@ -59,7 +59,7 @@ async function resolveFabricProductId(fabricName: string): Promise<number> {
     return Number(invItem.alostaz_product_id)
   }
 
-  // إنشاء المنتج في الأستاذ ضمن فرع ياسمين الشام مع تتبّع المخزون
+  // إنشاء المنتج في الأستاذ ضمن فرع «بروكار الشرقية» مع تتبّع المخزون
   const productId = await createProduct(invItem?.name || name || 'قماش', {
     branchId: ctx.branchId,
     supportsInventory: true,

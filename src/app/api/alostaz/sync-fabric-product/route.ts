@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createProduct, getFabricsBranchContext } from '@/lib/services/alostaz-service'
 
 /**
- * مسار خادمي لإضافة صنف مخزون قماش كمنتج في تطبيق الأستاذ (فرع ياسمين الشام).
+ * مسار خادمي لإضافة صنف مخزون قماش كمنتج في تطبيق الأستاذ (فرع بروكار الشرقية).
  * ─────────────────────────────────────────────────────────────
  * يُستدعى عند إضافة صنف جديد للمخزون في الموقع، فيُنشئ المنتج المقابل في الأستاذ
  * ويحفظ alostaz_product_id على الصنف لإعادة استخدامه في الفواتير لاحقاً.
@@ -69,8 +69,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'صنف المخزون غير موجود' }, { status: 404 })
     }
 
-    // 4) منع الإنشاء المكرر داخل الفرع الرئيسي فقط.
-    // المعرّفات القديمة بلا branch_id تعود لفرع الأقمشة الخارجي السابق ولا تُستخدم.
+    // 4) منع الإنشاء المكرر داخل فرع «بروكار الشرقية» فقط.
+    // المعرّفات القديمة التابعة لفرع مختلف لا تُستخدم.
     const ctx = await getFabricsBranchContext()
     if (
       item.alostaz_product_id &&
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 5) إنشاء المنتج في الأستاذ ضمن فرع ياسمين الشام، ثم حفظ المعرّف وسياق الفرع
+    // 5) إنشاء المنتج في الأستاذ ضمن فرع «بروكار الشرقية»، ثم حفظ المعرّف وسياق الفرع
     let productId: number
     try {
       productId = await createProduct(item.name || 'قماش', {
