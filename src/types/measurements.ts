@@ -54,6 +54,18 @@ export interface Measurements {
   additional_notes?: string
 }
 
+/** مصدر المقاس المسجّل على الطلب. */
+export type MeasurementSource = 'yasmin_alsham' | 'external'
+
+/** طريقة تحصيل أجرة المقاس داخل ياسمين الشام. */
+export type MeasurementPaymentMethod = 'cash' | 'card'
+
+/** البيانات المصاحبة للمقاسات عند حفظها من صفحة الطلبات الحديثة. */
+export interface MeasurementSaveMetadata {
+  source: MeasurementSource
+  paymentMethod: MeasurementPaymentMethod | null
+}
+
 /**
  * أسماء المقاسات بالعربية والإنجليزية
  * Measurement names in Arabic and English
@@ -123,4 +135,3 @@ export function getMeasurementLabelWithSymbol(key: keyof Measurements, language:
   
   return name
 }
-

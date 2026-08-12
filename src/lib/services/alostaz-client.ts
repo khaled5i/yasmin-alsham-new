@@ -23,13 +23,14 @@ export interface SendInvoiceResult {
   error?: string
 }
 
-export type TailoringInvoicePhase = 'deposit' | 'delivery' | 'manual'
+export type TailoringInvoicePhase = 'deposit' | 'delivery' | 'manual' | 'measurement'
 
 /**
  * إرسال فاتورة تفصيل إلى الأستاذ عبر المسار الخادمي.
  * - deposit: عربون الشبكة عند إنشاء الطلب الجديد.
  * - delivery: شبكة الدفعة المتبقية فقط عند التسليم.
  * - manual: المسار اليدوي للطلبات القديمة.
+ * - measurement: أجرة مقاس ياسمين الشام المدفوعة بالشبكة.
  */
 export async function sendInvoiceToAlostaz(
   orderId: string,

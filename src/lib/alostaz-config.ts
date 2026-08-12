@@ -25,6 +25,12 @@ export const ALOSTAZ_PARTNER_LIST_ID = 1
 export const ALOSTAZ_STOREHOUSE_ID = 1
 /** منتج الخدمة الثابت «أجرة تفصيل فستان» */
 export const ALOSTAZ_SERVICE_PRODUCT_ID = 2
+/** منتج الخدمة «أجرة مقاس» في فرع ياسمين الشام الأول (تم التحقق منه عملياً). */
+export const ALOSTAZ_MEASUREMENT_PRODUCT_ID =
+  Number(process.env.ALOSTAZ_MEASUREMENT_PRODUCT_ID) || 22
+/** أجرة مقاس ياسمين الشام، شاملة ضريبة القيمة المضافة. */
+export const ALOSTAZ_MEASUREMENT_FEE_SAR = 85
+export const ALOSTAZ_MEASUREMENT_PRODUCT_NAME = 'أجرة مقاس'
 
 /**
  * ضريبة القيمة المضافة 15% «الشاملة» (inclusive) — id 2 في الحساب.

@@ -2,10 +2,16 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Save, Ruler, RotateCcw } from 'lucide-react'
+import { X, Save, Ruler, RotateCcw, Store, MapPin, Banknote, CreditCard, LockKeyhole } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import NumericInput from './NumericInput'
-import { Measurements, MEASUREMENT_ORDER } from '@/types/measurements'
+import {
+  Measurements,
+  MEASUREMENT_ORDER,
+  type MeasurementPaymentMethod,
+  type MeasurementSaveMetadata,
+  type MeasurementSource,
+} from '@/types/measurements'
 
 const STORAGE_KEY_PREFIX = 'measurements-draft-'
 
@@ -13,13 +19,30 @@ function getStorageKey(orderId: string) {
   return `${STORAGE_KEY_PREFIX}${orderId}`
 }
 
-function saveDraftToLocal(orderId: string, data: Measurements) {
+interface MeasurementsDraft {
+  data: Measurements
+  timestamp: number
+  source?: MeasurementSource | null
+  paymentMethod?: MeasurementPaymentMethod | null
+}
+
+function saveDraftToLocal(
+  orderId: string,
+  data: Measurements,
+  source?: MeasurementSource | null,
+  paymentMethod?: MeasurementPaymentMethod | null
+) {
   try {
-    localStorage.setItem(getStorageKey(orderId), JSON.stringify({ data, timestamp: Date.now() }))
+    localStorage.setItem(getStorageKey(orderId), JSON.stringify({
+      data,
+      timestamp: Date.now(),
+      source,
+      paymentMethod,
+    }))
   } catch {}
 }
 
-function loadDraftFromLocal(orderId: string): { data: Measurements; timestamp: number } | null {
+function loadDraftFromLocal(orderId: string): MeasurementsDraft | null {
   try {
     const raw = localStorage.getItem(getStorageKey(orderId))
     if (!raw) return null
@@ -38,9 +61,13 @@ function clearDraftFromLocal(orderId: string) {
 interface MeasurementsModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (measurements: Measurements) => Promise<void>
+  onSave: (measurements: Measurements, metadata?: MeasurementSaveMetadata) => Promise<void>
   initialMeasurements?: Measurements
   orderId: string
+  showMeasurementOptions?: boolean
+  initialMeasurementSource?: MeasurementSource | null
+  initialMeasurementPaymentMethod?: MeasurementPaymentMethod | null
+  isMeasurementBillingLocked?: boolean
 }
 
 export default function MeasurementsModal({
@@ -48,14 +75,21 @@ export default function MeasurementsModal({
   onClose,
   onSave,
   initialMeasurements,
-  orderId
+  orderId,
+  showMeasurementOptions = false,
+  initialMeasurementSource = null,
+  initialMeasurementPaymentMethod = null,
+  isMeasurementBillingLocked = false,
 }: MeasurementsModalProps) {
-  const { t } = useTranslation()
+  const { t, isArabic } = useTranslation()
   const [measurements, setMeasurements] = useState<Measurements>(initialMeasurements || {})
+  const [measurementSource, setMeasurementSource] = useState<MeasurementSource | null>(initialMeasurementSource)
+  const [measurementPaymentMethod, setMeasurementPaymentMethod] = useState<MeasurementPaymentMethod | null>(initialMeasurementPaymentMethod)
   const [isSaving, setIsSaving] = useState(false)
   const [showDraftBanner, setShowDraftBanner] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const userHasEdited = useRef(false)
-  const draftRestoredRef = useRef(false)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // عند فتح المودال: استعادة المسودة تلقائياً
@@ -64,49 +98,109 @@ export default function MeasurementsModal({
       const draft = loadDraftFromLocal(orderId)
       if (draft) {
         setMeasurements(draft.data)
+        if (showMeasurementOptions) {
+          const restoredSource = draft.source || initialMeasurementSource
+          setMeasurementSource(restoredSource)
+          setMeasurementPaymentMethod(
+            restoredSource === 'external'
+              ? null
+              : (draft.paymentMethod || initialMeasurementPaymentMethod)
+          )
+        }
         setShowDraftBanner(true)
-        draftRestoredRef.current = true
       } else {
-        draftRestoredRef.current = false
+        setMeasurements(initialMeasurements || {})
+        setMeasurementSource(initialMeasurementSource)
+        setMeasurementPaymentMethod(initialMeasurementPaymentMethod)
+        setShowDraftBanner(false)
       }
+      setValidationError(null)
+      setSaveError(null)
       userHasEdited.current = false
     }
-  }, [isOpen, orderId])
-
-  // تحديث المقاسات عند تغيير initialMeasurements (فقط إذا لم يتم استعادة مسودة)
-  useEffect(() => {
-    if (initialMeasurements && !draftRestoredRef.current) {
-      setMeasurements(initialMeasurements)
-    }
-  }, [initialMeasurements])
+  }, [
+    isOpen,
+    orderId,
+    initialMeasurements,
+    initialMeasurementSource,
+    initialMeasurementPaymentMethod,
+    showMeasurementOptions,
+  ])
 
   // حفظ تلقائي محلي مع debounce
-  const saveDraftDebounced = useCallback((data: Measurements) => {
+  const saveDraftDebounced = useCallback((
+    data: Measurements,
+    source?: MeasurementSource | null,
+    paymentMethod?: MeasurementPaymentMethod | null
+  ) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
     debounceTimer.current = setTimeout(() => {
-      saveDraftToLocal(orderId, data)
+      saveDraftToLocal(orderId, data, source, paymentMethod)
     }, 500)
   }, [orderId])
 
   const handleMeasurementChange = (key: keyof Measurements, value: string) => {
     userHasEdited.current = true
+    setValidationError(null)
+    setSaveError(null)
     setMeasurements(prev => {
       const updated = { ...prev, [key]: key === 'additional_notes' ? value : value }
-      saveDraftDebounced(updated)
+      saveDraftDebounced(updated, measurementSource, measurementPaymentMethod)
       return updated
     })
+  }
+
+  const handleMeasurementSourceChange = (source: MeasurementSource) => {
+    if (isMeasurementBillingLocked) return
+    userHasEdited.current = true
+    const nextPaymentMethod = source === 'external' ? null : measurementPaymentMethod
+    setMeasurementSource(source)
+    setMeasurementPaymentMethod(nextPaymentMethod)
+    setValidationError(null)
+    setSaveError(null)
+    saveDraftDebounced(measurements, source, nextPaymentMethod)
+  }
+
+  const handleMeasurementPaymentChange = (method: MeasurementPaymentMethod) => {
+    if (isMeasurementBillingLocked || measurementSource !== 'yasmin_alsham') return
+    userHasEdited.current = true
+    setMeasurementPaymentMethod(method)
+    setValidationError(null)
+    setSaveError(null)
+    saveDraftDebounced(measurements, measurementSource, method)
   }
 
   // مسح المسودة والعودة للبيانات الأصلية
   const handleClearDraft = () => {
     clearDraftFromLocal(orderId)
-    draftRestoredRef.current = false
     setMeasurements(initialMeasurements || {})
+    setMeasurementSource(initialMeasurementSource)
+    setMeasurementPaymentMethod(initialMeasurementPaymentMethod)
     setShowDraftBanner(false)
+    setValidationError(null)
+    setSaveError(null)
   }
 
   const handleSave = async () => {
+    let metadata: MeasurementSaveMetadata | undefined
+    if (showMeasurementOptions) {
+      if (!measurementSource) {
+        setValidationError(isArabic ? 'يرجى اختيار نوع المقاس قبل الحفظ' : 'Select the measurement source before saving')
+        return
+      }
+      if (measurementSource === 'yasmin_alsham' && !measurementPaymentMethod) {
+        setValidationError(isArabic ? 'طريقة الدفع مطلوبة لمقاس ياسمين الشام' : 'Payment method is required for Yasmin Al-Sham measurements')
+        return
+      }
+      metadata = {
+        source: measurementSource,
+        paymentMethod: measurementSource === 'yasmin_alsham' ? measurementPaymentMethod : null,
+      }
+    }
+
     setIsSaving(true)
+    setValidationError(null)
+    setSaveError(null)
     try {
       // تحويل القيم النصية إلى أرقام (ما عدا additional_notes)
       // نتجاهل أي مفاتيح غير معروفة (صور التصميم وغيرها) لمنع تحويلها إلى NaN
@@ -124,12 +218,17 @@ export default function MeasurementsModal({
         }
       })
 
-      await onSave(processedMeasurements)
+      await onSave(processedMeasurements, metadata)
       // عند الحفظ الناجح، مسح المسودة المحلية
       clearDraftFromLocal(orderId)
       onClose()
     } catch (error) {
       console.error('Error saving measurements:', error)
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : (isArabic ? 'حدث خطأ أثناء حفظ المقاسات' : 'Error saving measurements')
+      )
     } finally {
       setIsSaving(false)
     }
@@ -191,6 +290,118 @@ export default function MeasurementsModal({
 
               {/* Content */}
               <div className="p-6">
+                {showMeasurementOptions && (
+                  <div className="mb-7 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <fieldset className="rounded-2xl border border-pink-100 bg-pink-50/60 p-4">
+                      <legend className="px-2 text-sm font-bold text-gray-800">
+                        {isArabic ? 'نوع المقاس' : 'Measurement source'}
+                        <span className="mr-1 text-rose-600" aria-hidden="true">*</span>
+                      </legend>
+                      <div className="mt-2 grid grid-cols-2 gap-3">
+                        {([
+                          { value: 'yasmin_alsham', label: isArabic ? 'مقاس ياسمين الشام' : 'Yasmin Al-Sham', icon: Store },
+                          { value: 'external', label: isArabic ? 'مقاس خارجي' : 'External', icon: MapPin },
+                        ] as const).map(({ value, label, icon: Icon }) => {
+                          const selected = measurementSource === value
+                          return (
+                            <label
+                              key={value}
+                              className={`flex min-h-20 cursor-pointer items-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
+                                selected
+                                  ? 'border-pink-500 bg-white text-pink-700 shadow-sm'
+                                  : 'border-pink-100 bg-white/70 text-gray-700 hover:border-pink-300'
+                              } ${isMeasurementBillingLocked ? 'cursor-not-allowed opacity-70' : ''}`}
+                            >
+                              <input
+                                type="radio"
+                                name={`measurement-source-${orderId}`}
+                                value={value}
+                                checked={selected}
+                                onChange={() => handleMeasurementSourceChange(value)}
+                                disabled={isSaving || isMeasurementBillingLocked}
+                                className="h-4 w-4 accent-pink-600"
+                              />
+                              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                              <span>{label}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </fieldset>
+
+                    <fieldset
+                      disabled={measurementSource !== 'yasmin_alsham' || isSaving || isMeasurementBillingLocked}
+                      className={`rounded-2xl border p-4 transition-colors ${
+                        measurementSource === 'yasmin_alsham'
+                          ? 'border-emerald-100 bg-emerald-50/60'
+                          : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <legend className="px-2 text-sm font-bold text-gray-800">
+                        {isArabic ? 'طريقة دفع أجرة المقاس' : 'Measurement fee payment'}
+                        {measurementSource === 'yasmin_alsham' && (
+                          <span className="mr-1 text-rose-600" aria-hidden="true">*</span>
+                        )}
+                      </legend>
+                      <div className="mt-2 grid grid-cols-2 gap-3">
+                        {([
+                          { value: 'cash', label: isArabic ? 'كاش' : 'Cash', icon: Banknote },
+                          { value: 'card', label: isArabic ? 'شبكة' : 'Card', icon: CreditCard },
+                        ] as const).map(({ value, label, icon: Icon }) => {
+                          const selected = measurementPaymentMethod === value
+                          const disabled = measurementSource !== 'yasmin_alsham' || isMeasurementBillingLocked
+                          return (
+                            <label
+                              key={value}
+                              className={`flex min-h-20 items-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
+                                selected
+                                  ? 'border-emerald-500 bg-white text-emerald-700 shadow-sm'
+                                  : 'border-gray-200 bg-white/70 text-gray-700'
+                              } ${disabled ? 'cursor-not-allowed opacity-45' : 'cursor-pointer hover:border-emerald-300'}`}
+                            >
+                              <input
+                                type="radio"
+                                name={`measurement-payment-${orderId}`}
+                                value={value}
+                                checked={selected}
+                                onChange={() => handleMeasurementPaymentChange(value)}
+                                className="h-4 w-4 accent-emerald-600"
+                              />
+                              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                              <span>{label}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      {measurementSource === 'external' && (
+                        <p className="mt-3 text-xs font-medium text-gray-500">
+                          {isArabic ? 'لا توجد طريقة دفع للمقاس الخارجي.' : 'Payment is not available for external measurements.'}
+                        </p>
+                      )}
+                    </fieldset>
+
+                    {isMeasurementBillingLocked && (
+                      <div className="md:col-span-2 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">
+                        <LockKeyhole className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span>
+                          {isArabic
+                            ? 'تم إرسال فاتورة المقاس أو أنها قيد المراجعة؛ يمكنك تعديل الأرقام فقط.'
+                            : 'Measurement billing is sent or under review; only measurement values can be edited.'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(validationError || saveError) && (
+                  <div
+                    role="alert"
+                    className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+                  >
+                    {validationError || saveError}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-3 sm:gap-4 md:gap-6">
                   {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => (
                     <div key={key}>

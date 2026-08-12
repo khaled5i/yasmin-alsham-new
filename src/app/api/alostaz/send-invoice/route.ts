@@ -2,16 +2,19 @@ import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import {
+  createInvoiceForMeasurement,
   createInvoiceForOrder,
   isAlostazInvoiceOutcomeUnknown,
 } from '@/lib/services/alostaz-service'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
+import { ALOSTAZ_MEASUREMENT_FEE_SAR } from '@/lib/alostaz-config'
 
 /**
  * مسار خادمي لفواتير التفصيل المرحلية في تطبيق الأستاذ.
  * - deposit: عربون الشبكة عند إنشاء طلب جديد من الإصدار المحاسبي 2.
  * - delivery: شبكة الدفعة المتبقية فقط عند التسليم.
  * - manual: المسار اليدوي المحفوظ للطلبات القديمة (الإصدار 1).
+ * - measurement: أجرة مقاس ياسمين الشام المدفوعة بالشبكة.
  */
 
 // عميل Admin (Service Role) لقراءة/تحديث الطلبات بتجاوز RLS
@@ -21,9 +24,9 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-type InvoicePhase = 'deposit' | 'delivery' | 'manual'
+type InvoicePhase = 'deposit' | 'delivery' | 'manual' | 'measurement'
 
-const PHASES = new Set<InvoicePhase>(['deposit', 'delivery', 'manual'])
+const PHASES = new Set<InvoicePhase>(['deposit', 'delivery', 'manual', 'measurement'])
 
 const PHASE_FIELDS = {
   deposit: {
@@ -41,6 +44,14 @@ const PHASE_FIELDS = {
     syncToken: 'alostaz_sync_token',
     syncError: 'alostaz_sync_error',
     syncedAt: 'alostaz_synced_at',
+  },
+  measurement: {
+    invoiceId: 'alostaz_measurement_invoice_id',
+    invoiceCode: 'alostaz_measurement_invoice_code',
+    syncStatus: 'alostaz_measurement_sync_status',
+    syncToken: 'alostaz_measurement_sync_token',
+    syncError: 'alostaz_measurement_sync_error',
+    syncedAt: 'alostaz_measurement_synced_at',
   },
 } as const
 
@@ -89,7 +100,7 @@ export async function POST(request: NextRequest) {
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select(
-        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, alostaz_billing_version, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code, alostaz_deposit_sync_status, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status'
+        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, has_measurements, measurement_source, measurement_payment_method, alostaz_billing_version, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code, alostaz_deposit_sync_status, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status, alostaz_measurement_invoice_id, alostaz_measurement_invoice_code, alostaz_measurement_sync_status'
       )
       .eq('id', orderId)
       .single()
@@ -99,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     const stagedBilling = Number(order.alostaz_billing_version) >= 2
-    if (requestedPhase !== 'manual' && !stagedBilling) {
+    if ((requestedPhase === 'deposit' || requestedPhase === 'delivery') && !stagedBilling) {
       return NextResponse.json({
         data: { skipped: true, reason: 'legacy-order' },
         error: null,
@@ -114,8 +125,20 @@ export async function POST(request: NextRequest) {
     if (requestedPhase === 'delivery' && order.status !== 'delivered') {
       return NextResponse.json({ error: 'لا يمكن إرسال دفعة التسليم قبل تسليم الطلب' }, { status: 409 })
     }
+    if (requestedPhase === 'measurement') {
+      if (order.measurement_source !== 'yasmin_alsham') {
+        return NextResponse.json({ error: 'فاتورة أجرة المقاس متاحة لمقاس ياسمين الشام فقط' }, { status: 409 })
+      }
+      if (order.measurement_payment_method !== 'card') {
+        return NextResponse.json({ error: 'فاتورة أجرة المقاس تُرسل عند اختيار الدفع شبكة فقط' }, { status: 409 })
+      }
+    }
 
-    const effectivePhase = requestedPhase === 'deposit' ? 'deposit' : 'delivery'
+    const effectivePhase = requestedPhase === 'deposit'
+      ? 'deposit'
+      : requestedPhase === 'measurement'
+        ? 'measurement'
+        : 'delivery'
     const fields = PHASE_FIELDS[effectivePhase]
     const existingInvoiceId = order[fields.invoiceId]
     const existingInvoiceCode = order[fields.invoiceCode]
@@ -132,28 +155,35 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const breakdown = computePaymentBreakdown(order)
-    const cash = breakdown.cashTotal
-    const net = breakdown.networkTotal
     let invoicePayments: Array<{ amount: number; method: 'cash' | 'card' }>
+    let invoiceAmount: number
 
-    if (requestedPhase === 'deposit') {
-      invoicePayments = [{ amount: breakdown.preDeliveryNetwork, method: 'card' }]
-    } else if (requestedPhase === 'delivery') {
-      invoicePayments = [{ amount: breakdown.remainingNetwork, method: 'card' }]
-    } else if (mode === 'cash') {
-      invoicePayments = [{ amount: cash, method: 'cash' }]
-    } else if (mode === 'network') {
-      invoicePayments = [{ amount: net, method: 'card' }]
+    if (requestedPhase === 'measurement') {
+      invoicePayments = [{ amount: ALOSTAZ_MEASUREMENT_FEE_SAR, method: 'card' }]
+      invoiceAmount = ALOSTAZ_MEASUREMENT_FEE_SAR
     } else {
-      invoicePayments = [
-        { amount: cash, method: 'cash' },
-        { amount: net, method: 'card' },
-      ]
-    }
+      const breakdown = computePaymentBreakdown(order)
+      const cash = breakdown.cashTotal
+      const net = breakdown.networkTotal
 
-    invoicePayments = invoicePayments.filter((payment) => payment.amount >= 0.005)
-    const invoiceAmount = invoicePayments.reduce((sum, payment) => sum + payment.amount, 0)
+      if (requestedPhase === 'deposit') {
+        invoicePayments = [{ amount: breakdown.preDeliveryNetwork, method: 'card' }]
+      } else if (requestedPhase === 'delivery') {
+        invoicePayments = [{ amount: breakdown.remainingNetwork, method: 'card' }]
+      } else if (mode === 'cash') {
+        invoicePayments = [{ amount: cash, method: 'cash' }]
+      } else if (mode === 'network') {
+        invoicePayments = [{ amount: net, method: 'card' }]
+      } else {
+        invoicePayments = [
+          { amount: cash, method: 'cash' },
+          { amount: net, method: 'card' },
+        ]
+      }
+
+      invoicePayments = invoicePayments.filter((payment) => payment.amount >= 0.005)
+      invoiceAmount = invoicePayments.reduce((sum, payment) => sum + payment.amount, 0)
+    }
 
     if (invoiceAmount < 0.005 && requestedPhase !== 'manual') {
       return NextResponse.json({
@@ -224,19 +254,25 @@ export async function POST(request: NextRequest) {
 
     let result
     try {
-      result = await createInvoiceForOrder(
-        {
-          order_number: order.order_number,
-          client_name: order.client_name,
-          client_phone: order.client_phone,
-          description: order.description,
-          price: invoiceAmount,
-          paid_amount: invoiceAmount,
-          payment_method: 'card',
-          due_date: order.due_date,
-        },
-        { payments: invoicePayments }
-      )
+      result = requestedPhase === 'measurement'
+        ? await createInvoiceForMeasurement({
+            order_number: order.order_number,
+            client_name: order.client_name,
+            client_phone: order.client_phone,
+          })
+        : await createInvoiceForOrder(
+            {
+              order_number: order.order_number,
+              client_name: order.client_name,
+              client_phone: order.client_phone,
+              description: order.description,
+              price: invoiceAmount,
+              paid_amount: invoiceAmount,
+              payment_method: 'card',
+              due_date: order.due_date,
+            },
+            { payments: invoicePayments }
+          )
     } catch (error: unknown) {
       const outcomeUnknown = isAlostazInvoiceOutcomeUnknown(error)
       const errorMessage = error instanceof Error ? error.message : 'فشل إرسال الفاتورة للأستاذ'
@@ -278,6 +314,8 @@ export async function POST(request: NextRequest) {
       }
       if (requestedPhase === 'deposit') {
         finalUpdates.alostaz_deposit_invoice_amount = invoiceAmount
+      } else if (requestedPhase === 'measurement') {
+        finalUpdates.alostaz_measurement_invoice_amount = invoiceAmount
       }
 
       const { data: finalizedOrder, error } = await supabaseAdmin

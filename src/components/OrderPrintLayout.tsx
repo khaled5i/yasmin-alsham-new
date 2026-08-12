@@ -272,7 +272,12 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
           <div className="print-measurements-section">
             {/* قسم المقاسات - مختصر بنسبة 40% */}
             <div className="print-measurements print-measurements-compact">
-              <h2 className="section-title section-title-compact">المقاسات</h2>
+              <h2 className="section-title section-title-compact">
+                المقاسات
+                {order.measurement_source === 'external' && (
+                  <span style={{ marginRight: '6px', fontWeight: 800 }}>— مقاس خارجي</span>
+                )}
+              </h2>
               <div className="measurements-list measurements-list-compact">
                 {getMeasurementsForPrint().map((key) => {
                   const value = (order.measurements as any)?.[key]

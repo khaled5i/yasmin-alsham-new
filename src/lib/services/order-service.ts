@@ -57,6 +57,8 @@ const ORDER_LIST_COLUMNS = [
   'delivery_date',
   // أعمدة مستقلة (migration 29) - لا تحتاج JSONB extraction بعد الآن
   'has_measurements',
+  'measurement_source',
+  'measurement_payment_method',
   'is_printed',
   'whatsapp_sent',
   'needs_review',
@@ -108,6 +110,10 @@ const ORDER_LIST_COLUMNS = [
   'alostaz_deposit_invoice_code',
   'alostaz_deposit_invoice_amount',
   'alostaz_deposit_sync_status',
+  'alostaz_measurement_invoice_id',
+  'alostaz_measurement_invoice_code',
+  'alostaz_measurement_invoice_amount',
+  'alostaz_measurement_sync_status',
   'alostaz_invoice_id',
   'alostaz_invoice_code',
   'alostaz_sync_status'
@@ -136,6 +142,8 @@ export interface Order {
   // أعمدة مستقلة (migration 29) - قيم boolean حقيقية من DB
   fabric_type?: string | null
   has_measurements: boolean
+  measurement_source?: 'yasmin_alsham' | 'external' | null
+  measurement_payment_method?: 'cash' | 'card' | null
   is_printed: boolean
   whatsapp_sent: boolean
   needs_review: boolean
@@ -215,6 +223,10 @@ export interface Order {
   alostaz_deposit_invoice_code?: string | null
   alostaz_deposit_invoice_amount?: number | null
   alostaz_deposit_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
+  alostaz_measurement_invoice_id?: number | null
+  alostaz_measurement_invoice_code?: string | null
+  alostaz_measurement_invoice_amount?: number | null
+  alostaz_measurement_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
   alostaz_invoice_id?: number | null
   alostaz_invoice_code?: string | null
   alostaz_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
@@ -358,6 +370,8 @@ export interface UpdateOrderData {
   measurements?: Record<string, any>
   // أعمدة مستقلة (migration 29)
   has_measurements?: boolean
+  measurement_source?: 'yasmin_alsham' | 'external' | null
+  measurement_payment_method?: 'cash' | 'card' | null
   is_printed?: boolean
   // تتبع التعديلات (migration 34)
   alteration_count?: number

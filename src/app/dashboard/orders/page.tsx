@@ -56,6 +56,8 @@ import {
 import PrintOrderModal from '@/components/PrintOrderModal'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
+import { sendInvoiceToAlostaz } from '@/lib/services/alostaz-client'
+import type { MeasurementSaveMetadata } from '@/types/measurements'
 
 const PAGE_SIZE = 50
 
@@ -629,8 +631,12 @@ function OrdersPageInner() {
   }
 
   // حفظ المقاسات
-  const handleSaveMeasurements = async (measurements: any) => {
-    if (!measurementsOrder) return
+  const handleSaveMeasurements = async (
+    measurements: any,
+    metadata?: MeasurementSaveMetadata
+  ) => {
+    if (!measurementsOrder) throw new Error('تعذّر تحديد الطلب المطلوب')
+    if (!metadata) throw new Error('يرجى اختيار نوع المقاس وطريقة الدفع المطلوبة')
 
     try {
       const shouldMarkHasMeasurements = hasMeasurementsData(measurements) || measurementsOrder.has_measurements === true
@@ -659,20 +665,51 @@ function OrdersPageInner() {
 
       const result = await updateOrder(measurementsOrder.id, {
         measurements: updatedMeasurements,
-        has_measurements: shouldMarkHasMeasurements
+        has_measurements: shouldMarkHasMeasurements,
+        measurement_source: metadata.source,
+        measurement_payment_method: metadata.paymentMethod,
       })
 
-      if (result.success) {
-        setMeasurementsSaveSuccess(true)
-        setTimeout(() => setMeasurementsSaveSuccess(false), 1200)
-        setShowMeasurementsModal(false)
-        setMeasurementsOrder(null)
-      } else {
-        setMeasurementsSaveError(result.error || t('measurements_save_error') || 'حدث خطأ أثناء حفظ المقاسات')
+      if (!result.success) {
+        throw new Error(result.error || t('measurements_save_error') || 'حدث خطأ أثناء حفظ المقاسات')
       }
+
+      if (metadata.source === 'yasmin_alsham' && metadata.paymentMethod === 'card') {
+        const invoiceResult = await sendInvoiceToAlostaz(
+          measurementsOrder.id,
+          { phase: 'measurement' }
+        )
+
+        if (!invoiceResult.success || invoiceResult.skipped) {
+          throw new Error(
+            `تم حفظ المقاسات، لكن تعذّر إرسال فاتورة أجرة المقاس: ${invoiceResult.error || 'استجابة غير متوقعة من المحاسبة'}`
+          )
+        }
+
+        if (invoiceResult.warning) {
+          toast(invoiceResult.warning, { icon: '⚠️', duration: 7000 })
+        } else if (invoiceResult.inProgress) {
+          toast('تم حفظ المقاسات وفاتورة أجرة المقاس قيد الإرسال', { icon: '⏳' })
+        } else if (invoiceResult.alreadySent) {
+          toast.success('تم حفظ المقاسات، وفاتورة أجرة المقاس مرسلة مسبقاً')
+        } else {
+          toast.success(
+            `تم حفظ المقاسات وإرسال فاتورة شبكة بقيمة 85 ر.س${invoiceResult.invoice_code ? ` — ${invoiceResult.invoice_code}` : ''}`
+          )
+        }
+      }
+
+      setMeasurementsSaveSuccess(true)
+      setTimeout(() => setMeasurementsSaveSuccess(false), 1200)
+      setShowMeasurementsModal(false)
+      setMeasurementsOrder(null)
     } catch (error) {
       console.error('Error saving measurements:', error)
-      setMeasurementsSaveError(t('measurements_save_error') || 'حدث خطأ أثناء حفظ المقاسات')
+      const message = error instanceof Error
+        ? error.message
+        : (t('measurements_save_error') || 'حدث خطأ أثناء حفظ المقاسات')
+      setMeasurementsSaveError(message)
+      throw new Error(message)
     }
   }
 
@@ -1898,6 +1935,15 @@ function OrdersPageInner() {
               onSave={handleSaveMeasurements}
               initialMeasurements={measurementsOrder.measurements || {}}
               orderId={measurementsOrder.id}
+              showMeasurementOptions
+              initialMeasurementSource={measurementsOrder.measurement_source || null}
+              initialMeasurementPaymentMethod={measurementsOrder.measurement_payment_method || null}
+              isMeasurementBillingLocked={Boolean(
+                measurementsOrder.alostaz_measurement_invoice_id ||
+                ['sending', 'sent', 'review_required'].includes(
+                  measurementsOrder.alostaz_measurement_sync_status
+                )
+              )}
             />
           )
         }

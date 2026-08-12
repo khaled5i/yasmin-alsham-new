@@ -16,6 +16,9 @@ import {
   ALOSTAZ_PARTNER_LIST_ID,
   ALOSTAZ_STOREHOUSE_ID,
   ALOSTAZ_SERVICE_PRODUCT_ID,
+  ALOSTAZ_MEASUREMENT_PRODUCT_ID,
+  ALOSTAZ_MEASUREMENT_FEE_SAR,
+  ALOSTAZ_MEASUREMENT_PRODUCT_NAME,
   ALOSTAZ_VAT_TAX_ID,
   ALOSTAZ_API_VERSION,
   ALOSTAZ_LOCALE,
@@ -205,7 +208,7 @@ function treasuryForPaymentMethod(method?: string | null): number {
 /**
  * إنشاء فاتورة مبيعات في الأستاذ لمرحلة دفع من طلب تفصيل.
  * - المبلغ الكامل والمدفوع يمثلان قيمة المرحلة المرسلة (عربون أو متبقٍ).
- * - منتج ثابت «أجرة تفصيل فستان»، بدون ضريبة.
+ * - منتج ثابت «أجرة تفصيل فستان»، بسعر شامل للضريبة.
  */
 export async function createInvoiceForOrder(
   order: AlostazOrderInput,
@@ -282,6 +285,78 @@ export async function createInvoiceForOrder(
   if (!created?.id) {
     throw new AlostazRequestError(
       'فشل إنشاء الفاتورة في الأستاذ (لم يُرجَع معرّف).',
+      true
+    )
+  }
+
+  return {
+    invoice_id: Number(created.id),
+    invoice_code: String(created.code || ''),
+    customer_id: customerId,
+    is_draft: isDraft,
+  }
+}
+
+/**
+ * إنشاء فاتورة أجرة المقاس عند الدفع بالشبكة.
+ * - الفرع: ياسمين الشام الأول.
+ * - المنتج: «أجرة مقاس».
+ * - المبلغ: 85 ر.س مدفوع بالكامل عبر الشبكة.
+ * - تاريخ الإصدار والاستحقاق: الوقت الحالي.
+ * - الضريبة شاملة داخل السعر.
+ */
+export async function createInvoiceForMeasurement(
+  order: Pick<AlostazOrderInput, 'order_number' | 'client_name' | 'client_phone'>
+): Promise<AlostazInvoiceResult> {
+  const customerId = await findOrCreateCustomer({
+    name: order.client_name,
+    phone: order.client_phone,
+  })
+
+  const nowIso = new Date().toISOString()
+  const invoiceStatus = ALOSTAZ_INVOICE_STATUS
+  const isDraft = invoiceStatus === 'draft'
+  const amountHalalas = toHalalas(ALOSTAZ_MEASUREMENT_FEE_SAR)
+
+  const body: Record<string, unknown> = {
+    variant: 'standard',
+    nature: 'sale',
+    type: 'invoice',
+    status: invoiceStatus,
+    issue_date: nowIso,
+    due_date: nowIso,
+    partner_id: customerId,
+    partner_order_code: order.order_number || undefined,
+    line_items: [
+      {
+        product_id: ALOSTAZ_MEASUREMENT_PRODUCT_ID,
+        storehouse_id: ALOSTAZ_STOREHOUSE_ID,
+        description: ALOSTAZ_MEASUREMENT_PRODUCT_NAME,
+        unit_quantity: ALOSTAZ_QUANTITY_SCALE,
+        unit_price: amountHalalas,
+        unit_content: 1,
+        ...(ALOSTAZ_VAT_TAX_ID ? { taxes: [{ id: ALOSTAZ_VAT_TAX_ID }] } : {}),
+      },
+    ],
+  }
+
+  if (!isDraft) {
+    body.payments = [
+      {
+        amount: amountHalalas,
+        treasury_id: ALOSTAZ_TREASURY_BANK,
+      },
+    ]
+  }
+
+  const created = await alostazFetch('/invoices', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+  if (!created?.id) {
+    throw new AlostazRequestError(
+      'فشل إنشاء فاتورة أجرة المقاس في الأستاذ (لم يُرجَع معرّف).',
       true
     )
   }
