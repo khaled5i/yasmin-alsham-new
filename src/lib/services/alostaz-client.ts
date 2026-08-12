@@ -23,14 +23,20 @@ export interface SendInvoiceResult {
   error?: string
 }
 
+export type TailoringInvoicePhase = 'deposit' | 'delivery' | 'manual'
+
 /**
- * إرسال فاتورة طلب مسلّم إلى الأستاذ عبر المسار الخادمي.
- * - الوضع الافتراضي (الزر اليدوي): يُرسِل الفاتورة كاملة (كل السعر) بغضّ النظر عن الكاش/الشبكة.
- * - الوضع التلقائي ({ auto: true }): يُرسِل «مبلغ الشبكة فقط»؛ فإن كان صفراً لا يُنشئ فاتورة (skipped).
+ * إرسال فاتورة تفصيل إلى الأستاذ عبر المسار الخادمي.
+ * - deposit: عربون الشبكة عند إنشاء الطلب الجديد.
+ * - delivery: شبكة الدفعة المتبقية فقط عند التسليم.
+ * - manual: المسار اليدوي للطلبات القديمة.
  */
 export async function sendInvoiceToAlostaz(
   orderId: string,
-  opts?: { auto?: boolean; mode?: 'both' | 'cash' | 'network' }
+  opts?: {
+    phase?: TailoringInvoicePhase
+    mode?: 'both' | 'cash' | 'network'
+  }
 ): Promise<SendInvoiceResult> {
   try {
     const { data: { session } } = await supabase.auth.getSession()
@@ -50,7 +56,11 @@ export async function sendInvoiceToAlostaz(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ orderId, auto: !!opts?.auto, mode: opts?.mode }),
+      body: JSON.stringify({
+        orderId,
+        phase: opts?.phase || 'manual',
+        mode: opts?.mode,
+      }),
       signal: controller.signal,
     }).finally(() => globalThis.clearTimeout(timeoutId))
 
@@ -69,14 +79,17 @@ export async function sendInvoiceToAlostaz(
       skipped: result?.data?.skipped,
       warning: result?.warning,
     }
-  } catch (err: any) {
-    if (err?.name === 'AbortError') {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
       return {
         success: false,
-        error: 'انتهت مهلة الاتصال بالمحاسبة؛ ستستمر طباعة الإيصال برقم الطلب المحلي',
+        error: 'انتهت مهلة الاتصال بالمحاسبة قبل تأكيد رقم الفاتورة',
       }
     }
-    return { success: false, error: err?.message || 'خطأ غير متوقع' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'خطأ غير متوقع',
+    }
   }
 }
 

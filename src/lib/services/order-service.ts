@@ -103,6 +103,11 @@ const ORDER_LIST_COLUMNS = [
   // إظهار التقييم للعامل (migration 44)
   'worker_rating_visible',
   // الربط مع الأستاذ للمحاسبة (migration 64)
+  'alostaz_billing_version',
+  'alostaz_deposit_invoice_id',
+  'alostaz_deposit_invoice_code',
+  'alostaz_deposit_invoice_amount',
+  'alostaz_deposit_sync_status',
   'alostaz_invoice_id',
   'alostaz_invoice_code',
   'alostaz_sync_status'
@@ -205,6 +210,11 @@ export interface Order {
   // إظهار التقييم للعامل (migration 44)
   worker_rating_visible?: boolean
   // الربط مع الأستاذ للمحاسبة (migration 64)
+  alostaz_billing_version?: number
+  alostaz_deposit_invoice_id?: number | null
+  alostaz_deposit_invoice_code?: string | null
+  alostaz_deposit_invoice_amount?: number | null
+  alostaz_deposit_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
   alostaz_invoice_id?: number | null
   alostaz_invoice_code?: string | null
   alostaz_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
@@ -239,6 +249,8 @@ export interface CreateOrderData {
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
+  /** الإصدار 2 يفعّل فاتورة عربون الشبكة وفاتورة شبكة المتبقي بصورة مستقلة. */
+  alostaz_billing_version?: number
   pre_delivery_cash_amount?: number | null
   pre_delivery_network_amount?: number | null
   // فصل طريقة الدفع بين العربون والمتبقي (migration 67)
@@ -556,6 +568,9 @@ export const orderService = {
         paid_amount: orderData.paid_amount || 0,
         payment_status: orderData.payment_status || 'unpaid',
         payment_method: orderData.payment_method || 'cash',
+        // الطلبات المنشأة بعد هذا التعديل فقط تدخل دورة الفوترة المرحلية.
+        // القيمة الافتراضية في قاعدة البيانات 1 لحماية الطلبات القديمة والعملاء غير المحدّثين.
+        alostaz_billing_version: orderData.alostaz_billing_version ?? 2,
         pre_delivery_cash_amount: orderData.pre_delivery_cash_amount ?? null,
         pre_delivery_network_amount: orderData.pre_delivery_network_amount ?? null,
         // فصل طريقة الدفع (migration 67): العربون = ما دُفع عند الإنشاء بطريقة payment_method

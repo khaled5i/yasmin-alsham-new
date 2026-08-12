@@ -8,12 +8,10 @@ import {
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 
 /**
- * مسار خادمي لإرسال فاتورة طلب مسلّم إلى تطبيق الأستاذ للمحاسبة.
- * ─────────────────────────────────────────────────────────────
- * - التوكن السرّي (ALOSTAZ_API_TOKEN) يبقى هنا في الخادم ولا يصل للمتصفح.
- * - يتحقق أن المستخدم مدير (admin) قبل التنفيذ.
- * - يمنع الإرسال المكرر (idempotent) عبر عمود alostaz_invoice_id.
- * - يحدّث الطلب بمعرّف الفاتورة/العميل وحالة المزامنة.
+ * مسار خادمي لفواتير التفصيل المرحلية في تطبيق الأستاذ.
+ * - deposit: عربون الشبكة عند إنشاء طلب جديد من الإصدار المحاسبي 2.
+ * - delivery: شبكة الدفعة المتبقية فقط عند التسليم.
+ * - manual: المسار اليدوي المحفوظ للطلبات القديمة (الإصدار 1).
  */
 
 // عميل Admin (Service Role) لقراءة/تحديث الطلبات بتجاوز RLS
@@ -23,47 +21,75 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+type InvoicePhase = 'deposit' | 'delivery' | 'manual'
+
+const PHASES = new Set<InvoicePhase>(['deposit', 'delivery', 'manual'])
+
+const PHASE_FIELDS = {
+  deposit: {
+    invoiceId: 'alostaz_deposit_invoice_id',
+    invoiceCode: 'alostaz_deposit_invoice_code',
+    syncStatus: 'alostaz_deposit_sync_status',
+    syncToken: 'alostaz_deposit_sync_token',
+    syncError: 'alostaz_deposit_sync_error',
+    syncedAt: 'alostaz_deposit_synced_at',
+  },
+  delivery: {
+    invoiceId: 'alostaz_invoice_id',
+    invoiceCode: 'alostaz_invoice_code',
+    syncStatus: 'alostaz_sync_status',
+    syncToken: 'alostaz_sync_token',
+    syncError: 'alostaz_sync_error',
+    syncedAt: 'alostaz_synced_at',
+  },
+} as const
+
 export async function POST(request: NextRequest) {
   try {
-    // 1) التحقق من الجلسة والصلاحية (مدير فقط)
     const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json({ error: 'غير مصرّح - لا يوجد ترويسة مصادقة' }, { status: 401 })
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'غير مصرّح - لا يوجد توكن صالح' }, { status: 401 })
     }
-    const token = authHeader.replace('Bearer ', '')
 
-    const supabase = createClient(
+    const token = authHeader.slice('Bearer '.length)
+    const authClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    const { data: { user }, error: authError } = await authClient.auth.getUser(token)
     if (authError || !user) {
       return NextResponse.json({ error: 'غير مصرّح - توكن غير صالح' }, { status: 401 })
     }
 
-    const { data: userData } = await supabase
+    const { data: userData, error: roleError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single()
-    if (userData?.role !== 'admin') {
+    if (roleError || userData?.role !== 'admin') {
       return NextResponse.json({ error: 'غير مسموح - للمدير فقط' }, { status: 403 })
     }
 
-    // 2) قراءة معرّف الطلب + وضع الإرسال
-    //    auto=true → «مبلغ الشبكة فقط» (الإرسال التلقائي عند التسليم)
-    //    auto=false → الزر اليدوي، ويحدّد mode ما يُرسَل:
-    //       'both' (افتراضي) = كاش + شبكة | 'cash' = الكاش فقط | 'network' = الشبكة فقط
-    const { orderId, auto, mode } = await request.json()
+    const payload = await request.json()
+    const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : ''
+    // توافق آمن مع واجهة قديمة قد تبقى مفتوحة أثناء النشر: auto=true يُعامل
+    // كتسليم، وبذلك تُستبعد الطلبات القديمة بدلاً من إرسالها كفاتورة يدوية كاملة.
+    const requestedPhase = String(
+      payload?.phase || (payload?.auto === true ? 'delivery' : 'manual')
+    ) as InvoicePhase
+    const mode = payload?.mode as 'both' | 'cash' | 'network' | undefined
+
     if (!orderId) {
       return NextResponse.json({ error: 'orderId مطلوب' }, { status: 400 })
     }
+    if (!PHASES.has(requestedPhase)) {
+      return NextResponse.json({ error: 'مرحلة الفاتورة غير صالحة' }, { status: 400 })
+    }
 
-    // 3) جلب الطلب (يشمل حقول فصل الدفع لحساب مبلغ الشبكة — migration 67)
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select(
-        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, alostaz_invoice_id, alostaz_invoice_code'
+        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, alostaz_billing_version, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code, alostaz_deposit_sync_status, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status'
       )
       .eq('id', orderId)
       .single()
@@ -72,74 +98,90 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'الطلب غير موجود' }, { status: 404 })
     }
 
-    // 4) منع الإرسال المكرر
-    if (order.alostaz_invoice_id) {
+    const stagedBilling = Number(order.alostaz_billing_version) >= 2
+    if (requestedPhase !== 'manual' && !stagedBilling) {
+      return NextResponse.json({
+        data: { skipped: true, reason: 'legacy-order' },
+        error: null,
+      })
+    }
+    if (requestedPhase === 'manual' && stagedBilling) {
+      return NextResponse.json(
+        { error: 'الطلبات الجديدة تُرسل بمرحلة العربون أو مرحلة التسليم فقط' },
+        { status: 400 }
+      )
+    }
+    if (requestedPhase === 'delivery' && order.status !== 'delivered') {
+      return NextResponse.json({ error: 'لا يمكن إرسال دفعة التسليم قبل تسليم الطلب' }, { status: 409 })
+    }
+
+    const effectivePhase = requestedPhase === 'deposit' ? 'deposit' : 'delivery'
+    const fields = PHASE_FIELDS[effectivePhase]
+    const existingInvoiceId = order[fields.invoiceId]
+    const existingInvoiceCode = order[fields.invoiceCode]
+
+    if (existingInvoiceId) {
       return NextResponse.json({
         data: {
           alreadySent: true,
-          invoice_id: order.alostaz_invoice_id,
-          invoice_code: order.alostaz_invoice_code,
+          phase: requestedPhase,
+          invoice_id: existingInvoiceId,
+          invoice_code: existingInvoiceCode,
         },
         error: null,
       })
     }
 
-    // 4.5) حساب قيمة الفاتورة والدفعات حسب الوضع.
-    const breakdown = computePaymentBreakdown(order as any)
+    const breakdown = computePaymentBreakdown(order)
     const cash = breakdown.cashTotal
     const net = breakdown.networkTotal
-
-    // الوضع التلقائي: مبلغ الشبكة فقط. إن كان صفراً (كل الدفعات كاش) لا فاتورة.
-    if (auto && net <= 0) {
-      return NextResponse.json({
-        data: { skipped: true, reason: 'no-network' },
-        error: null,
-      })
-    }
-
-    // بناء قائمة الدفعات (كاش لخزنة النقد، شبكة لخزنة البنك) حسب الوضع/الاختيار.
     let invoicePayments: Array<{ amount: number; method: 'cash' | 'card' }>
-    if (auto) {
-      invoicePayments = [{ amount: net, method: 'card' }]
+
+    if (requestedPhase === 'deposit') {
+      invoicePayments = [{ amount: breakdown.preDeliveryNetwork, method: 'card' }]
+    } else if (requestedPhase === 'delivery') {
+      invoicePayments = [{ amount: breakdown.remainingNetwork, method: 'card' }]
     } else if (mode === 'cash') {
       invoicePayments = [{ amount: cash, method: 'cash' }]
     } else if (mode === 'network') {
       invoicePayments = [{ amount: net, method: 'card' }]
     } else {
-      // 'both' (افتراضي): كاش + شبكة
       invoicePayments = [
         { amount: cash, method: 'cash' },
         { amount: net, method: 'card' },
       ]
     }
-    invoicePayments = invoicePayments.filter((p) => p.amount > 0)
-    const invoiceAmount = invoicePayments.reduce((s, p) => s + p.amount, 0)
 
-    if (invoiceAmount <= 0) {
+    invoicePayments = invoicePayments.filter((payment) => payment.amount >= 0.005)
+    const invoiceAmount = invoicePayments.reduce((sum, payment) => sum + payment.amount, 0)
+
+    if (invoiceAmount < 0.005 && requestedPhase !== 'manual') {
+      return NextResponse.json({
+        data: { skipped: true, reason: 'no-network', phase: requestedPhase },
+        error: null,
+      })
+    }
+    if (invoiceAmount < 0.005) {
       return NextResponse.json(
         { error: 'لا يوجد مبلغ مدفوع (كاش/شبكة) لإرساله لهذا الطلب' },
         { status: 400 }
       )
     }
 
-    // 5) حجز الإرسال بشكل ذري قبل الاتصال بالأستاذ.
-    // لا يكفي فحص alostaz_invoice_id أعلاه: قد يقرأ طلبان متزامنان القيمة NULL.
-    // التحديث الشرطي أدناه يُقفل صف الطلب، ولذلك يفوز طلب واحد فقط بالحجز.
-    // Keep this as a count-only PATCH. PostgREST v14 miscompiles this OR filter
-    // when UPDATE is chained with select()/return=representation.
+    // Count-only conditional PATCH: only one concurrent request can claim this phase.
     const syncAttemptToken = randomUUID()
     const syncStartedAt = new Date().toISOString()
     const { count: claimedOrderCount, error: claimError } = await supabaseAdmin
       .from('orders')
       .update({
-        alostaz_sync_status: 'sending',
-        alostaz_sync_token: syncAttemptToken,
-        alostaz_sync_error: null,
-        alostaz_synced_at: syncStartedAt,
+        [fields.syncStatus]: 'sending',
+        [fields.syncToken]: syncAttemptToken,
+        [fields.syncError]: null,
+        [fields.syncedAt]: syncStartedAt,
       }, { count: 'exact' })
       .eq('id', orderId)
-      .is('alostaz_invoice_id', null)
-      .or('alostaz_sync_status.is.null,alostaz_sync_status.eq.failed')
+      .is(fields.invoiceId, null)
+      .or(`${fields.syncStatus}.is.null,${fields.syncStatus}.eq.failed`)
 
     if (claimError) {
       return NextResponse.json(
@@ -151,45 +193,35 @@ export async function POST(request: NextRequest) {
     if (claimedOrderCount !== 1) {
       const { data: latestOrder, error: latestError } = await supabaseAdmin
         .from('orders')
-        .select('alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status')
+        .select(`${fields.invoiceId}, ${fields.invoiceCode}, ${fields.syncStatus}`)
         .eq('id', orderId)
         .single()
 
       if (latestError || !latestOrder) {
-        return NextResponse.json(
-          { error: 'تعذّر التحقق من حالة إرسال الفاتورة' },
-          { status: 500 }
-        )
+        return NextResponse.json({ error: 'تعذّر التحقق من حالة إرسال الفاتورة' }, { status: 500 })
       }
-
-      if (latestOrder.alostaz_invoice_id) {
+      const latest = latestOrder as Record<string, unknown>
+      if (latest[fields.invoiceId]) {
         return NextResponse.json({
           data: {
             alreadySent: true,
-            invoice_id: latestOrder.alostaz_invoice_id,
-            invoice_code: latestOrder.alostaz_invoice_code,
+            phase: requestedPhase,
+            invoice_id: latest[fields.invoiceId],
+            invoice_code: latest[fields.invoiceCode],
           },
           error: null,
         })
       }
-
-      if (latestOrder.alostaz_sync_status === 'review_required') {
+      if (latest[fields.syncStatus] === 'review_required') {
         return NextResponse.json(
-          {
-            error:
-              'توقّفت إعادة الإرسال لحماية الطلب من فاتورة مكررة. يجب مراجعة تطبيق الأستاذ أولاً.',
-          },
+          { error: 'توقّفت إعادة الإرسال لحماية الطلب من فاتورة مكررة. يجب مراجعة تطبيق الأستاذ أولاً.' },
           { status: 409 }
         )
       }
 
-      return NextResponse.json({
-        data: { inProgress: true },
-        error: null,
-      })
+      return NextResponse.json({ data: { inProgress: true, phase: requestedPhase }, error: null })
     }
 
-    // 6) إنشاء فاتورة حقيقية صادرة في الأستاذ مع تسجيل الدفعات المقسّمة.
     let result
     try {
       result = await createInvoiceForOrder(
@@ -205,21 +237,19 @@ export async function POST(request: NextRequest) {
         },
         { payments: invoicePayments }
       )
-    } catch (err: any) {
-      const outcomeUnknown = isAlostazInvoiceOutcomeUnknown(err)
-      const errorMessage = err?.message || 'فشل إرسال الفاتورة للأستاذ'
+    } catch (error: unknown) {
+      const outcomeUnknown = isAlostazInvoiceOutcomeUnknown(error)
+      const errorMessage = error instanceof Error ? error.message : 'فشل إرسال الفاتورة للأستاذ'
       const { error: failureUpdateError } = await supabaseAdmin
         .from('orders')
         .update({
-          // عند غموض نتيجة POST نمنع إعادة المحاولة؛ فقد تكون الفاتورة أُنشئت
-          // في الأستاذ رغم انقطاع الرد. أخطاء الرفض المؤكدة فقط قابلة للمحاولة.
-          alostaz_sync_status: outcomeUnknown ? 'review_required' : 'failed',
-          alostaz_sync_error: errorMessage,
-          alostaz_synced_at: new Date().toISOString(),
+          [fields.syncStatus]: outcomeUnknown ? 'review_required' : 'failed',
+          [fields.syncError]: errorMessage,
+          [fields.syncedAt]: new Date().toISOString(),
         })
         .eq('id', orderId)
-        .eq('alostaz_sync_token', syncAttemptToken)
-        .eq('alostaz_sync_status', 'sending')
+        .eq(fields.syncToken, syncAttemptToken)
+        .eq(fields.syncStatus, 'sending')
 
       if (failureUpdateError) {
         console.error('Failed to persist Alostaz failure state:', failureUpdateError)
@@ -235,23 +265,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 7) حفظ النتيجة محلياً. إعادة هذا التحديث آمنة لأنها تستخدم رمز الحجز
-    // نفسه، ولذلك نحاول حتى 3 مرات لتقليل احتمال بقاء فاتورة ناجحة بلا مرجع.
     let updateError: { message: string } | null = null
     let finalized = false
     for (let attempt = 0; attempt < 3 && !finalized; attempt++) {
+      const finalUpdates: Record<string, unknown> = {
+        alostaz_customer_id: result.customer_id,
+        [fields.invoiceId]: result.invoice_id,
+        [fields.invoiceCode]: result.invoice_code,
+        [fields.syncStatus]: 'sent',
+        [fields.syncError]: null,
+        [fields.syncedAt]: new Date().toISOString(),
+      }
+      if (requestedPhase === 'deposit') {
+        finalUpdates.alostaz_deposit_invoice_amount = invoiceAmount
+      }
+
       const { data: finalizedOrder, error } = await supabaseAdmin
         .from('orders')
-        .update({
-          alostaz_customer_id: result.customer_id,
-          alostaz_invoice_id: result.invoice_id,
-          alostaz_invoice_code: result.invoice_code,
-          alostaz_sync_status: 'sent',
-          alostaz_sync_error: null,
-          alostaz_synced_at: new Date().toISOString(),
-        })
+        .update(finalUpdates)
         .eq('id', orderId)
-        .eq('alostaz_sync_token', syncAttemptToken)
+        .eq(fields.syncToken, syncAttemptToken)
         .select('id')
         .maybeSingle()
 
@@ -260,10 +293,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (updateError || !finalized) {
-      // الفاتورة أُنشئت في الأستاذ لكن فشل حفظ المرجع محلياً — نُبلّغ بذلك
       return NextResponse.json(
         {
-          data: { invoice_id: result.invoice_id, invoice_code: result.invoice_code, draft: result.is_draft },
+          data: {
+            phase: requestedPhase,
+            invoice_id: result.invoice_id,
+            invoice_code: result.invoice_code,
+            draft: result.is_draft,
+          },
           warning:
             'أُنشئت الفاتورة في الأستاذ لكن تعذّر حفظ المرجع محلياً. أُبقي حجز الحماية فعالاً لمنع إعادة إرسالها.' +
             (updateError?.message ? ' ' + updateError.message : ''),
@@ -275,6 +312,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       data: {
+        phase: requestedPhase,
         invoice_id: result.invoice_id,
         invoice_code: result.invoice_code,
         customer_id: result.customer_id,
@@ -282,8 +320,9 @@ export async function POST(request: NextRequest) {
       },
       error: null,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ send-invoice error:', error)
-    return NextResponse.json({ error: error?.message || 'حدث خطأ غير متوقع' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'حدث خطأ غير متوقع'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

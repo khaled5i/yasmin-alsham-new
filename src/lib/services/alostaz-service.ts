@@ -203,8 +203,8 @@ function treasuryForPaymentMethod(method?: string | null): number {
 }
 
 /**
- * إنشاء فاتورة مبيعات في الأستاذ من طلب مسلّم.
- * - المبلغ الكامل = price، والمدفوع = paid_amount (العربون).
+ * إنشاء فاتورة مبيعات في الأستاذ لمرحلة دفع من طلب تفصيل.
+ * - المبلغ الكامل والمدفوع يمثلان قيمة المرحلة المرسلة (عربون أو متبقٍ).
  * - منتج ثابت «أجرة تفصيل فستان»، بدون ضريبة.
  */
 export async function createInvoiceForOrder(

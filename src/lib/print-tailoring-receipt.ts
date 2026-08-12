@@ -25,7 +25,9 @@ export interface TailoringReceiptPayload {
 export interface TailoringReceiptOrder extends OrderPaymentInput {
   id?: string | null
   order_number?: string | null
+  alostaz_billing_version?: number | null
   alostaz_invoice_code?: string | null
+  alostaz_deposit_invoice_code?: string | null
   client_name?: string | null
   description?: string | null
   delivery_date?: string | null
@@ -113,8 +115,15 @@ export function createTailoringReceiptPayload(
   const deliveredAt = String(order?.delivery_date || new Date().toISOString())
   const fullyNetwork = isFullyNetworkPaid(order)
   const accountingCode = String(alostazInvoiceCode || order?.alostaz_invoice_code || '').trim()
-  const useAccountingCode = fullyNetwork && accountingCode.length > 0
   const breakdown = computePaymentBreakdown(order)
+  // عند تقسيم الدفع الكامل بالشبكة بين العربون والمتبقي توجد فاتورتان
+  // محاسبيتان؛ لذلك لا ننسب إيصال إجمالي الطلب إلى رقم إحداهما وحدها.
+  const hasMultipleAccountingInvoices =
+    Number(order?.alostaz_billing_version) >= 2 &&
+    breakdown.preDeliveryNetwork >= 0.005 &&
+    breakdown.remainingNetwork >= 0.005
+  const useAccountingCode =
+    fullyNetwork && accountingCode.length > 0 && !hasMultipleAccountingInvoices
 
   return {
     order_id: String(order?.id || ''),
@@ -136,20 +145,29 @@ export function createTailoringReceiptPayload(
 }
 
 /**
- * يبني فاتورة الطلب المبدئية عند التسجيل دون الرجوع إلى نظام المحاسبة.
- * رقم الفاتورة يساوي رقم الطلب حرفياً، وتفصيل الكاش/الشبكة مأخوذ من دفعة العربون.
+ * يبني فاتورة الطلب المبدئية عند التسجيل.
+ * عند دفع العربون بالشبكة يُستخدم رقم فاتورة الأستاذ؛ أما الكاش فيبقى برقم الطلب المحلي.
  */
 export function createPreliminaryTailoringReceiptPayload(
-  order: TailoringReceiptOrder
+  order: TailoringReceiptOrder,
+  alostazInvoiceCode?: string | null
 ): TailoringReceiptPayload {
   const orderNumber = String(order?.order_number || order?.id || '')
   const breakdown = computePaymentBreakdown(order)
+  const accountingCode = String(
+    alostazInvoiceCode || order?.alostaz_deposit_invoice_code || ''
+  ).trim()
+  const hasNetworkDeposit = breakdown.preDeliveryNetwork >= 0.005
+
+  if (hasNetworkDeposit && !accountingCode) {
+    throw new Error('لا يمكن طباعة فاتورة عربون شبكة قبل استلام رقمها من برنامج الأستاذ')
+  }
 
   return {
     order_id: String(order?.id || ''),
     order_number: orderNumber,
-    invoice_code: orderNumber,
-    invoice_code_source: 'local',
+    invoice_code: hasNetworkDeposit ? accountingCode : orderNumber,
+    invoice_code_source: hasNetworkDeposit ? 'alostaz' : 'local',
     receipt_type: 'preliminary',
     customer_name: String(order?.client_name || 'عميل'),
     item_description: 'أجرة تفصيل فستان',

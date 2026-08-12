@@ -55,6 +55,14 @@ export interface PaymentBreakdown {
   depositAmount: number
   /** مقدار المتبقي المُحصَّل عند التسليم */
   remainingCollected: number
+  /** الكاش المحصّل قبل التسليم. */
+  preDeliveryCash: number
+  /** الشبكة المحصّلة قبل التسليم. */
+  preDeliveryNetwork: number
+  /** الكاش المحصّل من الدفعة المتبقية عند التسليم. */
+  remainingCash: number
+  /** الشبكة المحصّلة من الدفعة المتبقية عند التسليم. */
+  remainingNetwork: number
   /** إجمالي ما دُفع نقداً (كاش) */
   cashTotal: number
   /** إجمالي ما دُفع عبر الشبكة */
@@ -86,20 +94,29 @@ export function computePaymentBreakdown(order: OrderPaymentInput): PaymentBreakd
   const explicitRemainingCash = Math.max(0, Number(order?.remaining_cash_amount) || 0)
   const explicitRemainingNetwork = Math.max(0, Number(order?.remaining_network_amount) || 0)
 
-  const networkTotal =
-    (hasExplicitPreDeliveryAmounts
-      ? explicitPreDeliveryNetwork
-      : depositIsNet ? depositAmount : 0) +
-    (hasExplicitRemainingSplit
-      ? explicitRemainingNetwork
-      : remainingIsNet ? remainingCollected : 0)
-  const cashTotal =
-    (hasExplicitPreDeliveryAmounts
-      ? explicitPreDeliveryCash
-      : depositIsNet ? 0 : depositAmount) +
-    (hasExplicitRemainingSplit
-      ? explicitRemainingCash
-      : remainingIsNet ? 0 : remainingCollected)
+  const preDeliveryNetwork = hasExplicitPreDeliveryAmounts
+    ? explicitPreDeliveryNetwork
+    : depositIsNet ? depositAmount : 0
+  const preDeliveryCash = hasExplicitPreDeliveryAmounts
+    ? explicitPreDeliveryCash
+    : depositIsNet ? 0 : depositAmount
+  const remainingNetwork = hasExplicitRemainingSplit
+    ? explicitRemainingNetwork
+    : remainingIsNet ? remainingCollected : 0
+  const remainingCash = hasExplicitRemainingSplit
+    ? explicitRemainingCash
+    : remainingIsNet ? 0 : remainingCollected
+  const networkTotal = preDeliveryNetwork + remainingNetwork
+  const cashTotal = preDeliveryCash + remainingCash
 
-  return { depositAmount, remainingCollected, cashTotal, networkTotal }
+  return {
+    depositAmount,
+    remainingCollected,
+    preDeliveryCash,
+    preDeliveryNetwork,
+    remainingCash,
+    remainingNetwork,
+    cashTotal,
+    networkTotal,
+  }
 }

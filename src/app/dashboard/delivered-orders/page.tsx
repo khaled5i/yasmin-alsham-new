@@ -144,6 +144,10 @@ export default function DeliveredOrdersPage() {
   const handleSendToAccounting = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation()
     if (sendingId) return
+    if (Number(order.alostaz_billing_version) >= 2) {
+      await performManualSend(order, 'network')
+      return
+    }
     const bd = computePaymentBreakdown(order)
     if (bd.cashTotal > 0 && bd.networkTotal > 0) {
       setSendChoiceOrder(order)
@@ -157,12 +161,20 @@ export default function DeliveredOrdersPage() {
     setSendChoiceOrder(null)
     if (sendingId) return
     setSendingId(order.id)
-    const res = await sendInvoiceToAlostaz(order.id, { mode })
+    const stagedBilling = Number(order.alostaz_billing_version) >= 2
+    const res = await sendInvoiceToAlostaz(
+      order.id,
+      stagedBilling ? { phase: 'delivery' } : { phase: 'manual', mode }
+    )
     setSendingId(null)
 
     if (res.success) {
       if (res.inProgress) {
         toast('الفاتورة قيد الإرسال بالفعل؛ تم منع محاولة مكررة.', { icon: '🛡️' })
+        return
+      }
+      if (res.skipped) {
+        toast('لا توجد دفعة شبكة متبقية لإرسالها لهذا الطلب', { icon: 'ℹ️' })
         return
       }
       // يُعلَّم الطلب كمُرسَل حتى في وضع المسودة (منع إعادة الإرسال)
@@ -192,13 +204,18 @@ export default function DeliveredOrdersPage() {
       setAutoSend(!next) // تراجع عند الفشل
       toast.error('تعذّر تحديث الإعداد: ' + error)
     } else {
-      toast.success(next ? 'تم تفعيل الإرسال التلقائي لكل الفواتير' : 'تم إيقاف الإرسال التلقائي')
+      toast.success(next ? 'تم تفعيل إرسال شبكة المتبقي للطلبات الجديدة' : 'تم إيقاف الإرسال التلقائي')
     }
   }
 
   // هل أُرسِل الطلب للمحاسبة؟ (من قاعدة البيانات أو من الحالة المحلية)
-  const isOrderSent = (order: Order) => !!order.alostaz_invoice_id || !!sentMap[order.id]
-  const getSentCode = (order: Order) => order.alostaz_invoice_code || sentMap[order.id]?.code
+  const isOrderSent = (order: Order) => {
+    if (order.alostaz_invoice_id || sentMap[order.id]) return true
+    if (Number(order.alostaz_billing_version) < 2 || !order.alostaz_deposit_invoice_id) return false
+    return computePaymentBreakdown(order).remainingNetwork < 0.005
+  }
+  const getSentCode = (order: Order) =>
+    order.alostaz_invoice_code || order.alostaz_deposit_invoice_code || sentMap[order.id]?.code
 
   // إعادة طباعة إيصال الطلب بنفس قواعد الطباعة التلقائية، دون تغيير بيانات الطلب.
   const handlePrintReceipt = async (order: Order, event: React.MouseEvent) => {
@@ -465,7 +482,7 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
               </div>
               <div>
                 <p className="font-semibold text-gray-800 text-sm">الإرسال التلقائي للمحاسبة (الأستاذ)</p>
-                <p className="text-xs text-gray-500">عند التفعيل تُرسَل فاتورة كل طلب تلقائياً بمجرد تسليمه</p>
+                <p className="text-xs text-gray-500">عند التفعيل تُرسل شبكة الدفعة المتبقية للطلبات الجديدة عند التسليم</p>
               </div>
             </div>
             <button

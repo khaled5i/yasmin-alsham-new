@@ -3,9 +3,9 @@
  * ─────────────────────────────────────────────────────────────
  * الغرض من التوحيد:
  *   • بناء تحديثات التسليم بشكل متّسق (لقطة العربون + طريقة دفع المتبقي).
- *   • الإرسال التلقائي «مبلغ الشبكة فقط» للمحاسبة (الأستاذ) من أي مكان في الموقع.
+ *   • إرسال شبكة الدفعة المتبقية فقط للمحاسبة للطلبات الجديدة من أي مكان في الموقع.
  *
- * لا يُرسِل الزرُّ اليدوي (فوق كل طلب) عبر هذا المسار — يبقى يُرسل الفاتورة كاملة.
+ * الزر اليدوي للطلبات القديمة يبقى مستقلاً، أما الجديدة فيرسل شبكة المتبقي فقط.
  */
 
 import toast from 'react-hot-toast'
@@ -16,9 +16,10 @@ import {
   type TailoringReceiptOrder,
 } from '@/lib/print-tailoring-receipt'
 import { dispatchTailoringReceiptPrint } from './tailoring-receipt-printer'
-import type {
-  RemainingPaymentDetails,
-  RemainingPaymentMethod,
+import {
+  computePaymentBreakdown,
+  type RemainingPaymentDetails,
+  type RemainingPaymentMethod,
 } from '@/lib/payment-breakdown'
 
 export interface DeliveryUpdateOptions {
@@ -29,6 +30,8 @@ export interface DeliveryUpdateOptions {
 }
 
 interface DeliveryOrder extends TailoringReceiptOrder {
+  alostaz_billing_version?: number | null
+  alostaz_deposit_invoice_code?: string | null
   alostaz_invoice_id?: number | null
 }
 
@@ -136,7 +139,17 @@ async function printDeliveredOrderReceipt(
       icon: '🧾',
     })
 
-    if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
+    const breakdown = computePaymentBreakdown(order)
+    const intentionallyLocal =
+      Number(order.alostaz_billing_version) >= 2 &&
+      breakdown.preDeliveryNetwork >= 0.005 &&
+      breakdown.remainingNetwork >= 0.005
+
+    if (
+      isFullyNetworkPaid(order) &&
+      receipt.invoice_code_source !== 'alostaz' &&
+      !intentionallyLocal
+    ) {
       toast('تعذّر جلب رقم فاتورة الأستاذ؛ أُرسل رقم محلي مرتبط بالطلب إلى الطباعة.', {
         icon: '⚠️',
         duration: 5000,
@@ -149,9 +162,10 @@ async function printDeliveredOrderReceipt(
 }
 
 /**
- * إرسال «مبلغ الشبكة فقط» تلقائياً إلى المحاسبة بعد التسليم (إن كان الإرسال التلقائي مفعّلاً).
- * - للمدير فقط، وللطلبات غير المُرسَلة مسبقاً.
- * - إن كان مبلغ الشبكة صفراً (كل الدفعات كاش) لا تُنشأ فاتورة ولا تظهر رسالة.
+ * إرسال «شبكة الدفعة المتبقية فقط» تلقائياً بعد التسليم (إن كان الإرسال التلقائي مفعّلاً).
+ * - للمدير فقط، وللطلبات الجديدة ذات الإصدار المحاسبي 2.
+ * - الطلبات القديمة لا تمر بهذا المسار إطلاقاً وتبقى للمعالجة اليدوية.
+ * - إن كانت شبكة المتبقي صفراً لا تُنشأ فاتورة ولا تظهر رسالة.
  * - صامت عند الفشل: لا يُفشل التسليم بسبب المحاسبة.
  *
  * يُمرَّر الطلب بعد دمج تحديثات التسليم كي يعكس paid_amount/طريقة المتبقي الجديدة.
@@ -159,8 +173,12 @@ async function printDeliveredOrderReceipt(
 export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined, userRole?: string): Promise<void> {
   if (!order?.id) return
 
-  let accountingInvoiceCode = String(order.alostaz_invoice_code || '').trim()
+  let accountingInvoiceCode = String(
+    order.alostaz_invoice_code || order.alostaz_deposit_invoice_code || ''
+  ).trim()
   const fullyNetworkPaid = isFullyNetworkPaid(order)
+  const stagedBilling = Number(order.alostaz_billing_version) >= 2
+  const remainingNetwork = computePaymentBreakdown(order).remainingNetwork
 
   // وجود أي كاش يعني أن رقم الإيصال محلي، لذلك لا نؤخر الطباعة وفتح الدرج
   // بانتظار اتصال المحاسبة. هذا يحافظ أيضاً على اتصال جسر أندرويد الذي جرى
@@ -169,13 +187,18 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
     await printDeliveredOrderReceipt(order, accountingInvoiceCode)
   }
 
-  // نحافظ على السلوك المحاسبي الحالي (مبلغ الشبكة فقط، وللمدير عند تفعيل الإرسال).
-  // عند الدفع شبكة بالكامل ننتظر النتيجة هنا كي يحمل الإيصال نفس رقم فاتورة الأستاذ.
-  if (userRole === 'admin' && !order.alostaz_invoice_id) {
+  // للطلبات الجديدة فقط: نرسل شبكة المتبقي دون إعادة عربون الشبكة الذي أُرسل عند الإنشاء.
+  // عند الدفع شبكة بالكامل ننتظر النتيجة هنا كي يحمل الإيصال رقم فاتورة الأستاذ المناسب.
+  if (
+    userRole === 'admin' &&
+    stagedBilling &&
+    remainingNetwork >= 0.005 &&
+    !order.alostaz_invoice_id
+  ) {
     try {
       const enabled = await getAutoSendEnabled()
       if (enabled) {
-        const res = await sendInvoiceToAlostaz(order.id, { auto: true })
+        const res = await sendInvoiceToAlostaz(order.id, { phase: 'delivery' })
         accountingInvoiceCode = String(res.invoice_code || accountingInvoiceCode).trim()
 
         if (res.success && res.inProgress) {
@@ -187,7 +210,7 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
           )
         } else if (res.success && !res.alreadySent && !res.skipped) {
           toast.success(
-            `تم إرسال مبلغ الشبكة للمحاسبة تلقائياً${res.invoice_code ? ' — ' + res.invoice_code : ''}`
+            `تم إرسال شبكة الدفعة المتبقية للمحاسبة تلقائياً${res.invoice_code ? ' — ' + res.invoice_code : ''}`
           )
         } else if (!res.success) {
           toast.error('تعذّر الإرسال التلقائي للمحاسبة: ' + (res.error || ''))
