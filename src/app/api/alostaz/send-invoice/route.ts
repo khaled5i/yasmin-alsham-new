@@ -11,7 +11,7 @@ import { ALOSTAZ_MEASUREMENT_FEE_SAR } from '@/lib/alostaz-config'
 
 /**
  * مسار خادمي لفواتير التفصيل المرحلية في تطبيق الأستاذ.
- * - deposit: عربون الشبكة عند إنشاء طلب جديد من الإصدار المحاسبي 2.
+ * - deposit: عربون الشبكة عند إنشاء الطلب، وأي دفعة شبكة إضافية قبل التسليم.
  * - delivery: شبكة الدفعة المتبقية فقط عند التسليم.
  * - manual: المسار اليدوي المحفوظ للطلبات القديمة (الإصدار 1).
  * - measurement: أجرة مقاس ياسمين الشام المدفوعة بالشبكة.
@@ -89,6 +89,11 @@ export async function POST(request: NextRequest) {
       payload?.phase || (payload?.auto === true ? 'delivery' : 'manual')
     ) as InvoicePhase
     const mode = payload?.mode as 'both' | 'cash' | 'network' | undefined
+    const hasRequestedPaymentAmount = payload?.paymentAmount !== undefined
+    const parsedPaymentAmount = Number(payload?.paymentAmount)
+    const requestedPaymentAmount = hasRequestedPaymentAmount && Number.isFinite(parsedPaymentAmount)
+      ? Math.round((parsedPaymentAmount + Number.EPSILON) * 100) / 100
+      : undefined
 
     if (!orderId) {
       return NextResponse.json({ error: 'orderId مطلوب' }, { status: 400 })
@@ -96,11 +101,17 @@ export async function POST(request: NextRequest) {
     if (!PHASES.has(requestedPhase)) {
       return NextResponse.json({ error: 'مرحلة الفاتورة غير صالحة' }, { status: 400 })
     }
+    if (hasRequestedPaymentAmount && (requestedPaymentAmount == null || requestedPaymentAmount < 0.005)) {
+      return NextResponse.json({ error: 'مبلغ الدفعة الجديدة غير صالح' }, { status: 400 })
+    }
+    if (requestedPaymentAmount != null && requestedPhase !== 'deposit') {
+      return NextResponse.json({ error: 'مبلغ الدفعة الجديدة متاح لمرحلة العربون فقط' }, { status: 400 })
+    }
 
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select(
-        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, has_measurements, measurement_source, measurement_payment_method, alostaz_billing_version, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code, alostaz_deposit_sync_status, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status, alostaz_measurement_invoice_id, alostaz_measurement_invoice_code, alostaz_measurement_sync_status'
+        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, has_measurements, measurement_source, measurement_payment_method, alostaz_billing_version, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code, alostaz_deposit_invoice_amount, alostaz_deposit_sync_status, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status, alostaz_measurement_invoice_id, alostaz_measurement_invoice_code, alostaz_measurement_sync_status'
       )
       .eq('id', orderId)
       .single()
@@ -110,7 +121,11 @@ export async function POST(request: NextRequest) {
     }
 
     const stagedBilling = Number(order.alostaz_billing_version) >= 2
-    if ((requestedPhase === 'deposit' || requestedPhase === 'delivery') && !stagedBilling) {
+    const isAdditionalDeposit = requestedPhase === 'deposit' && requestedPaymentAmount != null
+    if (
+      (requestedPhase === 'delivery' || (requestedPhase === 'deposit' && !isAdditionalDeposit)) &&
+      !stagedBilling
+    ) {
       return NextResponse.json({
         data: { skipped: true, reason: 'legacy-order' },
         error: null,
@@ -143,7 +158,9 @@ export async function POST(request: NextRequest) {
     const existingInvoiceId = order[fields.invoiceId]
     const existingInvoiceCode = order[fields.invoiceCode]
 
-    if (existingInvoiceId) {
+    // العربون قد يملك فاتورة سابقة ثم يستقبل دفعة شبكة إضافية؛ بقية المراحل
+    // ما زالت فاتورة واحدة فقط لكل مرحلة.
+    if (requestedPhase !== 'deposit' && existingInvoiceId) {
       return NextResponse.json({
         data: {
           alreadySent: true,
@@ -157,6 +174,10 @@ export async function POST(request: NextRequest) {
 
     let invoicePayments: Array<{ amount: number; method: 'cash' | 'card' }>
     let invoiceAmount: number
+    let depositTargetAmount = 0
+    const storedDepositInvoiceAmount = order.alostaz_deposit_invoice_amount == null
+      ? null
+      : Math.max(0, Number(order.alostaz_deposit_invoice_amount) || 0)
 
     if (requestedPhase === 'measurement') {
       invoicePayments = [{ amount: ALOSTAZ_MEASUREMENT_FEE_SAR, method: 'card' }]
@@ -167,7 +188,73 @@ export async function POST(request: NextRequest) {
       const net = breakdown.networkTotal
 
       if (requestedPhase === 'deposit') {
-        invoicePayments = [{ amount: breakdown.preDeliveryNetwork, method: 'card' }]
+        depositTargetAmount = Math.round(
+          (Math.max(0, breakdown.preDeliveryNetwork) + Number.EPSILON) * 100
+        ) / 100
+
+        if (requestedPaymentAmount != null && requestedPaymentAmount > depositTargetAmount + 0.005) {
+          return NextResponse.json(
+            { error: 'مبلغ دفعة الشبكة أكبر من إجمالي دفعات الشبكة المسجلة على الطلب' },
+            { status: 409 }
+          )
+        }
+
+        if (storedDepositInvoiceAmount != null) {
+          const unsyncedAmount = Math.round(
+            (Math.max(0, depositTargetAmount - storedDepositInvoiceAmount) + Number.EPSILON) * 100
+          ) / 100
+
+          if (unsyncedAmount < 0.005) {
+            return NextResponse.json({
+              data: {
+                alreadySent: true,
+                phase: requestedPhase,
+                invoice_id: existingInvoiceId,
+                invoice_code: existingInvoiceCode,
+                invoice_amount: requestedPaymentAmount || storedDepositInvoiceAmount,
+              },
+              error: null,
+            })
+          }
+
+          if (
+            requestedPaymentAmount != null &&
+            Math.abs(unsyncedAmount - requestedPaymentAmount) >= 0.005
+          ) {
+            return NextResponse.json(
+              { error: 'قيمة دفعة الشبكة الجديدة لا تطابق الزيادة المسجلة على الطلب' },
+              { status: 409 }
+            )
+          }
+
+          invoicePayments = [{ amount: unsyncedAmount, method: 'card' }]
+        } else if (requestedPaymentAmount != null) {
+          if (
+            stagedBilling &&
+            Math.abs(depositTargetAmount - requestedPaymentAmount) >= 0.005
+          ) {
+            return NextResponse.json(
+              { error: 'تعذّر تحديد الزيادة غير المرسلة في عربون الشبكة لهذا الطلب؛ راجع فاتورة العربون السابقة أولاً' },
+              { status: 409 }
+            )
+          }
+          // للطلبات القديمة لا نرسل الشبكة التاريخية بأثر رجعي؛ نرسل الدفعة
+          // التي أضافها المستخدم الآن فقط، ثم نحفظ الإجمالي الحالي كنقطة مزامنة.
+          invoicePayments = [{ amount: requestedPaymentAmount, method: 'card' }]
+        } else if (existingInvoiceId) {
+          // مرجع قديم بلا قيمة محفوظة: نمنع التخمين وإعادة إنشاء فاتورة محتملة.
+          return NextResponse.json({
+            data: {
+              alreadySent: true,
+              phase: requestedPhase,
+              invoice_id: existingInvoiceId,
+              invoice_code: existingInvoiceCode,
+            },
+            error: null,
+          })
+        } else {
+          invoicePayments = [{ amount: depositTargetAmount, method: 'card' }]
+        }
       } else if (requestedPhase === 'delivery') {
         invoicePayments = [{ amount: breakdown.remainingNetwork, method: 'card' }]
       } else if (mode === 'cash') {
@@ -201,7 +288,7 @@ export async function POST(request: NextRequest) {
     // Count-only conditional PATCH: only one concurrent request can claim this phase.
     const syncAttemptToken = randomUUID()
     const syncStartedAt = new Date().toISOString()
-    const { count: claimedOrderCount, error: claimError } = await supabaseAdmin
+    let claimQuery = supabaseAdmin
       .from('orders')
       .update({
         [fields.syncStatus]: 'sending',
@@ -210,8 +297,21 @@ export async function POST(request: NextRequest) {
         [fields.syncedAt]: syncStartedAt,
       }, { count: 'exact' })
       .eq('id', orderId)
-      .is(fields.invoiceId, null)
-      .or(`${fields.syncStatus}.is.null,${fields.syncStatus}.eq.failed`)
+
+    if (requestedPhase === 'deposit') {
+      claimQuery = storedDepositInvoiceAmount == null
+        ? claimQuery.is('alostaz_deposit_invoice_amount', null)
+        : claimQuery.eq('alostaz_deposit_invoice_amount', storedDepositInvoiceAmount)
+      claimQuery = claimQuery.or(
+        `${fields.syncStatus}.is.null,${fields.syncStatus}.eq.failed,${fields.syncStatus}.eq.sent`
+      )
+    } else {
+      claimQuery = claimQuery
+        .is(fields.invoiceId, null)
+        .or(`${fields.syncStatus}.is.null,${fields.syncStatus}.eq.failed`)
+    }
+
+    const { count: claimedOrderCount, error: claimError } = await claimQuery
 
     if (claimError) {
       return NextResponse.json(
@@ -223,7 +323,7 @@ export async function POST(request: NextRequest) {
     if (claimedOrderCount !== 1) {
       const { data: latestOrder, error: latestError } = await supabaseAdmin
         .from('orders')
-        .select(`${fields.invoiceId}, ${fields.invoiceCode}, ${fields.syncStatus}`)
+        .select(`${fields.invoiceId}, ${fields.invoiceCode}, ${fields.syncStatus}, alostaz_deposit_invoice_amount`)
         .eq('id', orderId)
         .single()
 
@@ -231,13 +331,23 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'تعذّر التحقق من حالة إرسال الفاتورة' }, { status: 500 })
       }
       const latest = latestOrder as Record<string, unknown>
-      if (latest[fields.invoiceId]) {
+      const latestDepositAmount = Math.max(
+        0,
+        Number(latest.alostaz_deposit_invoice_amount) || 0
+      )
+      const depositAlreadySynced =
+        requestedPhase === 'deposit' &&
+        latestDepositAmount >= depositTargetAmount - 0.005 &&
+        !!latest[fields.invoiceId]
+
+      if (depositAlreadySynced || (requestedPhase !== 'deposit' && latest[fields.invoiceId])) {
         return NextResponse.json({
           data: {
             alreadySent: true,
             phase: requestedPhase,
             invoice_id: latest[fields.invoiceId],
             invoice_code: latest[fields.invoiceCode],
+            invoice_amount: invoiceAmount,
           },
           error: null,
         })
@@ -313,7 +423,9 @@ export async function POST(request: NextRequest) {
         [fields.syncedAt]: new Date().toISOString(),
       }
       if (requestedPhase === 'deposit') {
-        finalUpdates.alostaz_deposit_invoice_amount = invoiceAmount
+        // نخزن الإجمالي التراكمي الذي أصبحت فواتير الأستاذ تغطيه، بينما
+        // invoiceAmount هو مبلغ فاتورة هذه الدفعة فقط.
+        finalUpdates.alostaz_deposit_invoice_amount = depositTargetAmount
       } else if (requestedPhase === 'measurement') {
         finalUpdates.alostaz_measurement_invoice_amount = invoiceAmount
       }
@@ -337,6 +449,7 @@ export async function POST(request: NextRequest) {
             phase: requestedPhase,
             invoice_id: result.invoice_id,
             invoice_code: result.invoice_code,
+            invoice_amount: invoiceAmount,
             draft: result.is_draft,
           },
           warning:
@@ -353,6 +466,7 @@ export async function POST(request: NextRequest) {
         phase: requestedPhase,
         invoice_id: result.invoice_id,
         invoice_code: result.invoice_code,
+        invoice_amount: invoiceAmount,
         customer_id: result.customer_id,
         draft: result.is_draft,
       },

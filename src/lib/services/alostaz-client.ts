@@ -13,6 +13,7 @@ export interface SendInvoiceResult {
   success: boolean
   invoice_id?: number
   invoice_code?: string
+  invoice_amount?: number
   alreadySent?: boolean
   /** طلب آخر حجز إرسال الفاتورة نفسها بالفعل؛ لا تبدأ محاولة ثانية. */
   inProgress?: boolean
@@ -27,7 +28,7 @@ export type TailoringInvoicePhase = 'deposit' | 'delivery' | 'manual' | 'measure
 
 /**
  * إرسال فاتورة تفصيل إلى الأستاذ عبر المسار الخادمي.
- * - deposit: عربون الشبكة عند إنشاء الطلب الجديد.
+ * - deposit: عربون الشبكة عند إنشاء الطلب وأي دفعة شبكة إضافية.
  * - delivery: شبكة الدفعة المتبقية فقط عند التسليم.
  * - manual: المسار اليدوي للطلبات القديمة.
  * - measurement: أجرة مقاس ياسمين الشام المدفوعة بالشبكة.
@@ -37,6 +38,8 @@ export async function sendInvoiceToAlostaz(
   opts?: {
     phase?: TailoringInvoicePhase
     mode?: 'both' | 'cash' | 'network'
+    /** مبلغ الدفعة الجديدة عند إضافة عربون من صفحة تعديل الطلب. */
+    paymentAmount?: number
   }
 ): Promise<SendInvoiceResult> {
   try {
@@ -61,6 +64,7 @@ export async function sendInvoiceToAlostaz(
         orderId,
         phase: opts?.phase || 'manual',
         mode: opts?.mode,
+        paymentAmount: opts?.paymentAmount,
       }),
       signal: controller.signal,
     }).finally(() => globalThis.clearTimeout(timeoutId))
@@ -74,6 +78,7 @@ export async function sendInvoiceToAlostaz(
       success: true,
       invoice_id: result?.data?.invoice_id,
       invoice_code: result?.data?.invoice_code,
+      invoice_amount: result?.data?.invoice_amount,
       alreadySent: result?.data?.alreadySent,
       inProgress: result?.data?.inProgress,
       isDraft: result?.data?.draft,

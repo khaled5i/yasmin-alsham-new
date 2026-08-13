@@ -31,8 +31,15 @@ import DatePickerForSecondProof from './DatePickerForSecondProof'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef, DesignSummaryNote } from './InteractiveImageAnnotation'
 import DesignSummarySection from './DesignSummarySection'
 import { Order, orderService } from '@/lib/services/order-service'
+import { issueOrderPaymentReceipt } from '@/lib/services/order-payment-receipt'
+import type { AdditionalOrderPaymentReceipt } from '@/lib/print-tailoring-receipt'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
+
+const createPaymentId = () =>
+  typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
 
@@ -118,6 +125,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
   const [showAddPaymentModal, setShowAddPaymentModal] = useState(false)
   const [newPaymentAmount, setNewPaymentAmount] = useState('')
   const [newPaymentMethod, setNewPaymentMethod] = useState<'cash' | 'card' | null>(null)
+  const [pendingPayment, setPendingPayment] = useState<AdditionalOrderPaymentReceipt | null>(null)
 
   // Fetch full order data when opened with lightweight-loaded order
   useEffect(() => {
@@ -237,6 +245,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       setShowAddPaymentModal(false)
       setNewPaymentAmount('')
       setNewPaymentMethod(null)
+      setPendingPayment(null)
 
       // نحفظ نسخة من التعليقات بدون compositeImage لأنها كبيرة ولا تفيد في المقارنة
       const commentsForComparison = savedComments.map((c: any) => {
@@ -275,37 +284,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
   const previewPaidTotal =
     Math.round((((Number(formData.paidAmount) || 0) + parsedNewPaymentAmount) + Number.EPSILON) * 100) / 100
 
-  const handlePaidAmountChange = useCallback((value: string) => {
-    const price = Number(formData.price) || 0
-    const paid = Number(value) || 0
-    if (paid > price) {
-      toast.error('الدفعة المستلمة لا يمكن أن تتجاوز السعر الكلي', {
-        icon: '⚠️',
-      })
+  const openAddPaymentModal = useCallback(() => {
+    if (pendingPayment) {
+      toast.error('يوجد دفعة جديدة بانتظار حفظ الطلب')
       return
     }
-
-    setFormData(prev => ({
-      ...prev,
-      paidAmount: value,
-      preDeliveryCashAmount: prev.paymentMethod === 'cash' ? paid : 0,
-      preDeliveryNetworkAmount: prev.paymentMethod === 'card' ? paid : 0,
-    }))
-  }, [formData.price])
-
-  const handlePaymentMethodChange = useCallback((method: 'cash' | 'card') => {
-    setFormData(prev => {
-      const paid = Number(prev.paidAmount) || 0
-      return {
-        ...prev,
-        paymentMethod: method,
-        preDeliveryCashAmount: method === 'cash' ? paid : 0,
-        preDeliveryNetworkAmount: method === 'card' ? paid : 0,
-      }
-    })
-  }, [])
-
-  const openAddPaymentModal = useCallback(() => {
     if (remainingAmount <= 0) {
       toast.error('تم دفع كامل قيمة الطلب ولا توجد دفعة متبقية')
       return
@@ -313,7 +296,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
     setNewPaymentAmount('')
     setNewPaymentMethod(null)
     setShowAddPaymentModal(true)
-  }, [remainingAmount])
+  }, [pendingPayment, remainingAmount])
 
   const confirmAddPayment = useCallback(() => {
     const amount = Math.round(((Number(newPaymentAmount) || 0) + Number.EPSILON) * 100) / 100
@@ -330,6 +313,12 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
     const paymentMethod = newPaymentMethod
+    const payment: AdditionalOrderPaymentReceipt = {
+      id: createPaymentId(),
+      amount,
+      method: paymentMethod,
+      receivedAt: new Date().toISOString(),
+    }
 
     setFormData(prev => {
       const currentPaid = Number(prev.paidAmount) || 0
@@ -344,11 +333,12 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
           prev.preDeliveryNetworkAmount + (paymentMethod === 'card' ? amount : 0),
       }
     })
+    setPendingPayment(payment)
 
     setShowAddPaymentModal(false)
     setNewPaymentAmount('')
     setNewPaymentMethod(null)
-    toast.success('تمت إضافة الدفعة إلى إجمالي المدفوع')
+    toast.success('تمت إضافة الدفعة؛ اضغط تحديث الطلب لحفظها وطباعة فاتورتها')
   }, [newPaymentAmount, newPaymentMethod, remainingAmount])
 
   // معالجة تغيير الحقول
@@ -699,6 +689,38 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       if (!saveSucceeded) {
         setSaveError(t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب')
         return
+      }
+
+      if (pendingPayment) {
+        try {
+          const refreshedOrder = await orderService.getById(order.id)
+          if (!refreshedOrder.data) {
+            throw new Error(refreshedOrder.error || 'تعذّر تحميل الطلب بعد حفظ الدفعة')
+          }
+
+          const receiptResult = await issueOrderPaymentReceipt(
+            refreshedOrder.data,
+            pendingPayment
+          )
+
+          if (pendingPayment.method === 'card' && !receiptResult.accountingAlreadySent) {
+            toast.success(`تم إرسال دفعة الشبكة للمحاسبة — ${receiptResult.invoiceCode}`)
+          }
+          if (receiptResult.accountingWarning) {
+            toast(receiptResult.accountingWarning, { icon: '⚠️' })
+          }
+          toast.success(`أُضيفت فاتورة الدفعة للطلب ${receiptResult.orderNumber} إلى طابور الطباعة`, {
+            icon: '🧾',
+          })
+          setPendingPayment(null)
+        } catch (paymentError) {
+          const message = paymentError instanceof Error
+            ? paymentError.message
+            : 'تعذّرت معالجة فاتورة الدفعة'
+          setSaveError(`تم حفظ الدفعة في الطلب، لكن لم تكتمل الفوترة: ${message}. اضغط «تحديث الطلب» لإعادة المحاولة.`)
+          toast.error(`تم حفظ الدفعة، لكن لم تكتمل الفوترة: ${message}`)
+          return
+        }
       }
 
       setSaveSuccess(true)
@@ -1065,20 +1087,23 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                         <button
                           type="button"
                           onClick={openAddPaymentModal}
-                          disabled={isSubmitting || !formData.price || remainingAmount <= 0}
+                          disabled={isSubmitting || !formData.price || remainingAmount <= 0 || !!pendingPayment}
                           className="inline-flex items-center gap-1 text-xs font-bold text-pink-600 transition-colors hover:text-pink-700 disabled:cursor-not-allowed disabled:text-gray-400"
                         >
                           <PlusCircle className="h-4 w-4" />
-                          <span>إضافة دفعة جديدة</span>
+                          <span>{pendingPayment ? 'دفعة بانتظار الحفظ' : 'إضافة دفعة جديدة'}</span>
                         </button>
                       </div>
                       <NumericInput
                         value={formData.paidAmount}
-                        onChange={handlePaidAmountChange}
+                        onChange={() => undefined}
                         type="price"
                         placeholder="0"
-                        disabled={isSubmitting || !formData.price}
+                        disabled
                       />
+                      <p className="mt-1.5 text-xs text-gray-500">
+                        هذا الحقل للعرض فقط؛ تُضاف الدفعات من زر «إضافة دفعة جديدة».
+                      </p>
                     </div>
 
                     {/* 9. الدفعة المتبقية (للعرض فقط) */}
@@ -1095,43 +1120,35 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                     <div className="col-span-2 sm:col-span-3">
                       <div className="grid grid-cols-2 gap-3 sm:gap-4">
                         {/* 10. طريقة دفع الدفعة المستلمة */}
-                        <div className={`rounded-xl border p-3 sm:p-4 transition-colors ${
-                          hasReceivedPayment
-                            ? 'border-gray-200 bg-gray-50/70'
-                            : 'border-gray-200 bg-gray-100/80'
-                        }`}>
+                        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
                           <label className="block text-sm font-medium text-gray-700 mb-3">
-                            طريقة دفع الدفعة المستلمة
+                            طريقة الدفع المسجلة
                           </label>
                           <div className="flex flex-wrap gap-x-6 gap-y-2">
-                            <label className={`flex items-center gap-2 ${
-                              hasReceivedPayment ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
-                            }`}>
+                            <label className="flex cursor-not-allowed items-center gap-2 opacity-60">
                               <input
                                 type="radio"
                                 name="paymentMethodEdit"
                                 value="cash"
                                 checked={hasReceivedPayment && formData.paymentMethod === 'cash'}
-                                onChange={() => handlePaymentMethodChange('cash')}
+                                readOnly
                                 className="w-5 h-5 text-green-600 border-gray-300 focus:ring-green-500 disabled:cursor-not-allowed"
-                                disabled={isSubmitting || !hasReceivedPayment}
+                                disabled
                               />
                               <span className="flex items-center gap-1.5 text-gray-700 font-medium">
                                 <Banknote className="w-4 h-4 text-green-600" />
                                 كاش
                               </span>
                             </label>
-                            <label className={`flex items-center gap-2 ${
-                              hasReceivedPayment ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
-                            }`}>
+                            <label className="flex cursor-not-allowed items-center gap-2 opacity-60">
                               <input
                                 type="radio"
                                 name="paymentMethodEdit"
                                 value="card"
                                 checked={hasReceivedPayment && formData.paymentMethod === 'card'}
-                                onChange={() => handlePaymentMethodChange('card')}
+                                readOnly
                                 className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:cursor-not-allowed"
-                                disabled={isSubmitting || !hasReceivedPayment}
+                                disabled
                               />
                               <span className="flex items-center gap-1.5 text-gray-700 font-medium">
                                 <CreditCard className="w-4 h-4 text-blue-600" />
@@ -1139,11 +1156,6 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                               </span>
                             </label>
                           </div>
-                          {!hasReceivedPayment ? (
-                            <p className="mt-2 text-xs text-gray-500">
-                              أدخل قيمة الدفعة المستلمة أولاً لاختيار طريقة الدفع
-                            </p>
-                          ) : null}
                           <p className="mt-3 border-t border-gray-200 pt-3 text-xs text-gray-600">
                             <span className="font-medium">توزيع المدفوع الحالي: </span>
                             <span className="font-semibold text-green-700">

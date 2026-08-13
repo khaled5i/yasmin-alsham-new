@@ -12,13 +12,17 @@ export interface TailoringReceiptPayload {
   order_number: string
   invoice_code: string
   invoice_code_source: 'alostaz' | 'local'
-  receipt_type?: 'delivery' | 'preliminary'
+  receipt_type?: 'delivery' | 'preliminary' | 'payment'
   customer_name: string
   item_description: string
+  /** قيمة الطلب كاملة، وتُستخدم لحساب الرصيد المتبقي. */
   total: number
+  /** قيمة هذه الفاتورة فقط؛ تُستخدم لفواتير الدفعات الإضافية. */
+  invoice_total?: number
   paid_amount: number
   cash_amount: number
   network_amount: number
+  received_payment_method?: 'cash' | 'card'
   delivered_at: string
 }
 
@@ -179,24 +183,83 @@ export function createPreliminaryTailoringReceiptPayload(
   }
 }
 
-/** مستند الإيصال الحراري الكامل، بعرض 80mm وإجمالي الطلب دون ربطه بمبلغ المحاسبة. */
+export interface AdditionalOrderPaymentReceipt {
+  id: string
+  amount: number
+  method: 'cash' | 'card'
+  receivedAt?: string
+}
+
+/**
+ * يبني فاتورة مستقلة للدفعة المضافة من صفحة تعديل الطلب.
+ * إجمالي الفاتورة هو مبلغ الدفعة الجديدة، بينما يبقى paid_amount هو الإجمالي
+ * التراكمي كي يظهر الرصيد الصحيح بعد استلامها.
+ */
+export function createAdditionalPaymentReceiptPayload(
+  order: TailoringReceiptOrder,
+  payment: AdditionalOrderPaymentReceipt,
+  alostazInvoiceCode?: string | null
+): TailoringReceiptPayload {
+  const orderNumber = String(order?.order_number || order?.id || '')
+  const amount = Math.max(0, Number(payment.amount) || 0)
+  const accountingCode = String(alostazInvoiceCode || '').trim()
+
+  if (payment.method === 'card' && !accountingCode) {
+    throw new Error('لا يمكن طباعة فاتورة دفعة شبكة قبل استلام رقمها من برنامج الأستاذ')
+  }
+
+  const localReference = String(payment.id || Date.now())
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(-8)
+
+  return {
+    order_id: String(order?.id || ''),
+    order_number: orderNumber,
+    invoice_code:
+      payment.method === 'card'
+        ? accountingCode
+        : `${orderNumber}-P-${localReference || Date.now()}`,
+    invoice_code_source: payment.method === 'card' ? 'alostaz' : 'local',
+    receipt_type: 'payment',
+    customer_name: String(order?.client_name || 'عميل'),
+    item_description: 'دفعة على أجرة تفصيل فستان',
+    total: Number(order?.price) || 0,
+    invoice_total: amount,
+    paid_amount: Number(order?.paid_amount) || 0,
+    cash_amount: payment.method === 'cash' ? amount : 0,
+    network_amount: payment.method === 'card' ? amount : 0,
+    received_payment_method: payment.method,
+    delivered_at: String(payment.receivedAt || new Date().toISOString()),
+  }
+}
+
+/** مستند الإيصال الحراري بعرض 80mm؛ ويدعم فاتورة طلب كاملة أو فاتورة دفعة مستقلة. */
 export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): string {
-  const total = Math.max(0, Number(payload.total) || 0)
-  const priceBeforeTax = total / 1.15
-  const vatAmount = total - priceBeforeTax
+  const orderTotal = Math.max(0, Number(payload.total) || 0)
+  const invoiceTotal = Math.max(
+    0,
+    payload.invoice_total == null
+      ? orderTotal
+      : Number(payload.invoice_total) || 0
+  )
+  const priceBeforeTax = invoiceTotal / 1.15
+  const vatAmount = invoiceTotal - priceBeforeTax
   const paidAmount = Math.max(
     0,
     Number(payload.paid_amount) ||
       (Number(payload.cash_amount) || 0) + (Number(payload.network_amount) || 0)
   )
-  const remainingAmount = Math.max(0, total - paidAmount)
+  const remainingAmount = Math.max(0, orderTotal - paidAmount)
   const printedAt = formatPrintTimestamp()
   const invoiceCode = escapeHtml(payload.invoice_code)
   const orderNumber = escapeHtml(payload.order_number)
   const customerName = escapeHtml(payload.customer_name)
   const itemDescription = escapeHtml(payload.item_description)
-  const documentTitle =
-    payload.receipt_type === 'preliminary' ? 'فاتورة مبدئية' : 'فاتورة ضريبية مبسطة'
+  const documentTitle = payload.receipt_type === 'preliminary'
+    ? 'فاتورة مبدئية'
+    : payload.receipt_type === 'payment'
+      ? 'فاتورة دفعة'
+      : 'فاتورة ضريبية مبسطة'
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -285,9 +348,9 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <tbody>
       <tr>
         <td class="description">${itemDescription}</td>
-        <td class="price">${formatMoney(total)}</td>
+        <td class="price">${formatMoney(invoiceTotal)}</td>
         <td class="quantity">1</td>
-        <td class="line-total">${formatMoney(total)}</td>
+        <td class="line-total">${formatMoney(invoiceTotal)}</td>
       </tr>
     </tbody>
   </table>
@@ -304,10 +367,21 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
   </div>
   <hr class="dash">
   <div class="summary-row total">
-    <span class="label">الإجمالي <span class="currency">(ر.س)</span></span>
-    <span class="value">${formatMoney(total)}</span>
+    <span class="label">${payload.receipt_type === 'payment' ? 'إجمالي الفاتورة' : 'الإجمالي'} <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(invoiceTotal)}</span>
   </div>
   <hr class="dash">
+  ${payload.receipt_type === 'payment' ? `
+  <div class="summary-row">
+    <span class="label">طريقة الدفعة</span>
+    <span class="value">${payload.received_payment_method === 'cash' ? 'كاش' : 'شبكة'}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row">
+    <span class="label">قيمة الطلب <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(orderTotal)}</span>
+  </div>
+  <hr class="dash">` : ''}
   <div class="summary-row total">
     <span class="label">إجمالي المدفوع <span class="currency">(ر.س)</span></span>
     <span class="value">${formatMoney(paidAmount)}</span>

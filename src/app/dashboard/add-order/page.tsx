@@ -53,12 +53,7 @@ import PrintOrderModal from '@/components/PrintOrderModal'
 import DesignSummarySection from '@/components/DesignSummarySection'
 import { Order } from '@/lib/services/order-service'
 import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
-import { createPreliminaryTailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
-import {
-  dispatchTailoringReceiptPrint,
-} from '@/lib/services/tailoring-receipt-printer'
-import { sendInvoiceToAlostaz } from '@/lib/services/alostaz-client'
-import { computePaymentBreakdown } from '@/lib/payment-breakdown'
+import { issueOrderPaymentReceipt } from '@/lib/services/order-payment-receipt'
 
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
@@ -80,35 +75,12 @@ async function printNewOrderPreliminaryReceipt(
   order: Order
 ): Promise<void> {
   try {
-    let accountingInvoiceCode = String(order.alostaz_deposit_invoice_code || '').trim()
-    const hasNetworkDeposit = computePaymentBreakdown(order).preDeliveryNetwork >= 0.005
-
-    if (hasNetworkDeposit && !accountingInvoiceCode) {
-      const result = await sendInvoiceToAlostaz(order.id, { phase: 'deposit' })
-      accountingInvoiceCode = String(result.invoice_code || '').trim()
-
-      if (!result.success) {
-        throw new Error(result.error || 'تعذّر إرسال فاتورة عربون الشبكة للمحاسبة')
-      }
-      if (result.inProgress && !accountingInvoiceCode) {
-        throw new Error('فاتورة العربون قيد الإرسال؛ انتظر ظهور رقمها من الأستاذ')
-      }
-      if (!accountingInvoiceCode) {
-        throw new Error('لم يُرجع الأستاذ رقم فاتورة عربون الشبكة')
-      }
-
-      if (!result.alreadySent) {
-        toast.success(`تم إرسال عربون الشبكة للمحاسبة — ${accountingInvoiceCode}`)
-      }
-      if (result.warning) toast(result.warning, { icon: '⚠️' })
+    const result = await issueOrderPaymentReceipt(order)
+    if (result.accountingSynced && !result.accountingAlreadySent) {
+      toast.success(`تم إرسال عربون الشبكة للمحاسبة — ${result.invoiceCode}`)
     }
-
-    const receipt = createPreliminaryTailoringReceiptPayload(order, accountingInvoiceCode)
-    await dispatchTailoringReceiptPrint(receipt, {
-      // لا يُرسل أمر فتح الدرج إلا عند وجود مبلغ كاش فعلي في الدفعة.
-      openCashDrawer: receipt.cash_amount >= 0.005,
-    })
-    toast.success(`أُضيفت الفاتورة المبدئية للطلب ${receipt.order_number} إلى طابور الطباعة`, {
+    if (result.accountingWarning) toast(result.accountingWarning, { icon: '⚠️' })
+    toast.success(`أُضيفت الفاتورة المبدئية للطلب ${result.orderNumber} إلى طابور الطباعة`, {
       icon: '🧾',
     })
   } catch (error) {

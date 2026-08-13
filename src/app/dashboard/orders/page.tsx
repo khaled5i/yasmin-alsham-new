@@ -537,8 +537,6 @@ function OrdersPageInner() {
       toast.success(t('order_updated_success') || 'تم تحديث الطلب بنجاح', {
         icon: '✓',
       })
-      setShowEditModal(false)
-      setSelectedOrder(null)
       return true
     } else {
       toast.error(result.error || t('order_update_error') || 'حدث خطأ أثناء تحديث الطلب', {

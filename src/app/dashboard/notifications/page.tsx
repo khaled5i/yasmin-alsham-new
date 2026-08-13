@@ -463,11 +463,11 @@ export default function NotificationsPage() {
     if (result.success) {
       if (result.data) refreshOrderInList(orderId, result.data)
       toast.success(isArabic ? 'تم تحديث الطلب بنجاح' : 'Order updated', { icon: '✓' })
+      return true
     } else {
       toast.error(result.error || (isArabic ? 'حدث خطأ أثناء تحديث الطلب' : 'Error updating order'), { icon: '✗' })
+      return false
     }
-    setShowEditModal(false)
-    setSelectedOrder(null)
   }
 
   // عدد الإشعارات الجديدة (لم تُرسَل رسالتها بعد) عبر كل الأقسام
