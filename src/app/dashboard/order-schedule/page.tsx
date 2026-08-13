@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, ChevronLeft, ChevronRight, CalendarDays, CalendarCheck, X, Phone, User, Eye, Loader } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, CalendarDays, CalendarCheck, X, Phone, User, Eye, Loader, PackageCheck, Truck, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const moment = require('moment-hijri')
@@ -61,6 +61,36 @@ interface OrderOnDate {
     order_number: string
     status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
     worker_id?: string | null
+}
+
+const SCHEDULE_PAGE_SIZE = 500
+
+async function loadAllScheduleOrders(statuses: OrderOnDate['status'][]): Promise<Order[]> {
+    const loadPage = (page: number) => orderService.getAll({
+        status: statuses,
+        page,
+        pageSize: SCHEDULE_PAGE_SIZE,
+        lightweight: true,
+    })
+
+    const firstPage = await loadPage(0)
+    if (firstPage.error) throw new Error(firstPage.error)
+
+    const totalPages = Math.ceil((firstPage.total ?? firstPage.data.length) / SCHEDULE_PAGE_SIZE)
+    const remainingPages = totalPages > 1
+        ? await Promise.all(Array.from({ length: totalPages - 1 }, (_, index) => loadPage(index + 1)))
+        : []
+
+    const failedPage = remainingPages.find((page) => page.error)
+    if (failedPage?.error) throw new Error(failedPage.error)
+
+    const uniqueOrders = new Map<string, Order>()
+    const pages = [firstPage, ...remainingPages]
+    pages.forEach((page) => {
+        page.data.forEach((order) => uniqueOrders.set(order.id, order))
+    })
+
+    return Array.from(uniqueOrders.values())
 }
 
 const ORDER_STATUS_LABEL: Record<OrderOnDate['status'], string> = {
@@ -453,9 +483,13 @@ export default function OrderSchedulePage() {
     // عند true: يعرض تقويم التسليم التواريخ الحقيقية للزبون (customer_due_date)
     // بدلاً من due_date الداخلي المُزاح يومين للخلف
     const [useRealDates, setUseRealDates] = useState(false)
+    const [showCompletedOrders, setShowCompletedOrders] = useState(false)
+    const [showDeliveredOrders, setShowDeliveredOrders] = useState(false)
     const [stats, setStats] = useState<Record<string, number>>({})
     const [ordersMap, setOrdersMap] = useState<Record<string, OrderOnDate[]>>({})
     const [isLoadingData, setIsLoadingData] = useState(false)
+    const [dataError, setDataError] = useState<string | null>(null)
+    const dataRequestId = useRef(0)
 
     const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
     const [viewingOrder, setViewingOrder] = useState<Order | null>(null)
@@ -469,47 +503,58 @@ export default function OrderSchedulePage() {
         if (!authLoading && !user) router.push('/login')
     }, [user, authLoading, workerLoading, workerType, router])
 
+    const visibleStatuses = useMemo<OrderOnDate['status'][]>(() => {
+        const statuses: OrderOnDate['status'][] = ['pending', 'in_progress']
+        if (showCompletedOrders) statuses.push('completed')
+        if (showDeliveredOrders) statuses.push('delivered')
+        return statuses
+    }, [showCompletedOrders, showDeliveredOrders])
+
     const fetchData = useCallback(async () => {
+        const requestId = ++dataRequestId.current
         setIsLoadingData(true)
+        setDataError(null)
         try {
-            const result = await orderService.getAll({ pageSize: 500 })
-            if (result.data) {
-                const newStats: Record<string, number> = {}
-                const newOrdersMap: Record<string, OrderOnDate[]> = {}
-                result.data.forEach((order) => {
-                    if (order.status === 'cancelled') return
-                    const deliveryDate = useRealDates
-                        ? (order.customer_due_date || order.due_date)
-                        : order.due_date
-                    // البروفا الثانية تاريخ مُخزَّن قابل للتعديل، وإلا يُحسب كـ due_date − 1 (migration 51)
-                    const secondProofDate = order.second_proof_date || shiftDate(order.due_date, -1)
-                    const key = mode === 'delivery'
-                        ? (deliveryDate || '').slice(0, 10)
-                        : mode === 'proof'
-                            ? (order.proof_delivery_date || '').slice(0, 10)
-                            : (secondProofDate || '').slice(0, 10)
-                    if (!key) return
-                    if (mode === 'delivery' && (order.status === 'delivered' || order.status === 'completed')) return
-                    if (mode === 'proof' && (order.status === 'delivered')) return
-                    if (mode === 'second_proof' && (order.status === 'delivered')) return
-                    newStats[key] = (newStats[key] || 0) + 1
-                    if (!newOrdersMap[key]) newOrdersMap[key] = []
-                    newOrdersMap[key].push({
-                        id: order.id,
-                        client_name: order.client_name,
-                        client_phone: order.client_phone,
-                        order_number: order.order_number,
-                        status: order.status,
-                        worker_id: order.worker_id || null,
-                    })
+            const orders = await loadAllScheduleOrders(visibleStatuses)
+            if (requestId !== dataRequestId.current) return
+
+            const newStats: Record<string, number> = {}
+            const newOrdersMap: Record<string, OrderOnDate[]> = {}
+            orders.forEach((order) => {
+                const deliveryDate = useRealDates
+                    ? (order.customer_due_date || order.due_date)
+                    : order.due_date
+                // البروفا الثانية تاريخ مُخزَّن قابل للتعديل، وإلا يُحسب كـ due_date − 1 (migration 51)
+                const secondProofDate = order.second_proof_date || shiftDate(order.due_date, -1)
+                const key = mode === 'delivery'
+                    ? (deliveryDate || '').slice(0, 10)
+                    : mode === 'proof'
+                        ? (order.proof_delivery_date || '').slice(0, 10)
+                        : (secondProofDate || '').slice(0, 10)
+                if (!key) return
+                newStats[key] = (newStats[key] || 0) + 1
+                if (!newOrdersMap[key]) newOrdersMap[key] = []
+                newOrdersMap[key].push({
+                    id: order.id,
+                    client_name: order.client_name,
+                    client_phone: order.client_phone,
+                    order_number: order.order_number,
+                    status: order.status,
+                    worker_id: order.worker_id || null,
                 })
-                setStats(newStats)
-                setOrdersMap(newOrdersMap)
-            }
+            })
+            setStats(newStats)
+            setOrdersMap(newOrdersMap)
+        } catch (error) {
+            if (requestId !== dataRequestId.current) return
+            console.error('Error loading order schedule:', error)
+            setStats({})
+            setOrdersMap({})
+            setDataError('تعذر تحميل جميع الطلبات. يرجى المحاولة مرة أخرى.')
         } finally {
-            setIsLoadingData(false)
+            if (requestId === dataRequestId.current) setIsLoadingData(false)
         }
-    }, [mode, useRealDates])
+    }, [mode, useRealDates, visibleStatuses])
 
     useEffect(() => { if (user) fetchData() }, [fetchData, user])
     useEffect(() => { if (user) loadWorkers() }, [user, loadWorkers])
@@ -602,6 +647,31 @@ export default function OrderSchedulePage() {
                         </button>
                     )}
 
+                    <div className="flex flex-wrap items-center justify-center gap-2" role="group" aria-label="خيارات عرض حالات الطلبات">
+                        <button
+                            type="button"
+                            aria-pressed={showCompletedOrders}
+                            onClick={() => setShowCompletedOrders((current) => !current)}
+                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border-2 transition-all duration-300 ${showCompletedOrders
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-100'
+                                : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300'}`}
+                        >
+                            <PackageCheck className="w-4 h-4" />
+                            <span>عرض الطلبات المكتملة</span>
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={showDeliveredOrders}
+                            onClick={() => setShowDeliveredOrders((current) => !current)}
+                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border-2 transition-all duration-300 ${showDeliveredOrders
+                                ? 'bg-violet-600 text-white border-violet-600 shadow-md shadow-violet-100'
+                                : 'bg-white text-violet-700 border-violet-200 hover:bg-violet-50 hover:border-violet-300'}`}
+                        >
+                            <Truck className="w-4 h-4" />
+                            <span>عرض الطلبات المسلمة</span>
+                        </button>
+                    </div>
+
                     {isLoadingData && (
                         <div className="flex items-center gap-2 text-gray-400 text-sm">
                             <Loader className="w-4 h-4 animate-spin" />
@@ -624,6 +694,18 @@ export default function OrderSchedulePage() {
                         </button>
                     </div>
                 </motion.div>
+
+                {dataError && (
+                    <div role="alert" className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        <div className="flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4 shrink-0" />
+                            <span>{dataError}</span>
+                        </div>
+                        <button type="button" onClick={fetchData} className="shrink-0 font-bold text-red-800 underline underline-offset-2 hover:text-red-950">
+                            إعادة المحاولة
+                        </button>
+                    </div>
+                )}
 
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
                     className="grid grid-cols-1 gap-6">
