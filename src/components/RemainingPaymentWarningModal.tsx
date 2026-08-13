@@ -412,12 +412,21 @@ export default function RemainingPaymentWarningModal({
                   ) : (
                     <Ban className="h-5 w-5" />
                   )}
-                  <span>
-                    {submittingAction === 'ignore'
-                      ? isArabic
-                        ? 'جارٍ تسليم الطلب...'
-                        : 'Delivering order...'
-                      : t('ignore_and_deliver') || (isArabic ? 'تجاهل وتسليم الطلب' : 'Ignore and deliver')}
+                  <span className="flex flex-col items-center">
+                    <span>
+                      {submittingAction === 'ignore'
+                        ? isArabic
+                          ? 'جارٍ تسليم الطلب بصمت...'
+                          : 'Delivering silently...'
+                        : t('ignore_and_deliver') || (isArabic ? 'تجاهل وتسليم بصمت' : 'Ignore and deliver silently')}
+                    </span>
+                    {submittingAction !== 'ignore' ? (
+                      <span className="mt-0.5 text-xs font-normal text-white/80">
+                        {isArabic
+                          ? 'بدون واتساب أو طباعة أو إرسال للمحاسبة'
+                          : 'No WhatsApp, printing, or accounting sync'}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
 

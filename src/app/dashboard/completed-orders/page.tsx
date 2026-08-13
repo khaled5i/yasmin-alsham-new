@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
@@ -10,8 +10,15 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
-import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
+import {
+  autoSendOnDelivery,
+  buildDeliveryUpdates,
+  buildSilentOutstandingDeliveryUpdates,
+} from '@/lib/services/delivery-service'
 import CartoonGridModal from '@/components/CartoonGridModal'
+import BulkSilentDeliveryModal, {
+  type BulkSilentDeliveryItem,
+} from '@/components/BulkSilentDeliveryModal'
 import {
   ArrowRight,
   Package,
@@ -36,7 +43,8 @@ import {
   Trash2,
   RotateCcw,
   Loader,
-  Wand2
+  Wand2,
+  ListChecks
 } from 'lucide-react'
 import { useAppResume } from '@/hooks/useAppResume'
 import { orderService } from '@/lib/services/order-service'
@@ -51,7 +59,17 @@ const PAGE_SIZE = 50
 
 export default function CompletedOrdersPage() {
   const { user, isLoading: authLoading } = useAuthStore()
-  const { orders, loadOrders, loadMoreOrders, updateOrder, deleteOrder, hasMore, isLoadingMore, isLoading: ordersLoading } = useOrderStore()
+  const {
+    orders,
+    loadOrders,
+    loadMoreOrders,
+    updateOrder,
+    deleteOrder,
+    bulkSilentDeliverOrders,
+    hasMore,
+    isLoadingMore,
+    isLoading: ordersLoading,
+  } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
@@ -80,8 +98,11 @@ export default function CompletedOrdersPage() {
   const [statusChangeOrderId, setStatusChangeOrderId] = useState<string | null>(null)
   const [isChangingStatus, setIsChangingStatus] = useState(false)
 
-  // حالة تحويل الطلبات المتأخرة
-  const [isAutoConverting, setIsAutoConverting] = useState(false)
+  // أداة مؤقتة للتسليم الصامت الجماعي للطلبات المكتملة المتراكمة
+  const [showBulkSilentDelivery, setShowBulkSilentDelivery] = useState(false)
+  const [bulkCompletedOrders, setBulkCompletedOrders] = useState<BulkSilentDeliveryItem[]>([])
+  const [isLoadingBulkOrders, setIsLoadingBulkOrders] = useState(false)
+  const [isBulkDelivering, setIsBulkDelivering] = useState(false)
 
   // حالة نافذة شبكة الكرتون
   const [showCartoonGridModal, setShowCartoonGridModal] = useState(false)
@@ -289,6 +310,26 @@ export default function CompletedOrdersPage() {
     }
   }
 
+  const deliverSilentlyWithOutstandingBalance = async (orderId: string) => {
+    setIsProcessing(true)
+    try {
+      const updates = buildSilentOutstandingDeliveryUpdates()
+      const result = await updateOrder(orderId, updates)
+
+      if (result.success) {
+        setDeliverySuccess(true)
+        setTimeout(() => setDeliverySuccess(false), 3000)
+        setShowPaymentWarning(false)
+        setOrderToDeliver(null)
+        toast.success('تم تسليم الطلب بصمت مع إبقاء الدفعة المتبقية كما هي', { icon: '✓' })
+      } else {
+        toast.error(result.error || 'تعذّر تسليم الطلب', { icon: '✗' })
+      }
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   // إرسال رسالة "جاهز للاستلام" + تأكيد المراجعة من المسؤول
   const handleSendReadyForPickup = async (order: any) => {
     if (!order.client_phone || order.client_phone.trim() === '') {
@@ -326,25 +367,54 @@ export default function CompletedOrdersPage() {
     setSelectedOrder(null)
   }
 
-  // تحويل الطلبات المكتملة المتأخرة إلى "تم التسليم"
-  const handleAutoConvertOverdue = async () => {
-    setIsAutoConverting(true)
+  const handleOpenBulkSilentDelivery = async () => {
+    setShowBulkSilentDelivery(true)
+    setIsLoadingBulkOrders(true)
+    setBulkCompletedOrders([])
     try {
-      const result = await orderService.bulkDeliverOverdue(10)
+      const result = await orderService.getCompletedOrdersForBulkSilentDelivery()
+
       if (result.error) {
         toast.error(result.error, { icon: '⚠️' })
         return
       }
-      if (result.count === 0) {
-        toast('لا توجد طلبات متأخرة تستوفي الشرط', { icon: 'ℹ️' })
+
+      setBulkCompletedOrders(result.data)
+    } finally {
+      setIsLoadingBulkOrders(false)
+    }
+  }
+
+  const handleBulkSilentDelivery = async (orderIds: string[]) => {
+    if (orderIds.length === 0) return
+
+    setIsBulkDelivering(true)
+    try {
+      const result = await bulkSilentDeliverOrders(orderIds)
+      if (!result.success) {
+        toast.error(result.error || 'تعذّر التسليم الصامت للطلبات المحددة', { icon: '⚠️' })
         return
       }
-      toast.success(`تم تحويل ${result.count} طلب إلى "تم التسليم"`, { icon: '✅', duration: 4000 })
-      // إعادة تحميل القائمة لعكس التغييرات
+
+      if (result.count === 0) {
+        toast('لم يتم تسليم أي طلب؛ ربما تغيرت حالات الطلبات المحددة', { icon: 'ℹ️' })
+        return
+      }
+
+      const skippedCount = orderIds.length - result.count
+      toast.success(
+        skippedCount > 0
+          ? `تم تسليم ${result.count} طلب بصمت، وتُرك ${skippedCount} طلب لأن حالته تغيرت`
+          : `تم تسليم ${result.count} طلب بصمت بنجاح`,
+        { icon: '✅', duration: 4500 },
+      )
+
+      setShowBulkSilentDelivery(false)
+      setBulkCompletedOrders([])
       setCurrentPage(0)
-      loadOrders({ status: 'completed', page: 0, pageSize: PAGE_SIZE })
+      await loadOrders({ status: 'completed', page: 0, pageSize: PAGE_SIZE })
     } finally {
-      setIsAutoConverting(false)
+      setIsBulkDelivering(false)
     }
   }
 
@@ -548,7 +618,7 @@ export default function CompletedOrdersPage() {
             </button>
           </div>
 
-          {/* زر تحويل الطلبات المتأخرة + زر شبكة الكرتون */}
+          {/* أداة التسليم الصامت المؤقتة + زر شبكة الكرتون */}
           <div className="mt-3 flex justify-end gap-2 flex-wrap">
             <button
               onClick={() => setShowCartoonGridModal(true)}
@@ -558,15 +628,12 @@ export default function CompletedOrdersPage() {
               <span>تحويل الفستان إلى كرتون</span>
             </button>
             <button
-              onClick={handleAutoConvertOverdue}
-              disabled={isAutoConverting}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs sm:text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all duration-200 shadow-sm"
+              onClick={() => void handleOpenBulkSilentDelivery()}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all duration-200 hover:bg-slate-800 sm:text-sm"
             >
-              {isAutoConverting
-                ? <Loader className="w-3.5 h-3.5 animate-spin" />
-                : <Truck className="w-3.5 h-3.5" />
-              }
-              <span>{isAutoConverting ? 'جارٍ التحويل...' : 'تحويل المتأخرة (أكثر من 10 أيام)'}</span>
+              <ListChecks className="h-4 w-4 text-amber-300" />
+              <span>تسليم صامت متعدد</span>
+              <span className="rounded-full bg-amber-300 px-1.5 py-0.5 text-[9px] font-black text-slate-950">مؤقت</span>
             </button>
           </div>
 
@@ -862,6 +929,22 @@ export default function CompletedOrdersPage() {
         workers={workers}
       />
 
+      <AnimatePresence>
+        {showBulkSilentDelivery ? (
+          <BulkSilentDeliveryModal
+            orders={bulkCompletedOrders}
+            isLoading={isLoadingBulkOrders}
+            isSubmitting={isBulkDelivering}
+            onClose={() => {
+              if (isBulkDelivering) return
+              setShowBulkSilentDelivery(false)
+              setBulkCompletedOrders([])
+            }}
+            onConfirm={handleBulkSilentDelivery}
+          />
+        ) : null}
+      </AnimatePresence>
+
       <RemainingPaymentWarningModal
         isOpen={showPaymentWarning}
         remainingAmount={orderToDeliver?.remaining_amount || 0}
@@ -876,7 +959,7 @@ export default function CompletedOrdersPage() {
         }}
         onIgnore={() => {
           if (orderToDeliver) {
-            return deliverOrder(orderToDeliver.id, false)
+            return deliverSilentlyWithOutstandingBalance(orderToDeliver.id)
           }
         }}
       />

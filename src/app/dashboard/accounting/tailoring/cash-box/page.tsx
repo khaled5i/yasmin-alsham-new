@@ -13,6 +13,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   AlertCircle,
+  ArchiveRestore,
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
@@ -335,6 +336,7 @@ function CashBoxContent() {
   const [movementFilter, setMovementFilter] = useState<MovementFilter>('all')
   const [drawerRetry, setDrawerRetry] = useState<CashDrawerWithdrawalVoucher | null>(null)
   const [retryingDrawer, setRetryingDrawer] = useState(false)
+  const [openingDrawer, setOpeningDrawer] = useState(false)
 
   const loadCashBox = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true)
@@ -455,6 +457,30 @@ function CashBoxContent() {
     }
   }
 
+  const openDrawerWithoutWithdrawal = async () => {
+    if (openingDrawer) return
+    setOpeningDrawer(true)
+
+    const requestedAt = new Date().toISOString()
+    const commandId = globalThis.crypto.randomUUID()
+    const command: CashDrawerWithdrawalVoucher = {
+      withdrawalId: commandId,
+      amount: 0,
+      reason: 'فتح الصندوق دون إجراء سحب',
+      withdrawnAt: requestedAt,
+      withdrawnBy: user?.full_name || 'مستخدم النظام',
+    }
+
+    try {
+      await dispatchCashDrawerOpen(command)
+      toast.success('تمت إضافة أمر فتح الدرج دون تسجيل عملية سحب', { icon: '🗄️' })
+    } catch (error) {
+      toast.error(`تعذّر فتح الدرج: ${getErrorMessage(error)}`)
+    } finally {
+      setOpeningDrawer(false)
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f3f0e8] text-stone-950" dir="rtl">
       <div
@@ -511,22 +537,47 @@ function CashBoxContent() {
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowWithdrawalModal(true)}
-              disabled={loading || balance <= 0}
-              className="group flex w-full items-center justify-between rounded-2xl bg-amber-400 px-5 py-4 text-right text-stone-950 shadow-xl shadow-amber-500/10 transition hover:-translate-y-0.5 hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-stone-950 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span>
-                <span className="block text-base font-black">إجراء عملية سحب</span>
-                <span className="mt-0.5 block text-xs font-bold text-stone-700">
-                  تسجيل الحركة ثم فتح الدرج
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => void openDrawerWithoutWithdrawal()}
+                disabled={openingDrawer}
+                className="group flex w-full items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-5 py-4 text-right text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:border-amber-300/40 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-stone-950 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span>
+                  <span className="block text-base font-black">
+                    {openingDrawer ? 'جارٍ فتح الصندوق...' : 'فتح الصندوق دون إجراء سحب'}
+                  </span>
+                  <span className="mt-0.5 block text-xs font-bold text-stone-400">
+                    فتح الدرج فقط دون تسجيل حركة مالية
+                  </span>
                 </span>
-              </span>
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-stone-950 text-amber-300 transition group-hover:rotate-3">
-                <HandCoins className="h-6 w-6" />
-              </span>
-            </button>
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-400 text-stone-950 transition group-hover:-translate-y-0.5">
+                  {openingDrawer ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <ArchiveRestore className="h-6 w-6" />
+                  )}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowWithdrawalModal(true)}
+                disabled={loading || balance <= 0}
+                className="group flex w-full items-center justify-between rounded-2xl bg-amber-400 px-5 py-4 text-right text-stone-950 shadow-xl shadow-amber-500/10 transition hover:-translate-y-0.5 hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-stone-950 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span>
+                  <span className="block text-base font-black">إجراء عملية سحب</span>
+                  <span className="mt-0.5 block text-xs font-bold text-stone-700">
+                    تسجيل الحركة ثم فتح الدرج
+                  </span>
+                </span>
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-stone-950 text-amber-300 transition group-hover:rotate-3">
+                  <HandCoins className="h-6 w-6" />
+                </span>
+              </button>
+            </div>
           </div>
         </section>
 

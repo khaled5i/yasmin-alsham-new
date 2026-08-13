@@ -78,6 +78,12 @@ interface OrderState {
   // عمليات خاصة بالعمال
   startOrderWork: (orderId: string) => Promise<{ success: boolean; error?: string }>
   completeOrder: (orderId: string, completedImages?: string[]) => Promise<{ success: boolean; error?: string }>
+  bulkSilentDeliverOrders: (orderIds: string[]) => Promise<{
+    success: boolean
+    count: number
+    updatedIds: string[]
+    error?: string
+  }>
 
   // وظائف مساعدة
   clearError: () => void
@@ -444,6 +450,29 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       completed_images: completedImages || [],
       worker_completed_at: new Date().toISOString()
     })
+  },
+
+  bulkSilentDeliverOrders: async (orderIds) => {
+    const result = await orderService.bulkSilentDeliverSelected(orderIds)
+    if (result.error) {
+      return { success: false, count: 0, updatedIds: [], error: result.error }
+    }
+
+    const updatedIdSet = new Set(result.updatedIds)
+    set((state) => ({
+      orders: state.orders.filter((order) => !updatedIdSet.has(order.id)),
+      totalOrders: state.totalOrders === null
+        ? null
+        : Math.max(0, state.totalOrders - result.count),
+      // أبطل الكاش حتى تجلب الصفحة قائمة مكتملة حديثة بعد العملية الجماعية.
+      lastFetchedAt: null,
+    }))
+
+    return {
+      success: true,
+      count: result.count,
+      updatedIds: result.updatedIds,
+    }
   },
 
   // ============================================================================

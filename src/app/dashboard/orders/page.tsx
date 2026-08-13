@@ -55,7 +55,11 @@ import {
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
-import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
+import {
+  autoSendOnDelivery,
+  buildDeliveryUpdates,
+  buildSilentOutstandingDeliveryUpdates,
+} from '@/lib/services/delivery-service'
 import { sendInvoiceToAlostaz } from '@/lib/services/alostaz-client'
 import type { MeasurementSaveMetadata } from '@/types/measurements'
 
@@ -794,6 +798,29 @@ function OrdersPageInner() {
         }
       } else {
         toast.error(result.error || 'حدث خطأ', { icon: '✗' })
+      }
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const deliverSilentlyWithOutstandingBalance = async (orderId: string) => {
+    setIsProcessing(true)
+    try {
+      const updates = buildSilentOutstandingDeliveryUpdates()
+      const result = await updateOrder(orderId, updates)
+
+      if (result.success) {
+        setShowPaymentWarning(false)
+        setOrderToDeliver(null)
+        toast.success(
+          isArabic
+            ? 'تم تسليم الطلب بصمت مع إبقاء الدفعة المتبقية كما هي'
+            : 'Order delivered silently; the outstanding balance was left unchanged',
+          { icon: '✓' },
+        )
+      } else {
+        toast.error(result.error || (isArabic ? 'تعذّر تسليم الطلب' : 'Could not deliver order'), { icon: '✗' })
       }
     } finally {
       setIsProcessing(false)
@@ -1855,7 +1882,7 @@ function OrdersPageInner() {
           }}
           onIgnore={() => {
             if (orderToDeliver) {
-              return deliverOrderWithPaidStatus(orderToDeliver.id, false)
+              return deliverSilentlyWithOutstandingBalance(orderToDeliver.id)
             }
           }}
         />

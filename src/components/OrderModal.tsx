@@ -42,7 +42,11 @@ import { useOrderStore } from '@/store/orderStore' // إضافة
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions' // إضافة
 import { useTranslation } from '@/hooks/useTranslation'
 import { toast } from 'react-hot-toast' // إضافة
-import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
+import {
+  autoSendOnDelivery,
+  buildDeliveryUpdates,
+  buildSilentOutstandingDeliveryUpdates,
+} from '@/lib/services/delivery-service'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import VoiceNotes from './VoiceNotes'
@@ -312,6 +316,26 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       setShowStatusDropdown(false)
       // إرسال «مبلغ الشبكة فقط» تلقائياً للمحاسبة (للمدير إن كان التلقائي مفعّلاً)
       await autoSendOnDelivery({ ...base, ...updates, id: order.id }, user?.role)
+    } catch {
+      toast.error('فشل تحديث الحالة')
+    } finally {
+      setIsUpdatingStatus(false)
+    }
+  }
+
+  const performSilentOutstandingDelivery = async () => {
+    if (!order) return
+    setShowDeliverWarning(false)
+    setIsUpdatingStatus(true)
+    try {
+      const base = fullOrder || initialOrder || order
+      const updates = buildSilentOutstandingDeliveryUpdates()
+      const result = await updateOrder(order.id, updates)
+      if (!result.success) throw new Error(result.error)
+
+      setFullOrder({ ...base, ...updates } as Order)
+      toast.success('تم تسليم الطلب بصمت مع إبقاء الدفعة المتبقية كما هي')
+      setShowStatusDropdown(false)
     } catch {
       toast.error('فشل تحديث الحالة')
     } finally {
@@ -2468,7 +2492,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           : Math.max(0, (Number(order?.price) || 0) - (Number(order?.paid_amount) || 0))
       }
       onMarkAsPaid={(payment) => performDeliver(true, payment)}
-      onIgnore={() => performDeliver(false)}
+      onIgnore={performSilentOutstandingDelivery}
       onCancel={() => setShowDeliverWarning(false)}
     />
   </>

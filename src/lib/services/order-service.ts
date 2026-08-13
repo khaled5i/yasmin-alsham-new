@@ -81,6 +81,7 @@ const ORDER_LIST_COLUMNS = [
   'delivery_notified_at',
   'delivery_whatsapp_sent',
   'delivery_dismissed',
+  'delivered_with_outstanding_balance',
   'has_alterations',   // migration 34
   'alteration_count',  // migration 34
   'design_thumbnail',           // عمود مستقل (migration 32)
@@ -166,6 +167,7 @@ export interface Order {
   delivery_notified_at?: string | null
   delivery_whatsapp_sent?: boolean
   delivery_dismissed?: boolean
+  delivered_with_outstanding_balance?: boolean
   // تتبع التعديلات (migration 34)
   has_alterations: boolean
   alteration_count: number
@@ -400,6 +402,7 @@ export interface UpdateOrderData {
   delivery_notified_at?: string | null
   delivery_whatsapp_sent?: boolean
   delivery_dismissed?: boolean
+  delivered_with_outstanding_balance?: boolean
   admin_confirmed?: boolean
   fabric_type?: string | null
   price?: number
@@ -879,20 +882,53 @@ export const orderService = {
   },
 
   /**
-   * تحويل الطلبات المكتملة المتأخرة إلى "تم التسليم"
-   * يشمل كل طلب مكتمل تجاوز موعد تسليمه بأكثر من 10 أيام
-   * بشرط أن يكون قد تم تحديد العامل الخاص بالطلب (worker_id غير فارغ)
+   * القائمة الخفيفة الخاصة بأداة التسليم الصامت المؤقتة.
+   * لا تجلب سوى ما تحتاجه واجهة الاختيار: المعرّف والاسم وموعد التسليم.
    */
-  async bulkDeliverOverdue(daysOverdue: number = 10): Promise<{ count: number; error: string | null }> {
+  async getCompletedOrdersForBulkSilentDelivery(): Promise<{
+    data: Array<{ id: string; client_name: string; due_date: string }>
+    error: string | null
+  }> {
     if (!isSupabaseConfigured()) {
-      return { count: 0, error: 'Supabase is not configured.' }
+      return { data: [], error: 'Supabase is not configured.' }
     }
 
     try {
-      const cutoff = new Date()
-      cutoff.setDate(cutoff.getDate() - daysOverdue)
-      const cutoffDate = cutoff.toISOString().split('T')[0] // YYYY-MM-DD
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, client_name, due_date')
+        .eq('status', 'completed')
+        .order('due_date', { ascending: true, nullsFirst: false })
 
+      if (error) throw error
+      return { data: data || [], error: null }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'خطأ في تحميل الطلبات المكتملة'
+      console.error('❌ Error loading completed orders for bulk silent delivery:', message)
+      return { data: [], error: message }
+    }
+  },
+
+  /**
+   * تسليم صامت للطلبات المكتملة المحددة فقط.
+   * لا يلمس أي حقل دفع ولا يفعّل إشعارات التسليم؛ ومن ثم لا يفتح مسارات
+   * واتساب أو الطباعة أو إرسال الفواتير للمحاسبة.
+   */
+  async bulkSilentDeliverSelected(orderIds: string[]): Promise<{
+    count: number
+    updatedIds: string[]
+    error: string | null
+  }> {
+    if (!isSupabaseConfigured()) {
+      return { count: 0, updatedIds: [], error: 'Supabase is not configured.' }
+    }
+
+    const uniqueOrderIds = [...new Set(orderIds.filter(Boolean))]
+    if (uniqueOrderIds.length === 0) {
+      return { count: 0, updatedIds: [], error: 'لم يتم تحديد أي طلب' }
+    }
+
+    try {
       const deliveryDate = new Date().toISOString()
 
       const { data, error } = await supabase
@@ -900,22 +936,28 @@ export const orderService = {
         .update({
           status: 'delivered',
           delivery_date: deliveryDate,
-          delivery_notified: true,
-          delivery_notified_at: deliveryDate,
+          delivery_notified: false,
+          delivery_notified_at: null,
           delivery_whatsapp_sent: false,
-          delivery_dismissed: false,
+          delivery_dismissed: true,
+          delivered_with_outstanding_balance: true,
         })
         .eq('status', 'completed')
-        .lt('due_date', cutoffDate)
-        .not('worker_id', 'is', null)
+        .in('id', uniqueOrderIds)
         .select('id')
 
       if (error) throw error
 
-      return { count: data?.length ?? 0, error: null }
-    } catch (error: any) {
-      console.error('❌ Error in bulkDeliverOverdue:', error.message)
-      return { count: 0, error: error.message || 'خطأ في تحويل الطلبات' }
+      const updatedIds = (data || []).map((order) => order.id)
+      return { count: updatedIds.length, updatedIds, error: null }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'خطأ في التسليم الصامت للطلبات المحددة'
+      console.error('❌ Error in bulkSilentDeliverSelected:', message)
+      return {
+        count: 0,
+        updatedIds: [],
+        error: message,
+      }
     }
   },
 
@@ -1054,6 +1096,16 @@ export const orderService = {
       // إذا غيّر المدير الحالة إلى completed أو delivered → سجّل وقت الإنهاء
       const finalUpdates: any = { ...updates }
       const nowIso = new Date().toISOString()
+
+      // العلامة تخص آخر انتقال إلى التسليم فقط. أي إعادة فتح للطلب تزيلها،
+      // والتسليم العادي يضبطها إلى false ما لم يكن المسار الصامت صريحاً.
+      if (
+        updates.status &&
+        updates.status !== 'delivered' &&
+        finalUpdates.delivered_with_outstanding_balance === undefined
+      ) {
+        finalUpdates.delivered_with_outstanding_balance = false
+      }
       if (
         (updates.status === 'completed' || updates.status === 'delivered') &&
         !finalUpdates.admin_completed_at
@@ -1099,10 +1151,23 @@ export const orderService = {
 
       // إشعار التسليم (migration 71): يُفعَّل فقط عند الانتقال الفعلي إلى "تم التسليم".
       if (updates.status === 'delivered' && existingStatus !== 'delivered') {
-        if (finalUpdates.delivery_notified === undefined) finalUpdates.delivery_notified = true
-        if (finalUpdates.delivery_notified_at === undefined) finalUpdates.delivery_notified_at = nowIso
-        if (finalUpdates.delivery_whatsapp_sent === undefined) finalUpdates.delivery_whatsapp_sent = false
-        if (finalUpdates.delivery_dismissed === undefined) finalUpdates.delivery_dismissed = false
+        const isSilentOutstandingDelivery = finalUpdates.delivered_with_outstanding_balance === true
+
+        if (isSilentOutstandingDelivery) {
+          // لا يظهر في مركز إشعارات التسليم ولا يفتح أي مسار واتساب لاحقاً.
+          finalUpdates.delivery_notified = false
+          finalUpdates.delivery_notified_at = null
+          finalUpdates.delivery_whatsapp_sent = false
+          finalUpdates.delivery_dismissed = true
+        } else {
+          if (finalUpdates.delivered_with_outstanding_balance === undefined) {
+            finalUpdates.delivered_with_outstanding_balance = false
+          }
+          if (finalUpdates.delivery_notified === undefined) finalUpdates.delivery_notified = true
+          if (finalUpdates.delivery_notified_at === undefined) finalUpdates.delivery_notified_at = nowIso
+          if (finalUpdates.delivery_whatsapp_sent === undefined) finalUpdates.delivery_whatsapp_sent = false
+          if (finalUpdates.delivery_dismissed === undefined) finalUpdates.delivery_dismissed = false
+        }
       }
 
       const { data, error } = await supabase

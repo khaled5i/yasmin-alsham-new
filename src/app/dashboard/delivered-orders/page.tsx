@@ -16,7 +16,8 @@ import {
   Calculator,
   Banknote,
   CreditCard,
-  Printer
+  Printer,
+  AlertTriangle
 } from 'lucide-react'
 import toast from 'react-hot-toast' // Import toast
 import { useOrderStore } from '@/store/orderStore'
@@ -82,7 +83,7 @@ export default function DeliveredOrdersPage() {
       status: 'delivered',
       page: 0,
       pageSize: PAGE_SIZE,
-      orderBy: 'delivery_notified_at',
+      orderBy: 'delivery_date',
       orderAscending: false,
     })
     loadWorkers()
@@ -95,7 +96,7 @@ export default function DeliveredOrdersPage() {
       status: 'delivered',
       page: currentPage,
       pageSize: PAGE_SIZE,
-      orderBy: 'delivery_notified_at',
+      orderBy: 'delivery_date',
       orderAscending: false,
     })
   }, [currentPage, loadMoreOrders])
@@ -126,7 +127,7 @@ export default function DeliveredOrdersPage() {
       status: 'delivered',
       page: 0,
       pageSize: PAGE_SIZE,
-      orderBy: 'delivery_notified_at',
+      orderBy: 'delivery_date',
       orderAscending: false,
     })
     loadWorkers()
@@ -516,6 +517,12 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
           <div className={deliveredOrders.length === 0 ? "space-y-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}>
             {deliveredOrders.map((order, index) => {
               const paymentBreakdown = computePaymentBreakdown(order)
+              const outstandingBalance = Math.max(
+                0,
+                (Number(order.price) || 0) - (Number(order.paid_amount) || 0),
+              )
+              const isSilentDelivery = order.delivered_with_outstanding_balance === true
+              const hasOutstandingBalance = outstandingBalance >= 0.005
 
               return (
                 <motion.div
@@ -523,8 +530,42 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: index * 0.1 }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
+                  className={`overflow-hidden rounded-xl bg-white p-6 shadow-sm transition-all hover:shadow-lg ${
+                    isSilentDelivery
+                      ? 'border-2 border-amber-300 ring-2 ring-amber-100'
+                      : 'border border-gray-200'
+                  }`}
                 >
+                {isSilentDelivery ? (
+                  <div
+                    className="-mx-6 -mt-6 mb-4 flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-900"
+                    role="note"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
+                      <AlertTriangle className="h-4 w-4 text-amber-700" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold">
+                        {hasOutstandingBalance
+                          ? isArabic ? 'تسليم صامت — دفعة متبقية' : 'Silent delivery — balance outstanding'
+                          : isArabic ? 'تسليم صامت' : 'Silent delivery'}
+                      </p>
+                      <p className="text-xs text-amber-700">
+                        {workerType === 'workshop_manager'
+                          ? isArabic
+                            ? 'تم التسليم دون إجراءات تلقائية'
+                            : 'Delivered without automatic actions'
+                          : hasOutstandingBalance
+                            ? isArabic
+                              ? `المتبقي: ${outstandingBalance.toFixed(2)} ر.س`
+                              : `Outstanding: ${outstandingBalance.toFixed(2)} SAR`
+                            : isArabic
+                              ? 'بدون واتساب أو طباعة أو إرسال للمحاسبة'
+                              : 'No WhatsApp, printing, or accounting sync'}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 {/* Container for Main Content (Left) and Actions (Right) */}
                 <div className="flex items-start justify-between mb-2">
                   {/* Left Side: Info & Details */}
@@ -680,7 +721,7 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                       <div className="text-right">
                         <p className="text-xs text-gray-500">{t('paid') || (isArabic ? 'المدفوع' : 'Paid')}</p>
                         <p className="text-sm font-semibold text-green-600">
-                          {(order.paid_amount || order.price || 0).toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
+                          {(Number(order.paid_amount) || 0).toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
                         </p>
                       </div>
                     </div>

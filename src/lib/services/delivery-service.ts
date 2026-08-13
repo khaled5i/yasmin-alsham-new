@@ -38,6 +38,7 @@ interface DeliveryOrder extends TailoringReceiptOrder {
 interface DeliveryUpdates {
   status: 'delivered'
   delivery_date: string
+  delivered_with_outstanding_balance: false
   deposit_amount: number
   pre_delivery_cash_amount: number
   pre_delivery_network_amount: number
@@ -46,6 +47,33 @@ interface DeliveryUpdates {
   remaining_payment_method?: RemainingPaymentMethod
   remaining_cash_amount?: number
   remaining_network_amount?: number
+}
+
+export interface SilentOutstandingDeliveryUpdates {
+  status: 'delivered'
+  delivery_date: string
+  delivered_with_outstanding_balance: true
+  delivery_notified: false
+  delivery_notified_at: null
+  delivery_whatsapp_sent: false
+  delivery_dismissed: true
+}
+
+/**
+ * يبني تحديث التسليم الصامت عند تجاهل الدفعة المتبقية.
+ * لا يتضمن أي حقل دفع، لذلك تبقى paid_amount / remaining_amount وحالة الدفع كما هي.
+ * كما يمنع إنشاء إشعار تسليم يمكن أن يقود لاحقاً إلى واتساب تلقائي.
+ */
+export function buildSilentOutstandingDeliveryUpdates(): SilentOutstandingDeliveryUpdates {
+  return {
+    status: 'delivered',
+    delivery_date: new Date().toISOString(),
+    delivered_with_outstanding_balance: true,
+    delivery_notified: false,
+    delivery_notified_at: null,
+    delivery_whatsapp_sent: false,
+    delivery_dismissed: true,
+  }
 }
 
 /**
@@ -70,6 +98,7 @@ export function buildDeliveryUpdates(order: DeliveryOrder | null | undefined, op
   const updates: DeliveryUpdates = {
     status: 'delivered',
     delivery_date: new Date().toISOString(),
+    delivered_with_outstanding_balance: false,
     // نأخذ لقطة فعلية لكل ما دُفع قبل لحظة التسليم. قد يكون المستخدم عدّل
     // paid_amount بعد إنشاء الطلب، لذلك لا نعتمد قيمة deposit_amount القديمة.
     deposit_amount: preDeliveryPaid,

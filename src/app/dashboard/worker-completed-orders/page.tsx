@@ -10,7 +10,11 @@ import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
-import { buildDeliveryUpdates, autoSendOnDelivery } from '@/lib/services/delivery-service'
+import {
+  autoSendOnDelivery,
+  buildDeliveryUpdates,
+  buildSilentOutstandingDeliveryUpdates,
+} from '@/lib/services/delivery-service'
 import {
   ArrowRight,
   Package,
@@ -295,6 +299,26 @@ export default function WorkerCompletedOrdersPage() {
             // لا نعرض رسالة خطأ هنا لأن التسليم تم بنجاح
           }
         }
+      }
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const deliverSilentlyWithOutstandingBalance = async (orderId: string) => {
+    setIsProcessing(true)
+    try {
+      const updates = buildSilentOutstandingDeliveryUpdates()
+      const result = await updateOrder(orderId, updates)
+
+      if (result.success) {
+        setDeliverySuccess(true)
+        setTimeout(() => setDeliverySuccess(false), 3000)
+        setShowPaymentWarning(false)
+        setOrderToDeliver(null)
+        toast.success('تم تسليم الطلب بصمت مع إبقاء الدفعة المتبقية كما هي', { icon: '✓' })
+      } else {
+        toast.error(result.error || 'تعذّر تسليم الطلب', { icon: '✗' })
       }
     } finally {
       setIsProcessing(false)
@@ -753,7 +777,7 @@ export default function WorkerCompletedOrdersPage() {
         }}
         onIgnore={() => {
           if (orderToDeliver) {
-            return deliverOrder(orderToDeliver.id, false)
+            return deliverSilentlyWithOutstandingBalance(orderToDeliver.id)
           }
         }}
         onCancel={() => {
