@@ -52,6 +52,12 @@ export interface AlostazInvoiceResult {
   is_draft: boolean
 }
 
+export interface WomenWorkshopInvoiceInput {
+  operation_name: string
+  amount: number
+  use_measurement_product?: boolean
+}
+
 class AlostazRequestError extends Error {
   constructor(
     message: string,
@@ -357,6 +363,78 @@ export async function createInvoiceForMeasurement(
   if (!created?.id) {
     throw new AlostazRequestError(
       'فشل إنشاء فاتورة أجرة المقاس في الأستاذ (لم يُرجَع معرّف).',
+      true
+    )
+  }
+
+  return {
+    invoice_id: Number(created.id),
+    invoice_code: String(created.code || ''),
+    customer_id: customerId,
+    is_draft: isDraft,
+  }
+}
+
+/**
+ * إنشاء فاتورة شبكة لعملية مستقلة من المشغل النسائي.
+ * يسجّلها في فرع ياسمين الشام باسم «عميل جديد»، مدفوعة بالكامل،
+ * وبسعر شامل ضريبة القيمة المضافة.
+ */
+export async function createInvoiceForWomenWorkshop(
+  input: WomenWorkshopInvoiceInput
+): Promise<AlostazInvoiceResult> {
+  const branchHeaders = { 'X-Branch-Id': String(ALOSTAZ_BRANCH_ID) }
+  const customerId = await findOrCreateCustomer(
+    { name: 'عميل جديد' },
+    { branchId: ALOSTAZ_BRANCH_ID, partnerListId: ALOSTAZ_PARTNER_LIST_ID }
+  )
+
+  const nowIso = new Date().toISOString()
+  const invoiceStatus = ALOSTAZ_INVOICE_STATUS
+  const isDraft = invoiceStatus === 'draft'
+  const amountHalalas = toHalalas(input.amount)
+
+  const body: Record<string, unknown> = {
+    variant: 'standard',
+    nature: 'sale',
+    type: 'invoice',
+    status: invoiceStatus,
+    issue_date: nowIso,
+    due_date: nowIso,
+    partner_id: customerId,
+    line_items: [
+      {
+        product_id: input.use_measurement_product
+          ? ALOSTAZ_MEASUREMENT_PRODUCT_ID
+          : ALOSTAZ_SERVICE_PRODUCT_ID,
+        storehouse_id: ALOSTAZ_STOREHOUSE_ID,
+        description: input.operation_name,
+        unit_quantity: ALOSTAZ_QUANTITY_SCALE,
+        unit_price: amountHalalas,
+        unit_content: 1,
+        ...(ALOSTAZ_VAT_TAX_ID ? { taxes: [{ id: ALOSTAZ_VAT_TAX_ID }] } : {}),
+      },
+    ],
+  }
+
+  if (!isDraft) {
+    body.payments = [
+      {
+        amount: amountHalalas,
+        treasury_id: ALOSTAZ_TREASURY_BANK,
+      },
+    ]
+  }
+
+  const created = await alostazFetch('/invoices', {
+    method: 'POST',
+    headers: branchHeaders,
+    body: JSON.stringify(body),
+  })
+
+  if (!created?.id) {
+    throw new AlostazRequestError(
+      'فشل إنشاء فاتورة المشغل النسائي في الأستاذ (لم يُرجَع معرّف).',
       true
     )
   }

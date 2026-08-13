@@ -10,7 +10,8 @@ import {
   Shirt,
   ArrowLeft,
   Clock,
-  Calculator
+  Calculator,
+  Sparkles
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
@@ -49,6 +50,16 @@ const branches = [
     color: 'from-emerald-500 to-teal-600',
     bgColor: 'bg-emerald-50',
     available: true
+  },
+  {
+    id: 'women_workshop',
+    name: 'المشغل النسائي',
+    description: 'تقرير عمليات المشغل وفواتير المقاسات',
+    icon: Sparkles,
+    href: '/dashboard/accounting/women-workshop',
+    color: 'from-rose-500 to-fuchsia-600',
+    bgColor: 'bg-rose-50',
+    available: true
   }
 ]
 
@@ -62,7 +73,7 @@ function AccountingMainContent() {
 
   const isAccountant = user?.role === 'worker' && workerType === 'accountant'
   const visibleBranches = isAccountant
-    ? branches.filter((branch) => branch.id === 'tailoring')
+    ? branches.filter((branch) => ['tailoring', 'women_workshop'].includes(branch.id))
     : branches
 
   // تحديد مسار العودة حسب نوع المستخدم
@@ -105,7 +116,7 @@ function AccountingMainContent() {
         </motion.div>
 
         {/* بطاقات الفروع */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           {visibleBranches.map((branch, index) => (
             <motion.div
               key={branch.id}
@@ -201,4 +212,3 @@ export default function AccountingPage() {
 
   return <AccountingMainContent />
 }
-

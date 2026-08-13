@@ -1963,6 +1963,7 @@ function OrdersPageInner() {
               showMeasurementOptions
               initialMeasurementSource={measurementsOrder.measurement_source || null}
               initialMeasurementPaymentMethod={measurementsOrder.measurement_payment_method || null}
+              forceNetworkMeasurementBilling={!hasMeasurementsBadge(measurementsOrder)}
               isMeasurementBillingLocked={Boolean(
                 measurementsOrder.alostaz_measurement_invoice_id ||
                 ['sending', 'sent', 'review_required'].includes(
