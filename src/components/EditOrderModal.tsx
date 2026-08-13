@@ -942,7 +942,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
               </div>
 
               {/* محتوى النموذج */}
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              <form id="edit-order-form" onSubmit={handleSubmit} className="p-6 space-y-6">
                 {/* المعلومات الأساسية */}
                 <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
                   <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center space-x-2 space-x-reverse">
@@ -1365,6 +1365,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                   {/* زر تحديث الطلب العادي */}
                   <button
                     type="submit"
+                    form="edit-order-form"
                     disabled={isSubmitting}
                     className="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg hover:from-pink-600 hover:to-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse font-medium shadow-lg"
                   >

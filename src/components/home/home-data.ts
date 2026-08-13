@@ -21,7 +21,7 @@ export const homeMedia = {
   hero: {
     mobilePoster: '/media/home/hero-mobile.webp',
     desktopPoster: '/media/home/hero-desktop.webp',
-    mobileVideo: '/media/home/hero-mobile.mp4',
+    mobileVideo: '/media/home/hero-mobile1.mp4',
     desktopVideo: '/media/home/hero-desktop.mp4',
   },
   craftPoster: '/media/home/craft-poster.webp',
