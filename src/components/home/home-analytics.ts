@@ -7,6 +7,9 @@ export type HomeEventName =
   | 'hero_cta_click'
   | 'tailoring_gallery_view'
   | 'tailoring_work_open'
+  | 'tailoring_work_scroll'
+  | 'tailoring_tiktok_reveal'
+  | 'tailoring_tiktok_click'
   | 'tailoring_whatsapp_click'
   | 'fabric_card_click'
   | 'fabric_category_click'
@@ -25,4 +28,3 @@ export function trackHomeEvent(
   if (typeof window === 'undefined') return
   window.gtag?.('event', eventName, properties)
 }
-

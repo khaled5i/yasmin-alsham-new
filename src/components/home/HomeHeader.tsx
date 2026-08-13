@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  ArrowRight,
   HelpCircle,
   Menu,
   MessageCircle,
@@ -29,25 +30,55 @@ const serviceItems = [
 ]
 
 type HomeHeaderProps = {
+  activeSection?: HomeSectionKey | null
   forceSolid?: boolean
   onSelectHome: () => void
   onSelectSection: (section: HomeSectionKey) => void
 }
 
-export default function HomeHeader({ forceSolid = false, onSelectHome, onSelectSection }: HomeHeaderProps) {
+export default function HomeHeader({
+  activeSection = null,
+  forceSolid = false,
+  onSelectHome,
+  onSelectSection,
+}: HomeHeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const headerRef = useRef<HTMLElement>(null)
   const brandClickCountRef = useRef(0)
   const brandClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollFrameRef = useRef<number | null>(null)
   const router = useRouter()
+  const isTailoring = activeSection === 'tailoring'
 
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 24)
+    const updateHeader = () => {
+      const scrollTop = window.scrollY
+      setIsScrolled(scrollTop > 24)
+
+      if (headerRef.current) {
+        const progress = Math.min(1, scrollTop / Math.max(180, window.innerHeight * 0.32))
+        headerRef.current.style.setProperty('--tailoring-header-progress', progress.toFixed(3))
+      }
+
+      scrollFrameRef.current = null
+    }
+
+    const handleScroll = () => {
+      if (scrollFrameRef.current !== null) return
+      scrollFrameRef.current = window.requestAnimationFrame(updateHeader)
+    }
+
     handleScroll()
     window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+    window.addEventListener('resize', handleScroll, { passive: true })
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('resize', handleScroll)
+      if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current)
+    }
+  }, [activeSection])
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -115,10 +146,10 @@ export default function HomeHeader({ forceSolid = false, onSelectHome, onSelectS
   return (
     <header
       ref={headerRef}
-      className={`${styles.homeHeader} ${forceSolid || isScrolled || isMenuOpen ? styles.headerSolid : ''}`}
+      className={`${styles.homeHeader} ${isTailoring ? styles.tailoringHomeHeader : ''} ${!isTailoring && (forceSolid || isScrolled || isMenuOpen) ? styles.headerSolid : ''}`}
       data-open={isMenuOpen}
     >
-      <div className={styles.headerInner}>
+      <div className={`${styles.headerInner} ${isTailoring ? styles.tailoringHeaderInner : ''}`}>
         <button
           type="button"
           className={styles.menuButton}
@@ -143,19 +174,21 @@ export default function HomeHeader({ forceSolid = false, onSelectHome, onSelectS
             <span>{isMenuOpen ? 'إغلاق' : 'القائمة'}</span>
           </button>
 
-          {navItems.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              onClick={(event) => {
-                event.preventDefault()
-                closeMenu()
-                onSelectSection(item.section)
-              }}
-            >
-              {item.label}
-            </a>
-          ))}
+          {isTailoring
+            ? null
+            : navItems.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    closeMenu()
+                    onSelectSection(item.section)
+                  }}
+                >
+                  {item.label}
+                </a>
+              ))}
         </nav>
 
         <a
@@ -168,16 +201,23 @@ export default function HomeHeader({ forceSolid = false, onSelectHome, onSelectS
           <small>YASMIN AL-SHAM</small>
         </a>
 
-        <a
-          href={tailoringWhatsAppUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={styles.headerContact}
-          onClick={() => trackHomeEvent('tailoring_whatsapp_click', { placement: 'header' })}
-        >
-          <MessageCircle aria-hidden="true" />
-          <span>تواصلي معنا</span>
-        </a>
+        {isTailoring ? (
+          <button type="button" className={styles.tailoringBackButton} onClick={onSelectHome}>
+            <ArrowRight aria-hidden="true" />
+            <span>العودة إلى الرئيسية</span>
+          </button>
+        ) : (
+          <a
+            href={tailoringWhatsAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.headerContact}
+            onClick={() => trackHomeEvent('tailoring_whatsapp_click', { placement: 'header' })}
+          >
+            <MessageCircle aria-hidden="true" />
+            <span>تواصلي معنا</span>
+          </a>
+        )}
       </div>
 
       <nav id="home-navigation-menu" className={styles.menuPanel} aria-label="روابط وخدمات ياسمين الشام">

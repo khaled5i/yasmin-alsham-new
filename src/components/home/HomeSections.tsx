@@ -1,5 +1,5 @@
 import Image from 'next/image'
-import { ArrowDown, ArrowLeft, MessageCircle } from 'lucide-react'
+import { ArrowLeft, MessageCircle } from 'lucide-react'
 import ResponsiveHeroMedia from './ResponsiveHeroMedia'
 import TailoringShowcase from './TailoringShowcase'
 import TrackedLink from './TrackedLink'
@@ -34,8 +34,7 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
               onSelectSection('tailoring')
             }}
           >
-            اكتشفي التفصيل
-            <ArrowDown aria-hidden="true" />
+            تفصيل فستان سهرة
           </TrackedLink>
           <TrackedLink
             href="#fabrics"
@@ -47,7 +46,7 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
               onSelectSection('fabrics')
             }}
           >
-            تسوّقي الأقمشة
+            متجر الأقمشة
           </TrackedLink>
         </div>
       </div>
@@ -124,58 +123,73 @@ export function BusinessGateway({ onSelectSection }: SectionSelectionProps) {
   )
 }
 
-export function TailoringStory() {
+export function TailoringStory({ onSelectSection }: SectionSelectionProps) {
   return (
-    <section className={styles.tailoringSection} aria-labelledby="tailoring-title">
-      <div className={styles.sectionContainer}>
-        <header className={styles.tailoringHeader}>
-          <div>
-            <p className={styles.sectionEyebrow}>ATELIER · مشغل ياسمين الشام</p>
-            <h2 id="tailoring-title" className={styles.sectionTitle}>نصنع فستانًا<br />يحمل تفاصيلك</h2>
-          </div>
-          <p>من اختيار القماش ورسم الفكرة إلى آخر غرزة، ننفذ كل فستان بعناية توازن بين أناقة التصميم ودقة المقاس وجودة التشطيب.</p>
-        </header>
+    <>
+      <section className={styles.tailoringHero} aria-labelledby="tailoring-title">
+        <ResponsiveHeroMedia {...homeMedia.hero} />
+        <div className={styles.tailoringHeroShade} />
+        <div className={styles.heroGrain} />
 
-        <div className={styles.craftPanel}>
-          <Image
-            src={homeMedia.craftPoster}
-            alt="فستان سهرة على مانيكان داخل مشغل ياسمين الشام"
-            fill
-            sizes="(max-width: 767px) 92vw, 76vw"
-            className={styles.craftImage}
-          />
-          <span className={styles.craftShade} />
-          <p>لا نتبع التفاصيل…<br /><strong>نصنعها.</strong></p>
-          <small>الحرفة في كل مرحلة</small>
-        </div>
-
-        <div className={styles.showcaseHeader}>
-          <div>
-            <p className={styles.sectionEyebrow}>من أعمال ياسمين الشام</p>
-            <h3>تفاصيل تروي<br />الحكاية.</h3>
-          </div>
-          <p>لمسات من القصّة والتطريز والتشطيب، مجمّعة في معرض مستقل للتفصيل.</p>
-        </div>
-        <TailoringShowcase items={tailoringShowcase} />
-
-        <div className={styles.tailoringCta}>
-          <p className={styles.sectionEyebrow}>الخطوة التالية</p>
-          <h3>لديك فكرة لفستانك؟</h3>
-          <p>شاركينا فكرتك عبر واتساب، وسيساعدك فريق ياسمين الشام في الخطوة التالية.</p>
+        <div className={styles.tailoringHeroContent}>
+          <p className={styles.heroEyebrow}>مشغل ياسمين الشام <span aria-hidden="true" /> الخبر</p>
+          <h1 id="tailoring-title">من فكرتكِ…<br />إلى فستانٍ يشبهكِ</h1>
+          <p>نصمّم ونفصّل فساتين السهرة بعناية تُرى في كل غرزة.</p>
           <TrackedLink
-            href={tailoringWhatsAppUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.lightButton}
-            eventName="tailoring_whatsapp_click"
-            eventProperties={{ placement: 'tailoring_cta' }}
+            href="#tailoring-work"
+            className={styles.tailoringHeroButton}
+            eventName="tailoring_work_scroll"
           >
-            <MessageCircle aria-hidden="true" />
-            تواصلي مع قسم التفصيل
+            شاهدي أعمالنا السابقة
           </TrackedLink>
         </div>
-      </div>
-    </section>
+        <a className={styles.tailoringScrollMark} href="#tailoring-work" aria-label="الانتقال إلى أعمالنا السابقة">
+          <span aria-hidden="true" />
+        </a>
+      </section>
+
+      <section id="tailoring-work" className={styles.tailoringWorksSection} aria-labelledby="tailoring-work-title">
+        <p className={styles.tailoringSectionNotice}>أنتِ الآن في قسم التفصيل التابع لياسمين الشام</p>
+        <div className={styles.tailoringWorksInner}>
+          <header className={styles.tailoringWorksHeader}>
+            <h2 id="tailoring-work-title">من أعمال ياسمين الشام</h2>
+          </header>
+
+          <TailoringShowcase items={tailoringShowcase} />
+
+          <div className={styles.tailoringContactCta}>
+            <p>شاركينا فكرتك عبر واتساب، وسيساعدك فريق ياسمين الشام في الخطوة التالية.</p>
+            <TrackedLink
+              href={tailoringWhatsAppUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.tailoringWhatsAppButton}
+              eventName="tailoring_whatsapp_click"
+              eventProperties={{ placement: 'tailoring_cta' }}
+            >
+              <MessageCircle aria-hidden="true" />
+              تواصلي مع قسم التفصيل
+            </TrackedLink>
+            <div className={styles.fabricStorePrompt}>
+              <p>ليس لديكِ قماش بعد؟</p>
+              <TrackedLink
+                href="#fabrics"
+                className={styles.fabricStorePromptButton}
+                eventName="hero_cta_click"
+                eventProperties={{ destination: 'fabrics', placement: 'tailoring_footer' }}
+                onClick={(event) => {
+                  event.preventDefault()
+                  onSelectSection('fabrics')
+                }}
+              >
+                زوري متجر الأقمشة
+                <ArrowLeft aria-hidden="true" />
+              </TrackedLink>
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
   )
 }
 

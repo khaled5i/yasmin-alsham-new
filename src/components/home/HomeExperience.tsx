@@ -18,6 +18,7 @@ function getSectionFromHash(): HomeSectionKey | null {
   if (typeof window === 'undefined') return null
 
   const hash = window.location.hash.slice(1)
+  if (hash === 'tailoring-work') return 'tailoring'
   return hash === 'tailoring' || hash === 'fabrics' ? hash : null
 }
 
@@ -28,7 +29,12 @@ export default function HomeExperience() {
 
   const scrollToActivePanel = useCallback(() => {
     window.requestAnimationFrame(() => {
-      panelRef.current?.scrollIntoView({
+      const hash = window.location.hash.slice(1)
+      const scrollTarget = hash === 'tailoring-work'
+        ? document.getElementById('tailoring-work')
+        : panelRef.current
+
+      scrollTarget?.scrollIntoView({
         behavior: scrollBehaviorRef.current,
         block: 'start',
       })
@@ -90,7 +96,8 @@ export default function HomeExperience() {
   return (
     <>
       <HomeHeader
-        forceSolid={activeSection !== null}
+        activeSection={activeSection}
+        forceSolid={activeSection === 'fabrics'}
         onSelectHome={selectHome}
         onSelectSection={selectSection}
       />
@@ -103,22 +110,22 @@ export default function HomeExperience() {
             tabIndex={-1}
             data-section={activeSection}
           >
-            <div className={styles.sectionToolbar}>
-              <div className={styles.sectionToolbarInner}>
-                <button type="button" className={styles.sectionBackButton} onClick={selectHome}>
-                  <ArrowRight aria-hidden="true" />
-                  العودة إلى الرئيسية
-                </button>
-                <div className={styles.sectionContext} aria-live="polite">
-                  <small>أنتِ الآن في</small>
-                  <strong>
-                    {activeSection === 'tailoring' ? 'تفصيل ياسمين الشام' : 'متجر الأقمشة'}
-                  </strong>
+            {activeSection === 'fabrics' ? (
+              <div className={styles.sectionToolbar}>
+                <div className={styles.sectionToolbarInner}>
+                  <button type="button" className={styles.sectionBackButton} onClick={selectHome}>
+                    <ArrowRight aria-hidden="true" />
+                    العودة إلى الرئيسية
+                  </button>
+                  <div className={styles.sectionContext} aria-live="polite">
+                    <small>أنتِ الآن في</small>
+                    <strong>متجر الأقمشة</strong>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : null}
             {activeSection === 'tailoring' ? (
-              <TailoringStory />
+              <TailoringStory onSelectSection={selectSection} />
             ) : (
               <>
                 <FabricTransition />
