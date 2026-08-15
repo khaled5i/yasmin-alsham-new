@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowRight } from 'lucide-react'
 import FeaturedFabricStore from './FeaturedFabricStore'
 import HomeFooter from './HomeFooter'
 import HomeHeader from './HomeHeader'
@@ -19,6 +18,7 @@ function getSectionFromHash(): HomeSectionKey | null {
 
   const hash = window.location.hash.slice(1)
   if (hash === 'tailoring-work') return 'tailoring'
+  if (hash === 'fabric-collection') return 'fabrics'
   return hash === 'tailoring' || hash === 'fabrics' ? hash : null
 }
 
@@ -30,8 +30,8 @@ export default function HomeExperience() {
   const scrollToActivePanel = useCallback(() => {
     window.requestAnimationFrame(() => {
       const hash = window.location.hash.slice(1)
-      const scrollTarget = hash === 'tailoring-work'
-        ? document.getElementById('tailoring-work')
+      const scrollTarget = hash === 'tailoring-work' || hash === 'fabric-collection'
+        ? document.getElementById(hash)
         : panelRef.current
 
       scrollTarget?.scrollIntoView({
@@ -97,7 +97,6 @@ export default function HomeExperience() {
     <>
       <HomeHeader
         activeSection={activeSection}
-        forceSolid={activeSection === 'fabrics'}
         onSelectHome={selectHome}
         onSelectSection={selectSection}
       />
@@ -110,26 +109,15 @@ export default function HomeExperience() {
             tabIndex={-1}
             data-section={activeSection}
           >
-            {activeSection === 'fabrics' ? (
-              <div className={styles.sectionToolbar}>
-                <div className={styles.sectionToolbarInner}>
-                  <button type="button" className={styles.sectionBackButton} onClick={selectHome}>
-                    <ArrowRight aria-hidden="true" />
-                    العودة إلى الرئيسية
-                  </button>
-                  <div className={styles.sectionContext} aria-live="polite">
-                    <small>أنتِ الآن في</small>
-                    <strong>متجر الأقمشة</strong>
-                  </div>
-                </div>
-              </div>
-            ) : null}
             {activeSection === 'tailoring' ? (
               <TailoringStory onSelectSection={selectSection} />
             ) : (
               <>
                 <FabricTransition />
-                <FeaturedFabricStore />
+                <div id="fabric-collection" className={styles.fabricCollectionAnchor}>
+                  <p className={styles.fabricSectionNotice}>أنتِ الآن في قسم متجر الأقمشة التابع لياسمين الشام</p>
+                  <FeaturedFabricStore />
+                </div>
               </>
             )}
           </div>

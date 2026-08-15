@@ -49,7 +49,7 @@ export default function HomeHeader({
   const brandClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const router = useRouter()
-  const isTailoring = activeSection === 'tailoring'
+  const isSectionExperience = activeSection !== null
 
   useEffect(() => {
     const updateHeader = () => {
@@ -146,10 +146,10 @@ export default function HomeHeader({
   return (
     <header
       ref={headerRef}
-      className={`${styles.homeHeader} ${isTailoring ? styles.tailoringHomeHeader : ''} ${!isTailoring && (forceSolid || isScrolled || isMenuOpen) ? styles.headerSolid : ''}`}
+      className={`${styles.homeHeader} ${isSectionExperience ? styles.tailoringHomeHeader : ''} ${!isSectionExperience && (forceSolid || isScrolled || isMenuOpen) ? styles.headerSolid : ''}`}
       data-open={isMenuOpen}
     >
-      <div className={`${styles.headerInner} ${isTailoring ? styles.tailoringHeaderInner : ''}`}>
+      <div className={`${styles.headerInner} ${isSectionExperience ? styles.tailoringHeaderInner : ''}`}>
         <button
           type="button"
           className={styles.menuButton}
@@ -174,7 +174,7 @@ export default function HomeHeader({
             <span>{isMenuOpen ? 'إغلاق' : 'القائمة'}</span>
           </button>
 
-          {isTailoring
+          {isSectionExperience
             ? null
             : navItems.map((item) => (
                 <a
@@ -201,7 +201,7 @@ export default function HomeHeader({
           <small>YASMIN AL-SHAM</small>
         </a>
 
-        {isTailoring ? (
+        {isSectionExperience ? (
           <button type="button" className={styles.tailoringBackButton} onClick={onSelectHome}>
             <ArrowRight aria-hidden="true" />
             <span>العودة إلى الرئيسية</span>

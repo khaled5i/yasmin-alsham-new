@@ -68,7 +68,6 @@ interface MeasurementsModalProps {
   initialMeasurementSource?: MeasurementSource | null
   initialMeasurementPaymentMethod?: MeasurementPaymentMethod | null
   isMeasurementBillingLocked?: boolean
-  forceNetworkMeasurementBilling?: boolean
 }
 
 export default function MeasurementsModal({
@@ -81,16 +80,11 @@ export default function MeasurementsModal({
   initialMeasurementSource = null,
   initialMeasurementPaymentMethod = null,
   isMeasurementBillingLocked = false,
-  forceNetworkMeasurementBilling = false,
 }: MeasurementsModalProps) {
   const { t, isArabic } = useTranslation()
   const [measurements, setMeasurements] = useState<Measurements>(initialMeasurements || {})
-  const [measurementSource, setMeasurementSource] = useState<MeasurementSource | null>(
-    forceNetworkMeasurementBilling ? 'yasmin_alsham' : initialMeasurementSource
-  )
-  const [measurementPaymentMethod, setMeasurementPaymentMethod] = useState<MeasurementPaymentMethod | null>(
-    forceNetworkMeasurementBilling ? 'card' : initialMeasurementPaymentMethod
-  )
+  const [measurementSource, setMeasurementSource] = useState<MeasurementSource | null>(initialMeasurementSource)
+  const [measurementPaymentMethod, setMeasurementPaymentMethod] = useState<MeasurementPaymentMethod | null>(initialMeasurementPaymentMethod)
   const [isSaving, setIsSaving] = useState(false)
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
@@ -105,14 +99,10 @@ export default function MeasurementsModal({
       if (draft) {
         setMeasurements(draft.data)
         if (showMeasurementOptions) {
-          const restoredSource = forceNetworkMeasurementBilling
-            ? 'yasmin_alsham'
-            : (draft.source || initialMeasurementSource)
+          const restoredSource = draft.source || initialMeasurementSource
           setMeasurementSource(restoredSource)
           setMeasurementPaymentMethod(
-            forceNetworkMeasurementBilling
-              ? 'card'
-              : restoredSource === 'external'
+            restoredSource === 'external'
               ? null
               : (draft.paymentMethod || initialMeasurementPaymentMethod)
           )
@@ -120,8 +110,8 @@ export default function MeasurementsModal({
         setShowDraftBanner(true)
       } else {
         setMeasurements(initialMeasurements || {})
-        setMeasurementSource(forceNetworkMeasurementBilling ? 'yasmin_alsham' : initialMeasurementSource)
-        setMeasurementPaymentMethod(forceNetworkMeasurementBilling ? 'card' : initialMeasurementPaymentMethod)
+        setMeasurementSource(initialMeasurementSource)
+        setMeasurementPaymentMethod(initialMeasurementPaymentMethod)
         setShowDraftBanner(false)
       }
       setValidationError(null)
@@ -135,7 +125,6 @@ export default function MeasurementsModal({
     initialMeasurementSource,
     initialMeasurementPaymentMethod,
     showMeasurementOptions,
-    forceNetworkMeasurementBilling,
   ])
 
   // حفظ تلقائي محلي مع debounce
@@ -162,7 +151,7 @@ export default function MeasurementsModal({
   }
 
   const handleMeasurementSourceChange = (source: MeasurementSource) => {
-    if (isMeasurementBillingLocked || forceNetworkMeasurementBilling) return
+    if (isMeasurementBillingLocked) return
     userHasEdited.current = true
     const nextPaymentMethod = source === 'external' ? null : measurementPaymentMethod
     setMeasurementSource(source)
@@ -173,7 +162,7 @@ export default function MeasurementsModal({
   }
 
   const handleMeasurementPaymentChange = (method: MeasurementPaymentMethod) => {
-    if (isMeasurementBillingLocked || forceNetworkMeasurementBilling || measurementSource !== 'yasmin_alsham') return
+    if (isMeasurementBillingLocked || measurementSource !== 'yasmin_alsham') return
     userHasEdited.current = true
     setMeasurementPaymentMethod(method)
     setValidationError(null)
@@ -185,8 +174,8 @@ export default function MeasurementsModal({
   const handleClearDraft = () => {
     clearDraftFromLocal(orderId)
     setMeasurements(initialMeasurements || {})
-    setMeasurementSource(forceNetworkMeasurementBilling ? 'yasmin_alsham' : initialMeasurementSource)
-    setMeasurementPaymentMethod(forceNetworkMeasurementBilling ? 'card' : initialMeasurementPaymentMethod)
+    setMeasurementSource(initialMeasurementSource)
+    setMeasurementPaymentMethod(initialMeasurementPaymentMethod)
     setShowDraftBanner(false)
     setValidationError(null)
     setSaveError(null)
@@ -195,9 +184,6 @@ export default function MeasurementsModal({
   const handleSave = async () => {
     let metadata: MeasurementSaveMetadata | undefined
     if (showMeasurementOptions) {
-      if (forceNetworkMeasurementBilling) {
-        metadata = { source: 'yasmin_alsham', paymentMethod: 'card' }
-      }
       if (!measurementSource) {
         setValidationError(isArabic ? 'يرجى اختيار نوع المقاس قبل الحفظ' : 'Select the measurement source before saving')
         return
@@ -206,11 +192,9 @@ export default function MeasurementsModal({
         setValidationError(isArabic ? 'طريقة الدفع مطلوبة لمقاس ياسمين الشام' : 'Payment method is required for Yasmin Al-Sham measurements')
         return
       }
-      if (!forceNetworkMeasurementBilling) {
-        metadata = {
-          source: measurementSource,
-          paymentMethod: measurementSource === 'yasmin_alsham' ? measurementPaymentMethod : null,
-        }
+      metadata = {
+        source: measurementSource,
+        paymentMethod: measurementSource === 'yasmin_alsham' ? measurementPaymentMethod : null,
       }
     }
 
@@ -326,7 +310,7 @@ export default function MeasurementsModal({
                                 selected
                                   ? 'border-pink-500 bg-white text-pink-700 shadow-sm'
                                   : 'border-pink-100 bg-white/70 text-gray-700 hover:border-pink-300'
-                              } ${isMeasurementBillingLocked || forceNetworkMeasurementBilling ? 'cursor-not-allowed opacity-70' : ''}`}
+                              } ${isMeasurementBillingLocked ? 'cursor-not-allowed opacity-70' : ''}`}
                             >
                               <input
                                 type="radio"
@@ -334,7 +318,7 @@ export default function MeasurementsModal({
                                 value={value}
                                 checked={selected}
                                 onChange={() => handleMeasurementSourceChange(value)}
-                                disabled={isSaving || isMeasurementBillingLocked || forceNetworkMeasurementBilling}
+                                disabled={isSaving || isMeasurementBillingLocked}
                                 className="h-4 w-4 accent-pink-600"
                               />
                               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -346,7 +330,7 @@ export default function MeasurementsModal({
                     </fieldset>
 
                     <fieldset
-                      disabled={measurementSource !== 'yasmin_alsham' || isSaving || isMeasurementBillingLocked || forceNetworkMeasurementBilling}
+                      disabled={measurementSource !== 'yasmin_alsham' || isSaving || isMeasurementBillingLocked}
                       className={`rounded-2xl border p-4 transition-colors ${
                         measurementSource === 'yasmin_alsham'
                           ? 'border-emerald-100 bg-emerald-50/60'
@@ -365,7 +349,7 @@ export default function MeasurementsModal({
                           { value: 'card', label: isArabic ? 'شبكة' : 'Card', icon: CreditCard },
                         ] as const).map(({ value, label, icon: Icon }) => {
                           const selected = measurementPaymentMethod === value
-                          const disabled = measurementSource !== 'yasmin_alsham' || isMeasurementBillingLocked || forceNetworkMeasurementBilling
+                          const disabled = measurementSource !== 'yasmin_alsham' || isMeasurementBillingLocked
                           return (
                             <label
                               key={value}
@@ -395,17 +379,6 @@ export default function MeasurementsModal({
                         </p>
                       )}
                     </fieldset>
-
-                    {forceNetworkMeasurementBilling && (
-                      <div className="md:col-span-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-                        <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        <span>
-                          {isArabic
-                            ? 'إضافة المقاس الجديدة تُسجّل تلقائياً كدفعة شبكة بقيمة 85 ر.س وتُرسل للمحاسبة.'
-                            : 'A new measurement is automatically billed as an 85 SAR card payment and sent to accounting.'}
-                        </span>
-                      </div>
-                    )}
 
                     {isMeasurementBillingLocked && (
                       <div className="md:col-span-2 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">

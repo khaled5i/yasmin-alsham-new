@@ -195,19 +195,27 @@ export function TailoringStory({ onSelectSection }: SectionSelectionProps) {
 
 export function FabricTransition() {
   return (
-    <section className={styles.fabricTransition} aria-label="الانتقال من التفصيل إلى الأقمشة">
-      <Image
-        src={homeMedia.transitionPoster}
-        alt=""
-        fill
-        sizes="100vw"
-        className={styles.transitionImage}
-      />
-      <span className={styles.transitionShade} />
-      <div>
-        <p>كل فستان استثنائي</p>
-        <h2>يبدأ بقماش استثنائي</h2>
+    <section className={`${styles.tailoringHero} ${styles.fabricTransition}`} aria-labelledby="fabric-hero-title">
+      <ResponsiveHeroMedia {...homeMedia.hero} />
+      <div className={`${styles.tailoringHeroShade} ${styles.fabricHeroShade}`} />
+      <div className={styles.heroGrain} />
+
+      <div className={`${styles.tailoringHeroContent} ${styles.fabricHeroContent}`}>
+        <p className={styles.heroEyebrow}>متجر أقمشة ياسمين الشام <span aria-hidden="true" /> الخبر</p>
+        <h1 id="fabric-hero-title">كل فستانٍ جميل…<br />يبدأ بقماشٍ استثنائي</h1>
+        <p>تشكيلة منتقاة بعناية، لتمنح فكرتكِ البداية الأجمل.</p>
+        <TrackedLink
+          href="#fabric-collection"
+          className={styles.tailoringHeroButton}
+          eventName="hero_cta_click"
+          eventProperties={{ destination: 'fabric_collection' }}
+        >
+          شاهدي مجموعة الأقمشة
+        </TrackedLink>
       </div>
+      <a className={styles.tailoringScrollMark} href="#fabric-collection" aria-label="الانتقال إلى مجموعة الأقمشة">
+        <span aria-hidden="true" />
+      </a>
     </section>
   )
 }

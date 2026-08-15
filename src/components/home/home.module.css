@@ -918,46 +918,11 @@
 
 /* Fabric transition */
 .fabricTransition {
-  position: relative;
-  display: grid;
-  min-height: min(70svh, 760px);
-  place-items: center;
-  overflow: hidden;
-  color: var(--white);
-  text-align: center;
-  isolation: isolate;
+  background: #26100f;
 }
 
-.transitionImage {
-  z-index: -3;
-  object-fit: cover;
-  animation: transitionDrift 14s ease-in-out infinite alternate;
-}
-
-.transitionShade {
-  position: absolute;
-  z-index: -2;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(47, 12, 20, 0.72), rgba(47, 12, 20, 0.36) 50%, rgba(246, 240, 232, 0.92));
-}
-
-.fabricTransition div {
-  width: min(100% - 32px, 900px);
-  margin-bottom: 8vh;
-}
-
-.fabricTransition p {
-  margin-bottom: 8px !important;
-  color: var(--sand);
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-}
-
-.fabricTransition h2 {
-  font-family: var(--font-home-display), serif;
-  font-size: clamp(2.5rem, 8vw, 6rem);
-  font-weight: 600;
-  line-height: 1.08;
+.fabricHeroContent {
+  text-align: right;
 }
 
 /* Fabric store */
@@ -2011,6 +1976,11 @@
   background: var(--deep-wine);
 }
 
+.experiencePanel[data-section='fabrics'] {
+  scroll-margin-top: 0;
+  background: var(--ivory-soft);
+}
+
 .tailoringHomeHeader {
   --tailoring-header-progress: 0;
   color: var(--white);
@@ -2086,6 +2056,12 @@
   background:
     linear-gradient(180deg, rgba(27, 5, 10, 0.46) 0%, rgba(27, 5, 10, 0.13) 37%, rgba(27, 5, 10, 0.9) 100%),
     linear-gradient(90deg, rgba(27, 5, 10, 0.05), rgba(52, 10, 19, 0.48));
+}
+
+.fabricHeroShade {
+  background:
+    linear-gradient(180deg, rgba(24, 10, 8, 0.43) 0%, rgba(24, 10, 8, 0.1) 37%, rgba(24, 10, 8, 0.9) 100%),
+    linear-gradient(90deg, rgba(35, 13, 10, 0.04), rgba(50, 19, 14, 0.5));
 }
 
 .tailoringHeroContent {
@@ -2167,6 +2143,21 @@
     radial-gradient(circle at 86% 74%, rgba(185, 154, 104, 0.08), transparent 23%),
     var(--deep-wine);
   scroll-margin-top: 0;
+}
+
+.fabricCollectionAnchor {
+  scroll-margin-top: 0;
+}
+
+.fabricSectionNotice {
+  padding: calc(80px + env(safe-area-inset-top, 0px)) 18px 14px;
+  color: rgba(246, 240, 232, 0.82);
+  font-size: 0.69rem;
+  font-weight: 500;
+  line-height: 1.7;
+  text-align: center;
+  background: var(--deep-wine);
+  border-bottom: 1px solid rgba(234, 210, 166, 0.12);
 }
 
 .tailoringSectionNotice {
@@ -2564,6 +2555,12 @@
     font-size: 0.76rem;
   }
 
+  .fabricSectionNotice {
+    padding-top: calc(92px + env(safe-area-inset-top, 0px));
+    padding-bottom: 16px;
+    font-size: 0.76rem;
+  }
+
   .tailoringWorksInner {
     padding-top: 72px;
   }
@@ -2609,6 +2606,12 @@
     background:
       linear-gradient(180deg, rgba(27, 5, 10, 0.45), rgba(27, 5, 10, 0.06) 36%, rgba(27, 5, 10, 0.82)),
       linear-gradient(90deg, rgba(27, 5, 10, 0.08), rgba(27, 5, 10, 0.68) 82%);
+  }
+
+  .fabricHeroShade {
+    background:
+      linear-gradient(180deg, rgba(24, 10, 8, 0.42), rgba(24, 10, 8, 0.05) 36%, rgba(24, 10, 8, 0.84)),
+      linear-gradient(90deg, rgba(24, 10, 8, 0.07), rgba(43, 16, 12, 0.66) 82%);
   }
 
   .tailoringHeroContent {
