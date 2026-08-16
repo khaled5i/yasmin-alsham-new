@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  UserRound,
   WalletCards,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
@@ -124,11 +125,12 @@ function TransactionsTable({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-right text-sm">
+          <table className="w-full min-w-[880px] text-right text-sm">
             <thead className="bg-slate-50 text-xs font-bold text-slate-500">
               <tr>
                 <th className="px-5 py-3">التاريخ</th>
                 <th className="px-5 py-3">العملية</th>
+                <th className="px-5 py-3">اسم العميل</th>
                 <th className="px-5 py-3">المصدر</th>
                 <th className="px-5 py-3">المبلغ</th>
                 <th className="px-5 py-3">الحالة</th>
@@ -142,6 +144,18 @@ function TransactionsTable({
                     {formatDate(transaction.occurred_at)}
                   </td>
                   <td className="px-5 py-4 font-bold text-slate-900">{transaction.operation_name}</td>
+                  <td className="px-5 py-4">
+                    {transaction.customer_name?.trim() ? (
+                      <span className="inline-flex items-center gap-2 font-bold text-slate-800">
+                        <span className="rounded-full bg-rose-50 p-1.5 text-rose-600">
+                          <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                        </span>
+                        {transaction.customer_name.trim()}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-4">
                     <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-bold text-fuchsia-700">
                       {transaction.source === 'order_measurement' ? 'صفحة الطلبات الحديثة' : 'زر فاتورة المشغل'}
@@ -206,6 +220,7 @@ export default function WomenWorkshopAccountingPage() {
     return transactions.filter((transaction) => {
       const matchesSearch = !normalizedSearch
         || transaction.operation_name.toLowerCase().includes(normalizedSearch)
+        || String(transaction.customer_name || '').toLowerCase().includes(normalizedSearch)
         || String(transaction.alostaz_invoice_code || '').toLowerCase().includes(normalizedSearch)
       const matchesDate = !dateFilter || localDateKey(transaction.occurred_at) === dateFilter
       return matchesSearch && matchesDate
@@ -290,7 +305,7 @@ export default function WomenWorkshopAccountingPage() {
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="ابحث باسم العملية أو رقم الفاتورة"
+              placeholder="ابحث باسم العميل أو العملية أو رقم الفاتورة"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-4 pr-12 font-medium text-slate-800 outline-none transition focus:border-fuchsia-400 focus:bg-white focus:ring-4 focus:ring-fuchsia-100"
             />
           </label>
@@ -336,4 +351,3 @@ export default function WomenWorkshopAccountingPage() {
     </div>
   )
 }
-

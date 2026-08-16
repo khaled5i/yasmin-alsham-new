@@ -26,6 +26,7 @@ export interface WomenWorkshopTransaction {
   amount: number
   payment_method: WomenWorkshopPaymentMethod
   order_id?: string | null
+  customer_name?: string | null
   created_by?: string | null
   occurred_at: string
   alostaz_customer_id?: number | null
@@ -124,4 +125,3 @@ export async function getWomenWorkshopTransactions(): Promise<{
     error: error?.message || null,
   }
 }
-
