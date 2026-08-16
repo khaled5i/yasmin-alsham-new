@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2 } from 'lucide-react'
-import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
+import { useFabricStore, Fabric } from '@/store/fabricStore'
 import FabricSortOptions from '@/components/FabricSortOptions'
 
 import dynamic from 'next/dynamic'
@@ -14,7 +14,7 @@ import { formatFabricNumber } from '@/lib/fabric-number-format'
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
   ssr: false,
-  loading: () => <div className="hidden lg:block w-80 h-screen animate-pulse bg-gray-100 rounded-2xl" />
+  loading: () => <div className="hidden lg:block w-80 h-screen animate-pulse bg-[#f6f0e8] rounded-2xl" />
 })
 
 const FabricQuickViewModal = dynamic(() => import('@/components/FabricQuickViewModal'), { ssr: false })
@@ -24,13 +24,13 @@ const FABRICS_PER_PAGE = 12
 function FabricSkeleton() {
   return (
     <div className="group">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg">
-        <div className="aspect-[9/16] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
+      <div className="relative overflow-hidden rounded-2xl border border-[#d8c5ae]/60 bg-[#f6f0e8] shadow-lg">
+        <div className="aspect-[9/16] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/55 animate-pulse" />
         <div className="p-3 space-y-2">
-          <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4 mx-auto" />
+          <div className="h-5 bg-[#d8c5ae]/60 rounded animate-pulse w-3/4 mx-auto" />
           <div className="space-y-1">
-            <div className="h-3 bg-gray-200 rounded animate-pulse w-full" />
-            <div className="h-3 bg-gray-200 rounded animate-pulse w-2/3 mx-auto" />
+            <div className="h-3 bg-[#d8c5ae]/50 rounded animate-pulse w-full" />
+            <div className="h-3 bg-[#d8c5ae]/50 rounded animate-pulse w-2/3 mx-auto" />
           </div>
         </div>
       </div>
@@ -39,7 +39,7 @@ function FabricSkeleton() {
 }
 
 export default function FabricsPage() {
-  const { fabrics, loadFabrics, isLoading, error, getFilteredFabrics, filters, sortBy, setFilters, setSortBy, resetFilters } = useFabricStore()
+  const { fabrics, loadFabrics, isLoading, error, getFilteredFabrics, filters, sortBy, setFilters, resetFilters } = useFabricStore()
   const [currentImageIndexes, setCurrentImageIndexes] = useState<{ [key: string]: number }>({})
   const [isSingleColumn, setIsSingleColumn] = useState(false)
   const [displayedFabrics, setDisplayedFabrics] = useState<Fabric[]>([])
@@ -76,8 +76,9 @@ export default function FabricsPage() {
       },
       { threshold: 0.1 }
     )
-    if (observerTarget.current) observer.observe(observerTarget.current)
-    return () => { if (observerTarget.current) observer.unobserve(observerTarget.current) }
+    const observerNode = observerTarget.current
+    if (observerNode) observer.observe(observerNode)
+    return () => { if (observerNode) observer.unobserve(observerNode) }
   }, [hasMore, isLoading])
 
   useEffect(() => {
@@ -127,7 +128,7 @@ export default function FabricsPage() {
 
   return (
     <>
-      <main className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-4 lg:pt-8">
+      <main className="min-h-screen bg-[#fbf8f3] text-[#211b19] pt-4 lg:pt-8">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
 
           {/* العنوان مع زر العودة */}
@@ -137,21 +138,18 @@ export default function FabricsPage() {
             transition={{ duration: 0.8 }}
             className="mb-12"
           >
-            <div className="relative flex items-center justify-center mb-2">
+            <div className="relative flex items-center justify-center">
               <Link
-                href="/#featured-fabrics"
-                className="absolute right-0 inline-flex items-center gap-1.5 text-pink-600 hover:text-pink-700 bg-white/80 backdrop-blur-sm hover:bg-white border border-pink-200 rounded-full px-4 py-2 shadow-sm hover:shadow-md transition-all duration-300"
+                href="/#fabrics"
+                className="absolute right-0 inline-flex items-center gap-1.5 text-[#6b1726] hover:text-[#2f0c14] bg-[#f6f0e8]/90 backdrop-blur-sm hover:bg-[#f6f0e8] border border-[#d8c5ae] rounded-full px-4 py-2 shadow-sm hover:shadow-md transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]"
               >
                 <ArrowRight className="w-5 h-5" />
                 <span className="text-sm font-medium">رجوع</span>
               </Link>
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold">
-                <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-                  متجر الأقمشة
-                </span>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-[#6b1726]">
+                متجر الأقمشة
               </h1>
             </div>
-            <p className="text-sm text-gray-500 text-center">بالتعاون مع بروكار الشرقية ✨</p>
           </motion.header>
 
           {/* شريط البحث والفلاتر */}
@@ -169,12 +167,12 @@ export default function FabricsPage() {
                   placeholder="ابحث عن نوع القماش..."
                   value={filters.searchQuery}
                   onChange={(e) => setFilters({ searchQuery: e.target.value })}
-                  className="w-full px-6 py-3 pr-12 pl-12 border-2 border-pink-200 rounded-xl bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition-all duration-300 shadow-sm hover:shadow-md"
+                  className="w-full px-6 py-3 pr-12 pl-12 border-2 border-[#d8c5ae] rounded-xl bg-[#f6f0e8]/80 text-[#211b19] placeholder:text-[#211b19]/45 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-[#b99a68] focus:border-[#6b1726] transition-all duration-300 shadow-sm hover:shadow-md"
                   aria-label="البحث عن الأقمشة"
                 />
 
                 {/* Search Icon */}
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-pink-600 pointer-events-none">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6b1726] pointer-events-none">
                   <Search className="w-5 h-5" />
                 </div>
 
@@ -182,7 +180,7 @@ export default function FabricsPage() {
                 {filters.searchQuery && (
                   <button
                     onClick={() => setFilters({ searchQuery: '' })}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-pink-600 transition-colors duration-200"
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-[#211b19]/45 hover:text-[#6b1726] transition-colors duration-200"
                     aria-label="مسح البحث"
                   >
                     <X className="w-5 h-5" />
@@ -197,11 +195,11 @@ export default function FabricsPage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setIsFilterOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-pink-200 rounded-xl hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl hover:border-[#6b1726] hover:shadow-md transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
                   aria-label="فتح الفلاتر"
                 >
-                  <SlidersHorizontal className="w-5 h-5 text-pink-600" />
-                  <span className="text-sm font-medium text-gray-800">الفلاتر</span>
+                  <SlidersHorizontal className="w-5 h-5 text-[#6b1726]" />
+                  <span className="text-sm font-medium text-[#211b19]">الفلاتر</span>
                 </button>
               </div>
 
@@ -212,13 +210,13 @@ export default function FabricsPage() {
                 {/* زر تبديل العرض */}
                 <button
                   onClick={toggleViewMode}
-                  className="sm:hidden bg-white border-2 border-pink-200 rounded-xl p-2.5 hover:border-pink-400 hover:shadow-md transition-all duration-300"
+                  className="sm:hidden bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl p-2.5 hover:border-[#6b1726] hover:shadow-md transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
                   aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
                 >
                   {isSingleColumn ? (
-                    <Grid2X2 className="w-5 h-5 text-pink-600" />
+                    <Grid2X2 className="w-5 h-5 text-[#6b1726]" />
                   ) : (
-                    <Grid3X3 className="w-5 h-5 text-pink-600" />
+                    <Grid3X3 className="w-5 h-5 text-[#6b1726]" />
                   )}
                 </button>
               </div>
@@ -232,7 +230,7 @@ export default function FabricsPage() {
           <div className="w-full">
             {/* رسالة خطأ */}
             {error && (
-              <div className="bg-red-50 border-2 border-red-200 text-red-700 px-6 py-4 rounded-xl mb-6 shadow-sm">
+              <div className="bg-[#f6f0e8] border-2 border-[#6b1726]/25 text-[#6b1726] px-6 py-4 rounded-xl mb-6 shadow-sm">
                 <p className="font-medium">{error}</p>
               </div>
             )}
@@ -252,10 +250,10 @@ export default function FabricsPage() {
             {/* لا توجد نتائج */}
             {!isLoading && displayedFabrics.length === 0 && fabrics.length > 0 && (
               <div className="text-center py-20">
-                <p className="text-gray-600 text-lg mb-4">لا توجد أقمشة تطابق معايير البحث</p>
+                <p className="text-[#211b19]/70 text-lg mb-4">لا توجد أقمشة تطابق معايير البحث</p>
                 <button
                   onClick={resetFilters}
-                  className="px-6 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all duration-300 font-medium"
+                  className="px-6 py-3 bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] rounded-xl hover:shadow-lg transition-all duration-300 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]"
                 >
                   إعادة تعيين الفلاتر
                 </button>
@@ -265,8 +263,8 @@ export default function FabricsPage() {
             {/* لا توجد أقمشة في قاعدة البيانات */}
             {!isLoading && fabrics.length === 0 && (
               <div className="text-center py-20">
-                <Loader2 className="w-12 h-12 text-pink-600 animate-spin mx-auto mb-4" />
-                <p className="text-gray-600 text-lg">لا توجد أقمشة متاحة حالياً</p>
+                <Loader2 className="w-12 h-12 text-[#6b1726] animate-spin mx-auto mb-4" />
+                <p className="text-[#211b19]/70 text-lg">لا توجد أقمشة متاحة حالياً</p>
               </div>
             )}
 
@@ -298,8 +296,6 @@ export default function FabricsPage() {
                       { width: 720, height: 1280 },
                     ])
                   const fallbackImage = fabric.thumbnail_image || originalImage
-                  const finalPrice = getFinalPrice(fabric)
-
                   return (
                     <motion.div
                       key={fabric.id}
@@ -308,9 +304,9 @@ export default function FabricsPage() {
                       transition={{ duration: 0.6, delay: index * 0.05 }}
                       className="group"
                     >
-                      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
+                      <div className="relative overflow-hidden rounded-2xl border border-[#d8c5ae]/60 bg-[#f6f0e8] shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
                         <Link href={`/fabrics/${fabric.id}`}>
-                          <div className="aspect-[9/16] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100 relative overflow-hidden cursor-pointer">
+                          <div className="aspect-[9/16] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35 relative overflow-hidden cursor-pointer">
                             {currentImageIsVideo ? (
                               <video
                                 src={currentImage}
@@ -348,7 +344,7 @@ export default function FabricsPage() {
                                     e.preventDefault()
                                     prevImage(fabric.id, fabricImages.length)
                                   }}
-                                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg z-10"
+                                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-[#f6f0e8]/90 hover:bg-[#f6f0e8] text-[#6b1726] rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg z-10"
                                   aria-label="الصورة السابقة"
                                 >
                                   <ChevronLeft className="w-4 h-4" />
@@ -358,7 +354,7 @@ export default function FabricsPage() {
                                     e.preventDefault()
                                     nextImage(fabric.id, fabricImages.length)
                                   }}
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg z-10"
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#f6f0e8]/90 hover:bg-[#f6f0e8] text-[#6b1726] rounded-full p-2 opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg z-10"
                                   aria-label="الصورة التالية"
                                 >
                                   <ChevronRight className="w-4 h-4" />
@@ -367,21 +363,21 @@ export default function FabricsPage() {
                             )}
 
                             {fabric.is_on_sale && (
-                              <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+                              <div className="absolute top-4 right-4 bg-[#6b1726] text-[#f6f0e8] px-3 py-1 rounded-full text-sm font-bold shadow-lg">
                                 خصم {fabric.discount_percentage}%
                               </div>
                             )}
 
                             {!fabric.is_available && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                <span className="bg-white text-gray-800 px-4 py-2 rounded-lg font-bold">غير متوفر</span>
+                              <div className="absolute inset-0 bg-[#2f0c14]/55 flex items-center justify-center">
+                                <span className="bg-[#f6f0e8] text-[#6b1726] px-4 py-2 rounded-lg font-bold">غير متوفر</span>
                               </div>
                             )}
 
                             {/* زر نظرة سريعة - مخفي على الجوال */}
                             <button
                               onClick={(e) => openQuickView(fabric, e)}
-                              className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-pink-600 px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 items-center gap-1 sm:gap-2 z-20"
+                              className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#f6f0e8] text-[#6b1726] px-3 py-2 sm:px-6 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-base font-semibold opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:bg-[#6b1726] hover:text-[#f6f0e8] hover:shadow-xl hover:scale-105 items-center gap-1 sm:gap-2 z-20"
                               aria-label="نظرة سريعة"
                             >
                               <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -393,14 +389,14 @@ export default function FabricsPage() {
                         {(fabric.name || fabric.show_stock_quantity) && (
                           <div className="p-3 space-y-1.5">
                             <Link href={`/fabrics/${fabric.id}`}>
-                              <div className="cursor-pointer hover:bg-pink-50/50 transition-colors duration-300 p-1 -m-1 rounded-lg">
+                              <div className="cursor-pointer hover:bg-[#fbf8f3] transition-colors duration-300 p-1 -m-1 rounded-lg">
                                 {fabric.name && (
-                                  <h3 className="font-bold text-gray-800 group-hover:text-pink-600 transition-colors duration-300 text-center">
+                                  <h3 className="font-bold text-[#211b19] group-hover:text-[#6b1726] transition-colors duration-300 text-center">
                                     {fabric.name}
                                   </h3>
                                 )}
                                 {fabric.show_stock_quantity && (
-                                  <p className="text-center text-xs font-medium text-gray-500">
+                                  <p className="text-center text-xs font-medium text-[#211b19]/60">
                                     المتوفر: {formatFabricNumber(fabric.stock_quantity)} متر
                                   </p>
                                 )}
@@ -433,7 +429,7 @@ export default function FabricsPage() {
             {/* رسالة نهاية القائمة */}
             {!hasMore && displayedFabrics.length > 0 && (
               <div className="text-center py-8" role="status" aria-live="polite">
-                <p className="text-gray-700 font-medium">تم عرض جميع الأقمشة</p>
+                <p className="text-[#211b19]/70 font-medium">تم عرض جميع الأقمشة</p>
               </div>
             )}
           </div>

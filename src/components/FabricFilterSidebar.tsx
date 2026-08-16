@@ -119,11 +119,11 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
           onClick={() => toggleSection('category')}
           className="flex items-center justify-between w-full py-2 text-right"
         >
-          <h4 className="font-semibold text-gray-700">الفئة</h4>
+          <h4 className="font-semibold text-[#211b19]/80">الفئة</h4>
           {expandedSections.category ? (
-            <ChevronUp className="w-5 h-5 text-gray-500" />
+            <ChevronUp className="w-5 h-5 text-[#211b19]/55" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-gray-500" />
+            <ChevronDown className="w-5 h-5 text-[#211b19]/55" />
           )}
         </button>
         {expandedSections.category && (
@@ -132,15 +132,15 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
               {uniqueCategories.map(category => (
                 <label
                   key={category}
-                  className="flex items-center gap-2 cursor-pointer hover:bg-pink-50 p-2 rounded-lg transition-colors duration-200"
+                  className="flex items-center gap-2 cursor-pointer hover:bg-[#f6f0e8] p-2 rounded-lg transition-colors duration-200"
                 >
                   <input
                     type="checkbox"
                     checked={tempFilters.category.includes(category)}
                     onChange={(e) => handleCategoryChange(category, e.target.checked)}
-                    className="w-4 h-4 text-pink-600 focus:ring-pink-500 rounded border-gray-300"
+                    className="w-4 h-4 text-[#6b1726] focus:ring-[#b99a68] rounded border-[#d8c5ae]"
                   />
-                  <span className="text-sm text-gray-700">{category}</span>
+                  <span className="text-sm text-[#211b19]/80">{category}</span>
                 </label>
               ))}
             </div>
@@ -154,11 +154,11 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
           onClick={() => toggleSection('colors')}
           className="flex items-center justify-between w-full py-2 text-right"
         >
-          <h4 className="font-semibold text-gray-700">الألوان المتاحة</h4>
+          <h4 className="font-semibold text-[#211b19]/80">الألوان المتاحة</h4>
           {expandedSections.colors ? (
-            <ChevronUp className="w-5 h-5 text-gray-500" />
+            <ChevronUp className="w-5 h-5 text-[#211b19]/55" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-gray-500" />
+            <ChevronDown className="w-5 h-5 text-[#211b19]/55" />
           )}
         </button>
         {expandedSections.colors && (
@@ -167,15 +167,15 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
               {uniqueColors.map(color => (
                 <label
                   key={color}
-                  className="flex items-center gap-2 cursor-pointer hover:bg-pink-50 p-2 rounded-lg transition-colors duration-200"
+                  className="flex items-center gap-2 cursor-pointer hover:bg-[#f6f0e8] p-2 rounded-lg transition-colors duration-200"
                 >
                   <input
                     type="checkbox"
                     checked={tempFilters.colors.includes(color)}
                     onChange={(e) => handleColorChange(color, e.target.checked)}
-                    className="w-4 h-4 text-pink-600 focus:ring-pink-500 rounded border-gray-300"
+                    className="w-4 h-4 text-[#6b1726] focus:ring-[#b99a68] rounded border-[#d8c5ae]"
                   />
-                  <span className="text-sm text-gray-700">{color}</span>
+                  <span className="text-sm text-[#211b19]/80">{color}</span>
                 </label>
               ))}
             </div>
@@ -189,45 +189,45 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
           onClick={() => toggleSection('availability')}
           className="flex items-center justify-between w-full py-2 text-right"
         >
-          <h4 className="font-semibold text-gray-700">التوفر</h4>
+          <h4 className="font-semibold text-[#211b19]/80">التوفر</h4>
           {expandedSections.availability ? (
-            <ChevronUp className="w-5 h-5 text-gray-500" />
+            <ChevronUp className="w-5 h-5 text-[#211b19]/55" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-gray-500" />
+            <ChevronDown className="w-5 h-5 text-[#211b19]/55" />
           )}
         </button>
         {expandedSections.availability && (
           <div className="mt-3">
-            <label className="flex items-center gap-2 cursor-pointer hover:bg-pink-50 p-2 rounded-lg transition-colors duration-200">
+            <label className="flex items-center gap-2 cursor-pointer hover:bg-[#f6f0e8] p-2 rounded-lg transition-colors duration-200">
               <input
                 type="checkbox"
                 checked={tempFilters.availability === 'available'}
                 onChange={(e) => handleAvailabilityChange(e.target.checked)}
-                className="w-4 h-4 text-pink-600 focus:ring-pink-500 rounded border-gray-300"
+                className="w-4 h-4 text-[#6b1726] focus:ring-[#b99a68] rounded border-[#d8c5ae]"
               />
-              <span className="text-sm text-gray-700">المتوفر فقط</span>
+              <span className="text-sm text-[#211b19]/80">المتوفر فقط</span>
             </label>
           </div>
         )}
       </div>
 
       {/* فلتر السعر */}
-      <div className="border-b border-gray-200 pb-4">
+      <div className="border-b border-[#d8c5ae]/70 pb-4">
         <button
-          onClick={() => toggleSection('price' as any)}
+          onClick={() => toggleSection('price')}
           className="w-full flex items-center justify-between mb-3"
           aria-label="توسيع/طي قسم السعر"
         >
-          <h3 className="text-base font-semibold text-gray-800">السعر</h3>
-          {(expandedSections as any).price ? (
-            <ChevronUp className="w-4 h-4 text-gray-600" />
+          <h3 className="text-base font-semibold text-[#211b19]">السعر</h3>
+          {expandedSections.price ? (
+            <ChevronUp className="w-4 h-4 text-[#211b19]/65" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-600" />
+            <ChevronDown className="w-4 h-4 text-[#211b19]/65" />
           )}
         </button>
 
         <AnimatePresence>
-          {(expandedSections as any).price && (
+          {expandedSections.price && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -245,10 +245,10 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
                     Number(e.target.value),
                     tempFilters.priceRange?.max || priceRange[1]
                   )}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[#d8c5ae] rounded-lg bg-[#fbf8f3] focus:ring-2 focus:ring-[#b99a68] focus:border-[#6b1726] text-sm"
                   aria-label="السعر الأدنى"
                 />
-                <span className="text-gray-500">-</span>
+                <span className="text-[#211b19]/55">-</span>
                 <input
                   type="number"
                   placeholder="إلى"
@@ -259,11 +259,11 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
                     tempFilters.priceRange?.min || priceRange[0],
                     Number(e.target.value)
                   )}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[#d8c5ae] rounded-lg bg-[#fbf8f3] focus:ring-2 focus:ring-[#b99a68] focus:border-[#6b1726] text-sm"
                   aria-label="السعر الأعلى"
                 />
               </div>
-              <div className="text-xs text-gray-500 text-center">
+              <div className="text-xs text-[#211b19]/55 text-center">
                 {priceRange[0]} - {priceRange[1]} ريال/متر
               </div>
             </motion.div>
@@ -276,13 +276,13 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
   // عرض الفلاتر على الشاشات الكبيرة (Sidebar)
   if (isOpen === true && onClose.toString() === '() => {}') {
     return (
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border-2 border-pink-100 shadow-lg">
+      <div className="bg-[#fbf8f3]/90 backdrop-blur-sm rounded-2xl p-6 border-2 border-[#d8c5ae]/60 shadow-lg">
         {/* Header للـ Sidebar */}
-        <div className="flex items-center justify-between pb-4 border-b-2 border-pink-100 mb-6">
-          <h3 className="text-xl font-bold text-gray-800">الفلاتر</h3>
+        <div className="flex items-center justify-between pb-4 border-b-2 border-[#d8c5ae]/60 mb-6">
+          <h3 className="text-xl font-bold text-[#211b19]">الفلاتر</h3>
           <button
             onClick={handleResetFilters}
-            className="text-pink-600 hover:text-pink-700 transition-colors duration-200 p-2 hover:bg-pink-50 rounded-lg"
+            className="text-[#6b1726] hover:text-[#2f0c14] transition-colors duration-200 p-2 hover:bg-[#f6f0e8] rounded-lg"
             aria-label="إعادة تعيين الفلاتر"
           >
             <RotateCcw className="w-5 h-5" />
@@ -306,7 +306,7 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+            className="fixed inset-0 bg-[#2f0c14]/55 z-40 lg:hidden"
             onClick={onClose}
           />
 
@@ -316,24 +316,24 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 lg:hidden overflow-y-auto"
+            className="fixed top-0 right-0 h-full w-80 bg-[#fbf8f3] shadow-2xl z-50 lg:hidden overflow-y-auto"
             dir="rtl"
           >
             <div className="p-6">
               {/* Header للنافذة المنبثقة */}
-              <div className="flex items-center justify-between pb-4 border-b-2 border-pink-100 mb-6">
-                <h3 className="text-xl font-bold text-gray-800">الفلاتر</h3>
+              <div className="flex items-center justify-between pb-4 border-b-2 border-[#d8c5ae]/60 mb-6">
+                <h3 className="text-xl font-bold text-[#211b19]">الفلاتر</h3>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleResetFilters}
-                    className="text-pink-600 hover:text-pink-700 transition-colors duration-200 p-2 hover:bg-pink-50 rounded-lg"
+                    className="text-[#6b1726] hover:text-[#2f0c14] transition-colors duration-200 p-2 hover:bg-[#f6f0e8] rounded-lg"
                     aria-label="إعادة تعيين الفلاتر"
                   >
                     <RotateCcw className="w-5 h-5" />
                   </button>
                   <button
                     onClick={onClose}
-                    className="text-gray-500 hover:text-pink-600 transition-colors duration-200 p-2 hover:bg-pink-50 rounded-lg"
+                    className="text-[#211b19]/55 hover:text-[#6b1726] transition-colors duration-200 p-2 hover:bg-[#f6f0e8] rounded-lg"
                     aria-label="إغلاق"
                   >
                     <X className="w-6 h-6" />
@@ -345,10 +345,10 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
               <div className="space-y-6">{renderFilterSections()}</div>
 
               {/* Apply Button */}
-              <div className="mt-6 pt-6 border-t-2 border-pink-100">
+              <div className="mt-6 pt-6 border-t-2 border-[#d8c5ae]/60">
                 <button
                   onClick={applyFilters}
-                  className="w-full bg-gradient-to-r from-pink-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all duration-300"
+                  className="w-full bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] py-3 rounded-xl font-bold hover:shadow-lg transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
                 >
                   تطبيق الفلاتر
                 </button>

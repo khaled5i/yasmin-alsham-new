@@ -42,10 +42,10 @@ export default function FabricDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20 flex items-center justify-center">
+      <div className="min-h-screen bg-[#fbf8f3] pt-20 flex items-center justify-center">
         <div className="flex flex-col items-center">
-          <Loader2 className="w-12 h-12 text-pink-600 animate-spin mb-4" />
-          <p className="text-gray-600">جاري تحميل القماش...</p>
+          <Loader2 className="w-12 h-12 text-[#6b1726] animate-spin mb-4" />
+          <p className="text-[#211b19]/70">جاري تحميل القماش...</p>
         </div>
       </div>
     )
@@ -53,10 +53,10 @@ export default function FabricDetailPage() {
 
   if (!fabric && !isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20 flex items-center justify-center">
+      <div className="min-h-screen bg-[#fbf8f3] pt-20 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-800 mb-4">القماش غير موجود</h1>
-          <Link href="/fabrics" className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300">
+          <h1 className="text-2xl font-bold text-[#211b19] mb-4">القماش غير موجود</h1>
+          <Link href="/fabrics" className="inline-flex items-center space-x-2 space-x-reverse text-[#6b1726] hover:text-[#2f0c14] transition-colors duration-300">
             <ArrowRight className="w-4 h-4" />
             <span>العودة إلى متجر الأقمشة</span>
           </Link>
@@ -108,7 +108,7 @@ export default function FabricDetailPage() {
   const whatsappLink = `https://wa.me/966502901534?text=${encodeURIComponent(whatsappMessage)}`
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-16 lg:pt-20">
+    <div className="min-h-screen bg-[#fbf8f3] text-[#211b19] pt-16 lg:pt-20">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-8">
         {/* التنقل */}
         <motion.div
@@ -119,7 +119,7 @@ export default function FabricDetailPage() {
         >
           <Link
             href="/fabrics"
-            className="inline-flex items-center space-x-2 space-x-reverse text-pink-600 hover:text-pink-700 transition-colors duration-300"
+            className="inline-flex items-center space-x-2 space-x-reverse text-[#6b1726] hover:text-[#2f0c14] transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
           >
             <ArrowRight className="w-4 h-4" />
             <span>العودة إلى متجر الأقمشة</span>
@@ -129,7 +129,7 @@ export default function FabricDetailPage() {
         <div className="grid lg:grid-cols-2 gap-12">
           <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
             <div
-              className={`relative ${isVideoFile(fabric.images?.[currentImageIndex] || '') ? 'bg-black/5' : 'aspect-[4/5] bg-gradient-to-br from-pink-100 via-rose-100 to-purple-100'} rounded-2xl overflow-hidden mb-4 group cursor-pointer`}
+              className={`relative ${isVideoFile(fabric.images?.[currentImageIndex] || '') ? 'bg-[#2f0c14]/5' : 'aspect-[4/5] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35'} rounded-2xl overflow-hidden mb-4 group cursor-pointer border border-[#d8c5ae]/60`}
               onClick={openGallery}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
@@ -156,10 +156,10 @@ export default function FabricDetailPage() {
 
               {(fabric.images?.length || 0) > 1 && (
                 <>
-                  <button onClick={(e) => { e.stopPropagation(); nextImage() }} className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة التالية">
+                  <button onClick={(e) => { e.stopPropagation(); nextImage() }} className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-[#2f0c14]/65 hover:bg-[#2f0c14]/85 text-[#f6f0e8] rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة التالية">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <button onClick={(e) => { e.stopPropagation(); prevImage() }} className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة السابقة">
+                  <button onClick={(e) => { e.stopPropagation(); prevImage() }} className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-[#2f0c14]/65 hover:bg-[#2f0c14]/85 text-[#f6f0e8] rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة السابقة">
                     <ChevronRight className="w-5 h-5" />
                   </button>
                 </>
@@ -172,7 +172,7 @@ export default function FabricDetailPage() {
                 {/* عرض في صف واحد إذا كانت الصور 5 أو أقل، وصفين إذا كانت أكثر من 5 */}
                 <div className={`gap-3 pb-2 ${(fabric.images?.length || 0) > 5
                   ? 'grid grid-cols-5'
-                  : 'flex overflow-x-auto scrollbar-thin scrollbar-thumb-pink-300 scrollbar-track-pink-50'
+                  : 'flex overflow-x-auto scrollbar-thin scrollbar-thumb-[#6b1726] scrollbar-track-[#f6f0e8]'
                   }`}>
                   {fabric.images?.map((image, index) => (
                     <motion.button
@@ -181,8 +181,8 @@ export default function FabricDetailPage() {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       className={`relative flex-shrink-0 w-20 h-24 md:w-24 md:h-28 rounded-xl overflow-hidden border-3 transition-all duration-300 ${currentImageIndex === index
-                        ? 'border-pink-500 shadow-lg ring-2 ring-pink-300'
-                        : 'border-gray-200 hover:border-pink-300'
+                        ? 'border-[#6b1726] shadow-lg ring-2 ring-[#d8c5ae]'
+                        : 'border-[#d8c5ae] hover:border-[#6b1726]'
                         }`}
                     >
                       {isVideoFile(image) ? (
@@ -204,7 +204,7 @@ export default function FabricDetailPage() {
                         />
                       )}
                       {currentImageIndex === index && (
-                        <div className="absolute inset-0 bg-pink-500/20 pointer-events-none" />
+                        <div className="absolute inset-0 bg-[#6b1726]/20 pointer-events-none" />
                       )}
                     </motion.button>
                   ))}
@@ -215,20 +215,20 @@ export default function FabricDetailPage() {
 
           <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="space-y-6">
             <div>
-              <span className="bg-gradient-to-r from-pink-100 to-rose-100 text-pink-700 px-3 py-1 rounded-full text-sm font-medium">{fabric.category}</span>
+              <span className="bg-[#f6f0e8] text-[#6b1726] border border-[#d8c5ae]/70 px-3 py-1 rounded-full text-sm font-medium">{fabric.category}</span>
               {fabric.name && (
-                <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mt-4 mb-4">{fabric.name}</h1>
+                <h1 className="text-3xl lg:text-4xl font-bold text-[#211b19] mt-4 mb-4">{fabric.name}</h1>
               )}
               {fabric.fabric_code && (
-                <p dir="ltr" className="mt-4 text-right font-mono text-lg font-bold tracking-wider text-teal-700">
+                <p dir="ltr" className="mt-4 text-right font-mono text-lg font-bold tracking-wider text-[#6b1726]">
                   {fabric.fabric_code}
                 </p>
               )}
               {fabric.description && (
-                <p className="mt-3 text-lg text-gray-600 leading-relaxed whitespace-pre-wrap">{fabric.description}</p>
+                <p className="mt-3 text-lg text-[#211b19]/70 leading-relaxed whitespace-pre-wrap">{fabric.description}</p>
               )}
               {fabric.show_stock_quantity && (
-                <p className="mt-3 inline-flex rounded-full bg-teal-50 px-4 py-2 text-sm font-bold text-teal-700">
+                <p className="mt-3 inline-flex rounded-full bg-[#f6f0e8] border border-[#d8c5ae]/70 px-4 py-2 text-sm font-bold text-[#6b1726]">
                   الكمية المتوفرة: {formatFabricNumber(fabric.stock_quantity)} متر
                 </p>
               )}
@@ -236,12 +236,12 @@ export default function FabricDetailPage() {
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               {fabric.price_per_meter && fabric.price_per_meter > 0 && (
-                <div className="text-3xl font-bold text-pink-600">
+                <div className="text-3xl font-bold text-[#6b1726]">
                   {fabric.is_on_sale ? (
                     <div className="flex items-center gap-3">
                       <span>{formatFabricPrice(finalPrice)}</span>
-                      <span className="text-xl text-gray-400 line-through">{formatFabricPrice(fabric.price_per_meter)}</span>
-                      <span className="bg-red-500 text-white text-sm px-2 py-1 rounded-full">خصم {fabric.discount_percentage}%</span>
+                      <span className="text-xl text-[#211b19]/40 line-through">{formatFabricPrice(fabric.price_per_meter)}</span>
+                      <span className="bg-[#6b1726] text-[#f6f0e8] text-sm px-2 py-1 rounded-full">خصم {fabric.discount_percentage}%</span>
                     </div>
                   ) : (
                     <span>{formatFabricPrice(fabric.price_per_meter)}</span>
@@ -252,7 +252,7 @@ export default function FabricDetailPage() {
 
             {fabric.available_colors && fabric.available_colors.length > 0 && (
               <div>
-                <h3 className="text-lg font-medium text-gray-800 mb-3 flex items-center gap-2">
+                <h3 className="text-lg font-medium text-[#211b19] mb-3 flex items-center gap-2">
                   <Palette className="w-5 h-5" />
                   الألوان المتاحة
                 </h3>
@@ -261,7 +261,7 @@ export default function FabricDetailPage() {
                     <button
                       key={color}
                       onClick={() => setSelectedColor(color)}
-                      className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedColor === color ? 'border-pink-500 bg-pink-50 text-pink-700 font-bold' : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                      className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedColor === color ? 'border-[#6b1726] bg-[#f6f0e8] text-[#6b1726] font-bold' : 'border-[#d8c5ae] hover:border-[#6b1726] text-[#211b19]/80'
                         }`}
                     >
                       {color}
@@ -277,7 +277,7 @@ export default function FabricDetailPage() {
               href={whatsappLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-3 w-full border-2 border-green-500 text-green-600 bg-transparent text-center px-8 py-4 rounded-full font-bold hover:bg-green-50 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+              className="flex items-center justify-center gap-3 w-full border-2 border-[#6b1726] text-[#6b1726] bg-transparent text-center px-8 py-4 rounded-full font-bold hover:bg-[#f6f0e8] hover:shadow-xl transition-all duration-300 transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
             >
               <MessageCircle className="w-6 h-6" />
               <span>استفسار عبر الواتساب</span>
@@ -288,8 +288,8 @@ export default function FabricDetailPage() {
 
       {/* Image Gallery Modal */}
       {isGalleryOpen && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={closeGallery}>
-          <button onClick={closeGallery} className="absolute top-4 right-4 text-white hover:text-pink-400 transition-colors duration-300 z-10" aria-label="إغلاق">
+        <div className="fixed inset-0 bg-[#2f0c14]/95 z-50 flex items-center justify-center p-4" onClick={closeGallery}>
+          <button onClick={closeGallery} className="absolute top-4 right-4 text-[#f6f0e8] hover:text-[#d8c5ae] transition-colors duration-300 z-10" aria-label="إغلاق">
             <X className="w-8 h-8" />
           </button>
           <div
@@ -317,10 +317,10 @@ export default function FabricDetailPage() {
             )}
             {(fabric.images?.length || 0) > 1 && (
               <>
-                <button onClick={nextImage} className="absolute left-4 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-all duration-300" aria-label="الصورة التالية">
+                <button onClick={nextImage} className="absolute left-4 bg-[#f6f0e8]/20 hover:bg-[#f6f0e8]/30 text-[#f6f0e8] rounded-full p-3 transition-all duration-300" aria-label="الصورة التالية">
                   <ChevronLeft className="w-6 h-6" />
                 </button>
-                <button onClick={prevImage} className="absolute right-4 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 transition-all duration-300" aria-label="الصورة السابقة">
+                <button onClick={prevImage} className="absolute right-4 bg-[#f6f0e8]/20 hover:bg-[#f6f0e8]/30 text-[#f6f0e8] rounded-full p-3 transition-all duration-300" aria-label="الصورة السابقة">
                   <ChevronRight className="w-6 h-6" />
                 </button>
               </>

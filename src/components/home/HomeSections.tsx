@@ -127,7 +127,7 @@ export function TailoringStory({ onSelectSection }: SectionSelectionProps) {
   return (
     <>
       <section className={styles.tailoringHero} aria-labelledby="tailoring-title">
-        <ResponsiveHeroMedia {...homeMedia.hero} />
+        <ResponsiveHeroMedia {...homeMedia.tailoringHero} />
         <div className={styles.tailoringHeroShade} />
         <div className={styles.heroGrain} />
 

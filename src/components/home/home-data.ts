@@ -25,6 +25,12 @@ export const homeMedia = {
     mobileVideo: '/media/home/hero-mobile1.mp4',
     desktopVideo: '/media/home/hero-desktop.mp4',
   },
+  tailoringHero: {
+    mobilePoster: '/media/home/hero-mobile.webp',
+    desktopPoster: '/media/home/hero-desktop.webp',
+    mobileVideo: '/media/home/0816.mp4',
+    desktopVideo: '/media/home/0816.mp4',
+  },
   craftPoster: '/media/home/craft-poster.webp',
   transitionPoster: '/media/home/fabric-transition.webp',
 }

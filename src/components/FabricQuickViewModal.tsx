@@ -94,7 +94,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            className="fixed inset-0 bg-[#2f0c14]/65 backdrop-blur-sm z-50"
             aria-hidden="true"
           />
 
@@ -106,18 +106,18 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden pointer-events-auto"
+              className="bg-[#fbf8f3] rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden pointer-events-auto"
               role="dialog"
               aria-modal="true"
               aria-labelledby="quick-view-title"
             >
               <div className="flex flex-col md:flex-row h-full max-h-[90vh]">
                 {/* قسم الصور - يسار */}
-                <div className="md:w-1/2 bg-gradient-to-br from-pink-50 to-purple-50 relative">
+                <div className="md:w-1/2 bg-[#f6f0e8] relative">
                   {/* زر الإغلاق */}
                   <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 z-10 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
+                    className="absolute top-4 right-4 z-10 bg-[#f6f0e8]/90 hover:bg-[#6b1726] text-[#6b1726] hover:text-[#f6f0e8] rounded-full p-2 shadow-lg transition-all duration-300"
                     aria-label="إغلاق"
                   >
                     <X className="w-5 h-5" />
@@ -125,7 +125,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
 
                   {/* الصورة مع خلفية ضبابية */}
                   <div
-                    className="relative h-80 md:h-full overflow-hidden bg-gradient-to-br from-pink-50 via-purple-50 to-rose-50"
+                    className="relative h-80 md:h-full overflow-hidden bg-gradient-to-br from-[#f6f0e8] via-[#fbf8f3] to-[#d8c5ae]/45"
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
                   >
@@ -183,14 +183,14 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                       <>
                         <button
                           onClick={nextImage}
-                          className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
+                          className="absolute left-4 top-1/2 -translate-y-1/2 bg-[#f6f0e8]/90 hover:bg-[#6b1726] text-[#6b1726] hover:text-[#f6f0e8] rounded-full p-2 shadow-lg transition-all duration-300"
                           aria-label="الصورة التالية"
                         >
                           <ChevronLeft className="w-5 h-5" />
                         </button>
                         <button
                           onClick={prevImage}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 rounded-full p-2 shadow-lg transition-all duration-300"
+                          className="absolute right-4 top-1/2 -translate-y-1/2 bg-[#f6f0e8]/90 hover:bg-[#6b1726] text-[#6b1726] hover:text-[#f6f0e8] rounded-full p-2 shadow-lg transition-all duration-300"
                           aria-label="الصورة السابقة"
                         >
                           <ChevronRight className="w-5 h-5" />
@@ -202,7 +202,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                             <button
                               key={index}
                               onClick={() => setCurrentImageIndex(index)}
-                              className={`w-2 h-2 rounded-full transition-all duration-300 ${currentImageIndex === index ? 'bg-white w-6' : 'bg-white/50'
+                              className={`w-2 h-2 rounded-full transition-all duration-300 ${currentImageIndex === index ? 'bg-[#f6f0e8] w-6' : 'bg-[#f6f0e8]/50'
                                 }`}
                               aria-label={`عرض الصورة ${index + 1}`}
                             />
@@ -214,24 +214,24 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                 </div>
 
                 {/* قسم المعلومات - يمين */}
-                <div className="md:w-1/2 p-6 md:p-8 overflow-y-auto">
+                <div className="md:w-1/2 bg-[#fbf8f3] p-6 md:p-8 overflow-y-auto">
                   {/* الفئة */}
-                  <div className="inline-block bg-gradient-to-r from-pink-100 to-purple-100 text-pink-700 px-3 py-1 rounded-full text-xs font-semibold mb-4">
+                  <div className="inline-block bg-[#f6f0e8] text-[#6b1726] border border-[#d8c5ae]/70 px-3 py-1 rounded-full text-xs font-semibold mb-4">
                     {fabric.category}
                   </div>
 
                   {fabric.name && (
-                    <h2 id="quick-view-title" className="text-2xl md:text-3xl font-bold text-gray-800 mb-3">
+                    <h2 id="quick-view-title" className="text-2xl md:text-3xl font-bold text-[#211b19] mb-3">
                       {fabric.name}
                     </h2>
                   )}
                   {fabric.fabric_code && (
-                    <p dir="ltr" className="mb-2 text-right font-mono text-sm font-bold tracking-wide text-teal-700">
+                    <p dir="ltr" className="mb-2 text-right font-mono text-sm font-bold tracking-wide text-[#6b1726]">
                       {fabric.fabric_code}
                     </p>
                   )}
                   {fabric.show_stock_quantity && (
-                    <p className="mb-3 text-sm font-bold text-teal-700">المتوفر: {formatFabricNumber(fabric.stock_quantity)} متر</p>
+                    <p className="mb-3 text-sm font-bold text-[#6b1726]">المتوفر: {formatFabricNumber(fabric.stock_quantity)} متر</p>
                   )}
 
                   {/* السعر وحالة التوفر */}
@@ -240,22 +240,22 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                     <div className="hidden md:block">
                       {fabric.discount_percentage && fabric.discount_percentage > 0 ? (
                         <div className="flex items-center gap-3">
-                          <span className="text-3xl font-bold text-pink-600">
+                          <span className="text-3xl font-bold text-[#6b1726]">
                             {formatFabricPrice(finalPrice)}
                           </span>
-                          <span className="text-xl text-gray-400 line-through">
+                          <span className="text-xl text-[#211b19]/40 line-through">
                             {formatFabricPrice(fabric.price_per_meter)}
                           </span>
-                          <span className="bg-red-500 text-white px-2 py-1 rounded-full text-sm font-bold">
+                          <span className="bg-[#6b1726] text-[#f6f0e8] px-2 py-1 rounded-full text-sm font-bold">
                             -{fabric.discount_percentage}%
                           </span>
                         </div>
                       ) : (
-                        <div className="text-3xl font-bold text-pink-600">
+                        <div className="text-3xl font-bold text-[#6b1726]">
                           {formatFabricPrice(fabric.price_per_meter)}
                         </div>
                       )}
-                      <p className="text-sm text-gray-500 mt-1">السعر للمتر الواحد</p>
+                      <p className="text-sm text-[#211b19]/55 mt-1">السعر للمتر الواحد</p>
                     </div>
 
                     {/* نسخة الجوال - السعر وحالة التوفر في نفس السطر */}
@@ -263,34 +263,34 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                       <div className="flex items-center justify-between gap-3 mb-2">
                         {fabric.discount_percentage && fabric.discount_percentage > 0 ? (
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-2xl font-bold text-pink-600">
+                            <span className="text-2xl font-bold text-[#6b1726]">
                               {formatFabricPrice(finalPrice)}
                             </span>
-                            <span className="text-lg text-gray-400 line-through">
+                            <span className="text-lg text-[#211b19]/40 line-through">
                               {formatFabricPrice(fabric.price_per_meter)}
                             </span>
-                            <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                            <span className="bg-[#6b1726] text-[#f6f0e8] px-2 py-1 rounded-full text-xs font-bold">
                               -{fabric.discount_percentage}%
                             </span>
                           </div>
                         ) : (
-                          <div className="text-2xl font-bold text-pink-600">
+                          <div className="text-2xl font-bold text-[#6b1726]">
                             {formatFabricPrice(fabric.price_per_meter)}
                           </div>
                         )}
 
                         {/* حالة التوفر */}
-                        <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        <div className={`px-3 py-1.5 rounded-full border text-xs font-bold whitespace-nowrap ${fabric.is_available ? 'bg-[#f6f0e8] text-[#6b1726] border-[#d8c5ae]' : 'bg-[#6b1726] text-[#f6f0e8] border-[#6b1726]'
                           }`}>
                           {fabric.is_available ? 'متوفر' : 'غير متوفر'}
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">السعر للمتر الواحد</p>
+                      <p className="text-xs text-[#211b19]/55">السعر للمتر الواحد</p>
                     </div>
 
                     {/* حالة التوفر لسطح المكتب */}
                     <div className="hidden md:block mt-3">
-                      <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${fabric.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      <div className={`inline-block px-4 py-2 rounded-full border text-sm font-bold ${fabric.is_available ? 'bg-[#f6f0e8] text-[#6b1726] border-[#d8c5ae]' : 'bg-[#6b1726] text-[#f6f0e8] border-[#6b1726]'
                         }`}>
                         {fabric.is_available ? 'متوفر' : 'غير متوفر'}
                       </div>
@@ -299,7 +299,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
 
                   {/* الوصف */}
                   {fabric.description && (
-                    <p className="text-gray-600 leading-relaxed mb-6">
+                    <p className="text-[#211b19]/70 leading-relaxed mb-6">
                       {fabric.description}
                     </p>
                   )}
@@ -307,12 +307,12 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                   {/* الألوان المتاحة */}
                   {fabric.available_colors && fabric.available_colors.length > 0 && (
                     <div className="mb-6">
-                      <h3 className="text-sm font-semibold text-gray-800 mb-3">الألوان المتاحة:</h3>
+                      <h3 className="text-sm font-semibold text-[#211b19] mb-3">الألوان المتاحة:</h3>
                       <div className="flex flex-wrap gap-2">
                         {fabric.available_colors.map((color) => (
                           <span
                             key={color}
-                            className="px-4 py-2 rounded-lg border-2 border-gray-200 text-gray-700 text-sm"
+                            className="px-4 py-2 rounded-lg border-2 border-[#d8c5ae] bg-[#f6f0e8] text-[#211b19]/80 text-sm"
                           >
                             {color}
                           </span>
@@ -322,31 +322,31 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                   )}
 
                   {/* تفاصيل إضافية */}
-                  <div className="border-t border-gray-200 pt-6 space-y-4">
-                    <h3 className="text-lg font-bold text-gray-800 mb-4">تفاصيل إضافية</h3>
+                  <div className="border-t border-[#d8c5ae]/70 pt-6 space-y-4">
+                    <h3 className="text-lg font-bold text-[#211b19] mb-4">تفاصيل إضافية</h3>
 
                     {/* نوع القماش */}
                     {fabric.type && (
-                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                      <div className="bg-[#f6f0e8] border border-[#d8c5ae]/60 rounded-lg p-4">
+                        <h4 className="font-semibold text-[#211b19] mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-[#6b1726] rounded-full"></span>
                           نوع القماش
                         </h4>
-                        <p className="text-gray-700">{fabric.type}</p>
+                        <p className="text-[#211b19]/80">{fabric.type}</p>
                       </div>
                     )}
 
                     {/* المميزات */}
                     {fabric.features && fabric.features.length > 0 && (
-                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                      <div className="bg-[#f6f0e8] border border-[#d8c5ae]/60 rounded-lg p-4">
+                        <h4 className="font-semibold text-[#211b19] mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-[#6b1726] rounded-full"></span>
                           المميزات
                         </h4>
                         <ul className="space-y-1">
                           {fabric.features.map((feature, index) => (
-                            <li key={index} className="text-gray-700 flex items-start gap-2">
-                              <span className="text-pink-500 mt-1">•</span>
+                            <li key={index} className="text-[#211b19]/80 flex items-start gap-2">
+                              <span className="text-[#6b1726] mt-1">•</span>
                               <span>{feature}</span>
                             </li>
                           ))}
@@ -356,16 +356,16 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
 
                     {/* مناسب لـ */}
                     {fabric.suitable_for && fabric.suitable_for.length > 0 && (
-                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                      <div className="bg-[#f6f0e8] border border-[#d8c5ae]/60 rounded-lg p-4">
+                        <h4 className="font-semibold text-[#211b19] mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-[#6b1726] rounded-full"></span>
                           مناسب لـ
                         </h4>
                         <div className="flex flex-wrap gap-2">
                           {fabric.suitable_for.map((item, index) => (
                             <span
                               key={index}
-                              className="bg-white px-3 py-1 rounded-full text-sm text-gray-700 border border-pink-200"
+                              className="bg-[#fbf8f3] px-3 py-1 rounded-full text-sm text-[#211b19]/80 border border-[#d8c5ae]"
                             >
                               {item}
                             </span>
@@ -376,16 +376,16 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
 
                     {/* المناسبات */}
                     {fabric.occasions && fabric.occasions.length > 0 && (
-                      <div className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                          <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                      <div className="bg-[#f6f0e8] border border-[#d8c5ae]/60 rounded-lg p-4">
+                        <h4 className="font-semibold text-[#211b19] mb-2 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-[#6b1726] rounded-full"></span>
                           المناسبات المناسبة
                         </h4>
                         <div className="flex flex-wrap gap-2">
                           {fabric.occasions.map((occasion, index) => (
                             <span
                               key={index}
-                              className="bg-white px-3 py-1 rounded-full text-sm text-gray-700 border border-pink-200"
+                              className="bg-[#fbf8f3] px-3 py-1 rounded-full text-sm text-[#211b19]/80 border border-[#d8c5ae]"
                             >
                               {occasion}
                             </span>
@@ -400,7 +400,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                   <div className="mt-8 space-y-3">
                     <Link
                       href={`/fabrics/${fabric.id}`}
-                      className="block w-full bg-gradient-to-r from-pink-600 to-purple-600 text-white py-3 px-6 rounded-xl font-semibold hover:from-pink-700 hover:to-purple-700 transition-all duration-300 shadow-lg hover:shadow-xl text-center"
+                      className="block w-full bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] py-3 px-6 rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
                     >
                       عرض التفاصيل الكاملة
                     </Link>
@@ -409,7 +409,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                       href={whatsappLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 w-full border-2 border-green-500 text-green-600 bg-transparent py-3 px-6 rounded-xl font-semibold hover:bg-green-50 transition-all duration-300 text-center"
+                      className="flex items-center justify-center gap-2 w-full border-2 border-[#6b1726] text-[#6b1726] bg-transparent py-3 px-6 rounded-xl font-semibold hover:bg-[#f6f0e8] transition-all duration-300 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
                     >
                       <MessageCircle className="w-5 h-5" />
                       <span>استفسار عبر الواتساب</span>

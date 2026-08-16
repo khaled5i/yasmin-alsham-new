@@ -48,11 +48,11 @@ body {
 html {
   scroll-behavior: smooth;
   scrollbar-width: thin;
-  scrollbar-color: rgba(219, 39, 119, 0.3) transparent;
+  scrollbar-color: rgba(107, 23, 38, 0.55) transparent;
 }
 
 html:hover {
-  scrollbar-color: rgba(219, 39, 119, 0.6) transparent;
+  scrollbar-color: rgba(107, 23, 38, 0.85) transparent;
 }
 
 /* للمتصفحات المبنية على Webkit (Chrome, Safari, Edge) */
@@ -65,13 +65,13 @@ html:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(219, 39, 119, 0.3);
+  background: rgba(107, 23, 38, 0.55);
   border-radius: 4px;
   transition: background 0.3s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(219, 39, 119, 0.6);
+  background: rgba(107, 23, 38, 0.85);
 }
 
 /* إخفاء شريط التمرير بشكل افتراضي وإظهاره عند التمرير */
@@ -116,7 +116,7 @@ body {
   html::-webkit-scrollbar-thumb,
   body::-webkit-scrollbar-thumb,
   #main-scroll-container::-webkit-scrollbar-thumb {
-    background: #ec4899;
+    background: #6b1726;
     border-radius: 10px;
   }
 }
@@ -127,7 +127,7 @@ body {
   html,
   body {
     scrollbar-width: thin;
-    scrollbar-color: #ec4899 transparent;
+    scrollbar-color: #6b1726 transparent;
   }
 
   html::-webkit-scrollbar,
@@ -142,7 +142,7 @@ body {
 
   html::-webkit-scrollbar-thumb,
   body::-webkit-scrollbar-thumb {
-    background: #ec4899;
+    background: #6b1726;
     border-radius: 10px;
   }
 }
@@ -248,17 +248,17 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #f6f0e8;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #f472b6, #ec4899);
+  background: #6b1726;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #ec4899, #db2777);
+  background: #2f0c14;
 }
 
 /* تحسينات Accessibility - Focus Indicators */
