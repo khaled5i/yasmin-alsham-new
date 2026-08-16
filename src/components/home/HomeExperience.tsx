@@ -115,7 +115,6 @@ export default function HomeExperience() {
               <>
                 <FabricTransition />
                 <div id="fabric-collection" className={styles.fabricCollectionAnchor}>
-                  <p className={styles.fabricSectionNotice}>أنتِ الآن في قسم متجر الأقمشة التابع لياسمين الشام</p>
                   <FeaturedFabricStore />
                 </div>
               </>

@@ -27,7 +27,6 @@ export const homeMedia = {
   },
   craftPoster: '/media/home/craft-poster.webp',
   transitionPoster: '/media/home/fabric-transition.webp',
-  campaignPoster: '/media/home/campaign-fabrics.webp',
 }
 
 export const tailoringShowcase: TailoringShowcaseItem[] = [

@@ -50,6 +50,9 @@ export default function HomeHeader({
   const scrollFrameRef = useRef<number | null>(null)
   const router = useRouter()
   const isSectionExperience = activeSection !== null
+  const useSolidHeader = !isSectionExperience
+    ? forceSolid || isScrolled || isMenuOpen
+    : activeSection === 'fabrics' && (forceSolid || isScrolled || isMenuOpen)
 
   useEffect(() => {
     const updateHeader = () => {
@@ -146,7 +149,7 @@ export default function HomeHeader({
   return (
     <header
       ref={headerRef}
-      className={`${styles.homeHeader} ${isSectionExperience ? styles.tailoringHomeHeader : ''} ${!isSectionExperience && (forceSolid || isScrolled || isMenuOpen) ? styles.headerSolid : ''}`}
+      className={`${styles.homeHeader} ${isSectionExperience ? styles.tailoringHomeHeader : ''} ${activeSection === 'fabrics' ? styles.fabricHomeHeader : ''} ${useSolidHeader ? styles.headerSolid : ''}`}
       data-open={isMenuOpen}
     >
       <div className={`${styles.headerInner} ${isSectionExperience ? styles.tailoringHeaderInner : ''}`}>

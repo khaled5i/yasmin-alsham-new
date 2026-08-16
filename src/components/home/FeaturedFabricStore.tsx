@@ -1,13 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, RefreshCw } from 'lucide-react'
-import useEmblaCarousel from 'embla-carousel-react'
+import { motion, type PanInfo } from 'framer-motion'
+import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { formatFabricPrice, getFinalPrice, type Fabric, useFabricStore } from '@/store/fabricStore'
 import { isVideoFile } from '@/lib/utils/media'
 import FabricMedia from './FabricMedia'
-import { homeMedia } from './home-data'
 import { trackHomeEvent } from './home-analytics'
 import styles from './home.module.css'
 
@@ -16,17 +15,6 @@ const FALLBACK_IMAGE = '/yasmin.jpg'
 export default function FeaturedFabricStore() {
   const { fabrics, loadFabrics, isLoading, error } = useFabricStore()
   const [hasRequested, setHasRequested] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState('الكل')
-  const [selectedSnap, setSelectedSnap] = useState(0)
-  const [emblaRef, emblaApi] = useEmblaCarousel({
-    direction: 'rtl',
-    align: 'start',
-    containScroll: 'trimSnaps',
-    dragFree: true,
-    breakpoints: {
-      '(min-width: 768px)': { active: false },
-    },
-  })
 
   useEffect(() => {
     setHasRequested(true)
@@ -38,73 +26,14 @@ export default function FeaturedFabricStore() {
     [fabrics],
   )
 
-  const categories = useMemo(
-    () => [
-      'الكل',
-      ...Array.from(new Set(featuredFabrics.map((fabric) => fabric.category).filter(Boolean))),
-    ],
-    [featuredFabrics],
-  )
-
-  const visibleFabrics = useMemo(
-    () =>
-      selectedCategory === 'الكل'
-        ? featuredFabrics
-        : featuredFabrics.filter((fabric) => fabric.category === selectedCategory),
-    [featuredFabrics, selectedCategory],
-  )
-
-  const onSelect = useCallback(() => {
-    if (emblaApi) setSelectedSnap(emblaApi.selectedScrollSnap())
-  }, [emblaApi])
-
-  useEffect(() => {
-    if (!emblaApi) return
-    onSelect()
-    emblaApi.on('select', onSelect)
-    emblaApi.on('reInit', onSelect)
-    return () => {
-      emblaApi.off('select', onSelect)
-      emblaApi.off('reInit', onSelect)
-    }
-  }, [emblaApi, onSelect])
-
-  useEffect(() => {
-    emblaApi?.reInit()
-    emblaApi?.scrollTo(0)
-    setSelectedSnap(0)
-  }, [emblaApi, selectedCategory])
-
   const showLoading = !hasRequested || isLoading
 
   return (
     <section className={styles.fabricStoreSection} aria-labelledby="fabrics-title">
       <div className={styles.sectionContainer}>
-        <div className={styles.fabricStoreHeader}>
-          <div>
-            <p className={styles.sectionEyebrow}>الخامة الأولى</p>
-            <h2 id="fabrics-title" className={styles.sectionTitle}>متجر الأقمشة</h2>
-          </div>
-          <p>خامات مختارة بعناية لتناسب فساتين السهرة والمناسبات والتصاميم الخاصة.</p>
-        </div>
-
-        {!showLoading && !error && categories.length > 1 ? (
-          <div className={styles.categoryChips} aria-label="تصفية الأقمشة حسب الفئة">
-            {categories.map((category) => (
-              <button
-                type="button"
-                key={category}
-                aria-pressed={selectedCategory === category}
-                onClick={() => {
-                  setSelectedCategory(category)
-                  trackHomeEvent('fabric_category_click', { category })
-                }}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <header className={`${styles.tailoringWorksHeader} ${styles.fabricStoreHeader}`}>
+          <h2 id="fabrics-title">متجر الأقمشة</h2>
+        </header>
 
         {showLoading ? <FabricSkeletons /> : null}
 
@@ -121,44 +50,16 @@ export default function FeaturedFabricStore() {
           </div>
         ) : null}
 
-        {!showLoading && !error && visibleFabrics.length === 0 ? (
+        {!showLoading && !error && featuredFabrics.length === 0 ? (
           <div className={styles.fabricStatus} role="status">
             <p>تصفّحي أحدث الأقمشة المتوفرة في المتجر.</p>
             <Link href="/fabrics">عرض جميع الأقمشة</Link>
           </div>
         ) : null}
 
-        {!showLoading && !error && visibleFabrics.length > 0 ? (
-          <div className={styles.fabricCarousel} ref={emblaRef}>
-            <div className={styles.fabricTrack}>
-              {visibleFabrics.map((fabric, index) => (
-                <FabricCard key={fabric.id} fabric={fabric} index={index} />
-              ))}
-            </div>
-          </div>
+        {!showLoading && !error && featuredFabrics.length > 0 ? (
+          <FabricDeck fabrics={featuredFabrics} />
         ) : null}
-
-        {!showLoading && !error && visibleFabrics.length > 1 ? (
-          <div className={styles.fabricDots} aria-hidden="true">
-            {visibleFabrics.map((fabric, index) => (
-              <span key={fabric.id} data-active={selectedSnap === index} />
-            ))}
-          </div>
-        ) : null}
-
-        <div className={styles.campaignBanner}>
-          <img src={homeMedia.campaignPoster} alt="" width={1600} height={900} loading="lazy" />
-          <div className={styles.campaignOverlay} />
-          <div className={styles.campaignContent}>
-            <p>اختيارات ياسمين الشام</p>
-            <h3>تشكيلة المناسبات</h3>
-            <span>خامات تمنح الفكرة بدايتها الأجمل.</span>
-            <Link href="/fabrics">
-              اكتشفي التشكيلة
-              <ArrowLeft aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
 
         <div className={styles.fabricsAllLink}>
           <Link
@@ -174,56 +75,146 @@ export default function FeaturedFabricStore() {
   )
 }
 
-function FabricCard({ fabric, index }: { fabric: Fabric; index: number }) {
-  const media = getFabricMedia(fabric)
-  const finalPrice = getFinalPrice(fabric)
-  const hasDiscount = fabric.is_on_sale && fabric.discount_percentage > 0
+function FabricDeck({ fabrics }: { fabrics: Fabric[] }) {
+  const [activeIndex, setActiveIndex] = useState(() => Math.floor((fabrics.length - 1) / 2))
+  const dragInProgress = useRef(false)
+
+  const moveDeck = useCallback((step: -1 | 1) => {
+    setActiveIndex((index) => {
+      if (fabrics.length <= 1) return 0
+      return (index + step + fabrics.length) % fabrics.length
+    })
+  }, [fabrics.length])
+
+  const handleDragEnd = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const swipeIntent = Math.abs(info.offset.x) > 48 || Math.abs(info.velocity.x) > 420
+    if (swipeIntent) moveDeck(info.offset.x < 0 ? 1 : -1)
+
+    window.requestAnimationFrame(() => {
+      dragInProgress.current = false
+    })
+  }, [moveDeck])
+
+  const paddedPosition = String(activeIndex + 1).padStart(2, '0')
+  const paddedTotal = String(fabrics.length).padStart(2, '0')
 
   return (
-    <article className={styles.fabricSlide}>
-      <Link
-        href={`/fabrics/${fabric.id}`}
-        className={styles.fabricCard}
-        onClick={() =>
-          trackHomeEvent('fabric_card_click', {
-            fabric_id: fabric.id,
-            position: index + 1,
-          })
-        }
-      >
-        <div className={styles.fabricImageWrap}>
-          <FabricMedia
-            src={media.src}
-            poster={media.poster}
-            alt={`${fabric.name || fabric.category || 'قماش'} من تشكيلة أقمشة ياسمين الشام`}
-            priority={index === 0}
-          />
-          {hasDiscount ? <span className={styles.discountBadge}>خصم {fabric.discount_percentage}%</span> : null}
-          <span className={styles.availabilityBadge}>
-            <Check aria-hidden="true" />
-            متوفر
-          </span>
-        </div>
-        <div className={styles.fabricCardBody}>
-          <p>{fabric.category}</p>
-          <h3>{fabric.name || 'قماش'}</h3>
-          <div className={styles.fabricPrice}>
-            {(fabric.price_per_meter ?? 0) > 0 ? (
-              <>
-                <strong>{formatFabricPrice(finalPrice)}</strong>
-                {hasDiscount ? <del>{formatFabricPrice(fabric.price_per_meter)}</del> : null}
-              </>
-            ) : (
-              <strong>السعر عند الطلب</strong>
-            )}
+    <div className={`${styles.atelierGallery} ${styles.fabricDeckGallery}`}>
+      <div className={styles.cardDeck}>
+        {fabrics.map((fabric, index) => {
+          const offset = index - activeIndex
+          const distance = Math.abs(offset)
+          const isCurrent = offset === 0
+          const media = getFabricMedia(fabric)
+          const finalPrice = getFinalPrice(fabric)
+          const hasDiscount = fabric.is_on_sale && fabric.discount_percentage > 0
+
+          return (
+            <motion.article
+              key={fabric.id}
+              className={`${styles.deckCard} ${styles.fabricDeckCard}`}
+              initial={false}
+              animate={{
+                x: `${offset * 23}%`,
+                y: distance * 18,
+                rotate: offset * -4.8,
+                scale: 1 - Math.min(distance, 3) * 0.055,
+                opacity: distance > 2 ? 0 : 1 - distance * 0.14,
+              }}
+              transition={{ type: 'spring', stiffness: 260, damping: 28, mass: 0.8 }}
+              drag={isCurrent ? 'x' : false}
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.58}
+              whileDrag={isCurrent ? { scale: 1.025, cursor: 'grabbing' } : undefined}
+              onDragStart={() => {
+                dragInProgress.current = true
+              }}
+              onDragEnd={isCurrent ? handleDragEnd : undefined}
+              onClickCapture={(event) => {
+                if (isCurrent) return
+                event.preventDefault()
+                setActiveIndex(index)
+              }}
+              aria-current={isCurrent ? 'true' : undefined}
+              style={{
+                zIndex: fabrics.length - distance,
+                pointerEvents: distance <= 2 ? 'auto' : 'none',
+              }}
+            >
+              <Link
+                href={`/fabrics/${fabric.id}`}
+                className={styles.fabricDeckLink}
+                draggable={false}
+                tabIndex={distance <= 2 ? 0 : -1}
+                aria-label={isCurrent ? `عرض تفاصيل ${fabric.name || 'القماش'}` : `إظهار ${fabric.name || 'القماش'}`}
+                onClick={(event) => {
+                  if (dragInProgress.current) {
+                    event.preventDefault()
+                    return
+                  }
+
+                  if (isCurrent) {
+                    trackHomeEvent('fabric_card_click', {
+                      fabric_id: fabric.id,
+                      position: index + 1,
+                    })
+                  }
+                }}
+              >
+                <FabricMedia
+                  src={media.src}
+                  poster={media.poster}
+                  alt={`${fabric.name || fabric.category || 'قماش'} من تشكيلة أقمشة ياسمين الشام`}
+                  priority={isCurrent}
+                />
+                <span className={styles.deckCardShade} />
+                <span className={styles.deckCardTopline}>
+                  <small>YASMIN AL-SHAM</small>
+                  <small>{String(index + 1).padStart(2, '0')}</small>
+                </span>
+                {hasDiscount ? (
+                  <span className={styles.fabricDeckDiscount}>خصم {fabric.discount_percentage}%</span>
+                ) : null}
+                <span className={`${styles.deckCardCaption} ${styles.fabricDeckCaption}`}>
+                  <span className={styles.fabricDeckDetails}>
+                    <strong>{fabric.name || 'قماش'}</strong>
+                    <small className={styles.fabricDeckPrice}>
+                      {(fabric.price_per_meter ?? 0) > 0 ? (
+                        <>
+                          <b>{formatFabricPrice(finalPrice)}</b>
+                          {hasDiscount ? <del>{formatFabricPrice(fabric.price_per_meter)}</del> : null}
+                        </>
+                      ) : (
+                        <b>السعر عند الطلب</b>
+                      )}
+                    </small>
+                  </span>
+                  <span className={styles.fabricDeckAction}>
+                    التفاصيل
+                    <ArrowLeft aria-hidden="true" />
+                  </span>
+                </span>
+              </Link>
+            </motion.article>
+          )
+        })}
+      </div>
+
+      {fabrics.length > 1 ? (
+        <>
+          <div className={styles.deckControls}>
+            <button type="button" onClick={() => moveDeck(-1)} aria-label="القماش السابق">
+              <ChevronRight aria-hidden="true" />
+            </button>
+            <p aria-live="polite" dir="ltr">{paddedPosition} / {paddedTotal}</p>
+            <button type="button" onClick={() => moveDeck(1)} aria-label="القماش التالي">
+              <ChevronLeft aria-hidden="true" />
+            </button>
           </div>
-          <span className={styles.fabricCardAction}>
-            عرض التفاصيل
-            <ArrowLeft aria-hidden="true" />
-          </span>
-        </div>
-      </Link>
-    </article>
+          <p className={styles.deckHint}>اسحبي البطاقة للتنقّل بين الأقمشة</p>
+        </>
+      ) : null}
+    </div>
   )
 }
 

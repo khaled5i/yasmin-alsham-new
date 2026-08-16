@@ -927,7 +927,7 @@
 
 /* Fabric store */
 .fabricStoreSection {
-  padding: 100px 0 120px;
+  padding: 88px 0 120px;
   background:
     radial-gradient(circle at 0 30%, rgba(201, 142, 148, 0.09), transparent 26%),
     var(--ivory-soft);
@@ -937,85 +937,23 @@
 }
 
 .fabricStoreHeader {
-  display: grid;
-  gap: 22px;
-  margin-bottom: 30px;
+  margin-bottom: 0;
 }
 
-.fabricStoreHeader > p {
-  max-width: 540px;
-  color: rgba(33, 27, 25, 0.65);
-  line-height: 1.9;
+.tailoringWorksHeader.fabricStoreHeader h2 {
+  color: var(--wine);
 }
 
-.categoryChips {
-  display: flex;
-  gap: 8px;
-  width: calc(100% + 16px);
-  margin: 0 0 28px -16px;
-  padding-inline-start: 16px;
-  overflow-x: auto;
-  scrollbar-width: none;
+.tailoringWorksHeader.fabricStoreHeader h2::before {
+  background: linear-gradient(90deg, transparent, rgba(107, 23, 38, 0.48));
 }
 
-.categoryChips::-webkit-scrollbar {
-  display: none;
+.tailoringWorksHeader.fabricStoreHeader h2::after {
+  background: linear-gradient(90deg, rgba(107, 23, 38, 0.48), transparent);
 }
 
-.categoryChips button {
-  flex: 0 0 auto;
-  min-height: 42px;
-  padding: 9px 17px;
-  color: var(--charcoal);
-  font: inherit;
-  font-size: 0.84rem;
-  background: transparent;
-  border: 1px solid rgba(107, 23, 38, 0.2);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
-}
-
-.categoryChips button[aria-pressed='true'] {
-  color: var(--white);
-  background: var(--wine);
-  border-color: var(--wine);
-}
-
-.fabricCarousel {
-  width: calc(100% + 16px);
-  margin-inline-end: -16px;
-  overflow: hidden;
-}
-
-.fabricTrack {
-  display: flex;
-  gap: 14px;
-  touch-action: pan-y pinch-zoom;
-}
-
-.fabricSlide {
-  flex: 0 0 80vw;
-  min-width: 0;
-  max-width: 430px;
-}
-
-.fabricCard {
-  display: block;
-  overflow: hidden;
-  color: var(--charcoal);
-  text-decoration: none;
-  background: var(--white);
-  border: 1px solid rgba(107, 23, 38, 0.1);
-  border-radius: 18px;
-  box-shadow: 0 18px 50px rgba(49, 20, 24, 0.06);
-}
-
-.fabricImageWrap {
-  position: relative;
-  aspect-ratio: 4 / 5;
-  overflow: hidden;
-  background: #eadfd2;
+.fabricStoreHeader + :is(.fabricSkeletonGrid, .fabricStatus) {
+  margin-top: 24px;
 }
 
 .fabricMedia {
@@ -1023,115 +961,6 @@
   height: 100%;
   object-fit: cover;
   transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.discountBadge,
-.availabilityBadge {
-  position: absolute;
-  top: 14px;
-  min-height: 28px;
-  padding: 6px 10px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  border-radius: 7px;
-}
-
-.discountBadge {
-  right: 14px;
-  color: var(--white);
-  background: var(--wine);
-}
-
-.availabilityBadge {
-  left: 14px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #2c4233;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(8px);
-}
-
-.availabilityBadge svg {
-  width: 12px;
-  height: 12px;
-}
-
-.fabricCardBody {
-  padding: 18px;
-}
-
-.fabricCardBody > p {
-  color: var(--rose);
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.fabricCardBody h3 {
-  margin-top: 4px !important;
-  font-family: var(--font-home-display), serif;
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-.fabricPrice {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  min-height: 28px;
-  margin-top: 10px;
-}
-
-.fabricPrice strong {
-  color: var(--wine);
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.fabricPrice del {
-  color: rgba(33, 27, 25, 0.42);
-  font-size: 0.75rem;
-}
-
-.fabricCardAction {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 16px;
-  padding-top: 13px;
-  color: rgba(33, 27, 25, 0.7);
-  font-size: 0.78rem;
-  border-top: 1px solid rgba(107, 23, 38, 0.1);
-}
-
-.fabricCardAction svg {
-  width: 16px;
-}
-
-.fabricCard:hover .fabricMedia {
-  transform: scale(1.035);
-}
-
-.fabricDots {
-  display: flex;
-  justify-content: center;
-  gap: 5px;
-  margin-top: 20px;
-}
-
-.fabricDots span {
-  width: 5px;
-  height: 5px;
-  background: rgba(107, 23, 38, 0.25);
-  border-radius: 50%;
-  transition: width 200ms ease, background-color 200ms ease, border-radius 200ms ease;
-}
-
-.fabricDots span[data-active='true'] {
-  width: 20px;
-  background: var(--wine);
-  border-radius: 99px;
 }
 
 .fabricSkeletonGrid {
@@ -1213,78 +1042,6 @@
 
 .fabricStatus svg {
   width: 15px;
-}
-
-.campaignBanner {
-  position: relative;
-  min-height: min(68svh, 700px);
-  margin-top: 72px;
-  overflow: hidden;
-  color: var(--white);
-  border-radius: 22px;
-  isolation: isolate;
-}
-
-.campaignBanner > img {
-  position: absolute;
-  z-index: -3;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-}
-
-.campaignOverlay {
-  position: absolute;
-  z-index: -2;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(40, 7, 13, 0.08), rgba(40, 7, 13, 0.82));
-}
-
-.campaignContent {
-  position: absolute;
-  inset: auto 22px 28px;
-}
-
-.campaignContent > p {
-  color: var(--sand);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-}
-
-.campaignContent h3 {
-  margin-top: 7px !important;
-  font-family: var(--font-home-display), serif;
-  font-size: clamp(2.5rem, 8vw, 5.5rem);
-  font-weight: 600;
-  line-height: 1.06;
-}
-
-.campaignContent > span {
-  display: block;
-  max-width: 490px;
-  margin-top: 10px;
-  color: rgba(255, 255, 255, 0.75);
-  line-height: 1.8;
-}
-
-.campaignContent a {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 22px;
-  padding-bottom: 5px;
-  color: var(--white);
-  font-size: 0.88rem;
-  font-weight: 600;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
-}
-
-.campaignContent a svg {
-  width: 16px;
 }
 
 .fabricsAllLink {
@@ -1624,8 +1381,7 @@
     padding-inline: 24px;
   }
 
-  .showcaseGrid,
-  .fabricCarousel {
+  .showcaseGrid {
     width: 100%;
     margin-inline-end: 0;
   }
@@ -1638,7 +1394,6 @@
     flex-basis: 62vw;
   }
 
-  .fabricSlide,
   .fabricSkeleton {
     flex-basis: 46vw;
   }
@@ -1699,7 +1454,6 @@
   }
 
   .tailoringHeader,
-  .fabricStoreHeader,
   .showcaseHeader {
     grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.7fr);
     align-items: end;
@@ -1750,27 +1504,7 @@
   }
 
   .fabricStoreSection {
-    padding-block: 142px 160px;
-  }
-
-  .categoryChips {
-    width: 100%;
-    margin-left: 0;
-    padding-inline-start: 0;
-  }
-
-  .fabricTrack {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 24px;
-  }
-
-  .fabricSlide {
-    max-width: none;
-  }
-
-  .fabricDots {
-    display: none;
+    padding-block: 96px 160px;
   }
 
   .fabricSkeletonGrid {
@@ -1781,14 +1515,6 @@
 
   .fabricSkeleton {
     max-width: none;
-  }
-
-  .campaignBanner {
-    margin-top: 112px;
-  }
-
-  .campaignContent {
-    inset: auto 52px 50px;
   }
 
   .footerTop {
@@ -1949,13 +1675,8 @@
     max-width: 600px;
   }
 
-  .fabricTrack,
   .fabricSkeletonGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .fabricCardBody {
-    padding: 20px;
   }
 }
 
@@ -1991,6 +1712,20 @@
 
 .tailoringHomeHeader[data-open='true'] {
   --tailoring-header-progress: 1 !important;
+}
+
+.fabricHomeHeader {
+  color: var(--white);
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.fabricHomeHeader.headerSolid {
+  color: var(--wine);
+  background: color-mix(in srgb, var(--ivory) 93%, transparent);
+  box-shadow: 0 1px 0 rgba(107, 23, 38, 0.1);
+  backdrop-filter: blur(18px);
 }
 
 .tailoringHeaderInner {
@@ -2147,17 +1882,6 @@
 
 .fabricCollectionAnchor {
   scroll-margin-top: 0;
-}
-
-.fabricSectionNotice {
-  padding: calc(80px + env(safe-area-inset-top, 0px)) 18px 14px;
-  color: rgba(246, 240, 232, 0.82);
-  font-size: 0.69rem;
-  font-weight: 500;
-  line-height: 1.7;
-  text-align: center;
-  background: var(--deep-wine);
-  border-bottom: 1px solid rgba(234, 210, 166, 0.12);
 }
 
 .tailoringSectionNotice {
@@ -2413,6 +2137,138 @@
   font-size: 0.62rem;
 }
 
+.fabricDeckGallery {
+  margin-top: 24px;
+}
+
+.fabricDeckCard {
+  background: #eadfd2;
+}
+
+.fabricDeckLink {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+}
+
+.fabricDeckCard .fabricMedia {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.fabricDeckCard .deckCardShade {
+  background:
+    linear-gradient(180deg, rgba(38, 7, 13, 0.19) 0%, transparent 34%, rgba(38, 7, 13, 0.92) 100%),
+    linear-gradient(90deg, rgba(38, 7, 13, 0.12), transparent 48%);
+}
+
+.fabricDeckCard .deckCardTopline small:last-child {
+  max-width: 52%;
+  overflow: hidden;
+  direction: rtl;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fabricDeckDiscount {
+  position: absolute;
+  z-index: 2;
+  top: 48px;
+  right: 17px;
+  padding: 6px 10px;
+  color: var(--white);
+  font-size: 0.67rem;
+  font-weight: 600;
+  background: var(--wine);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.fabricDeckCaption {
+  align-items: flex-end;
+}
+
+.fabricDeckDetails {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.fabricDeckDetails > strong {
+  display: -webkit-box;
+  overflow: hidden;
+  text-align: right;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fabricDeckPrice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-size: 0.7rem !important;
+  direction: rtl !important;
+  letter-spacing: 0;
+}
+
+.fabricDeckPrice b {
+  font-weight: 600;
+}
+
+.fabricDeckPrice del {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.6rem;
+}
+
+.fabricDeckAction {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding-bottom: 3px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.42);
+}
+
+.fabricDeckAction svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fabricDeckLink:hover .fabricMedia {
+  transform: scale(1.035);
+}
+
+.fabricDeckGallery .deckControls button {
+  color: var(--wine);
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(107, 23, 38, 0.24);
+}
+
+.fabricDeckGallery .deckControls button:hover {
+  color: var(--white);
+  background: var(--wine);
+}
+
+.fabricDeckGallery .deckControls p {
+  color: var(--wine);
+}
+
+.fabricDeckGallery .deckHint {
+  color: rgba(33, 27, 25, 0.5);
+}
+
 .tailoringContactCta {
   max-width: 650px;
   margin: 60px auto 0;
@@ -2550,12 +2406,6 @@
 
 @media (min-width: 768px) {
   .tailoringSectionNotice {
-    padding-top: calc(92px + env(safe-area-inset-top, 0px));
-    padding-bottom: 16px;
-    font-size: 0.76rem;
-  }
-
-  .fabricSectionNotice {
     padding-top: calc(92px + env(safe-area-inset-top, 0px));
     padding-bottom: 16px;
     font-size: 0.76rem;
