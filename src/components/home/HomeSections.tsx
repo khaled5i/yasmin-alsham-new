@@ -196,7 +196,7 @@ export function TailoringStory({ onSelectSection }: SectionSelectionProps) {
 export function FabricTransition() {
   return (
     <section className={`${styles.tailoringHero} ${styles.fabricTransition}`} aria-labelledby="fabric-hero-title">
-      <ResponsiveHeroMedia {...homeMedia.hero} />
+      <ResponsiveHeroMedia {...homeMedia.fabricsHero} />
       <div className={`${styles.tailoringHeroShade} ${styles.fabricHeroShade}`} />
       <div className={styles.heroGrain} />
 
