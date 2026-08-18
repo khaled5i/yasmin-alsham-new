@@ -17,6 +17,7 @@ import {
   LogOut,
   Loader2,
   Calendar,
+  Fingerprint,
 } from 'lucide-react'
 
 const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
@@ -123,11 +124,6 @@ export default function WorkerMonitoringPage() {
   const availableCount = tailors.filter((w) => w.is_available).length
   const totalActiveOrders = Object.values(activeOrderCounts).reduce((s, c) => s + c, 0)
   const totalCompletedOrders = Object.values(completedOrderCounts).reduce((s, c) => s + c, 0)
-  const avgRating =
-    tailors.length > 0
-      ? (tailors.reduce((s, w) => s + (w.performance_rating || 0), 0) / tailors.length).toFixed(1)
-      : '—'
-
   if (permissionsLoading || (isLoading && tailors.length === 0)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50 flex items-center justify-center">
@@ -184,18 +180,27 @@ export default function WorkerMonitoringPage() {
             <h2 className="text-xl sm:text-2xl font-bold text-gray-800">الخياطون</h2>
             <p className="text-sm text-gray-500 mt-1">عرض ومتابعة أداء جميع الخياطين وطلباتهم</p>
           </div>
-          <div className="relative self-start sm:self-auto">
-            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-500 pointer-events-none" />
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="pr-9 pl-4 py-2 text-sm border border-teal-200 rounded-xl bg-white focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100 appearance-none cursor-pointer font-medium text-gray-700 shadow-sm"
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <Link
+              href="/dashboard/worker-monitoring/attendance"
+              className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-3.5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-teal-800"
             >
-              <option value="">كل الأشهر</option>
-              {recentMonths.map((m) => (
-                <option key={m.key} value={m.key}>{m.label}</option>
-              ))}
-            </select>
+              <Fingerprint className="h-4 w-4" />
+              الحضور والانصراف
+            </Link>
+            <div className="relative">
+              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-500 pointer-events-none" />
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="pr-9 pl-4 py-2 text-sm border border-teal-200 rounded-xl bg-white focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100 appearance-none cursor-pointer font-medium text-gray-700 shadow-sm"
+              >
+                <option value="">كل الأشهر</option>
+                {recentMonths.map((m) => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </motion.div>
 

@@ -760,10 +760,22 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
   const isIn = type === 'in'
 
   useEffect(() => {
+    let isActive = true
+    setLoadingColors(true)
     getColors(item.id)
-      .then(setColors)
+      .then(loadedColors => {
+        if (!isActive) return
+        setColors(loadedColors)
+        setSelectedColorId(loadedColors.length === 1 ? loadedColors[0].id : '')
+      })
       .catch(() => {})
-      .finally(() => setLoadingColors(false))
+      .finally(() => {
+        if (isActive) setLoadingColors(false)
+      })
+
+    return () => {
+      isActive = false
+    }
   }, [item.id])
 
   // الرصيد الحالي (إجمالي أو للون المحدد)
@@ -775,6 +787,13 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
     e.preventDefault()
     const qty = roundFabricNumber(parseFloat(quantity))
     if (!qty || qty <= 0) return
+
+    if (loadingColors) return
+
+    if (colors.length > 0 && !selectedColorId) {
+      alert('❌ يجب تحديد لون القماش حتى تتم مزامنة الكمية مع متجر الأقمشة')
+      return
+    }
 
     if (!isIn && qty > currentQty) {
       alert(`❌ الكمية المطلوبة (${qty}) أكبر من الرصيد الحالي (${currentQty})`)
@@ -793,8 +812,11 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
         date
       })
       onSave(result)
-    } catch {
-      alert('❌ حدث خطأ أثناء الحفظ')
+    } catch (error) {
+      const message = error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : ''
+      alert(message.includes('تحديد لون القماش') ? `❌ ${message}` : '❌ حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
@@ -848,20 +870,9 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
                 <Palette className="w-4 h-4 text-teal-600" />
-                اللون (اختياري)
+                اللون *
               </label>
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedColorId('')}
-                  className={`px-3 py-1.5 rounded-full text-sm border transition-all ${
-                    !selectedColorId
-                      ? 'bg-teal-600 text-white border-teal-600'
-                      : 'border-gray-200 text-gray-600 hover:border-teal-400'
-                  }`}
-                >
-                  كل الألوان
-                </button>
                 {colors.map(c => (
                   <button
                     type="button"
@@ -945,7 +956,7 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
 
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || loadingColors || (colors.length > 0 && !selectedColorId)}
             className={`w-full py-3 text-white rounded-xl transition-colors disabled:opacity-50 font-medium ${
               isIn ? 'bg-green-600 hover:bg-green-700' : 'bg-red-500 hover:bg-red-600'
             }`}

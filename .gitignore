@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Dahua attendance connector local state and encrypted Windows credentials
+/tools/dahua-attendance-connector/.runtime/

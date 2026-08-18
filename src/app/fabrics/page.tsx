@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2 } from 'lucide-react'
-import { useFabricStore, Fabric } from '@/store/fabricStore'
+import { useFabricStore, Fabric, getFinalPrice } from '@/store/fabricStore'
 import FabricSortOptions from '@/components/FabricSortOptions'
 
 import dynamic from 'next/dynamic'
@@ -25,12 +25,13 @@ function FabricSkeleton() {
   return (
     <div className="group">
       <div className="relative overflow-hidden rounded-2xl border border-[#d8c5ae]/60 bg-[#f6f0e8] shadow-lg">
-        <div className="aspect-[9/16] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/55 animate-pulse" />
-        <div className="p-3 space-y-2">
-          <div className="h-5 bg-[#d8c5ae]/60 rounded animate-pulse w-3/4 mx-auto" />
-          <div className="space-y-1">
-            <div className="h-3 bg-[#d8c5ae]/50 rounded animate-pulse w-full" />
-            <div className="h-3 bg-[#d8c5ae]/50 rounded animate-pulse w-2/3 mx-auto" />
+        <div className="relative aspect-[9/16] overflow-hidden bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/55 animate-pulse">
+          <div className="absolute inset-x-0 bottom-0 flex h-[20%] items-end justify-center bg-gradient-to-b from-transparent via-[#f6f0e8]/75 to-[#f6f0e8] px-3 pb-3 sm:px-5 sm:pb-4">
+            <div className="flex w-full items-center justify-center gap-2 sm:gap-3">
+              <span className="h-px min-w-2 max-w-6 flex-1 bg-[#6b1726]/35 sm:max-w-10" />
+              <span className="h-4 w-20 rounded bg-[#d8c5ae]/70 sm:w-28" />
+              <span className="h-px min-w-2 max-w-6 flex-1 bg-[#6b1726]/35 sm:max-w-10" />
+            </div>
           </div>
         </div>
       </div>
@@ -296,6 +297,10 @@ export default function FabricsPage() {
                       { width: 720, height: 1280 },
                     ])
                   const fallbackImage = fabric.thumbnail_image || originalImage
+                  const finalPrice = getFinalPrice(fabric)
+                  const priceLabel = finalPrice != null && finalPrice > 0
+                    ? `السعر : ${formatFabricNumber(finalPrice)} / متر`
+                    : 'السعر عند الطلب'
                   return (
                     <motion.div
                       key={fabric.id}
@@ -383,27 +388,21 @@ export default function FabricsPage() {
                               <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
                               <span>نظرة سريعة</span>
                             </button>
+
+                            <div
+                              className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex h-[20%] items-end justify-center bg-gradient-to-b from-transparent via-[#f6f0e8]/75 to-[#f6f0e8] px-3 pb-3 sm:px-5 sm:pb-4"
+                              dir="rtl"
+                            >
+                              <div className="flex w-full items-center justify-center gap-2 text-[#6b1726] sm:gap-3">
+                                <span className="h-px min-w-2 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
+                                <p className="whitespace-nowrap text-xs font-semibold leading-none sm:text-base lg:text-lg">
+                                  {priceLabel}
+                                </p>
+                                <span className="h-px min-w-2 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
+                              </div>
+                            </div>
                           </div>
                         </Link>
-
-                        {(fabric.name || fabric.show_stock_quantity) && (
-                          <div className="p-3 space-y-1.5">
-                            <Link href={`/fabrics/${fabric.id}`}>
-                              <div className="cursor-pointer hover:bg-[#fbf8f3] transition-colors duration-300 p-1 -m-1 rounded-lg">
-                                {fabric.name && (
-                                  <h3 className="font-bold text-[#211b19] group-hover:text-[#6b1726] transition-colors duration-300 text-center">
-                                    {fabric.name}
-                                  </h3>
-                                )}
-                                {fabric.show_stock_quantity && (
-                                  <p className="text-center text-xs font-medium text-[#211b19]/60">
-                                    المتوفر: {formatFabricNumber(fabric.stock_quantity)} متر
-                                  </p>
-                                )}
-                              </div>
-                            </Link>
-                          </div>
-                        )}
                       </div>
                     </motion.div>
                   )

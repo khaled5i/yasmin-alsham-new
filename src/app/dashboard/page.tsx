@@ -42,7 +42,8 @@ import {
   Wallet,
   ShoppingBag,
   WalletCards,
-  ReceiptText
+  ReceiptText,
+  Boxes
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 
@@ -784,6 +785,14 @@ function DashboardContent() {
                     <ShoppingBag className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
                   </Link>
+
+                  <Link
+                    href="/dashboard/accounting/fabrics/inventory"
+                    className="p-4 bg-gradient-to-r from-teal-50 to-cyan-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <Boxes className="w-6 h-6 text-teal-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون قسم الأقمشة' : 'Fabrics Inventory'}</span>
+                  </Link>
                 </div>
               </motion.div>
             )}
@@ -945,7 +954,7 @@ function DashboardContent() {
                   <span>{isArabic ? 'لوحة الوصول السريع' : 'Quick Access'}</span>
                 </h3>
 
-                <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
                   <Link
                     href="/dashboard/accounting/tailoring/cash-box"
                     className="p-4 bg-gradient-to-r from-stone-50 to-amber-100 rounded-lg border border-amber-300 hover:shadow-md transition-all duration-300 text-center block"
@@ -968,6 +977,14 @@ function DashboardContent() {
                   >
                     <ShoppingBag className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
+                  </Link>
+
+                  <Link
+                    href="/dashboard/accounting/fabrics/inventory"
+                    className="p-4 bg-gradient-to-r from-teal-50 to-cyan-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <Boxes className="w-6 h-6 text-teal-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون قسم الأقمشة' : 'Fabrics Inventory'}</span>
                   </Link>
                 </div>
               </motion.div>
