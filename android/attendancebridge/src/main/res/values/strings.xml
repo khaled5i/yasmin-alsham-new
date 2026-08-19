@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">مزامنة حضور ياسمين الشام</string>
+    <string name="notification_channel">مزامنة أجهزة الحضور</string>
+</resources>

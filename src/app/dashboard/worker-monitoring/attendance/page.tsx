@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
   ArrowRight,
+  BarChart3,
   CalendarDays,
   Check,
   CircleDot,
@@ -13,8 +14,10 @@ import {
   Fingerprint,
   LogIn,
   LogOut,
+  MoonStar,
   RefreshCw,
   ShieldCheck,
+  TimerReset,
   Unplug,
   UserRoundCheck,
   UsersRound,
@@ -25,9 +28,17 @@ import type { WorkerWithUser } from '@/lib/services/worker-service'
 import {
   attendanceService,
   type AttendanceDevice,
+  type AttendanceDeviceUser,
   type AttendanceEvent,
   type AttendanceMapping,
 } from '@/lib/services/attendance-service'
+import {
+  analyzeAttendanceDay,
+  formatAttendanceDuration,
+  type AttendanceDayAnalysis,
+  type AttendancePrayerTime,
+} from '@/lib/attendance-analysis'
+import MonthlyAttendanceReport from './MonthlyAttendanceReport'
 
 const RIYADH_TIME_ZONE = 'Asia/Riyadh'
 
@@ -71,17 +82,26 @@ function getDeviceHealth(device: AttendanceDevice) {
 
 interface AttendanceDayData {
   devices: AttendanceDevice[]
+  deviceUsers: AttendanceDeviceUser[]
   mappings: AttendanceMapping[]
   events: AttendanceEvent[]
+}
+
+interface UnmatchedPerson {
+  key: string
+  deviceId: string
+  deviceUserId: string
+  displayName: string | null
+  deviceName: string
+  direction: 'entry' | 'exit'
+  lastEvent: AttendanceEvent | null
 }
 
 interface WorkerDayRow {
   worker: WorkerWithUser
   events: AttendanceEvent[]
-  firstEntry: AttendanceEvent | null
-  lastExit: AttendanceEvent | null
   lastEvent: AttendanceEvent | null
-  workedMinutes: number | null
+  analysis: AttendanceDayAnalysis
 }
 
 export default function AttendanceMonitoringPage() {
@@ -90,9 +110,12 @@ export default function AttendanceMonitoringPage() {
   const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
   const [dateKey, setDateKey] = useState(getRiyadhDateKey)
   const [workers, setWorkers] = useState<WorkerWithUser[]>([])
-  const [attendance, setAttendance] = useState<AttendanceDayData>({ devices: [], mappings: [], events: [] })
+  const [attendance, setAttendance] = useState<AttendanceDayData>({ devices: [], deviceUsers: [], mappings: [], events: [] })
+  const [prayerTimes, setPrayerTimes] = useState<AttendancePrayerTime[]>([])
+  const [view, setView] = useState<'daily' | 'monthly'>('daily')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [prayerError, setPrayerError] = useState<string | null>(null)
   const [mappingChoices, setMappingChoices] = useState<Record<string, string>>({})
   const [savingMapping, setSavingMapping] = useState<string | null>(null)
 
@@ -115,14 +138,23 @@ export default function AttendanceMonitoringPage() {
     if (!isAuthorized) return
     setIsLoading(true)
     setError(null)
+    setPrayerError(null)
     try {
-      const [workersResult, attendanceResult] = await Promise.all([
+      const [workersResult, attendanceResult, prayersResult] = await Promise.all([
         attendanceService.getWorkers(),
         attendanceService.getDay(dateKey),
+        attendanceService.getPrayerTimesMonth(dateKey.slice(0, 7)).catch((prayerLoadError) => {
+          console.error('Failed to load prayer times:', prayerLoadError)
+          return null
+        }),
       ])
 
       setWorkers(workersResult.filter((worker) => worker.user?.is_active !== false))
       setAttendance(attendanceResult)
+      setPrayerTimes(prayersResult || [])
+      if (!prayersResult) {
+        setPrayerError('تعذر تحميل مواقيت الصلاة؛ لا تعتمد تصنيف الخروج لهذا اليوم قبل المراجعة.')
+      }
     } catch (loadError) {
       console.error('Failed to load attendance dashboard:', loadError)
       setError('تعذر تحميل سجلات الحضور. تأكد من تطبيق تحديث قاعدة البيانات ثم أعد المحاولة.')
@@ -135,58 +167,107 @@ export default function AttendanceMonitoringPage() {
     void loadAttendance()
   }, [loadAttendance])
 
-  const effectiveWorkerByEvent = useMemo(() => {
-    const mappings = new Map(
+  const mappingWorkerByTerminal = useMemo(() => new Map(
       attendance.mappings.map((mapping) => [
         `${mapping.device_id}:${mapping.device_user_id}`,
         mapping.worker_id,
       ])
-    )
+    ), [attendance.mappings])
 
-    return new Map(attendance.events.map((event) => [
+  const effectiveWorkerByEvent = useMemo(() => new Map(attendance.events.map((event) => [
       event.id,
-      event.worker_id || mappings.get(`${event.device_id}:${event.device_user_id}`) || null,
-    ]))
-  }, [attendance.events, attendance.mappings])
+      event.worker_id || mappingWorkerByTerminal.get(`${event.device_id}:${event.device_user_id}`) || null,
+    ])), [attendance.events, mappingWorkerByTerminal])
+
+  const eventsByWorker = useMemo(() => {
+    const grouped = new Map<string, AttendanceEvent[]>()
+    for (const event of attendance.events) {
+      const workerId = effectiveWorkerByEvent.get(event.id)
+      if (!workerId) continue
+      const events = grouped.get(workerId) || []
+      events.push(event)
+      grouped.set(workerId, events)
+    }
+    return grouped
+  }, [attendance.events, effectiveWorkerByEvent])
+
+  const prayerTimesByDate = useMemo(() => new Map(
+    prayerTimes.map((day) => [day.date, day])
+  ), [prayerTimes])
+
+  const selectedPrayerTimes = prayerTimesByDate.get(dateKey) || null
 
   const rows = useMemo<WorkerDayRow[]>(() => workers.map((worker) => {
-    const events = attendance.events.filter((event) => effectiveWorkerByEvent.get(event.id) === worker.id)
-    const entries = events.filter((event) => event.direction === 'entry')
-    const exits = events.filter((event) => event.direction === 'exit')
-    const firstEntry = entries[0] || null
-    const lastExit = exits.at(-1) || null
+    const events = eventsByWorker.get(worker.id) || []
     const lastEvent = events.at(-1) || null
-    const workedMinutes = firstEntry && lastExit && Date.parse(lastExit.occurred_at) >= Date.parse(firstEntry.occurred_at)
-      ? Math.round((Date.parse(lastExit.occurred_at) - Date.parse(firstEntry.occurred_at)) / 60000)
-      : null
+    const analysis = analyzeAttendanceDay(dateKey, events, selectedPrayerTimes)
 
-    return { worker, events, firstEntry, lastExit, lastEvent, workedMinutes }
-  }), [attendance.events, effectiveWorkerByEvent, workers])
+    return { worker, events, lastEvent, analysis }
+  }), [dateKey, eventsByWorker, selectedPrayerTimes, workers])
 
-  const unmatchedPeople = useMemo(() => {
-    const unique = new Map<string, AttendanceEvent>()
+  const unmatchedPeople = useMemo<UnmatchedPerson[]>(() => {
+    const devices = new Map(attendance.devices.map((device) => [device.id, device]))
+    const lastEventByTerminal = new Map<string, AttendanceEvent>()
+    for (const event of attendance.events) {
+      const key = `${event.device_id}:${event.device_user_id}`
+      lastEventByTerminal.set(key, event)
+    }
+
+    const unique = new Map<string, UnmatchedPerson>()
+    for (const terminalUser of attendance.deviceUsers) {
+      const key = `${terminalUser.device_id}:${terminalUser.device_user_id}`
+      if (mappingWorkerByTerminal.has(key)) continue
+      const device = devices.get(terminalUser.device_id)
+      if (!device) continue
+      unique.set(key, {
+        key,
+        deviceId: terminalUser.device_id,
+        deviceUserId: terminalUser.device_user_id,
+        displayName: terminalUser.display_name,
+        deviceName: device.name,
+        direction: device.direction,
+        lastEvent: lastEventByTerminal.get(key) || null,
+      })
+    }
+
     for (const event of attendance.events) {
       if (effectiveWorkerByEvent.get(event.id)) continue
       const key = `${event.device_id}:${event.device_user_id}`
-      if (!unique.has(key)) unique.set(key, event)
+      if (unique.has(key)) continue
+      const device = devices.get(event.device_id)
+      unique.set(key, {
+        key,
+        deviceId: event.device_id,
+        deviceUserId: event.device_user_id,
+        displayName: event.device_person_name,
+        deviceName: device?.name || (event.direction === 'entry' ? 'جهاز الدخول' : 'جهاز الخروج'),
+        direction: event.direction,
+        lastEvent: event,
+      })
     }
-    return [...unique.entries()].map(([key, event]) => ({ key, event }))
-  }, [attendance.events, effectiveWorkerByEvent])
+
+    return [...unique.values()].sort((first, second) =>
+      (first.displayName || first.deviceUserId).localeCompare(second.displayName || second.deviceUserId, 'ar')
+    )
+  }, [attendance.deviceUsers, attendance.devices, attendance.events, effectiveWorkerByEvent, mappingWorkerByTerminal])
 
   const summary = useMemo(() => ({
     present: rows.filter((row) => row.events.length > 0).length,
     inside: rows.filter((row) => row.lastEvent?.direction === 'entry').length,
-    completed: rows.filter((row) => row.firstEntry && row.lastExit).length,
-    absent: rows.filter((row) => row.events.length === 0).length,
+    absent: rows.filter((row) => row.analysis.status === 'absent').length,
+    delayMinutes: rows.reduce((total, row) => total + row.analysis.totalDelayMinutes, 0),
+    deficitMinutes: rows.reduce((total, row) => total + row.analysis.totalDeficitMinutes, 0),
+    overtimeMinutes: rows.reduce((total, row) => total + row.analysis.totalOvertimeMinutes, 0),
   }), [rows])
 
-  const saveMapping = async (key: string, event: AttendanceEvent) => {
+  const saveMapping = async (person: UnmatchedPerson) => {
+    const { key } = person
     const workerId = mappingChoices[key]
     if (!workerId) return
     setSavingMapping(key)
     setError(null)
     try {
-      await attendanceService.saveMapping(event.device_id, event.device_user_id, workerId)
+      await attendanceService.saveMapping(person.deviceId, person.deviceUserId, workerId)
       await loadAttendance()
     } catch (saveError) {
       console.error('Failed to save attendance mapping:', saveError)
@@ -223,15 +304,17 @@ export default function AttendanceMonitoringPage() {
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadAttendance()}
-            disabled={isLoading}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-teal-200 bg-white px-3 text-sm font-semibold text-teal-800 shadow-sm transition hover:bg-teal-50 disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">تحديث</span>
-          </button>
+          {view === 'daily' && (
+            <button
+              type="button"
+              onClick={() => void loadAttendance()}
+              disabled={isLoading}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-teal-200 bg-white px-3 text-sm font-semibold text-teal-800 shadow-sm transition hover:bg-teal-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">تحديث</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -243,42 +326,84 @@ export default function AttendanceMonitoringPage() {
               <div>
                 <p className="mb-2 flex items-center gap-2 text-xs font-bold tracking-wide text-teal-200">
                   <CircleDot className="h-3.5 w-3.5" />
-                  لوحة تشغيل يومية
+                  {view === 'daily' ? 'لوحة تشغيل يومية' : 'دفتر الحضور الشهري'}
                 </p>
-                <h2 className="text-2xl font-black tracking-tight sm:text-3xl">من دخل، من خرج، ومن لم يسجل بعد</h2>
+                <h2 className="text-2xl font-black tracking-tight sm:text-3xl">
+                  {view === 'daily' ? 'الحركة اليومية محسوبة بالدقيقة' : 'مراجعة الغياب والتأخير والعمل الإضافي'}
+                </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-teal-100/80">
-                  تُحفظ أوقات الحركة فقط. صور الوجه وقوالب البصمة تبقى داخل الجهاز ولا تُرسل إلى الموقع.
+                  {view === 'daily'
+                    ? 'الصلاة لها نافذة خروج ساعة بعد الأذان، ومدة سماح 20 دقيقة. سجلات الجهاز الخام تبقى محفوظة دون تعديل.'
+                    : 'الجمعة عطلة، وإجمالي النقص منفصل عن ساعات العمل الإضافية حتى تبقى المراجعة واضحة.'}
                 </p>
               </div>
-              <label className="flex w-full max-w-xs items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur sm:w-auto">
-                <CalendarDays className="h-5 w-5 text-cyan-300" />
-                <span className="text-xs font-semibold text-teal-100">اليوم</span>
-                <input
-                  type="date"
-                  value={dateKey}
-                  onChange={(event) => setDateKey(event.target.value)}
-                  className="min-w-0 flex-1 bg-transparent text-left text-sm font-bold text-white outline-none [color-scheme:dark]"
-                />
-              </label>
+              {view === 'daily' && (
+                <label className="flex w-full max-w-xs items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur sm:w-auto">
+                  <CalendarDays className="h-5 w-5 text-cyan-300" />
+                  <span className="text-xs font-semibold text-teal-100">اليوم</span>
+                  <input
+                    type="date"
+                    value={dateKey}
+                    onChange={(event) => setDateKey(event.target.value)}
+                    className="min-w-0 flex-1 bg-transparent text-left text-sm font-bold text-white outline-none [color-scheme:dark]"
+                  />
+                </label>
+              )}
             </div>
           </div>
         </section>
 
-        {error && (
+        <div className="mt-4 grid grid-cols-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm print:hidden">
+          <button
+            type="button"
+            onClick={() => setView('daily')}
+            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition ${
+              view === 'daily' ? 'bg-teal-950 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+            }`}
+          >
+            <CalendarDays className="h-4 w-4" />
+            السجل اليومي
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('monthly')}
+            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition ${
+              view === 'monthly' ? 'bg-teal-950 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4" />
+            التقرير الشهري
+          </button>
+        </div>
+
+        {view === 'daily' && error && (
           <div role="alert" className="mt-5 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
             <p>{error}</p>
           </div>
         )}
 
-        <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <SummaryCard label="سجلوا اليوم" value={summary.present} icon={UserRoundCheck} tone="teal" />
-          <SummaryCard label="داخل الموقع" value={summary.inside} icon={LogIn} tone="cyan" />
-          <SummaryCard label="اكتمل يومهم" value={summary.completed} icon={Check} tone="emerald" />
-          <SummaryCard label="بلا تسجيل" value={summary.absent} icon={UsersRound} tone="slate" />
-        </section>
+        {view === 'daily' ? (
+          <>
+            {prayerError && (
+              <div role="alert" className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                <p>{prayerError}</p>
+              </div>
+            )}
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <PrayerSchedule prayerTimes={selectedPrayerTimes} />
+
+            <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+              <SummaryCard label="سجلوا اليوم" value={summary.present} icon={UserRoundCheck} tone="teal" />
+              <SummaryCard label="داخل الموقع" value={summary.inside} icon={LogIn} tone="cyan" />
+              <SummaryCard label="غياب" value={summary.absent} icon={UsersRound} tone="slate" />
+              <SummaryCard label="إجمالي التأخير" value={formatAttendanceDuration(summary.delayMinutes)} icon={TimerReset} tone="amber" />
+              <SummaryCard label="إجمالي النقص" value={formatAttendanceDuration(summary.deficitMinutes)} icon={LogOut} tone="rose" />
+              <SummaryCard label="العمل الإضافي" value={formatAttendanceDuration(summary.overtimeMinutes)} icon={Clock3} tone="sky" />
+            </section>
+
+            <section className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -299,8 +424,8 @@ export default function AttendanceMonitoringPage() {
           <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="font-black text-slate-900">أرقام تحتاج ربطًا</h3>
-                <p className="mt-1 text-xs text-slate-500">تظهر مرة واحدة عند وصول عامل جديد من الجهاز.</p>
+                <h3 className="font-black text-slate-900">مستخدمون يحتاجون ربطًا</h3>
+                <p className="mt-1 text-xs text-slate-500">القائمة الكاملة المستردة من جهازي الدخول والخروج.</p>
               </div>
               <span className="grid h-8 min-w-8 place-items-center rounded-full bg-amber-100 px-2 text-xs font-black text-amber-800">
                 {unmatchedPeople.length}
@@ -309,22 +434,27 @@ export default function AttendanceMonitoringPage() {
             <div className="mt-4 space-y-3">
               {unmatchedPeople.length === 0 ? (
                 <EmptyInline icon={Check} text="كل الأرقام الواردة مرتبطة بعمال الموقع." />
-              ) : unmatchedPeople.map(({ key, event }) => (
-                <div key={key} className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+              ) : unmatchedPeople.map((person) => (
+                <div key={person.key} className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-slate-900">{event.device_person_name || `رقم ${event.device_user_id}`}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">معرّف الجهاز: {event.device_user_id}</p>
+                      <p className="truncate text-sm font-bold text-slate-900">{person.displayName || `رقم ${person.deviceUserId}`}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">معرّف الجهاز: {person.deviceUserId} · {person.deviceName}</p>
                     </div>
-                    <span className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-amber-800 shadow-sm">
-                      {event.direction === 'entry' ? 'دخول' : 'خروج'}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-amber-800 shadow-sm">
+                        {person.direction === 'entry' ? 'دخول' : 'خروج'}
+                      </span>
+                      {!person.lastEvent && (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">لم يسجل حركة اليوم</span>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-3 flex gap-2">
                     <select
-                      aria-label={`اختر العامل للرقم ${event.device_user_id}`}
-                      value={mappingChoices[key] || ''}
-                      onChange={(choice) => setMappingChoices((current) => ({ ...current, [key]: choice.target.value }))}
+                      aria-label={`اختر العامل للرقم ${person.deviceUserId}`}
+                      value={mappingChoices[person.key] || ''}
+                      onChange={(choice) => setMappingChoices((current) => ({ ...current, [person.key]: choice.target.value }))}
                       className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
                     >
                       <option value="">اختر العامل</option>
@@ -334,24 +464,24 @@ export default function AttendanceMonitoringPage() {
                     </select>
                     <button
                       type="button"
-                      disabled={!mappingChoices[key] || savingMapping === key}
-                      onClick={() => void saveMapping(key, event)}
+                      disabled={!mappingChoices[person.key] || savingMapping === person.key}
+                      onClick={() => void saveMapping(person)}
                       className="rounded-xl bg-teal-700 px-3 text-sm font-bold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {savingMapping === key ? '...' : 'ربط'}
+                      {savingMapping === person.key ? '...' : 'ربط'}
                     </button>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-        </section>
+            </section>
 
-        <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+            <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
               <h3 className="font-black text-slate-900">سجل العمال اليومي</h3>
-              <p className="mt-1 text-xs text-slate-500">أول دخول وآخر خروج وعدد الحركات المسجلة.</p>
+              <p className="mt-1 text-xs text-slate-500">افتح سطر العامل لرؤية تفاصيل التأخير والصلاة والعمل الإضافي.</p>
             </div>
             <span className="text-xs font-semibold text-slate-400">{rows.length} عامل</span>
           </div>
@@ -367,7 +497,11 @@ export default function AttendanceMonitoringPage() {
               {rows.map((row) => <WorkerAttendanceRow key={row.worker.id} row={row} />)}
             </div>
           )}
-        </section>
+            </section>
+          </>
+        ) : (
+          <MonthlyAttendanceReport workers={workers} initialMonth={dateKey.slice(0, 7)} />
+        )}
       </main>
     </div>
   )
@@ -384,6 +518,40 @@ function AttendanceLoading() {
   )
 }
 
+function PrayerSchedule({ prayerTimes }: { prayerTimes: AttendancePrayerTime | null }) {
+  const prayers = [
+    { key: 'dhuhr_at' as const, label: 'الظهر' },
+    { key: 'maghrib_at' as const, label: 'المغرب' },
+    { key: 'isha_at' as const, label: 'العشاء' },
+  ]
+
+  return (
+    <section className="mt-5 overflow-hidden rounded-2xl border border-teal-100 bg-[linear-gradient(120deg,#ffffff_0%,#f0fdfa_65%,#ecfeff_100%)] shadow-sm">
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-teal-950 text-cyan-200 shadow-sm">
+            <MoonStar className="h-5 w-5" />
+          </span>
+          <div>
+            <h3 className="text-sm font-black text-slate-900">نوافذ الصلاة في الخبر</h3>
+            <p className="mt-0.5 text-[11px] leading-5 text-slate-500">الخروج من الأذان ولمدة ساعة · السماح خارج المشغل 20 دقيقة</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:min-w-[390px]">
+          {prayers.map((prayer) => (
+            <div key={prayer.key} className="rounded-xl border border-white bg-white/80 px-3 py-2 text-center shadow-sm">
+              <span className="block text-[10px] font-bold text-slate-400">{prayer.label}</span>
+              <strong className="mt-0.5 block text-sm font-black tabular-nums text-teal-900">
+                {formatTime(prayerTimes?.[prayer.key] || null)}
+              </strong>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function SummaryCard({
   label,
   value,
@@ -391,15 +559,18 @@ function SummaryCard({
   tone,
 }: {
   label: string
-  value: number
+  value: number | string
   icon: typeof LogIn
-  tone: 'teal' | 'cyan' | 'emerald' | 'slate'
+  tone: 'teal' | 'cyan' | 'emerald' | 'slate' | 'amber' | 'rose' | 'sky'
 }) {
   const styles = {
     teal: 'bg-teal-50 text-teal-800 ring-teal-100',
     cyan: 'bg-cyan-50 text-cyan-800 ring-cyan-100',
     emerald: 'bg-emerald-50 text-emerald-800 ring-emerald-100',
     slate: 'bg-slate-50 text-slate-700 ring-slate-100',
+    amber: 'bg-amber-50 text-amber-800 ring-amber-100',
+    rose: 'bg-rose-50 text-rose-800 ring-rose-100',
+    sky: 'bg-sky-50 text-sky-800 ring-sky-100',
   }[tone]
 
   return (
@@ -407,7 +578,7 @@ function SummaryCard({
       <div className={`mb-3 grid h-9 w-9 place-items-center rounded-xl ring-1 ${styles}`}>
         <Icon className="h-4.5 w-4.5" />
       </div>
-      <p className="text-2xl font-black tabular-nums text-slate-950 sm:text-3xl">{value}</p>
+      <p className="truncate text-xl font-black tabular-nums text-slate-950 sm:text-2xl" title={String(value)}>{value}</p>
       <p className="mt-1 text-xs font-semibold text-slate-500">{label}</p>
     </div>
   )
@@ -454,42 +625,115 @@ function EmptyInline({ icon: Icon, text }: { icon: typeof Check; text: string })
 }
 
 function WorkerAttendanceRow({ row }: { row: WorkerDayRow }) {
-  const hasEvents = row.events.length > 0
-  const isInside = row.lastEvent?.direction === 'entry'
-  const status = !hasEvents
-    ? { label: 'بلا تسجيل', classes: 'bg-slate-100 text-slate-600' }
-    : isInside
-      ? { label: 'داخل الموقع', classes: 'bg-cyan-100 text-cyan-800' }
-      : row.firstEntry && row.lastExit
-        ? { label: 'اكتمل اليوم', classes: 'bg-emerald-100 text-emerald-800' }
-        : { label: 'خروج فقط', classes: 'bg-amber-100 text-amber-800' }
-
-  const duration = row.workedMinutes === null
-    ? '—'
-    : `${Math.floor(row.workedMinutes / 60)} س ${row.workedMinutes % 60} د`
+  const status = getDayStatus(row.analysis)
+  const metric = (minutes: number) => minutes > 0 ? formatAttendanceDuration(minutes) : '—'
 
   return (
-    <article className="grid gap-4 px-5 py-4 transition hover:bg-slate-50/70 sm:grid-cols-[minmax(180px,1.4fr)_repeat(4,minmax(90px,0.75fr))] sm:items-center sm:px-6">
-      <div className="flex items-center justify-between gap-3 sm:justify-start">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-teal-50 text-sm font-black text-teal-800 ring-1 ring-teal-100">
-          {row.worker.user.full_name.trim().charAt(0) || 'ع'}
+    <details className="group transition open:bg-slate-50/60">
+      <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 transition hover:bg-slate-50/70 sm:grid-cols-[minmax(180px,1.35fr)_repeat(4,minmax(90px,0.72fr))_auto] sm:items-center sm:px-6 [&::-webkit-details-marker]:hidden">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-teal-50 text-sm font-black text-teal-800 ring-1 ring-teal-100">
+            {row.worker.user.full_name.trim().charAt(0) || 'ع'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-black text-slate-900">{row.worker.user.full_name}</p>
+            <p className="mt-0.5 truncate text-xs text-slate-500">{row.worker.specialty || 'عامل'} · {row.events.length} حركة</p>
+          </div>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black sm:hidden ${status.classes}`}>{status.label}</span>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black text-slate-900">{row.worker.user.full_name}</p>
-          <p className="mt-0.5 truncate text-xs text-slate-500">{row.worker.specialty || 'عامل'}</p>
+        <TimeCell label="أول دخول" value={formatTime(row.analysis.firstEntryAt)} icon={LogIn} />
+        <TimeCell label="التأخير" value={metric(row.analysis.totalDelayMinutes)} icon={TimerReset} />
+        <TimeCell label="إجمالي النقص" value={metric(row.analysis.totalDeficitMinutes)} icon={LogOut} />
+        <TimeCell label="العمل الإضافي" value={metric(row.analysis.totalOvertimeMinutes)} icon={Clock3} />
+        <div className="hidden items-center justify-end gap-2 sm:flex">
+          <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black ${status.classes}`}>{status.label}</span>
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-open:rotate-180">⌄</span>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-black sm:hidden ${status.classes}`}>{status.label}</span>
+      </summary>
+
+      <div className="border-t border-slate-100 px-4 pb-5 pt-4 sm:px-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+          <DetailMetric label="آخر خروج" value={formatTime(row.analysis.lastExitAt)} tone="slate" />
+          <DetailMetric label="تأخير الصباح" value={metric(row.analysis.morningLateMinutes)} tone="amber" />
+          <DetailMetric label="تجاوز الصلاة" value={metric(row.analysis.prayerOverrunMinutes)} tone="amber" />
+          <DetailMetric label="بعد الاستراحة" value={metric(row.analysis.breakLateMinutes)} tone="amber" />
+          <DetailMetric label="خروج غير مبرر" value={metric(row.analysis.unexcusedMinutes)} tone="rose" />
+          <DetailMetric label="خروج مبكر" value={metric(row.analysis.earlyDepartureMinutes)} tone="rose" />
+          <DetailMetric label="إضافي الاستراحة" value={metric(row.analysis.breakOvertimeMinutes)} tone="sky" />
+          <DetailMetric label="إضافي بعد 10:30" value={metric(row.analysis.endOvertimeMinutes + row.analysis.holidayOvertimeMinutes)} tone="sky" />
+        </div>
+
+        {row.analysis.prayerTrips.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {row.analysis.prayerTrips.map((trip) => (
+              <span key={`${trip.prayer}-${trip.exitAt}`} className="rounded-full bg-teal-50 px-3 py-1.5 text-[11px] font-bold text-teal-800 ring-1 ring-teal-100">
+                {getPrayerLabel(trip.prayer)}: {formatTime(trip.exitAt)}–{formatTime(trip.entryAt)} · {formatAttendanceDuration(trip.durationMinutes)}
+                {trip.overrunMinutes > 0 ? ` · تجاوز ${formatAttendanceDuration(trip.overrunMinutes)}` : ''}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {row.events.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+            <span className="ml-1 text-[10px] font-black text-slate-400">تسلسل الحركات</span>
+            {row.events.map((event) => (
+              <span key={event.id} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold ${
+                event.direction === 'entry' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+              }`}>
+                {event.direction === 'entry' ? <LogIn className="h-3 w-3" /> : <LogOut className="h-3 w-3" />}
+                {formatTime(event.occurred_at)}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {row.analysis.anomalies.length > 0 && (
+          <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-900">
+            {row.analysis.anomalies.join(' · ')}
+          </p>
+        )}
       </div>
-      <TimeCell label="أول دخول" value={formatTime(row.firstEntry?.occurred_at || null)} icon={LogIn} />
-      <TimeCell label="آخر خروج" value={formatTime(row.lastExit?.occurred_at || null)} icon={LogOut} />
-      <TimeCell label="المدة" value={duration} icon={Clock3} />
-      <div className="hidden justify-end sm:flex">
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${status.classes}`}>{status.label}</span>
-      </div>
-      <p className="text-[11px] text-slate-400 sm:col-start-2 sm:col-span-3 sm:-mt-3">
-        {row.events.length > 0 ? `${row.events.length} حركة مسجلة` : 'لم تصل أي حركة لهذا اليوم'}
-      </p>
-    </article>
+    </details>
+  )
+}
+
+function getDayStatus(analysis: AttendanceDayAnalysis) {
+  if (analysis.isInside && !analysis.isClosed) return { label: 'داخل الموقع', classes: 'bg-cyan-100 text-cyan-800' }
+  return {
+    present: { label: 'حاضر', classes: 'bg-emerald-100 text-emerald-800' },
+    absent: { label: 'غياب', classes: 'bg-rose-100 text-rose-800' },
+    friday: { label: 'عطلة الجمعة', classes: 'bg-slate-100 text-slate-600' },
+    friday_work: { label: 'عمل الجمعة', classes: 'bg-sky-100 text-sky-800' },
+    pending: { label: 'بانتظار التسجيل', classes: 'bg-slate-100 text-slate-600' },
+    needs_review: { label: 'يحتاج مراجعة', classes: 'bg-amber-100 text-amber-800' },
+  }[analysis.status]
+}
+
+function getPrayerLabel(prayer: 'dhuhr' | 'maghrib' | 'isha') {
+  return { dhuhr: 'الظهر', maghrib: 'المغرب', isha: 'العشاء' }[prayer]
+}
+
+function DetailMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone: 'slate' | 'amber' | 'rose' | 'sky'
+}) {
+  const styles = {
+    slate: 'bg-white text-slate-800 ring-slate-200',
+    amber: 'bg-amber-50/70 text-amber-900 ring-amber-100',
+    rose: 'bg-rose-50/70 text-rose-900 ring-rose-100',
+    sky: 'bg-sky-50/70 text-sky-900 ring-sky-100',
+  }[tone]
+  return (
+    <div className={`rounded-xl px-3 py-2.5 ring-1 ${styles}`}>
+      <span className="block text-[10px] font-bold opacity-60">{label}</span>
+      <strong className="mt-1 block text-xs font-black tabular-nums">{value}</strong>
+    </div>
   )
 }
 

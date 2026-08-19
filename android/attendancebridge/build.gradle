@@ -1,0 +1,40 @@
+apply plugin: 'com.android.application'
+
+if (project.hasProperty('attendanceBridgeBuildDir')) {
+    layout.buildDirectory = file(project.property('attendanceBridgeBuildDir'))
+}
+
+android {
+    namespace = "com.yasminalsham.attendancebridge"
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId "com.yasminalsham.attendancebridge"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            // Internal workshop distribution. Replace with a private production key
+            // before publishing this application through a public app store.
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    // 1.17.0 is the newest line compatible with this repository's SDK 36 / AGP 8.13 toolchain.
+    implementation "androidx.core:core:$androidxCoreVersion"
+    implementation "androidx.work:work-runtime:2.11.2"
+    testImplementation "junit:junit:$junitVersion"
+}

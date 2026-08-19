@@ -22,7 +22,8 @@ $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
   -StartWhenAvailable `
-  -ExecutionTimeLimit (New-TimeSpan -Minutes 1)
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 3) `
+  -MultipleInstances IgnoreNew
 $userId = '{0}\{1}' -f $env:USERDOMAIN, $env:USERNAME
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
 

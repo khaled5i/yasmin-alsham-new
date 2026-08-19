@@ -209,6 +209,42 @@ function Get-DahuaRecords {
   return $records.ToArray()
 }
 
+function Get-DahuaUsers {
+  param(
+    [Parameter(Mandatory = $true)]$Device,
+    [Parameter(Mandatory = $true)][Management.Automation.PSCredential]$Credential
+  )
+
+  $session = Open-DahuaSession -Device $Device -Credential $Credential
+  $findToken = $null
+  $users = New-Object System.Collections.Generic.List[object]
+
+  try {
+    $start = Invoke-DahuaRpc -Session $session -Method 'AccessUser.startFind' -Params @{ Condition = $null }
+    $findToken = $start.params.Token
+    $total = [int]$start.params.Total
+
+    for ($offset = 0; $offset -lt $total; $offset += 100) {
+      $count = [Math]::Min(100, $total - $offset)
+      $page = Invoke-DahuaRpc -Session $session -Method 'AccessUser.doFind' -Params @{
+        Token = $findToken
+        Offset = $offset
+        Count = $count
+      }
+      foreach ($terminalUser in @($page.params.Info)) {
+        if ($null -ne $terminalUser) { $users.Add($terminalUser) }
+      }
+    }
+  } finally {
+    if ($null -ne $findToken) {
+      try { [void](Invoke-DahuaRpc -Session $session -Method 'AccessUser.stopFind' -Params @{ Token = $findToken }) } catch {}
+    }
+    try { [void](Invoke-DahuaRpc -Session $session -Method 'global.logout') } catch {}
+  }
+
+  return $users.ToArray()
+}
+
 function Get-RecordValue {
   param($Record, [string[]]$Names)
 
@@ -254,18 +290,47 @@ function ConvertTo-AttendanceEvent {
   }
 }
 
+function ConvertTo-AttendanceDeviceUser {
+  param([Parameter(Mandatory = $true)]$TerminalUser)
+
+  $deviceUserId = [string](Get-RecordValue -Record $TerminalUser -Names @('UserID', 'UserId'))
+  if ([string]::IsNullOrWhiteSpace($deviceUserId)) { return $null }
+
+  $displayName = [string](Get-RecordValue -Record $TerminalUser -Names @('UserName', 'Name'))
+  $userType = Get-RecordValue -Record $TerminalUser -Names @('UserType')
+  $userStatus = Get-RecordValue -Record $TerminalUser -Names @('UserStatus')
+
+  $deviceUserId = $deviceUserId.Trim()
+  $displayName = $displayName.Trim()
+  if ($deviceUserId.Length -gt 100) { return $null }
+  if ($displayName.Length -gt 160) { $displayName = $displayName.Substring(0, 160) }
+
+  return [pscustomobject][ordered]@{
+    deviceUserId = $deviceUserId
+    displayName = if ([string]::IsNullOrWhiteSpace($displayName)) { $null } else { $displayName }
+    userType = if ($null -eq $userType) { $null } else { ([string]$userType).Substring(0, [Math]::Min(80, ([string]$userType).Length)) }
+    userStatus = if ($null -eq $userStatus) { $null } else { ([string]$userStatus).Substring(0, [Math]::Min(80, ([string]$userStatus).Length)) }
+  }
+}
+
 function Send-AttendanceBatch {
   param(
     [Parameter(Mandatory = $true)]$Config,
     [Parameter(Mandatory = $true)][Security.SecureString]$IngestSecret,
     [Parameter(Mandatory = $true)]$Device,
-    [Parameter(Mandatory = $true)][object[]]$Events
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events,
+    [AllowEmptyCollection()][object[]]$Users = @(),
+    [switch]$UserSnapshot
   )
 
   $bodyObject = [ordered]@{
     connectorId = $Config.connectorId
     deviceCode = $Device.code
     events = @($Events)
+  }
+  if ($UserSnapshot) {
+    $bodyObject['userSnapshot'] = $true
+    $bodyObject['users'] = @($Users)
   }
   $body = $bodyObject | ConvertTo-Json -Compress -Depth 12
   $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -312,10 +377,60 @@ function Read-Cursors {
   return $cursors
 }
 
-function Save-Cursors {
-  param([string]$StatePath, [hashtable]$Cursors)
+function Read-UserSyncAt {
+  param([string]$StatePath)
 
-  $payload = [ordered]@{ cursors = $Cursors; updatedAt = [DateTime]::UtcNow.ToString('o') }
+  $userSyncAt = @{}
+  if (-not (Test-Path -LiteralPath $StatePath)) { return $userSyncAt }
+
+  try {
+    $state = Get-Content -LiteralPath $StatePath -Raw -Encoding utf8 | ConvertFrom-Json
+    $property = $state.PSObject.Properties['userSyncAt']
+    if ($null -ne $property -and $null -ne $property.Value) {
+      foreach ($entry in $property.Value.PSObject.Properties) {
+        $userSyncAt[$entry.Name] = [long]$entry.Value
+      }
+    }
+  } catch {
+    Write-ConnectorLog -Level 'WARN' -Message 'Could not read the previous user-sync time; a full directory sync will be attempted.'
+  }
+  return $userSyncAt
+}
+
+function Read-UserSyncAttemptAt {
+  param([string]$StatePath)
+
+  $userSyncAttemptAt = @{}
+  if (-not (Test-Path -LiteralPath $StatePath)) { return $userSyncAttemptAt }
+
+  try {
+    $state = Get-Content -LiteralPath $StatePath -Raw -Encoding utf8 | ConvertFrom-Json
+    $property = $state.PSObject.Properties['userSyncAttemptAt']
+    if ($null -ne $property -and $null -ne $property.Value) {
+      foreach ($entry in $property.Value.PSObject.Properties) {
+        $userSyncAttemptAt[$entry.Name] = [long]$entry.Value
+      }
+    }
+  } catch {
+    Write-ConnectorLog -Level 'WARN' -Message 'Could not read the previous user-sync attempt time.'
+  }
+  return $userSyncAttemptAt
+}
+
+function Save-ConnectorState {
+  param(
+    [string]$StatePath,
+    [hashtable]$Cursors,
+    [hashtable]$UserSyncAt,
+    [hashtable]$UserSyncAttemptAt
+  )
+
+  $payload = [ordered]@{
+    cursors = $Cursors
+    userSyncAt = $UserSyncAt
+    userSyncAttemptAt = $UserSyncAttemptAt
+    updatedAt = [DateTime]::UtcNow.ToString('o')
+  }
   $temporaryPath = $StatePath + '.tmp'
   $payload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temporaryPath -Encoding utf8
   Move-Item -LiteralPath $temporaryPath -Destination $StatePath -Force
@@ -331,9 +446,17 @@ $statePath = Join-Path $runtimeDirectory 'state.json'
 $secretCredentialPath = Join-Path $runtimeDirectory $config.ingestCredentialFile
 $secretCredential = Import-Clixml -LiteralPath $secretCredentialPath
 $cursors = Read-Cursors -StatePath $statePath
+$userSyncAt = Read-UserSyncAt -StatePath $statePath
+$userSyncAttemptAt = Read-UserSyncAttemptAt -StatePath $statePath
 $pollSeconds = [Math]::Max(15, [int]$config.pollIntervalSeconds)
 $overlapSeconds = [Math]::Max(60, [int]$config.overlapSeconds)
 $initialLookbackSeconds = [Math]::Max(3600, [int]$config.initialLookbackHours * 3600)
+$userSyncIntervalMinutes = 60
+$configuredUserSyncInterval = $config.PSObject.Properties['userSyncIntervalMinutes']
+if ($null -ne $configuredUserSyncInterval) {
+  $userSyncIntervalMinutes = [Math]::Max(15, [int]$configuredUserSyncInterval.Value)
+}
+$userSyncIntervalSeconds = $userSyncIntervalMinutes * 60
 
 Write-ConnectorLog -Message ('Connector {0} started for {1} devices.' -f $config.connectorId, @($config.devices).Count)
 
@@ -360,12 +483,44 @@ do {
         }
       }
       $events = @($records | ForEach-Object { ConvertTo-AttendanceEvent -Device $device -Record $_ } | Where-Object { $null -ne $_ })
-      $response = Send-AttendanceBatch -Config $config -IngestSecret $secretCredential.Password -Device $device -Events $events
+      $users = @()
+      $includeUserSnapshot = $false
+      $lastUserSyncAttempt = if ($userSyncAttemptAt.ContainsKey([string]$device.code)) { [long]$userSyncAttemptAt[[string]$device.code] } else { 0 }
+
+      if (($now - $lastUserSyncAttempt) -ge $userSyncIntervalSeconds) {
+        try {
+          $terminalUsers = @(Get-DahuaUsers -Device $device -Credential $credential)
+          $users = @($terminalUsers | ForEach-Object { ConvertTo-AttendanceDeviceUser -TerminalUser $_ } | Where-Object { $null -ne $_ })
+          $includeUserSnapshot = $true
+        } catch {
+          Write-ConnectorLog -Level 'WARN' -Message ('{0}: user directory read failed ({1}); attendance events will still be uploaded.' -f $device.name, $_.Exception.Message)
+        }
+      }
+
+      $sendArguments = @{
+        Config = $config
+        IngestSecret = $secretCredential.Password
+        Device = $device
+        Events = $events
+        Users = $users
+      }
+      if ($includeUserSnapshot) { $sendArguments['UserSnapshot'] = $true }
+      $response = Send-AttendanceBatch @sendArguments
 
       if (-not $response.ok) { throw 'The website did not acknowledge the batch.' }
       $cursors[[string]$device.code] = $now
-      Save-Cursors -StatePath $statePath -Cursors $cursors
-      Write-ConnectorLog -Message ('{0}: uploaded {1} records.' -f $device.name, $events.Count)
+      $userSnapshotAccepted = $response.PSObject.Properties['userSnapshotAccepted']
+      if ($includeUserSnapshot) { $userSyncAttemptAt[[string]$device.code] = $now }
+      if ($includeUserSnapshot -and $null -ne $userSnapshotAccepted -and $userSnapshotAccepted.Value -eq $true) {
+        $userSyncAt[[string]$device.code] = $now
+      } elseif ($includeUserSnapshot) {
+        Write-ConnectorLog -Level 'WARN' -Message ('{0}: the website accepted attendance events but has not accepted the user directory yet.' -f $device.name)
+      }
+      Save-ConnectorState -StatePath $statePath -Cursors $cursors -UserSyncAt $userSyncAt -UserSyncAttemptAt $userSyncAttemptAt
+      $userCountMessage = if ($includeUserSnapshot -and $null -ne $userSnapshotAccepted -and $userSnapshotAccepted.Value -eq $true) {
+        '; synchronized {0} users' -f $users.Count
+      } else { '' }
+      Write-ConnectorLog -Message ('{0}: uploaded {1} records{2}.' -f $device.name, $events.Count, $userCountMessage)
     } catch {
       Write-ConnectorLog -Level 'ERROR' -Message ('{0}: {1}' -f $device.name, $_.Exception.Message)
     }

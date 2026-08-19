@@ -18,10 +18,27 @@ const attendanceEventSchema = z.object({
   wasSuccessful: z.boolean().default(true),
 })
 
+const attendanceDeviceUserSchema = z.object({
+  deviceUserId: z.string().trim().min(1).max(100),
+  displayName: z.string().trim().max(160).nullable().optional(),
+  userType: z.string().trim().max(80).nullable().optional(),
+  userStatus: z.string().trim().max(80).nullable().optional(),
+})
+
 const ingestSchema = z.object({
   connectorId: z.string().trim().min(3).max(80),
   deviceCode: z.string().regex(/^[a-z0-9][a-z0-9_-]{2,49}$/),
   events: z.array(attendanceEventSchema).max(500),
+  userSnapshot: z.boolean().default(false),
+  users: z.array(attendanceDeviceUserSchema).max(2000).optional(),
+}).superRefine((payload, context) => {
+  if (payload.userSnapshot && !payload.users) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['users'],
+      message: 'users is required when userSnapshot is true',
+    })
+  }
 })
 
 function signaturesMatch(provided: string, expected: string) {
@@ -154,6 +171,36 @@ export async function POST(request: Request) {
     }
   }
 
+  let usersReceived = 0
+  if (payload.userSnapshot) {
+    const uniqueUsers = [
+      ...new Map(
+        (payload.users || []).map((terminalUser) => [terminalUser.deviceUserId, terminalUser])
+      ).values(),
+    ]
+
+    const { error: userSyncError } = await supabase.rpc('sync_attendance_device_users', {
+      p_device_id: device.id,
+      p_users: uniqueUsers,
+    })
+
+    if (userSyncError) {
+      console.error('Attendance device user sync failed:', userSyncError.message)
+      await supabase
+        .from('attendance_devices')
+        .update({
+          connector_id: payload.connectorId,
+          last_seen_at: new Date().toISOString(),
+          last_error: 'user_sync_failed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', device.id)
+      return NextResponse.json({ error: 'تعذر حفظ قائمة مستخدمي الجهاز' }, { status: 500 })
+    }
+
+    usersReceived = uniqueUsers.length
+  }
+
   const lastEventAt = payload.events.reduce<string | null>((latest, event) => {
     if (!latest || Date.parse(event.occurredAt) > Date.parse(latest)) return event.occurredAt
     return latest
@@ -186,5 +233,7 @@ export async function POST(request: Request) {
     ok: true,
     received: payload.events.length,
     mapped: payload.events.filter((event) => mappings.has(event.deviceUserId)).length,
+    userSnapshotAccepted: payload.userSnapshot,
+    usersReceived,
   })
 }

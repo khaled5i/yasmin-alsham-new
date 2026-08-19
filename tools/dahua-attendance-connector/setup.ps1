@@ -75,6 +75,7 @@ $config = [ordered]@{
   pollIntervalSeconds = 30
   overlapSeconds = 120
   initialLookbackHours = 72
+  userSyncIntervalMinutes = 60
   ingestCredentialFile = 'ingest-secret.credential.xml'
   devices = @(
     [ordered]@{
