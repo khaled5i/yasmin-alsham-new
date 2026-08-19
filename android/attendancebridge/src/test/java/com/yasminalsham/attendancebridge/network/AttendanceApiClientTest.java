@@ -15,4 +15,20 @@ public final class AttendanceApiClientTest {
                 )
         );
     }
+
+    @Test
+    public void unauthorizedErrorIdentifiesMismatchedSecret() {
+        assertEquals(
+                "المفتاح السري المحفوظ في التطبيق لا يطابق مفتاح الاستضافة (HTTP 401)",
+                AttendanceApiClient.describeHttpError(401, "{\"error\":\"غير مصرح\"}")
+        );
+    }
+
+    @Test
+    public void unauthorizedTimeErrorIdentifiesAndroidClock() {
+        assertEquals(
+                "ساعة جهاز أندرويد غير متزامنة. فعّل التاريخ والوقت والمنطقة الزمنية التلقائية (HTTP 401)",
+                AttendanceApiClient.describeHttpError(401, "{\"error\":\"وقت الطلب غير صالح\"}")
+        );
+    }
 }

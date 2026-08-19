@@ -78,9 +78,7 @@ public final class AttendanceApiClient {
                             : connection.getErrorStream()
             );
             if (status < 200 || status >= 300) {
-                throw new IOException(
-                        "Attendance server rejected the batch (HTTP " + status + ")"
-                );
+                throw new IOException(describeHttpError(status, responseBody));
             }
 
             JSONObject response = new JSONObject(responseBody);
@@ -104,6 +102,20 @@ public final class AttendanceApiClient {
         StringBuilder result = new StringBuilder(hash.length * 2);
         for (byte item : hash) result.append(String.format(Locale.US, "%02x", item & 0xff));
         return result.toString();
+    }
+
+    static String describeHttpError(int status, String responseBody) {
+        String body = responseBody == null ? "" : responseBody;
+        if (status == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            if (body.contains("وقت") || body.toLowerCase(Locale.US).contains("time")) {
+                return "ساعة جهاز أندرويد غير متزامنة. فعّل التاريخ والوقت والمنطقة الزمنية التلقائية (HTTP 401)";
+            }
+            return "المفتاح السري المحفوظ في التطبيق لا يطابق مفتاح الاستضافة (HTTP 401)";
+        }
+        if (status == HttpURLConnection.HTTP_UNAVAILABLE) {
+            return "خدمة مزامنة الحضور غير مهيأة في الاستضافة (HTTP 503)";
+        }
+        return "تعذّر إرسال السجلات إلى خادم الحضور (HTTP " + status + ")";
     }
 
     private static String readBody(InputStream input) throws IOException {
