@@ -32,12 +32,15 @@ import androidx.core.content.ContextCompat;
 
 import com.yasminalsham.attendancebridge.config.AttendancePreferences;
 import com.yasminalsham.attendancebridge.data.AttendanceDatabase;
+import com.yasminalsham.attendancebridge.network.AttendanceApiClient;
 import com.yasminalsham.attendancebridge.sync.AttendanceSyncService;
 import com.yasminalsham.attendancebridge.sync.SyncScheduler;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @SuppressLint("SetTextI18n")
 public final class MainActivity extends Activity {
@@ -57,6 +60,8 @@ public final class MainActivity extends Activity {
     private TextView statusDetail;
     private TextView queueText;
     private TextView devicesText;
+    private Button saveButton;
+    private final ExecutorService configurationExecutor = Executors.newSingleThreadExecutor();
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
@@ -97,6 +102,7 @@ public final class MainActivity extends Activity {
             unregisterReceiver(statusReceiver);
         } catch (IllegalArgumentException ignored) {
         }
+        configurationExecutor.shutdownNow();
         if (database != null) database.close();
         super.onDestroy();
     }
@@ -165,7 +171,7 @@ public final class MainActivity extends Activity {
         LinearLayout exitCard = deviceCard(false);
         content.addView(exitCard, marginParams(0, dp(18)));
 
-        Button saveButton = button("حفظ وتشغيل المزامنة", "#7F1D1D", "#FFFFFF");
+        saveButton = button("حفظ واختبار المفتاح", "#7F1D1D", "#FFFFFF");
         saveButton.setOnClickListener(view -> saveAndStart());
         content.addView(saveButton, marginParams(0, dp(10)));
 
@@ -243,36 +249,114 @@ public final class MainActivity extends Activity {
     }
 
     private void saveAndStart() {
+        final String siteUrl = value(siteUrlInput);
+        final String enteredSecret = value(ingestSecretInput);
+        final String entryAddress = value(entryAddressInput);
+        final String entryUsername = value(entryUsernameInput);
+        final String entryPassword = value(entryPasswordInput);
+        final String exitAddress = value(exitAddressInput);
+        final String exitUsername = value(exitUsernameInput);
+        final String exitPassword = value(exitPasswordInput);
+
         try {
-            preferences.saveConfiguration(
-                    value(siteUrlInput),
-                    value(ingestSecretInput),
-                    value(entryAddressInput),
-                    value(entryUsernameInput),
-                    value(entryPasswordInput),
-                    value(exitAddressInput),
-                    value(exitUsernameInput),
-                    value(exitPasswordInput)
-            );
-            preferences.setEnabled(true);
-            clearSecretInputs();
-            SyncScheduler.schedule(this);
-            SyncScheduler.enqueueImmediate(this);
-            startServiceAction(AttendanceSyncService.ACTION_CONFIG_CHANGED);
-            Toast.makeText(this, "تم الحفظ وبدأت المزامنة", Toast.LENGTH_SHORT).show();
-            statusTitle.postDelayed(this::refreshStatus, 500);
+            final String normalizedSiteUrl = AttendancePreferences.normalizeSiteUrl(siteUrl);
+            final String secretToVerify = enteredSecret.isEmpty()
+                    ? preferences.getIngestSecret()
+                    : enteredSecret;
+            if (secretToVerify.length() < 32 || secretToVerify.length() > 512) {
+                throw new IllegalArgumentException("Invalid ingest secret");
+            }
+
+            saveButton.setEnabled(false);
+            statusTitle.setText("جارٍ التحقق من المفتاح");
+            statusTitle.setTextColor(Color.parseColor("#0F766E"));
+            statusDetail.setText("يتحقق التطبيق الآن من المفتاح مع الموقع قبل حفظه وتشغيل الإرسال.");
+
+            configurationExecutor.execute(() -> {
+                try {
+                    new AttendanceApiClient().verifySecret(normalizedSiteUrl, secretToVerify);
+                    runOnUiThread(() -> finishVerifiedConfigurationSave(
+                            normalizedSiteUrl,
+                            secretToVerify,
+                            entryAddress,
+                            entryUsername,
+                            entryPassword,
+                            exitAddress,
+                            exitUsername,
+                            exitPassword
+                    ));
+                } catch (Exception error) {
+                    runOnUiThread(() -> showSecretVerificationError(error));
+                }
+            });
         } catch (IllegalArgumentException error) {
+            saveButton.setEnabled(true);
             statusTitle.setText("راجع الإعدادات");
             statusTitle.setTextColor(Color.parseColor("#B91C1C"));
             statusDetail.setText(
                     "تأكد من رابط الموقع HTTPS، وعناوين الأجهزة المحلية، وأسماء المستخدمين "
                             + "وكلمات المرور. المفتاح السري يجب أن يكون 32 حرفًا على الأقل."
             );
-        } catch (Exception error) {
-            statusTitle.setText("تعذر حفظ الإعدادات بأمان");
-            statusTitle.setTextColor(Color.parseColor("#B91C1C"));
-            statusDetail.setText("أعد المحاولة، ولا ترسل كلمات المرور في المحادثة.");
         }
+    }
+
+    private void finishVerifiedConfigurationSave(
+            String siteUrl,
+            String verifiedSecret,
+            String entryAddress,
+            String entryUsername,
+            String entryPassword,
+            String exitAddress,
+            String exitUsername,
+            String exitPassword
+    ) {
+        if (isFinishing() || isDestroyed()) return;
+        try {
+            preferences.saveConfiguration(
+                    siteUrl,
+                    verifiedSecret,
+                    entryAddress,
+                    entryUsername,
+                    entryPassword,
+                    exitAddress,
+                    exitUsername,
+                    exitPassword
+            );
+            if (!verifiedSecret.equals(preferences.getIngestSecret())) {
+                throw new IllegalStateException("Stored attendance secret verification failed");
+            }
+            preferences.setEnabled(true);
+            clearSecretInputs();
+            SyncScheduler.schedule(this);
+            SyncScheduler.enqueueImmediate(this);
+            startServiceAction(AttendanceSyncService.ACTION_CONFIG_CHANGED);
+            statusTitle.setText("تم قبول المفتاح وتشغيل المزامنة");
+            statusTitle.setTextColor(Color.parseColor("#047857"));
+            statusDetail.setText("أكد الموقع المفتاح، وحُفظ مشفرًا داخل الجهاز. جارٍ إرسال السجلات المعلقة.");
+            Toast.makeText(this, "تم قبول المفتاح", Toast.LENGTH_SHORT).show();
+            statusTitle.postDelayed(this::refreshStatus, 1500);
+        } catch (IllegalArgumentException error) {
+            statusTitle.setText("راجع إعدادات الأجهزة");
+            statusTitle.setTextColor(Color.parseColor("#B91C1C"));
+            statusDetail.setText("تم قبول المفتاح، لكن عنوان جهاز أو اسم مستخدم أو كلمة مرور غير مكتمل.");
+        } catch (Exception error) {
+            statusTitle.setText("تعذر حفظ المفتاح بأمان");
+            statusTitle.setTextColor(Color.parseColor("#B91C1C"));
+            statusDetail.setText("قبِل الموقع المفتاح، لكن أندرويد لم يؤكد حفظه المشفر. أعد المحاولة دون حذف التطبيق.");
+        } finally {
+            saveButton.setEnabled(true);
+        }
+    }
+
+    private void showSecretVerificationError(Exception error) {
+        if (isFinishing() || isDestroyed()) return;
+        saveButton.setEnabled(true);
+        statusTitle.setText("رفض الموقع المفتاح");
+        statusTitle.setTextColor(Color.parseColor("#B91C1C"));
+        String message = error.getMessage();
+        statusDetail.setText(message == null || message.trim().isEmpty()
+                ? "تعذر اختبار المفتاح. تحقق من الإنترنت وحاول مجددًا."
+                : message);
     }
 
     private void syncNow() {

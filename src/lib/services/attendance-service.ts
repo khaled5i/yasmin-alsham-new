@@ -36,6 +36,15 @@ export interface AttendanceDeviceUser {
   last_seen_at: string
 }
 
+export interface AttendanceWorkerSuspension {
+  id: string
+  worker_id: string
+  suspended_at: string
+  resumed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface AttendanceEvent {
   id: string
   event_key: string
@@ -49,6 +58,31 @@ export interface AttendanceEvent {
   attendance_state: number | null
   was_successful: boolean
   received_at: string
+}
+
+function getRiyadhDateKey(value: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(value))
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+export function isAttendanceSuspensionActive(suspension: AttendanceWorkerSuspension) {
+  return suspension.resumed_at === null
+}
+
+export function isAttendanceSuspendedOnDate(
+  suspension: AttendanceWorkerSuspension,
+  dateKey: string,
+) {
+  const suspendedDateKey = getRiyadhDateKey(suspension.suspended_at)
+  if (dateKey < suspendedDateKey) return false
+  if (!suspension.resumed_at) return true
+  return dateKey < getRiyadhDateKey(suspension.resumed_at)
 }
 
 function getRiyadhDayBounds(dateKey: string) {
@@ -113,6 +147,16 @@ export const attendanceService = {
     })) as WorkerWithUser[]
   },
 
+  async getWorkerSuspensions() {
+    const { data, error } = await supabase
+      .from('attendance_worker_suspensions')
+      .select('id, worker_id, suspended_at, resumed_at, created_at, updated_at')
+      .order('suspended_at', { ascending: false })
+
+    if (error) throw new Error(error.message)
+    return (data || []) as AttendanceWorkerSuspension[]
+  },
+
   async getDay(dateKey: string) {
     const { start, end } = getRiyadhDayBounds(dateKey)
 
@@ -124,7 +168,6 @@ export const attendanceService = {
       supabase
         .from('attendance_device_users')
         .select('id, device_id, device_user_id, display_name, user_type, user_status, is_present_on_device, first_seen_at, last_seen_at')
-        .eq('is_present_on_device', true)
         .order('display_name', { ascending: true, nullsFirst: false }),
       supabase
         .from('attendance_worker_mappings')
@@ -197,5 +240,41 @@ export const attendanceService = {
       }, { onConflict: 'device_id,device_user_id' })
 
     if (error) throw new Error(error.message)
+  },
+
+  async removeMapping(mappingId: string) {
+    const updatedAt = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('attendance_worker_mappings')
+      .update({ is_active: false, updated_at: updatedAt })
+      .eq('id', mappingId)
+      .eq('is_active', true)
+      .select('id')
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('No active attendance mapping was found')
+  },
+
+  async suspendWorker(workerId: string) {
+    const { error } = await supabase
+      .from('attendance_worker_suspensions')
+      .insert({ worker_id: workerId })
+
+    if (error) throw new Error(error.message)
+  },
+
+  async resumeWorker(workerId: string) {
+    const resumedAt = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('attendance_worker_suspensions')
+      .update({ resumed_at: resumedAt, updated_at: resumedAt })
+      .eq('worker_id', workerId)
+      .is('resumed_at', null)
+      .select('id')
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('No active attendance suspension was found')
   },
 }

@@ -95,6 +95,55 @@ public final class AttendanceApiClient {
         }
     }
 
+    /**
+     * Verifies the exact secret against the deployed endpoint without reaching
+     * any attendance or device database operation. The signed empty object is
+     * deliberately rejected by schema validation with HTTP 400 only after the
+     * HMAC and clock checks have succeeded.
+     */
+    public void verifySecret(String siteUrl, String ingestSecret) throws Exception {
+        String normalizedSiteUrl = AttendancePreferences.normalizeSiteUrl(siteUrl);
+        String body = "{}";
+        long timestamp = System.currentTimeMillis() / 1000L;
+        String signature = hmacSha256Lower(
+                ingestSecret,
+                timestamp + "." + body
+        );
+
+        URL endpoint = new URL(normalizedSiteUrl + "/api/attendance/ingest/");
+        HttpURLConnection connection = (HttpURLConnection) endpoint.openConnection();
+        try {
+            connection.setConnectTimeout(30_000);
+            connection.setReadTimeout(30_000);
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("x-attendance-timestamp", String.valueOf(timestamp));
+            connection.setRequestProperty("x-attendance-signature", signature);
+
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(bytes);
+            }
+
+            int status = connection.getResponseCode();
+            String responseBody = readBody(
+                    status >= 200 && status < 300
+                            ? connection.getInputStream()
+                            : connection.getErrorStream()
+            );
+            if (isSecretVerificationAccepted(status)) return;
+            if (status < 200 || status >= 300) {
+                throw new IOException(describeHttpError(status, responseBody));
+            }
+            throw new IOException("استجابة اختبار المفتاح من الموقع غير متوقعة");
+        } finally {
+            connection.disconnect();
+        }
+    }
+
     static String hmacSha256Lower(String secret, String message) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
@@ -116,6 +165,10 @@ public final class AttendanceApiClient {
             return "خدمة مزامنة الحضور غير مهيأة في الاستضافة (HTTP 503)";
         }
         return "تعذّر إرسال السجلات إلى خادم الحضور (HTTP " + status + ")";
+    }
+
+    static boolean isSecretVerificationAccepted(int status) {
+        return status == HttpURLConnection.HTTP_BAD_REQUEST;
     }
 
     private static String readBody(InputStream input) throws IOException {

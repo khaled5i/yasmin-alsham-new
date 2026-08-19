@@ -3,6 +3,8 @@ package com.yasminalsham.attendancebridge.network;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public final class AttendanceApiClientTest {
     @Test
@@ -30,5 +32,12 @@ public final class AttendanceApiClientTest {
                 "ساعة جهاز أندرويد غير متزامنة. فعّل التاريخ والوقت والمنطقة الزمنية التلقائية (HTTP 401)",
                 AttendanceApiClient.describeHttpError(401, "{\"error\":\"وقت الطلب غير صالح\"}")
         );
+    }
+
+    @Test
+    public void secretVerificationAcceptsOnlyPostAuthenticationSchemaRejection() {
+        assertTrue(AttendanceApiClient.isSecretVerificationAccepted(400));
+        assertFalse(AttendanceApiClient.isSecretVerificationAccepted(401));
+        assertFalse(AttendanceApiClient.isSecretVerificationAccepted(503));
     }
 }

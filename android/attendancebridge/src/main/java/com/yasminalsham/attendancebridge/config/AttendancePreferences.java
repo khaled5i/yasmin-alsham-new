@@ -68,6 +68,9 @@ public final class AttendancePreferences {
         secretStore.save(SECRET_INGEST, nextIngestSecret);
         secretStore.save(SECRET_ENTRY_PASSWORD, nextEntryPassword);
         secretStore.save(SECRET_EXIT_PASSWORD, nextExitPassword);
+        if (!nextIngestSecret.equals(secretStore.load(SECRET_INGEST))) {
+            throw new IllegalStateException("The attendance secret was not persisted correctly");
+        }
 
         boolean saved = preferences.edit()
                 .putString(PREF_SITE_URL, normalizedSiteUrl)

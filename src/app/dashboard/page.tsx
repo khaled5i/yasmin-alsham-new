@@ -42,8 +42,7 @@ import {
   Wallet,
   ShoppingBag,
   WalletCards,
-  ReceiptText,
-  Boxes
+  ReceiptText
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 
@@ -688,27 +687,11 @@ function DashboardContent() {
 
                 <div className="grid gap-4 grid-cols-2">
                   <Link
-                    href="/dashboard/ready-designs"
-                    className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Palette className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-purple-800">{t('ready_designs_management')}</span>
-                  </Link>
-
-                  <Link
                     href="/dashboard/fabrics"
                     className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
                   >
                     <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{t('fabrics_management')}</span>
-                  </Link>
-
-                  <Link
-                    href="/dashboard/workers"
-                    className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Users className="w-6 h-6 text-blue-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-blue-800">{t('worker_management')}</span>
                   </Link>
 
                   {/* إدارة المواعيد - مخفي مؤقتاً
@@ -786,13 +769,6 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
                   </Link>
 
-                  <Link
-                    href="/dashboard/accounting/fabrics/inventory"
-                    className="p-4 bg-gradient-to-r from-teal-50 to-cyan-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Boxes className="w-6 h-6 text-teal-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون قسم الأقمشة' : 'Fabrics Inventory'}</span>
-                  </Link>
                 </div>
               </motion.div>
             )}
@@ -879,29 +855,13 @@ function DashboardContent() {
                   <span>{isArabic ? 'الإدارة العامة' : 'General Management'}</span>
                 </h3>
 
-                <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
-                  <Link
-                    href="/dashboard/ready-designs"
-                    className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Palette className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-purple-800">{t('ready_designs_management')}</span>
-                  </Link>
-
+                <div className="grid gap-4 grid-cols-2 lg:grid-cols-2">
                   <Link
                     href="/dashboard/fabrics"
                     className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
                   >
                     <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{t('fabrics_management')}</span>
-                  </Link>
-
-                  <Link
-                    href="/dashboard/workers"
-                    className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Users className="w-6 h-6 text-blue-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-blue-800">{t('worker_management')}</span>
                   </Link>
 
                   {/* إدارة المواعيد - مخفي مؤقتاً
@@ -954,7 +914,7 @@ function DashboardContent() {
                   <span>{isArabic ? 'لوحة الوصول السريع' : 'Quick Access'}</span>
                 </h3>
 
-                <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                   <Link
                     href="/dashboard/accounting/tailoring/cash-box"
                     className="p-4 bg-gradient-to-r from-stone-50 to-amber-100 rounded-lg border border-amber-300 hover:shadow-md transition-all duration-300 text-center block"
@@ -979,13 +939,6 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
                   </Link>
 
-                  <Link
-                    href="/dashboard/accounting/fabrics/inventory"
-                    className="p-4 bg-gradient-to-r from-teal-50 to-cyan-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <Boxes className="w-6 h-6 text-teal-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون قسم الأقمشة' : 'Fabrics Inventory'}</span>
-                  </Link>
                 </div>
               </motion.div>
             )}

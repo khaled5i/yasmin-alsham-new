@@ -16,12 +16,15 @@ import {
 import type { WorkerWithUser } from '@/lib/services/worker-service'
 import {
   attendanceService,
+  isAttendanceSuspendedOnDate,
   type AttendanceEvent,
   type AttendanceMapping,
+  type AttendanceWorkerSuspension,
 } from '@/lib/services/attendance-service'
 import {
   buildAttendanceMonthSummary,
   formatAttendanceDuration,
+  getMonthDateKeys,
   groupAttendanceEventsByRiyadhDate,
   type AttendanceDayAnalysis,
   type AttendancePrayerTime,
@@ -29,6 +32,7 @@ import {
 
 interface MonthlyAttendanceReportProps {
   workers: WorkerWithUser[]
+  suspensions: AttendanceWorkerSuspension[]
   initialMonth: string
 }
 
@@ -59,7 +63,7 @@ function durationOrDash(minutes: number) {
   return minutes > 0 ? formatAttendanceDuration(minutes) : '—'
 }
 
-export default function MonthlyAttendanceReport({ workers, initialMonth }: MonthlyAttendanceReportProps) {
+export default function MonthlyAttendanceReport({ workers, suspensions, initialMonth }: MonthlyAttendanceReportProps) {
   const [monthKey, setMonthKey] = useState(initialMonth)
   const [workerId, setWorkerId] = useState(workers[0]?.id ?? '')
   const [monthData, setMonthData] = useState<MonthData>({ mappings: [], events: [] })
@@ -68,13 +72,23 @@ export default function MonthlyAttendanceReport({ workers, initialMonth }: Month
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!workerId && workers[0]) setWorkerId(workers[0].id)
+    if (!workers.some((worker) => worker.id === workerId)) {
+      setWorkerId(workers[0]?.id ?? '')
+    }
   }, [workerId, workers])
 
   useEffect(() => {
     let isCurrent = true
 
     async function loadMonth() {
+      if (workers.length === 0) {
+        setMonthData({ mappings: [], events: [] })
+        setPrayerTimes([])
+        setError(null)
+        setIsLoading(false)
+        return
+      }
+
       setIsLoading(true)
       setError(null)
       const [attendanceResult, prayersResult] = await Promise.allSettled([
@@ -106,7 +120,7 @@ export default function MonthlyAttendanceReport({ workers, initialMonth }: Month
 
     void loadMonth()
     return () => { isCurrent = false }
-  }, [monthKey])
+  }, [monthKey, workers.length])
 
   const selectedWorker = workers.find((worker) => worker.id === workerId) ?? null
 
@@ -120,8 +134,24 @@ export default function MonthlyAttendanceReport({ workers, initialMonth }: Month
     ))
     const eventsByDate = groupAttendanceEventsByRiyadhDate(workerEvents)
     const prayersByDate = new Map(prayerTimes.map((day) => [day.date, day]))
-    return buildAttendanceMonthSummary(monthKey, eventsByDate, prayersByDate)
-  }, [monthData.events, monthData.mappings, monthKey, prayerTimes, workerId])
+    const workerSuspensions = suspensions.filter((suspension) => suspension.worker_id === workerId)
+    const excludedDateKeys = new Set(getMonthDateKeys(monthKey).filter((dateKey) => (
+      workerSuspensions.some((suspension) => isAttendanceSuspendedOnDate(suspension, dateKey))
+    )))
+    return buildAttendanceMonthSummary(monthKey, eventsByDate, prayersByDate, new Date(), excludedDateKeys)
+  }, [monthData.events, monthData.mappings, monthKey, prayerTimes, suspensions, workerId])
+
+  if (workers.length === 0) {
+    return (
+      <section className="mt-6 rounded-[1.75rem] border border-amber-200 bg-amber-50/70 px-5 py-10 text-center shadow-sm">
+        <UserRoundX className="mx-auto h-9 w-9 text-amber-700" />
+        <h2 className="mt-3 text-lg font-black text-slate-900">لا يوجد عمال داخل الاحتساب حاليًا</h2>
+        <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-600">
+          جميع العمال معلّقون من الحضور. يمكنك استئناف أحدهم من قائمة العمال المستثنين أعلاه.
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section className="mt-6 space-y-5 print:mt-0" aria-labelledby="monthly-report-title">
@@ -191,6 +221,11 @@ export default function MonthlyAttendanceReport({ workers, initialMonth }: Month
           </div>
         ) : (
           <>
+            {report.excludedDays > 0 && (
+              <div className="mx-5 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-900 sm:mx-6">
+                تم استبعاد {report.excludedDays} يوم من هذا التقرير لأنها تقع ضمن فترة تعليق العامل.
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3 lg:grid-cols-6 sm:p-6">
               <ReportMetric label="أيام الدوام" value={String(report.scheduledDays)} icon={CalendarRange} tone="slate" />
               <ReportMetric label="أيام الحضور" value={String(report.presentDays)} icon={CheckCircle2} tone="emerald" />

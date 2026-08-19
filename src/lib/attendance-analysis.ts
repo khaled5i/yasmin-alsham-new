@@ -58,6 +58,7 @@ export interface AttendanceDayAnalysis {
 
 export interface AttendanceMonthSummary {
   days: AttendanceDayAnalysis[]
+  excludedDays: number
   scheduledDays: number
   presentDays: number
   absentDays: number
@@ -90,6 +91,7 @@ export const ATTENDANCE_POLICY = {
 const MINUTE_MS = 60 * 1000
 const RIYADH_OFFSET = '+03:00'
 const PRAYERS: PrayerName[] = ['dhuhr', 'maghrib', 'isha']
+const EMPTY_EXCLUDED_DATE_KEYS: ReadonlySet<string> = new Set()
 
 interface NormalizedEvent extends AttendanceAnalysisEvent {
   timestamp: number
@@ -381,10 +383,14 @@ export function buildAttendanceMonthSummary(
   eventsByDate: Map<string, AttendanceAnalysisEvent[]>,
   prayerTimesByDate: Map<string, AttendancePrayerTime>,
   now: Date = new Date(),
+  excludedDateKeys: ReadonlySet<string> = EMPTY_EXCLUDED_DATE_KEYS,
 ): AttendanceMonthSummary {
   const todayKey = getRiyadhDateKey(now)
-  const days = getMonthDateKeys(monthKey)
+  const elapsedDateKeys = getMonthDateKeys(monthKey)
     .filter((dateKey) => dateKey <= todayKey)
+  const includedDateKeys = elapsedDateKeys
+    .filter((dateKey) => !excludedDateKeys.has(dateKey))
+  const days = includedDateKeys
     .map((dateKey) => analyzeAttendanceDay(
       dateKey,
       eventsByDate.get(dateKey) ?? [],
@@ -398,6 +404,7 @@ export function buildAttendanceMonthSummary(
 
   return {
     days,
+    excludedDays: elapsedDateKeys.length - includedDateKeys.length,
     scheduledDays: days.filter((day) => !day.isFriday && day.status !== 'pending').length,
     presentDays: days.filter((day) => !day.isFriday && (
       day.status === 'present' || day.status === 'needs_review'

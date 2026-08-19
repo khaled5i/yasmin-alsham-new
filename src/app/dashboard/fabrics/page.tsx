@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from 'framer-motion'
-import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2, Eye, EyeOff, Database, Hash } from 'lucide-react'
+import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2, Eye, EyeOff, Database, Hash, Boxes } from 'lucide-react'
 import ImageUpload from '@/components/ImageUpload'
 import Link from 'next/link'
 import { fabricService, Fabric, UpdateFabricData, CreateFabricData } from '@/lib/services/fabric-service'
@@ -365,20 +365,38 @@ function FabricsAdminContent() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="mb-8 flex items-center justify-between"
+          className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
         >
           <div className="flex items-center gap-2">
             <Palette className="w-7 h-7 text-purple-600" />
             <h1 className="text-2xl font-bold">إدارة الأقمشة</h1>
           </div>
-          <button
-            onClick={startAddNew}
-            disabled={isAddingNew || editingId !== null}
-            className="btn-primary flex items-center gap-2 px-4 py-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-5 h-5" />
-            <span>إضافة قماش جديد</span>
-          </button>
+          <div className="flex flex-col gap-2 sm:items-end">
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                href="/dashboard/ready-designs"
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-white px-3 py-2 text-[11px] font-bold leading-4 text-purple-800 shadow-sm transition-colors hover:bg-purple-50 sm:text-xs"
+              >
+                <Palette className="h-4 w-4 shrink-0" />
+                التصاميم الجاهزة
+              </Link>
+              <Link
+                href="/dashboard/accounting/fabrics/inventory"
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-teal-200 bg-white px-3 py-2 text-[11px] font-bold leading-4 text-teal-800 shadow-sm transition-colors hover:bg-teal-50 sm:text-xs"
+              >
+                <Boxes className="h-4 w-4 shrink-0" />
+                مخزون الأقمشة
+              </Link>
+            </div>
+            <button
+              onClick={startAddNew}
+              disabled={isAddingNew || editingId !== null}
+              className="btn-primary flex min-h-10 items-center justify-center gap-2 rounded-full px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="w-5 h-5" />
+              <span>إضافة قماش جديد</span>
+            </button>
+          </div>
         </motion.div>
 
         {/* رسالة خطأ */}

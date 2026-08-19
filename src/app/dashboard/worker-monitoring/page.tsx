@@ -18,6 +18,7 @@ import {
   Loader2,
   Calendar,
   Fingerprint,
+  UserCog,
 } from 'lucide-react'
 
 const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
@@ -181,6 +182,15 @@ export default function WorkerMonitoringPage() {
             <p className="text-sm text-gray-500 mt-1">عرض ومتابعة أداء جميع الخياطين وطلباتهم</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {user?.role === 'admin' && (
+              <Link
+                href="/dashboard/workers"
+                className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-white px-3.5 py-2 text-sm font-bold text-teal-800 shadow-sm transition-colors hover:bg-teal-50"
+              >
+                <UserCog className="h-4 w-4" />
+                إدارة العمال
+              </Link>
+            )}
             <Link
               href="/dashboard/worker-monitoring/attendance"
               className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-3.5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-teal-800"
