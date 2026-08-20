@@ -10,6 +10,28 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { getWorkerDashboardRoute } from '@/lib/worker-types'
 import type { WorkerType } from '@/lib/services/worker-service'
 
+function getSafeRequestedDashboardPath(): string | null {
+  if (typeof window === 'undefined') return null
+
+  const requestedPath = new URLSearchParams(window.location.search).get('next')
+  if (!requestedPath) return null
+
+  try {
+    const requestedUrl = new URL(requestedPath, window.location.origin)
+    const isDashboardPath =
+      requestedUrl.pathname === '/dashboard' ||
+      requestedUrl.pathname.startsWith('/dashboard/')
+
+    if (requestedUrl.origin !== window.location.origin || !isDashboardPath) {
+      return null
+    }
+
+    return `${requestedUrl.pathname}${requestedUrl.search}${requestedUrl.hash}`
+  } catch {
+    return null
+  }
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -81,6 +103,12 @@ export default function LoginPage() {
     async function redirectUser(currentUser: typeof user) {
       if (!currentUser) return
 
+      const requestedPath = getSafeRequestedDashboardPath()
+      if (requestedPath) {
+        router.replace(requestedPath)
+        return
+      }
+
       if (currentUser.role === 'admin') {
         router.push('/dashboard')
         return
@@ -143,6 +171,12 @@ export default function LoginPage() {
         if (!currentUser) {
           console.error('❌ لم يتم العثور على بيانات المستخدم بعد تسجيل الدخول')
           router.push('/dashboard')
+          return
+        }
+
+        const requestedPath = getSafeRequestedDashboardPath()
+        if (requestedPath) {
+          router.replace(requestedPath)
           return
         }
 

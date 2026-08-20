@@ -34,6 +34,7 @@ interface AuthState {
   isSessionFresh: () => boolean
   ensureAnonymousUser: () => Promise<string>
   invalidateDataCaches: () => void
+  setHasHydrated: (hasHydrated: boolean) => void
 }
 
 // بيانات المستخدمين الافتراضية (سيتم استبدالها بنظام إدارة العمال)
@@ -78,7 +79,14 @@ export const useAuthStore = create<AuthState>()(
       error: null,
       anonymousUserId: null,
       lastVerifiedAt: null,
-      _hasHydrated: true, // Always true — no hydration gating in old system
+      _hasHydrated: false,
+
+      // Zustand restores persisted state after the first client render.
+      // Route guards must wait for this flag before treating `user: null`
+      // as an unauthenticated session.
+      setHasHydrated: (hasHydrated: boolean) => {
+        set({ _hasHydrated: hasHydrated })
+      },
 
       // Returns true only if session was verified within the last 5 minutes
       isSessionFresh: () => {
@@ -289,9 +297,9 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // Stub: same as setUser (kept for interface compatibility)
+      // Store the time of a successful server-side session verification.
       setUserWithTimestamp: (user: AuthUser | null) => {
-        set({ user })
+        set({ user, lastVerifiedAt: user ? Date.now() : null })
 
         if (typeof window !== 'undefined') {
           if (user) {
@@ -338,6 +346,12 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'yasmin-auth-storage',
       partialize: (state) => ({ user: state.user }),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error('Error hydrating auth state:', error)
+        }
+        state?.setHasHydrated(true)
+      },
     }
   )
 )

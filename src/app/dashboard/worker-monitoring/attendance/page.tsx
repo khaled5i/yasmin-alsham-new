@@ -9,6 +9,7 @@ import {
   BarChart3,
   CalendarDays,
   Check,
+  ChevronDown,
   CircleDot,
   Clock3,
   Eye,
@@ -574,17 +575,20 @@ export default function AttendanceMonitoringPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex items-center justify-between gap-3">
+          <details className="group rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 select-none [&::-webkit-details-marker]:hidden sm:p-6">
               <div>
                 <h3 className="font-black text-slate-900">مستخدمون يحتاجون ربطًا</h3>
                 <p className="mt-1 text-xs text-slate-500">القائمة الكاملة المستردة من جهازي الدخول والخروج.</p>
               </div>
-              <span className="grid h-8 min-w-8 place-items-center rounded-full bg-amber-100 px-2 text-xs font-black text-amber-800">
-                {unmatchedPeople.length}
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="grid h-8 min-w-8 place-items-center rounded-full bg-amber-100 px-2 text-xs font-black text-amber-800">
+                  {unmatchedPeople.length}
+                </span>
+                <ChevronDown aria-hidden="true" className="h-5 w-5 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
               </span>
-            </div>
-            <div className="mt-4 space-y-3">
+            </summary>
+            <div className="space-y-3 border-t border-slate-100 px-5 pt-4 pb-5 sm:px-6 sm:pb-6">
               {unmatchedPeople.length === 0 ? (
                 <EmptyInline icon={Check} text="كل الأرقام الواردة مرتبطة بعمال الموقع." />
               ) : unmatchedPeople.map((person) => (
@@ -627,7 +631,7 @@ export default function AttendanceMonitoringPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </details>
             </section>
 
             <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
@@ -839,8 +843,8 @@ function SuspendedWorkersSection({
   const hasEntries = activeEntries.length > 0 || historicalEntries.length > 0
 
   return (
-    <section className="mt-5 overflow-hidden rounded-3xl border border-amber-200/80 bg-white shadow-sm print:hidden" aria-labelledby="suspended-workers-title">
-      <div className="flex flex-col gap-3 border-b border-amber-100 bg-[linear-gradient(120deg,#fffbeb_0%,#ffffff_70%)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <details className="group mt-5 overflow-hidden rounded-3xl border border-amber-200/80 bg-white shadow-sm print:hidden" aria-labelledby="suspended-workers-title">
+      <summary className="flex cursor-pointer list-none flex-col gap-3 bg-[linear-gradient(120deg,#fffbeb_0%,#ffffff_70%)] px-5 py-5 select-none [&::-webkit-details-marker]:hidden sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-start gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-800 ring-1 ring-amber-200">
             <Eye className="h-5 w-5" />
@@ -852,13 +856,16 @@ function SuspendedWorkersSection({
             </p>
           </div>
         </div>
-        <span className="w-fit rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-900 ring-1 ring-amber-200">
-          {activeEntries.length} معلّق حاليًا
+        <span className="flex w-fit shrink-0 items-center gap-2">
+          <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-900 ring-1 ring-amber-200">
+            {activeEntries.length} معلّق حاليًا
+          </span>
+          <ChevronDown aria-hidden="true" className="h-5 w-5 text-amber-700 transition-transform duration-200 group-open:rotate-180" />
         </span>
-      </div>
+      </summary>
 
       {!hasEntries ? (
-        <div className="flex min-h-24 items-center justify-center gap-2 px-5 text-center text-xs font-semibold text-slate-500">
+        <div className="flex min-h-24 items-center justify-center gap-2 border-t border-amber-100 px-5 text-center text-xs font-semibold text-slate-500">
           <Check className="h-4 w-4 text-teal-600" />
           لا يوجد عمال مستثنون حاليًا.
         </div>
@@ -910,7 +917,7 @@ function SuspendedWorkersSection({
           )}
         </div>
       )}
-    </section>
+    </details>
   )
 }
 
