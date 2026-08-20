@@ -3,7 +3,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-service'
-import { isSupabaseConfigured } from '@/lib/supabase'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 
 // ============================================
@@ -18,6 +17,7 @@ export interface Fabric {
   description: string | null
   description_en?: string | null
   category: string
+  categories?: string[]
   type?: string | null
   price_per_meter: number | null
   original_price_per_meter?: number | null
@@ -63,6 +63,7 @@ export interface Fabric {
 // تحويل من نوع Supabase إلى نوع التطبيق
 const convertSupabaseFabric = (fabric: SupabaseFabric): Fabric => ({
   ...fabric,
+  categories: fabric.categories?.length ? fabric.categories : [fabric.category],
   price_per_meter: fabric.price_per_meter ?? null
 })
 
@@ -194,10 +195,11 @@ export const useFabricStore = create<FabricStoreState>()(
         const { fabrics, filters, sortBy } = get()
 
         // تطبيق الفلاتر
-        let filtered = fabrics.filter((fabric) => {
+        const filtered = fabrics.filter((fabric) => {
           // فلتر الفئة
           if (Array.isArray(filters.category) && filters.category.length > 0) {
-            if (!filters.category.includes(fabric.category)) return false
+            const fabricCategories = fabric.categories?.length ? fabric.categories : [fabric.category]
+            if (!filters.category.some(category => fabricCategories.includes(category))) return false
           }
 
           // فلتر السعر
@@ -224,7 +226,8 @@ export const useFabricStore = create<FabricStoreState>()(
             const query = filters.searchQuery.toLowerCase()
             const matchesName = fabric.name?.toLowerCase().includes(query)
             const matchesDescription = fabric.description?.toLowerCase().includes(query)
-            const matchesCategory = fabric.category.toLowerCase().includes(query)
+            const matchesCategory = (fabric.categories?.length ? fabric.categories : [fabric.category])
+              .some(category => category.toLowerCase().includes(query))
             const matchesCode = fabric.fabric_code?.toLowerCase().includes(query)
             if (!matchesName && !matchesDescription && !matchesCategory && !matchesCode) return false
           }
@@ -293,7 +296,9 @@ export const getFinalPrice = (fabric: Fabric): number | null => {
 
 // دالة مساعدة للحصول على جميع الفئات الفريدة
 export const getUniqueCategories = (fabrics: Fabric[]): string[] => {
-  return [...new Set(fabrics.map(f => f.category))]
+  return [...new Set(fabrics.flatMap(fabric =>
+    fabric.categories?.length ? fabric.categories : [fabric.category]
+  ))]
 }
 
 // دالة مساعدة للحصول على جميع الألوان الفريدة

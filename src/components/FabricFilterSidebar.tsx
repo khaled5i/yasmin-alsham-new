@@ -50,7 +50,9 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
 
   useEffect(() => {
     // استخراج الفئات الفريدة
-    const categories = Array.from(new Set(fabrics.map(f => f.category).filter(Boolean))) as string[]
+    const categories = Array.from(new Set(fabrics.flatMap(fabric =>
+      fabric.categories?.length ? fabric.categories : [fabric.category]
+    ).filter(Boolean))) as string[]
     setUniqueCategories(categories)
 
     // استخراج الألوان الفريدة

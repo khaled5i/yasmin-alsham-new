@@ -37,8 +37,12 @@ import {
   getFabricTypeCodes,
   createColor,
   deleteColor,
+  setFabricSerialNumber,
+  getFabricColorOptions,
+  saveFabricColorOption,
   type FabricInventoryItem,
   type FabricInventoryColor,
+  type FabricColorOption,
   type FabricInventoryMovement,
   type CreateInventoryItemInput,
   type InventoryUnit,
@@ -75,28 +79,117 @@ const PRESET_COLORS = [
   { name: 'تركوازي', hex: '#0D9488' },
 ]
 
+const LAST_PRIMARY_FABRIC_TYPE_STORAGE_KEY = 'fabric-inventory:last-primary-type:v1'
+
+function getSequenceFromFabricCode(fabricCode?: string | null): string {
+  const match = fabricCode?.match(/-(\d+)$/)
+  return match ? String(Number(match[1])) : ''
+}
+
+function getFabricSerialErrorMessage(error: unknown): string {
+  const message = error instanceof Error
+    ? error.message
+    : String((error as { message?: unknown } | null)?.message ?? '')
+
+  if (message.includes('FABRIC_SERIAL_IN_USE')) {
+    return 'هذا الرقم مستخدم حالياً لقماش أو لون آخر'
+  }
+  if (message.includes('FABRIC_SERIAL_REQUIRES_COLOR')) {
+    return 'هذا القماش يحتوي على ألوان؛ عدّل رقم كل لون بشكل مستقل'
+  }
+  if (message.includes('FABRIC_SERIAL_FORBIDDEN')) {
+    return 'ليست لديك صلاحية تعديل أرقام الأقمشة'
+  }
+  if (message.includes('FABRIC_SERIAL_INVALID')) {
+    return 'يرجى إدخال رقم تسلسلي صحيح أكبر من صفر'
+  }
+  return 'تعذر حفظ الرقم أو إكمال العملية'
+}
+
 // ─── مكون إدارة الألوان ─────────────────────────────────────────────────────
 interface ColorManagerProps {
   colors: FabricInventoryColor[]
   onChange: (colors: FabricInventoryColor[]) => void
+  colorOptions: FabricColorOption[]
+  draft: ColorDraft
+  onDraftChange: (draft: ColorDraft) => void
+  onColorOptionSaved: (option: FabricColorOption) => void
   isEditing?: boolean // عند التعديل نحفظ مباشرة
   itemId?: string
+  unit: InventoryUnit
+  costPerUnit?: number | null
+  typeCode: string
 }
 
-function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps) {
-  const [colorName, setColorName] = useState('')
-  const [colorHex, setColorHex] = useState('')
+interface ColorDraft {
+  name: string
+  hex: string
+  quantity: string
+  serialNumber: string
+}
+
+const EMPTY_COLOR_DRAFT: ColorDraft = {
+  name: '',
+  hex: '',
+  quantity: '',
+  serialNumber: '',
+}
+
+function ColorManager({
+  colors,
+  onChange,
+  colorOptions,
+  draft,
+  onDraftChange,
+  onColorOptionSaved,
+  isEditing,
+  itemId,
+  unit,
+  costPerUnit,
+  typeCode,
+}: ColorManagerProps) {
+  const [editingSerialColorId, setEditingSerialColorId] = useState<string | null>(null)
+  const [editingSerialNumber, setEditingSerialNumber] = useState('')
+  const [serialSaving, setSerialSaving] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  const selectableColorOptions = [...PRESET_COLORS.map(option => ({
+    color_name: option.name,
+    color_hex: option.hex,
+  })), ...colorOptions].filter((option, index, allOptions) => (
+    allOptions.findIndex(candidate => (
+      candidate.color_name.trim().toLowerCase() === option.color_name.trim().toLowerCase()
+    )) === index
+  ))
+
   const selectPreset = (preset: { name: string; hex: string }) => {
-    setColorName(preset.name)
-    setColorHex(preset.hex)
+    onDraftChange({ ...draft, name: preset.name, hex: preset.hex })
   }
 
   const addColor = async () => {
-    if (!colorName.trim()) return
+    if (!draft.name.trim()) return
+    const rawQuantity = Number(draft.quantity)
+    if (!draft.quantity.trim() || !Number.isFinite(rawQuantity) || rawQuantity <= 0) {
+      alert(`كمية اللون بال${unit === 'meter' ? 'متر' : 'قطعة'} مطلوبة ويجب أن تكون أكبر من صفر`)
+      return
+    }
+    const initialQuantity = roundFabricNumber(rawQuantity)
+    if (initialQuantity <= 0) {
+      alert('أقل كمية مسموحة هي 0.01')
+      return
+    }
+    const rawSerialNumber = draft.serialNumber.trim() === '' ? null : Number(draft.serialNumber)
+    if (
+      isEditing &&
+      rawSerialNumber != null &&
+      (!Number.isInteger(rawSerialNumber) || rawSerialNumber <= 0)
+    ) {
+      alert('يرجى إدخال رقم تسلسلي صحيح أكبر من صفر')
+      return
+    }
+
     // تحقق من عدم التكرار
-    if (colors.some(c => c.color_name.toLowerCase() === colorName.trim().toLowerCase())) {
+    if (colors.some(c => c.color_name.toLowerCase() === draft.name.trim().toLowerCase())) {
       alert('هذا اللون موجود مسبقاً')
       return
     }
@@ -104,34 +197,85 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
     if (isEditing && itemId) {
       setSaving(true)
       try {
+        const reusableOption: FabricColorOption = {
+          color_name: draft.name.trim(),
+          color_hex: draft.hex || null,
+        }
+        await saveFabricColorOption(reusableOption)
         const created = await createColor({
           inventory_item_id: itemId,
-          color_name: colorName.trim(),
-          color_hex: colorHex || undefined
+          color_name: reusableOption.color_name,
+          color_hex: reusableOption.color_hex || undefined
         })
-        onChange([...colors, created])
-      } catch {
-        alert('❌ خطأ في إضافة اللون')
+        let savedColor = created
+
+        if (rawSerialNumber != null) {
+          try {
+            const fabricCode = await setFabricSerialNumber({
+              inventoryItemId: itemId,
+              inventoryColorId: created.id,
+              sequenceNumber: rawSerialNumber,
+            })
+            savedColor = { ...created, fabric_code: fabricCode }
+          } catch (serialError) {
+            await deleteColor(created.id).catch(() => undefined)
+            throw serialError
+          }
+        }
+
+        if (initialQuantity > 0) {
+          try {
+            await addMovement({
+              inventory_item_id: itemId,
+              color_id: savedColor.id,
+              movement_type: 'in',
+              quantity: initialQuantity,
+              cost_per_unit: costPerUnit ?? undefined,
+              description: `رصيد اللون عند الإضافة - ${savedColor.color_name}`
+            })
+          } catch (movementError) {
+            await deleteColor(savedColor.id).catch(() => undefined)
+            throw movementError
+          }
+        }
+
+        onChange([...colors, { ...savedColor, current_quantity: initialQuantity }])
+        onColorOptionSaved(reusableOption)
+        onDraftChange(EMPTY_COLOR_DRAFT)
+      } catch (error) {
+        alert(`❌ ${getFabricSerialErrorMessage(error)}`)
       } finally {
         setSaving(false)
       }
     } else {
       // عند الإضافة الجديدة، نخزن مؤقتاً
-      const temp: FabricInventoryColor = {
-        id: `temp-${Date.now()}`,
-        inventory_item_id: '',
-        color_name: colorName.trim(),
-        color_hex: colorHex || null,
-        current_quantity: 0,
-        notes: null,
-        created_at: new Date().toISOString(),
-        created_by: null,
-        fabric_code: null
+      setSaving(true)
+      try {
+        const reusableOption: FabricColorOption = {
+          color_name: draft.name.trim(),
+          color_hex: draft.hex || null,
+        }
+        await saveFabricColorOption(reusableOption)
+        const temp: FabricInventoryColor = {
+          id: `temp-${Date.now()}`,
+          inventory_item_id: '',
+          color_name: reusableOption.color_name,
+          color_hex: reusableOption.color_hex,
+          current_quantity: initialQuantity,
+          notes: null,
+          created_at: new Date().toISOString(),
+          created_by: null,
+          fabric_code: null
+        }
+        onChange([...colors, temp])
+        onColorOptionSaved(reusableOption)
+        onDraftChange(EMPTY_COLOR_DRAFT)
+      } catch {
+        alert('❌ تعذر حفظ اللون')
+      } finally {
+        setSaving(false)
       }
-      onChange([...colors, temp])
     }
-    setColorName('')
-    setColorHex('')
   }
 
   const removeColor = async (id: string) => {
@@ -145,6 +289,38 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
       }
     }
     onChange(colors.filter(c => c.id !== id))
+  }
+
+  const startEditingSerial = (color: FabricInventoryColor) => {
+    setEditingSerialColorId(color.id)
+    setEditingSerialNumber(getSequenceFromFabricCode(color.fabric_code))
+  }
+
+  const saveColorSerial = async (color: FabricInventoryColor) => {
+    if (!itemId) return
+    const sequenceNumber = Number(editingSerialNumber)
+    if (!Number.isInteger(sequenceNumber) || sequenceNumber <= 0) {
+      alert('يرجى إدخال رقم تسلسلي صحيح أكبر من صفر')
+      return
+    }
+
+    setSerialSaving(true)
+    try {
+      const fabricCode = await setFabricSerialNumber({
+        inventoryItemId: itemId,
+        inventoryColorId: color.id,
+        sequenceNumber,
+      })
+      onChange(colors.map(current => (
+        current.id === color.id ? { ...current, fabric_code: fabricCode } : current
+      )))
+      setEditingSerialColorId(null)
+      setEditingSerialNumber('')
+    } catch (error) {
+      alert(`❌ ${getFabricSerialErrorMessage(error)}`)
+    } finally {
+      setSerialSaving(false)
+    }
   }
 
   return (
@@ -164,8 +340,20 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
                 />
               )}
               <span className="text-gray-700">{c.color_name}</span>
-              {isEditing && c.current_quantity > 0 && (
+              {c.current_quantity > 0 && (
                 <span className="text-xs text-teal-600 font-medium">({formatFabricNumber(c.current_quantity)})</span>
+              )}
+              {isEditing && c.fabric_code && (
+                <button
+                  type="button"
+                  onClick={() => startEditingSerial(c)}
+                  dir="ltr"
+                  className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-teal-700 transition-colors hover:bg-teal-100"
+                  title="تعديل رقم اللون"
+                >
+                  {c.fabric_code}
+                  <Pencil className="h-2.5 w-2.5" />
+                </button>
               )}
               <button
                 type="button"
@@ -179,6 +367,48 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
         </div>
       )}
 
+      {isEditing && editingSerialColorId && (() => {
+        const color = colors.find(current => current.id === editingSerialColorId)
+        if (!color) return null
+        return (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p className="mb-2 text-xs font-medium text-amber-900">
+              تعديل رقم اللون: {color.color_name}
+            </p>
+            <div className="flex gap-2" dir="ltr">
+              <span className="flex h-10 items-center rounded-xl border border-amber-200 bg-white px-3 font-mono text-sm font-bold text-amber-800">
+                {typeCode || 'FB'}-
+              </span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={editingSerialNumber}
+                onChange={event => setEditingSerialNumber(event.target.value)}
+                className="min-w-0 flex-1 rounded-xl border border-amber-200 px-3 py-2 font-mono text-sm focus:border-transparent focus:ring-2 focus:ring-amber-500"
+                aria-label={`الرقم التسلسلي للون ${color.color_name}`}
+              />
+              <button
+                type="button"
+                onClick={() => saveColorSerial(color)}
+                disabled={serialSaving}
+                className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-40"
+              >
+                {serialSaving ? '...' : 'حفظ'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingSerialColorId(null)}
+                className="rounded-xl border border-amber-200 bg-white p-2 text-amber-700 hover:bg-amber-100"
+                aria-label="إلغاء تعديل الرقم"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ألوان سريعة */}
       <div className="grid grid-cols-8 gap-1.5">
         {PRESET_COLORS.map(p => (
@@ -188,11 +418,11 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
             onClick={() => selectPreset(p)}
             title={p.name}
             className={`w-8 h-8 rounded-lg border-2 transition-all ${
-              colorHex === p.hex ? 'border-teal-500 scale-110' : 'border-transparent hover:border-gray-300'
+              draft.hex === p.hex ? 'border-teal-500 scale-110' : 'border-transparent hover:border-gray-300'
             }`}
             style={{ backgroundColor: p.hex }}
           >
-            {colorHex === p.hex && p.hex !== '#FFFFFF' && (
+            {draft.hex === p.hex && p.hex !== '#FFFFFF' && (
               <Check className="w-4 h-4 text-white mx-auto" />
             )}
           </button>
@@ -200,30 +430,72 @@ function ColorManager({ colors, onChange, isEditing, itemId }: ColorManagerProps
       </div>
 
       {/* إدخال اللون */}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={colorName}
-          onChange={e => setColorName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addColor())}
-          placeholder="اسم اللون..."
-          className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-        />
-        <input
-          type="color"
-          value={colorHex || '#000000'}
-          onChange={e => setColorHex(e.target.value)}
-          className="w-10 h-10 rounded-xl border border-gray-200 cursor-pointer p-0.5"
-          title="اختر لون"
-        />
-        <button
-          type="button"
-          onClick={addColor}
-          disabled={!colorName.trim() || saving}
-          className="px-3 py-2 bg-teal-600 text-white rounded-xl hover:bg-teal-700 disabled:opacity-40 transition-colors text-sm font-medium"
-        >
-          {saving ? '...' : 'إضافة'}
-        </button>
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={draft.name}
+            list="fabric-color-options"
+            onChange={event => {
+              const name = event.target.value
+              const selectedOption = selectableColorOptions.find(option => (
+                option.color_name.trim().toLowerCase() === name.trim().toLowerCase()
+              ))
+              onDraftChange({
+                ...draft,
+                name,
+                hex: selectedOption?.color_hex ?? draft.hex,
+              })
+            }}
+            onKeyDown={e => e.key === 'Enter' && !isEditing && (e.preventDefault(), addColor())}
+            placeholder="اسم اللون..."
+            className="min-w-0 flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          />
+          <datalist id="fabric-color-options">
+            {selectableColorOptions.map(option => (
+              <option key={option.color_name} value={option.color_name} />
+            ))}
+          </datalist>
+          <input
+            type="color"
+            value={draft.hex || '#000000'}
+            onChange={event => onDraftChange({ ...draft, hex: event.target.value })}
+            className="w-10 h-10 shrink-0 rounded-xl border border-gray-200 cursor-pointer p-0.5"
+            title="اختر لون"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={draft.quantity}
+            onChange={event => onDraftChange({ ...draft, quantity: event.target.value })}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addColor())}
+            placeholder={unit === 'meter' ? 'الكمية بالمتر *' : 'الكمية بالقطعة *'}
+            className="min-w-0 flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          />
+          {isEditing && (
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={draft.serialNumber}
+              onChange={event => onDraftChange({ ...draft, serialNumber: event.target.value })}
+              placeholder={`رقم اللون ${typeCode || 'FB'}- (اختياري)`}
+              className="min-w-0 flex-1 px-3 py-2 border border-gray-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          )}
+          <button
+            type="button"
+            onClick={addColor}
+            disabled={!draft.name.trim() || !draft.quantity.trim() || saving}
+            className={`${isEditing ? 'sm:col-span-2' : 'w-full'} px-4 py-2 bg-teal-600 text-white rounded-xl hover:bg-teal-700 disabled:opacity-40 transition-colors text-sm font-medium`}
+          >
+            {saving ? '...' : 'إضافة'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -234,33 +506,81 @@ interface ItemModalProps {
   item: FabricInventoryItem | null
   suppliers: Supplier[]
   typeCodes: FabricTypeCodeOption[]
+  classificationOptions: string[]
+  colorOptions: FabricColorOption[]
   onClose: () => void
   onSave: (item: FabricInventoryItem) => void
   onSupplierCreated: (supplier: Supplier) => void
+  onColorOptionSaved: (option: FabricColorOption) => void
 }
 
-function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCreated }: ItemModalProps) {
+function ItemModal({
+  item,
+  suppliers,
+  typeCodes,
+  classificationOptions,
+  colorOptions,
+  onClose,
+  onSave,
+  onSupplierCreated,
+  onColorOptionSaved,
+}: ItemModalProps) {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'admin'
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState<CreateInventoryItemInput>({
-    name: item?.name ?? '',
-    fabric_type: item?.fabric_type ?? '',
-    type_code: item?.type_code ?? '',
-    unit: item?.unit ?? 'meter',
-    cost_per_unit: item?.cost_per_unit ?? undefined,
-    sale_price_per_unit: item?.sale_price_per_unit ?? undefined,
-    supplier_id: item?.supplier_id ?? undefined,
-    supplier_name: item?.supplier_name ?? undefined,
-    notes: item?.notes ?? '',
-    images: item?.images ?? [],
-    thumbnail_image: item?.thumbnail_image ?? undefined,
-    has_color_variants: item?.has_color_variants ?? false
+  const [form, setForm] = useState<CreateInventoryItemInput>(() => {
+    let rememberedFabricType = ''
+    if (!item && typeof window !== 'undefined') {
+      try {
+        rememberedFabricType = window.localStorage
+          .getItem(LAST_PRIMARY_FABRIC_TYPE_STORAGE_KEY)
+          ?.trim() ?? ''
+      } catch {
+        rememberedFabricType = ''
+      }
+    }
+
+    const initialFabricType = item?.fabric_type ?? rememberedFabricType
+    const rememberedTypeCode = typeCodes.find(option => (
+      option.fabric_type.trim().toLowerCase() === initialFabricType.trim().toLowerCase()
+    ))?.type_code
+
+    return {
+      name: item?.name ?? '',
+      fabric_type: initialFabricType,
+      fabric_types: item?.fabric_types?.length
+        ? item.fabric_types
+        : initialFabricType
+          ? [initialFabricType]
+          : [],
+      type_code: item
+        ? item.type_code ?? ''
+        : rememberedTypeCode ?? suggestFabricTypeCode(initialFabricType),
+      unit: item?.unit ?? 'meter',
+      cost_per_unit: item?.cost_per_unit ?? undefined,
+      purchase_price_mode: item?.purchase_price_mode ?? undefined,
+      purchase_total_price: item?.purchase_total_price ?? undefined,
+      purchase_total_quantity: item?.purchase_total_quantity ?? undefined,
+      sale_price_per_unit: item?.sale_price_per_unit ?? undefined,
+      supplier_id: item?.supplier_id ?? undefined,
+      supplier_name: item?.supplier_name ?? undefined,
+      notes: item?.notes ?? '',
+      images: item?.images ?? [],
+      thumbnail_image: item?.thumbnail_image ?? undefined,
+      has_color_variants: item?.has_color_variants ?? false,
+    }
   })
-  const [initialQty, setInitialQty] = useState('')
-  const [initialColorQuantities, setInitialColorQuantities] = useState<Record<string, string>>({})
+  const [initialColorSerialNumbers, setInitialColorSerialNumbers] = useState<Record<string, string>>({})
+  const [baseSerialNumber, setBaseSerialNumber] = useState(
+    getSequenceFromFabricCode(item?.base_fabric_code)
+  )
   const [colors, setColors] = useState<FabricInventoryColor[]>(item?.colors ?? [])
+  const [colorDraft, setColorDraft] = useState<ColorDraft>(EMPTY_COLOR_DRAFT)
   const [loadingColors, setLoadingColors] = useState(!!item)
+  const [purchasePriceMode, setPurchasePriceMode] = useState<'per_unit' | 'total'>(
+    item?.purchase_price_mode === 'total' ? 'total' : 'per_unit'
+  )
+  const [additionalFabricTypeInput, setAdditionalFabricTypeInput] = useState('')
 
   // حالة المورد
   const [supplierMode, setSupplierMode] = useState<'select' | 'new'>(
@@ -273,17 +593,77 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
   const selectedType = typeCodes.find(
     option => option.fabric_type.trim().toLowerCase() === form.fabric_type?.trim().toLowerCase()
   )
+  const additionalFabricTypes = form.fabric_types?.filter(
+    type => type.trim().toLowerCase() !== form.fabric_type?.trim().toLowerCase()
+  ) ?? []
+  const isPrimaryClassificationLocked = Boolean(
+    item && (item.base_fabric_code || colors.some(color => color.fabric_code))
+  )
   const nextSequence = (selectedType?.last_sequence ?? 0) + 1
   const codePreview = formatFabricCodePreview(form.type_code || suggestFabricTypeCode(form.fabric_type ?? ''), nextSequence)
+  const normalizedTypeCode = normalizeFabricTypeCode(
+    form.type_code || suggestFabricTypeCode(form.fabric_type ?? '') || 'FB'
+  )
+  const hasColorSerials = !item || colors.length > 0 || Boolean(item.has_color_variants)
+  const requestedBaseSequence = baseSerialNumber.trim() === '' ? null : Number(baseSerialNumber)
+  const requestedBaseCode = requestedBaseSequence != null && Number.isInteger(requestedBaseSequence)
+    ? formatFabricCodePreview(normalizedTypeCode, requestedBaseSequence)
+    : codePreview
+  const totalPurchaseUnitCost =
+    purchasePriceMode === 'total' &&
+    form.purchase_total_price != null &&
+    form.purchase_total_quantity != null &&
+    form.purchase_total_quantity > 0
+      ? roundFabricNumber(form.purchase_total_price / form.purchase_total_quantity)
+      : null
 
   const handleFabricTypeChange = (fabricType: string) => {
     const existing = typeCodes.find(
       option => option.fabric_type.trim().toLowerCase() === fabricType.trim().toLowerCase()
     )
+    setForm(previous => {
+      const previousPrimary = previous.fabric_type?.trim().toLowerCase()
+      const additionalTypes = previous.fabric_types?.filter(
+        type => type.trim().toLowerCase() !== previousPrimary
+      ) ?? []
+      return {
+        ...previous,
+        fabric_type: fabricType,
+        fabric_types: [fabricType, ...additionalTypes].filter(
+          (type, index, allTypes) =>
+            type.trim() &&
+            allTypes.findIndex(candidate => candidate.trim().toLowerCase() === type.trim().toLowerCase()) === index
+        ),
+        type_code: existing?.type_code ?? suggestFabricTypeCode(fabricType)
+      }
+    })
+  }
+
+  const addAdditionalFabricType = () => {
+    const fabricType = additionalFabricTypeInput.trim()
+    if (!fabricType) return
+    if (fabricType.toLowerCase() === form.fabric_type?.trim().toLowerCase()) {
+      alert('هذا هو التصنيف الأساسي بالفعل')
+      return
+    }
+    if (additionalFabricTypes.some(type => type.trim().toLowerCase() === fabricType.toLowerCase())) {
+      alert('هذا التصنيف مضاف مسبقاً')
+      return
+    }
     setForm(previous => ({
       ...previous,
-      fabric_type: fabricType,
-      type_code: existing?.type_code ?? suggestFabricTypeCode(fabricType)
+      fabric_types: [previous.fabric_type ?? '', ...additionalFabricTypes, fabricType]
+        .filter(type => type.trim())
+    }))
+    setAdditionalFabricTypeInput('')
+  }
+
+  const removeAdditionalFabricType = (fabricType: string) => {
+    setForm(previous => ({
+      ...previous,
+      fabric_types: (previous.fabric_types ?? []).filter(
+        type => type.trim().toLowerCase() !== fabricType.trim().toLowerCase()
+      )
     }))
   }
 
@@ -328,77 +708,284 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
       alert('صورة القماش مطلوبة')
       return
     }
-    // سعر الشراء وسعر البيع إلزاميان (لازمان لتتبّع المخزون في الأستاذ)
-    if (form.cost_per_unit == null || form.sale_price_per_unit == null) {
-      alert('يرجى إدخال سعر الشراء وسعر البيع')
+
+    const pendingColorName = colorDraft.name.trim()
+    const hasPendingColorInput = Boolean(
+      pendingColorName ||
+      colorDraft.hex.trim() ||
+      colorDraft.quantity.trim() ||
+      colorDraft.serialNumber.trim()
+    )
+    let pendingColor: FabricInventoryColor | null = null
+    let colorsForSave = colors
+
+    if (hasPendingColorInput) {
+      if (!pendingColorName) {
+        alert('اسم اللون مطلوب')
+        return
+      }
+      const rawQuantity = Number(colorDraft.quantity)
+      if (!colorDraft.quantity.trim() || !Number.isFinite(rawQuantity) || rawQuantity <= 0) {
+        alert(`كمية اللون بال${form.unit === 'meter' ? 'متر' : 'قطعة'} مطلوبة ويجب أن تكون أكبر من صفر`)
+        return
+      }
+      if (colors.some(color => color.color_name.trim().toLowerCase() === pendingColorName.toLowerCase())) {
+        alert('هذا اللون موجود مسبقاً')
+        return
+      }
+      if (item && colorDraft.serialNumber.trim()) {
+        const sequenceNumber = Number(colorDraft.serialNumber)
+        if (!Number.isInteger(sequenceNumber) || sequenceNumber <= 0) {
+          alert('يرجى إدخال رقم تسلسلي صحيح أكبر من صفر')
+          return
+        }
+      }
+
+      pendingColor = {
+        id: `temp-pending-${Date.now()}`,
+        inventory_item_id: item?.id ?? '',
+        color_name: pendingColorName,
+        color_hex: colorDraft.hex || null,
+        current_quantity: roundFabricNumber(rawQuantity),
+        notes: null,
+        created_at: new Date().toISOString(),
+        created_by: null,
+        fabric_code: null,
+      }
+      colorsForSave = [...colors, pendingColor]
+    }
+
+    if (colorsForSave.length === 0) {
+      alert('يجب إضافة لون واحد على الأقل مع كميته قبل حفظ القماش')
       return
     }
+    if (!item) {
+      const colorWithoutQuantity = colorsForSave.find(color => (
+        !Number.isFinite(color.current_quantity) || color.current_quantity <= 0
+      ))
+      if (colorWithoutQuantity) {
+        alert(`كمية اللون ${colorWithoutQuantity.color_name} مطلوبة ويجب أن تكون أكبر من صفر`)
+        return
+      }
+    }
+    const hasColorSerialsForSave = !item || colorsForSave.length > 0 || Boolean(item.has_color_variants)
+    if (
+      !hasColorSerialsForSave &&
+      requestedBaseSequence != null &&
+      (!Number.isInteger(requestedBaseSequence) || requestedBaseSequence <= 0)
+    ) {
+      alert('يرجى إدخال رقم تسلسلي صحيح أكبر من صفر')
+      return
+    }
+    if (!item) {
+      const invalidColorSerial = colorsForSave.find(color => {
+        const value = initialColorSerialNumbers[color.id]?.trim()
+        if (!value) return false
+        const sequenceNumber = Number(value)
+        return !Number.isInteger(sequenceNumber) || sequenceNumber <= 0
+      })
+      if (invalidColorSerial) {
+        alert(`رقم اللون ${invalidColorSerial.color_name} يجب أن يكون عدداً صحيحاً أكبر من صفر`)
+        return
+      }
+    }
+
+    let purchaseCostPerUnit: number | null = null
+    if (purchasePriceMode === 'total') {
+      const hasTotalPrice = form.purchase_total_price != null
+      const hasTotalQuantity = form.purchase_total_quantity != null
+      if (hasTotalPrice !== hasTotalQuantity) {
+        alert('أدخل السعر الكلي والكمية معاً، أو اتركهما فارغين لإضافة السعر لاحقاً')
+        return
+      }
+      if (hasTotalPrice && (form.purchase_total_quantity ?? 0) <= 0) {
+        alert('عدد الأمتار أو القطع يجب أن يكون أكبر من صفر')
+        return
+      }
+      if (hasTotalPrice && hasTotalQuantity) {
+        purchaseCostPerUnit = roundFabricNumber(
+          (form.purchase_total_price ?? 0) / (form.purchase_total_quantity ?? 1)
+        )
+      }
+    } else if (form.cost_per_unit != null) {
+      purchaseCostPerUnit = roundFabricNumber(form.cost_per_unit)
+    }
+
     setSaving(true)
+    let createdItemId: string | null = null
+    let createdEditingColorId: string | null = null
     try {
       const payload: CreateInventoryItemInput = {
         ...form,
-        cost_per_unit: roundFabricNumber(form.cost_per_unit),
-        sale_price_per_unit: roundFabricNumber(form.sale_price_per_unit),
+        cost_per_unit: purchaseCostPerUnit,
+        purchase_price_mode: purchaseCostPerUnit == null ? null : purchasePriceMode,
+        purchase_total_price:
+          purchasePriceMode === 'total' && purchaseCostPerUnit != null
+            ? roundFabricNumber(form.purchase_total_price ?? 0)
+            : null,
+        purchase_total_quantity:
+          purchasePriceMode === 'total' && purchaseCostPerUnit != null
+            ? roundFabricNumber(form.purchase_total_quantity ?? 0)
+            : null,
+        sale_price_per_unit:
+          form.sale_price_per_unit == null
+            ? null
+            : roundFabricNumber(form.sale_price_per_unit),
         name: form.name || form.type_code || form.fabric_type,
         type_code: normalizeFabricTypeCode(form.type_code || suggestFabricTypeCode(form.fabric_type)),
-        has_color_variants: colors.length > 0,
+        fabric_types: [form.fabric_type, ...additionalFabricTypes, additionalFabricTypeInput.trim()]
+          .filter((type): type is string => Boolean(type?.trim()))
+          .filter((type, index, allTypes) =>
+            allTypes.findIndex(candidate => candidate.trim().toLowerCase() === type.trim().toLowerCase()) === index
+          ),
+        has_color_variants: colorsForSave.length > 0,
         supplier_id: form.supplier_id || undefined,
         supplier_name: form.supplier_name || undefined,
         fabric_type: form.fabric_type || undefined,
         notes: form.notes || undefined
       }
       let result: FabricInventoryItem
+      let savedPendingColor: FabricInventoryColor | null = null
+
+      if (pendingColor) {
+        const reusableOption: FabricColorOption = {
+          color_name: pendingColor.color_name,
+          color_hex: pendingColor.color_hex,
+        }
+        await saveFabricColorOption(reusableOption)
+        onColorOptionSaved(reusableOption)
+      }
+
       if (item) {
+        if (pendingColor) {
+          let created = await createColor({
+            inventory_item_id: item.id,
+            color_name: pendingColor.color_name,
+            color_hex: pendingColor.color_hex ?? undefined,
+          })
+          createdEditingColorId = created.id
+          savedPendingColor = created
+          try {
+            if (colorDraft.serialNumber.trim()) {
+              const fabricCode = await setFabricSerialNumber({
+                inventoryItemId: item.id,
+                inventoryColorId: created.id,
+                sequenceNumber: Number(colorDraft.serialNumber),
+              })
+              created = { ...created, fabric_code: fabricCode }
+              savedPendingColor = created
+            }
+            await addMovement({
+              inventory_item_id: item.id,
+              color_id: created.id,
+              movement_type: 'in',
+              quantity: pendingColor.current_quantity,
+              cost_per_unit: payload.cost_per_unit ?? undefined,
+              description: `رصيد اللون عند الإضافة - ${created.color_name}`,
+            })
+            savedPendingColor = {
+              ...created,
+              current_quantity: pendingColor.current_quantity,
+            }
+          } catch (colorError) {
+            await deleteColor(created.id).catch(() => undefined)
+            createdEditingColorId = null
+            savedPendingColor = null
+            throw colorError
+          }
+        }
+
         result = await updateInventoryItem(item.id, payload)
-        result = { ...result, colors }
+        if (!hasColorSerialsForSave && requestedBaseSequence != null) {
+          const fabricCode = await setFabricSerialNumber({
+            inventoryItemId: item.id,
+            sequenceNumber: requestedBaseSequence,
+          })
+          result = { ...result, base_fabric_code: fabricCode }
+        }
+        result = {
+          ...result,
+          colors: savedPendingColor ? [...colors, savedPendingColor] : colors,
+        }
       } else {
         result = await createInventoryItem(payload)
-        // إضافة المنتج المقابل في نظام المحاسبة (الأستاذ — فرع بروكار الشرقية)
-        // أفضل جهد: لا يوقف حفظ المخزون إن فشل، وللمدير فقط
-        if (isAdmin) {
-          syncFabricProductToAlostaz(result.id).catch(() => {})
+        createdItemId = result.id
+        if (!hasColorSerialsForSave && requestedBaseSequence != null) {
+          const fabricCode = await setFabricSerialNumber({
+            inventoryItemId: result.id,
+            sequenceNumber: requestedBaseSequence,
+          })
+          result = { ...result, base_fabric_code: fabricCode }
         }
         // حفظ الألوان المؤقتة
-        const savedColors = await Promise.all(colors.map(async c => {
-          const savedColor = await createColor({
+        const savedColors: FabricInventoryColor[] = []
+        for (const color of colorsForSave) {
+          let savedColor = await createColor({
             inventory_item_id: result.id,
-            color_name: c.color_name,
-            color_hex: c.color_hex ?? undefined
+            color_name: color.color_name,
+            color_hex: color.color_hex ?? undefined
           })
-          const colorQuantity = roundFabricNumber(parseFloat(initialColorQuantities[c.id] ?? ''))
+          const colorSerial = initialColorSerialNumbers[color.id]?.trim()
+          if (colorSerial) {
+            const fabricCode = await setFabricSerialNumber({
+              inventoryItemId: result.id,
+              inventoryColorId: savedColor.id,
+              sequenceNumber: Number(colorSerial),
+            })
+            savedColor = { ...savedColor, fabric_code: fabricCode }
+          }
+
+          const colorQuantity = roundFabricNumber(color.current_quantity)
           if (colorQuantity > 0) {
             await addMovement({
               inventory_item_id: result.id,
               color_id: savedColor.id,
               movement_type: 'in',
               quantity: colorQuantity,
-              cost_per_unit: payload.cost_per_unit,
+              cost_per_unit: payload.cost_per_unit ?? undefined,
               description: `رصيد ابتدائي - ${savedColor.color_name}`,
               date: new Date().toISOString().split('T')[0]
             })
           }
-          return { ...savedColor, current_quantity: colorQuantity > 0 ? colorQuantity : 0 }
-        }))
-
-        const qty = colors.length === 0 ? roundFabricNumber(parseFloat(initialQty)) : 0
-        if (qty > 0 && savedColors.length === 0) {
-          await addMovement({
-            inventory_item_id: result.id,
-            movement_type: 'in',
-            quantity: qty,
-            cost_per_unit: payload.cost_per_unit,
-            description: 'رصيد ابتدائي',
-            date: new Date().toISOString().split('T')[0]
+          savedColors.push({
+            ...savedColor,
+            current_quantity: colorQuantity > 0 ? colorQuantity : 0,
           })
         }
-        const totalInitialQuantity = savedColors.length > 0
-          ? savedColors.reduce((sum, color) => sum + color.current_quantity, 0)
-          : Math.max(0, qty || 0)
+
+        const totalInitialQuantity = savedColors.reduce(
+          (sum, color) => sum + color.current_quantity,
+          0
+        )
         result = { ...result, current_quantity: totalInitialQuantity, colors: savedColors }
+        // إضافة المنتج المقابل في نظام المحاسبة (الأستاذ — فرع بروكار الشرقية)
+        // أفضل جهد: لا يوقف حفظ المخزون إن فشل، وللمدير فقط
+        if (isAdmin) {
+          syncFabricProductToAlostaz(result.id).catch(() => {})
+        }
+      }
+      if (!item && typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(
+            LAST_PRIMARY_FABRIC_TYPE_STORAGE_KEY,
+            form.fabric_type?.trim() ?? ''
+          )
+        } catch {
+          // يبقى الحفظ ناجحاً حتى إذا كان التخزين المحلي غير متاح.
+        }
       }
       onSave(result)
-    } catch {
-      alert('❌ حدث خطأ أثناء الحفظ')
+    } catch (error) {
+      if (createdItemId) {
+        await deleteInventoryItem(createdItemId).catch(() => undefined)
+      }
+      if (createdEditingColorId) {
+        await deleteColor(createdEditingColorId).catch(() => undefined)
+      }
+      const message = String((error as { message?: unknown } | null)?.message ?? '')
+      alert(message.includes('FABRIC_SERIAL')
+        ? `❌ ${getFabricSerialErrorMessage(error)}`
+        : '❌ حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
@@ -433,50 +1020,139 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
             <div className="flex items-center gap-2 text-sm font-medium text-teal-900 mb-2">
               <Hash className="w-4 h-4" /> رقم القماش
             </div>
-            <div dir="ltr" className="font-mono text-2xl font-black tracking-wider text-teal-800">
-              {item?.base_fabric_code || item?.colors?.[0]?.fabric_code || codePreview}
+            <div
+              dir="ltr"
+              className={`grid gap-2 ${hasColorSerials ? 'grid-cols-1' : 'grid-cols-2'}`}
+            >
+              <label className="min-w-0">
+                <span dir="rtl" className="mb-1 block text-xs font-medium text-teal-800">
+                  حروف التصنيف
+                </span>
+                <input
+                  dir="ltr"
+                  type="text"
+                  value={form.type_code ?? ''}
+                  onChange={event => setForm({
+                    ...form,
+                    type_code: normalizeFabricTypeCode(event.target.value)
+                  })}
+                  className="h-11 w-full rounded-xl border border-teal-200 bg-white px-3 font-mono text-base font-black uppercase text-teal-800 focus:border-transparent focus:ring-2 focus:ring-teal-500 disabled:bg-teal-100/70 disabled:text-teal-600"
+                  placeholder="SAT"
+                  maxLength={8}
+                  required
+                  disabled={Boolean(selectedType) || isPrimaryClassificationLocked}
+                />
+              </label>
+              {!hasColorSerials && (
+                <label className="min-w-0">
+                  <span dir="rtl" className="mb-1 block text-xs font-medium text-teal-800">
+                    الرقم التسلسلي
+                  </span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={baseSerialNumber}
+                    onChange={event => setBaseSerialNumber(event.target.value)}
+                    placeholder={String(nextSequence)}
+                    className="min-w-0 flex-1 rounded-xl border border-teal-200 bg-white px-3 py-2 font-mono text-lg font-black text-teal-800 focus:border-transparent focus:ring-2 focus:ring-teal-500"
+                    aria-label="الرقم التسلسلي للقماش"
+                  />
+                </label>
+              )}
             </div>
-            <p className="text-xs text-teal-700 mt-2">
-              الرقم النهائي يُحجز عند الحفظ. كل لون سيحصل على رقم تسلسلي مستقل.
-            </p>
+            {!hasColorSerials && (
+                <div dir="ltr" className="mt-2 font-mono text-sm font-bold tracking-wider text-teal-700">
+                  {baseSerialNumber.trim()
+                    ? `سيُحفظ كـ ${requestedBaseCode}`
+                    : `تلقائي: ${item?.base_fabric_code || codePreview}`}
+                </div>
+            )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">نوع القماش *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">التصنيف الأساسي *</label>
             <input
               type="text"
               value={form.fabric_type ?? ''}
               onChange={e => handleFabricTypeChange(e.target.value)}
               list="fabric-type-options"
               className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              placeholder="اختر نوعاً سابقاً أو اكتب نوعاً جديداً"
+              placeholder="اختر تصنيفاً سابقاً أو اكتب تصنيفاً جديداً"
               required
+              disabled={isPrimaryClassificationLocked}
             />
             <datalist id="fabric-type-options">
-              {typeCodes.map(option => (
-                <option key={option.id} value={option.fabric_type}>{option.type_code}</option>
+              {classificationOptions.map(type => (
+                <option key={type} value={type}>
+                  {typeCodes.find(option => option.fabric_type === type)?.type_code}
+                </option>
               ))}
             </datalist>
+            {isPrimaryClassificationLocked && (
+              <p className="text-xs text-gray-400 mt-1">لا يمكن تغييره بعد حجز أول رقم.</p>
+            )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">الحروف التعريفية *</label>
-            <input
-              dir="ltr"
-              type="text"
-              value={form.type_code ?? ''}
-              onChange={e => setForm({ ...form, type_code: normalizeFabricTypeCode(e.target.value) })}
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent font-mono uppercase"
-              placeholder="SAT"
-              maxLength={8}
-              required
-              disabled={Boolean(selectedType)}
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              {selectedType
-                ? `هذا النوع يستخدم الرمز ${selectedType.type_code} لضمان تسلسل موحّد.`
-                : 'تم اقتراح الحروف تلقائياً ويمكنك تعديلها قبل الحفظ.'}
-            </p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              التصنيفات الإضافية — اختياري
+            </label>
+            {additionalFabricTypes.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {additionalFabricTypes.map(type => (
+                  <span
+                    key={type}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800"
+                  >
+                    {type}
+                    <button
+                      type="button"
+                      onClick={() => removeAdditionalFabricType(type)}
+                      className="rounded-full p-0.5 text-amber-500 transition-colors hover:bg-amber-100 hover:text-red-600"
+                      aria-label={`حذف تصنيف ${type}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={additionalFabricTypeInput}
+                onChange={event => setAdditionalFabricTypeInput(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addAdditionalFabricType()
+                  }
+                }}
+                list="additional-fabric-type-options"
+                className="min-w-0 flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                placeholder="اختر تصنيفاً أو اكتب تصنيفاً جديداً"
+              />
+              <button
+                type="button"
+                onClick={addAdditionalFabricType}
+                disabled={!additionalFabricTypeInput.trim()}
+                className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-amber-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4" />
+                إضافة
+              </button>
+            </div>
+            <datalist id="additional-fabric-type-options">
+              {classificationOptions
+                .filter(type =>
+                  type.trim().toLowerCase() !== form.fabric_type?.trim().toLowerCase() &&
+                  !additionalFabricTypes.some(selected =>
+                    selected.trim().toLowerCase() === type.trim().toLowerCase()
+                  )
+                )
+                .map(type => <option key={type} value={type} />)}
+            </datalist>
           </div>
 
           <div>
@@ -494,14 +1170,13 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
               useSupabaseStorage
               acceptVideo={false}
             />
-            <p className="text-xs text-gray-400 mt-2">تُضغط الصور وتُرفع بصيغة محسّنة تلقائياً.</p>
           </div>
 
           {/* قسم الألوان */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
               <Palette className="w-4 h-4 text-teal-600" />
-              الألوان المتاحة
+              الألوان المتاحة {!item && '*'}
               {colors.length > 0 && (
                 <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-bold">
                   {colors.length}
@@ -515,32 +1190,52 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
                 <ColorManager
                   colors={colors}
                   onChange={setColors}
+                  colorOptions={colorOptions}
+                  draft={colorDraft}
+                  onDraftChange={setColorDraft}
+                  onColorOptionSaved={onColorOptionSaved}
                   isEditing={!!item}
                   itemId={item?.id}
+                  unit={form.unit}
+                  costPerUnit={form.cost_per_unit}
+                  typeCode={normalizedTypeCode}
                 />
                 {!item && colors.length > 0 && (
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {colors.map((color, index) => (
-                      <label key={color.id} className="flex items-center gap-2 rounded-xl bg-gray-50 p-2 text-sm">
-                        <span className="flex-1 min-w-0">
-                          <span className="block truncate">كمية {color.color_name}</span>
-                          <span dir="ltr" className="block text-right font-mono text-[10px] font-bold text-teal-700">
-                            {formatFabricCodePreview(form.type_code || 'FB', nextSequence + index)}
+                      <div key={color.id} className="space-y-2 rounded-xl bg-gray-50 p-3 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="block truncate font-medium text-gray-700">{color.color_name}</span>
+                            <span className="text-xs font-medium text-teal-700">
+                              {formatFabricNumber(color.current_quantity)} {form.unit === 'meter' ? 'متر' : 'قطعة'}
+                            </span>
+                          </div>
+                          <span dir="ltr" className="shrink-0 font-mono text-[10px] font-bold text-teal-700">
+                            {initialColorSerialNumbers[color.id]?.trim()
+                              ? formatFabricCodePreview(
+                                  normalizedTypeCode,
+                                  Number(initialColorSerialNumbers[color.id])
+                                )
+                              : formatFabricCodePreview(normalizedTypeCode, nextSequence + index)}
                           </span>
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={initialColorQuantities[color.id] ?? ''}
-                          onChange={event => setInitialColorQuantities(previous => ({
-                            ...previous,
-                            [color.id]: event.target.value
-                          }))}
-                          className="w-24 rounded-lg border border-gray-200 px-2 py-1"
-                          placeholder="0"
-                        />
-                      </label>
+                        </div>
+                        <label className="block space-y-1 text-xs text-gray-500">
+                          <span>الرقم — اختياري</span>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={initialColorSerialNumbers[color.id] ?? ''}
+                            onChange={event => setInitialColorSerialNumbers(previous => ({
+                              ...previous,
+                              [color.id]: event.target.value
+                            }))}
+                            className="w-full rounded-lg border border-gray-200 px-2 py-1.5 font-mono text-sm"
+                            placeholder={String(nextSequence + index)}
+                          />
+                        </label>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -560,60 +1255,120 @@ function ItemModal({ item, suppliers, typeCodes, onClose, onSave, onSupplierCrea
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                سعر الشراء للوحدة (ر.س) *
-              </label>
-              <input
-                type="number"
-                value={form.cost_per_unit ?? ''}
-                onChange={e =>
-                  setForm({ ...form, cost_per_unit: e.target.value ? parseFloat(e.target.value) : undefined })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                required
-              />
+          <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4 space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">سعر الشراء — اختياري</p>
+              </div>
+              <div className="grid grid-cols-2 rounded-xl border border-gray-200 bg-white p-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setPurchasePriceMode('per_unit')}
+                  className={`rounded-lg px-3 py-1.5 transition-colors ${
+                    purchasePriceMode === 'per_unit'
+                      ? 'bg-teal-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  سعر {form.unit === 'meter' ? 'المتر' : 'القطعة'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPurchasePriceMode('total')}
+                  className={`rounded-lg px-3 py-1.5 transition-colors ${
+                    purchasePriceMode === 'total'
+                      ? 'bg-teal-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  السعر الكلي
+                </button>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                سعر البيع للوحدة (ر.س) *
-              </label>
-              <input
-                type="number"
-                value={form.sale_price_per_unit ?? ''}
-                onChange={e =>
-                  setForm({ ...form, sale_price_per_unit: e.target.value ? parseFloat(e.target.value) : undefined })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                required
-              />
-            </div>
+
+            {purchasePriceMode === 'per_unit' ? (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  سعر الشراء لكل {form.unit === 'meter' ? 'متر' : 'قطعة'} (ر.س)
+                </label>
+                <input
+                  type="number"
+                  value={form.cost_per_unit ?? ''}
+                  onChange={event => setForm({
+                    ...form,
+                    cost_per_unit: event.target.value === '' ? null : parseFloat(event.target.value)
+                  })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  min="0"
+                  step="0.01"
+                  placeholder="اتركه فارغاً لإضافته لاحقاً"
+                />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">السعر الكلي (ر.س)</label>
+                    <input
+                      type="number"
+                      value={form.purchase_total_price ?? ''}
+                      onChange={event => setForm({
+                        ...form,
+                        purchase_total_price: event.target.value === '' ? null : parseFloat(event.target.value)
+                      })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      min="0"
+                      step="0.01"
+                      placeholder="مثال: 1200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      عدد {form.unit === 'meter' ? 'الأمتار' : 'القطع'}
+                    </label>
+                    <input
+                      type="number"
+                      value={form.purchase_total_quantity ?? ''}
+                      onChange={event => setForm({
+                        ...form,
+                        purchase_total_quantity: event.target.value === '' ? null : parseFloat(event.target.value)
+                      })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      min="0.01"
+                      step="0.01"
+                      placeholder="مثال: 40"
+                    />
+                  </div>
+                </div>
+                {totalPurchaseUnitCost != null && (
+                  <div className="flex items-center justify-between rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-sm">
+                    <span className="text-teal-700">سعر {form.unit === 'meter' ? 'المتر' : 'القطعة'} المحسوب</span>
+                    <strong className="text-teal-900">
+                      {formatFabricCurrency(totalPurchaseUnitCost)}
+                    </strong>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {!item && colors.length === 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                الكمية الابتدائية — اختياري
-              </label>
-              <input
-                type="number"
-                value={initialQty}
-                onChange={e => setInitialQty(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                min="0"
-                step="0.01"
-                placeholder="0 — اتركه فارغاً إن لم يكن لديك رصيد حالي"
-              />
-              <p className="text-xs text-gray-400 mt-1">يُسجَّل كـ &quot;رصيد ابتدائي&quot; في حركات المخزون</p>
-            </div>
-          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              سعر البيع لكل {form.unit === 'meter' ? 'متر' : 'قطعة'} (ر.س) — اختياري
+            </label>
+            <input
+              type="number"
+              value={form.sale_price_per_unit ?? ''}
+              onChange={event => setForm({
+                ...form,
+                sale_price_per_unit: event.target.value === '' ? null : parseFloat(event.target.value)
+              })}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              min="0"
+              step="0.01"
+              placeholder="اتركه فارغاً لإضافته لاحقاً"
+            />
+          </div>
 
           {/* ─── قسم المورد الذكي ─── */}
           <div>
@@ -1127,6 +1882,13 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
                     {item.fabric_type}
                   </span>
                 )}
+                {item.fabric_types
+                  ?.filter(type => type.trim().toLowerCase() !== item.fabric_type?.trim().toLowerCase())
+                  .map(type => (
+                    <span key={type} className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                      {type}
+                    </span>
+                  ))}
                 {colors.length > 0 && (
                   <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Palette className="w-3 h-3" />
@@ -1286,6 +2048,7 @@ function FabricsInventoryContent() {
   const [items, setItems] = useState<FabricInventoryItem[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [typeCodes, setTypeCodes] = useState<FabricTypeCodeOption[]>([])
+  const [colorOptions, setColorOptions] = useState<FabricColorOption[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -1305,10 +2068,11 @@ function FabricsInventoryContent() {
   const loadAll = async () => {
     setLoading(true)
     try {
-      const [itemsData, suppliersData, typeCodeData] = await Promise.all([
+      const [itemsData, suppliersData, typeCodeData, colorOptionData] = await Promise.all([
         getInventoryItems(),
         getSuppliers('fabrics'),
-        getFabricTypeCodes().catch(() => [])
+        getFabricTypeCodes().catch(() => []),
+        getFabricColorOptions().catch(() => []),
       ])
       // تحميل الألوان لكل صنف
       const itemsWithColors = await Promise.all(
@@ -1320,6 +2084,7 @@ function FabricsInventoryContent() {
       setItems(itemsWithColors)
       setSuppliers(suppliersData)
       setTypeCodes(typeCodeData)
+      setColorOptions(colorOptionData)
     } catch {
       alert('❌ خطأ في تحميل البيانات')
     } finally {
@@ -1340,6 +2105,18 @@ function FabricsInventoryContent() {
 
   const handleSupplierCreated = (supplier: Supplier) => {
     setSuppliers(prev => [supplier, ...prev])
+  }
+
+  const handleColorOptionSaved = (option: FabricColorOption) => {
+    setColorOptions(previous => {
+      const normalizedName = option.color_name.trim().toLowerCase()
+      if (previous.some(current => current.color_name.trim().toLowerCase() === normalizedName)) {
+        return previous
+      }
+      return [...previous, option].sort((first, second) => (
+        first.color_name.localeCompare(second.color_name, 'ar')
+      ))
+    })
   }
 
   const handleMovementSaved = (movement: FabricInventoryMovement) => {
@@ -1368,9 +2145,16 @@ function FabricsInventoryContent() {
     }
   }
 
-  const fabricTypes = Array.from(
-    new Set(items.map(it => it.fabric_type).filter(Boolean) as string[])
-  )
+  const fabricTypes = Array.from(new Set([
+    ...typeCodes.map(option => option.fabric_type),
+    ...items.flatMap(item =>
+      item.fabric_types?.length
+        ? item.fabric_types
+        : item.fabric_type
+          ? [item.fabric_type]
+          : []
+    )
+  ]))
 
   const filtered = items.filter(it => {
     const q = searchQuery.toLowerCase()
@@ -1378,12 +2162,14 @@ function FabricsInventoryContent() {
       !q ||
       it.name.toLowerCase().includes(q) ||
       (it.base_fabric_code?.toLowerCase().includes(q) ?? false) ||
-      (it.fabric_type?.toLowerCase().includes(q) ?? false) ||
+      (it.fabric_types?.some(type => type.toLowerCase().includes(q)) ??
+        (it.fabric_type?.toLowerCase().includes(q) ?? false)) ||
       (it.supplier_name?.toLowerCase().includes(q) ?? false) ||
       (it.colors?.some(c =>
         c.color_name.toLowerCase().includes(q) || c.fabric_code?.toLowerCase().includes(q)
       ) ?? false)
-    const matchType = !typeFilter || it.fabric_type === typeFilter
+    const matchType = !typeFilter ||
+      (it.fabric_types?.length ? it.fabric_types.includes(typeFilter) : it.fabric_type === typeFilter)
     return matchSearch && matchType
   })
 
@@ -1520,12 +2306,15 @@ function FabricsInventoryContent() {
             item={editingItem}
             suppliers={suppliers}
             typeCodes={typeCodes}
+            classificationOptions={fabricTypes}
+            colorOptions={colorOptions}
             onClose={() => {
               setShowItemModal(false)
               setEditingItem(null)
             }}
             onSave={handleItemSaved}
             onSupplierCreated={handleSupplierCreated}
+            onColorOptionSaved={handleColorOptionSaved}
           />
         )}
         {movementTarget && (

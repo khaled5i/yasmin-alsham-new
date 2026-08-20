@@ -215,7 +215,16 @@ export default function FabricDetailPage() {
 
           <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="space-y-6">
             <div>
-              <span className="bg-[#f6f0e8] text-[#6b1726] border border-[#d8c5ae]/70 px-3 py-1 rounded-full text-sm font-medium">{fabric.category}</span>
+              <div className="flex flex-wrap gap-2">
+                {(fabric.categories?.length ? fabric.categories : [fabric.category]).map(category => (
+                  <span
+                    key={category}
+                    className="bg-[#f6f0e8] text-[#6b1726] border border-[#d8c5ae]/70 px-3 py-1 rounded-full text-sm font-medium"
+                  >
+                    {category}
+                  </span>
+                ))}
+              </div>
               {fabric.name && (
                 <h1 className="text-3xl lg:text-4xl font-bold text-[#211b19] mt-4 mb-4">{fabric.name}</h1>
               )}

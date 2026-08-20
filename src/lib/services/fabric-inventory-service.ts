@@ -12,9 +12,13 @@ export interface FabricInventoryItem {
   id: string
   name: string
   fabric_type: string | null
+  fabric_types: string[]
   unit: InventoryUnit
   current_quantity: number
   cost_per_unit: number | null
+  purchase_price_mode: 'per_unit' | 'total' | null
+  purchase_total_price: number | null
+  purchase_total_quantity: number | null
   sale_price_per_unit: number | null
   supplier_id: string | null
   supplier_name: string | null
@@ -43,6 +47,11 @@ export interface FabricInventoryColor {
   fabric_code: string | null
 }
 
+export interface FabricColorOption {
+  color_name: string
+  color_hex: string | null
+}
+
 export interface FabricInventoryMovement {
   id: string
   inventory_item_id: string
@@ -62,10 +71,14 @@ export interface FabricInventoryMovement {
 export interface CreateInventoryItemInput {
   name?: string
   fabric_type?: string
+  fabric_types?: string[]
   type_code?: string
   unit: InventoryUnit
-  cost_per_unit?: number
-  sale_price_per_unit?: number
+  cost_per_unit?: number | null
+  purchase_price_mode?: 'per_unit' | 'total' | null
+  purchase_total_price?: number | null
+  purchase_total_quantity?: number | null
+  sale_price_per_unit?: number | null
   supplier_id?: string
   supplier_name?: string
   notes?: string
@@ -135,6 +148,33 @@ export async function getMovements(itemId: string): Promise<FabricInventoryMovem
 
 // ---- ألوان المخزون ----
 
+export async function getFabricColorOptions(): Promise<FabricColorOption[]> {
+  const { data, error } = await supabase
+    .from('fabric_color_options')
+    .select('color_name, color_hex')
+    .order('color_name', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function saveFabricColorOption(input: FabricColorOption): Promise<void> {
+  const colorName = input.color_name.trim()
+  if (!colorName) return
+
+  const { error } = await supabase
+    .from('fabric_color_options')
+    .upsert([{
+      color_name: colorName,
+      color_hex: input.color_hex || null,
+    }], {
+      onConflict: 'normalized_name',
+      ignoreDuplicates: true,
+    })
+
+  if (error) throw error
+}
+
 export async function getColors(itemId: string): Promise<FabricInventoryColor[]> {
   const { data, error } = await supabase
     .from('fabric_inventory_colors')
@@ -194,9 +234,20 @@ export async function createInventoryItem(
 ): Promise<FabricInventoryItem> {
   const normalizedInput = {
     ...input,
-    cost_per_unit: input.cost_per_unit == null ? undefined : roundFabricNumber(input.cost_per_unit),
+    cost_per_unit:
+      input.cost_per_unit == null ? input.cost_per_unit : roundFabricNumber(input.cost_per_unit),
+    purchase_total_price:
+      input.purchase_total_price == null
+        ? input.purchase_total_price
+        : roundFabricNumber(input.purchase_total_price),
+    purchase_total_quantity:
+      input.purchase_total_quantity == null
+        ? input.purchase_total_quantity
+        : roundFabricNumber(input.purchase_total_quantity),
     sale_price_per_unit:
-      input.sale_price_per_unit == null ? undefined : roundFabricNumber(input.sale_price_per_unit),
+      input.sale_price_per_unit == null
+        ? input.sale_price_per_unit
+        : roundFabricNumber(input.sale_price_per_unit),
   }
   let { data, error } = await supabase
     .from('fabric_inventory')
@@ -229,9 +280,7 @@ export interface FabricTypeCodeOption {
 
 export async function getFabricTypeCodes(): Promise<FabricTypeCodeOption[]> {
   const { data, error } = await supabase
-    .from('fabric_type_codes')
-    .select('id,fabric_type,type_code,last_sequence')
-    .order('fabric_type', { ascending: true })
+    .rpc('get_fabric_type_codes_with_actual_sequence')
 
   if (error) throw error
   return data ?? []
@@ -256,6 +305,21 @@ export async function addMovement(input: CreateMovementInput): Promise<FabricInv
   return data
 }
 
+export async function setFabricSerialNumber(input: {
+  inventoryItemId: string
+  sequenceNumber: number
+  inventoryColorId?: string
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('set_fabric_serial_number', {
+    p_inventory_item_id: input.inventoryItemId,
+    p_sequence_number: input.sequenceNumber,
+    p_inventory_color_id: input.inventoryColorId ?? null,
+  })
+
+  if (error) throw error
+  return data as string
+}
+
 // ---- تعديل ----
 
 export async function updateInventoryItem(
@@ -264,9 +328,20 @@ export async function updateInventoryItem(
 ): Promise<FabricInventoryItem> {
   const normalizedInput = {
     ...input,
-    cost_per_unit: input.cost_per_unit == null ? undefined : roundFabricNumber(input.cost_per_unit),
+    cost_per_unit:
+      input.cost_per_unit == null ? input.cost_per_unit : roundFabricNumber(input.cost_per_unit),
+    purchase_total_price:
+      input.purchase_total_price == null
+        ? input.purchase_total_price
+        : roundFabricNumber(input.purchase_total_price),
+    purchase_total_quantity:
+      input.purchase_total_quantity == null
+        ? input.purchase_total_quantity
+        : roundFabricNumber(input.purchase_total_quantity),
     sale_price_per_unit:
-      input.sale_price_per_unit == null ? undefined : roundFabricNumber(input.sale_price_per_unit),
+      input.sale_price_per_unit == null
+        ? input.sale_price_per_unit
+        : roundFabricNumber(input.sale_price_per_unit),
   }
   let { data, error } = await supabase
     .from('fabric_inventory')

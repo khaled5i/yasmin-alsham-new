@@ -216,8 +216,15 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                 {/* قسم المعلومات - يمين */}
                 <div className="md:w-1/2 bg-[#fbf8f3] p-6 md:p-8 overflow-y-auto">
                   {/* الفئة */}
-                  <div className="inline-block bg-[#f6f0e8] text-[#6b1726] border border-[#d8c5ae]/70 px-3 py-1 rounded-full text-xs font-semibold mb-4">
-                    {fabric.category}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {(fabric.categories?.length ? fabric.categories : [fabric.category]).map(category => (
+                      <span
+                        key={category}
+                        className="inline-block bg-[#f6f0e8] text-[#6b1726] border border-[#d8c5ae]/70 px-3 py-1 rounded-full text-xs font-semibold"
+                      >
+                        {category}
+                      </span>
+                    ))}
                   </div>
 
                   {fabric.name && (

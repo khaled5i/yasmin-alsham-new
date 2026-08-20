@@ -18,6 +18,7 @@ export interface Fabric {
   description: string | null
   description_en?: string | null
   category: string
+  categories?: string[]
   type?: string | null
   price_per_meter?: number | null // ✅ جعل السعر اختياري
   original_price_per_meter?: number | null
@@ -66,6 +67,7 @@ export interface CreateFabricData {
   description?: string | null
   description_en?: string
   category: string
+  categories?: string[]
   type?: string
   price_per_meter?: number // ✅ جعل السعر اختياري
   original_price_per_meter?: number
@@ -101,6 +103,7 @@ export interface UpdateFabricData {
   description?: string | null
   description_en?: string
   category?: string
+  categories?: string[]
   type?: string
   price_per_meter?: number | null
   original_price_per_meter?: number
@@ -181,7 +184,7 @@ export const fabricService = {
 
       // تطبيق الفلاتر
       if (filters?.category) {
-        query = query.eq('category', filters.category)
+        query = query.contains('categories', [filters.category])
       }
 
       if (filters?.is_available !== undefined) {
@@ -545,7 +548,7 @@ export const fabricService = {
 
       const { data, error } = await supabase
         .from('fabrics')
-        .select('category')
+        .select('category,categories')
         .eq('is_active', true)
 
       if (error) {
@@ -554,7 +557,9 @@ export const fabricService = {
       }
 
       // استخراج الفئات الفريدة
-      const categories = [...new Set(data.map(item => item.category))]
+      const categories = [...new Set(data.flatMap(item =>
+        item.categories?.length ? item.categories : [item.category]
+      ))]
       console.log(`✅ تم جلب ${categories.length} فئة`)
       return { data: categories, error: null }
     } catch (error: any) {
