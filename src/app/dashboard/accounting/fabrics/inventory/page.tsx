@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
+import Image from 'next/image'
 import {
   Boxes,
   ArrowLeft,
@@ -14,11 +15,14 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   History,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   ChevronUp,
   Package,
   Palette,
   Check,
+  Save,
   UserPlus,
   Hash,
   Image as ImageIcon
@@ -1834,6 +1838,181 @@ function MovementsHistoryModal({ item, onClose }: MovementsHistoryModalProps) {
   )
 }
 
+// ─── عارض صور القماش ──────────────────────────────────────────────────────────
+interface FabricImagesModalProps {
+  item: FabricInventoryItem
+  onClose: () => void
+}
+
+function FabricImagesModal({ item, onClose }: FabricImagesModalProps) {
+  const images = useMemo(
+    () => Array.from(new Set((item.images ?? []).filter(Boolean))),
+    [item.images]
+  )
+  const [activeIndex, setActiveIndex] = useState(0)
+  const touchStartX = useRef<number | null>(null)
+
+  const showPreviousImage = useCallback(() => {
+    if (images.length < 2) return
+    setActiveIndex(current => (current - 1 + images.length) % images.length)
+  }, [images.length])
+
+  const showNextImage = useCallback(() => {
+    if (images.length < 2) return
+    setActiveIndex(current => (current + 1) % images.length)
+  }, [images.length])
+
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+      if (event.key === 'ArrowLeft') showPreviousImage()
+      if (event.key === 'ArrowRight') showNextImage()
+    }
+
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = originalOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onClose, showNextImage, showPreviousImage])
+
+  const activeImage = images[activeIndex]
+  if (!activeImage) return null
+
+  const itemLabel = item.base_fabric_code || item.colors?.[0]?.fabric_code || item.name || 'قماش'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/90 p-2 backdrop-blur-sm sm:p-6"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        transition={{ duration: 0.2 }}
+        onClick={event => event.stopPropagation()}
+        className="flex h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl sm:h-[min(88vh,780px)]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fabric-images-title"
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
+          <div className="min-w-0">
+            <h2 id="fabric-images-title" className="font-bold">صور القماش</h2>
+            <p dir="ltr" className="truncate text-left font-mono text-xs text-slate-400">
+              {itemLabel}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200">
+              {activeIndex + 1} / {images.length}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+              aria-label="إغلاق صور القماش"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div
+          className="relative min-h-0 flex-1 bg-black"
+          onTouchStart={event => {
+            touchStartX.current = event.targetTouches[0]?.clientX ?? null
+          }}
+          onTouchEnd={event => {
+            if (touchStartX.current == null) return
+            const touchEndX = event.changedTouches[0]?.clientX
+            if (touchEndX == null) return
+            const distance = touchStartX.current - touchEndX
+            if (Math.abs(distance) >= 50) {
+              if (distance > 0) showNextImage()
+              else showPreviousImage()
+            }
+            touchStartX.current = null
+          }}
+        >
+          <motion.div
+            key={activeImage}
+            initial={{ opacity: 0, scale: 0.985 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.18 }}
+            className="absolute inset-0"
+          >
+            <Image
+              src={activeImage}
+              alt={`${item.fabric_type || 'قماش'} - صورة ${activeIndex + 1}`}
+              fill
+              priority
+              sizes="(max-width: 640px) 100vw, 1024px"
+              className="object-contain p-2 sm:p-6"
+            />
+          </motion.div>
+
+          {images.length > 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={showNextImage}
+                className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white shadow-lg transition-colors hover:bg-black/75 sm:left-5"
+                aria-label="الصورة التالية"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              <button
+                type="button"
+                onClick={showPreviousImage}
+                className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white shadow-lg transition-colors hover:bg-black/75 sm:right-5"
+                aria-label="الصورة السابقة"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </>
+          ) : null}
+        </div>
+
+        {images.length > 1 ? (
+          <div className="border-t border-white/10 bg-slate-900/95 p-2.5">
+            <div className="flex gap-2 overflow-x-auto" dir="rtl">
+              {images.map((image, index) => (
+                <button
+                  key={image}
+                  type="button"
+                  onClick={() => setActiveIndex(index)}
+                  className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 transition-all ${
+                    activeIndex === index
+                      ? 'border-teal-400 opacity-100'
+                      : 'border-transparent opacity-55 hover:opacity-100'
+                  }`}
+                  aria-label={`عرض الصورة ${index + 1}`}
+                  aria-current={activeIndex === index ? 'true' : undefined}
+                >
+                  <Image
+                    src={image}
+                    alt=""
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </motion.div>
+    </motion.div>
+  )
+}
+
 // ─── بطاقة الصنف ─────────────────────────────────────────────────────────────
 interface InventoryCardProps {
   item: FabricInventoryItem
@@ -1842,13 +2021,62 @@ interface InventoryCardProps {
   onAddIn: () => void
   onAddOut: () => void
   onHistory: () => void
+  onOpenImages: () => void
+  onSavePrices: (purchasePricePerUnit: number, salePricePerUnit: number) => Promise<void>
 }
 
-function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }: InventoryCardProps) {
+function InventoryCard({
+  item,
+  onEdit,
+  onDelete,
+  onAddIn,
+  onAddOut,
+  onHistory,
+  onOpenImages,
+  onSavePrices,
+}: InventoryCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const [purchasePrice, setPurchasePrice] = useState(item.cost_per_unit?.toString() ?? '')
+  const [salePrice, setSalePrice] = useState(item.sale_price_per_unit?.toString() ?? '')
+  const [savingPrices, setSavingPrices] = useState(false)
   const unitLabel = item.unit === 'meter' ? 'متر' : 'قطعة'
+  const priceUnitLabel = item.unit === 'meter' ? 'للمتر' : 'للقطعة'
   const totalValue = item.cost_per_unit != null ? item.current_quantity * item.cost_per_unit : null
   const colors = item.colors ?? []
+  const hasMissingPrices = item.cost_per_unit == null || item.sale_price_per_unit == null
+
+  const handleSavePrices = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!purchasePrice.trim() || !salePrice.trim()) {
+      alert('يرجى إدخال سعر الشراء وسعر البيع')
+      return
+    }
+
+    const purchasePricePerUnit = Number(purchasePrice)
+    const salePricePerUnit = Number(salePrice)
+    if (
+      !Number.isFinite(purchasePricePerUnit) ||
+      !Number.isFinite(salePricePerUnit) ||
+      purchasePricePerUnit < 0 ||
+      salePricePerUnit < 0
+    ) {
+      alert('يرجى إدخال أسعار صحيحة تساوي صفراً أو أكثر')
+      return
+    }
+
+    setSavingPrices(true)
+    try {
+      await onSavePrices(
+        roundFabricNumber(purchasePricePerUnit),
+        roundFabricNumber(salePricePerUnit)
+      )
+    } catch {
+      alert('❌ تعذر حفظ أسعار القماش')
+    } finally {
+      setSavingPrices(false)
+    }
+  }
 
   return (
     <motion.div
@@ -1860,13 +2088,25 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {item.images?.[0] ? (
-              <img
-                src={item.thumbnail_image || item.images[0]}
-                alt={item.fabric_type || 'قماش'}
-                loading="lazy"
-                decoding="async"
-                className="w-12 h-12 rounded-xl object-cover shrink-0 bg-gray-100"
-              />
+              <button
+                type="button"
+                onClick={onOpenImages}
+                className="group relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100 ring-offset-2 transition hover:ring-2 hover:ring-teal-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                aria-label={`فتح صور ${item.fabric_type || 'القماش'}`}
+              >
+                <Image
+                  src={item.thumbnail_image || item.images[0]}
+                  alt={item.fabric_type || 'قماش'}
+                  fill
+                  sizes="48px"
+                  className="object-cover transition-transform duration-200 group-hover:scale-105"
+                />
+                {item.images.length > 1 ? (
+                  <span className="absolute bottom-0.5 left-0.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                    {item.images.length}
+                  </span>
+                ) : null}
+              </button>
             ) : (
               <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shrink-0">
                 <Boxes className="w-6 h-6 text-white" />
@@ -1955,6 +2195,78 @@ function InventoryCard({ item, onEdit, onDelete, onAddIn, onAddOut, onHistory }:
             السجل
           </button>
         </div>
+
+        {hasMissingPrices ? (
+          <form
+            onSubmit={handleSavePrices}
+            className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3"
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+              <div>
+                <label
+                  htmlFor={`purchase-price-${item.id}`}
+                  className="block text-xs font-medium text-amber-900"
+                >
+                  سعر الشراء {priceUnitLabel}
+                </label>
+                <div className="relative mt-1">
+                  <input
+                    id={`purchase-price-${item.id}`}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={purchasePrice}
+                    onChange={event => setPurchasePrice(event.target.value)}
+                    disabled={savingPrices}
+                    placeholder="0.00"
+                    dir="ltr"
+                    className="w-full rounded-lg border border-amber-200 bg-white py-2 pl-12 pr-3 text-left text-sm text-gray-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                    ر.س
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor={`sale-price-${item.id}`}
+                  className="block text-xs font-medium text-amber-900"
+                >
+                  سعر البيع {priceUnitLabel}
+                </label>
+                <div className="relative mt-1">
+                  <input
+                    id={`sale-price-${item.id}`}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={salePrice}
+                    onChange={event => setSalePrice(event.target.value)}
+                    disabled={savingPrices}
+                    placeholder="0.00"
+                    dir="ltr"
+                    className="w-full rounded-lg border border-amber-200 bg-white py-2 pl-12 pr-3 text-left text-sm text-gray-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                    ر.س
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingPrices}
+                className="flex h-[42px] items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-4 text-sm font-bold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Save className="h-4 w-4" />
+                {savingPrices ? 'جاري الحفظ...' : 'حفظ'}
+              </button>
+            </div>
+          </form>
+        ) : null}
       </div>
 
       {/* التفاصيل الموسعة */}
@@ -2060,6 +2372,7 @@ function FabricsInventoryContent() {
     type: MovementType
   } | null>(null)
   const [historyTarget, setHistoryTarget] = useState<FabricInventoryItem | null>(null)
+  const [galleryTarget, setGalleryTarget] = useState<FabricInventoryItem | null>(null)
 
   useEffect(() => {
     loadAll()
@@ -2133,6 +2446,30 @@ function FabricsInventoryContent() {
       })
     )
     setMovementTarget(null)
+  }
+
+  const handlePricesSaved = async (
+    itemId: string,
+    purchasePricePerUnit: number,
+    salePricePerUnit: number
+  ) => {
+    const saved = await updateInventoryItem(itemId, {
+      cost_per_unit: purchasePricePerUnit,
+      purchase_price_mode: 'per_unit',
+      purchase_total_price: null,
+      purchase_total_quantity: null,
+      sale_price_per_unit: salePricePerUnit,
+    })
+
+    if (saved.cost_per_unit == null || saved.sale_price_per_unit == null) {
+      throw new Error('FABRIC_PRICES_NOT_SAVED')
+    }
+
+    setItems(previous => previous.map(current => (
+      current.id === itemId
+        ? { ...saved, colors: current.colors }
+        : current
+    )))
   }
 
   const handleDelete = async (id: string) => {
@@ -2293,6 +2630,10 @@ function FabricsInventoryContent() {
                 onAddIn={() => setMovementTarget({ item, type: 'in' })}
                 onAddOut={() => setMovementTarget({ item, type: 'out' })}
                 onHistory={() => setHistoryTarget(item)}
+                onOpenImages={() => setGalleryTarget(item)}
+                onSavePrices={(purchasePricePerUnit, salePricePerUnit) => (
+                  handlePricesSaved(item.id, purchasePricePerUnit, salePricePerUnit)
+                )}
               />
             ))
           )}
@@ -2329,6 +2670,13 @@ function FabricsInventoryContent() {
           <MovementsHistoryModal
             item={historyTarget}
             onClose={() => setHistoryTarget(null)}
+          />
+        )}
+        {galleryTarget && (
+          <FabricImagesModal
+            key={galleryTarget.id}
+            item={galleryTarget}
+            onClose={() => setGalleryTarget(null)}
           />
         )}
       </AnimatePresence>

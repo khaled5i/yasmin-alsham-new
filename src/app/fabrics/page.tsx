@@ -299,7 +299,7 @@ export default function FabricsPage() {
                   const fallbackImage = fabric.thumbnail_image || originalImage
                   const finalPrice = getFinalPrice(fabric)
                   const priceLabel = finalPrice != null && finalPrice > 0
-                    ? `السعر : ${formatFabricNumber(finalPrice)} / متر`
+                    ? `السعر : ${formatFabricNumber(finalPrice)} ريال / متر`
                     : 'السعر عند الطلب'
                   return (
                     <motion.div
