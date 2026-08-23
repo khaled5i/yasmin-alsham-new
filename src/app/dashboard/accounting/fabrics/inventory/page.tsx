@@ -84,6 +84,37 @@ const PRESET_COLORS = [
 ]
 
 const LAST_PRIMARY_FABRIC_TYPE_STORAGE_KEY = 'fabric-inventory:last-primary-type:v1'
+type InventorySortKey = 'serial' | 'sale-price'
+type SortDirection = 'asc' | 'desc'
+type PricingFilter = 'all' | 'unpriced'
+
+const FABRIC_SERIAL_COLLATOR = new Intl.Collator('ar', {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+function getInventoryItemSerialCode(item: FabricInventoryItem): string | null {
+  return item.base_fabric_code || item.colors?.find(color => color.fabric_code)?.fabric_code || null
+}
+
+function compareInventoryItemsBySerial(
+  first: FabricInventoryItem,
+  second: FabricInventoryItem
+): number {
+  const firstCode = getInventoryItemSerialCode(first)
+  const secondCode = getInventoryItemSerialCode(second)
+
+  if (firstCode && secondCode) {
+    const codeComparison = FABRIC_SERIAL_COLLATOR.compare(firstCode, secondCode)
+    if (codeComparison !== 0) return codeComparison
+  } else if (firstCode) {
+    return -1
+  } else if (secondCode) {
+    return 1
+  }
+
+  return first.name.localeCompare(second.name, 'ar')
+}
 
 function getSequenceFromFabricCode(fabricCode?: string | null): string {
   const match = fabricCode?.match(/-(\d+)$/)
@@ -2043,6 +2074,7 @@ function InventoryCard({
   const priceUnitLabel = item.unit === 'meter' ? 'للمتر' : 'للقطعة'
   const totalValue = item.cost_per_unit != null ? item.current_quantity * item.cost_per_unit : null
   const colors = item.colors ?? []
+  const availableColors = colors.filter(color => color.current_quantity > 0)
   const hasMissingPrices = item.cost_per_unit == null || item.sale_price_per_unit == null
 
   const handleSavePrices = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -2114,11 +2146,11 @@ function InventoryCard({
             )}
             <div className="min-w-0">
               <p dir="ltr" className="font-mono font-bold text-gray-900 truncate text-right">
-                {item.base_fabric_code || item.colors?.[0]?.fabric_code || item.name}
+                {getInventoryItemSerialCode(item) || item.name}
               </p>
-              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {item.fabric_type && (
-                  <span className="text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
+                  <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
                     {item.fabric_type}
                   </span>
                 )}
@@ -2130,9 +2162,26 @@ function InventoryCard({
                     </span>
                   ))}
                 {colors.length > 0 && (
-                  <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
                     <Palette className="w-3 h-3" />
                     {colors.length} {colors.length === 1 ? 'لون' : 'ألوان'}
+                  </span>
+                )}
+                {colors.length > 0 && (
+                  <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600">
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
+                      style={{ backgroundColor: availableColors[0]?.color_hex ?? '#d1d5db' }}
+                    />
+                    <span className="shrink-0 text-gray-400">
+                      {availableColors.length === 1 ? 'اللون المتوفر:' : 'الألوان المتوفرة:'}
+                    </span>
+                    <span className="min-w-0 truncate font-medium text-gray-700">
+                      {availableColors.length > 0
+                        ? availableColors.map(color => color.color_name).join('، ')
+                        : 'لا يوجد'}
+                    </span>
                   </span>
                 )}
                 {(!item.fabric_type || !item.images?.length) && (
@@ -2141,40 +2190,14 @@ function InventoryCard({
                   </span>
                 )}
               </div>
-              {/* شريط ألوان مصغر */}
-              {colors.length > 0 && (
-                <div className="flex gap-1 mt-1.5">
-                  {colors.map(c => (
-                    <div
-                      key={c.id}
-                      title={`${c.color_name}: ${formatFabricNumber(c.current_quantity)} ${unitLabel}`}
-                      className="w-4 h-4 rounded-full border border-gray-200 shrink-0 cursor-default"
-                      style={{ backgroundColor: c.color_hex ?? '#e5e7eb' }}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 mr-2">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">{formatFabricNumber(item.current_quantity)}</p>
-              <p className="text-xs text-gray-400">{unitLabel}</p>
-            </div>
-            <div aria-hidden="true" className="h-9 w-px bg-gray-200" />
-            <div className="min-w-[72px] text-center">
-              <p dir="ltr" className="whitespace-nowrap text-base font-bold text-teal-700">
-                {item.sale_price_per_unit != null
-                  ? `${formatFabricNumber(item.sale_price_per_unit)} ر.س`
-                  : '—'}
-              </p>
-              <p className="text-[11px] text-gray-400">سعر البيع / {unitLabel}</p>
-            </div>
+          <div className="shrink-0">
             <button
               type="button"
               onClick={() => setExpanded(v => !v)}
-              className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              className="rounded-xl border border-gray-200 bg-gray-50 p-2 text-gray-500 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
               aria-label={expanded ? 'إخفاء تفاصيل القماش' : 'عرض تفاصيل القماش'}
               aria-expanded={expanded}
             >
@@ -2183,29 +2206,40 @@ function InventoryCard({
           </div>
         </div>
 
-        {/* أزرار الحركة */}
-        <div className="flex gap-2 mt-3">
-          <button
-            onClick={onAddIn}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-green-50 text-green-700 rounded-xl hover:bg-green-100 transition-colors text-sm font-medium"
-          >
-            <ArrowDownCircle className="w-4 h-4" />
-            إدخال
-          </button>
-          <button
-            onClick={onAddOut}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors text-sm font-medium"
-          >
-            <ArrowUpCircle className="w-4 h-4" />
-            إخراج
-          </button>
-          <button
-            onClick={onHistory}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 transition-colors text-sm font-medium"
-          >
-            <History className="w-4 h-4" />
-            السجل
-          </button>
+        <div className="mt-4 grid grid-cols-3 divide-x divide-x-reverse divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-gray-50/80">
+          <div className="min-w-0 px-2 py-2.5 text-center sm:px-4">
+            <p className="text-[11px] font-medium text-gray-400">سعر الشراء</p>
+            <p className="mt-1 truncate text-sm font-bold text-gray-800">
+              {item.cost_per_unit != null ? (
+                <>
+                  <span dir="ltr">{formatFabricNumber(item.cost_per_unit)}</span>
+                  <span className="text-[10px] font-medium text-gray-500"> ر.س / {unitLabel}</span>
+                </>
+              ) : (
+                <span className="text-xs font-medium text-amber-600">غير محدد</span>
+              )}
+            </p>
+          </div>
+          <div className="min-w-0 px-2 py-2.5 text-center sm:px-4">
+            <p className="text-[11px] font-medium text-gray-400">سعر البيع</p>
+            <p className="mt-1 truncate text-sm font-bold text-teal-700">
+              {item.sale_price_per_unit != null ? (
+                <>
+                  <span dir="ltr">{formatFabricNumber(item.sale_price_per_unit)}</span>
+                  <span className="text-[10px] font-medium text-teal-600/70"> ر.س / {unitLabel}</span>
+                </>
+              ) : (
+                <span className="text-xs font-medium text-amber-600">غير محدد</span>
+              )}
+            </p>
+          </div>
+          <div className="min-w-0 px-2 py-2.5 text-center sm:px-4">
+            <p className="text-[11px] font-medium text-gray-400">الكمية المتوفرة</p>
+            <p className="mt-1 truncate text-sm font-bold text-gray-900">
+              <span dir="ltr">{formatFabricNumber(item.current_quantity)}</span>
+              <span className="text-[10px] font-medium text-gray-500"> {unitLabel}</span>
+            </p>
+          </div>
         </div>
 
         {hasMissingPrices ? (
@@ -2317,12 +2351,6 @@ function InventoryCard({
               )}
 
               <div className="grid grid-cols-2 gap-3 text-sm">
-                {item.cost_per_unit != null && (
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-gray-500 text-xs mb-1">سعر الشراء</p>
-                    <p className="font-bold text-gray-800">{formatFabricNumber(item.cost_per_unit)} ر.س/{unitLabel}</p>
-                  </div>
-                )}
                 {totalValue != null && (
                   <div className="bg-teal-50 rounded-xl p-3">
                     <p className="text-teal-600 text-xs mb-1">إجمالي القيمة</p>
@@ -2341,6 +2369,30 @@ function InventoryCard({
                     <p className="text-gray-800">{item.notes}</p>
                   </div>
                 )}
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3">
+                <button
+                  onClick={onAddIn}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-green-50 px-2 py-2 text-sm font-medium text-green-700 transition-colors hover:bg-green-100"
+                >
+                  <ArrowDownCircle className="h-4 w-4" />
+                  إدخال
+                </button>
+                <button
+                  onClick={onAddOut}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-red-50 px-2 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100"
+                >
+                  <ArrowUpCircle className="h-4 w-4" />
+                  إخراج
+                </button>
+                <button
+                  onClick={onHistory}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-gray-100 px-2 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200"
+                >
+                  <History className="h-4 w-4" />
+                  السجل
+                </button>
               </div>
 
               <div className="flex gap-2 mt-3">
@@ -2376,6 +2428,9 @@ function FabricsInventoryContent() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [pricingFilter, setPricingFilter] = useState<PricingFilter>('all')
+  const [sortKey, setSortKey] = useState<InventorySortKey>('serial')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
   const [showItemModal, setShowItemModal] = useState(false)
   const [editingItem, setEditingItem] = useState<FabricInventoryItem | null>(null)
@@ -2505,22 +2560,67 @@ function FabricsInventoryContent() {
     )
   ]))
 
-  const filtered = items.filter(it => {
-    const q = searchQuery.toLowerCase()
-    const matchSearch =
-      !q ||
-      it.name.toLowerCase().includes(q) ||
-      (it.base_fabric_code?.toLowerCase().includes(q) ?? false) ||
-      (it.fabric_types?.some(type => type.toLowerCase().includes(q)) ??
-        (it.fabric_type?.toLowerCase().includes(q) ?? false)) ||
-      (it.supplier_name?.toLowerCase().includes(q) ?? false) ||
-      (it.colors?.some(c =>
-        c.color_name.toLowerCase().includes(q) || c.fabric_code?.toLowerCase().includes(q)
-      ) ?? false)
-    const matchType = !typeFilter ||
-      (it.fabric_types?.length ? it.fabric_types.includes(typeFilter) : it.fabric_type === typeFilter)
-    return matchSearch && matchType
-  })
+  const filtered = useMemo(() => {
+    const visibleItems = items.filter(it => {
+      const q = searchQuery.toLowerCase()
+      const matchSearch =
+        !q ||
+        it.name.toLowerCase().includes(q) ||
+        (it.base_fabric_code?.toLowerCase().includes(q) ?? false) ||
+        (it.fabric_types?.some(type => type.toLowerCase().includes(q)) ??
+          (it.fabric_type?.toLowerCase().includes(q) ?? false)) ||
+        (it.supplier_name?.toLowerCase().includes(q) ?? false) ||
+        (it.colors?.some(c =>
+          c.color_name.toLowerCase().includes(q) || c.fabric_code?.toLowerCase().includes(q)
+        ) ?? false)
+      const matchType = !typeFilter ||
+        (it.fabric_types?.length ? it.fabric_types.includes(typeFilter) : it.fabric_type === typeFilter)
+      const matchPricing = pricingFilter === 'all' ||
+        it.cost_per_unit == null ||
+        it.sale_price_per_unit == null
+
+      return matchSearch && matchType && matchPricing
+    })
+
+    const directionMultiplier = sortDirection === 'asc' ? 1 : -1
+    return visibleItems.sort((first, second) => {
+      if (sortKey === 'serial') {
+        return compareInventoryItemsBySerial(first, second) * directionMultiplier
+      }
+
+      const firstPrice = first.sale_price_per_unit
+      const secondPrice = second.sale_price_per_unit
+      if (firstPrice == null && secondPrice == null) {
+        return compareInventoryItemsBySerial(first, second)
+      }
+      if (firstPrice == null) return 1
+      if (secondPrice == null) return -1
+
+      const priceDifference = (firstPrice - secondPrice) * directionMultiplier
+      return priceDifference || compareInventoryItemsBySerial(first, second)
+    })
+  }, [items, pricingFilter, searchQuery, sortDirection, sortKey, typeFilter])
+
+  const handleSortChange = (nextSortKey: InventorySortKey) => {
+    if (nextSortKey === sortKey) {
+      setSortDirection(current => current === 'asc' ? 'desc' : 'asc')
+      return
+    }
+
+    setSortKey(nextSortKey)
+    setSortDirection('asc')
+  }
+
+  const sortDirectionLabel = sortDirection === 'asc'
+    ? 'من الأقل إلى الأعلى'
+    : 'من الأعلى إلى الأقل'
+  const hasActiveFilters = searchQuery.trim() !== '' || typeFilter !== '' || pricingFilter !== 'all'
+
+  const handleClearFilters = () => {
+    setSearchQuery('')
+    setTypeFilter('')
+    setPricingFilter('all')
+  }
 
   const totalItems = filtered.length
   const totalValue = filtered.reduce((sum, it) => {
@@ -2533,19 +2633,33 @@ function FabricsInventoryContent() {
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="flex items-center gap-4 mb-6">
-            <Link href="/dashboard/accounting/fabrics" className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-              <ArrowLeft className="w-6 h-6 rotate-180" />
-            </Link>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl shadow-lg">
-                <Boxes className="w-8 h-8 text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">المخزون</h1>
-                <p className="text-gray-500">إدارة مخزون الأقمشة والألوان</p>
+              <Link href="/dashboard/accounting/fabrics" className="rounded-xl p-2 transition-colors hover:bg-gray-100">
+                <ArrowLeft className="h-6 w-6 rotate-180" />
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 p-3 shadow-lg">
+                  <Boxes className="h-8 w-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">المخزون</h1>
+                  <p className="text-gray-500">إدارة مخزون الأقمشة والألوان</p>
+                </div>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditingItem(null)
+                setShowItemModal(true)
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 py-3 font-bold text-white shadow-sm transition-colors hover:bg-teal-700 sm:w-auto"
+            >
+              <Plus className="h-5 w-5" />
+              <span>إضافة صنف</span>
+            </button>
           </div>
         </motion.div>
 
@@ -2574,43 +2688,127 @@ function FabricsInventoryContent() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6"
+          className="mb-6 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5"
         >
-          <div className="flex flex-col md:flex-row gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-bold text-gray-900">البحث والفلاتر</h2>
+              <p className="mt-0.5 text-xs text-gray-400" aria-live="polite">
+                {totalItems} {totalItems === 1 ? 'بطاقة ظاهرة' : 'بطاقات ظاهرة'}
+              </p>
+            </div>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+              >
+                <X className="h-3.5 w-3.5" />
+                مسح الفلاتر
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-4">
+            <label htmlFor="inventory-search" className="block text-xs font-medium text-gray-600">
+              البحث
+            </label>
+            <div className="relative mt-1.5">
+              <Search className="absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
+                id="inventory-search"
                 type="text"
                 placeholder="بحث برقم القماش أو النوع أو اللون أو المورد..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                className="h-12 w-full rounded-xl border border-gray-200 bg-gray-50/70 pr-11 pl-11 text-sm text-gray-900 outline-none transition focus:border-teal-400 focus:bg-white focus:ring-2 focus:ring-teal-500/15"
               />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="مسح البحث"
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
             </div>
+          </div>
 
-            {fabricTypes.length > 0 && (
+          <div className="mt-4 grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1.6fr)] lg:gap-4">
+            <label className="block">
+              <span className="text-xs font-medium text-gray-600">نوع القماش</span>
               <select
                 value={typeFilter}
                 onChange={e => setTypeFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 bg-white min-w-[160px]"
+                className="mt-1.5 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-500/15"
               >
                 <option value="">كل الأنواع</option>
                 {fabricTypes.map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
-            )}
+            </label>
 
-            <button
-              onClick={() => {
-                setEditingItem(null)
-                setShowItemModal(true)
-              }}
-              className="px-4 py-2 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors flex items-center gap-2 font-medium"
-            >
-              <Plus className="w-5 h-5" />
-              <span>إضافة صنف</span>
-            </button>
+            <label className="block">
+              <span className="text-xs font-medium text-gray-600">حالة التسعير</span>
+              <select
+                value={pricingFilter}
+                onChange={e => setPricingFilter(e.target.value as PricingFilter)}
+                className="mt-1.5 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-500/15"
+              >
+                <option value="all">كل حالات التسعير</option>
+                <option value="unpriced">البطاقات غير المسعّرة</option>
+              </select>
+            </label>
+
+            <fieldset className="min-w-0 sm:col-span-2 lg:col-span-1">
+              <legend className="text-xs font-medium text-gray-600">ترتيب البطاقات</legend>
+              <div className="mt-1.5 grid h-11 grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1 ring-1 ring-inset ring-gray-200">
+                <button
+                  type="button"
+                  onClick={() => handleSortChange('serial')}
+                  aria-pressed={sortKey === 'serial'}
+                  className={`flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-all sm:text-sm ${
+                    sortKey === 'serial'
+                      ? 'bg-white text-teal-700 shadow-sm'
+                      : 'text-gray-500 hover:bg-white/60 hover:text-gray-700'
+                  }`}
+                >
+                  <Hash className="h-4 w-4 shrink-0" />
+                  <span className="truncate">الرقم التسلسلي</span>
+                  {sortKey === 'serial' ? (
+                    sortDirection === 'asc'
+                      ? <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                      : <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSortChange('sale-price')}
+                  aria-pressed={sortKey === 'sale-price'}
+                  title="الترتيب حسب سعر البيع"
+                  className={`flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-all sm:text-sm ${
+                    sortKey === 'sale-price'
+                      ? 'bg-white text-teal-700 shadow-sm'
+                      : 'text-gray-500 hover:bg-white/60 hover:text-gray-700'
+                  }`}
+                >
+                  <span className="shrink-0 text-[10px] font-bold">ر.س</span>
+                  <span>السعر</span>
+                  {sortKey === 'sale-price' ? (
+                    sortDirection === 'asc'
+                      ? <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                      : <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  ) : null}
+                </button>
+              </div>
+              <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-400">
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+                {sortKey === 'serial' ? 'الرقم التسلسلي' : 'سعر البيع'} · {sortDirectionLabel}
+              </p>
+            </fieldset>
           </div>
         </motion.div>
 
@@ -2626,8 +2824,16 @@ function FabricsInventoryContent() {
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
               <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg font-medium">لا توجد أصناف في المخزون</p>
-              <p className="text-gray-400 text-sm mt-1">أضف أول صنف بالضغط على زر &quot;إضافة صنف&quot;</p>
+              <p className="text-gray-500 text-lg font-medium">
+                {items.length === 0 ? 'لا توجد أصناف في المخزون' : 'لا توجد بطاقات تطابق الفلاتر'}
+              </p>
+              <p className="text-gray-400 text-sm mt-1">
+                {items.length === 0
+                  ? 'أضف أول صنف بالضغط على زر "إضافة صنف"'
+                  : pricingFilter === 'unpriced'
+                    ? 'جميع البطاقات المطابقة مكتملة التسعير'
+                    : 'جرّب تغيير البحث أو الفلاتر الحالية'}
+              </p>
             </div>
           ) : (
             filtered.map(item => (

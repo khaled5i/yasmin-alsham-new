@@ -64,6 +64,8 @@ export interface FabricInventoryMovement {
   date: string
   created_at: string
   created_by: string | null
+  sale_income_id?: string | null
+  sale_line_index?: number | null
   // اسم اللون للعرض
   color_name?: string | null
 }
@@ -156,6 +158,16 @@ export async function getFabricColorOptions(): Promise<FabricColorOption[]> {
 
   if (error) throw error
   return data ?? []
+}
+
+export async function getInventoryItemsWithColors(): Promise<FabricInventoryItem[]> {
+  const { data, error } = await supabase
+    .from('fabric_inventory')
+    .select('*, colors:fabric_inventory_colors(*)')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []) as FabricInventoryItem[]
 }
 
 export async function saveFabricColorOption(input: FabricColorOption): Promise<void> {

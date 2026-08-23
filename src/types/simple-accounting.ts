@@ -67,6 +67,8 @@ export type PaymentMethod = 'cash' | 'network'
 // بند قماش واحد داخل مبيعة أقمشة (تدعم عدّة أقمشة في مبيعة واحدة)
 export interface FabricSaleItem {
   inventory_id?: string | null   // معرّف صنف المخزون المطابق (للمرجع)
+  inventory_color_id?: string | null // معرّف لون المخزون عند ارتباط رقم القماش بلون
+  fabric_code?: string | null    // رقم القماش الظاهر للمستخدم مثل SS-0087
   name: string                   // اسم القماش (يُطابَق به منتج الأستاذ)
   quantity_meters?: number | null // الكمية بالمتر لهذا القماش
 }

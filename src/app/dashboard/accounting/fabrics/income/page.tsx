@@ -43,7 +43,10 @@ import ReportPeriodPicker, {
 } from '@/components/ReportPeriodPicker'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
 import type { Income, CreateIncomeInput, FabricSaleItem } from '@/types/simple-accounting'
-import { getInventoryItems, type FabricInventoryItem } from '@/lib/services/fabric-inventory-service'
+import {
+  getInventoryItemsWithColors,
+  type FabricInventoryItem,
+} from '@/lib/services/fabric-inventory-service'
 import { getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
 import { queueFabricReceiptPrint } from '@/lib/services/print-job-service'
 import {
@@ -69,6 +72,56 @@ const ACCENT_CLASSES: Record<StatAccent, { box: string; icon: string; total: str
   green: { box: 'bg-green-50 border-green-100', icon: 'text-green-600', total: 'text-green-700' },
   teal: { box: 'bg-teal-50 border-teal-100', icon: 'text-teal-600', total: 'text-teal-700' },
   purple: { box: 'bg-purple-50 border-purple-100', icon: 'text-purple-600', total: 'text-purple-700' }
+}
+
+type FabricLine = {
+  inventory_id: string
+  inventory_color_id: string
+  search_query: string
+  quantity_meters: string
+}
+
+type FabricInventorySearchOption = {
+  key: string
+  inventory_id: string
+  inventory_color_id: string | null
+  code: string
+  name: string
+  fabric_type: string | null
+  color_name: string | null
+  current_quantity: number
+  unit: FabricInventoryItem['unit']
+}
+
+const createEmptyFabricLine = (): FabricLine => ({
+  inventory_id: '',
+  inventory_color_id: '',
+  search_query: '',
+  quantity_meters: '',
+})
+
+const getFabricOptionKey = (inventoryId: string, inventoryColorId?: string | null) =>
+  `${inventoryId}:${inventoryColorId || ''}`
+
+const normalizeFabricSearch = (value: string) =>
+  value
+    .trim()
+    .toLocaleLowerCase('ar')
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776))
+    .replace(/[^a-z0-9\u0600-\u06ff]/g, '')
+
+const getFabricSaleErrorMessage = (error: unknown) => {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String(error.message)
+        : ''
+  const separatorIndex = message.indexOf('|')
+  return separatorIndex >= 0
+    ? message.slice(separatorIndex + 1)
+    : 'حدث خطأ أثناء حفظ المبيعة'
 }
 
 const toLocalDateKey = (date: Date) =>
@@ -188,9 +241,8 @@ function FabricsIncomeContent() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showStats, setShowStats] = useState(false)
   // حقول النموذج (مشتركة بين الإضافة والتعديل)
-  // أسطر الأقمشة: كل سطر قماش من المخزون + كميته بالمتر (تدعم عدّة أقمشة في مبيعة واحدة)
-  type FabricLine = { inventory_id: string; quantity_meters: string }
-  const [fabricLines, setFabricLines] = useState<FabricLine[]>([{ inventory_id: '', quantity_meters: '' }])
+  // أسطر الأقمشة: بحث برقم القماش + الكمية لكل رقم داخل المبيعة.
+  const [fabricLines, setFabricLines] = useState<FabricLine[]>([createEmptyFabricLine()])
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
@@ -207,6 +259,72 @@ function FabricsIncomeContent() {
   // ── الربط مع الأستاذ للمحاسبة ──────────────────────────────
   const [sendingId, setSendingId] = useState<string | null>(null)
   const [sentMap, setSentMap] = useState<Record<string, { code?: string }>>({})
+
+  const inventorySearchOptions = useMemo<FabricInventorySearchOption[]>(() => {
+    const options: FabricInventorySearchOption[] = []
+
+    for (const item of inventoryItems) {
+      const colors = item.colors ?? []
+      if (colors.length > 0) {
+        for (const color of colors) {
+          options.push({
+            key: getFabricOptionKey(item.id, color.id),
+            inventory_id: item.id,
+            inventory_color_id: color.id,
+            code: color.fabric_code || item.base_fabric_code || item.name,
+            name: item.name,
+            fabric_type: item.fabric_type,
+            color_name: color.color_name,
+            current_quantity: Number(color.current_quantity) || 0,
+            unit: item.unit,
+          })
+        }
+        continue
+      }
+
+      options.push({
+        key: getFabricOptionKey(item.id),
+        inventory_id: item.id,
+        inventory_color_id: null,
+        code: item.base_fabric_code || item.name,
+        name: item.name,
+        fabric_type: item.fabric_type,
+        color_name: null,
+        current_quantity: Number(item.current_quantity) || 0,
+        unit: item.unit,
+      })
+    }
+
+    return options.sort((first, second) =>
+      first.code.localeCompare(second.code, 'ar', { numeric: true })
+    )
+  }, [inventoryItems])
+
+  const inventoryOptionByKey = useMemo(
+    () => new Map(inventorySearchOptions.map((option) => [option.key, option])),
+    [inventorySearchOptions]
+  )
+
+  const getSelectedFabricOption = (line: FabricLine) =>
+    line.inventory_id
+      ? inventoryOptionByKey.get(
+          getFabricOptionKey(line.inventory_id, line.inventory_color_id)
+        )
+      : undefined
+
+  const getFabricSearchResults = (query: string) => {
+    const normalizedQuery = normalizeFabricSearch(query)
+    if (!normalizedQuery) return []
+
+    return inventorySearchOptions
+      .filter((option) => {
+        const searchable = normalizeFabricSearch(
+          `${option.code} ${option.name} ${option.fabric_type || ''} ${option.color_name || ''}`
+        )
+        return searchable.includes(normalizedQuery)
+      })
+      .slice(0, 8)
+  }
 
   useEffect(() => {
     loadAll()
@@ -261,7 +379,7 @@ function FabricsIncomeContent() {
     try {
       const [incomeData, invData] = await Promise.all([
         getIncome('fabrics'),
-        getInventoryItems()
+        getInventoryItemsWithColors()
       ])
       setIncome(incomeData)
       setInventoryItems(invData)
@@ -272,9 +390,18 @@ function FabricsIncomeContent() {
     }
   }
 
+  const refreshInventoryItems = async () => {
+    try {
+      setInventoryItems(await getInventoryItemsWithColors())
+    } catch (error) {
+      console.error('Error refreshing fabric inventory:', error)
+      toast.error('تم حفظ العملية، لكن تعذّر تحديث رصيد المخزون الظاهر. حدّث الصفحة لإظهاره.')
+    }
+  }
+
   const resetForm = () => {
     pendingIncomeIdRef.current = null
-    setFabricLines([{ inventory_id: '', quantity_meters: '' }])
+    setFabricLines([createEmptyFabricLine()])
     setAmount('')
     setDescription('')
     setDate(new Date().toISOString().split('T')[0])
@@ -289,7 +416,7 @@ function FabricsIncomeContent() {
   // ── إدارة أسطر الأقمشة المتعدّدة ──────────────────────────────
   const getInventoryItem = (id: string) => inventoryItems.find((it) => it.id === id)
   const addFabricLine = () =>
-    setFabricLines((ls) => [...ls, { inventory_id: '', quantity_meters: '' }])
+    setFabricLines((ls) => [...ls, createEmptyFabricLine()])
   const removeFabricLine = (idx: number) =>
     setFabricLines((ls) => (ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls))
   const updateFabricLine = (idx: number, patch: Partial<FabricLine>) =>
@@ -347,9 +474,12 @@ function FabricsIncomeContent() {
       .filter((l) => l.inventory_id)
       .map((l) => {
         const it = getInventoryItem(l.inventory_id)
+        const selectedOption = getSelectedFabricOption(l)
         const q = roundFabricNumber(parseFloat(l.quantity_meters))
         return {
           inventory_id: l.inventory_id,
+          inventory_color_id: l.inventory_color_id || null,
+          fabric_code: selectedOption?.code ?? null,
           name: it?.name ?? '-',
           quantity_meters: Number.isFinite(q) && q > 0 ? q : null,
         }
@@ -363,6 +493,35 @@ function FabricsIncomeContent() {
     if (items.some((it) => it.quantity_meters == null)) {
       alert('يرجى إدخال الكمية بالمتر لكل قماش')
       return
+    }
+    const selectedKeys = items.map((item) =>
+      getFabricOptionKey(item.inventory_id || '', item.inventory_color_id)
+    )
+    if (new Set(selectedKeys).size !== selectedKeys.length) {
+      alert('رقم القماش نفسه مضاف أكثر من مرة. اجمع الكمية في سطر واحد.')
+      return
+    }
+    if (!isEditing) {
+      const insufficientItem = items.find((item) => {
+        const option = inventoryOptionByKey.get(
+          getFabricOptionKey(item.inventory_id || '', item.inventory_color_id)
+        )
+        return !option || (item.quantity_meters || 0) > option.current_quantity
+      })
+      if (insufficientItem) {
+        const option = inventoryOptionByKey.get(
+          getFabricOptionKey(
+            insufficientItem.inventory_id || '',
+            insufficientItem.inventory_color_id
+          )
+        )
+        alert(
+          option
+            ? `الكمية المطلوبة من القماش ${option.code} أكبر من الرصيد المتاح (${formatFabricNumber(option.current_quantity)} ${option.unit === 'meter' ? 'متر' : 'قطعة'})`
+            : 'رقم القماش المحدد لم يعد موجودًا في المخزون'
+        )
+        return
+      }
     }
     if (!amount) return
     if (!paymentMethod) {
@@ -414,6 +573,7 @@ function FabricsIncomeContent() {
         const result = await updateIncome(editingId, commonFields)
         if (result) {
           setIncome((current) => current.map((it) => (it.id === editingId ? result : it)))
+          await refreshInventoryItems()
           await sendReceiptToPrintStation(result)
         } else {
           alert('❌ تعذّر تأكيد حفظ التعديل. بقي النموذج مفتوحاً؛ تحقق من الاتصال ثم أعد المحاولة.')
@@ -423,8 +583,8 @@ function FabricsIncomeContent() {
         setIsEditing(false)
         setEditingId(null)
         resetForm()
-      } catch {
-        alert('❌ حدث خطأ أثناء الحفظ')
+      } catch (error) {
+        alert(`❌ ${getFabricSaleErrorMessage(error)}`)
       } finally {
         setSaving(false)
       }
@@ -445,6 +605,7 @@ function FabricsIncomeContent() {
       const result = await createIncome(payload)
       if (result) {
         setIncome((current) => [result, ...current])
+        await refreshInventoryItems()
         await sendReceiptToPrintStation(result)
       } else {
         alert(
@@ -454,8 +615,8 @@ function FabricsIncomeContent() {
       }
       setShowModal(false)
       resetForm()
-    } catch {
-      alert('❌ حدث خطأ أثناء الحفظ')
+    } catch (error) {
+      alert(`❌ ${getFabricSaleErrorMessage(error)}`)
     } finally {
       setSaving(false)
     }
@@ -473,20 +634,44 @@ function FabricsIncomeContent() {
     if (item.fabric_items && item.fabric_items.length > 0) {
       setFabricLines(
         item.fabric_items.map((fi) => {
-          const matched =
-            (fi.inventory_id ? inventoryItems.find((inv) => inv.id === fi.inventory_id) : null) ||
-            inventoryItems.find((inv) => inv.name === fi.name)
+          const nameMatches = inventorySearchOptions.filter(
+            (option) => option.name === fi.name
+          )
+          const matchedOption =
+            (fi.inventory_id
+              ? inventoryOptionByKey.get(
+                  getFabricOptionKey(fi.inventory_id, fi.inventory_color_id)
+                ) ||
+                inventorySearchOptions.find(
+                  (option) => option.inventory_id === fi.inventory_id
+                )
+              : undefined) ||
+            (fi.fabric_code
+              ? inventorySearchOptions.find(
+                  (option) =>
+                    normalizeFabricSearch(option.code) ===
+                    normalizeFabricSearch(fi.fabric_code || '')
+                )
+              : undefined) ||
+            (nameMatches.length === 1 ? nameMatches[0] : undefined)
           return {
-            inventory_id: matched?.id ?? '',
+            inventory_id: matchedOption?.inventory_id ?? '',
+            inventory_color_id: matchedOption?.inventory_color_id ?? '',
+            search_query: matchedOption?.code ?? fi.fabric_code ?? fi.name ?? '',
             quantity_meters: fi.quantity_meters != null ? String(fi.quantity_meters) : '',
           }
         })
       )
     } else {
-      const matched = inventoryItems.find((inv) => inv.name === item.customer_name)
+      const nameMatches = inventorySearchOptions.filter(
+        (option) => option.name === item.customer_name
+      )
+      const matchedOption = nameMatches.length === 1 ? nameMatches[0] : undefined
       setFabricLines([
         {
-          inventory_id: matched?.id ?? '',
+          inventory_id: matchedOption?.inventory_id ?? '',
+          inventory_color_id: matchedOption?.inventory_color_id ?? '',
+          search_query: matchedOption?.code ?? item.customer_name ?? '',
           quantity_meters: item.quantity_meters != null ? String(item.quantity_meters) : '',
         },
       ])
@@ -523,6 +708,7 @@ function FabricsIncomeContent() {
       const success = await deleteIncome(item.id)
       if (success) {
         setIncome((current) => current.filter((it) => it.id !== item.id))
+        await refreshInventoryItems()
       } else {
         alert('❌ فشل الحذف')
       }
@@ -1125,7 +1311,7 @@ function FabricsIncomeContent() {
                       {/* اختيار الأقمشة من المخزون (قماش متعدد: قماش + كمية بالمتر لكل سطر) */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          الأقمشة والكمية *
+                          رقم القماش والكمية *
                         </label>
                         {inventoryItems.length === 0 ? (
                           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
@@ -1140,50 +1326,173 @@ function FabricsIncomeContent() {
                         ) : (
                           <>
                             <div className="space-y-2">
-                              {fabricLines.map((line, idx) => (
-                                <div key={idx} className="flex gap-2 items-center">
-                                  <select
-                                    value={line.inventory_id}
-                                    onChange={(e) => updateFabricLine(idx, { inventory_id: e.target.value })}
-                                    dir="rtl"
-                                    className="flex-1 min-w-0 px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white text-sm text-right truncate"
-                                    required={idx === 0}
-                                  >
-                                    <option value="">اختر القماش...</option>
-                                    {inventoryItems.map((it) => (
-                                      <option key={it.id} value={it.id}>
-                                        {it.name}
-                                        {it.fabric_type ? ` — ${it.fabric_type}` : ''}
-                                        {' '}— الرصيد {formatFabricNumber(it.current_quantity)} {it.unit === 'meter' ? 'م' : 'ق'}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <div className="relative w-24 shrink-0">
-                                    <input
-                                      type="number"
-                                      value={line.quantity_meters}
-                                      onChange={(e) => updateFabricLine(idx, { quantity_meters: e.target.value })}
-                                      className="w-full pl-7 pr-2 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
-                                      placeholder="الكمية"
-                                      min="0"
-                                      step="0.01"
-                                    />
-                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                                      م
-                                    </span>
+                              {fabricLines.map((line, idx) => {
+                                const selectedOption = getSelectedFabricOption(line)
+                                const searchResults = selectedOption
+                                  ? []
+                                  : getFabricSearchResults(line.search_query)
+                                const showSearchResults =
+                                  line.search_query.trim().length > 0 && !selectedOption
+                                const unitLabel = selectedOption?.unit === 'piece' ? 'ق' : 'م'
+                                const enteredQuantity = Number(line.quantity_meters)
+                                const exceedsAvailable =
+                                  !isEditing &&
+                                  !!selectedOption &&
+                                  Number.isFinite(enteredQuantity) &&
+                                  enteredQuantity > selectedOption.current_quantity
+
+                                return (
+                                  <div key={idx} className="flex gap-2 items-start">
+                                    <div className="relative min-w-0 flex-1">
+                                      <Search className="pointer-events-none absolute right-3 top-3 z-10 h-4 w-4 text-gray-400" />
+                                      <input
+                                        type="search"
+                                        value={line.search_query}
+                                        onChange={(event) =>
+                                          updateFabricLine(idx, {
+                                            search_query: event.target.value,
+                                            inventory_id: '',
+                                            inventory_color_id: '',
+                                          })
+                                        }
+                                        onFocus={(event) => event.currentTarget.select()}
+                                        autoComplete="off"
+                                        className="w-full rounded-xl border border-gray-200 py-2.5 pl-3 pr-9 text-sm text-right focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500"
+                                        placeholder="ابحث برقم القماش، مثال SS-0087"
+                                        aria-label={`البحث برقم القماش ${idx + 1}`}
+                                        required={idx === 0}
+                                      />
+
+                                      {showSearchResults && (
+                                        <div
+                                          className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-xl"
+                                          role="listbox"
+                                        >
+                                          {searchResults.length > 0 ? (
+                                            searchResults.map((option) => {
+                                              const alreadySelected = fabricLines.some(
+                                                (otherLine, otherIndex) =>
+                                                  otherIndex !== idx &&
+                                                  getFabricOptionKey(
+                                                    otherLine.inventory_id,
+                                                    otherLine.inventory_color_id
+                                                  ) === option.key
+                                              )
+                                              const unavailable = option.current_quantity <= 0
+
+                                              return (
+                                                <button
+                                                  key={option.key}
+                                                  type="button"
+                                                  role="option"
+                                                  aria-selected="false"
+                                                  disabled={alreadySelected || unavailable}
+                                                  onClick={() =>
+                                                    updateFabricLine(idx, {
+                                                      inventory_id: option.inventory_id,
+                                                      inventory_color_id:
+                                                        option.inventory_color_id || '',
+                                                      search_query: option.code,
+                                                    })
+                                                  }
+                                                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-right transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-45"
+                                                >
+                                                  <span className="min-w-0">
+                                                    <span
+                                                      className="block font-bold text-gray-900"
+                                                      dir="ltr"
+                                                    >
+                                                      {option.code}
+                                                    </span>
+                                                    <span className="block truncate text-xs text-gray-500">
+                                                      {[option.fabric_type, option.color_name]
+                                                        .filter(Boolean)
+                                                        .join(' — ') || option.name}
+                                                    </span>
+                                                  </span>
+                                                  <span
+                                                    className={`shrink-0 text-xs font-medium ${
+                                                      unavailable
+                                                        ? 'text-red-600'
+                                                        : 'text-emerald-700'
+                                                    }`}
+                                                  >
+                                                    {alreadySelected
+                                                      ? 'مضاف بالفعل'
+                                                      : unavailable
+                                                        ? 'نفد المخزون'
+                                                        : `متوفر ${formatFabricNumber(option.current_quantity)} ${option.unit === 'meter' ? 'م' : 'ق'}`}
+                                                  </span>
+                                                </button>
+                                              )
+                                            })
+                                          ) : (
+                                            <p className="px-3 py-4 text-center text-sm text-gray-500">
+                                              لا يوجد قماش بهذا الرقم في المخزون
+                                            </p>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {selectedOption && (
+                                        <p className="mt-1.5 flex items-center gap-1.5 px-1 text-xs text-emerald-700">
+                                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                          <span>
+                                            {selectedOption.color_name
+                                              ? `${selectedOption.color_name} — `
+                                              : ''}
+                                            الرصيد {formatFabricNumber(selectedOption.current_quantity)}{' '}
+                                            {selectedOption.unit === 'meter' ? 'متر' : 'قطعة'}
+                                          </span>
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    <div className="w-24 shrink-0">
+                                      <div className="relative">
+                                        <input
+                                          type="number"
+                                          value={line.quantity_meters}
+                                          onChange={(event) =>
+                                            updateFabricLine(idx, {
+                                              quantity_meters: event.target.value,
+                                            })
+                                          }
+                                          className={`w-full rounded-xl border py-2.5 pl-7 pr-2 text-sm focus:ring-2 ${
+                                            exceedsAvailable
+                                              ? 'border-red-300 focus:ring-red-400'
+                                              : 'border-gray-200 focus:ring-emerald-500'
+                                          }`}
+                                          placeholder="الكمية"
+                                          aria-label={`كمية القماش ${idx + 1}`}
+                                          min="0.01"
+                                          step="0.01"
+                                          required={!!line.inventory_id}
+                                        />
+                                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                                          {unitLabel}
+                                        </span>
+                                      </div>
+                                      {exceedsAvailable && (
+                                        <p className="mt-1 text-center text-[10px] leading-tight text-red-600">
+                                          أكبر من الرصيد
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {fabricLines.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeFabricLine(idx)}
+                                        className="shrink-0 rounded-xl p-2.5 text-red-500 transition-colors hover:bg-red-50"
+                                        title="حذف هذا القماش"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    )}
                                   </div>
-                                  {fabricLines.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => removeFabricLine(idx)}
-                                      className="p-2 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
-                                      title="حذف هذا القماش"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
                             <button
                               type="button"

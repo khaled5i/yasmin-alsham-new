@@ -347,6 +347,12 @@ function isNetworkFetchError(error: { message?: string } | Error | null | undefi
   return /failed to fetch|networkerror|load failed|fetch failed/i.test(message)
 }
 
+function isFabricInventorySaleError(
+  error: { message?: string } | Error | null | undefined
+): boolean {
+  return (error?.message || '').includes('FABRIC_STOCK_')
+}
+
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
@@ -473,6 +479,9 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
     }
 
     if (error) {
+      if (isFabricInventorySaleError(error)) {
+        throw new Error(error.message)
+      }
       if (error.code === '42P01') {
         console.warn('⚠️ income table does not exist. Please run migrations/06-simple-accounting.sql')
         return null
@@ -483,6 +492,9 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
 
     return data
   } catch (err) {
+    if (isFabricInventorySaleError(err instanceof Error ? err : null)) {
+      throw err
+    }
     if (isNetworkFetchError(err instanceof Error ? err : null)) {
       const recovered = await recoverCreatedIncome(incomeId)
       if (recovered) {
@@ -554,12 +566,18 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
     }
 
     if (error) {
+      if (isFabricInventorySaleError(error)) {
+        throw new Error(error.message)
+      }
       console.error('Error updating income:', error.message || error)
       return null
     }
 
     return data
   } catch (err) {
+    if (isFabricInventorySaleError(err instanceof Error ? err : null)) {
+      throw err
+    }
     console.error('Error updating income:', err)
     return null
   }
