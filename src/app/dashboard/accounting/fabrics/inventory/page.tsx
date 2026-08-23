@@ -2158,13 +2158,25 @@ function InventoryCard({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 mr-2">
-            <div className="text-left">
+            <div className="text-center">
               <p className="text-2xl font-bold text-gray-900">{formatFabricNumber(item.current_quantity)}</p>
               <p className="text-xs text-gray-400">{unitLabel}</p>
             </div>
+            <div aria-hidden="true" className="h-9 w-px bg-gray-200" />
+            <div className="min-w-[72px] text-center">
+              <p dir="ltr" className="whitespace-nowrap text-base font-bold text-teal-700">
+                {item.sale_price_per_unit != null
+                  ? `${formatFabricNumber(item.sale_price_per_unit)} ر.س`
+                  : '—'}
+              </p>
+              <p className="text-[11px] text-gray-400">سعر البيع / {unitLabel}</p>
+            </div>
             <button
+              type="button"
               onClick={() => setExpanded(v => !v)}
               className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              aria-label={expanded ? 'إخفاء تفاصيل القماش' : 'عرض تفاصيل القماش'}
+              aria-expanded={expanded}
             >
               {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
