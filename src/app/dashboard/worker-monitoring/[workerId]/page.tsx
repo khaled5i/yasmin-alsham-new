@@ -326,7 +326,7 @@ export default function WorkerDetailPage() {
     // الطلبات التي تحتوي على تقييم أو سعر ولم تُرسَل للعامل بعد
     const targets = completedOrders.filter((o) => {
       const form = pricingForms[o.id]
-      const hasData = (form?.price && parseFloat(form.price) > 0) || (form?.rating ?? 0) > 0 || form?.notes?.trim()
+      const hasData = (form?.price?.trim() ?? '') !== '' || (form?.rating ?? 0) > 0 || form?.notes?.trim()
       return hasData && !o.worker_rating_visible
     })
     if (targets.length === 0) return
@@ -879,12 +879,12 @@ function CompletedOrdersTab({
   const hasActiveFilters = !!monthFilter || unratedOnly
 
   const evaluatedCount = orders.filter(
-    (o) => (pricingForms[o.id]?.price && parseFloat(pricingForms[o.id].price) > 0) || (pricingForms[o.id]?.rating ?? 0) > 0
+    (o) => (pricingForms[o.id]?.price?.trim() ?? '') !== '' || (pricingForms[o.id]?.rating ?? 0) > 0
   ).length
 
   const pendingVisibilityCount = orders.filter((o) => {
     const form = pricingForms[o.id]
-    const hasData = (form?.price && parseFloat(form.price) > 0) || (form?.rating ?? 0) > 0 || form?.notes?.trim()
+    const hasData = (form?.price?.trim() ?? '') !== '' || (form?.rating ?? 0) > 0 || form?.notes?.trim()
     return hasData && !o.worker_rating_visible
   }).length
 
@@ -1055,7 +1055,7 @@ function CompletedOrderRow({
   onToggleRatingVisibility: (order: Order) => void
 }) {
   const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
-  const hasPricing = parseFloat(pricingData.price) > 0
+  const hasPricing = pricingData.price.trim() !== ''
   const isEvaluated = hasPricing || pricingData.rating > 0
   const thumbnail = (order as any).design_thumbnail || '/front2.png'
 
@@ -1396,7 +1396,7 @@ function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean
   }
 
   // Salary by priced pieces — grouped by worker_completed_at month
-  const pricedOrders = orders.filter((o) => (o.worker_price ?? 0) > 0 && o.worker_completed_at)
+  const pricedOrders = orders.filter((o) => o.worker_price != null && o.worker_completed_at)
   type MonthlySalary = { count: number; price: number; bonus: number }
   const salaryByMonth: Record<string, MonthlySalary> = {}
   for (const o of pricedOrders) {
@@ -1404,10 +1404,13 @@ function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean
     if (!salaryByMonth[key]) salaryByMonth[key] = { count: 0, price: 0, bonus: 0 }
     salaryByMonth[key].count++
     salaryByMonth[key].price += o.worker_price ?? 0
-    salaryByMonth[key].bonus += o.worker_bonus ?? 0
+    salaryByMonth[key].bonus += (o.worker_price ?? 0) > 0 ? (o.worker_bonus ?? 0) : 0
   }
   const salaryMonthKeys = Object.keys(salaryByMonth).sort((a, b) => b.localeCompare(a))
-  const totalSalaryAll = pricedOrders.reduce((s, o) => s + (o.worker_price ?? 0) + (o.worker_bonus ?? 0), 0)
+  const totalSalaryAll = pricedOrders.reduce(
+    (sum, order) => sum + (order.worker_price ?? 0) + ((order.worker_price ?? 0) > 0 ? (order.worker_bonus ?? 0) : 0),
+    0
+  )
   const avgMonthlySalary = salaryMonthKeys.length > 0 ? Math.round(totalSalaryAll / salaryMonthKeys.length) : 0
 
   // Monthly trend (last 6 months)

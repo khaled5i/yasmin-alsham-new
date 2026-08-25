@@ -25,7 +25,8 @@ import {
   Save,
   UserPlus,
   Hash,
-  Image as ImageIcon
+  Image as ImageIcon,
+  BarChart3
 } from 'lucide-react'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import ImageUpload from '@/components/ImageUpload'
@@ -2649,17 +2650,26 @@ function FabricsInventoryContent() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setEditingItem(null)
-                setShowItemModal(true)
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 py-3 font-bold text-white shadow-sm transition-colors hover:bg-teal-700 sm:w-auto"
-            >
-              <Plus className="h-5 w-5" />
-              <span>إضافة صنف</span>
-            </button>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Link
+                href="/dashboard/accounting/fabrics/inventory/statistics"
+                className="flex items-center justify-center gap-2 rounded-xl border border-teal-200 bg-white px-4 py-3 text-sm font-bold text-teal-800 shadow-sm transition-colors hover:bg-teal-50"
+              >
+                <BarChart3 className="h-5 w-5" />
+                <span>إحصائيات المخزون</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingItem(null)
+                  setShowItemModal(true)
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 py-3 font-bold text-white shadow-sm transition-colors hover:bg-teal-700"
+              >
+                <Plus className="h-5 w-5" />
+                <span>إضافة صنف</span>
+              </button>
+            </div>
           </div>
         </motion.div>
 

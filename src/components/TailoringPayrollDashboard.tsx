@@ -121,6 +121,23 @@ function orderToPricingData(order: Order): OrderPricingData {
   }
 }
 
+function getPricingSummary(forms: Record<string, OrderPricingData>): { pricedCount: number; totalPriced: number } {
+  return Object.values(forms).reduce(
+    (summary, form) => {
+      if (form.price.trim() === '') return summary
+
+      summary.pricedCount += 1
+      if (toNumber(form.price) > 0) {
+        summary.totalPriced = roundMoney(
+          summary.totalPriced + toNumber(form.price) + toNumber(form.bonus)
+        )
+      }
+      return summary
+    },
+    { pricedCount: 0, totalPriced: 0 }
+  )
+}
+
 
 interface SalaryCalculation {
   fixedSalaryValue: number
@@ -586,8 +603,10 @@ export default function TailoringPayrollDashboard() {
           next[worker.id] = {
             salaryType,
             fixedSalary: fixedSalaryValue > 0 ? fixedSalaryValue.toString() : '',
-            pieceCount: normalizedPieceCount > 0 ? normalizedPieceCount.toString() : '',
-            pieceRate: normalizedPieceRate > 0 ? normalizedPieceRate.toString() : '',
+            pieceCount: salaryType === 'piecework' ? normalizedPieceCount.toString() : '',
+            pieceRate: salaryType === 'piecework'
+              ? (normalizedPieceRate > 0 ? normalizedPieceRate.toString() : '1')
+              : '',
             overtimeAmount: overtimeAmountValue > 0 ? overtimeAmountValue.toString() : '',
             // في الشهر الحالي تُسجَّل عملية الراتب بتاريخ اليوم الفعلي، وللأشهر السابقة بنهاية الشهر
             operationDate: operationDefaultDate,
@@ -1288,7 +1307,8 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
     setPricingForms({})
     setOrderFullDetails({})
     setLightboxImage(null)
-  }, [])
+    void loadData(true)
+  }, [loadData])
 
   // اختيار طلب للتسعير + جلب صوره الكاملة عند الحاجة
   const handleSelectOrderForPricing = useCallback(async (order: Order) => {
@@ -1322,26 +1342,6 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
       worker_notes:  data.notes  || null,
     }).catch(() => { /* تجاهل — الحالة المحلية لا تزال محدَّثة */ })
   }, [])
-
-  const handleApplyPricingToSalary = useCallback((worker: WorkerWithUser) => {
-    const pricedOrders = Object.values(pricingForms).filter(
-      (f) => f.price && toNumber(f.price) > 0
-    )
-    const totalPrice = pricedOrders.reduce((sum, f) => sum + toNumber(f.price), 0)
-
-    setSalaryForms((prev) => ({
-      ...prev,
-      [worker.id]: {
-        ...prev[worker.id],
-        salaryType: 'piecework',
-        pieceCount: totalPrice > 0 ? totalPrice.toFixed(2) : '',
-        pieceRate: totalPrice > 0 ? '1' : ''
-      }
-    }))
-
-    handleClosePricingModal()
-    openWorkerPanel(worker, 'salary')
-  }, [pricingForms, handleClosePricingModal, openWorkerPanel])
 
   if (isLoading) {
     return (
@@ -1879,7 +1879,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                         )}
                         {!monthRowsByWorker[worker.id] && salaryForm.salaryType === 'piecework' && (
                           <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-                            عامل قطعة: راتب هذا الشهر يُحسب من جديد — أدخل الإجمالي مباشرة أو استخدم «تسعير وتقييم الطلبات» ثم رحِّل الإجمالي
+                            عامل قطعة: راتب هذا الشهر يتزامن تلقائياً مع تسعير القطع والمكافآت في قسم متابعة العمال، ويظهر 0 عند عدم وجود مبلغ.
                           </div>
                         )}
 
@@ -1920,21 +1920,21 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                             className={'w-full ' + NUMBER_INPUT_CLASS}
                           />
                         ) : (
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="إجمالي الراتب بالقطعة لهذا الشهر"
-                            value={salaryForm.pieceCount}
-                            onChange={(e) => {
-                              const val = sanitizeNonNegativeInput(e.target.value)
-                              setSalaryForms((prev) => ({
-                                ...prev,
-                                [worker.id]: { ...prev[worker.id], pieceCount: val, pieceRate: val ? '1' : '' }
-                              }))
-                            }}
-                            className={'w-full ' + NUMBER_INPUT_CLASS}
-                          />
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-indigo-700">
+                              إجمالي تسعير القطع والمكافآت — متزامن تلقائياً
+                            </label>
+                            <input
+                              type="number"
+                              value={salaryForm.pieceCount}
+                              readOnly
+                              aria-readonly="true"
+                              className={'w-full cursor-default bg-indigo-50 font-semibold text-indigo-900 ' + NUMBER_INPUT_CLASS}
+                            />
+                            <p className="mt-1 text-[11px] text-gray-500">
+                              يتم تحديثه من قسم متابعة العمال، ولا يحتاج إلى ترحيل يدوي.
+                            </p>
+                          </div>
                         )}
 
                         {/* دفعة العمل الإضافي (لكلا النوعين) */}
@@ -2611,9 +2611,8 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                   <>
                     {/* ملخص التسعير */}
                     {(() => {
-                      const pricedCount = Object.values(pricingForms).filter(f => toNumber(f.price) > 0).length
-                      const totalPriced = Object.values(pricingForms).reduce((s, f) => s + toNumber(f.price), 0)
-                      return pricedCount > 0 ? (
+                      const { pricedCount, totalPriced } = getPricingSummary(pricingForms)
+                      return pricingOrders.length > 0 ? (
                         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-3">
@@ -2627,13 +2626,10 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                 </p>
                               </div>
                             </div>
-                            <button
-                              onClick={() => handleApplyPricingToSalary(selectedWorkerForPricing)}
-                              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 transition-colors"
-                            >
-                              <DollarSign className="h-4 w-4" />
-                              ترحيل إلى الراتب الشهري
-                            </button>
+                            <span className="inline-flex items-center gap-2 rounded-lg bg-green-100 px-4 py-2 text-sm font-semibold text-green-800">
+                              <RefreshCw className="h-4 w-4" />
+                              الراتب متزامن تلقائياً
+                            </span>
                           </div>
                         </div>
                       ) : null
@@ -2644,7 +2640,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                       {pricingOrders.map((order, index) => {
                         const isSelected = selectedOrderForPricing?.id === order.id
                         const formData = pricingForms[order.id] || { orderId: order.id, price: '', notes: '', bonus: '', rating: 0 }
-                        const hasPricing = toNumber(formData.price) > 0
+                        const hasPricing = formData.price.trim() !== ''
 
                         const getStatusInfo = (status: string) => {
                           if (status === 'completed') return { label: 'مكتمل', bgColor: 'bg-green-100', color: 'text-green-700' }
@@ -2914,8 +2910,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
               {!pricingOrdersLoading && pricingOrders.length > 0 && (
                 <div className="border-t border-gray-200 p-4 sm:p-5 bg-gray-50 rounded-b-2xl">
                   {(() => {
-                    const pricedCount = Object.values(pricingForms).filter(f => toNumber(f.price) > 0).length
-                    const totalPriced = Object.values(pricingForms).reduce((s, f) => s + toNumber(f.price), 0)
+                    const { pricedCount, totalPriced } = getPricingSummary(pricingForms)
                     return (
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-sm text-gray-600">
@@ -2927,15 +2922,10 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                           )}
                         </div>
                         <div className="flex gap-2">
-                          {pricedCount > 0 && (
-                            <button
-                              onClick={() => handleApplyPricingToSalary(selectedWorkerForPricing)}
-                              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 transition-colors"
-                            >
-                              <DollarSign className="h-4 w-4" />
-                              ترحيل إلى الراتب الشهري
-                            </button>
-                          )}
+                          <span className="inline-flex items-center gap-2 rounded-lg bg-green-100 px-4 py-2 text-sm font-semibold text-green-800">
+                            <RefreshCw className="h-4 w-4" />
+                            مزامنة تلقائية
+                          </span>
                           <button
                             onClick={handleClosePricingModal}
                             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition-colors"

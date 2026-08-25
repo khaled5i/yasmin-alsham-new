@@ -631,7 +631,7 @@ export default function WorkerCompletedOrdersPage() {
                     {(() => {
                       if (!order.worker_rating_visible) return null
                       const hasRating = order.worker_rating != null && order.worker_rating > 0
-                      const hasPrice  = order.worker_price  != null && order.worker_price  > 0
+                      const hasPrice  = order.worker_price != null
                       const hasNotes  = typeof order.worker_notes === 'string' && order.worker_notes.trim() !== ''
                       if (!hasRating && !hasPrice && !hasNotes) return null
                       return (
@@ -662,7 +662,7 @@ export default function WorkerCompletedOrdersPage() {
                             <p className="text-xs text-teal-800 flex items-center gap-1 font-semibold">
                               <Tag className="w-3 h-3" />
                               {t('piece_wage_label')}: {Number(order.worker_price).toLocaleString('en-US')} {t('sar_unit')}
-                              {order.worker_bonus != null && order.worker_bonus > 0 && (
+                              {order.worker_price != null && order.worker_price > 0 && order.worker_bonus != null && order.worker_bonus > 0 && (
                                 <span className="text-green-600 mr-1">
                                   + {t('bonus_label')} {Number(order.worker_bonus).toLocaleString('en-US')} {t('sar_unit')}
                                 </span>
