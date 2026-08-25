@@ -99,6 +99,10 @@ interface NewWorkerFormState {
   specialty: string
 }
 
+interface TailoringPayrollDashboardProps {
+  embeddedWorkerId?: string
+}
+
 // ============================================================================
 // بيانات التسعير والتقييم
 // ============================================================================
@@ -340,7 +344,7 @@ function calculateSalaryValues(form: SalaryFormState): SalaryCalculation {
   }
 }
 
-export default function TailoringPayrollDashboard() {
+export default function TailoringPayrollDashboard({ embeddedWorkerId }: TailoringPayrollDashboardProps = {}) {
   const router = useRouter()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === 'admin'
@@ -397,9 +401,9 @@ export default function TailoringPayrollDashboard() {
    * فتح لوحة التحكم الموحدة للعامل على تبويب محدد
    * تُحمِّل سجل العمليات (كل الفترات) ودفعات الديون معاً
    */
-  const openWorkerPanel = useCallback(async (worker: WorkerWithUser, tab: PanelTab = 'salary') => {
+  const openWorkerPanel = useCallback(async (worker: WorkerWithUser, tab: PanelTab | null = 'salary') => {
     setSelectedWorkerForPanel(worker)
-    setPanelTab(tab)
+    if (tab) setPanelTab(tab)
 
     const today = new Date().toISOString().split('T')[0]
     const isCurrentMonth = selectedMonth === toMonthValue(new Date())
@@ -451,11 +455,16 @@ export default function TailoringPayrollDashboard() {
         getWorkerPayrollBigDebts(BRANCH)
       ])
 
-      const tailoringWorkers = (workerResult.data || []).filter(
+      const activeWorkers = (workerResult.data || []).filter(
+        (worker) => worker.user?.is_active !== false
+      )
+      const tailoringWorkers = activeWorkers.filter(
         (worker) => (worker.worker_type === 'tailor' || worker.worker_type === 'workshop_manager') && worker.user?.is_active !== false
       )
 
-      const allWorkers = tailoringWorkers
+      const allWorkers = embeddedWorkerId
+        ? activeWorkers.filter((worker) => worker.id === embeddedWorkerId)
+        : tailoringWorkers
 
       const monthMap: Record<string, WorkerPayrollMonth> = {}
       months.forEach((row) => {
@@ -637,11 +646,20 @@ export default function TailoringPayrollDashboard() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [selectedMonth, isAdmin])
+  }, [selectedMonth, isAdmin, embeddedWorkerId])
 
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!embeddedWorkerId || isLoading) return
+
+    const embeddedWorker = workers.find((worker) => worker.id === embeddedWorkerId)
+    if (embeddedWorker) {
+      void openWorkerPanel(embeddedWorker, null)
+    }
+  }, [embeddedWorkerId, isLoading, openWorkerPanel, workers])
 
 const getMonthRow = useCallback((worker: WorkerWithUser) => {
     return monthRowsByWorker[worker.id] || buildEmptyMonth(worker, selectedMonth)
@@ -1345,17 +1363,113 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6" dir="rtl">
-        <div className="mx-auto max-w-7xl rounded-xl border border-gray-200 bg-white p-6 text-center text-gray-600">
-          جاري تحميل نظام الرواتب...
+      <div className={embeddedWorkerId ? 'bg-transparent' : 'min-h-screen bg-gray-50 p-6'} dir="rtl">
+        <div className={`mx-auto rounded-xl border border-gray-200 bg-white text-center text-gray-600 ${embeddedWorkerId ? 'p-8' : 'max-w-7xl p-6'}`}>
+          <RefreshCw className="mx-auto mb-3 h-5 w-5 animate-spin text-indigo-500" />
+          جاري تحميل بيانات الراتب...
         </div>
       </div>
     )
   }
 
+  const embeddedWorker = embeddedWorkerId
+    ? workers.find((worker) => worker.id === embeddedWorkerId) || null
+    : null
+
+  if (embeddedWorkerId && !embeddedWorker) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center text-sm text-amber-800" dir="rtl">
+        تعذر العثور على سجل راتب لهذا العامل. جرّب تحديث الصفحة أو تأكد أن حساب العامل ما زال نشطًا.
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6" dir="rtl">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className={embeddedWorkerId ? 'bg-transparent' : 'min-h-screen bg-gray-50 p-6'} dir="rtl">
+      <div className={embeddedWorkerId ? 'space-y-4' : 'mx-auto max-w-7xl space-y-6'}>
+        {embeddedWorker && (
+          <div className="rounded-2xl border border-indigo-100 bg-gradient-to-l from-indigo-50 via-white to-white p-4 sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                    <Wallet className="h-3.5 w-3.5" />
+                    نافذة الرواتب المرتبطة
+                  </span>
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                    isLocked
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }`}>
+                    {isLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                    {isLocked ? 'الشهر مقفل' : 'الشهر مفتوح'}
+                  </span>
+                  {suspendedWorkers.has(embeddedWorker.id) && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700">
+                      <PauseCircle className="h-3.5 w-3.5" />
+                      الراتب معلّق
+                    </span>
+                  )}
+                </div>
+                <h2 className="mt-2 text-lg font-bold text-slate-900 sm:text-xl">إدارة راتب {getWorkerName(embeddedWorker)}</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
+                  تستخدم هذه النافذة نفس بيانات وأوامر قسم الرواتب الأساسي؛ أي تعديل يظهر في المكانين مباشرة.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end">
+                <label className="col-span-2 block min-w-0 sm:w-44">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">الشهر المحاسبي</span>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => loadData(true)}
+                  disabled={isRefreshing}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  تحديث
+                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => toggleSuspendWorker(embeddedWorker)}
+                    disabled={!!actionKey}
+                    className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60 ${
+                      suspendedWorkers.has(embeddedWorker.id)
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                        : 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                    }`}
+                  >
+                    {suspendedWorkers.has(embeddedWorker.id) ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
+                    {suspendedWorkers.has(embeddedWorker.id) ? 'إلغاء التعليق' : 'تعليق الراتب'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {!isAdmin && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                العرض متاح لك، أما الإضافات والتعديلات المالية فمتاحة للأدمن فقط.
+              </div>
+            )}
+            {isLocked && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>هذا الشهر مقفل ولا يمكن تعديله. سبب القفل: {lockReason || 'غير محدد'}.</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!embeddedWorkerId && (
+          <>
         <div className="rounded-2xl border border-gray-200 bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -1743,6 +1857,8 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
             </div>
           </div>
         )}
+          </>
+        )}
 
         {/* لوحة تحكم العامل الموحدة: الراتب + الدفعات + الديون + سجل العمليات */}
         {selectedWorkerForPanel && (() => {
@@ -1793,9 +1909,17 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
           }
 
           return (
-            <div key={worker.id} className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4" dir="rtl" onClick={() => setSelectedWorkerForPanel(null)}>
-              <div className="mx-auto my-8 max-w-3xl" onClick={(e) => e.stopPropagation()}>
-                <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+            <div
+              key={worker.id}
+              className={embeddedWorkerId ? 'w-full' : 'fixed inset-0 z-50 overflow-y-auto bg-black/50 p-2 sm:p-4'}
+              dir="rtl"
+              onClick={embeddedWorkerId ? undefined : () => setSelectedWorkerForPanel(null)}
+            >
+              <div
+                className={embeddedWorkerId ? 'w-full' : 'mx-auto my-4 max-w-3xl sm:my-8'}
+                onClick={embeddedWorkerId ? undefined : (e) => e.stopPropagation()}
+              >
+                <div className={`space-y-4 rounded-2xl border border-gray-200 bg-white p-3 sm:p-6 ${embeddedWorkerId ? 'shadow-sm' : 'shadow-2xl'}`}>
                   {/* رأس اللوحة */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
                     <div className="flex items-center gap-3">
@@ -1803,17 +1927,19 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                         <LayoutDashboard className="h-5 w-5 text-indigo-600" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-gray-900">لوحة تحكم العامل</h2>
+                        <h2 className="text-lg font-bold text-gray-900">{embeddedWorkerId ? 'تفاصيل الراتب والعمليات' : 'لوحة تحكم العامل'}</h2>
                         <p className="text-sm text-gray-600">{getWorkerName(worker)} — شهر {selectedMonth}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => setSelectedWorkerForPanel(null)}
-                      className="rounded-lg p-2 hover:bg-gray-100"
-                      title="إغلاق"
-                    >
-                      <X className="h-5 w-5 text-gray-500" />
-                    </button>
+                    {!embeddedWorkerId && (
+                      <button
+                        onClick={() => setSelectedWorkerForPanel(null)}
+                        className="rounded-lg p-2 hover:bg-gray-100"
+                        title="إغلاق"
+                      >
+                        <X className="h-5 w-5 text-gray-500" />
+                      </button>
+                    )}
                   </div>
 
                   {/* ملخص سريع */}
@@ -1850,7 +1976,8 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                           }`}
                         >
                           <TabIcon className="h-4 w-4" />
-                          {tab.label}
+                          <span className="hidden sm:inline">{tab.label}</span>
+                          <span className="sm:hidden">{tab.key === 'log' ? 'السجل' : tab.label}</span>
                         </button>
                       )
                     })}
@@ -2098,7 +2225,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                               return (
                                 <div
                                   key={op.id}
-                                  className={`group flex items-center justify-between rounded-lg border p-3 transition-all hover:shadow-sm ${
+                                  className={`group flex items-start justify-between gap-3 rounded-lg border p-3 transition-all hover:shadow-sm ${
                                     isSettlement
                                       ? 'border-teal-200 bg-teal-50 hover:border-teal-300'
                                       : 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
@@ -2108,7 +2235,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                     <div className={`rounded-lg p-1.5 ${isSettlement ? 'bg-teal-100' : 'bg-emerald-100'}`}>
                                       <Wallet className={`h-4 w-4 ${isSettlement ? 'text-teal-700' : 'text-emerald-700'}`} />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <p className={`font-semibold ${isSettlement ? 'text-teal-900' : 'text-emerald-900'}`}>{formatCurrency(op.amount)}</p>
                                         {isSettlement && (
@@ -2126,7 +2253,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                     <button
                                       onClick={() => handleDeleteOperation(op)}
                                       disabled={!!actionKey}
-                                      className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                      className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-100 transition-all hover:bg-red-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
                                       title={isSettlement ? 'حذف التسوية (يُعاد المبلغ للدين المتراكم)' : 'حذف الدفعة'}
                                     >
                                       <Trash2 className="h-4 w-4" />
@@ -2274,8 +2401,8 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                       </h3>
                       <div className="max-h-[200px] space-y-2 overflow-y-auto">
                         {monthDeductions.map((op) => (
-                          <div key={op.id} className="group flex items-center justify-between rounded-lg border border-red-100 bg-red-50 p-3">
-                            <div>
+                          <div key={op.id} className="group flex items-start justify-between gap-3 rounded-lg border border-red-100 bg-red-50 p-3">
+                            <div className="min-w-0">
                               <p className="font-semibold text-red-900">{formatCurrency(op.amount)}</p>
                               <p className="text-xs text-red-700">التاريخ: {formatOperationDay(op.operation_date)}</p>
                               <p className="text-[11px] text-gray-500">سُجِّلت: {formatRecordedAt(op.created_at)}</p>
@@ -2285,7 +2412,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                               <button
                                 onClick={() => handleDeleteOperation(op)}
                                 disabled={!!actionKey}
-                                className="rounded-lg border border-red-200 bg-white p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                className="rounded-lg border border-red-200 bg-white p-1.5 text-red-700 opacity-100 transition-all hover:bg-red-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
                                 title="حذف الدين (يُنقص من الدين المتراكم)"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -2314,14 +2441,14 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                     ) : (
                       <div className="max-h-[250px] space-y-2 overflow-y-auto">
                         {deductionPaymentsForWorker.map((payment) => (
-                          <div key={payment.id} className="group flex items-start justify-between rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                            <div>
+                          <div key={payment.id} className="group flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
                               <p className="font-semibold text-emerald-900">{formatCurrency(payment.amount)}</p>
                               <p className="text-xs text-emerald-700">التاريخ: {formatOperationDay(payment.payment_date)}</p>
                               <p className="text-[11px] text-gray-500">سُجِّلت: {formatRecordedAt(payment.created_at)}</p>
                               {payment.note && <p className="text-xs text-gray-600 mt-0.5">{payment.note}</p>}
                             </div>
-                            <div className="flex items-start gap-2">
+                            <div className="flex w-full items-start justify-between gap-2 sm:w-auto sm:justify-start">
                               <div className="text-left text-xs text-gray-500">
                                 <p>قبل: {formatCurrency(payment.before_amount)}</p>
                                 <p>بعد: {formatCurrency(payment.after_amount)}</p>
@@ -2330,7 +2457,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                 <button
                                   onClick={() => handleDeleteDebtPayment(payment)}
                                   disabled={!!actionKey}
-                                  className="rounded-lg border border-red-200 bg-white p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                  className="rounded-lg border border-red-200 bg-white p-1.5 text-red-700 opacity-100 transition-all hover:bg-red-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
                                   title="حذف سداد الدين (يُعاد المبلغ للدين المتراكم)"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -2374,13 +2501,13 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                 return (
                                   <div
                                     key={'debt-payment-' + payment.id}
-                                    className="group flex items-start justify-between rounded-lg border border-teal-200 bg-teal-50 p-3"
+                                    className="group flex flex-col gap-3 rounded-lg border border-teal-200 bg-teal-50 p-3 sm:flex-row sm:items-start sm:justify-between"
                                   >
                                     <div className="flex items-start gap-2">
                                       <div className="rounded-lg bg-teal-100 p-1.5">
                                         <Wallet className="h-4 w-4 text-teal-700" />
                                       </div>
-                                      <div>
+                                      <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-2">
                                           <span className="rounded-full border border-teal-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-teal-700">
                                             سداد دين
@@ -2392,7 +2519,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                         {payment.note && <p className="mt-0.5 text-xs text-gray-700">📝 {payment.note}</p>}
                                       </div>
                                     </div>
-                                    <div className="flex items-start gap-2">
+                                    <div className="flex w-full items-start justify-between gap-2 sm:w-auto sm:justify-start">
                                       <div className="text-left text-xs text-gray-500">
                                         <p>قبل: {formatCurrency(payment.before_amount)}</p>
                                         <p>بعد: {formatCurrency(payment.after_amount)}</p>
@@ -2401,7 +2528,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                         <button
                                           onClick={() => handleDeleteDebtPayment(payment)}
                                           disabled={!!actionKey}
-                                          className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                          className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-100 transition-all hover:bg-red-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
                                           title="حذف سداد الدين (يُعاد المبلغ للدين المتراكم)"
                                         >
                                           <Trash2 className="h-4 w-4" />
@@ -2421,13 +2548,13 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                               return (
                                 <div
                                   key={op.id}
-                                  className={`group flex items-start justify-between rounded-lg border ${style.border} ${style.bg} p-3`}
+                                  className={`group flex flex-col gap-3 rounded-lg border ${style.border} ${style.bg} p-3 sm:flex-row sm:items-start sm:justify-between`}
                                 >
                                   <div className="flex items-start gap-2">
                                     <div className={`rounded-lg ${style.iconBg} p-1.5`}>
                                       <OpIcon className={`h-4 w-4 ${style.iconText}`} />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <span className={`rounded-full border ${style.border} bg-white px-2 py-0.5 text-[11px] font-semibold ${style.iconText}`}>
                                           {isSettlement ? 'دفعة — تسوية دين' : operationTypeLabel(op.operation_type)}
@@ -2449,7 +2576,7 @@ const getMonthRow = useCallback((worker: WorkerWithUser) => {
                                     <button
                                       onClick={() => handleDeleteOperation(op)}
                                       disabled={!!actionKey}
-                                      className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-0 transition-all hover:bg-red-100 group-hover:opacity-100 disabled:opacity-60"
+                                      className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 opacity-100 transition-all hover:bg-red-100 disabled:opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
                                       title="حذف العملية"
                                     >
                                       <Trash2 className="h-4 w-4" />

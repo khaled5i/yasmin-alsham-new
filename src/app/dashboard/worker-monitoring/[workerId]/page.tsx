@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerStore } from '@/store/workerStore'
@@ -14,18 +15,13 @@ import OrderModal from '@/components/OrderModal'
 import PaginationControls from '@/components/PaginationControls'
 import {
   ArrowRight,
-  Users,
   Package,
   CheckCircle,
   Star,
-  BarChart3,
   Loader2,
   Clock,
   TrendingUp,
-  DollarSign,
-  AlertCircle,
   ChevronLeft,
-  ChevronRight,
   LogOut,
   Tag,
   Save,
@@ -34,9 +30,41 @@ import {
   Calendar,
   Filter,
   BellRing,
+  Wallet,
+  Fingerprint,
 } from 'lucide-react'
 
 const PAGE_SIZE = 20
+
+const WorkerPayrollMiniDashboard = dynamic(
+  () => import('@/components/TailoringPayrollDashboard'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-48 items-center justify-center rounded-xl border border-slate-100 bg-slate-50/70">
+        <div className="text-center text-sm text-slate-500">
+          <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-indigo-500" />
+          جاري تحميل بيانات الراتب...
+        </div>
+      </div>
+    ),
+  }
+)
+
+const WorkerAttendanceMiniDashboard = dynamic(
+  () => import('@/components/AttendanceMonitoringDashboard'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-48 items-center justify-center rounded-xl border border-teal-100 bg-teal-50/60">
+        <div className="text-center text-sm text-slate-500">
+          <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-teal-600" />
+          جاري تحميل سجل الحضور...
+        </div>
+      </div>
+    ),
+  }
+)
 
 // ============================================================================
 // بيانات التسعير والتقييم — مخزَّنة في أعمدة الطلب في قاعدة البيانات (migration 43)
@@ -66,7 +94,7 @@ function sanitizeNum(val: string): string {
   return parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned
 }
 
-type TabType = 'active' | 'completed' | 'reports'
+type TabType = 'active' | 'completed' | 'payroll' | 'attendance'
 
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -106,10 +134,6 @@ export default function WorkerDetailPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
   const [completedUnratedOnly, setCompletedUnratedOnly] = useState(false)
-
-  // Reports tab
-  const [allOrders, setAllOrders] = useState<Order[]>([])
-  const [isLoadingReports, setIsLoadingReports] = useState(false)
 
   // Modal
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
@@ -197,28 +221,12 @@ export default function WorkerDetailPage() {
     }
   }, [workerId])
 
-  // Fetch reports data (lazy)
-  const fetchReports = useCallback(async () => {
-    setIsLoadingReports(true)
-    try {
-      const { data } = await orderService.getAll({
-        worker_id: workerId,
-        noPagination: true,
-        lightweight: true,
-      })
-      setAllOrders(data || [])
-    } finally {
-      setIsLoadingReports(false)
-    }
-  }, [workerId])
-
   // Tab switch handler
   function handleTabSwitch(tab: TabType) {
     setActiveTab(tab)
     if (!loadedTabs.current.has(tab)) {
       loadedTabs.current.add(tab)
       if (tab === 'completed') fetchCompletedOrders(completedMonthFilter, completedUnratedOnly)
-      if (tab === 'reports') fetchReports()
     }
   }
 
@@ -477,7 +485,8 @@ export default function WorkerDetailPage() {
               [
                 { key: 'active' as TabType, label: 'الطلبات النشطة', icon: Package, count: activeOrdersTotal },
                 { key: 'completed' as TabType, label: 'الطلبات المكتملة', icon: CheckCircle, count: completedOrdersTotal },
-                { key: 'reports' as TabType, label: 'التقارير', icon: BarChart3, count: null },
+                { key: 'payroll' as TabType, label: 'الراتب', icon: Wallet, count: null },
+                { key: 'attendance' as TabType, label: 'الحضور', icon: Fingerprint, count: null },
               ] as const
             ).map((tab) => {
               const Icon = tab.icon
@@ -485,7 +494,7 @@ export default function WorkerDetailPage() {
                 <button
                   key={tab.key}
                   onClick={() => handleTabSwitch(tab.key)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs font-medium transition-colors border-b-2 sm:gap-2 sm:px-3 sm:py-4 sm:text-sm ${
                     activeTab === tab.key
                       ? 'border-teal-500 text-teal-600 bg-teal-50/50'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-slate-50'
@@ -494,10 +503,10 @@ export default function WorkerDetailPage() {
                   <Icon className="w-4 h-4" />
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">
-                    {tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : 'تقارير'}
+                    {tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : tab.key === 'payroll' ? 'الراتب' : 'الحضور'}
                   </span>
                   {tab.count !== null && tab.count > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">
+                    <span className="hidden rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 sm:inline-flex">
                       {tab.count}
                     </span>
                   )}
@@ -544,8 +553,11 @@ export default function WorkerDetailPage() {
                 isShowingAllRatings={isShowingAllRatings}
               />
             )}
-            {activeTab === 'reports' && (
-              <ReportsTab orders={allOrders} isLoading={isLoadingReports} />
+            {activeTab === 'payroll' && (
+              <WorkerPayrollMiniDashboard embeddedWorkerId={workerId} />
+            )}
+            {activeTab === 'attendance' && (
+              <WorkerAttendanceMiniDashboard embeddedWorkerId={workerId} />
             )}
           </div>
         </motion.div>
@@ -1344,333 +1356,6 @@ function CompletedOrderRow({
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// ============================================================================
-// Reports Tab
-// ============================================================================
-
-function ReportsTab({ orders, isLoading }: { orders: Order[]; isLoading: boolean }) {
-  if (isLoading) {
-    return (
-      <div className="flex justify-center py-16">
-        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
-      </div>
-    )
-  }
-
-  if (orders.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <BarChart3 className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-        <p className="text-gray-400 text-sm">لا توجد بيانات كافية لعرض التقارير</p>
-      </div>
-    )
-  }
-
-  // ---- Computed metrics ----
-  const total = orders.length
-  const completedCount = orders.filter((o) => ['completed', 'delivered'].includes(o.status)).length
-  const cancelledCount = orders.filter((o) => o.status === 'cancelled').length
-  const activeCount = orders.filter((o) => ['pending', 'in_progress'].includes(o.status)).length
-  const completionRate = total > 0 ? Math.round((completedCount / total) * 100) : 0
-
-  // Financial
-  const totalRevenue = orders
-    .filter((o) => ['completed', 'delivered'].includes(o.status))
-    .reduce((s, o) => s + (o.price || 0), 0)
-  const avgOrderValue = completedCount > 0 ? Math.round(totalRevenue / completedCount) : 0
-  const totalOutstanding = orders
-    .filter((o) => !['cancelled', 'delivered'].includes(o.status))
-    .reduce((s, o) => s + Math.max(0, (o.price || 0) - (o.paid_amount || 0)), 0)
-
-  // Status counts
-  const statusGroups: Record<string, number> = {
-    pending: orders.filter((o) => o.status === 'pending').length,
-    in_progress: orders.filter((o) => o.status === 'in_progress').length,
-    completed: orders.filter((o) => o.status === 'completed').length,
-    delivered: orders.filter((o) => o.status === 'delivered').length,
-    cancelled: orders.filter((o) => o.status === 'cancelled').length,
-  }
-
-  // Salary by priced pieces — grouped by worker_completed_at month
-  const pricedOrders = orders.filter((o) => o.worker_price != null && o.worker_completed_at)
-  type MonthlySalary = { count: number; price: number; bonus: number }
-  const salaryByMonth: Record<string, MonthlySalary> = {}
-  for (const o of pricedOrders) {
-    const key = o.worker_completed_at!.slice(0, 7)
-    if (!salaryByMonth[key]) salaryByMonth[key] = { count: 0, price: 0, bonus: 0 }
-    salaryByMonth[key].count++
-    salaryByMonth[key].price += o.worker_price ?? 0
-    salaryByMonth[key].bonus += (o.worker_price ?? 0) > 0 ? (o.worker_bonus ?? 0) : 0
-  }
-  const salaryMonthKeys = Object.keys(salaryByMonth).sort((a, b) => b.localeCompare(a))
-  const totalSalaryAll = pricedOrders.reduce(
-    (sum, order) => sum + (order.worker_price ?? 0) + ((order.worker_price ?? 0) > 0 ? (order.worker_bonus ?? 0) : 0),
-    0
-  )
-  const avgMonthlySalary = salaryMonthKeys.length > 0 ? Math.round(totalSalaryAll / salaryMonthKeys.length) : 0
-
-  // Monthly trend (last 6 months)
-  const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
-  const monthBuckets: { label: string; key: string; count: number }[] = []
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date()
-    d.setMonth(d.getMonth() - i)
-    monthBuckets.push({
-      label: arabicMonths[d.getMonth()],
-      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-      count: 0,
-    })
-  }
-  for (const order of orders) {
-    if (['completed', 'delivered'].includes(order.status) && order.created_at) {
-      const key = order.created_at.slice(0, 7)
-      const bucket = monthBuckets.find((m) => m.key === key)
-      if (bucket) bucket.count++
-    }
-  }
-  const maxMonthCount = Math.max(...monthBuckets.map((m) => m.count), 1)
-
-  // Status bar colors
-  const statusBarColors: Record<string, string> = {
-    pending: 'bg-yellow-400',
-    in_progress: 'bg-blue-400',
-    completed: 'bg-green-400',
-    delivered: 'bg-purple-400',
-    cancelled: 'bg-red-300',
-  }
-
-  return (
-    <div className="space-y-8">
-      {/* Section 1: Overview KPIs */}
-      <section>
-        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-teal-500" />
-          نظرة عامة
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <KpiCard
-            label="إجمالي الطلبات"
-            value={total}
-            icon={<Package className="w-4 h-4" />}
-            colorClass="text-slate-700 bg-slate-50 border-slate-200"
-          />
-          <KpiCard
-            label="نسبة الإنجاز"
-            value={`${completionRate}%`}
-            icon={<CheckCircle className="w-4 h-4" />}
-            colorClass="text-green-700 bg-green-50 border-green-200"
-          />
-          <KpiCard
-            label="طلبات نشطة"
-            value={activeCount}
-            icon={<Clock className="w-4 h-4" />}
-            colorClass="text-blue-700 bg-blue-50 border-blue-200"
-          />
-          <KpiCard
-            label="طلبات ملغاة"
-            value={cancelledCount}
-            icon={<AlertCircle className="w-4 h-4" />}
-            colorClass="text-red-700 bg-red-50 border-red-200"
-          />
-        </div>
-      </section>
-
-      {/* Section 2: Status Breakdown */}
-      <section>
-        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-teal-500" />
-          توزيع حالات الطلبات
-        </h3>
-        <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-3">
-          {Object.entries(statusGroups).map(([status, count]) => {
-            const pct = total > 0 ? Math.round((count / total) * 100) : 0
-            const info = STATUS_MAP[status]
-            return (
-              <div key={status} className="flex items-center gap-3">
-                <span className="text-xs text-gray-500 w-20 text-right flex-shrink-0">
-                  {info?.label || status}
-                </span>
-                <div className="flex-1 bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-700 ${statusBarColors[status] || 'bg-gray-400'}`}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <span className="text-xs font-medium text-gray-600 w-8 flex-shrink-0">{count}</span>
-              </div>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* Section 3: Monthly trend */}
-      <section>
-        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-teal-500" />
-          الطلبات المكتملة شهرياً (آخر 6 أشهر)
-        </h3>
-        <div className="bg-slate-50 rounded-xl border border-slate-100 p-4">
-          <div className="flex items-end justify-around gap-2 h-32">
-            {monthBuckets.map((m) => {
-              const heightPct = (m.count / maxMonthCount) * 100
-              return (
-                <div key={m.key} className="flex flex-col items-center gap-1 flex-1">
-                  <span className="text-xs font-medium text-gray-600">{m.count > 0 ? m.count : ''}</span>
-                  <div className="w-full flex items-end justify-center" style={{ height: '80px' }}>
-                    <div
-                      className="w-full max-w-[32px] bg-gradient-to-t from-teal-500 to-cyan-400 rounded-t-md transition-all duration-700"
-                      style={{ height: m.count > 0 ? `${heightPct}%` : '4px', opacity: m.count > 0 ? 1 : 0.2 }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-400 text-center leading-tight">{m.label}</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Section 4: Worker Salary by Month */}
-      <section>
-        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
-          <Tag className="w-4 h-4 text-pink-500" />
-          راتب القطعة الشهري
-        </h3>
-
-        {pricedOrders.length === 0 ? (
-          <div className="bg-slate-50 rounded-xl border border-slate-100 p-6 text-center text-sm text-gray-400">
-            لا توجد طلبات مسعَّرة بعد
-          </div>
-        ) : (
-          <>
-            {/* بطاقات الملخص */}
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <KpiCard
-                label="إجمالي القطع المسعَّرة"
-                value={pricedOrders.length}
-                icon={<Package className="w-4 h-4" />}
-                colorClass="text-pink-700 bg-pink-50 border-pink-200"
-              />
-              <KpiCard
-                label="إجمالي الراتب الكلي"
-                value={`${totalSalaryAll.toLocaleString('ar-SA-u-nu-latn')} ر.س`}
-                icon={<DollarSign className="w-4 h-4" />}
-                colorClass="text-emerald-700 bg-emerald-50 border-emerald-200"
-              />
-              <KpiCard
-                label="متوسط الشهر"
-                value={`${avgMonthlySalary.toLocaleString('ar-SA-u-nu-latn')} ر.س`}
-                icon={<TrendingUp className="w-4 h-4" />}
-                colorClass="text-teal-700 bg-teal-50 border-teal-200"
-              />
-            </div>
-
-            {/* جدول التفاصيل الشهرية */}
-            <div className="rounded-xl border border-slate-100 overflow-hidden">
-              {/* رأس الجدول */}
-              <div className="grid grid-cols-4 bg-slate-100 text-xs font-semibold text-slate-600 px-4 py-2.5 gap-2">
-                <span>الشهر</span>
-                <span className="text-center">القطع</span>
-                <span className="text-center">التسعير</span>
-                <span className="text-left">الإجمالي</span>
-              </div>
-
-              {/* صفوف الأشهر */}
-              {salaryMonthKeys.map((key, idx) => {
-                const m = salaryByMonth[key]
-                const [year, month] = key.split('-')
-                const monthLabel = `${arabicMonths[parseInt(month) - 1]} ${year}`
-                const total = m.price + m.bonus
-                return (
-                  <div
-                    key={key}
-                    className={`grid grid-cols-4 px-4 py-3 gap-2 text-sm border-t border-slate-100 items-center ${
-                      idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'
-                    }`}
-                  >
-                    <span className="font-medium text-gray-700">{monthLabel}</span>
-                    <span className="text-center text-gray-600">{m.count}</span>
-                    <span className="text-center text-gray-600">
-                      {m.price.toLocaleString('ar-SA-u-nu-latn')}
-                      {m.bonus > 0 && (
-                        <span className="text-green-600 text-xs mr-1">
-                          +{m.bonus.toLocaleString('ar-SA-u-nu-latn')}
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-left font-bold text-emerald-700">
-                      {total.toLocaleString('ar-SA-u-nu-latn')} <span className="font-normal text-xs text-gray-400">ر.س</span>
-                    </span>
-                  </div>
-                )
-              })}
-
-              {/* صف الإجمالي */}
-              <div className="grid grid-cols-4 px-4 py-3 gap-2 bg-emerald-50 border-t-2 border-emerald-200 text-sm font-bold items-center">
-                <span className="text-emerald-800">الإجمالي</span>
-                <span className="text-center text-emerald-800">{pricedOrders.length}</span>
-                <span className="text-center text-emerald-800">
-                  {pricedOrders.reduce((s, o) => s + (o.worker_price ?? 0), 0).toLocaleString('ar-SA-u-nu-latn')}
-                </span>
-                <span className="text-left text-emerald-700">
-                  {totalSalaryAll.toLocaleString('ar-SA-u-nu-latn')} <span className="font-normal text-xs text-gray-400">ر.س</span>
-                </span>
-              </div>
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* Section 5: Financial KPIs */}
-      <section>
-        <h3 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
-          <DollarSign className="w-4 h-4 text-teal-500" />
-          المؤشرات المالية
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <KpiCard
-            label="إجمالي الإيرادات"
-            value={`${totalRevenue.toLocaleString('ar-SA-u-nu-latn')} ريال`}
-            icon={<DollarSign className="w-4 h-4" />}
-            colorClass="text-green-700 bg-green-50 border-green-200"
-          />
-          <KpiCard
-            label="متوسط قيمة الطلب"
-            value={`${avgOrderValue.toLocaleString('ar-SA-u-nu-latn')} ريال`}
-            icon={<TrendingUp className="w-4 h-4" />}
-            colorClass="text-teal-700 bg-teal-50 border-teal-200"
-          />
-          <KpiCard
-            label="المبالغ المتبقية"
-            value={`${totalOutstanding.toLocaleString('ar-SA-u-nu-latn')} ريال`}
-            icon={<AlertCircle className="w-4 h-4" />}
-            colorClass="text-orange-700 bg-orange-50 border-orange-200"
-          />
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function KpiCard({
-  label,
-  value,
-  icon,
-  colorClass,
-}: {
-  label: string
-  value: string | number
-  icon: React.ReactNode
-  colorClass: string
-}) {
-  return (
-    <div className={`rounded-xl border p-4 ${colorClass}`}>
-      <div className="flex items-center gap-2 mb-2 opacity-70">{icon}<span className="text-xs font-medium">{label}</span></div>
-      <p className="text-xl font-bold">{value}</p>
     </div>
   )
 }
