@@ -88,6 +88,7 @@ type FabricInventorySearchOption = {
   code: string
   name: string
   fabric_type: string | null
+  secondary_fabric_types: string[]
   color_name: string | null
   current_quantity: number
   unit: FabricInventoryItem['unit']
@@ -265,6 +266,12 @@ function FabricsIncomeContent() {
 
     for (const item of inventoryItems) {
       const colors = item.colors ?? []
+      const normalizedPrimaryType = item.fabric_type?.trim().toLocaleLowerCase('ar')
+      const secondaryFabricTypes = (item.fabric_types ?? []).filter((type) => {
+        const normalizedType = type.trim().toLocaleLowerCase('ar')
+        return normalizedType && normalizedType !== normalizedPrimaryType
+      })
+
       if (colors.length > 0) {
         for (const color of colors) {
           options.push({
@@ -274,6 +281,7 @@ function FabricsIncomeContent() {
             code: color.fabric_code || item.base_fabric_code || item.name,
             name: item.name,
             fabric_type: item.fabric_type,
+            secondary_fabric_types: secondaryFabricTypes,
             color_name: color.color_name,
             current_quantity: Number(color.current_quantity) || 0,
             unit: item.unit,
@@ -289,6 +297,7 @@ function FabricsIncomeContent() {
         code: item.base_fabric_code || item.name,
         name: item.name,
         fabric_type: item.fabric_type,
+        secondary_fabric_types: secondaryFabricTypes,
         color_name: null,
         current_quantity: Number(item.current_quantity) || 0,
         unit: item.unit,
@@ -319,7 +328,7 @@ function FabricsIncomeContent() {
     return inventorySearchOptions
       .filter((option) => {
         const searchable = normalizeFabricSearch(
-          `${option.code} ${option.name} ${option.fabric_type || ''} ${option.color_name || ''}`
+          `${option.code} ${option.name} ${option.fabric_type || ''} ${option.secondary_fabric_types.join(' ')} ${option.color_name || ''}`
         )
         return searchable.includes(normalizedQuery)
       })
@@ -1409,6 +1418,11 @@ function FabricsIncomeContent() {
                                                         .filter(Boolean)
                                                         .join(' — ') || option.name}
                                                     </span>
+                                                    {option.secondary_fabric_types.length > 0 && (
+                                                      <span className="block truncate text-[11px] font-medium text-amber-700">
+                                                        التصنيف الثانوي: {option.secondary_fabric_types.join('، ')}
+                                                      </span>
+                                                    )}
                                                   </span>
                                                   <span
                                                     className={`shrink-0 text-xs font-medium ${
