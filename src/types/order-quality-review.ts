@@ -25,6 +25,9 @@ export interface OrderQualityReview {
   discrepancy_text: string | null
   voice_notes: OrderQualityReviewVoiceNote[]
   reviewed_by: string
+  reviewer?: {
+    full_name: string | null
+  } | null
   created_at: string
 }
 

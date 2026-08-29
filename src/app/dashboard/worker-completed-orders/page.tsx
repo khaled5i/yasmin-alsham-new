@@ -327,6 +327,10 @@ export default function WorkerCompletedOrdersPage() {
 
   // إرسال رسالة "جاهز للاستلام" عبر واتساب
   const handleSendReadyForPickup = (order: any) => {
+    if (order.admin_confirmed === true) {
+      toast.success('تم تسجيل إرسال رسالة الاستلام مسبقاً', { icon: '✅' })
+      return
+    }
     if (!order.client_phone || order.client_phone.trim() === '') {
       toast.error('لا يوجد رقم هاتف للعميل', {
         icon: '⚠️',
@@ -693,11 +697,11 @@ export default function WorkerCompletedOrdersPage() {
 
                       <button
                         onClick={() => handleSendReadyForPickup(order)}
-                        disabled={!order.client_phone || order.client_phone.trim() === ''}
+                        disabled={!order.client_phone || order.client_phone.trim() === '' || order.admin_confirmed === true}
                         className="p-3 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={!order.client_phone ? 'لا يوجد رقم هاتف للعميل' : 'إرسال رسالة استلام'}
+                        title={!order.client_phone ? 'لا يوجد رقم هاتف للعميل' : order.admin_confirmed ? 'تم إرسال رسالة الاستلام' : 'إرسال رسالة استلام'}
                       >
-                        <MessageCircle className="w-5 h-5 mx-auto" />
+                        {order.admin_confirmed ? <CheckCircle className="w-5 h-5 mx-auto" /> : <MessageCircle className="w-5 h-5 mx-auto" />}
                       </button>
 
                       <button

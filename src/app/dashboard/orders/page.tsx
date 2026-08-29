@@ -583,6 +583,21 @@ function OrdersPageInner() {
     setDateFilterResults(current => current?.map(patchOrder) ?? null)
   }
 
+  const handleReadyWhatsAppSent = (orderId: string) => {
+    const patchOrder = (candidate: Order) => candidate.id === orderId
+      ? { ...candidate, admin_confirmed: true }
+      : candidate
+
+    useOrderStore.setState(state => ({
+      orders: state.orders.map(patchOrder),
+      currentOrder: state.currentOrder?.id === orderId
+        ? { ...state.currentOrder, admin_confirmed: true }
+        : state.currentOrder,
+    }))
+    setSearchResults(current => current?.map(patchOrder) ?? null)
+    setDateFilterResults(current => current?.map(patchOrder) ?? null)
+  }
+
   // إغلاق النوافذ
   const handleCloseModals = () => {
     setShowViewModal(false)
@@ -862,6 +877,10 @@ function OrdersPageInner() {
 
   // تأكيد مراجعة الطلب المكتمل وإرسال رسالة "جاهز للاستلام" (للطلبات المكتملة في نتائج البحث)
   const handleSendReadyForPickup = async (order: any) => {
+    if (order.admin_confirmed === true) {
+      toast.success('تم تسجيل إرسال رسالة الاستلام مسبقاً', { icon: '✅' })
+      return
+    }
     if (!order.client_phone || order.client_phone.trim() === '') {
       toast.error('لا يوجد رقم هاتف للعميل', { icon: '⚠️' })
       return
@@ -1293,7 +1312,9 @@ function OrdersPageInner() {
                       onClick={event => event.stopPropagation()}
                     >
                       {([
-                        { stage: 'first_proof' as const, number: 1, ar: 'البروفا الأولى', en: 'First proof' },
+                        ...(order.proof_delivery_date
+                          ? [{ stage: 'first_proof' as const, number: 1, ar: 'البروفا الأولى', en: 'First proof' }]
+                          : []),
                         ...(order.has_second_proof
                           ? [{ stage: 'second_proof' as const, number: 2, ar: 'البروفا الثانية', en: 'Second proof' }]
                           : []),
@@ -1584,7 +1605,7 @@ function OrdersPageInner() {
 
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleSendReadyForPickup(order) }}
-                                  disabled={!order.client_phone || order.client_phone.trim() === '' || confirmingOrderId === order.id}
+                                  disabled={!order.client_phone || order.client_phone.trim() === '' || confirmingOrderId === order.id || order.admin_confirmed === true}
                                   className={`p-2 rounded-lg transition-colors border ${
                                     order.admin_confirmed
                                       ? 'text-green-600 bg-green-50 border-green-200 hover:bg-green-100'
@@ -1594,7 +1615,7 @@ function OrdersPageInner() {
                                     !order.client_phone
                                       ? 'لا يوجد رقم هاتف للعميل'
                                       : order.admin_confirmed
-                                        ? 'تمت المراجعة - إعادة إرسال رسالة الاستلام'
+                                        ? 'تم إرسال رسالة الاستلام'
                                         : 'تأكيد المراجعة وإرسال رسالة الاستلام'
                                   }
                                 >
@@ -1809,6 +1830,7 @@ function OrdersPageInner() {
           language={language}
           onClose={() => setQualityReviewTarget(null)}
           onReviewSaved={handleQualityReviewSaved}
+          onReadyWhatsAppSent={handleReadyWhatsAppSent}
         />
 
         < OrderModal

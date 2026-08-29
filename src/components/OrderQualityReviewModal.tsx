@@ -25,6 +25,9 @@ import DesignSummaryRecorder from '@/components/DesignSummaryRecorder'
 import { cleanTranscriptText, recordingBlobToWav } from '@/lib/audio-utils'
 import { orderQualityReviewService } from '@/lib/services/order-quality-review-service'
 import { orderService } from '@/lib/services/order-service'
+import { isVideoFile } from '@/lib/utils/media'
+import { useAuthStore } from '@/store/authStore'
+import { sendReadyForPickupWhatsApp } from '@/utils/whatsapp'
 import { MEASUREMENT_LABELS, MEASUREMENT_ORDER } from '@/types/measurements'
 import type { DesignSummaryNote } from '@/types/design-comments'
 import type {
@@ -38,6 +41,8 @@ interface ReviewOrderSummary {
   order_number?: string | null
   client_name?: string | null
   client_phone?: string | null
+  images?: string[] | null
+  admin_confirmed?: boolean | null
 }
 
 interface Props {
@@ -47,6 +52,7 @@ interface Props {
   language: 'ar' | 'en'
   onClose: () => void
   onReviewSaved: (review: OrderQualityReview) => Promise<void> | void
+  onReadyWhatsAppSent?: (orderId: string) => void
 }
 
 type Screen = 'loading' | 'test' | 'summary' | 'success'
@@ -98,8 +104,8 @@ const COPY = {
     finalDress: 'مراجعة الفستان النهائي',
     stepMeasurements: 'مطابقة المقاسات',
     stepDesign: 'مطابقة التصميم',
-    measurementsIntro: 'راجعي كل مقاس حقيقي وحددي هل يطابق المقاس المسجل في الطلب.',
-    noMeasurements: 'لا توجد مقاسات مسجلة لهذا الطلب. أضيفي المقاسات أولاً قبل بدء المراجعة.',
+    measurementsIntro: 'راجع كل مقاس حقيقي وحدد هل يطابق المقاس المسجل في الطلب.',
+    noMeasurements: 'لا توجد مقاسات مسجلة لهذا الطلب. أضف المقاسات أولاً قبل بدء المراجعة.',
     matches: 'مطابق',
     doesNotMatch: 'غير مطابق',
     inches: 'إنش',
@@ -108,11 +114,12 @@ const COPY = {
     answerAll: 'يجب تحديد نتيجة كل المقاسات قبل المتابعة.',
     frontDesign: 'التصميم من الأمام',
     backDesign: 'التصميم من الخلف',
+    additionalDesignImages: 'عرض الصور الإضافية للتصميم',
     designQuestion: 'هل {stage} مطابقة للصورتين الموجودتين في التصميم؟',
     yes: 'نعم، مطابقة',
     no: 'لا، يوجد اختلاف',
-    discrepancyTitle: 'اذكري الاختلاف أو نوع الخطأ',
-    discrepancyHelp: 'اكتبي الخطأ أو سجليه صوتياً. سيتم تحويل التسجيل إلى نص وحفظ الصوت والنص معاً.',
+    discrepancyTitle: 'اذكر الاختلاف أو نوع الخطأ',
+    discrepancyHelp: 'اكتب الخطأ أو سجله صوتياً. سيتم تحويل التسجيل إلى نص وحفظ الصوت والنص معاً.',
     discrepancyPlaceholder: 'مثال: فتحة الرقبة أوسع من التصميم، أو طول الكم يحتاج إلى تعديل...',
     voiceNote: 'الملاحظة الصوتية',
     transcribing: 'جارٍ تحويل الصوت إلى نص...',
@@ -121,11 +128,11 @@ const COPY = {
     transcription: 'النص المحوّل',
     finish: 'إنهاء المراجعة',
     saving: 'جارٍ حفظ النتيجة...',
-    detailsRequired: 'اكتبي الاختلاف أو سجلي ملاحظة صوتية واضحة.',
+    detailsRequired: 'اكتب الاختلاف أو سجل ملاحظة صوتية واضحة.',
     passed: 'نجحت المراجعة',
     failed: 'فشلت المراجعة',
-    passedHelp: 'جميع المقاسات والتصميم متطابقة. تم تحديث مرحلة الجاهزية في تتبع الطلب.',
-    failedHelp: 'توجد نقاط غير مطابقة. يمكن إعادة هذا الاختبار بعد تصحيحها.',
+    passedHelp: 'التصميم مطابق. تم تحديث مرحلة الجاهزية، وأي مقاسات غير مطابقة باقية في الملخص للتنبيه.',
+    failedHelp: 'التصميم غير مطابق. يمكن إعادة هذا الاختبار بعد تصحيح الاختلاف.',
     attempt: 'المحاولة',
     reviewSummary: 'ملخص المراجعة',
     measurementResults: 'نتائج المقاسات',
@@ -133,10 +140,16 @@ const COPY = {
     discrepancy: 'الاختلاف المسجل',
     noDiscrepancy: 'لا توجد ملاحظة اختلاف',
     reviewedAt: 'وقت المراجعة',
+    reviewedBy: 'تمت المراجعة بواسطة',
     retest: 'إعادة الاختبار',
     whatsappTitle: 'إرسال تذكير للزبونة',
     whatsappHelp: 'يمكنك الآن فتح واتساب وإرسال تذكير بالحضور.',
     sendWhatsApp: 'فتح واتساب وإرسال التذكير',
+    readyWhatsappTitle: 'إرسال رسالة جاهز للاستلام',
+    readyWhatsappHelp: 'سيتم استخدام نفس قالب واتساب الموجود في صفحة الطلبات المكتملة وتسجيل الرسالة كمرسلة.',
+    sendReadyWhatsApp: 'فتح واتساب وإرسال رسالة الاستلام',
+    whatsappAlreadySent: 'تم تسجيل إرسال رسالة الاستلام لهذا الطلب.',
+    whatsappSaveError: 'تعذّر تسجيل إرسال رسالة واتساب. لم يتم فتح واتساب لتجنب تكرار الرسالة.',
     noPhone: 'لا يوجد رقم هاتف مسجل للزبونة.',
     reviewAnotherTime: 'إغلاق والعودة للطلبات',
     firstProofNoun: 'البروفا الأولى',
@@ -163,6 +176,7 @@ const COPY = {
     answerAll: 'Answer every measurement before continuing.',
     frontDesign: 'Front design',
     backDesign: 'Back design',
+    additionalDesignImages: 'Show additional design images',
     designQuestion: 'Does the {stage} match both design images?',
     yes: 'Yes, it matches',
     no: 'No, there is a difference',
@@ -188,10 +202,16 @@ const COPY = {
     discrepancy: 'Recorded difference',
     noDiscrepancy: 'No discrepancy note',
     reviewedAt: 'Reviewed at',
+    reviewedBy: 'Reviewed by',
     retest: 'Repeat test',
     whatsappTitle: 'Send a customer reminder',
     whatsappHelp: 'You can now open WhatsApp and remind the customer to attend.',
     sendWhatsApp: 'Open WhatsApp and send reminder',
+    readyWhatsappTitle: 'Send ready-for-pickup message',
+    readyWhatsappHelp: 'The completed-orders WhatsApp template will be used and the message will be marked as sent.',
+    sendReadyWhatsApp: 'Open WhatsApp and send pickup message',
+    whatsappAlreadySent: 'The pickup message is recorded as sent for this order.',
+    whatsappSaveError: 'Could not mark the WhatsApp message as sent. WhatsApp was not opened to prevent a duplicate.',
     noPhone: 'No customer phone number is saved.',
     reviewAnotherTime: 'Close and return to orders',
     firstProofNoun: 'first proof',
@@ -292,9 +312,11 @@ export default function OrderQualityReviewModal({
   language,
   onClose,
   onReviewSaved,
+  onReadyWhatsAppSent,
 }: Props) {
   const copy = COPY[language]
   const isArabic = language === 'ar'
+  const currentUser = useAuthStore(state => state.user)
   const [screen, setScreen] = useState<Screen>('loading')
   const [step, setStep] = useState<TestStep>('measurements')
   const [measurementsData, setMeasurementsData] = useState<Record<string, unknown> | null>(null)
@@ -307,10 +329,16 @@ export default function OrderQualityReviewModal({
   const [isSaving, setIsSaving] = useState(false)
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null)
+  const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false)
+  const [isWhatsAppSent, setIsWhatsAppSent] = useState(false)
   const loadRequestRef = useRef(0)
 
   const measurementRows = useMemo(() => getMeasurementRows(measurementsData), [measurementsData])
   const designImages = useMemo(() => resolveDesignImages(measurementsData), [measurementsData])
+  const additionalDesignImages = useMemo(
+    () => (order?.images || []).filter(image => typeof image === 'string' && image.trim().length > 0),
+    [order?.images]
+  )
 
   const stageTitle = stage === 'first_proof'
     ? copy.firstProof
@@ -345,6 +373,7 @@ export default function OrderQualityReviewModal({
     setScreen('loading')
     setLoadError(null)
     setLatestReview(null)
+    setIsWhatsAppSent(order.admin_confirmed === true)
 
     void Promise.all([
       orderService.getMeasurements(order.id),
@@ -361,7 +390,11 @@ export default function OrderQualityReviewModal({
       setMeasurementsData(loadedMeasurements)
       setLatestReview(reviewResult.data)
       if (reviewResult.data) {
-        setScreen('summary')
+        setScreen(
+          stage === 'final_dress' && reviewResult.data.status === 'passed' && order.admin_confirmed !== true
+            ? 'success'
+            : 'summary'
+        )
       } else {
         startTestWithRows(rows)
       }
@@ -474,17 +507,37 @@ export default function OrderQualityReviewModal({
     }
   }
 
-  const openWhatsAppReminder = () => {
+  const openWhatsAppReminder = async () => {
     if (!order.client_phone) return
+
+    if (stage === 'final_dress') {
+      if (isWhatsAppSent) return
+      setIsSendingWhatsApp(true)
+      try {
+        const updateResult = await orderService.update(order.id, { admin_confirmed: true })
+        if (updateResult.error || !updateResult.data) {
+          toast.error(copy.whatsappSaveError)
+          return
+        }
+
+        setIsWhatsAppSent(true)
+        onReadyWhatsAppSent?.(order.id)
+        sendReadyForPickupWhatsApp(order.client_name || '', order.client_phone)
+        toast.success(copy.whatsappAlreadySent, { icon: '✅', duration: 3000 })
+      } catch (error) {
+        console.error('Could not mark final review WhatsApp as sent:', error)
+        toast.error(copy.whatsappSaveError)
+      } finally {
+        setIsSendingWhatsApp(false)
+      }
+      return
+    }
+
     const phone = normalizeWhatsAppPhone(order.client_phone)
     if (!phone) return
 
-    const actionAr = stage === 'final_dress'
-      ? 'لاستلام فستانك الجاهز'
-      : `للحضور وقياس ${stage === 'first_proof' ? 'البروفا الأولى' : 'البروفا الثانية'}`
-    const actionEn = stage === 'final_dress'
-      ? 'to collect your finished dress'
-      : `to attend your ${stage === 'first_proof' ? 'first' : 'second'} proof fitting`
+    const actionAr = `للحضور وقياس ${stage === 'first_proof' ? 'البروفا الأولى' : 'البروفا الثانية'}`
+    const actionEn = `to attend your ${stage === 'first_proof' ? 'first' : 'second'} proof fitting`
     const message = isArabic
       ? `مرحباً ${order.client_name || ''}،\nنذكّرك ${actionAr} في ياسمين الشام.\nرقم الطلب: ${order.order_number || order.id}`
       : `Hello ${order.client_name || ''},\nThis is a reminder ${actionEn} at Yasmin Al Sham.\nOrder: ${order.order_number || order.id}`
@@ -668,6 +721,39 @@ export default function OrderQualityReviewModal({
                         </figure>
                       ))}
                     </div>
+
+                    {additionalDesignImages.length > 0 ? (
+                      <details className="group mt-4 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 font-black text-[#6f2034] transition hover:bg-stone-50">
+                          <span className="flex items-center gap-2">
+                            <Images className="h-5 w-5" />
+                            {copy.additionalDesignImages}
+                          </span>
+                          <span className="rounded-full bg-[#6f2034]/10 px-2.5 py-1 text-xs">{additionalDesignImages.length}</span>
+                        </summary>
+                        <div className="grid gap-3 border-t border-stone-100 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                          {additionalDesignImages.map((image, index) => (
+                            <figure key={index} className="overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
+                              <div className="relative aspect-square overflow-hidden bg-stone-100">
+                                {isVideoFile(image) ? (
+                                  <video src={image} controls preload="metadata" className="h-full w-full object-contain" />
+                                ) : (
+                                  <Image
+                                    src={image}
+                                    alt={`${copy.additionalDesignImages} ${index + 1}`}
+                                    fill
+                                    unoptimized
+                                    sizes="(max-width: 640px) 100vw, 33vw"
+                                    className="object-contain"
+                                  />
+                                )}
+                              </div>
+                              <figcaption className="px-3 py-2 text-center text-xs font-bold text-stone-600">{index + 1}</figcaption>
+                            </figure>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
 
                     <div className="mt-5 rounded-2xl border border-[#ddbf85]/60 bg-[#fffaf0] p-5">
                       <h3 className="text-center text-lg font-black leading-7 text-slate-900">
@@ -853,6 +939,13 @@ export default function OrderQualityReviewModal({
                         {new Date(latestReview.created_at).toLocaleString(isArabic ? 'ar-SA-u-nu-latn' : 'en-GB')}
                       </p>
                     </div>
+                    <div>
+                      <p className="text-xs font-bold text-stone-500">{copy.reviewedBy}</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {latestReview.reviewer?.full_name
+                          || (latestReview.reviewed_by === currentUser?.id ? currentUser.full_name : latestReview.reviewed_by)}
+                      </p>
+                    </div>
                   </section>
                 </div>
 
@@ -879,15 +972,24 @@ export default function OrderQualityReviewModal({
 
                 <div className="mt-8 w-full max-w-xl rounded-3xl border border-[#ddbf85]/70 bg-[#fffaf0] p-6">
                   <MessageCircle className="mx-auto h-8 w-8 text-[#6f2034]" />
-                  <h4 className="mt-3 text-lg font-black text-slate-900">{copy.whatsappTitle}</h4>
-                  <p className="mt-1 text-sm text-slate-600">{copy.whatsappHelp}</p>
+                  <h4 className="mt-3 text-lg font-black text-slate-900">
+                    {stage === 'final_dress' ? copy.readyWhatsappTitle : copy.whatsappTitle}
+                  </h4>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {stage === 'final_dress' ? copy.readyWhatsappHelp : copy.whatsappHelp}
+                  </p>
                   <button
                     type="button"
-                    onClick={openWhatsAppReminder}
-                    disabled={!order.client_phone}
+                    onClick={() => void openWhatsAppReminder()}
+                    disabled={!order.client_phone || isSendingWhatsApp || isWhatsAppSent}
                     className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#187b54] px-5 py-3.5 font-bold text-white transition hover:bg-[#126342] disabled:cursor-not-allowed disabled:bg-stone-300"
                   >
-                    <MessageCircle className="h-5 w-5" /> {copy.sendWhatsApp}
+                    {isSendingWhatsApp ? <Loader2 className="h-5 w-5 animate-spin" /> : isWhatsAppSent ? <CheckCircle2 className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
+                    {isWhatsAppSent
+                      ? copy.whatsappAlreadySent
+                      : stage === 'final_dress'
+                        ? copy.sendReadyWhatsApp
+                        : copy.sendWhatsApp}
                   </button>
                   {!order.client_phone ? <p className="mt-2 text-xs font-medium text-red-700">{copy.noPhone}</p> : null}
                 </div>

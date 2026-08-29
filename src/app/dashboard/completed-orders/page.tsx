@@ -332,6 +332,10 @@ export default function CompletedOrdersPage() {
 
   // إرسال رسالة "جاهز للاستلام" + تأكيد المراجعة من المسؤول
   const handleSendReadyForPickup = async (order: any) => {
+    if (order.admin_confirmed === true) {
+      toast.success('تم تسجيل إرسال رسالة الاستلام مسبقاً', { icon: '✅' })
+      return
+    }
     if (!order.client_phone || order.client_phone.trim() === '') {
       toast.error('لا يوجد رقم هاتف للعميل', {
         icon: '⚠️',
@@ -786,7 +790,7 @@ export default function CompletedOrdersPage() {
                               e.stopPropagation()
                               handleSendReadyForPickup(order)
                             }}
-                            disabled={!order.client_phone || order.client_phone.trim() === '' || confirmingOrderId === order.id}
+                            disabled={!order.client_phone || order.client_phone.trim() === '' || confirmingOrderId === order.id || order.admin_confirmed === true}
                             className={`p-2 rounded-lg transition-colors border ${
                               order.admin_confirmed
                                 ? 'text-green-600 bg-green-50 border-green-200 hover:bg-green-100'
@@ -796,7 +800,7 @@ export default function CompletedOrdersPage() {
                               !order.client_phone
                                 ? 'لا يوجد رقم هاتف للعميل'
                                 : order.admin_confirmed
-                                  ? 'تمت المراجعة - إعادة إرسال رسالة الاستلام'
+                                  ? 'تم إرسال رسالة الاستلام'
                                   : 'تأكيد المراجعة وإرسال رسالة الاستلام'
                             }
                           >

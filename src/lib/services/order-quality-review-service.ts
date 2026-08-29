@@ -5,6 +5,31 @@ import type {
   SubmitOrderQualityReviewInput,
 } from '@/types/order-quality-review'
 
+const REVIEW_SELECT = `
+  id,
+  order_id,
+  stage,
+  attempt_number,
+  status,
+  measurement_checks,
+  design_matches,
+  discrepancy_text,
+  voice_notes,
+  reviewed_by,
+  created_at,
+  reviewer:users!order_quality_review_attempts_reviewed_by_fkey(full_name)
+`
+
+function normalizeReview(data: unknown): OrderQualityReview {
+  const review = data as Omit<OrderQualityReview, 'reviewer'> & {
+    reviewer?: OrderQualityReview['reviewer'] | Array<NonNullable<OrderQualityReview['reviewer']>>
+  }
+  return {
+    ...review,
+    reviewer: Array.isArray(review.reviewer) ? (review.reviewer[0] || null) : (review.reviewer || null),
+  }
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message
   if (error && typeof error === 'object' && 'message' in error) {
@@ -26,9 +51,7 @@ export const orderQualityReviewService = {
       await ensureValidSession()
       const { data, error } = await supabase
         .from('order_quality_review_attempts')
-        .select(
-          'id, order_id, stage, attempt_number, status, measurement_checks, design_matches, discrepancy_text, voice_notes, reviewed_by, created_at'
-        )
+        .select(REVIEW_SELECT)
         .eq('order_id', orderId)
         .eq('stage', stage)
         .order('attempt_number', { ascending: false })
@@ -36,7 +59,7 @@ export const orderQualityReviewService = {
         .maybeSingle()
 
       if (error) throw error
-      return { data: (data as OrderQualityReview | null) ?? null, error: null }
+      return { data: data ? normalizeReview(data) : null, error: null }
     } catch (error: unknown) {
       return {
         data: null,
@@ -64,13 +87,11 @@ export const orderQualityReviewService = {
           discrepancy_text: input.discrepancyText?.trim() || null,
           voice_notes: input.voiceNotes || [],
         })
-        .select(
-          'id, order_id, stage, attempt_number, status, measurement_checks, design_matches, discrepancy_text, voice_notes, reviewed_by, created_at'
-        )
+        .select(REVIEW_SELECT)
         .single()
 
       if (error) throw error
-      return { data: data as OrderQualityReview, error: null }
+      return { data: normalizeReview(data), error: null }
     } catch (error: unknown) {
       return {
         data: null,
