@@ -11,11 +11,45 @@ interface Props {
   disabled?: boolean
   mode?: 'add' | 'replace'
   onCancel?: () => void
+  language?: 'ar' | 'en'
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'خطأ غير متوقع'
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
 }
+
+const RECORDER_COPY = {
+  ar: {
+    noAudio: 'لم يتم التقاط صوت. حاول التسجيل مرة أخرى.',
+    prepareError: 'تعذّر تجهيز التسجيل للحفظ.',
+    readError: 'تعذّر قراءة التسجيل الصوتي.',
+    unsupported: 'المتصفح لا يدعم تسجيل الصوت. يرجى استخدام متصفح حديث مثل Chrome أو Safari.',
+    secureContext: 'تسجيل الصوت يتطلب اتصالًا آمنًا (HTTPS).',
+    recordingError: 'حدث خطأ أثناء التسجيل. حاول مرة أخرى.',
+    startError: 'فشل بدء التسجيل',
+    unexpected: 'خطأ غير متوقع',
+    add: 'تسجيل صوت جديد',
+    replace: 'ابدأ التسجيل البديل',
+    stop: 'إنهاء وحفظ',
+    cancelRecording: 'إلغاء التسجيل',
+    cancelEdit: 'إلغاء التعديل',
+  },
+  en: {
+    noAudio: 'No audio was captured. Please record again.',
+    prepareError: 'Could not prepare the recording for saving.',
+    readError: 'Could not read the audio recording.',
+    unsupported: 'This browser does not support audio recording. Use a modern browser such as Chrome or Safari.',
+    secureContext: 'Audio recording requires a secure HTTPS connection.',
+    recordingError: 'An error occurred while recording. Please try again.',
+    startError: 'Could not start recording',
+    unexpected: 'Unexpected error',
+    add: 'Record new audio',
+    replace: 'Record replacement',
+    stop: 'Finish and save',
+    cancelRecording: 'Cancel recording',
+    cancelEdit: 'Cancel edit',
+  },
+} as const
 
 /**
  * مسجّل مستقل لإضافة تسجيل إلى ملخص التصميم أو تسجيل بديل عنه.
@@ -26,8 +60,10 @@ export default function DesignSummaryRecorder({
   onRecordingComplete,
   disabled = false,
   mode = 'add',
-  onCancel
+  onCancel,
+  language = 'ar'
 }: Props) {
+  const copy = RECORDER_COPY[language]
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +92,7 @@ export default function DesignSummaryRecorder({
     const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current })
     chunksRef.current = []
     if (blob.size === 0) {
-      setError('لم يتم التقاط صوت. حاول التسجيل مرة أخرى.')
+      setError(copy.noAudio)
       return
     }
 
@@ -67,7 +103,7 @@ export default function DesignSummaryRecorder({
     reader.onloadend = () => {
       if (isUnmountingRef.current) return
       if (typeof reader.result !== 'string') {
-        setError('تعذّر تجهيز التسجيل للحفظ.')
+        setError(copy.prepareError)
         return
       }
 
@@ -80,10 +116,10 @@ export default function DesignSummaryRecorder({
       })
     }
     reader.onerror = () => {
-      if (!isUnmountingRef.current) setError('تعذّر قراءة التسجيل الصوتي.')
+      if (!isUnmountingRef.current) setError(copy.readError)
     }
     reader.readAsDataURL(blob)
-  }, [onRecordingComplete])
+  }, [copy.noAudio, copy.prepareError, copy.readError, onRecordingComplete])
 
   useEffect(() => {
     // React Strict Mode يشغّل دورة setup/cleanup إضافية في التطوير.
@@ -105,11 +141,11 @@ export default function DesignSummaryRecorder({
 
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-        setError('المتصفح لا يدعم تسجيل الصوت. يرجى استخدام متصفح حديث مثل Chrome أو Safari.')
+        setError(copy.unsupported)
         return
       }
       if (!window.isSecureContext) {
-        setError('تسجيل الصوت يتطلب اتصالًا آمنًا (HTTPS).')
+        setError(copy.secureContext)
         return
       }
 
@@ -139,7 +175,7 @@ export default function DesignSummaryRecorder({
         discardRecordingRef.current = false
       }
       recorder.onerror = () => {
-        setError('حدث خطأ أثناء التسجيل. حاول مرة أخرى.')
+        setError(copy.recordingError)
       }
 
       startTimeRef.current = Date.now()
@@ -151,7 +187,7 @@ export default function DesignSummaryRecorder({
       }, 1000)
     } catch (recordingError: unknown) {
       cleanupStream()
-      setError(`فشل بدء التسجيل: ${getErrorMessage(recordingError)}`)
+      setError(`${copy.startError}: ${getErrorMessage(recordingError, copy.unexpected)}`)
     }
   }
 
@@ -165,7 +201,7 @@ export default function DesignSummaryRecorder({
     stopRecording()
   }
 
-  const idleLabel = mode === 'replace' ? 'ابدأ التسجيل البديل' : 'تسجيل صوت جديد'
+  const idleLabel = mode === 'replace' ? copy.replace : copy.add
 
   return (
     <div className="flex flex-col items-start gap-2">
@@ -182,10 +218,10 @@ export default function DesignSummaryRecorder({
                 ? 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400'
                 : 'border border-teal-300 bg-white text-teal-700 hover:border-teal-400 hover:bg-teal-50'
           }`}
-          title={isRecording ? 'إنهاء التسجيل وحفظه' : idleLabel}
+          title={isRecording ? copy.stop : idleLabel}
         >
           {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-          <span>{isRecording ? 'إنهاء وحفظ' : idleLabel}</span>
+          <span>{isRecording ? copy.stop : idleLabel}</span>
           {isRecording ? (
             <span className="font-mono text-xs" dir="ltr">
               {`${Math.floor(recordingTime / 60)}:${String(recordingTime % 60).padStart(2, '0')}`}
@@ -200,7 +236,7 @@ export default function DesignSummaryRecorder({
             className="flex items-center gap-1 rounded-full px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
           >
             <X className="h-3.5 w-3.5" />
-            <span>إلغاء التسجيل</span>
+            <span>{copy.cancelRecording}</span>
           </button>
         ) : onCancel ? (
           <button
@@ -208,7 +244,7 @@ export default function DesignSummaryRecorder({
             onClick={onCancel}
             className="rounded-full px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
           >
-            إلغاء التعديل
+            {copy.cancelEdit}
           </button>
         ) : null}
 

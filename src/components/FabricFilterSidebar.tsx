@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { useFabricStore } from '@/store/fabricStore'
+import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 
 interface FabricFilterSidebarProps {
   isOpen: boolean
@@ -40,7 +41,7 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
   useEffect(() => {
     if (fabrics.length > 0) {
       const prices = fabrics
-        .map(f => f.price_per_meter)
+        .map(f => getFabricDisplayPricing(f.price_per_meter, f.stock_quantity).amount)
         .filter((price): price is number => price != null)
       const minPrice = Math.min(...prices, 0)
       const maxPrice = Math.max(...prices, 1000)
@@ -266,7 +267,7 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
                 />
               </div>
               <div className="text-xs text-[#211b19]/55 text-center">
-                {priceRange[0]} - {priceRange[1]} ريال/متر
+                {priceRange[0]} - {priceRange[1]} ريال حسب السعر المعروض
               </div>
             </motion.div>
           )}

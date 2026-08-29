@@ -6,6 +6,7 @@ import { X, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Fabric, formatFabricPrice, getFinalPrice } from '@/store/fabricStore'
+import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 
@@ -80,6 +81,14 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
   }
 
   const finalPrice = getFinalPrice(fabric)
+  const displayedFinalPrice = getFabricDisplayPricing(finalPrice, fabric.stock_quantity)
+  const displayedOriginalPrice = getFabricDisplayPricing(
+    fabric.price_per_meter,
+    fabric.stock_quantity
+  )
+  const pricingDescription = displayedFinalPrice.unit === 'piece'
+    ? `سعر القطعة كاملة (${formatFabricNumber(fabric.stock_quantity)} متر)`
+    : 'السعر للمتر الواحد'
   const fabricLabel = fabric.name || fabric.fabric_code || 'قماش'
   const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabricLabel}`
   const whatsappLink = `https://wa.me/966502901534?text=${encodeURIComponent(whatsappMessage)}`
@@ -248,10 +257,10 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                       {fabric.discount_percentage && fabric.discount_percentage > 0 ? (
                         <div className="flex items-center gap-3">
                           <span className="text-3xl font-bold text-[#6b1726]">
-                            {formatFabricPrice(finalPrice)}
+                            {formatFabricPrice(displayedFinalPrice.amount, displayedFinalPrice.unit)}
                           </span>
                           <span className="text-xl text-[#211b19]/40 line-through">
-                            {formatFabricPrice(fabric.price_per_meter)}
+                            {formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}
                           </span>
                           <span className="bg-[#6b1726] text-[#f6f0e8] px-2 py-1 rounded-full text-sm font-bold">
                             -{fabric.discount_percentage}%
@@ -259,10 +268,10 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                         </div>
                       ) : (
                         <div className="text-3xl font-bold text-[#6b1726]">
-                          {formatFabricPrice(fabric.price_per_meter)}
+                          {formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}
                         </div>
                       )}
-                      <p className="text-sm text-[#211b19]/55 mt-1">السعر للمتر الواحد</p>
+                      <p className="text-sm text-[#211b19]/55 mt-1">{pricingDescription}</p>
                     </div>
 
                     {/* نسخة الجوال - السعر وحالة التوفر في نفس السطر */}
@@ -271,10 +280,10 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                         {fabric.discount_percentage && fabric.discount_percentage > 0 ? (
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-2xl font-bold text-[#6b1726]">
-                              {formatFabricPrice(finalPrice)}
+                              {formatFabricPrice(displayedFinalPrice.amount, displayedFinalPrice.unit)}
                             </span>
                             <span className="text-lg text-[#211b19]/40 line-through">
-                              {formatFabricPrice(fabric.price_per_meter)}
+                              {formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}
                             </span>
                             <span className="bg-[#6b1726] text-[#f6f0e8] px-2 py-1 rounded-full text-xs font-bold">
                               -{fabric.discount_percentage}%
@@ -282,7 +291,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                           </div>
                         ) : (
                           <div className="text-2xl font-bold text-[#6b1726]">
-                            {formatFabricPrice(fabric.price_per_meter)}
+                            {formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}
                           </div>
                         )}
 
@@ -292,7 +301,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                           {fabric.is_available ? 'متوفر' : 'غير متوفر'}
                         </div>
                       </div>
-                      <p className="text-xs text-[#211b19]/55">السعر للمتر الواحد</p>
+                      <p className="text-xs text-[#211b19]/55">{pricingDescription}</p>
                     </div>
 
                     {/* حالة التوفر لسطح المكتب */}

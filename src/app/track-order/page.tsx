@@ -7,6 +7,7 @@ import { useOrderStore } from '@/store/orderStore'
 import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import NumericInput from '@/components/NumericInput'
 import Header from '@/components/Header'
+import { useTranslation } from '@/hooks/useTranslation'
 
 const EXCLUDED_KEYS = [
   'image_annotations', 'image_drawings', 'custom_design_image', 'saved_design_comments',
@@ -24,12 +25,17 @@ interface OrderInfo {
   customer_due_date?: string | null  // التاريخ الحقيقي للزبون (migration 49)
   proof_delivery_date?: string
   has_second_proof?: boolean
+  second_proof_date?: string | null
+  first_proof_review_status?: 'pending' | 'passed' | 'failed'
+  second_proof_review_status?: 'pending' | 'passed' | 'failed'
+  final_review_status?: 'pending' | 'passed' | 'failed'
   status: string
   admin_confirmed?: boolean
   measurements?: Record<string, unknown>
 }
 
 export default function TrackOrderPage() {
+  const { isArabic } = useTranslation()
   const [searchTerm, setSearchTerm] = useState('')
   const [searchType, setSearchType] = useState<'order' | 'phone'>('order')
   const [ordersData, setOrdersData] = useState<OrderInfo[]>([])
@@ -48,6 +54,10 @@ export default function TrackOrderPage() {
     customer_due_date: order.customer_due_date,
     proof_delivery_date: order.proof_delivery_date,
     has_second_proof: order.has_second_proof,
+    second_proof_date: order.second_proof_date,
+    first_proof_review_status: order.first_proof_review_status,
+    second_proof_review_status: order.second_proof_review_status,
+    final_review_status: order.final_review_status,
     status: order.status,
     admin_confirmed: order.admin_confirmed,
     measurements: order.measurements
@@ -194,6 +204,31 @@ export default function TrackOrderPage() {
         orderData.measurements![key] !== undefined &&
         orderData.measurements![key] !== ''
       )
+    const readinessStages = [
+      {
+        key: 'first-proof',
+        number: 1,
+        status: orderData.first_proof_review_status,
+        readyLabel: isArabic ? 'البروفا الأولى جاهزة' : 'First proof ready',
+        pendingLabel: isArabic ? 'البروفا الأولى قيد التجهيز' : 'First proof in preparation',
+      },
+      ...(orderData.has_second_proof
+        ? [{
+            key: 'second-proof',
+            number: 2,
+            status: orderData.second_proof_review_status,
+            readyLabel: isArabic ? 'البروفا الثانية جاهزة' : 'Second proof ready',
+            pendingLabel: isArabic ? 'البروفا الثانية قيد التجهيز' : 'Second proof in preparation',
+          }]
+        : []),
+      {
+        key: 'final-dress',
+        number: 3,
+        status: orderData.final_review_status,
+        readyLabel: isArabic ? 'الفستان جاهز للتسليم' : 'Dress ready for delivery',
+        pendingLabel: isArabic ? 'الفستان قيد التجهيز' : 'Dress in preparation',
+      },
+    ]
 
     return (
       <div key={orderData.order_number || index} className="space-y-4">
@@ -247,7 +282,7 @@ export default function TrackOrderPage() {
                 <div className="bg-gray-50 rounded-xl p-3">
                   <span className="text-xs text-gray-400 block mb-1">موعد البروفا الثانية</span>
                   <p className="text-sm font-medium text-gray-800">
-                    {formatDate(shiftDate(orderData.due_date, -1))}
+                    {formatDate(orderData.second_proof_date || shiftDate(orderData.due_date, -1))}
                   </p>
                 </div>
               )}
@@ -295,6 +330,45 @@ export default function TrackOrderPage() {
                   </div>
                 </motion.div>
               )}
+            </div>
+
+            {/* مراحل فحص الجاهزية الجديدة؛ حالة الطلب الأصلية أعلاه تبقى كما هي. */}
+            <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-emerald-950">
+                    {isArabic ? 'مراحل جاهزية الطلب' : 'Order readiness stages'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-emerald-700">
+                    {isArabic ? 'تتحدث بعد مراجعة الورشة لكل مرحلة' : 'Updated after the workshop reviews each stage'}
+                  </p>
+                </div>
+                <CheckCircle className="h-5 w-5 flex-none text-emerald-600" />
+              </div>
+              <div className="space-y-2">
+                {readinessStages.map(readiness => {
+                  const isReady = readiness.status === 'passed'
+                  return (
+                    <div
+                      key={readiness.key}
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                        isReady
+                          ? 'border-emerald-200 bg-white text-emerald-800'
+                          : 'border-stone-200 bg-stone-50/80 text-stone-500'
+                      }`}
+                    >
+                      <span className={`flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-black ${
+                        isReady ? 'bg-emerald-600 text-white' : 'bg-stone-200 text-stone-600'
+                      }`}>
+                        {isReady ? <CheckCircle className="h-4 w-4" /> : readiness.number}
+                      </span>
+                      <span className="text-sm font-bold">
+                        {isReady ? readiness.readyLabel : readiness.pendingLabel}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </div>

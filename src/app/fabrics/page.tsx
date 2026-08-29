@@ -10,6 +10,7 @@ import FabricSortOptions from '@/components/FabricSortOptions'
 import dynamic from 'next/dynamic'
 import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
@@ -298,8 +299,9 @@ export default function FabricsPage() {
                     ])
                   const fallbackImage = fabric.thumbnail_image || originalImage
                   const finalPrice = getFinalPrice(fabric)
-                  const priceLabel = finalPrice != null && finalPrice > 0
-                    ? `السعر : ${formatFabricNumber(finalPrice)} ريال / متر`
+                  const displayedPricing = getFabricDisplayPricing(finalPrice, fabric.stock_quantity)
+                  const priceLabel = displayedPricing.amount != null && displayedPricing.amount > 0
+                    ? `السعر : ${formatFabricNumber(displayedPricing.amount)} ريال / ${displayedPricing.unit === 'piece' ? 'القطعة' : 'متر'}`
                     : 'السعر عند الطلب'
                   return (
                     <motion.div

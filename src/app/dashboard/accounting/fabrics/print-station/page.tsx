@@ -26,6 +26,16 @@ import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { supabase } from '@/lib/supabase'
 import { buildFabricSaleReceiptHtml, getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
 import {
+  FABRIC_INVENTORY_LABEL_JOB_TYPE,
+  FABRIC_LABEL_SIZES,
+  buildFabricInventoryLabelHtml,
+  getFabricLabelSize,
+  isFabricInventoryLabelPayload,
+  isFabricLabelSize,
+  type FabricInventoryLabelPayload,
+  type FabricLabelSize,
+} from '@/lib/print-fabric-inventory-label'
+import {
   getFabricsAutoSendEnabled,
   setFabricsAutoSendEnabled,
 } from '@/lib/services/alostaz-client'
@@ -34,11 +44,19 @@ import {
   claimPrintJob,
   markPrintJobDone,
   markPrintJobError,
+  retryPrintJob,
   type PrintJob,
 } from '@/lib/services/print-job-service'
 import { useAuthStore } from '@/store/authStore'
+import type { Income } from '@/types/simple-accounting'
 
 type ConnectionStatus = 'connecting' | 'live' | 'error'
+type StationPrintMode = 'receipts' | 'labels'
+type FabricStationPayload = Income | FabricInventoryLabelPayload
+
+const STATION_MODE_STORAGE_KEY = 'yasmin-alsham:fabrics-print-station-mode:v1'
+const LABEL_SIZE_STORAGE_KEY = 'yasmin-alsham:fabrics-label-size:v1'
+const FABRIC_RECEIPT_JOB_TYPE = 'fabric_sale_receipt'
 
 interface LogEntry {
   id: string
@@ -50,7 +68,10 @@ interface LogEntry {
 
 // يرسم الإيصال في iframe مخفي ويستدعي print(). مع --kiosk-printing يطبع صامتاً
 // إلى الطابعة الافتراضية بلا حوار. بدون kiosk (أثناء التطوير) يظهر حوار الطباعة.
-function printReceiptViaIframe(job: PrintJob): Promise<void> {
+function printJobViaIframe(
+  job: PrintJob<FabricStationPayload>,
+  labelSize: FabricLabelSize
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false
     const iframe = document.createElement('iframe')
@@ -59,8 +80,10 @@ function printReceiptViaIframe(job: PrintJob): Promise<void> {
     iframe.style.position = 'fixed'
     iframe.style.left = '-10000px'
     iframe.style.top = '0'
-    iframe.style.width = '80mm'
-    iframe.style.height = '297mm'
+    const isLabelJob = job.job_type === FABRIC_INVENTORY_LABEL_JOB_TYPE
+    const labelDimensions = getFabricLabelSize(labelSize)
+    iframe.style.width = isLabelJob ? `${labelDimensions.widthMm}mm` : '80mm'
+    iframe.style.height = isLabelJob ? `${labelDimensions.heightMm}mm` : '297mm'
     iframe.style.border = '0'
 
     const cleanup = () => {
@@ -99,18 +122,33 @@ function printReceiptViaIframe(job: PrintJob): Promise<void> {
     // مهلة أمان: لا نُبقي طلباً معلّقاً للأبد لو تعثّر الإطار
     setTimeout(() => finish(new Error('انتهت مهلة الطباعة')), 12000)
 
-    iframe.srcdoc = buildFabricSaleReceiptHtml(job.payload)
+    if (isLabelJob) {
+      if (!isFabricInventoryLabelPayload(job.payload)) {
+        finish(new Error('بيانات ملصق القماش غير صالحة'))
+        return
+      }
+      iframe.srcdoc = buildFabricInventoryLabelHtml(job.payload, { size: labelSize })
+    } else {
+      iframe.srcdoc = buildFabricSaleReceiptHtml(job.payload as Income)
+    }
     document.body.appendChild(iframe)
   })
 }
 
-function jobLabel(job: PrintJob): string {
+function jobLabel(job: PrintJob<FabricStationPayload>): string {
+  if (
+    job.job_type === FABRIC_INVENTORY_LABEL_JOB_TYPE &&
+    isFabricInventoryLabelPayload(job.payload)
+  ) {
+    return `ملصق ${job.payload.product_code} — ${job.payload.color_name}`
+  }
   try {
-    return `فاتورة ${getFabricReceiptNumber(job.payload)}`
+    return `فاتورة ${getFabricReceiptNumber(job.payload as Income)}`
   } catch {
     // طلب قديم أُرسل للطابور قبل وصول رقم الأستاذ.
   }
-  const name = job.payload?.customer_name || job.payload?.description
+  const receiptPayload = job.payload as Income
+  const name = receiptPayload?.customer_name || receiptPayload?.description
   return name ? `فاتورة: ${name}` : 'فاتورة قماش'
 }
 
@@ -124,13 +162,38 @@ function PrintStationInner() {
   const [log, setLog] = useState<LogEntry[]>([])
   const [autoSend, setAutoSend] = useState(true)
   const [autoSendBusy, setAutoSendBusy] = useState(false)
+  const [stationMode, setStationMode] = useState<StationPrintMode>('receipts')
+  const [labelSize, setLabelSize] = useState<FabricLabelSize>('70x50')
+  const [preferencesReady, setPreferencesReady] = useState(false)
+  const [isPrintingJob, setIsPrintingJob] = useState(false)
 
   // حراسة التسلسل: طلب واحد قيد المعالجة في كل مرة، مع إعادة تشغيل إن وصل حدث جديد أثناء المعالجة
   const processingRef = useRef(false)
   const rerunRef = useRef(false)
+  const stationModeRef = useRef<StationPrintMode>('receipts')
+  const labelSizeRef = useRef<FabricLabelSize>('70x50')
 
   const addLog = useCallback((entry: LogEntry) => {
     setLog((prev) => [entry, ...prev].slice(0, 20))
+  }, [])
+
+  useEffect(() => {
+    try {
+      const savedMode = window.localStorage.getItem(STATION_MODE_STORAGE_KEY)
+      const savedSize = window.localStorage.getItem(LABEL_SIZE_STORAGE_KEY)
+      if (savedMode === 'receipts' || savedMode === 'labels') {
+        stationModeRef.current = savedMode
+        setStationMode(savedMode)
+      }
+      if (isFabricLabelSize(savedSize)) {
+        labelSizeRef.current = savedSize
+        setLabelSize(savedSize)
+      }
+    } catch {
+      // تعمل المحطة بالقيم الآمنة الافتراضية إذا كان التخزين المحلي غير متاح.
+    } finally {
+      setPreferencesReady(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -168,6 +231,28 @@ function PrintStationInner() {
     )
   }
 
+  const handleStationModeChange = (nextMode: StationPrintMode) => {
+    if (isPrintingJob || nextMode === stationMode) return
+    stationModeRef.current = nextMode
+    setStationMode(nextMode)
+    setPendingCount(0)
+    try {
+      window.localStorage.setItem(STATION_MODE_STORAGE_KEY, nextMode)
+    } catch {
+      // يبقى الاختيار فعالاً للجلسة الحالية.
+    }
+  }
+
+  const handleLabelSizeChange = (nextSize: FabricLabelSize) => {
+    labelSizeRef.current = nextSize
+    setLabelSize(nextSize)
+    try {
+      window.localStorage.setItem(LABEL_SIZE_STORAGE_KEY, nextSize)
+    } catch {
+      // يبقى المقاس فعالاً للجلسة الحالية.
+    }
+  }
+
   const processQueue = useCallback(async () => {
     if (processingRef.current) {
       rerunRef.current = true
@@ -177,9 +262,14 @@ function PrintStationInner() {
     try {
       do {
         rerunRef.current = false
-        let jobs: PrintJob[] = []
+        const activeMode = stationModeRef.current
+        let jobs: PrintJob<FabricStationPayload>[] = []
         try {
-          jobs = await getPendingPrintJobs('fabrics')
+          jobs = await getPendingPrintJobs<FabricStationPayload>('fabrics', [
+            activeMode === 'labels'
+              ? FABRIC_INVENTORY_LABEL_JOB_TYPE
+              : FABRIC_RECEIPT_JOB_TYPE,
+          ])
         } catch (e) {
           console.error('فشل جلب طلبات الطباعة:', e)
           setConnection('error')
@@ -188,18 +278,28 @@ function PrintStationInner() {
         setPendingCount(jobs.length)
 
         for (const job of jobs) {
+          if (stationModeRef.current !== activeMode) {
+            rerunRef.current = true
+            break
+          }
           // مطالبة ذرية: لو فاز عميل آخر بالطلب نتخطّاه
-          let claimed: PrintJob | null = null
+          let claimed: PrintJob<FabricStationPayload> | null = null
           try {
-            claimed = await claimPrintJob(job.id)
+            claimed = await claimPrintJob<FabricStationPayload>(job.id)
           } catch (e) {
             console.error('فشل المطالبة بالطلب:', e)
             continue
           }
           if (!claimed) continue
+          if (stationModeRef.current !== activeMode) {
+            try { await retryPrintJob(claimed.id) } catch { /* سيبقى ظاهراً للإدارة إن تعذّر تحريره */ }
+            rerunRef.current = true
+            break
+          }
 
+          setIsPrintingJob(true)
           try {
-            await printReceiptViaIframe(claimed)
+            await printJobViaIframe(claimed, labelSizeRef.current)
             await markPrintJobDone(claimed.id)
             setLastPrintedAt(Date.now())
             setTotalPrinted((n) => n + 1)
@@ -208,6 +308,8 @@ function PrintStationInner() {
             const msg = e instanceof Error ? e.message : String(e)
             try { await markPrintJobError(claimed.id, msg) } catch { /* noop */ }
             addLog({ id: claimed.id, label: jobLabel(claimed), status: 'error', message: msg, at: Date.now() })
+          } finally {
+            setIsPrintingJob(false)
           }
 
           // مهلة قصيرة بين الطلبات حتى يلتقط طابور الطباعة أنفاسه
@@ -221,6 +323,8 @@ function PrintStationInner() {
   }, [addLog])
 
   useEffect(() => {
+    if (!preferencesReady) return
+
     // 1) التقاط الطلبات المتراكمة عند بدء التشغيل (لو كان الكاشير مطفأً وقت الإرسال)
     processQueue()
 
@@ -244,7 +348,7 @@ function PrintStationInner() {
       supabase.removeChannel(channel)
       clearInterval(poll)
     }
-  }, [processQueue])
+  }, [preferencesReady, processQueue, stationMode])
 
   const statusBadge = {
     connecting: { icon: RefreshCw, text: 'جارٍ الاتصال...', cls: 'bg-amber-100 text-amber-700', spin: true },
@@ -253,6 +357,8 @@ function PrintStationInner() {
   }[connection]
 
   const StatusIcon = statusBadge.icon
+  const isLabelMode = stationMode === 'labels'
+  const activeModeLabel = isLabelMode ? 'ملصقات المخزون' : 'فواتير المبيعات'
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 p-4 sm:p-8">
@@ -265,7 +371,7 @@ function PrintStationInner() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-800">محطة الطباعة</h1>
-              <p className="text-sm text-slate-500">قسم الأقمشة — تُطبع الفواتير المرسَلة من الجوال تلقائياً</p>
+              <p className="text-sm text-slate-500">قسم الأقمشة — فواتير المبيعات وملصقات المخزون</p>
             </div>
           </div>
           <Link
@@ -281,6 +387,75 @@ function PrintStationInner() {
         <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl mb-4 font-medium ${statusBadge.cls}`}>
           <StatusIcon className={`w-5 h-5 ${statusBadge.spin ? 'animate-spin' : ''}`} />
           <span>{statusBadge.text}</span>
+        </div>
+
+        {/* نوع المستند والطابعة المستخدمة حالياً */}
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-black text-slate-800">وضع محطة الطباعة</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                تعالج المحطة نوعاً واحداً فقط، وتترك النوع الآخر محفوظاً في الطابور.
+              </p>
+            </div>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${
+              isLabelMode ? 'bg-slate-900 text-white' : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {activeModeLabel}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1" role="group" aria-label="اختيار وضع محطة الطباعة">
+            <button
+              type="button"
+              onClick={() => handleStationModeChange('receipts')}
+              disabled={isPrintingJob}
+              aria-pressed={!isLabelMode}
+              className={`rounded-lg px-3 py-2.5 text-sm font-black transition disabled:cursor-wait disabled:opacity-60 ${
+                !isLabelMode
+                  ? 'bg-white text-emerald-700 shadow-sm'
+                  : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+              }`}
+            >
+              فواتير المبيعات
+            </button>
+            <button
+              type="button"
+              onClick={() => handleStationModeChange('labels')}
+              disabled={isPrintingJob}
+              aria-pressed={isLabelMode}
+              className={`rounded-lg px-3 py-2.5 text-sm font-black transition disabled:cursor-wait disabled:opacity-60 ${
+                isLabelMode
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+              }`}
+            >
+              ملصقات المخزون
+            </button>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label htmlFor="fabric-label-size" className="block text-xs font-black text-slate-700">
+                مقاس ملصق TA-452
+              </label>
+              <select
+                id="fabric-label-size"
+                value={labelSize}
+                disabled={isPrintingJob}
+                onChange={(event) => {
+                  const nextSize = event.target.value
+                  if (isFabricLabelSize(nextSize)) handleLabelSizeChange(nextSize)
+                }}
+                className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 disabled:cursor-wait disabled:opacity-60"
+              >
+                {FABRIC_LABEL_SIZES.map((size) => (
+                  <option key={size.id} value={size.id}>{size.label}</option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                اضبطه قبل التحويل إلى وضع الملصقات، ويجب أن يطابق تعريف الورق في إعدادات الطابعة على Windows.
+              </p>
+          </div>
         </div>
 
         {/* التحكم المحصور داخل محطة الطباعة */}
@@ -346,7 +521,7 @@ function PrintStationInner() {
           <div className="bg-white rounded-2xl p-4 text-center border border-slate-100 shadow-sm">
             <Clock className="w-5 h-5 mx-auto text-amber-500 mb-1" />
             <p className="text-2xl font-bold text-slate-800">{pendingCount}</p>
-            <p className="text-xs text-slate-500">في الانتظار</p>
+            <p className="text-xs text-slate-500">بانتظار {isLabelMode ? 'الملصقات' : 'الفواتير'}</p>
           </div>
           <div className="bg-white rounded-2xl p-4 text-center border border-slate-100 shadow-sm">
             <CheckCircle2 className="w-5 h-5 mx-auto text-emerald-500 mb-1" />
@@ -365,7 +540,11 @@ function PrintStationInner() {
         {/* تنبيه الإبقاء مفتوحة */}
         <div className="flex items-start gap-2 bg-sky-50 text-sky-800 rounded-xl p-3 mb-6 text-sm">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <p>أبقِ هذه الصفحة مفتوحة على جهاز الكاشير. للطباعة الصامتة (بلا نافذة حوار) شغّل Chrome بوضع <code className="font-mono">--kiosk-printing</code> واجعل طابعة CityPOS هي الافتراضية.</p>
+          <p>
+            أبقِ هذه الصفحة مفتوحة على جهاز الكاشير. للطباعة الصامتة شغّل Chrome بوضع <code className="font-mono">--kiosk-printing</code> واجعل{' '}
+            <strong>{isLabelMode ? 'TA POS TA-452' : 'طابعة الفواتير CityPOS'}</strong>{' '}
+            هي طابعة Windows الافتراضية. لا حاجة لفصل الطابعة الأخرى؛ تغيير الافتراضية يكفي.
+          </p>
         </div>
 
         {/* سجل آخر العمليات */}

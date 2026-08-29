@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion, type PanInfo } from 'framer-motion'
 import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { formatFabricPrice, getFinalPrice, type Fabric, useFabricStore } from '@/store/fabricStore'
+import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
 import FabricMedia from './FabricMedia'
 import { trackHomeEvent } from './home-analytics'
@@ -107,6 +108,11 @@ function FabricDeck({ fabrics }: { fabrics: Fabric[] }) {
           const isCurrent = offset === 0
           const media = getFabricMedia(fabric)
           const finalPrice = getFinalPrice(fabric)
+          const displayedFinalPrice = getFabricDisplayPricing(finalPrice, fabric.stock_quantity)
+          const displayedOriginalPrice = getFabricDisplayPricing(
+            fabric.price_per_meter,
+            fabric.stock_quantity
+          )
           const hasDiscount = fabric.is_on_sale && fabric.discount_percentage > 0
 
           return (
@@ -181,8 +187,8 @@ function FabricDeck({ fabrics }: { fabrics: Fabric[] }) {
                     <small className={styles.fabricDeckPrice}>
                       {(fabric.price_per_meter ?? 0) > 0 ? (
                         <>
-                          <b>{formatFabricPrice(finalPrice)}</b>
-                          {hasDiscount ? <del>{formatFabricPrice(fabric.price_per_meter)}</del> : null}
+                          <b>{formatFabricPrice(displayedFinalPrice.amount, displayedFinalPrice.unit)}</b>
+                          {hasDiscount ? <del>{formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}</del> : null}
                         </>
                       ) : (
                         <b>السعر عند الطلب</b>

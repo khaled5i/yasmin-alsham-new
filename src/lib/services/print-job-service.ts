@@ -8,6 +8,10 @@
 import { supabase } from '@/lib/supabase'
 import type { Income } from '@/types/simple-accounting'
 import type { TailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
+import {
+  FABRIC_INVENTORY_LABEL_JOB_TYPE,
+  type FabricInventoryLabelPayload,
+} from '@/lib/print-fabric-inventory-label'
 
 export type PrintJobStatus = 'pending' | 'printing' | 'done' | 'error'
 
@@ -58,6 +62,27 @@ export async function queueFabricReceiptPrint(item: Income): Promise<void> {
     payload: item,
     status: 'pending',
   })
+  if (error) throw error
+}
+
+/**
+ * يرسل لقطة مستقلة لكل ملصق مخزون. تعدد الصفوف مقصود: كل صف يمثل ملصقاً
+ * فعلياً واحداً حتى تبقى إعادة المحاولة والسجل واضحين داخل محطة الطباعة.
+ */
+export async function queueFabricInventoryLabels(
+  labels: FabricInventoryLabelPayload[]
+): Promise<void> {
+  if (labels.length === 0) return
+
+  const { error } = await supabase.from('print_jobs').insert(
+    labels.map((payload) => ({
+      branch: FABRICS_BRANCH,
+      job_type: FABRIC_INVENTORY_LABEL_JOB_TYPE,
+      income_id: null,
+      payload,
+      status: 'pending' as const,
+    }))
+  )
   if (error) throw error
 }
 
@@ -156,13 +181,20 @@ export async function queueTailoringReceiptPrint(
 
 /** جلب الطلبات المعلّقة بالترتيب (تُستدعى عند بدء تشغيل المحطة + بعد كل حدث Realtime). */
 export async function getPendingPrintJobs<TPayload = Income>(
-  branch: string = FABRICS_BRANCH
+  branch: string = FABRICS_BRANCH,
+  jobTypes: string[] = []
 ): Promise<PrintJob<TPayload>[]> {
-  const { data, error } = await supabase
+  const baseQuery = supabase
     .from('print_jobs')
     .select('*')
     .eq('branch', branch)
     .eq('status', 'pending')
+
+  const filteredQuery = jobTypes.length > 0
+    ? baseQuery.in('job_type', jobTypes)
+    : baseQuery
+
+  const { data, error } = await filteredQuery
     .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []) as PrintJob<TPayload>[]

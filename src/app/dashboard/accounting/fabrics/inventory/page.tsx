@@ -26,8 +26,11 @@ import {
   UserPlus,
   Hash,
   Image as ImageIcon,
-  BarChart3
+  BarChart3,
+  Printer,
+  Loader2
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import ImageUpload from '@/components/ImageUpload'
 import {
@@ -56,6 +59,8 @@ import {
 import type { FabricTypeCodeOption } from '@/lib/services/fabric-inventory-service'
 import { getSuppliers, createSupplier, type Supplier } from '@/lib/services/supplier-service'
 import { syncFabricProductToAlostaz } from '@/lib/services/alostaz-client'
+import { queueFabricInventoryLabels } from '@/lib/services/print-job-service'
+import type { FabricInventoryLabelPayload } from '@/lib/print-fabric-inventory-label'
 import { useAuthStore } from '@/store/authStore'
 import { formatFabricCodePreview, normalizeFabricTypeCode, suggestFabricTypeCode } from '@/lib/fabric-codes'
 import {
@@ -63,6 +68,10 @@ import {
   formatFabricNumber,
   roundFabricNumber,
 } from '@/lib/fabric-number-format'
+import {
+  getFabricDisplayPricing,
+  getFabricPricingUnitLabel,
+} from '@/lib/fabric-display-pricing'
 
 // ─── ألوان سريعة للاختيار ──────────────────────────────────────────────────
 const PRESET_COLORS = [
@@ -2048,6 +2057,8 @@ function FabricImagesModal({ item, onClose }: FabricImagesModalProps) {
 // ─── بطاقة الصنف ─────────────────────────────────────────────────────────────
 interface InventoryCardProps {
   item: FabricInventoryItem
+  onPrint: () => void
+  isPrintingLabel: boolean
   onEdit: () => void
   onDelete: () => void
   onAddIn: () => void
@@ -2059,6 +2070,8 @@ interface InventoryCardProps {
 
 function InventoryCard({
   item,
+  onPrint,
+  isPrintingLabel,
   onEdit,
   onDelete,
   onAddIn,
@@ -2073,6 +2086,11 @@ function InventoryCard({
   const [savingPrices, setSavingPrices] = useState(false)
   const unitLabel = item.unit === 'meter' ? 'متر' : 'قطعة'
   const priceUnitLabel = item.unit === 'meter' ? 'للمتر' : 'للقطعة'
+  const displayedSalePricing = getFabricDisplayPricing(
+    item.sale_price_per_unit,
+    item.current_quantity,
+    item.unit
+  )
   const totalValue = item.cost_per_unit != null ? item.current_quantity * item.cost_per_unit : null
   const colors = item.colors ?? []
   const availableColors = colors.filter(color => color.current_quantity > 0)
@@ -2194,7 +2212,22 @@ function InventoryCard({
             </div>
           </div>
 
-          <div className="shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={onPrint}
+              disabled={isPrintingLabel}
+              aria-busy={isPrintingLabel}
+              className="inline-flex min-w-[76px] items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:bg-slate-400 sm:text-sm"
+              aria-label={`طباعة ملصق ${getInventoryItemSerialCode(item) || item.name}`}
+            >
+              {isPrintingLabel ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Printer className="h-4 w-4" />
+              )}
+              <span>{isPrintingLabel ? 'إرسال...' : 'طباعة'}</span>
+            </button>
             <button
               type="button"
               onClick={() => setExpanded(v => !v)}
@@ -2222,12 +2255,18 @@ function InventoryCard({
             </p>
           </div>
           <div className="min-w-0 px-2 py-2.5 text-center sm:px-4">
-            <p className="text-[11px] font-medium text-gray-400">سعر البيع</p>
+            <p className="text-[11px] font-medium text-gray-400">
+              {displayedSalePricing.isWholePiecePrice
+                ? `سعر القطعة (${formatFabricNumber(item.current_quantity)} متر)`
+                : 'سعر البيع'}
+            </p>
             <p className="mt-1 truncate text-sm font-bold text-teal-700">
-              {item.sale_price_per_unit != null ? (
+              {displayedSalePricing.amount != null ? (
                 <>
-                  <span dir="ltr">{formatFabricNumber(item.sale_price_per_unit)}</span>
-                  <span className="text-[10px] font-medium text-teal-600/70"> ر.س / {unitLabel}</span>
+                  <span dir="ltr">{formatFabricNumber(displayedSalePricing.amount)}</span>
+                  <span className="text-[10px] font-medium text-teal-600/70">
+                    {' '}ر.س {getFabricPricingUnitLabel(displayedSalePricing.unit)}
+                  </span>
                 </>
               ) : (
                 <span className="text-xs font-medium text-amber-600">غير محدد</span>
@@ -2334,19 +2373,36 @@ function InventoryCard({
                     <Palette className="w-3.5 h-3.5" /> الألوان وكمياتها
                   </p>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {colors.map(c => (
-                      <div key={c.id} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded-lg">
-                        <span
-                          className="w-4 h-4 rounded-full border border-gray-200 shrink-0"
-                          style={{ backgroundColor: c.color_hex ?? '#e5e7eb' }}
-                        />
-                        <span className="text-xs text-gray-700 truncate flex-1">{c.color_name}</span>
-                        {c.fabric_code && (
-                          <span dir="ltr" className="text-[10px] font-mono text-teal-700 shrink-0">{c.fabric_code}</span>
-                        )}
-                        <span className="text-xs font-bold text-gray-900 shrink-0">{formatFabricNumber(c.current_quantity)}</span>
-                      </div>
-                    ))}
+                    {colors.map(c => {
+                      const colorPricing = getFabricDisplayPricing(
+                        item.sale_price_per_unit,
+                        c.current_quantity,
+                        item.unit
+                      )
+                      return (
+                        <div key={c.id} className="rounded-lg bg-gray-50 px-2 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-4 w-4 shrink-0 rounded-full border border-gray-200"
+                              style={{ backgroundColor: c.color_hex ?? '#e5e7eb' }}
+                            />
+                            <span className="flex-1 truncate text-xs text-gray-700">{c.color_name}</span>
+                            {c.fabric_code && (
+                              <span dir="ltr" className="shrink-0 font-mono text-[10px] text-teal-700">{c.fabric_code}</span>
+                            )}
+                            <span className="shrink-0 text-xs font-bold text-gray-900">
+                              {formatFabricNumber(c.current_quantity)} {unitLabel}
+                            </span>
+                          </div>
+                          {colorPricing.amount != null ? (
+                            <p className="mt-1 text-[10px] font-bold text-teal-700">
+                              <span dir="ltr">{formatFabricNumber(colorPricing.amount)}</span>{' '}
+                              ر.س {getFabricPricingUnitLabel(colorPricing.unit)}
+                            </p>
+                          ) : null}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -2420,6 +2476,345 @@ function InventoryCard({
   )
 }
 
+interface FabricLabelChoice {
+  id: string
+  inventoryColorId: string | null
+  productCode: string
+  colorName: string
+  colorHex: string | null
+  quantity: number
+}
+
+function getFabricLabelChoices(item: FabricInventoryItem): FabricLabelChoice[] {
+  const colors = item.colors ?? []
+  if (colors.length > 0) {
+    return colors.map((color) => ({
+      id: color.id,
+      inventoryColorId: color.id,
+      productCode: color.fabric_code || item.base_fabric_code || item.name,
+      colorName: color.color_name,
+      colorHex: color.color_hex,
+      quantity: color.current_quantity,
+    }))
+  }
+
+  return [{
+    id: `base-${item.id}`,
+    inventoryColorId: null,
+    productCode: item.base_fabric_code || item.name,
+    colorName: 'بدون لون محدد',
+    colorHex: null,
+    quantity: item.current_quantity,
+  }]
+}
+
+function createFabricLabelPayload(
+  item: FabricInventoryItem,
+  choice: FabricLabelChoice,
+  queuedAt: string
+): FabricInventoryLabelPayload {
+  const displayedPricing = getFabricDisplayPricing(
+    item.sale_price_per_unit,
+    choice.quantity,
+    item.unit
+  )
+
+  return {
+    version: 1,
+    inventory_item_id: item.id,
+    inventory_color_id: choice.inventoryColorId,
+    product_code: choice.productCode,
+    sale_price_per_unit: displayedPricing.amount as number,
+    price_unit: displayedPricing.unit,
+    unit: item.unit,
+    color_name: choice.colorName,
+    available_quantity: choice.quantity,
+    queued_at: queuedAt,
+  }
+}
+
+interface FabricLabelPrintModalProps {
+  item: FabricInventoryItem
+  onClose: () => void
+}
+
+function FabricLabelPrintModal({ item, onClose }: FabricLabelPrintModalProps) {
+  const choices = useMemo(() => getFabricLabelChoices(item), [item])
+  const availableChoiceIds = useMemo(
+    () => choices.filter((choice) => choice.quantity > 0).map((choice) => choice.id),
+    [choices]
+  )
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(availableChoiceIds)
+  )
+  const [sending, setSending] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const selectedChoices = choices.filter((choice) => selectedIds.has(choice.id))
+  const previewChoice = selectedChoices[0] ?? choices[0]
+  const previewPricing = getFabricDisplayPricing(
+    item.sale_price_per_unit,
+    previewChoice?.quantity,
+    item.unit
+  )
+  const canPrint = item.sale_price_per_unit != null && selectedChoices.length > 0 && !sending
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !sending) onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose, sending])
+
+  const toggleChoice = (choice: FabricLabelChoice) => {
+    if (choice.quantity <= 0 || sending) return
+    setErrorMessage('')
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(choice.id)) next.delete(choice.id)
+      else next.add(choice.id)
+      return next
+    })
+  }
+
+  const handleQueueLabels = async () => {
+    if (item.sale_price_per_unit == null) {
+      setErrorMessage('أدخل سعر البيع أولاً حتى يظهر على الملصق.')
+      return
+    }
+    if (selectedChoices.length === 0) {
+      setErrorMessage('اختر لوناً واحداً على الأقل للطباعة.')
+      return
+    }
+
+    setSending(true)
+    setErrorMessage('')
+    const queuedAt = new Date().toISOString()
+    const labels = selectedChoices.map((choice) => (
+      createFabricLabelPayload(item, choice, queuedAt)
+    ))
+
+    try {
+      await queueFabricInventoryLabels(labels)
+      toast.success(
+        labels.length === 1
+          ? 'أُرسل الملصق إلى محطة الطباعة'
+          : `أُرسلت ${labels.length} ملصقات إلى محطة الطباعة`,
+        { icon: '🏷️' }
+      )
+      onClose()
+    } catch (error) {
+      console.error('Failed to queue fabric inventory labels', error)
+      setErrorMessage('تعذّر إرسال الملصقات. تحقق من الاتصال ثم أعد المحاولة.')
+      setSending(false)
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      onClick={() => { if (!sending) onClose() }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 18, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.98 }}
+        transition={{ duration: 0.18 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fabric-label-modal-title"
+        dir="rtl"
+        onClick={(event) => event.stopPropagation()}
+        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-white/60 bg-stone-50 shadow-2xl"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-stone-50/95 px-5 py-4 backdrop-blur sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-lg shadow-slate-300">
+              <Printer className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 id="fabric-label-modal-title" className="text-lg font-black text-slate-900 sm:text-xl">
+                تجهيز ملصق القماش
+              </h2>
+              <p className="mt-0.5 text-xs text-stone-500">اختر الألوان ثم راجع البيانات قبل الإرسال</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={sending}
+            className="rounded-xl p-2 text-stone-500 transition hover:bg-stone-200 hover:text-stone-900 disabled:opacity-50"
+            aria-label="إغلاق نافذة طباعة الملصق"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
+          <section>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-800">الملصقات المطلوبة</h3>
+                <p className="mt-1 text-xs text-stone-500">سيُطبع ملصق مستقل لكل لون محدد.</p>
+              </div>
+              {availableChoiceIds.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set(availableChoiceIds))}
+                  disabled={sending}
+                  className="shrink-0 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-bold text-teal-700 transition hover:bg-teal-100 disabled:opacity-50"
+                >
+                  تحديد المتوفر
+                </button>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              {choices.map((choice) => {
+                const selected = selectedIds.has(choice.id)
+                const unavailable = choice.quantity <= 0
+                return (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    onClick={() => toggleChoice(choice)}
+                    disabled={unavailable || sending}
+                    aria-pressed={selected}
+                    className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-right transition ${
+                      selected
+                        ? 'border-teal-500 bg-teal-50 shadow-sm'
+                        : 'border-stone-200 bg-white hover:border-stone-300'
+                    } ${unavailable ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-8 w-8 shrink-0 rounded-full border-2 border-white shadow ring-1 ring-stone-200"
+                      style={{ backgroundColor: choice.colorHex ?? '#e7e5e4' }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-black text-slate-800">{choice.colorName}</span>
+                      <span dir="ltr" className="mt-0.5 block truncate text-right font-mono text-xs font-bold text-teal-700">
+                        {choice.productCode}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-left">
+                      <span className="block text-sm font-black text-slate-900">
+                        {formatFabricNumber(choice.quantity)}
+                      </span>
+                      <span className="block text-[10px] text-stone-400">
+                        {item.unit === 'meter' ? 'متر' : 'قطعة'}
+                      </span>
+                    </span>
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                      selected ? 'border-teal-600 bg-teal-600 text-white' : 'border-stone-300 bg-white text-transparent'
+                    }`}>
+                      <Check className="h-3.5 w-3.5" />
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {item.sale_price_per_unit == null ? (
+              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800">
+                لا يمكن الطباعة قبل إدخال سعر البيع في البطاقة.
+              </p>
+            ) : null}
+            {availableChoiceIds.length === 0 ? (
+              <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold leading-5 text-rose-700">
+                لا توجد كمية متوفرة حالياً لإصدار ملصق.
+              </p>
+            ) : null}
+          </section>
+
+          <section>
+            <div className="mb-3">
+              <h3 className="text-sm font-black text-slate-800">معاينة الملصق</h3>
+              <p className="mt-1 text-xs text-stone-500">
+                {selectedChoices.length > 1 ? 'هذه معاينة أول ملصق من المحدد.' : 'المقاس الافتراضي 70 × 50 مم.'}
+              </p>
+            </div>
+
+            <div className="rounded-3xl bg-stone-200 p-3 shadow-inner">
+              <div className="mx-auto aspect-[7/5] w-full max-w-[350px] border-2 border-black bg-white p-[3.5%] text-black shadow-md">
+                <p className="text-center text-[clamp(14px,3.3vw,21px)] font-black leading-none">ياسمين الشام للأقمشة</p>
+                <p className="mt-1 text-center text-[9px] font-bold tracking-wide">بطاقة تعريف القماش</p>
+                <div className="my-[4%] border-t-2 border-black" />
+                <div className="grid grid-cols-[1.2fr_1fr] gap-2">
+                  <div>
+                    <p className="mb-1 text-[9px] font-bold">رقم المنتج</p>
+                    <div dir="ltr" className="flex min-h-10 items-center justify-center border-2 border-black px-1 font-mono text-[clamp(14px,3vw,20px)] font-black leading-none">
+                      {previewChoice?.productCode ?? '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[9px] font-bold">سعر البيع</p>
+                    <div className="flex min-h-10 items-center justify-center border-2 border-black px-1 text-[clamp(12px,2.8vw,18px)] font-black leading-none">
+                      <span dir="ltr">{previewPricing.amount != null ? formatFabricNumber(previewPricing.amount) : '—'}</span>
+                      <span className="mr-1 text-[8px]">
+                        ر.س {getFabricPricingUnitLabel(previewPricing.unit)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="border border-black px-2 py-1">
+                    <p className="text-[8px] font-bold">اللون</p>
+                    <p className="truncate text-xs font-black">{previewChoice?.colorName ?? '—'}</p>
+                  </div>
+                  <div className="border border-black px-2 py-1">
+                    <p className="text-[8px] font-bold">الكمية المتوفرة</p>
+                    <p className="text-xs font-black">
+                      <span dir="ltr">{previewChoice ? formatFabricNumber(previewChoice.quantity) : '—'}</span>{' '}
+                      {item.unit === 'meter' ? 'متر' : 'قطعة'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-800">
+              ستصل المهمة إلى طابور الملصقات، ولن تُطبع حتى تكون محطة الأقمشة على وضع «ملصقات المخزون».
+            </p>
+          </section>
+        </div>
+
+        <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-stone-200 bg-stone-50/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="min-h-5 text-xs font-bold text-rose-600" role="alert">
+            {errorMessage}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={sending}
+              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-bold text-stone-700 transition hover:bg-stone-100 disabled:opacity-50"
+            >
+              إلغاء
+            </button>
+            <button
+              type="button"
+              onClick={handleQueueLabels}
+              disabled={!canPrint}
+              className="inline-flex min-w-40 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-slate-300 transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:shadow-none"
+            >
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {sending
+                ? 'جاري الإرسال...'
+                : selectedChoices.length > 1
+                  ? `إرسال ${selectedChoices.length} ملصقات`
+                  : 'إرسال الملصق'}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
 // ─── الصفحة الرئيسية ──────────────────────────────────────────────────────────
 function FabricsInventoryContent() {
   const [items, setItems] = useState<FabricInventoryItem[]>([])
@@ -2441,6 +2836,9 @@ function FabricsInventoryContent() {
   } | null>(null)
   const [historyTarget, setHistoryTarget] = useState<FabricInventoryItem | null>(null)
   const [galleryTarget, setGalleryTarget] = useState<FabricInventoryItem | null>(null)
+  const [labelTarget, setLabelTarget] = useState<FabricInventoryItem | null>(null)
+  const [printingLabelItemId, setPrintingLabelItemId] = useState<string | null>(null)
+  const printingLabelItemRef = useRef<string | null>(null)
 
   useEffect(() => {
     loadAll()
@@ -2589,8 +2987,16 @@ function FabricsInventoryContent() {
         return compareInventoryItemsBySerial(first, second) * directionMultiplier
       }
 
-      const firstPrice = first.sale_price_per_unit
-      const secondPrice = second.sale_price_per_unit
+      const firstPrice = getFabricDisplayPricing(
+        first.sale_price_per_unit,
+        first.current_quantity,
+        first.unit
+      ).amount
+      const secondPrice = getFabricDisplayPricing(
+        second.sale_price_per_unit,
+        second.current_quantity,
+        second.unit
+      ).amount
       if (firstPrice == null && secondPrice == null) {
         return compareInventoryItemsBySerial(first, second)
       }
@@ -2610,6 +3016,41 @@ function FabricsInventoryContent() {
 
     setSortKey(nextSortKey)
     setSortDirection('asc')
+  }
+
+  const handlePrintRequested = async (item: FabricInventoryItem) => {
+    if (printingLabelItemRef.current) return
+
+    if (item.sale_price_per_unit == null) {
+      toast.error('أدخل سعر البيع أولاً حتى يظهر على الملصق.')
+      return
+    }
+
+    const availableChoices = getFabricLabelChoices(item).filter((choice) => choice.quantity > 0)
+    if (availableChoices.length === 0) {
+      toast.error('لا توجد كمية متوفرة حالياً لإصدار ملصق.')
+      return
+    }
+
+    if (availableChoices.length > 1) {
+      setLabelTarget(item)
+      return
+    }
+
+    printingLabelItemRef.current = item.id
+    setPrintingLabelItemId(item.id)
+    try {
+      await queueFabricInventoryLabels([
+        createFabricLabelPayload(item, availableChoices[0], new Date().toISOString()),
+      ])
+      toast.success('أُرسل الملصق مباشرة إلى محطة الطباعة', { icon: '🏷️' })
+    } catch (error) {
+      console.error('Failed to queue fabric inventory label', error)
+      toast.error('تعذّر إرسال الملصق. تحقق من الاتصال ثم أعد المحاولة.')
+    } finally {
+      printingLabelItemRef.current = null
+      setPrintingLabelItemId(null)
+    }
   }
 
   const sortDirectionLabel = sortDirection === 'asc'
@@ -2651,6 +3092,13 @@ function FabricsInventoryContent() {
             </div>
 
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Link
+                href="/dashboard/accounting/fabrics/print-station"
+                className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800 sm:col-span-1"
+              >
+                <Printer className="h-5 w-5" />
+                <span>محطة الطباعة</span>
+              </Link>
               <Link
                 href="/dashboard/accounting/fabrics/inventory/statistics"
                 className="flex items-center justify-center gap-2 rounded-xl border border-teal-200 bg-white px-4 py-3 text-sm font-bold text-teal-800 shadow-sm transition-colors hover:bg-teal-50"
@@ -2850,6 +3298,8 @@ function FabricsInventoryContent() {
               <InventoryCard
                 key={item.id}
                 item={item}
+                onPrint={() => { void handlePrintRequested(item) }}
+                isPrintingLabel={printingLabelItemId === item.id}
                 onEdit={() => {
                   setEditingItem(item)
                   setShowItemModal(true)
@@ -2870,6 +3320,12 @@ function FabricsInventoryContent() {
 
       {/* نوافذ */}
       <AnimatePresence>
+        {labelTarget && (
+          <FabricLabelPrintModal
+            item={labelTarget}
+            onClose={() => setLabelTarget(null)}
+          />
+        )}
         {showItemModal && (
           <ItemModal
             item={editingItem}

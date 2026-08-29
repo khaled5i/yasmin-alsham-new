@@ -10,7 +10,7 @@ import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
-import { orderService } from '@/lib/services/order-service'
+import { orderService, type Order } from '@/lib/services/order-service'
 import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp, sendReadyForPickupWhatsApp, sendDeliveredWhatsApp } from '@/utils/whatsapp'
@@ -54,6 +54,7 @@ import {
   BellRing
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
+import OrderQualityReviewModal from '@/components/OrderQualityReviewModal'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import {
   autoSendOnDelivery,
@@ -62,6 +63,7 @@ import {
 } from '@/lib/services/delivery-service'
 import { sendInvoiceToAlostaz } from '@/lib/services/alostaz-client'
 import type { MeasurementSaveMetadata } from '@/types/measurements'
+import type { OrderQualityReview, OrderQualityReviewStage, OrderQualityReviewStatus } from '@/types/order-quality-review'
 
 const PAGE_SIZE = 50
 
@@ -253,6 +255,10 @@ function OrdersPageInner() {
   const [orderToStartWork, setOrderToStartWork] = useState<any>(null)
   // إبلاغ المدير بجهوزية البروفا الثانية (للعامل) — معرف الطلب قيد المعالجة
   const [notifyingSecondProofId, setNotifyingSecondProofId] = useState<string | null>(null)
+  const [qualityReviewTarget, setQualityReviewTarget] = useState<{
+    order: Order
+    stage: OrderQualityReviewStage
+  } | null>(null)
 
   // إغلاق قائمة تغيير الحالة عند النقر خارجها
   useEffect(() => {
@@ -548,6 +554,33 @@ function OrdersPageInner() {
       })
       return false
     }
+  }
+
+  const handleOpenQualityReview = (order: Order, stage: OrderQualityReviewStage) => {
+    setQualityReviewTarget({ order, stage })
+  }
+
+  const handleQualityReviewSaved = (review: OrderQualityReview) => {
+    const patch = review.stage === 'first_proof'
+      ? { first_proof_review_status: review.status, first_proof_reviewed_at: review.created_at }
+      : review.stage === 'second_proof'
+        ? { second_proof_review_status: review.status, second_proof_reviewed_at: review.created_at }
+        : { final_review_status: review.status, final_reviewed_at: review.created_at }
+
+    const patchOrder = (candidate: Order) => candidate.id === review.order_id
+      ? { ...candidate, ...patch }
+      : candidate
+
+    // الحالة حُفظت ذرياً في قاعدة البيانات بواسطة trigger؛ نحدّث النسخ المحلية فقط
+    // حتى يتلوّن زر البطاقة فوراً من دون كتابة ثانية أو إعادة تحميل القائمة كاملة.
+    useOrderStore.setState(state => ({
+      orders: state.orders.map(patchOrder),
+      currentOrder: state.currentOrder?.id === review.order_id
+        ? { ...state.currentOrder, ...patch }
+        : state.currentOrder,
+    }))
+    setSearchResults(current => current?.map(patchOrder) ?? null)
+    setDateFilterResults(current => current?.map(patchOrder) ?? null)
   }
 
   // إغلاق النوافذ
@@ -1028,6 +1061,18 @@ function OrdersPageInner() {
 
   const hasAlterations = (order: any) => order?.has_alterations === true
 
+  const getQualityReviewStatus = (
+    order: Order,
+    stage: OrderQualityReviewStage
+  ): OrderQualityReviewStatus => {
+    const value = stage === 'first_proof'
+      ? order?.first_proof_review_status
+      : stage === 'second_proof'
+        ? order?.second_proof_review_status
+        : order?.final_review_status
+    return value === 'passed' || value === 'failed' ? value : 'pending'
+  }
+
   const filteredOrders = baseOrders.filter(order => {
     // فلترة حسب الدور
     let matchesRole = user?.role === 'admin' || workerType === 'workshop_manager'
@@ -1235,8 +1280,52 @@ function OrdersPageInner() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
-                  className={`bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-all ${user.role === 'worker' ? 'p-5 shadow-md' : 'p-6 shadow-sm rounded-xl'}`}
+                  className={`relative bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-all ${user.role === 'worker'
+                    ? workerType === 'workshop_manager'
+                      ? 'py-5 pr-5 pl-20 shadow-md'
+                      : 'p-5 shadow-md'
+                    : 'p-6 shadow-sm rounded-xl'
+                  }`}
                 >
+                  {workerType === 'workshop_manager' ? (
+                    <div
+                      className="absolute left-3 top-4 z-20 flex flex-col gap-2"
+                      onClick={event => event.stopPropagation()}
+                    >
+                      {([
+                        { stage: 'first_proof' as const, number: 1, ar: 'البروفا الأولى', en: 'First proof' },
+                        ...(order.has_second_proof
+                          ? [{ stage: 'second_proof' as const, number: 2, ar: 'البروفا الثانية', en: 'Second proof' }]
+                          : []),
+                        { stage: 'final_dress' as const, number: 3, ar: 'الفستان النهائي', en: 'Final dress' },
+                      ]).map(reviewButton => {
+                        const reviewStatus = getQualityReviewStatus(order, reviewButton.stage)
+                        const statusLabel = reviewStatus === 'passed'
+                          ? (isArabic ? 'ناجح' : 'Passed')
+                          : reviewStatus === 'failed'
+                            ? (isArabic ? 'فاشل' : 'Failed')
+                            : (isArabic ? 'لم يبدأ' : 'Not started')
+                        return (
+                          <button
+                            key={reviewButton.stage}
+                            type="button"
+                            onClick={() => handleOpenQualityReview(order, reviewButton.stage)}
+                            className={`flex h-12 w-12 items-center justify-center rounded-2xl border-2 text-lg font-black shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-4 ${
+                              reviewStatus === 'passed'
+                                ? 'border-emerald-600 bg-emerald-600 text-white focus:ring-emerald-200'
+                                : reviewStatus === 'failed'
+                                  ? 'border-red-600 bg-red-600 text-white focus:ring-red-200'
+                                  : 'border-stone-300 bg-stone-50 text-stone-700 hover:border-[#7f263b] hover:text-[#7f263b] focus:ring-rose-100'
+                            }`}
+                            aria-label={`${isArabic ? reviewButton.ar : reviewButton.en}: ${statusLabel}`}
+                            title={`${isArabic ? reviewButton.ar : reviewButton.en} — ${statusLabel}`}
+                          >
+                            {reviewButton.number}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : null}
                   {user.role === 'worker' ? (
                     /* ========= بطاقة العامل ========= */
                     <>
@@ -1713,6 +1802,15 @@ function OrdersPageInner() {
           )}</motion.div >
 
         {/* النوافذ المنبثقة */}
+        <OrderQualityReviewModal
+          isOpen={qualityReviewTarget !== null}
+          order={qualityReviewTarget?.order || null}
+          stage={qualityReviewTarget?.stage || null}
+          language={language}
+          onClose={() => setQualityReviewTarget(null)}
+          onReviewSaved={handleQualityReviewSaved}
+        />
+
         < OrderModal
           order={selectedOrder}
           workers={workers}

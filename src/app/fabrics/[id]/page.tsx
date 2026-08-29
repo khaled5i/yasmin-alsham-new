@@ -7,6 +7,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, MessageCircle } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
+import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 
@@ -101,6 +102,11 @@ export default function FabricDetailPage() {
   }
 
   const finalPrice = getFinalPrice(fabric)
+  const displayedFinalPrice = getFabricDisplayPricing(finalPrice, fabric.stock_quantity)
+  const displayedOriginalPrice = getFabricDisplayPricing(
+    fabric.price_per_meter,
+    fabric.stock_quantity
+  )
 
   // رابط واتساب للاستفسار
   const fabricLabel = fabric.name || fabric.fabric_code || 'قماش'
@@ -148,7 +154,7 @@ export default function FabricDetailPage() {
                   alt={`${fabricLabel} - صورة ${currentImageIndex + 1}`}
                   fill
                   sizes="(max-width: 768px) 100vw, 50vw"
-                  className="object-cover transition-transform duration-300"
+                  className="object-contain transition-transform duration-300"
                   priority={currentImageIndex === 0}
                   quality={85}
                 />
@@ -248,12 +254,12 @@ export default function FabricDetailPage() {
                 <div className="text-3xl font-bold text-[#6b1726]">
                   {fabric.is_on_sale ? (
                     <div className="flex items-center gap-3">
-                      <span>{formatFabricPrice(finalPrice)}</span>
-                      <span className="text-xl text-[#211b19]/40 line-through">{formatFabricPrice(fabric.price_per_meter)}</span>
+                      <span>{formatFabricPrice(displayedFinalPrice.amount, displayedFinalPrice.unit)}</span>
+                      <span className="text-xl text-[#211b19]/40 line-through">{formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}</span>
                       <span className="bg-[#6b1726] text-[#f6f0e8] text-sm px-2 py-1 rounded-full">خصم {fabric.discount_percentage}%</span>
                     </div>
                   ) : (
-                    <span>{formatFabricPrice(fabric.price_per_meter)}</span>
+                    <span>{formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}</span>
                   )}
                 </div>
               )}

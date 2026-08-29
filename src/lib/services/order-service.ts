@@ -67,6 +67,13 @@ const ORDER_LIST_COLUMNS = [
   'is_flagged',        // migration 40
   'fabric_type',
   'has_second_proof',  // migration 23
+  // مراحل مراجعة الجودة (البروفا الأولى والثانية والفستان النهائي)
+  'first_proof_review_status',
+  'first_proof_reviewed_at',
+  'second_proof_review_status',
+  'second_proof_reviewed_at',
+  'final_review_status',
+  'final_reviewed_at',
   // إشعارات البروفا الثانية (migration 54)
   'second_proof_completed',
   'second_proof_completed_at',
@@ -153,6 +160,12 @@ export interface Order {
   is_flagged: boolean   // migration 40
   // بروفا ثانية (migration 23)
   has_second_proof: boolean
+  first_proof_review_status?: 'pending' | 'passed' | 'failed'
+  first_proof_reviewed_at?: string | null
+  second_proof_review_status?: 'pending' | 'passed' | 'failed'
+  second_proof_reviewed_at?: string | null
+  final_review_status?: 'pending' | 'passed' | 'failed'
+  final_reviewed_at?: string | null
   // إشعارات البروفا الثانية (migration 54)
   second_proof_completed?: boolean
   second_proof_completed_at?: string | null

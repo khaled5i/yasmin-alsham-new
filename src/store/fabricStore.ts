@@ -4,6 +4,10 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-service'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import {
+  getFabricDisplayPricing,
+  type FabricPricingUnit,
+} from '@/lib/fabric-display-pricing'
 
 // ============================================
 // تعريف الأنواع (Types)
@@ -205,7 +209,11 @@ export const useFabricStore = create<FabricStoreState>()(
           // فلتر السعر
           if (filters.priceRange) {
             const { min, max } = filters.priceRange
-            if (fabric.price_per_meter == null || fabric.price_per_meter < min || fabric.price_per_meter > max) return false
+            const displayedPrice = getFabricDisplayPricing(
+              fabric.price_per_meter,
+              fabric.stock_quantity
+            ).amount
+            if (displayedPrice == null || displayedPrice < min || displayedPrice > max) return false
           }
 
           // فلتر التوفر
@@ -241,9 +249,17 @@ export const useFabricStore = create<FabricStoreState>()(
             case 'newest':
               return b.created_at.localeCompare(a.created_at)
             case 'price-high':
-              return (b.price_per_meter ?? 0) - (a.price_per_meter ?? 0)
+              return (
+                getFabricDisplayPricing(b.price_per_meter, b.stock_quantity).amount ?? 0
+              ) - (
+                getFabricDisplayPricing(a.price_per_meter, a.stock_quantity).amount ?? 0
+              )
             case 'price-low':
-              return (a.price_per_meter ?? 0) - (b.price_per_meter ?? 0)
+              return (
+                getFabricDisplayPricing(a.price_per_meter, a.stock_quantity).amount ?? 0
+              ) - (
+                getFabricDisplayPricing(b.price_per_meter, b.stock_quantity).amount ?? 0
+              )
             case 'popular':
               return b.orders_count - a.orders_count
             case 'name':
@@ -280,9 +296,12 @@ export const useFabricStore = create<FabricStoreState>()(
 )
 
 // دالة مساعدة لتنسيق السعر
-export const formatFabricPrice = (pricePerMeter: number | null | undefined): string => {
-  if (pricePerMeter == null) return 'السعر عند الطلب'
-  return `${formatFabricNumber(pricePerMeter)} ريال/متر`
+export const formatFabricPrice = (
+  price: number | null | undefined,
+  unit: FabricPricingUnit = 'meter'
+): string => {
+  if (price == null) return 'السعر عند الطلب'
+  return `${formatFabricNumber(price)} ريال/${unit === 'piece' ? 'القطعة' : 'متر'}`
 }
 
 // دالة مساعدة للحصول على السعر النهائي (بعد التخفيض)
