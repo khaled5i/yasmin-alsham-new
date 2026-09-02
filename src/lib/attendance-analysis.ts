@@ -122,7 +122,7 @@ function overlapMinutes(interval: TimeInterval, range: TimeInterval) {
   )
 }
 
-function getRiyadhDateKey(value: Date | string) {
+export function getRiyadhDateKey(value: Date | string) {
   const date = typeof value === 'string' ? new Date(value) : value
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: ATTENDANCE_POLICY.timeZone,

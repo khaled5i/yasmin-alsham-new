@@ -1,6 +1,12 @@
 import { supabase } from '@/lib/supabase'
 import type { WorkerWithUser } from '@/lib/services/worker-service'
-import type { AttendancePrayerTime } from '@/lib/attendance-analysis'
+import {
+  buildAttendanceMonthSummary,
+  getMonthDateKeys,
+  getRiyadhDateKey,
+  groupAttendanceEventsByRiyadhDate,
+  type AttendancePrayerTime,
+} from '@/lib/attendance-analysis'
 
 export type AttendanceDirection = 'entry' | 'exit'
 
@@ -60,15 +66,10 @@ export interface AttendanceEvent {
   received_at: string
 }
 
-function getRiyadhDateKey(value: string) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Riyadh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(value))
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-  return `${values.year}-${values.month}-${values.day}`
+export interface WorkerAttendanceSummary {
+  firstEntryAt: string | null
+  absentDays: number
+  monthKey: string
 }
 
 export function isAttendanceSuspensionActive(suspension: AttendanceWorkerSuspension) {
@@ -226,6 +227,63 @@ export const attendanceService = {
       throw new Error(payload.error || 'تعذر تحميل مواقيت الصلاة')
     }
     return payload.days
+  },
+
+  async getMySummary(userId: string): Promise<WorkerAttendanceSummary> {
+    const { data: worker, error: workerError } = await supabase
+      .from('workers')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (workerError) throw new Error(workerError.message)
+    if (!worker) throw new Error('لم يتم العثور على ملف العامل')
+
+    const now = new Date()
+    const todayKey = getRiyadhDateKey(now)
+    const monthKey = todayKey.slice(0, 7)
+    const { start, end } = getRiyadhMonthBounds(monthKey)
+
+    const [eventsResult, suspensionsResult] = await Promise.all([
+      supabase
+        .from('attendance_events')
+        .select('id, direction, occurred_at')
+        .eq('worker_id', worker.id)
+        .eq('was_successful', true)
+        .gte('occurred_at', start)
+        .lt('occurred_at', end)
+        .order('occurred_at', { ascending: true }),
+      supabase
+        .from('attendance_worker_suspensions')
+        .select('id, worker_id, suspended_at, resumed_at, created_at, updated_at')
+        .eq('worker_id', worker.id)
+        .order('suspended_at', { ascending: false }),
+    ])
+
+    const firstError = eventsResult.error || suspensionsResult.error
+    if (firstError) throw new Error(firstError.message)
+
+    const events = (eventsResult.data || []) as Pick<AttendanceEvent, 'id' | 'direction' | 'occurred_at'>[]
+    const suspensions = (suspensionsResult.data || []) as AttendanceWorkerSuspension[]
+    const eventsByDate = groupAttendanceEventsByRiyadhDate(events)
+    const excludedDateKeys = new Set(getMonthDateKeys(monthKey).filter((dateKey) => (
+      suspensions.some((suspension) => isAttendanceSuspendedOnDate(suspension, dateKey))
+    )))
+    const monthSummary = buildAttendanceMonthSummary(
+      monthKey,
+      eventsByDate,
+      new Map(),
+      now,
+      excludedDateKeys,
+    )
+    const firstEntryAt = (eventsByDate.get(todayKey) || [])
+      .find((event) => event.direction === 'entry')?.occurred_at || null
+
+    return {
+      firstEntryAt,
+      absentDays: monthSummary.absentDays,
+      monthKey,
+    }
   },
 
   async saveMapping(deviceId: string, deviceUserId: string, workerId: string) {

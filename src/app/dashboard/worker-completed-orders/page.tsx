@@ -9,6 +9,8 @@ import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { orderService } from '@/lib/services/order-service'
+import { getSupabaseImageSrcSet, getSupabaseImageUrl } from '@/lib/utils/media'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import {
   autoSendOnDelivery,
@@ -39,6 +41,7 @@ import {
   Trash2,
   Star,
   Tag,
+  Wallet,
 } from 'lucide-react'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
@@ -65,6 +68,7 @@ export default function WorkerCompletedOrdersPage() {
   const [showPaymentWarning, setShowPaymentWarning] = useState(false)
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  const [completedImageThumbnails, setCompletedImageThumbnails] = useState<Record<string, string>>({})
 
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -121,13 +125,11 @@ export default function WorkerCompletedOrdersPage() {
   // للعمال: تظهر الطلبات المكتملة والمسلمة معاً حتى لا تختفي بعد التسليم
   // للأدمن: المكتملة فقط (لا تغيير)
   const validStatuses = user?.role !== 'admin' ? ['completed', 'delivered'] : ['completed']
+  const currentWorker = workers.find(worker => worker.user_id === user?.id)
+  const currentWorkerId = currentWorker?.id
 
   const completedOrders = orders.filter(order => {
     if (!validStatuses.includes(order.status)) return false
-
-    // الحصول على معرف العامل الحالي
-    const currentWorker = workers.find(w => w.user_id === user?.id)
-    const currentWorkerId = currentWorker?.id
 
     // التأكد من أن الطلب يخص هذا العامل فقط (إذا لم يكن أدمن)
     if (user?.role !== 'admin') {
@@ -155,8 +157,6 @@ export default function WorkerCompletedOrdersPage() {
         ...orders
           .filter(order => {
             if (!validStatuses.includes(order.status)) return false
-            const currentWorker = workers.find(w => w.user_id === user?.id)
-            const currentWorkerId = currentWorker?.id
             if (user?.role !== 'admin') {
               if (!currentWorkerId) return false
               if (order.worker_id !== currentWorkerId) return false
@@ -184,6 +184,36 @@ export default function WorkerCompletedOrdersPage() {
     })
   })
   const sortedMonthKeys = Object.keys(ordersByMonth).sort((a, b) => b.localeCompare(a))
+
+  const salaryOrders = user?.role === 'admin'
+    ? []
+    : orders.filter(order => (
+        validStatuses.includes(order.status)
+        && order.worker_id === currentWorkerId
+        && (!selectedMonth || getOrderMonthKey(order) === selectedMonth)
+        && order.worker_rating_visible === true
+        && order.worker_price != null
+      ))
+  const visibleSalaryTotal = salaryOrders.reduce((total, order) => (
+    total + Number(order.worker_price || 0) + Number(order.worker_bonus || 0)
+  ), 0)
+  const completedOrderIdsKey = completedOrders.map(order => order.id).sort().join(',')
+
+  useEffect(() => {
+    let isCurrent = true
+    const orderIds = completedOrderIdsKey ? completedOrderIdsKey.split(',') : []
+
+    if (orderIds.length === 0) {
+      setCompletedImageThumbnails({})
+      return () => { isCurrent = false }
+    }
+
+    void orderService.getCompletedImageThumbnails(orderIds).then((result) => {
+      if (isCurrent) setCompletedImageThumbnails(result.data)
+    })
+
+    return () => { isCurrent = false }
+  }, [completedOrderIdsKey])
 
   const getWorkerName = (workerId?: string | null) => {
     if (!workerId) return t('not_specified') || 'غير محدد'
@@ -434,9 +464,9 @@ export default function WorkerCompletedOrdersPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="mb-8"
+          className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
         >
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
               <CheckCircle className="w-6 h-6 text-white" />
             </div>
@@ -447,6 +477,19 @@ export default function WorkerCompletedOrdersPage() {
               </p>
             </div>
           </div>
+          {salaryOrders.length > 0 && (
+            <div className="min-w-[220px] rounded-2xl border border-emerald-200 bg-white/90 p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-700">
+                <Wallet className="h-4 w-4" />
+                {t('visible_salary_total')}
+              </div>
+              <p className="mt-1 text-2xl font-black text-slate-900">
+                {visibleSalaryTotal.toLocaleString('en-US')}
+                <span className="mr-1.5 text-sm font-bold text-emerald-700">{t('sar_unit')}</span>
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">{t('visible_salary_note')}</p>
+            </div>
+          )}
         </motion.div>
 
         {/* البحث والفلاتر - تصميم محسّن */}
@@ -575,11 +618,39 @@ export default function WorkerCompletedOrdersPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.05 }}
                 onClick={() => handleViewOrder(order)}
-                className="bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
+                className="group bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
               >
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                <div className="flex items-start gap-3 sm:gap-4 lg:items-center">
+                  <div className="relative h-36 w-24 shrink-0 overflow-hidden rounded-xl border border-emerald-100 bg-white sm:h-40 sm:w-28 lg:h-28 lg:w-28">
+                    {completedImageThumbnails[order.id] ? (
+                      <img
+                        src={getSupabaseImageUrl(completedImageThumbnails[order.id], {
+                          width: 224,
+                          height: 320,
+                          quality: 78,
+                          resize: 'contain',
+                        })}
+                        srcSet={getSupabaseImageSrcSet(
+                          completedImageThumbnails[order.id],
+                          [{ width: 96, height: 144 }, { width: 224, height: 320 }],
+                          78,
+                          'contain',
+                        )}
+                        sizes="(min-width: 640px) 112px, 96px"
+                        alt={t('completed_work_thumbnail_alt', { order: order.order_number || order.id })}
+                        loading="lazy"
+                        className="h-full w-full object-contain p-1 transition-transform duration-300 group-hover:scale-[1.02]"
+                      />
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-emerald-700/60">
+                        <ImageIcon className="h-7 w-7" />
+                        <span className="text-[11px] font-bold leading-4">{t('no_completed_work_image')}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* معلومات الطلب الأساسية */}
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">

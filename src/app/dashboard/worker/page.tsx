@@ -7,8 +7,8 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { useTranslation } from '@/hooks/useTranslation'
+import WorkerAttendanceSummary from '@/components/WorkerAttendanceSummary'
 import {
-  ArrowRight,
   LogOut,
   Package,
   PackageCheck,
@@ -20,7 +20,7 @@ export default function WorkerDashboard() {
   const router = useRouter()
   const { user, signOut } = useAuthStore()
   const { workerType, permissions, isLoading } = useWorkerPermissions()
-  const { t, isArabic, language, changeLanguage } = useTranslation()
+  const { t, language, changeLanguage } = useTranslation()
 
   useEffect(() => {
     // التحقق من تسجيل الدخول
@@ -114,50 +114,13 @@ export default function WorkerDashboard() {
 
       {/* المحتوى الرئيسي */}
       <main className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
-        {/* قسم الترحيب */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="mb-6 sm:mb-8"
-        >
-          <div className="text-center sm:text-right">
-            <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-gray-800 mb-2 sm:mb-3">
-              {t('welcome_back')}, <span className="text-pink-600">{user?.full_name}</span>
-            </h2>
-            <p className="text-sm sm:text-base md:text-lg text-gray-600">
-              {t('tailor_dashboard_desc') || 'إدارة ومتابعة طلبات الخياطة الخاصة بك'}
-            </p>
-          </div>
-        </motion.div>
-
-        {/* رسالة ترحيب */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-xl p-4 sm:p-6 mb-6 sm:mb-8"
-        >
-          <div className="flex items-start space-x-3 sm:space-x-4 space-x-reverse">
-            <div className="p-2 sm:p-3 bg-pink-100 rounded-lg flex-shrink-0">
-              <Scissors className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-base sm:text-lg md:text-xl font-semibold text-pink-800 mb-1 sm:mb-2">
-                {t('tailor_workspace') || 'مساحة عمل الخياط'}
-              </h3>
-              <p className="text-xs sm:text-sm md:text-base text-pink-700">
-                {t('tailor_workspace_info') || 'يمكنك متابعة طلباتك الحالية، وتحديث حالاتها، وعرض أرشيف الطلبات المكتملة'}
-              </p>
-            </div>
-          </div>
-        </motion.div>
+        <WorkerAttendanceSummary userId={user.id} language={language} t={t} />
 
         {/* لوحة التحكم - البطاقات */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.4 }}
+          transition={{ duration: 0.6, delay: 0.1 }}
           className="bg-white/80 backdrop-blur-sm rounded-xl p-4 sm:p-6 border border-pink-100"
         >
           <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center space-x-2 space-x-reverse">

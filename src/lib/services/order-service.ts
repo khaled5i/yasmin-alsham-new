@@ -13,6 +13,7 @@
 import { extractDateKey } from '../date-utils'
 import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
 import { uploadOrderImages } from './storage-service'
+import { isVideoFile } from '@/lib/utils/media'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -891,6 +892,52 @@ export const orderService = {
     } catch (error: any) {
       console.error('❌ Error in getAll orders:', error.message)
       return { data: [], error: error.message || error.hint || 'خطأ في جلب الطلبات' }
+    }
+  },
+
+  /**
+   * يجلب صور العمل المكتمل فقط للبطاقات الظاهرة، دون تحميل تفاصيل الطلب الثقيلة.
+   */
+  async getCompletedImageThumbnails(orderIds: string[]): Promise<{
+    data: Record<string, string>
+    error: string | null
+  }> {
+    if (!isSupabaseConfigured() || orderIds.length === 0) {
+      return { data: {}, error: null }
+    }
+
+    try {
+      const uniqueIds = [...new Set(orderIds)]
+      const batchSize = 100
+      const batches = Array.from(
+        { length: Math.ceil(uniqueIds.length / batchSize) },
+        (_, index) => uniqueIds.slice(index * batchSize, (index + 1) * batchSize),
+      )
+      const results = await Promise.all(batches.map((ids) => (
+        supabase
+          .from('orders')
+          .select('id, completed_images')
+          .in('id', ids)
+      )))
+      const firstError = results.find((result) => result.error)?.error
+      if (firstError) throw firstError
+
+      const thumbnails: Record<string, string> = {}
+      for (const result of results) {
+        for (const row of result.data || []) {
+          const images = Array.isArray(row.completed_images) ? row.completed_images : []
+          const image = images.find((value) => (
+            typeof value === 'string' && value.trim() !== '' && !isVideoFile(value)
+          ))
+          if (image) thumbnails[row.id] = image
+        }
+      }
+
+      return { data: thumbnails, error: null }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'تعذر تحميل صور العمل المكتمل'
+      console.error('Error loading completed work thumbnails:', message)
+      return { data: {}, error: message }
     }
   },
 

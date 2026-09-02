@@ -88,6 +88,20 @@ function orderToPricingData(order: Order): OrderPricingData {
   }
 }
 
+function orderHasWorkerEvaluation(order: Order): boolean {
+  return order.worker_price != null
+    || order.worker_bonus != null
+    || (order.worker_rating ?? 0) > 0
+    || (typeof order.worker_notes === 'string' && order.worker_notes.trim() !== '')
+}
+
+function pricingFormHasWorkerEvaluation(form?: OrderPricingData): boolean {
+  return (form?.price?.trim() ?? '') !== ''
+    || (form?.bonus?.trim() ?? '') !== ''
+    || (form?.rating ?? 0) > 0
+    || (form?.notes?.trim() ?? '') !== ''
+}
+
 function sanitizeNum(val: string): string {
   const cleaned = val.replace(/[^\d.]/g, '')
   const parts = cleaned.split('.')
@@ -146,6 +160,7 @@ export default function WorkerDetailPage() {
   const [orderFullDetails, setOrderFullDetails] = useState<Record<string, Order>>({})
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [isExpandingAll, setIsExpandingAll] = useState(false)
+  const [isShowingAllRatings, setIsShowingAllRatings] = useState(false)
 
   const loadedTabs = useRef<Set<TabType>>(new Set())
 
@@ -208,18 +223,45 @@ export default function WorkerDetailPage() {
         orderBy: 'worker_completed_at',
         orderAscending: false,
       })
-      setCompletedOrders(data || [])
+      let loadedOrders = data || []
+
+      // في حساب المدير، أي تقييم أو تسعير محفوظ يصبح ظاهراً للعامل تلقائياً.
+      if (isAdmin) {
+        const visibilityTargets = loadedOrders.filter((order) => (
+          orderHasWorkerEvaluation(order) && !order.worker_rating_visible
+        ))
+        if (visibilityTargets.length > 0) {
+          setIsShowingAllRatings(true)
+          try {
+            const results = await Promise.all(
+              visibilityTargets.map((order) => orderService.update(order.id, { worker_rating_visible: true }))
+            )
+            const visibleOrderIds = new Set(
+              visibilityTargets
+                .filter((_, index) => !results[index].error)
+                .map((order) => order.id)
+            )
+            loadedOrders = loadedOrders.map((order) => (
+              visibleOrderIds.has(order.id) ? { ...order, worker_rating_visible: true } : order
+            ))
+          } finally {
+            setIsShowingAllRatings(false)
+          }
+        }
+      }
+
+      setCompletedOrders(loadedOrders)
       setCompletedOrdersTotal(total || 0)
       // قراءة بيانات التسعير من أعمدة الطلب مباشرةً
       const forms: Record<string, OrderPricingData> = {}
-      ;(data || []).forEach((order) => {
+      loadedOrders.forEach((order) => {
         forms[order.id] = orderToPricingData(order)
       })
       setPricingForms((prev) => ({ ...prev, ...forms }))
     } finally {
       setIsLoadingCompleted(false)
     }
-  }, [workerId])
+  }, [isAdmin, workerId])
 
   // Tab switch handler
   function handleTabSwitch(tab: TabType) {
@@ -311,12 +353,17 @@ export default function WorkerDetailPage() {
 
   const handleSavePricing = useCallback((orderId: string, data: OrderPricingData) => {
     setPricingForms((prev) => ({ ...prev, [orderId]: data }))
-    orderService.update(orderId, {
+    const updates = {
       worker_price:  data.price  ? parseFloat(data.price)  : null,
       worker_bonus:  data.bonus  ? parseFloat(data.bonus)  : null,
       worker_rating: data.rating || null,
       worker_notes:  data.notes  || null,
-    }).catch(() => { /* تجاهل — الحالة المحلية لا تزال محدَّثة */ })
+      worker_rating_visible: true,
+    }
+    setCompletedOrders((prev) => prev.map((order) => (
+      order.id === orderId ? { ...order, ...updates } : order
+    )))
+    orderService.update(orderId, updates).catch(() => { /* تجاهل — الحالة المحلية لا تزال محدَّثة */ })
   }, [])
 
   const handleToggleRatingVisibility = useCallback(async (order: Order) => {
@@ -327,24 +374,26 @@ export default function WorkerDetailPage() {
     await orderService.update(order.id, { worker_rating_visible: newVal })
   }, [])
 
-  const [isShowingAllRatings, setIsShowingAllRatings] = useState(false)
-
   const handleShowAllRatings = useCallback(async () => {
     if (isShowingAllRatings) return
     // الطلبات التي تحتوي على تقييم أو سعر ولم تُرسَل للعامل بعد
     const targets = completedOrders.filter((o) => {
       const form = pricingForms[o.id]
-      const hasData = (form?.price?.trim() ?? '') !== '' || (form?.rating ?? 0) > 0 || form?.notes?.trim()
-      return hasData && !o.worker_rating_visible
+      return pricingFormHasWorkerEvaluation(form) && !o.worker_rating_visible
     })
     if (targets.length === 0) return
     setIsShowingAllRatings(true)
     try {
-      await Promise.all(
+      const results = await Promise.all(
         targets.map((o) => orderService.update(o.id, { worker_rating_visible: true }))
       )
+      const visibleOrderIds = new Set(
+        targets
+          .filter((_, index) => !results[index].error)
+          .map((order) => order.id)
+      )
       setCompletedOrders((prev) =>
-        prev.map((o) => targets.some((t) => t.id === o.id) ? { ...o, worker_rating_visible: true } : o)
+        prev.map((o) => visibleOrderIds.has(o.id) ? { ...o, worker_rating_visible: true } : o)
       )
     } finally {
       setIsShowingAllRatings(false)
@@ -890,14 +939,13 @@ function CompletedOrdersTab({
   const recentMonths = getRecentMonths(18)
   const hasActiveFilters = !!monthFilter || unratedOnly
 
-  const evaluatedCount = orders.filter(
-    (o) => (pricingForms[o.id]?.price?.trim() ?? '') !== '' || (pricingForms[o.id]?.rating ?? 0) > 0
-  ).length
+  const evaluatedCount = orders.filter((order) => (
+    pricingFormHasWorkerEvaluation(pricingForms[order.id])
+  )).length
 
   const pendingVisibilityCount = orders.filter((o) => {
     const form = pricingForms[o.id]
-    const hasData = (form?.price?.trim() ?? '') !== '' || (form?.rating ?? 0) > 0 || form?.notes?.trim()
-    return hasData && !o.worker_rating_visible
+    return pricingFormHasWorkerEvaluation(form) && !o.worker_rating_visible
   }).length
 
   return (
