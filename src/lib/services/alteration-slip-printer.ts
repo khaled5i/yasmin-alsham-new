@@ -10,7 +10,10 @@
 import { alterationService } from './alteration-service'
 import { getAlterationText } from '@/lib/alteration-text'
 import { buildAlterationSlipPayload } from '@/lib/print-alteration-slip'
-import { enqueueAlterationSlipPrint } from './alteration-print-job-service'
+import {
+  enqueueAlterationSlipPrint,
+  type QueueAlterationPrintOptions,
+} from './alteration-print-job-service'
 
 export interface AlterationSlipPrintResult {
   jobId: string
@@ -61,7 +64,8 @@ async function resolveHindiContent(
 }
 
 export async function printAlterationSlip(
-  alterationId: string
+  alterationId: string,
+  queueOptions: QueueAlterationPrintOptions = {}
 ): Promise<AlterationSlipPrintResult> {
   const { data: alteration, error } = await alterationService.getById(alterationId)
   if (error) throw new Error(error)
@@ -74,7 +78,7 @@ export async function printAlterationSlip(
 
   const hindiContent = await resolveHindiContent(alterationId, sourceText)
   const payload = buildAlterationSlipPayload(alteration, hindiContent)
-  const queued = await enqueueAlterationSlipPrint(payload)
+  const queued = await enqueueAlterationSlipPrint(payload, queueOptions)
 
   return { jobId: queued.job_id, hindiMissing: hindiContent.length === 0 }
 }

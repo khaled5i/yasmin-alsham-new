@@ -15,10 +15,10 @@ import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignCo
 import NumericInput from '@/components/NumericInput'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
 import { imageService } from '@/lib/services/image-service'
+import { printAlterationSlip } from '@/lib/services/alteration-slip-printer'
 import {
   ArrowRight,
   Upload,
-  Save,
   User,
   MessageSquare,
   AlertCircle,
@@ -35,7 +35,8 @@ import {
   Phone,
   Clock,
   CheckCircle,
-  Pencil
+  Pencil,
+  Printer
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
@@ -485,7 +486,40 @@ function AddAlterationContent() {
     }]
   }, [formData.imageAnnotations, formData.imageDrawings, formData.savedDesignComments])
 
-  // إرسال النموذج
+  const queueSavedAlterationPrint = async (alterationId: string, updatedAt: string) => {
+    try {
+      const { hindiMissing } = await printAlterationSlip(alterationId, {
+        idempotencyKey: `alterations:save-print:${alterationId}:${updatedAt}`,
+      })
+
+      if (hindiMissing) {
+        toast(
+          isArabic
+            ? 'تم الحفظ وإرسال الورقة العربية للطباعة. تعذّرت الترجمة الهندية فلن تُطبع نسختها.'
+            : 'Saved and queued the Arabic slip. Hindi translation failed, so its copy will not print.',
+          { icon: '⚠️' }
+        )
+      } else {
+        toast.success(
+          isArabic
+            ? 'تم الحفظ وإرسال ورقتي التعديل (عربي + هندي) إلى طابعة الورشة'
+            : 'Saved and sent both alteration slips (Arabic + Hindi) to the workshop printer'
+        )
+      }
+    } catch (error: unknown) {
+      console.error('Failed to queue saved alteration for printing:', error)
+      toast.success(isArabic ? 'تم حفظ طلب التعديل بنجاح' : 'Alteration saved successfully')
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : (isArabic
+              ? 'تم الحفظ، لكن تعذّر إرسال ورقة التعديل للطباعة'
+              : 'Saved, but failed to queue the alteration slip')
+      )
+    }
+  }
+
+  // حفظ النموذج وإرسال ورقة التعديل تلقائياً إلى طابور طابعة الورشة
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -610,7 +644,12 @@ function AddAlterationContent() {
           await alterationService.syncOrderAlterationCount(effectiveOrderId)
         }
 
-        toast.success(isArabic ? 'تم تحديث طلب التعديل بنجاح!' : 'Alteration updated successfully!')
+        if (result.data) {
+          await queueSavedAlterationPrint(result.data.id, result.data.updated_at)
+        } else {
+          toast.success(isArabic ? 'تم تحديث طلب التعديل بنجاح!' : 'Alteration updated successfully!')
+          toast.error(isArabic ? 'تعذّر إرسال طلب التعديل للطباعة' : 'Failed to queue the alteration slip')
+        }
         router.push('/dashboard/alterations')
       } else {
         // وضع الإضافة
@@ -651,7 +690,12 @@ function AddAlterationContent() {
           await alterationService.syncOrderAlterationCount(effectiveOrderId)
         }
 
-        toast.success(isArabic ? 'تم إضافة طلب التعديل بنجاح!' : 'Alteration added successfully!')
+        if (result.data) {
+          await queueSavedAlterationPrint(result.data.id, result.data.updated_at)
+        } else {
+          toast.success(isArabic ? 'تم إضافة طلب التعديل بنجاح!' : 'Alteration added successfully!')
+          toast.error(isArabic ? 'تعذّر إرسال طلب التعديل للطباعة' : 'Failed to queue the alteration slip')
+        }
         router.push('/dashboard/alterations')
       }
     } catch (error: any) {
@@ -1582,7 +1626,7 @@ function AddAlterationContent() {
             transition={{ delay: 0.6 }}
             className="flex flex-col sm:flex-row gap-4"
           >
-            {/* زر حفظ طلب التعديل العادي */}
+            {/* زر حفظ طلب التعديل وإرساله تلقائياً إلى طابور الطباعة */}
             <button
               type="submit"
               disabled={isSubmitting}
@@ -1591,14 +1635,14 @@ function AddAlterationContent() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  {isArabic ? 'جاري الحفظ...' : 'Saving...'}
+                  {isArabic ? 'جاري الحفظ والطباعة...' : 'Saving & printing...'}
                 </>
               ) : (
                 <>
-                  <Save className="w-5 h-5" />
+                  <Printer className="w-5 h-5" />
                   {isEditMode
-                    ? (isArabic ? 'تحديث طلب التعديل' : 'Update Alteration')
-                    : (isArabic ? 'حفظ طلب التعديل' : 'Save Alteration')
+                    ? (isArabic ? 'تحديث وطباعة' : 'Update & Print')
+                    : (isArabic ? 'حفظ وطباعة' : 'Save & Print')
                   }
                 </>
               )}
