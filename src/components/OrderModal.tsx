@@ -54,6 +54,7 @@ import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote } from './InteractiveImageAnnotation'
 import DesignSummarySection from './DesignSummarySection'
+import OrderAlterationsSection from './OrderAlterationsSection'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatGregorianDate, parseDateForDisplay, shiftDate } from '@/lib/date-utils'
@@ -69,9 +70,10 @@ interface OrderModalProps {
   onCompleteWork?: (order: any) => void
   isProcessing?: boolean
   currentWorkerId?: string
+  autoTranslateAlterationsToHindi?: boolean
 }
 
-export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId }: OrderModalProps) {
+export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId, autoTranslateAlterationsToHindi = false }: OrderModalProps) {
   const { user } = useAuthStore()
   const { t } = useTranslation()
   // Lightbox state
@@ -1425,6 +1427,12 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   </div>
                 </div>
               )}
+
+              <OrderAlterationsSection
+                orderId={order.id}
+                autoTranslateHindi={autoTranslateAlterationsToHindi}
+                showErrorReason={user?.role === 'admin'}
+              />
 
               {/* 3️⃣ قسم تعليقات التصميم */}
               {(savedDesignComments.length > 0 || imageAnnotations.length > 0 || imageDrawings.length > 0 || customDesignImage) && (

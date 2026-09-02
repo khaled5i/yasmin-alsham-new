@@ -92,6 +92,7 @@ const ORDER_LIST_COLUMNS = [
   'delivered_with_outstanding_balance',
   'has_alterations',   // migration 34
   'alteration_count',  // migration 34
+  'second_proof_alteration_count', // migration 86
   'design_thumbnail',           // عمود مستقل (migration 32)
   'design_links',               // عمود مستقل (migration 36)
   'notes',
@@ -185,6 +186,7 @@ export interface Order {
   // تتبع التعديلات (migration 34)
   has_alterations: boolean
   alteration_count: number
+  second_proof_alteration_count: number
   last_alteration_at?: string | null
   // أعمدة JSONB مستقلة (migration 30) - بيانات التصميم
   image_annotations?: any[]

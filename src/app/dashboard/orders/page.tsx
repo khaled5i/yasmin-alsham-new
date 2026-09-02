@@ -1842,6 +1842,7 @@ function OrdersPageInner() {
           onCompleteWork={user.role === 'worker' ? handleOpenCompleteModal : undefined}
           isProcessing={isProcessing}
           currentWorkerId={currentWorkerId || undefined}
+          autoTranslateAlterationsToHindi={user.role === 'worker' && workerType === 'tailor'}
         />
 
         <EditOrderModal

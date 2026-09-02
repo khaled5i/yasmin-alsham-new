@@ -32,6 +32,7 @@ import {
   BellRing,
   Wallet,
   Fingerprint,
+  Wrench,
 } from 'lucide-react'
 
 const PAGE_SIZE = 20
@@ -1167,6 +1168,12 @@ function CompletedOrderRow({
                   تم التقييم
                 </span>
               )}
+              {Number(order.alteration_count || 0) > 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-700">
+                  <Wrench className="h-3 w-3" />
+                  تعديلات بعد التسليم: {Number(order.alteration_count)}
+                </span>
+              ) : null}
             </div>
 
             {/* الاسم ورقم الطلب */}

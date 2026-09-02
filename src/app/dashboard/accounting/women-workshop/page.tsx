@@ -15,6 +15,8 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  TrendingDown,
+  TrendingUp,
   UserRound,
   WalletCards,
 } from 'lucide-react'
@@ -24,6 +26,11 @@ import {
   getWomenWorkshopTransactions,
   type WomenWorkshopTransaction,
 } from '@/lib/services/women-workshop-service'
+import ReportPeriodPicker, {
+  computePresetRange,
+  type DateFilter,
+  type DateRange,
+} from '@/components/ReportPeriodPicker'
 
 const moneyFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
@@ -44,15 +51,16 @@ function formatDate(date: string) {
   }).format(new Date(date))
 }
 
-function localDateKey(date: string) {
-  const value = new Date(date)
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
 function SyncBadge({ transaction }: { transaction: WomenWorkshopTransaction }) {
+  if (transaction.transaction_kind === 'expense' || transaction.source === 'manual_expense') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        مصروف محفوظ محلياً
+      </span>
+    )
+  }
+
   if (transaction.payment_method === 'cash') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">
@@ -85,6 +93,73 @@ function SyncBadge({ transaction }: { transaction: WomenWorkshopTransaction }) {
       <AlertTriangle className="h-3.5 w-3.5" />
       {transaction.alostaz_sync_status === 'review_required' ? 'تحتاج مراجعة' : 'تعذّر الإرسال'}
     </span>
+  )
+}
+
+function ExpensesTable({ transactions }: { transactions: WomenWorkshopTransaction[] }) {
+  const total = transactions.reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0)
+
+  return (
+    <section className="overflow-hidden rounded-3xl border border-indigo-200 bg-white shadow-sm xl:col-span-2">
+      <div className="flex flex-col gap-3 border-b border-indigo-100 bg-indigo-50/70 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-indigo-700 p-2.5 text-white">
+            <TrendingDown className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-slate-900">مصروفات المشغل</h2>
+            <p className="text-xs font-semibold text-slate-500">{transactions.length} مصروف مسجل</p>
+          </div>
+        </div>
+        <div className="text-xl font-black text-indigo-700">{formatAmount(total)}</div>
+      </div>
+
+      {transactions.length === 0 ? (
+        <div className="px-6 py-14 text-center text-sm font-semibold text-slate-400">
+          لا توجد مصروفات مطابقة خلال الفترة المحددة
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-right text-sm">
+            <thead className="bg-slate-50 text-xs font-bold text-slate-500">
+              <tr>
+                <th className="px-5 py-3">التاريخ</th>
+                <th className="px-5 py-3">نوع المصروف</th>
+                <th className="px-5 py-3">طريقة الدفع</th>
+                <th className="px-5 py-3">المبلغ</th>
+                <th className="px-5 py-3">الحالة</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {transactions.map((transaction) => (
+                <tr key={transaction.id} className="transition hover:bg-indigo-50/40">
+                  <td className="whitespace-nowrap px-5 py-4 font-medium text-slate-600">
+                    {formatDate(transaction.occurred_at)}
+                  </td>
+                  <td className="px-5 py-4 font-bold text-slate-900">{transaction.operation_name}</td>
+                  <td className="px-5 py-4">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${
+                      transaction.payment_method === 'card'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {transaction.payment_method === 'card'
+                        ? <CreditCard className="h-3.5 w-3.5" />
+                        : <Banknote className="h-3.5 w-3.5" />}
+                      {transaction.payment_method === 'card' ? 'شبكة' : 'كاش'}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-4 font-black text-indigo-800">
+                    {formatAmount(transaction.amount)}
+                  </td>
+                  <td className="px-5 py-4"><SyncBadge transaction={transaction} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -186,7 +261,8 @@ export default function WomenWorkshopAccountingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateFilter, setDateFilter] = useState('')
+  const [selectedPeriod, setSelectedPeriod] = useState<DateRange>('month')
+  const [periodRange, setPeriodRange] = useState<DateFilter>(() => computePresetRange('month'))
 
   const loadTransactions = useCallback(async () => {
     setLoading(true)
@@ -215,23 +291,69 @@ export default function WomenWorkshopAccountingPage() {
     if (canAccess) void loadTransactions()
   }, [authLoading, loadTransactions, permissionsLoading, user, workerType])
 
+  const handleApplyPeriod = (period: DateRange, range: DateFilter) => {
+    setSelectedPeriod(period)
+    setPeriodRange(range)
+  }
+
   const filteredTransactions = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase()
+    const rangeStart = periodRange.startDate.getTime()
+    const rangeEnd = periodRange.endDate.getTime()
+
     return transactions.filter((transaction) => {
       const matchesSearch = !normalizedSearch
         || transaction.operation_name.toLowerCase().includes(normalizedSearch)
         || String(transaction.customer_name || '').toLowerCase().includes(normalizedSearch)
         || String(transaction.alostaz_invoice_code || '').toLowerCase().includes(normalizedSearch)
-      const matchesDate = !dateFilter || localDateKey(transaction.occurred_at) === dateFilter
+      const occurredAt = new Date(transaction.occurred_at).getTime()
+      const matchesDate = occurredAt >= rangeStart && occurredAt <= rangeEnd
       return matchesSearch && matchesDate
     })
-  }, [dateFilter, searchTerm, transactions])
+  }, [periodRange, searchTerm, transactions])
 
-  const cashTransactions = filteredTransactions.filter((transaction) => transaction.payment_method === 'cash')
-  const cardTransactions = filteredTransactions.filter((transaction) => transaction.payment_method === 'card')
-  const cashTotal = cashTransactions.reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0)
-  const cardTotal = cardTransactions.reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0)
-  const grandTotal = cashTotal + cardTotal
+  const accountingSummary = useMemo(() => {
+    const incomeTransactions: WomenWorkshopTransaction[] = []
+    const expenseTransactions: WomenWorkshopTransaction[] = []
+    let cashTotal = 0
+    let cardTotal = 0
+    let expenseTotal = 0
+
+    for (const transaction of filteredTransactions) {
+      const amount = Number(transaction.amount || 0)
+      const isExpense = transaction.transaction_kind === 'expense' || transaction.source === 'manual_expense'
+      if (isExpense) {
+        expenseTransactions.push(transaction)
+        expenseTotal += amount
+      } else {
+        incomeTransactions.push(transaction)
+        if (transaction.payment_method === 'cash') cashTotal += amount
+        if (transaction.payment_method === 'card') cardTotal += amount
+      }
+    }
+
+    return {
+      cashTransactions: incomeTransactions.filter((transaction) => transaction.payment_method === 'cash'),
+      cardTransactions: incomeTransactions.filter((transaction) => transaction.payment_method === 'card'),
+      expenseTransactions,
+      cashTotal,
+      cardTotal,
+      expenseTotal,
+      grandTotal: cashTotal + cardTotal,
+      netProfit: cashTotal + cardTotal - expenseTotal,
+    }
+  }, [filteredTransactions])
+
+  const {
+    cashTransactions,
+    cardTransactions,
+    expenseTransactions,
+    cashTotal,
+    cardTotal,
+    expenseTotal,
+    grandTotal,
+    netProfit,
+  } = accountingSummary
 
   if (authLoading || permissionsLoading) {
     return (
@@ -259,7 +381,7 @@ export default function WomenWorkshopAccountingPage() {
               </div>
               <div>
                 <h1 className="text-2xl font-black text-slate-950 sm:text-3xl">المشغل النسائي</h1>
-                <p className="mt-1 text-sm font-medium text-slate-500">تقرير موحد لفواتير المشغل وعمليات أخذ المقاس</p>
+                <p className="mt-1 text-sm font-medium text-slate-500">تقرير موحد لمبيعات ومصروفات المشغل وعمليات أخذ المقاس</p>
               </div>
             </div>
             <button
@@ -274,11 +396,13 @@ export default function WomenWorkshopAccountingPage() {
           </div>
         </motion.header>
 
-        <div className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {[
             { label: 'المجموع الكامل', value: grandTotal, icon: WalletCards, classes: 'from-slate-900 to-slate-700 text-white' },
             { label: 'إجمالي الشبكة', value: cardTotal, icon: CreditCard, classes: 'from-emerald-600 to-teal-600 text-white' },
             { label: 'إجمالي الكاش', value: cashTotal, icon: Banknote, classes: 'from-amber-500 to-orange-500 text-white' },
+            { label: 'إجمالي المصروفات', value: expenseTotal, icon: TrendingDown, classes: 'from-indigo-700 to-blue-600 text-white' },
+            { label: 'صافي الربح', value: netProfit, icon: TrendingUp, classes: netProfit >= 0 ? 'from-cyan-700 to-sky-600 text-white' : 'from-red-700 to-rose-600 text-white' },
             { label: 'عدد العمليات', value: filteredTransactions.length, icon: ReceiptText, classes: 'from-rose-500 to-fuchsia-600 text-white', isCount: true },
           ].map((card, index) => (
             <motion.div
@@ -299,7 +423,7 @@ export default function WomenWorkshopAccountingPage() {
           ))}
         </div>
 
-        <div className="mb-7 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_220px_auto]">
+        <div className="mb-7 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_auto_auto]">
           <label className="relative block">
             <Search className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
             <input
@@ -309,17 +433,18 @@ export default function WomenWorkshopAccountingPage() {
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-4 pr-12 font-medium text-slate-800 outline-none transition focus:border-fuchsia-400 focus:bg-white focus:ring-4 focus:ring-fuchsia-100"
             />
           </label>
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(event) => setDateFilter(event.target.value)}
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 font-bold text-slate-700 outline-none transition focus:border-fuchsia-400 focus:bg-white focus:ring-4 focus:ring-fuchsia-100"
+          <ReportPeriodPicker
+            period={selectedPeriod}
+            range={periodRange}
+            onApply={handleApplyPeriod}
+            className="w-full justify-center md:w-auto"
           />
           <button
             type="button"
             onClick={() => {
               setSearchTerm('')
-              setDateFilter('')
+              setSelectedPeriod('month')
+              setPeriodRange(computePresetRange('month'))
             }}
             className="rounded-2xl border border-slate-200 px-4 py-3 font-bold text-slate-600 transition hover:bg-slate-50"
           >
@@ -345,6 +470,7 @@ export default function WomenWorkshopAccountingPage() {
           <div className="grid gap-6 xl:grid-cols-2">
             <TransactionsTable title="عمليات الشبكة" transactions={cardTransactions} paymentMethod="card" />
             <TransactionsTable title="عمليات الكاش" transactions={cashTransactions} paymentMethod="cash" />
+            <ExpensesTable transactions={expenseTransactions} />
           </div>
         )}
       </div>

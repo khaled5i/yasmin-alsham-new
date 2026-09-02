@@ -23,7 +23,7 @@ interface AlterationDetails {
   clientName: string
   clientPhone: string
   alterationNumber?: string
-  dueDate: string
+  dueDate?: string | null
 }
 
 /**
@@ -202,9 +202,6 @@ export function generateAlterationWhatsAppMessage(alterationDetails: AlterationD
     dueDate
   } = alterationDetails
 
-  // تنسيق التاريخ
-  const formattedDueDate = formatDateArabic(dueDate)
-
   // بناء الرسالة بدون إيموجيات
   let message = `مرحباً ${clientName}\n\n`
   message += `تم تسجيل طلب التعديل الخاص بك بنجاح!\n\n`
@@ -215,8 +212,12 @@ export function generateAlterationWhatsAppMessage(alterationDetails: AlterationD
     message += `- رقم التعديل: ${alterationNumber}\n`
   }
 
-  // إضافة موعد التسليم
-  message += `- موعد التسليم: ${formattedDueDate}\n\n`
+  // إضافة موعد التسليم عند تحديده فقط
+  if (dueDate) {
+    message += `- موعد التسليم: ${formatDateArabic(dueDate)}\n\n`
+  } else {
+    message += `\n`
+  }
 
   const trackUrl = alterationNumber
     ? `https://www.yasmin-alsham.fashion/track-order/?order=${encodeURIComponent(alterationNumber)}`
@@ -226,8 +227,10 @@ export function generateAlterationWhatsAppMessage(alterationDetails: AlterationD
   message += `يمكنك متابعة حالة طلب التعديل في أي وقت من خلال الرابط التالي:\n`
   message += `${trackUrl}\n\n`
 
-  message += `*ملاحظة مهمة:*\n`
-  message += `يُرجى الحضور في الموعد المحدد لاستلام طلب التعديل.\n\n`
+  if (dueDate) {
+    message += `*ملاحظة مهمة:*\n`
+    message += `يُرجى الحضور في الموعد المحدد لاستلام طلب التعديل.\n\n`
+  }
 
   message += `شكراً لثقتكم بنا\n`
   message += `ياسمين الشام`

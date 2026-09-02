@@ -8,8 +8,10 @@ import { useAuthStore } from '@/store/authStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { alterationService, Alteration } from '@/lib/services/alteration-service'
 import AlterationTypeModal from '@/components/AlterationTypeModal'
+import AlterationStageModal from '@/components/AlterationStageModal'
 import OrderSearchModal from '@/components/OrderSearchModal'
 import { Order } from '@/lib/services/order-service'
+import type { AlterationType } from '@/lib/services/alteration-service'
 import {
   Search,
   Plus,
@@ -21,9 +23,11 @@ import {
   CheckCircle,
   AlertCircle,
   ArrowRight,
-  MessageCircle
+  MessageCircle,
+  RadioTower
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
+import { printAlterationSlip } from '@/lib/services/alteration-slip-printer'
 
 const PAGE_SIZE = 30
 
@@ -41,6 +45,8 @@ export default function AlterationsPage() {
   const [totalAlterations, setTotalAlterations] = useState(0)
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [showOrderSearchModal, setShowOrderSearchModal] = useState(false)
+  const [selectedOrderForAlteration, setSelectedOrderForAlteration] = useState<Order | null>(null)
+  const [printingAlterationId, setPrintingAlterationId] = useState<string | null>(null)
 
   const totalPages = Math.max(1, Math.ceil(totalAlterations / PAGE_SIZE))
 
@@ -107,8 +113,13 @@ export default function AlterationsPage() {
   }
 
   const handleSelectOrder = (order: Order) => {
-    // الانتقال لصفحة إضافة طلب تعديل مع بيانات الطلب الأصلي
-    router.push(`/dashboard/alterations/add?orderId=${order.id}`)
+    setSelectedOrderForAlteration(order)
+  }
+
+  const handleSelectAlterationStage = (alterationType: AlterationType) => {
+    if (!selectedOrderForAlteration) return
+    router.push(`/dashboard/alterations/add?orderId=${selectedOrderForAlteration.id}&alterationType=${alterationType}`)
+    setSelectedOrderForAlteration(null)
   }
 
   const handleDeleteAlteration = async (id: string, originalOrderId?: string | null) => {
@@ -130,6 +141,41 @@ export default function AlterationsPage() {
       loadAlterations(currentPage, debouncedSearchTerm)
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : 'Failed to delete alteration')
+    }
+  }
+
+  /**
+   * الطباعة تمر عبر طابور محطة الورشة، فلا يتصل هذا الجهاز بالطابعة إطلاقًا.
+   * كل ضغطة تُخرج ورقتين: العربية ثم الهندية على ورقة منفصلة.
+   */
+  const handlePrintAlteration = async (alterationId: string) => {
+    if (printingAlterationId) return
+    setPrintingAlterationId(alterationId)
+
+    try {
+      const { hindiMissing } = await printAlterationSlip(alterationId)
+      if (hindiMissing) {
+        toast(
+          isArabic
+            ? 'أُرسلت الورقة العربية. تعذّرت الترجمة الهندية فلن تُطبع نسختها.'
+            : 'Arabic slip queued. Hindi translation failed, so its copy will not print.',
+          { icon: '⚠️' }
+        )
+      } else {
+        toast.success(
+          isArabic
+            ? 'أُرسلت ورقتا التعديل (عربي + هندي) إلى طابعة الورشة'
+            : 'Both slips (Arabic + Hindi) were sent to the workshop printer'
+        )
+      }
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : (isArabic ? 'تعذّر إرسال ورقة التعديل للطباعة' : 'Failed to queue the alteration slip')
+      )
+    } finally {
+      setPrintingAlterationId(null)
     }
   }
 
@@ -204,6 +250,17 @@ export default function AlterationsPage() {
               <Plus className="w-5 h-5" />
               {isArabic ? 'إضافة طلب تعديل جديد' : 'Add New Alteration'}
             </button>
+
+            {user?.role === 'admin' && (
+              <button
+                onClick={() => router.push('/dashboard/alterations/print-station')}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:border-pink-400 hover:text-pink-600 transition-all whitespace-nowrap"
+                title={isArabic ? 'إدارة تابلت الورشة الرئيسي والاحتياطي' : 'Manage the main and backup workshop tablets'}
+              >
+                <RadioTower className="w-5 h-5" />
+                {isArabic ? 'محطة الطباعة' : 'Print Station'}
+              </button>
+            )}
           </div>
         </motion.div>
 
@@ -276,6 +333,15 @@ export default function AlterationsPage() {
                           </span>
                         )}
                       </div>
+                      <div className="mt-1">
+                        <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-bold text-orange-700">
+                          {alteration.alteration_type === 'first_proof'
+                            ? (isArabic ? 'تعديل البروفة الأولى' : 'First proof alteration')
+                            : alteration.alteration_type === 'second_proof'
+                              ? (isArabic ? 'تعديل البروفة الثانية' : 'Second proof alteration')
+                              : (isArabic ? 'تعديل بعد التسليم' : 'Post-delivery alteration')}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${statusInfo.bgColor}`}>
@@ -289,12 +355,15 @@ export default function AlterationsPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            router.push(`/dashboard/alterations/print/${alteration.id}`)
+                            void handlePrintAlteration(alteration.id)
                           }}
-                          className="p-2 text-gray-600 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors"
-                          title={isArabic ? 'طباعة' : 'Print'}
+                          disabled={printingAlterationId !== null}
+                          className="p-2 text-gray-600 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                          title={isArabic ? 'طباعة على طابعة الورشة (عربي + هندي)' : 'Print on the workshop printer (Arabic + Hindi)'}
                         >
-                          <Printer className="w-4 h-4" />
+                          {printingAlterationId === alteration.id
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <Printer className="w-4 h-4" />}
                         </button>
                         <button
                           onClick={(e) => {
@@ -339,10 +408,12 @@ export default function AlterationsPage() {
                         <span className="font-medium">{isArabic ? 'الوصف:' : 'Description:'}</span> {alteration.description}
                       </p>
                     )}
-                    <p className="text-sm text-gray-600">
-                      <span className="font-medium">{isArabic ? 'موعد التسليم:' : 'Due Date:'}</span>{' '}
-                      {new Date(alteration.alteration_due_date).toLocaleDateString(isArabic ? 'ar-SA-u-nu-latn' : 'en-US')}
-                    </p>
+                    {alteration.alteration_due_date ? (
+                      <p className="text-sm text-gray-600">
+                        <span className="font-medium">{isArabic ? 'موعد التسليم:' : 'Due Date:'}</span>{' '}
+                        {new Date(alteration.alteration_due_date).toLocaleDateString(isArabic ? 'ar-SA-u-nu-latn' : 'en-US')}
+                      </p>
+                    ) : null}
                   </div>
 
                   {/* Price */}
@@ -405,6 +476,15 @@ export default function AlterationsPage() {
         onClose={() => setShowOrderSearchModal(false)}
         onSelectOrder={handleSelectOrder}
       />
+
+      {selectedOrderForAlteration ? (
+        <AlterationStageModal
+          isOpen
+          order={selectedOrderForAlteration}
+          onClose={() => setSelectedOrderForAlteration(null)}
+          onSelect={handleSelectAlterationStage}
+        />
+      ) : null}
     </div>
   )
 }

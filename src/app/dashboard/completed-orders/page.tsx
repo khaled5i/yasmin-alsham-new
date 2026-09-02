@@ -713,6 +713,12 @@ export default function CompletedOrdersPage() {
                             تمت المراجعة
                           </span>
                         )}
+                        {Number(order.alteration_count || 0) > 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-700">
+                            <Wrench className="h-3 w-3" />
+                            {t('post_delivery_alterations_count')}: {Number(order.alteration_count)}
+                          </span>
+                        ) : null}
                       </div>
                       <p className="text-sm text-gray-500 mb-2">
                         <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}

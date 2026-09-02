@@ -40,6 +40,7 @@ import {
   AlertCircle,
   Trash2,
   Star,
+  Sparkles,
   Tag,
   Wallet,
 } from 'lucide-react'
@@ -618,7 +619,14 @@ export default function WorkerCompletedOrdersPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.05 }}
                 onClick={() => handleViewOrder(order)}
-                className="group bg-white rounded-xl p-4 border border-gray-200 hover:border-pink-300 hover:shadow-md transition-all duration-200 cursor-pointer"
+                className={`group rounded-xl p-4 border hover:shadow-md transition-all duration-200 cursor-pointer ${
+                  user.role === 'worker'
+                    && workerType === 'tailor'
+                    && Number(order.alteration_count || 0) === 0
+                    && (!order.has_second_proof || Number(order.second_proof_alteration_count || 0) === 0)
+                    ? 'border-amber-400 bg-gradient-to-br from-amber-50 via-white to-yellow-50 shadow-[0_8px_28px_rgba(217,160,38,0.12)] hover:border-amber-500'
+                    : 'border-gray-200 bg-white hover:border-pink-300'
+                }`}
               >
                 <div className="flex items-start gap-3 sm:gap-4 lg:items-center">
                   <div className="relative h-36 w-24 shrink-0 overflow-hidden rounded-xl border border-emerald-100 bg-white sm:h-40 sm:w-28 lg:h-28 lg:w-28">
@@ -663,6 +671,21 @@ export default function WorkerCompletedOrdersPage() {
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusInfo(order.status).bgColor} ${getStatusInfo(order.status).color}`}>
                             {getStatusInfo(order.status).label}
                           </span>
+                          {Number(order.alteration_count || 0) > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-700">
+                              <Wrench className="h-3 w-3" />
+                              {t('post_delivery_alterations_count')}: {Number(order.alteration_count)}
+                            </span>
+                          ) : null}
+                          {user.role === 'worker'
+                            && workerType === 'tailor'
+                            && Number(order.alteration_count || 0) === 0
+                            && (!order.has_second_proof || Number(order.second_proof_alteration_count || 0) === 0) ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-900">
+                                <Sparkles className="h-3 w-3" />
+                                {t('order_without_alteration')}
+                              </span>
+                            ) : null}
                         </div>
                         <p className="text-sm text-pink-600 font-medium">{order.description}</p>
                         <p className="text-xs text-gray-500 mt-1">#{order.order_number || order.id}</p>
@@ -813,6 +836,7 @@ export default function WorkerCompletedOrdersPage() {
         workers={workers}
         isOpen={showViewModal}
         onClose={handleCloseModal}
+        autoTranslateAlterationsToHindi={user.role === 'worker' && workerType === 'tailor'}
       />
 
       <DeleteOrderModal

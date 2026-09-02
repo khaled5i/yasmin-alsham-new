@@ -9,14 +9,19 @@ import {
   ReceiptText,
   Send,
   Sparkles,
+  TrendingDown,
   X,
 } from 'lucide-react'
 import {
+  createWomenWorkshopExpense,
   createWomenWorkshopInvoice,
+  WOMEN_WORKSHOP_EXPENSE_OPTIONS,
   WOMEN_WORKSHOP_OPERATION_OPTIONS,
+  type WomenWorkshopExpenseCategory,
   type WomenWorkshopOperationType,
   type WomenWorkshopPaymentMethod,
 } from '@/lib/services/women-workshop-service'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface WomenWorkshopInvoiceModalProps {
   isOpen: boolean
@@ -24,12 +29,16 @@ interface WomenWorkshopInvoiceModalProps {
 }
 
 type ManualOperationType = Exclude<WomenWorkshopOperationType, 'order_measurement'>
+type EntryMode = 'sale' | 'expense'
 
 export default function WomenWorkshopInvoiceModal({
   isOpen,
   onClose,
 }: WomenWorkshopInvoiceModalProps) {
+  const { isArabic } = useTranslation()
+  const [entryMode, setEntryMode] = useState<EntryMode>('sale')
   const [operationType, setOperationType] = useState<ManualOperationType>('external_measurement')
+  const [expenseCategory, setExpenseCategory] = useState<WomenWorkshopExpenseCategory>('salaries')
   const [customOperationName, setCustomOperationName] = useState('')
   const [amount, setAmount] = useState('85')
   const [paymentMethod, setPaymentMethod] = useState<WomenWorkshopPaymentMethod>('card')
@@ -44,7 +53,9 @@ export default function WomenWorkshopInvoiceModal({
 
   useEffect(() => {
     if (!isOpen) return
+    setEntryMode('sale')
     setOperationType('external_measurement')
+    setExpenseCategory('salaries')
     setCustomOperationName('')
     setAmount('85')
     setPaymentMethod('card')
@@ -59,13 +70,27 @@ export default function WomenWorkshopInvoiceModal({
     setError(null)
   }
 
+  const handleModeChange = (mode: EntryMode) => {
+    if (isSubmitting || mode === entryMode) return
+    setEntryMode(mode)
+    setOperationType('external_measurement')
+    setExpenseCategory('salaries')
+    setCustomOperationName('')
+    setAmount(mode === 'sale' ? '85' : '')
+    setPaymentMethod(mode === 'sale' ? 'card' : 'cash')
+    setError(null)
+    transactionIdRef.current = crypto.randomUUID()
+  }
+
   const handleSubmit = async () => {
     const parsedAmount = Number(amount)
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setError('يرجى إدخال مبلغ صحيح أكبر من صفر')
+      setError(entryMode === 'expense' && !isArabic
+        ? 'Enter an amount greater than zero'
+        : 'يرجى إدخال مبلغ صحيح أكبر من صفر')
       return
     }
-    if (operationType === 'other' && customOperationName.trim().length < 2) {
+    if (entryMode === 'sale' && operationType === 'other' && customOperationName.trim().length < 2) {
       setError('يرجى كتابة اسم العملية غير المدرجة')
       return
     }
@@ -73,20 +98,34 @@ export default function WomenWorkshopInvoiceModal({
     setIsSubmitting(true)
     setError(null)
     try {
-      const result = await createWomenWorkshopInvoice({
-        transactionId: transactionIdRef.current || crypto.randomUUID(),
-        operationType,
-        customOperationName: customOperationName.trim(),
-        amount: parsedAmount,
-        paymentMethod,
-      })
+      const transactionId = transactionIdRef.current || crypto.randomUUID()
+      const result = entryMode === 'expense'
+        ? await createWomenWorkshopExpense({
+            transactionId,
+            expenseCategory,
+            amount: parsedAmount,
+            paymentMethod,
+          })
+        : await createWomenWorkshopInvoice({
+            transactionId,
+            operationType,
+            customOperationName: customOperationName.trim(),
+            amount: parsedAmount,
+            paymentMethod,
+          })
 
       if (!result.success) {
-        setError(result.error || 'تعذّر حفظ الفاتورة')
+        setError(result.error || (entryMode === 'expense'
+          ? (isArabic ? 'تعذّر حفظ المصروف' : 'Unable to save the expense')
+          : 'تعذّر حفظ الفاتورة'))
         return
       }
 
-      if (result.warning) {
+      if (entryMode === 'expense') {
+        toast.success(isArabic
+          ? 'تم حفظ المصروف في قاعدة البيانات دون إرساله إلى تطبيق المحاسبة'
+          : 'Expense saved in the database without sending it to the accounting app')
+      } else if ('warning' in result && typeof result.warning === 'string' && result.warning) {
         toast(result.warning, { icon: '⚠️', duration: 8000 })
       } else if (paymentMethod === 'cash') {
         toast.success('تم حفظ فاتورة الكاش داخل الموقع دون إرسالها للمحاسبة')
@@ -121,22 +160,36 @@ export default function WomenWorkshopInvoiceModal({
             aria-modal="true"
             aria-labelledby="women-workshop-invoice-title"
             onMouseDown={(event) => event.stopPropagation()}
-            className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-rose-100 bg-white shadow-2xl"
+            className={`max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl border bg-white shadow-2xl ${
+              entryMode === 'expense' ? 'border-indigo-100' : 'border-rose-100'
+            }`}
           >
-            <div className="relative overflow-hidden rounded-t-3xl bg-gradient-to-l from-rose-600 via-pink-600 to-fuchsia-600 px-6 py-6 text-white">
+            <div className={`relative overflow-hidden rounded-t-3xl bg-gradient-to-l px-6 py-6 text-white transition-colors duration-300 ${
+              entryMode === 'expense'
+                ? 'from-indigo-700 via-blue-700 to-cyan-700'
+                : 'from-rose-600 via-pink-600 to-fuchsia-600'
+            }`}>
               <div className="absolute -left-10 -top-12 h-36 w-36 rounded-full bg-white/10" />
               <div className="absolute -bottom-16 right-12 h-32 w-32 rounded-full bg-white/10" />
               <div className="relative flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="rounded-2xl bg-white/15 p-3 ring-1 ring-white/20">
-                    <ReceiptText className="h-7 w-7" />
+                    {entryMode === 'expense'
+                      ? <TrendingDown className="h-7 w-7" />
+                      : <ReceiptText className="h-7 w-7" />}
                   </div>
                   <div>
                     <h2 id="women-workshop-invoice-title" className="text-xl font-bold sm:text-2xl">
-                      إضافة فاتورة للمشغل النسائي
+                      {entryMode === 'expense'
+                        ? (isArabic ? 'إضافة مصروف للمشغل النسائي' : 'Add workshop expense')
+                        : 'إضافة فاتورة للمشغل النسائي'}
                     </h2>
-                    <p className="mt-1 text-sm text-rose-50">
-                      المبلغ شامل الضريبة، والتاريخ يُسجّل تلقائياً وقت الحفظ
+                    <p className={`mt-1 text-sm ${entryMode === 'expense' ? 'text-blue-50' : 'text-rose-50'}`}>
+                      {entryMode === 'expense'
+                        ? (isArabic
+                            ? 'يُحفظ المصروف داخل الموقع فقط، والتاريخ يُسجّل تلقائياً'
+                            : 'Saved locally only, with the date recorded automatically')
+                        : 'المبلغ شامل الضريبة، والتاريخ يُسجّل تلقائياً وقت الحفظ'}
                     </p>
                   </div>
                 </div>
@@ -152,7 +205,43 @@ export default function WomenWorkshopInvoiceModal({
               </div>
             </div>
 
-            <div className="space-y-6 p-6">
+            <div className="space-y-6 p-6" dir={entryMode === 'expense' ? (isArabic ? 'rtl' : 'ltr') : 'rtl'}>
+              <div
+                className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1.5"
+                role="group"
+                aria-label={isArabic ? 'نوع القيد' : 'Entry type'}
+              >
+                <button
+                  type="button"
+                  aria-pressed={entryMode === 'sale'}
+                  disabled={isSubmitting}
+                  onClick={() => handleModeChange('sale')}
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-black transition-all ${
+                    entryMode === 'sale'
+                      ? 'bg-white text-rose-700 shadow-sm ring-1 ring-rose-100'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <ReceiptText className="h-4 w-4" />
+                  {isArabic ? 'عملية بيع' : 'Sale'}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={entryMode === 'expense'}
+                  disabled={isSubmitting}
+                  onClick={() => handleModeChange('expense')}
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-black transition-all ${
+                    entryMode === 'expense'
+                      ? 'bg-indigo-700 text-white shadow-sm shadow-indigo-200'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <TrendingDown className="h-4 w-4" />
+                  {isArabic ? 'إضافة مصروف' : 'Add expense'}
+                </button>
+              </div>
+
+              {entryMode === 'sale' ? (
               <div>
                 <label htmlFor="women-workshop-operation" className="mb-2 block text-sm font-bold text-slate-800">
                   نوع العملية
@@ -176,8 +265,31 @@ export default function WomenWorkshopInvoiceModal({
                   </p>
                 )}
               </div>
+              ) : (
+                <div>
+                  <label htmlFor="women-workshop-expense-category" className="mb-2 block text-sm font-bold text-slate-800">
+                    {isArabic ? 'نوع العملية' : 'Expense type'}
+                  </label>
+                  <select
+                    id="women-workshop-expense-category"
+                    value={expenseCategory}
+                    disabled={isSubmitting}
+                    onChange={(event) => {
+                      setExpenseCategory(event.target.value as WomenWorkshopExpenseCategory)
+                      setError(null)
+                    }}
+                    className="w-full rounded-2xl border border-indigo-200 bg-indigo-50/60 px-4 py-3.5 font-semibold text-slate-800 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  >
+                    {WOMEN_WORKSHOP_EXPENSE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {isArabic ? option.label : option.labelEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-              {operationType === 'other' && (
+              {entryMode === 'sale' && operationType === 'other' && (
                 <div>
                   <label htmlFor="women-workshop-custom-operation" className="mb-2 block text-sm font-bold text-slate-800">
                     اسم العملية الأخرى
@@ -196,7 +308,9 @@ export default function WomenWorkshopInvoiceModal({
 
               <div>
                 <label htmlFor="women-workshop-amount" className="mb-2 block text-sm font-bold text-slate-800">
-                  المبلغ شامل الضريبة
+                  {entryMode === 'expense'
+                    ? (isArabic ? 'المبلغ' : 'Amount')
+                    : 'المبلغ شامل الضريبة'}
                 </label>
                 <div className="relative">
                   <input
@@ -209,7 +323,11 @@ export default function WomenWorkshopInvoiceModal({
                     disabled={isSubmitting}
                     onChange={(event) => setAmount(event.target.value)}
                     placeholder="0.00"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 pl-20 text-lg font-bold text-slate-900 outline-none transition focus:border-pink-500 focus:bg-white focus:ring-4 focus:ring-pink-100"
+                    className={`w-full rounded-2xl border px-4 py-3.5 pl-20 text-lg font-bold text-slate-900 outline-none transition focus:bg-white focus:ring-4 ${
+                      entryMode === 'expense'
+                        ? 'border-indigo-200 bg-indigo-50/60 focus:border-indigo-500 focus:ring-indigo-100'
+                        : 'border-slate-200 bg-slate-50 focus:border-pink-500 focus:ring-pink-100'
+                    }`}
                   />
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">
                     ر.س
@@ -218,11 +336,13 @@ export default function WomenWorkshopInvoiceModal({
               </div>
 
               <fieldset>
-                <legend className="mb-3 text-sm font-bold text-slate-800">طريقة الدفع</legend>
+                <legend className="mb-3 text-sm font-bold text-slate-800">
+                  {entryMode === 'expense' && !isArabic ? 'Payment method' : 'طريقة الدفع'}
+                </legend>
                 <div className="grid grid-cols-2 gap-3">
                   {([
-                    { value: 'card', label: 'شبكة', icon: CreditCard, color: 'emerald' },
-                    { value: 'cash', label: 'كاش', icon: Banknote, color: 'amber' },
+                    { value: 'card', label: entryMode === 'expense' && !isArabic ? 'Card' : 'شبكة', icon: CreditCard, color: 'emerald' },
+                    { value: 'cash', label: entryMode === 'expense' && !isArabic ? 'Cash' : 'كاش', icon: Banknote, color: 'amber' },
                   ] as const).map(({ value, label, icon: Icon, color }) => {
                     const selected = paymentMethod === value
                     return (
@@ -230,9 +350,13 @@ export default function WomenWorkshopInvoiceModal({
                         key={value}
                         className={`flex cursor-pointer items-center justify-center gap-2 rounded-2xl border px-4 py-4 font-bold transition ${
                           selected
-                            ? color === 'emerald'
-                              ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-100'
-                              : 'border-amber-500 bg-amber-50 text-amber-700 ring-2 ring-amber-100'
+                            ? entryMode === 'expense'
+                              ? color === 'emerald'
+                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-100'
+                                : 'border-cyan-600 bg-cyan-50 text-cyan-800 ring-2 ring-cyan-100'
+                              : color === 'emerald'
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-100'
+                                : 'border-amber-500 bg-amber-50 text-amber-700 ring-2 ring-amber-100'
                             : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                         }`}
                       >
@@ -254,16 +378,22 @@ export default function WomenWorkshopInvoiceModal({
               </fieldset>
 
               <div className={`rounded-2xl border p-4 text-sm font-medium ${
-                paymentMethod === 'card'
+                entryMode === 'expense'
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
+                  : paymentMethod === 'card'
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                   : 'border-amber-200 bg-amber-50 text-amber-800'
               }`}>
                 <div className="flex items-start gap-3">
                   <Sparkles className="mt-0.5 h-5 w-5 shrink-0" />
                   <p>
-                    {paymentMethod === 'card'
-                      ? 'ستُحفظ العملية في التقرير وتُرسل فاتورة مدفوعة بالكامل إلى تطبيق الأستاذ في فرع ياسمين الشام.'
-                      : 'ستُحفظ العملية في تقرير المشغل النسائي داخل الموقع فقط، ولن تُرسل إلى تطبيق الأستاذ.'}
+                    {entryMode === 'expense'
+                      ? (isArabic
+                          ? 'سيُحفظ المصروف داخل قاعدة البيانات ويظهر في محاسبة المشغل فقط، ولن يُرسل إلى تطبيق المحاسبة سواء كان شبكة أو كاش.'
+                          : 'This expense is stored only in the workshop ledger and is never sent to the accounting app, whether paid by card or cash.')
+                      : paymentMethod === 'card'
+                        ? 'ستُحفظ العملية في التقرير وتُرسل فاتورة مدفوعة بالكامل إلى تطبيق الأستاذ في فرع ياسمين الشام.'
+                        : 'ستُحفظ العملية في تقرير المشغل النسائي داخل الموقع فقط، ولن تُرسل إلى تطبيق الأستاذ.'}
                   </p>
                 </div>
               </div>
@@ -281,19 +411,27 @@ export default function WomenWorkshopInvoiceModal({
                   disabled={isSubmitting}
                   className="rounded-2xl border border-slate-200 px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-1/3"
                 >
-                  إلغاء
+                  {entryMode === 'expense' && !isArabic ? 'Cancel' : 'إلغاء'}
                 </button>
                 <button
                   type="button"
                   onClick={handleSubmit}
                   disabled={isSubmitting}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-rose-600 to-fuchsia-600 px-5 py-3 font-bold text-white shadow-lg shadow-pink-200 transition hover:-translate-y-0.5 hover:shadow-xl disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-1"
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-l px-5 py-3 font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-1 ${
+                    entryMode === 'expense'
+                      ? 'from-indigo-700 to-cyan-700 shadow-indigo-200'
+                      : 'from-rose-600 to-fuchsia-600 shadow-pink-200'
+                  }`}
                 >
-                  <Send className={`h-5 w-5 ${isSubmitting ? 'animate-pulse' : ''}`} />
+                  {entryMode === 'expense'
+                    ? <TrendingDown className={`h-5 w-5 ${isSubmitting ? 'animate-pulse' : ''}`} />
+                    : <Send className={`h-5 w-5 ${isSubmitting ? 'animate-pulse' : ''}`} />}
                   <span>
                     {isSubmitting
-                      ? 'جاري الحفظ...'
-                      : paymentMethod === 'card'
+                      ? (entryMode === 'expense' && !isArabic ? 'Saving...' : 'جاري الحفظ...')
+                      : entryMode === 'expense'
+                        ? (isArabic ? 'حفظ المصروف' : 'Save expense')
+                        : paymentMethod === 'card'
                         ? 'إرسال إلى تطبيق المحاسبة'
                         : 'حفظ فاتورة الكاش'}
                   </span>
@@ -306,4 +444,3 @@ export default function WomenWorkshopInvoiceModal({
     </AnimatePresence>
   )
 }
-

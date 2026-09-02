@@ -6,8 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useTranslation } from '@/hooks/useTranslation'
-import { alterationService, AlterationErrorType } from '@/lib/services/alteration-service'
+import { alterationService, AlterationErrorType, isAlterationType, type AlterationType } from '@/lib/services/alteration-service'
 import { orderService, Order } from '@/lib/services/order-service'
+import AlterationStageModal, { getAvailableAlterationTypes } from '@/components/AlterationStageModal'
 import ImageUpload from '@/components/ImageUpload'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
@@ -67,11 +68,13 @@ function AddAlterationContent() {
   const searchParams = useSearchParams()
   const orderId = searchParams.get('orderId')
   const editId = searchParams.get('editId')
+  const requestedAlterationType = searchParams.get('alterationType')
 
   // تحميل بيانات الطلب الأصلي إذا كان موجوداً
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null)
   const [isLoadingOrder, setIsLoadingOrder] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [showAlterationStageModal, setShowAlterationStageModal] = useState(false)
 
   useEffect(() => {
     if (orderId) {
@@ -104,6 +107,7 @@ function AddAlterationContent() {
 
       setFormData({
         alterationNumber: alteration.alteration_number,
+        alterationType: alteration.alteration_type || 'after_delivery',
         clientName: alteration.client_name,
         clientPhone: alteration.client_phone,
         price: alteration.price.toString(),
@@ -160,6 +164,12 @@ function AddAlterationContent() {
         setOriginalOrder(data)
         // تعبئة البيانات تلقائياً
         prefillFormData(data)
+        if (isAlterationType(requestedAlterationType) && getAvailableAlterationTypes(data).includes(requestedAlterationType)) {
+          setFormData(prev => ({ ...prev, alterationType: requestedAlterationType }))
+        } else {
+          setFormData(prev => ({ ...prev, alterationType: 'after_delivery' }))
+          setShowAlterationStageModal(true)
+        }
       }
     } catch (error: any) {
       toast.error(error.message)
@@ -171,6 +181,7 @@ function AddAlterationContent() {
   // حالة النموذج
   const [formData, setFormData] = useState({
     alterationNumber: '',
+    alterationType: 'after_delivery' as AlterationType,
     clientName: '',
     clientPhone: '',
     price: '',
@@ -211,6 +222,9 @@ function AddAlterationContent() {
   const [editModeOriginalOrderId, setEditModeOriginalOrderId] = useState<string | null>(null)
   // المعرف الفعلي للطلب الأصلي: من URL أو من بيانات التعديل المحملة
   const effectiveOrderId = orderId || editModeOriginalOrderId
+  const availableAlterationTypes = originalOrder
+    ? getAvailableAlterationTypes(originalOrder)
+    : (['after_delivery'] as AlterationType[])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showDressDetails, setShowDressDetails] = useState(false)
@@ -563,6 +577,7 @@ function AddAlterationContent() {
       if (isEditMode && editId) {
         // وضع التعديل
         const result = await alterationService.update(editId, {
+          alteration_type: formData.alterationType,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
           price: price,
@@ -601,6 +616,7 @@ function AddAlterationContent() {
         // وضع الإضافة
         const result = await alterationService.create({
           alteration_number: formData.alterationNumber && formData.alterationNumber.trim() !== '' ? formData.alterationNumber.trim() : undefined,
+          alteration_type: formData.alterationType,
           original_order_id: effectiveOrderId || undefined,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
@@ -746,6 +762,7 @@ function AddAlterationContent() {
       if (isEditMode && editId) {
         // وضع التعديل
         result = await alterationService.update(editId, {
+          alteration_type: formData.alterationType,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
           price: price,
@@ -779,6 +796,7 @@ function AddAlterationContent() {
         // وضع الإضافة
         result = await alterationService.create({
           alteration_number: formData.alterationNumber && formData.alterationNumber.trim() !== '' ? formData.alterationNumber.trim() : undefined,
+          alteration_type: formData.alterationType,
           original_order_id: effectiveOrderId || undefined,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
@@ -955,6 +973,32 @@ function AddAlterationContent() {
                 />
               </div>
 
+              {/* نوع التعديل: يُعبّأ من نافذة الاختيار ويبقى قابلًا للتصحيح */}
+              {effectiveOrderId && originalOrder ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'نوع التعديل' : 'Alteration Type'} <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.alterationType}
+                    onChange={(event) => handleInputChange('alterationType', event.target.value as AlterationType)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    required
+                  >
+                    {availableAlterationTypes.includes('first_proof') ? (
+                      <option value="first_proof">{isArabic ? 'تعديل البروفة الأولى' : 'First proof alteration'}</option>
+                    ) : null}
+                    {availableAlterationTypes.includes('second_proof') ? (
+                      <option value="second_proof">{isArabic ? 'تعديل البروفة الثانية' : 'Second proof alteration'}</option>
+                    ) : null}
+                    <option value="after_delivery">{isArabic ? 'تعديل بعد التسليم' : 'Post-delivery alteration'}</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    {isArabic ? 'يمكنك تصحيح النوع هنا إذا تم اختياره بالخطأ.' : 'You can correct the type here if it was selected by mistake.'}
+                  </p>
+                </div>
+              ) : null}
+
               {/* 1.4. موعد تسليم التعديل */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1031,6 +1075,8 @@ function AddAlterationContent() {
               voiceNotes={formData.voiceNotes}
               onNotesChange={(notes) => handleInputChange('notes', notes)}
               onVoiceNotesChange={handleVoiceNotesChange}
+              appendTranscriptionToNotes={false}
+              allowTranscriptionEditing
             />
 
             {/* زر الكاميرا - إضافة صورة التعديل */}
@@ -1162,6 +1208,8 @@ function AddAlterationContent() {
                 onVoiceNotesChange={handleErrorVoiceNotesChange}
                 disabled={isSubmitting}
                 placeholder={isArabic ? 'أضف ملاحظات إضافية حول سبب التعديل أو اضغط على المايكروفون...' : 'Add additional notes about the error or press the mic...'}
+                appendTranscriptionToNotes={false}
+                allowTranscriptionEditing
               />
             </div>
           </motion.div>
@@ -1589,6 +1637,18 @@ function AddAlterationContent() {
           </motion.div>
         </form>
       </div>
+
+      {originalOrder && !isEditMode ? (
+        <AlterationStageModal
+          isOpen={showAlterationStageModal}
+          order={originalOrder}
+          onClose={() => setShowAlterationStageModal(false)}
+          onSelect={(alterationType) => {
+            setFormData(prev => ({ ...prev, alterationType }))
+            setShowAlterationStageModal(false)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

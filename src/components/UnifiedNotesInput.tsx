@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Loader2, Trash2, Play, Pause, Languages } from 'lucide-react'
+import { Mic, MicOff, Loader2, Trash2, Play, Pause, Languages, Pencil, Check, X } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 
 interface VoiceNote {
@@ -22,6 +22,8 @@ interface UnifiedNotesInputProps {
   onVoiceNotesChange: (voiceNotes: VoiceNote[]) => void
   disabled?: boolean
   placeholder?: string
+  appendTranscriptionToNotes?: boolean
+  allowTranscriptionEditing?: boolean
 }
 
 export default function UnifiedNotesInput({
@@ -30,9 +32,11 @@ export default function UnifiedNotesInput({
   onNotesChange,
   onVoiceNotesChange,
   disabled = false,
-  placeholder = 'اكتب ملاحظاتك هنا أو اضغط على المايكروفون للتسجيل الصوتي...'
+  placeholder = 'اكتب ملاحظاتك هنا أو اضغط على المايكروفون للتسجيل الصوتي...',
+  appendTranscriptionToNotes = true,
+  allowTranscriptionEditing = false
 }: UnifiedNotesInputProps) {
-  const { t } = useTranslation()
+  const { t, isArabic } = useTranslation()
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [translatingId, setTranslatingId] = useState<string | null>(null)
@@ -40,6 +44,8 @@ export default function UnifiedNotesInput({
   const [error, setError] = useState<string | null>(null)
   const [targetLanguage, setTargetLanguage] = useState<string>('en')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
+  const [editingTranscriptionId, setEditingTranscriptionId] = useState<string | null>(null)
+  const [transcriptionDraft, setTranscriptionDraft] = useState('')
 
   // Soniox real-time STT
   const [liveTranscription, setLiveTranscription] = useState('')
@@ -126,8 +132,8 @@ export default function UnifiedNotesInput({
       const updated = [...voiceNotesRef.current, newNote]
       onVoiceNotesChange(updated)
 
-      // إضافة النص إلى حقل الملاحظات تلقائياً
-      if (finalText) {
+      // بعض النماذج تعرض النص داخل التسجيل نفسه فقط لتجنب تكراره في الملاحظات.
+      if (appendTranscriptionToNotes && finalText) {
         const current = notesRef.current
         onNotesChange(current ? `${current}\n\n${finalText}` : finalText)
       }
@@ -377,6 +383,36 @@ export default function UnifiedNotesInput({
     }
     if (playingId === noteId) setPlayingId(null)
     onVoiceNotesChange(voiceNotes.filter(note => note.id !== noteId))
+  }
+
+  const startEditingTranscription = (note: VoiceNote) => {
+    setEditingTranscriptionId(note.id)
+    setTranscriptionDraft(note.transcription || '')
+  }
+
+  const cancelEditingTranscription = () => {
+    setEditingTranscriptionId(null)
+    setTranscriptionDraft('')
+  }
+
+  const saveTranscription = (noteId: string) => {
+    const transcription = transcriptionDraft.trim()
+    if (!transcription) return
+
+    const updatedNotes = voiceNotesRef.current.map(note =>
+      note.id === noteId
+        ? {
+            ...note,
+            transcription,
+            // يجب إعادة الترجمة بعد تعديل النص الأصلي حتى لا تبقى ترجمة قديمة.
+            translatedText: undefined,
+            translationLanguage: undefined
+          }
+        : note
+    )
+    onVoiceNotesChange(updatedNotes)
+    setEditingTranscriptionId(null)
+    setTranscriptionDraft('')
   }
 
   // ترجمة النص باستخدام OpenRouter API
@@ -631,10 +667,46 @@ export default function UnifiedNotesInput({
                       <span className="text-base text-pink-600 font-bold flex-shrink-0 mt-0.5">
                         {index + 1}.
                       </span>
-                      {note.transcription && (
+                      {note.transcription && editingTranscriptionId !== note.id && (
                         <p className="text-sm text-gray-700 leading-relaxed break-words">
                           {note.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
                         </p>
+                      )}
+                      {editingTranscriptionId === note.id && (
+                        <div className="flex-1 space-y-2">
+                          <label htmlFor={`voice-transcription-${note.id}`} className="sr-only">
+                            {t('edit_transcription')}
+                          </label>
+                          <textarea
+                            id={`voice-transcription-${note.id}`}
+                            value={transcriptionDraft}
+                            onChange={(event) => setTranscriptionDraft(event.target.value)}
+                            rows={3}
+                            dir="auto"
+                            autoFocus
+                            disabled={disabled}
+                            className="w-full resize-y rounded-lg border border-pink-300 bg-pink-50/40 px-3 py-2 text-sm leading-relaxed text-gray-800 outline-none transition focus:border-pink-500 focus:ring-2 focus:ring-pink-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => saveTranscription(note.id)}
+                              disabled={disabled || !transcriptionDraft.trim()}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-pink-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                              {t('save')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditingTranscription}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              {t('cancel')}
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
 
@@ -648,7 +720,20 @@ export default function UnifiedNotesInput({
                         {playingId === note.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                       </button>
 
-                      {note.transcription && !note.translatedText && (
+                      {allowTranscriptionEditing && note.transcription && editingTranscriptionId !== note.id && (
+                        <button
+                          type="button"
+                          onClick={() => startEditingTranscription(note)}
+                          disabled={disabled}
+                          className="p-1.5 text-pink-600 hover:bg-pink-50 rounded transition-colors disabled:opacity-50"
+                          title={t('edit_transcription')}
+                          aria-label={`${t('edit_transcription')} ${index + 1}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {note.transcription && !note.translatedText && editingTranscriptionId !== note.id && (
                         <button
                           type="button"
                           onClick={() => translateText(note.id, targetLanguage)}
@@ -674,7 +759,7 @@ export default function UnifiedNotesInput({
                     </div>
                   </div>
 
-                  {note.transcription ? (
+                  {note.transcription && editingTranscriptionId !== note.id ? (
                     note.translatedText && (
                       <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2">
                         <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
@@ -684,8 +769,12 @@ export default function UnifiedNotesInput({
                         <p className="text-sm text-gray-600">{note.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
                       </div>
                     )
+                  ) : editingTranscriptionId !== note.id ? (
+                    <p className="text-sm text-gray-500 mr-6">
+                      {isArabic ? 'تسجيل صوتي - في انتظار التحويل إلى نص...' : 'Voice recording — waiting for transcription...'}
+                    </p>
                   ) : (
-                    <p className="text-sm text-gray-500 mr-6">تسجيل صوتي - في انتظار التحويل إلى نص...</p>
+                    null
                   )}
                 </div>
               ))}

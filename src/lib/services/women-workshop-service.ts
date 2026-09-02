@@ -10,6 +10,13 @@ export type WomenWorkshopOperationType =
 
 export type WomenWorkshopPaymentMethod = 'cash' | 'card'
 
+export type WomenWorkshopTransactionKind = 'income' | 'expense'
+
+export type WomenWorkshopExpenseCategory =
+  | 'salaries'
+  | 'workshop_supplies'
+  | 'other'
+
 export type WomenWorkshopSyncStatus =
   | 'pending'
   | 'sending'
@@ -20,7 +27,9 @@ export type WomenWorkshopSyncStatus =
 
 export interface WomenWorkshopTransaction {
   id: string
-  source: 'manual_invoice' | 'order_measurement'
+  source: 'manual_invoice' | 'order_measurement' | 'manual_expense'
+  transaction_kind: WomenWorkshopTransactionKind
+  expense_category?: WomenWorkshopExpenseCategory | null
   operation_type: WomenWorkshopOperationType
   operation_name: string
   amount: number
@@ -53,6 +62,16 @@ export const WOMEN_WORKSHOP_OPERATION_OPTIONS: WomenWorkshopOperationOption[] = 
   { value: 'other', label: 'أخرى', defaultAmount: null },
 ]
 
+export const WOMEN_WORKSHOP_EXPENSE_OPTIONS: Array<{
+  value: WomenWorkshopExpenseCategory
+  label: string
+  labelEn: string
+}> = [
+  { value: 'salaries', label: 'رواتب', labelEn: 'Salaries' },
+  { value: 'workshop_supplies', label: 'مستلزمات للمشغل', labelEn: 'Workshop supplies' },
+  { value: 'other', label: 'مصروفات أخرى', labelEn: 'Other expenses' },
+]
+
 export interface CreateWomenWorkshopInvoiceInput {
   transactionId: string
   operationType: Exclude<WomenWorkshopOperationType, 'order_measurement'>
@@ -67,6 +86,20 @@ export interface CreateWomenWorkshopInvoiceResult {
   sentToAccounting?: boolean
   duplicate?: boolean
   warning?: string
+  error?: string
+}
+
+export interface CreateWomenWorkshopExpenseInput {
+  transactionId: string
+  expenseCategory: WomenWorkshopExpenseCategory
+  amount: number
+  paymentMethod: WomenWorkshopPaymentMethod
+}
+
+export interface CreateWomenWorkshopExpenseResult {
+  success: boolean
+  transaction?: WomenWorkshopTransaction
+  duplicate?: boolean
   error?: string
 }
 
@@ -102,6 +135,45 @@ export async function createWomenWorkshopInvoice(
       sentToAccounting: result?.sentToAccounting,
       duplicate: result?.duplicate,
       warning: result?.warning,
+    }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'حدث خطأ غير متوقع',
+    }
+  }
+}
+
+export async function createWomenWorkshopExpense(
+  input: CreateWomenWorkshopExpenseInput
+): Promise<CreateWomenWorkshopExpenseResult> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      return { success: false, error: 'الجلسة منتهية — يرجى إعادة تسجيل الدخول' }
+    }
+
+    const response = await fetch('/api/women-workshop/expenses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(input),
+    })
+
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      return {
+        success: false,
+        error: result?.error || 'تعذّر حفظ مصروف المشغل النسائي',
+      }
+    }
+
+    return {
+      success: true,
+      transaction: result?.data,
+      duplicate: result?.duplicate,
     }
   } catch (error: unknown) {
     return {

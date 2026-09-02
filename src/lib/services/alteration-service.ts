@@ -9,6 +9,7 @@ import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
 const ALTERATION_LIST_COLUMNS = [
   'id',
   'alteration_number',
+  'alteration_type',
   'original_order_id',
   'worker_id',
   'client_name',
@@ -43,9 +44,38 @@ export type AlterationErrorType =
   | 'reception_error'
   | 'other_error'
 
+export type AlterationType = 'first_proof' | 'second_proof' | 'after_delivery'
+
+export const isAlterationType = (value: string | null | undefined): value is AlterationType => (
+  value === 'first_proof' || value === 'second_proof' || value === 'after_delivery'
+)
+
+export interface AlterationStoredTranslation {
+  target_language: 'hi'
+  source_text: string
+  translated_text: string
+  updated_at: string
+}
+
+export interface OrderAlterationSummary {
+  id: string
+  alteration_number: string
+  alteration_type: AlterationType
+  error_type?: AlterationErrorType | null
+  description?: string | null
+  notes?: string | null
+  voice_transcriptions?: Array<{
+    transcription?: string | null
+  }> | null
+  alteration_translations?: AlterationStoredTranslation[] | null
+  status: Alteration['status']
+  created_at: string
+}
+
 export interface Alteration {
   id: string
   alteration_number: string
+  alteration_type: AlterationType
   original_order_id?: string | null
   worker_id?: string | null
   client_name: string
@@ -81,6 +111,7 @@ export interface Alteration {
 
 export interface CreateAlterationData {
   alteration_number?: string
+  alteration_type?: AlterationType
   original_order_id?: string | null
   worker_id?: string
   client_name: string
@@ -172,6 +203,7 @@ export interface CreateAlterationData {
 
 export interface UpdateAlterationData {
   alteration_number?: string
+  alteration_type?: AlterationType
   worker_id?: string | null
   client_name?: string
   client_phone?: string
@@ -243,6 +275,7 @@ export const alterationService = {
       // تحضير البيانات للإدخال
       const insertData: any = {
         original_order_id: alterationData.original_order_id || null,
+        alteration_type: alterationData.alteration_type || 'after_delivery',
         worker_id: alterationData.worker_id || null,
         client_name: alterationData.client_name,
         client_phone: alterationData.client_phone,
@@ -478,26 +511,44 @@ export const alterationService = {
     }
 
     try {
-      // حساب عدد التعديلات غير الملغاة المرتبطة بهذا الطلب
-      const { count, error: countError } = await supabase
-        .from('alterations')
-        .select('id', { count: 'exact', head: true })
-        .eq('original_order_id', originalOrderId)
-        .neq('status', 'cancelled')
+      // البطاقات تحسب تعديلات ما بعد التسليم فقط، مع عداد مستقل للبروفة الثانية.
+      const [allAlterationsResult, afterDeliveryResult, secondProofResult] = await Promise.all([
+        supabase
+          .from('alterations')
+          .select('id', { count: 'exact', head: true })
+          .eq('original_order_id', originalOrderId)
+          .neq('status', 'cancelled'),
+        supabase
+          .from('alterations')
+          .select('id', { count: 'exact', head: true })
+          .eq('original_order_id', originalOrderId)
+          .eq('alteration_type', 'after_delivery')
+          .neq('status', 'cancelled'),
+        supabase
+          .from('alterations')
+          .select('id', { count: 'exact', head: true })
+          .eq('original_order_id', originalOrderId)
+          .eq('alteration_type', 'second_proof')
+          .neq('status', 'cancelled')
+      ])
 
+      const countError = allAlterationsResult.error || afterDeliveryResult.error || secondProofResult.error
       if (countError) {
         console.error('❌ Error counting alterations:', countError)
         return { error: countError.message }
       }
 
-      const alterationCount = count ?? 0
+      const alterationCount = afterDeliveryResult.count ?? 0
+      const secondProofAlterationCount = secondProofResult.count ?? 0
+      const hasAnyAlterations = (allAlterationsResult.count ?? 0) > 0
 
       const { error: updateError } = await supabase
         .from('orders')
         .update({
           alteration_count: alterationCount,
-          has_alterations: alterationCount > 0,
-          last_alteration_at: alterationCount > 0 ? new Date().toISOString() : null
+          second_proof_alteration_count: secondProofAlterationCount,
+          has_alterations: hasAnyAlterations,
+          last_alteration_at: hasAnyAlterations ? new Date().toISOString() : null
         })
         .eq('id', originalOrderId)
 
@@ -570,8 +621,13 @@ export const alterationService = {
 
   /**
    * الحصول على طلبات التعديلات المرتبطة بطلب أصلي
+   * سبب الخطأ لا يُطلب إلا عند تفعيل includeErrorType (لوحة المدير)،
+   * حتى لا يصل إلى متصفّح العامل أصلاً.
    */
-  async getByOriginalOrderId(orderId: string): Promise<{ data: Alteration[] | null; error: string | null }> {
+  async getByOriginalOrderId(
+    orderId: string,
+    options: { includeErrorType?: boolean } = {}
+  ): Promise<{ data: OrderAlterationSummary[] | null; error: string | null }> {
     if (!isSupabaseConfigured()) {
       return { data: null, error: 'Supabase is not configured.' }
     }
@@ -579,19 +635,103 @@ export const alterationService = {
     try {
       const { data, error } = await supabase
         .from('alterations')
-        .select(ALTERATION_LIST_COLUMNS)
+        .select(`id,alteration_number,alteration_type,description,notes,voice_transcriptions,status,created_at${options.includeErrorType ? ',error_type' : ''},alteration_translations(target_language,source_text,translated_text,updated_at)`)
         .eq('original_order_id', orderId)
-        .order('created_at', { ascending: false })
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: true })
 
       if (error) {
         console.error('❌ Error fetching alterations by original order:', error)
         return { data: null, error: error.message }
       }
 
-      return { data: (data || []) as unknown as Alteration[], error: null }
+      return { data: (data || []) as unknown as OrderAlterationSummary[], error: null }
     } catch (error: any) {
       console.error('❌ Exception in getByOriginalOrderId alterations:', error)
       return { data: null, error: error.message }
+    }
+  },
+
+  /**
+   * جلب النسخة الهندية المخزّنة لتعديل واحد.
+   * يعيد null إذا لم تُترجم بعد؛ ويبقى فحص تطابق source_text على المستدعي
+   * لأن تغيّر وصف التعديل يُبطل الترجمة المحفوظة.
+   */
+  async getHindiTranslation(
+    alterationId: string
+  ): Promise<{ data: AlterationStoredTranslation | null; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: null, error: 'Supabase is not configured.' }
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('alteration_translations')
+        .select('target_language,source_text,translated_text,updated_at')
+        .eq('alteration_id', alterationId)
+        .eq('target_language', 'hi')
+        .maybeSingle()
+
+      if (error) {
+        console.error('❌ Error fetching alteration translation:', error)
+        return { data: null, error: error.message }
+      }
+
+      return { data: (data as AlterationStoredTranslation) ?? null, error: null }
+    } catch (error: any) {
+      console.error('❌ Exception in getHindiTranslation:', error)
+      return { data: null, error: error.message }
+    }
+  },
+
+  /**
+   * حفظ النسخة الهندية المشتركة مع النص المصدر الذي بُنيت منه.
+   * تخزين المصدر يمنع عرض ترجمة قديمة إذا تغير وصف التعديل لاحقاً.
+   */
+  async saveHindiTranslation(
+    alterationId: string,
+    sourceText: string,
+    translatedText: string
+  ): Promise<{ data: AlterationStoredTranslation | null; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: null, error: 'Supabase is not configured.' }
+    }
+
+    const cleanSourceText = sourceText.trim()
+    const cleanTranslatedText = translatedText.trim()
+    if (!cleanSourceText || !cleanTranslatedText) {
+      return { data: null, error: 'Source and translated text are required.' }
+    }
+
+    try {
+      await ensureValidSession()
+
+      const { data, error } = await supabase
+        .from('alteration_translations')
+        .upsert({
+          alteration_id: alterationId,
+          target_language: 'hi',
+          source_text: cleanSourceText,
+          translated_text: cleanTranslatedText,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'alteration_id,target_language'
+        })
+        .select('target_language,source_text,translated_text,updated_at')
+        .single()
+
+      if (error) {
+        console.error('Error saving alteration translation:', error)
+        return { data: null, error: error.message }
+      }
+
+      return { data: data as AlterationStoredTranslation, error: null }
+    } catch (error) {
+      console.error('Exception saving alteration translation:', error)
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'Failed to save alteration translation.'
+      }
     }
   },
 
