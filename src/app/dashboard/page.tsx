@@ -767,6 +767,14 @@ function DashboardContent() {
                   </Link>
 
                   <Link
+                    href="/dashboard/accounting/tailoring/income"
+                    className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-lg border border-emerald-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <TrendingUp className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-emerald-800">{isArabic ? 'واردات قسم التفصيل' : 'Tailoring Income'}</span>
+                  </Link>
+
+                  <Link
                     href="/dashboard/accounting/tailoring/salaries"
                     className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
                   >
@@ -942,6 +950,14 @@ function DashboardContent() {
                   >
                     <WalletCards className="w-6 h-6 text-amber-700 mx-auto mb-2" />
                     <span className="text-sm font-medium text-amber-900">{isArabic ? 'الصندوق' : 'Cash Box'}</span>
+                  </Link>
+
+                  <Link
+                    href="/dashboard/accounting/tailoring/income"
+                    className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-lg border border-emerald-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <TrendingUp className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-emerald-800">{isArabic ? 'واردات قسم التفصيل' : 'Tailoring Income'}</span>
                   </Link>
 
                   <Link

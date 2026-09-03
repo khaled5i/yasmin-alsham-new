@@ -691,22 +691,44 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                 {workerType !== 'workshop_manager' && (
                   <>
                     <div className="grid grid-cols-2 gap-2 pt-4 border-t border-gray-200 mt-4">
-                      <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
-                        <Banknote className="w-4 h-4 shrink-0" />
-                        <div className="min-w-0">
+                      <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
+                        <Banknote className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
                           <p className="text-[11px] font-medium">{isArabic ? 'الكاش المدفوع' : 'Cash Paid'}</p>
                           <p className="text-sm font-bold">
                             {paymentBreakdown.cashTotal.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
                           </p>
+                          {/* تفصيل: كم من الكاش عربون وكم دُفع عند التسليم */}
+                          <div className="mt-1 pt-1 border-t border-emerald-200/70 space-y-0.5 text-[10px] text-emerald-700">
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{isArabic ? 'عربون' : 'Deposit'}</span>
+                              <span className="font-semibold">{paymentBreakdown.preDeliveryCash.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{isArabic ? 'عند التسليم' : 'On delivery'}</span>
+                              <span className="font-semibold">{paymentBreakdown.remainingCash.toFixed(2)}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-blue-800">
-                        <CreditCard className="w-4 h-4 shrink-0" />
-                        <div className="min-w-0">
+                      <div className="flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2 text-blue-800">
+                        <CreditCard className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
                           <p className="text-[11px] font-medium">{isArabic ? 'الشبكة المدفوعة' : 'Network Paid'}</p>
                           <p className="text-sm font-bold">
                             {paymentBreakdown.networkTotal.toFixed(2)} {t('sar') || (isArabic ? 'ر.س' : 'SAR')}
                           </p>
+                          {/* تفصيل: كم من الشبكة عربون وكم دُفع عند التسليم */}
+                          <div className="mt-1 pt-1 border-t border-blue-200/70 space-y-0.5 text-[10px] text-blue-700">
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{isArabic ? 'عربون' : 'Deposit'}</span>
+                              <span className="font-semibold">{paymentBreakdown.preDeliveryNetwork.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{isArabic ? 'عند التسليم' : 'On delivery'}</span>
+                              <span className="font-semibold">{paymentBreakdown.remainingNetwork.toFixed(2)}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>

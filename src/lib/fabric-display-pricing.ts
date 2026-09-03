@@ -48,3 +48,16 @@ export function getFabricDisplayPricing(
 export function getFabricPricingUnitLabel(unit: FabricPricingUnit): string {
   return unit === 'piece' ? 'للقطعة' : 'للمتر'
 }
+
+/**
+ * قماش بدون سعر معروض (السعر عند الطلب) — يُستخدم لإنزال هذه الأقمشة
+ * إلى نهاية قائمة المتجر مهما كان نوع الترتيب المختار.
+ */
+export function hasFabricDisplayPrice(
+  pricePerInventoryUnit: number | null | undefined,
+  availableQuantity: number | null | undefined,
+  inventoryUnit: FabricPricingUnit = 'meter'
+): boolean {
+  const { amount } = getFabricDisplayPricing(pricePerInventoryUnit, availableQuantity, inventoryUnit)
+  return amount != null && amount > 0
+}

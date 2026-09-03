@@ -6,6 +6,7 @@ import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-s
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import {
   getFabricDisplayPricing,
+  hasFabricDisplayPrice,
   type FabricPricingUnit,
 } from '@/lib/fabric-display-pricing'
 
@@ -245,6 +246,11 @@ export const useFabricStore = create<FabricStoreState>()(
 
         // تطبيق الترتيب
         filtered.sort((a, b) => {
+          // الأولوية دائماً للأقمشة التي لها سعر، والأقمشة بدون سعر في نهاية المتجر
+          const aHasPrice = hasFabricDisplayPrice(a.price_per_meter, a.stock_quantity)
+          const bHasPrice = hasFabricDisplayPrice(b.price_per_meter, b.stock_quantity)
+          if (aHasPrice !== bHasPrice) return aHasPrice ? -1 : 1
+
           switch (sortBy) {
             case 'newest':
               return b.created_at.localeCompare(a.created_at)

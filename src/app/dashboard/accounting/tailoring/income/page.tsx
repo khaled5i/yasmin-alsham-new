@@ -189,6 +189,146 @@ function formatEntryMoment(entry: Income): string {
   return dateTimeFormatter.format(date)
 }
 
+// ============================================================================
+// صف وارد واحد — نفس بطاقة العملية بلا أي تغيير في محتواها
+// ============================================================================
+
+function IncomeEntryRow({ item, index }: { item: Income; index: number }) {
+  const appearance = entryAppearance[item.entry_kind || 'manual_income']
+  const Icon = appearance?.icon || Banknote
+  const method = paymentAppearance[item.payment_method || 'cash']
+  const invoice = getInvoiceState(item)
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.025, 0.25) }}
+      className="grid gap-3 px-5 py-4 transition hover:bg-gray-50/70 sm:grid-cols-[auto_1fr_auto] sm:items-center"
+    >
+      <div
+        className={`flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ${
+          appearance?.containerClass || 'bg-gray-100 ring-gray-200'
+        }`}
+      >
+        <Icon className={`h-5 w-5 ${appearance?.iconClass || 'text-gray-600'}`} />
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-black text-gray-900">{item.description}</h3>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black text-gray-500">
+            {appearance?.badge || 'حركة'}
+          </span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${method.className}`}
+          >
+            {method.label}
+          </span>
+        </div>
+        <p className="mt-1 truncate text-sm text-gray-600">{item.customer_name}</p>
+
+        {/* رقم فاتورة الأستاذ وحالتها — لحركات الشبكة فقط */}
+        {invoice && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {item.alostaz_invoice_code ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 font-mono text-[11px] font-bold text-gray-700"
+                dir="ltr"
+              >
+                <FileText className="h-3 w-3 text-gray-400" />
+                {item.alostaz_invoice_code}
+              </span>
+            ) : null}
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${invoice.className}`}
+            >
+              <invoice.icon className="h-3 w-3" />
+              {invoice.label}
+            </span>
+            {item.alostaz_invoice_code && item.alostaz_invoice_scope === 'full' ? (
+              <span className="text-[10px] font-bold text-gray-400">
+                فاتورة تغطي كامل الطلب
+              </span>
+            ) : null}
+          </div>
+        )}
+
+        <p className="mt-1.5 text-xs text-gray-400">{formatEntryMoment(item)}</p>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 sm:block sm:text-left">
+        <span className="text-xs font-bold text-gray-400 sm:hidden">وارد</span>
+        <p className="text-lg font-black text-emerald-700" dir="ltr">
+          + {formatCurrency(item.amount)}
+        </p>
+      </div>
+    </motion.article>
+  )
+}
+
+// ============================================================================
+// قسم مستقل لكل طريقة دفع — الشبكة والكاش كلٌّ في بطاقته
+// ============================================================================
+
+function IncomeMethodSection({
+  title,
+  method,
+  entries,
+  delay,
+}: {
+  title: string
+  method: PaymentMethod
+  entries: Income[]
+  delay: number
+}) {
+  const isNetwork = method === 'network'
+  const total = entries.reduce((sum, item) => sum + item.amount, 0)
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay }}
+      className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+    >
+      <div
+        className={`flex flex-col gap-3 border-b px-5 py-5 sm:flex-row sm:items-center sm:justify-between ${
+          isNetwork ? 'border-emerald-100 bg-emerald-50/70' : 'border-amber-100 bg-amber-50/70'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <div className={`rounded-2xl p-2.5 text-white ${isNetwork ? 'bg-emerald-600' : 'bg-amber-500'}`}>
+            {isNetwork ? <CreditCard className="h-5 w-5" /> : <Banknote className="h-5 w-5" />}
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-gray-900">{title}</h2>
+            <p className="text-xs font-semibold text-gray-500">{entries.length} عملية مسجلة</p>
+          </div>
+        </div>
+        <div
+          className={`text-xl font-black ${isNetwork ? 'text-emerald-700' : 'text-amber-700'}`}
+          dir="ltr"
+        >
+          {formatCurrency(total)}
+        </div>
+      </div>
+
+      {entries.length === 0 ? (
+        <div className="px-6 py-12 text-center text-sm font-semibold text-gray-400">
+          لا توجد عمليات مطابقة في هذه الفترة
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {entries.map((item, index) => (
+            <IncomeEntryRow key={item.id} item={item} index={index} />
+          ))}
+        </div>
+      )}
+    </motion.section>
+  )
+}
+
 function IncomePageContent() {
   const [entries, setEntries] = useState<Income[]>([])
   const [unrecorded, setUnrecorded] = useState<UnrecordedDeliveredOrder[]>([])
@@ -200,9 +340,9 @@ function IncomePageContent() {
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [unsentOnly, setUnsentOnly] = useState(false)
 
-  // نفس فلتر الفترة المستخدم في صفحة التقارير
-  const [selectedPeriod, setSelectedPeriod] = useState<DateRange>('month')
-  const [periodRange, setPeriodRange] = useState<DateFilter>(() => computePresetRange('month'))
+  // نفس فلتر الفترة المستخدم في صفحة التقارير — يبدأ على اليوم الحالي
+  const [selectedPeriod, setSelectedPeriod] = useState<DateRange>('today')
+  const [periodRange, setPeriodRange] = useState<DateFilter>(() => computePresetRange('today'))
 
   const loadIncome = useCallback(async () => {
     try {
@@ -285,6 +425,17 @@ function IncomePageContent() {
   const unrecordedTotal = useMemo(
     () => unrecordedInPeriod.reduce((sum, order) => sum + order.outstanding, 0),
     [unrecordedInPeriod]
+  )
+
+  // فصل الحركات حسب طريقة الدفع — كل طريقة في بطاقتها الخاصة
+  const networkEntries = useMemo(
+    () => filteredIncome.filter(item => item.payment_method === 'network'),
+    [filteredIncome]
+  )
+
+  const cashEntries = useMemo(
+    () => filteredIncome.filter(item => item.payment_method !== 'network'),
+    [filteredIncome]
   )
 
   const totals = useMemo(() => {
@@ -539,16 +690,23 @@ function IncomePageContent() {
           </motion.div>
         )}
 
-        {/* قائمة الواردات */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
-        >
-          {loading ? (
+        {/* قائمة الواردات — مفصولة: عمليات الشبكة ثم عمليات الكاش */}
+        {loading ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+          >
             <div className="py-12 text-center text-gray-400">جاري التحميل...</div>
-          ) : filteredIncome.length === 0 ? (
+          </motion.div>
+        ) : filteredIncome.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+          >
             <div className="py-12 text-center">
               <Package className="mx-auto mb-4 h-16 w-16 text-gray-300" />
               <p className="text-gray-500">لا توجد واردات في هذه الفترة</p>
@@ -556,85 +714,27 @@ function IncomePageContent() {
                 جرّب توسيع الفترة الزمنية أو إزالة فلاتر نوع العملية وطريقة الدفع
               </p>
             </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {filteredIncome.map((item, index) => {
-                const appearance = entryAppearance[item.entry_kind || 'manual_income']
-                const Icon = appearance?.icon || Banknote
-                const method = paymentAppearance[item.payment_method || 'cash']
-                const invoice = getInvoiceState(item)
-
-                return (
-                  <motion.article
-                    key={item.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(index * 0.025, 0.25) }}
-                    className="grid gap-3 px-5 py-4 transition hover:bg-gray-50/70 sm:grid-cols-[auto_1fr_auto] sm:items-center"
-                  >
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ${
-                        appearance?.containerClass || 'bg-gray-100 ring-gray-200'
-                      }`}
-                    >
-                      <Icon className={`h-5 w-5 ${appearance?.iconClass || 'text-gray-600'}`} />
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-black text-gray-900">{item.description}</h3>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black text-gray-500">
-                          {appearance?.badge || 'حركة'}
-                        </span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${method.className}`}
-                        >
-                          {method.label}
-                        </span>
-                      </div>
-                      <p className="mt-1 truncate text-sm text-gray-600">{item.customer_name}</p>
-
-                      {/* رقم فاتورة الأستاذ وحالتها — لحركات الشبكة فقط */}
-                      {invoice && (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          {item.alostaz_invoice_code ? (
-                            <span
-                              className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 font-mono text-[11px] font-bold text-gray-700"
-                              dir="ltr"
-                            >
-                              <FileText className="h-3 w-3 text-gray-400" />
-                              {item.alostaz_invoice_code}
-                            </span>
-                          ) : null}
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${invoice.className}`}
-                          >
-                            <invoice.icon className="h-3 w-3" />
-                            {invoice.label}
-                          </span>
-                          {item.alostaz_invoice_code && item.alostaz_invoice_scope === 'full' ? (
-                            <span className="text-[10px] font-bold text-gray-400">
-                              فاتورة تغطي كامل الطلب
-                            </span>
-                          ) : null}
-                        </div>
-                      )}
-
-                      <p className="mt-1.5 text-xs text-gray-400">{formatEntryMoment(item)}</p>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 sm:block sm:text-left">
-                      <span className="text-xs font-bold text-gray-400 sm:hidden">وارد</span>
-                      <p className="text-lg font-black text-emerald-700" dir="ltr">
-                        + {formatCurrency(item.amount)}
-                      </p>
-                    </div>
-                  </motion.article>
-                )
-              })}
-            </div>
-          )}
-        </motion.div>
+          </motion.div>
+        ) : (
+          <div className="space-y-6">
+            {methodFilter !== 'cash' && (
+              <IncomeMethodSection
+                title="عمليات الشبكة"
+                method="network"
+                entries={networkEntries}
+                delay={0.2}
+              />
+            )}
+            {methodFilter !== 'network' && (
+              <IncomeMethodSection
+                title="عمليات الكاش"
+                method="cash"
+                entries={cashEntries}
+                delay={0.25}
+              />
+            )}
+          </div>
+        )}
 
         {/* ملاحظة */}
         <motion.div
