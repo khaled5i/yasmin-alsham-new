@@ -73,6 +73,18 @@ export interface FabricSaleItem {
   quantity_meters?: number | null // الكمية بالمتر لهذا القماش
 }
 
+/**
+ * نوع الحركة الواردة كما تُعرض في صفحة الواردات.
+ * مشتقّة من الطلب نفسه (عربون / دفعة عند التسليم) أو مسجّلة يدوياً في جدول income.
+ */
+/** حالة مزامنة الفاتورة مع تطبيق المحاسبة (الأستاذ) */
+export type AlostazSyncStatus = 'sending' | 'sent' | 'failed' | 'review_required'
+
+export type IncomeEntryKind =
+  | 'order_deposit'    // عربون عند استلام الطلب
+  | 'order_delivery'   // الدفعة المحصّلة لحظة التسليم
+  | 'manual_income'    // وارد مسجّل يدوياً
+
 export interface Income {
   id: string
   branch: BranchType
@@ -92,12 +104,23 @@ export interface Income {
   date: string
   is_automatic: boolean   // هل تم إضافته تلقائياً من الطلبات
   created_at: string
+  // ── حقول محسوبة للحركات المشتقّة من الطلبات (غير مخزّنة في قاعدة البيانات) ──
+  entry_kind?: IncomeEntryKind | null   // نوع الحركة لعرض الشارة والأيقونة
+  occurred_at?: string | null           // لحظة حدوث الحركة بالضبط (تاريخ + وقت)
+  order_number?: string | null          // رقم الطلب الظاهر للمستخدم
   // ── الربط مع الأستاذ للمحاسبة (فرع الأقمشة) ──
   alostaz_customer_id?: number | null      // معرّف العميل (partner) في الأستاذ
   alostaz_invoice_id?: number | null       // معرّف الفاتورة في الأستاذ (وجوده = أُرسِلت)
   alostaz_invoice_code?: string | null     // رقم الفاتورة النصّي في الأستاذ
-  alostaz_sync_status?: 'sending' | 'sent' | 'failed' | 'review_required' | null
+  alostaz_sync_status?: AlostazSyncStatus | null
   alostaz_synced_at?: string | null        // وقت آخر مزامنة
+  /**
+   * نطاق فاتورة الأستاذ المرتبطة بحركة شبكة مشتقّة من طلب تفصيل:
+   *   'phase' = فاتورة تخص هذه الدفعة وحدها (طلبات الإصدار 2)
+   *   'full'  = فاتورة تغطي كامل الطلب (طلبات قديمة أُرسلت يدوياً)
+   */
+  alostaz_invoice_scope?: 'phase' | 'full' | null
+  alostaz_billing_version?: number | null  // 1 = طلب قديم يدوي، 2 = فوترة مرحلية
 }
 
 export interface CreateIncomeInput {

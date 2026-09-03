@@ -3,9 +3,9 @@
  * ─────────────────────────────────────────────────────────────
  * الغرض من التوحيد:
  *   • بناء تحديثات التسليم بشكل متّسق (لقطة العربون + طريقة دفع المتبقي).
- *   • إرسال شبكة الدفعة المتبقية فقط للمحاسبة للطلبات الجديدة من أي مكان في الموقع.
+ *   • إرسال شبكة الدفعة المتبقية فقط للمحاسبة حسب تاريخ التسليم من أي مكان في الموقع.
  *
- * الزر اليدوي للطلبات القديمة يبقى مستقلاً، أما الجديدة فيرسل شبكة المتبقي فقط.
+ * العربون التاريخي لا يُرسل عند التسليم، ويظل المسار اليدوي مستقلاً للمعالجة الاستثنائية.
  */
 
 import toast from 'react-hot-toast'
@@ -21,6 +21,7 @@ import {
   type RemainingPaymentDetails,
   type RemainingPaymentMethod,
 } from '@/lib/payment-breakdown'
+import { isAlostazDeliverySyncEligible } from '@/lib/alostaz-delivery-eligibility'
 
 export interface DeliveryUpdateOptions {
   /** هل نُعلّم المتبقي كمدفوع (paid_amount = price)؟ */
@@ -192,8 +193,8 @@ async function printDeliveredOrderReceipt(
 
 /**
  * إرسال «شبكة الدفعة المتبقية فقط» تلقائياً بعد التسليم (إن كان الإرسال التلقائي مفعّلاً).
- * - للمدير فقط، وللطلبات الجديدة ذات الإصدار المحاسبي 2.
- * - الطلبات القديمة لا تمر بهذا المسار إطلاقاً وتبقى للمعالجة اليدوية.
+ * - للمدير فقط، وللطلبات المسلّمة من تاريخ بدء مزامنة التسليم فما بعد.
+ * - تاريخ إنشاء الطلب لا يمنع الإرسال؛ الأهلية تُحدّد بتاريخ التسليم.
  * - إن كانت شبكة المتبقي صفراً لا تُنشأ فاتورة ولا تظهر رسالة.
  * - صامت عند الفشل: لا يُفشل التسليم بسبب المحاسبة.
  *
@@ -206,7 +207,7 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
     order.alostaz_invoice_code || order.alostaz_deposit_invoice_code || ''
   ).trim()
   const fullyNetworkPaid = isFullyNetworkPaid(order)
-  const stagedBilling = Number(order.alostaz_billing_version) >= 2
+  const deliverySyncEligible = isAlostazDeliverySyncEligible(order)
   const remainingNetwork = computePaymentBreakdown(order).remainingNetwork
 
   // وجود أي كاش يعني أن رقم الإيصال محلي، لذلك لا نؤخر الطباعة وفتح الدرج
@@ -216,11 +217,11 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
     await printDeliveredOrderReceipt(order, accountingInvoiceCode)
   }
 
-  // للطلبات الجديدة فقط: نرسل شبكة المتبقي دون إعادة عربون الشبكة الذي أُرسل عند الإنشاء.
+  // للتسليمات المؤهلة: نرسل شبكة المتبقي فقط دون إعادة أي عربون تاريخي.
   // عند الدفع شبكة بالكامل ننتظر النتيجة هنا كي يحمل الإيصال رقم فاتورة الأستاذ المناسب.
   if (
     userRole === 'admin' &&
-    stagedBilling &&
+    deliverySyncEligible &&
     remainingNetwork >= 0.005 &&
     !order.alostaz_invoice_id
   ) {

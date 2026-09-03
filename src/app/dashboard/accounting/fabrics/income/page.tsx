@@ -101,6 +101,9 @@ const createEmptyFabricLine = (): FabricLine => ({
   quantity_meters: '',
 })
 
+// الحد الأقصى لعدد الخيارات الظاهرة في قائمة البحث عن القماش
+const MAX_FABRIC_SEARCH_RESULTS = 20
+
 const getFabricOptionKey = (inventoryId: string, inventoryColorId?: string | null) =>
   `${inventoryId}:${inventoryColorId || ''}`
 
@@ -332,7 +335,62 @@ function FabricsIncomeContent() {
         )
         return searchable.includes(normalizedQuery)
       })
-      .slice(0, 8)
+      .slice(0, MAX_FABRIC_SEARCH_RESULTS)
+  }
+
+  // خريطة رقم القماش → خيار المخزون، لمطابقة المبيعات القديمة التي لا تحمل معرّف الصنف
+  const inventoryOptionByCode = useMemo(() => {
+    const map = new Map<string, FabricInventorySearchOption>()
+    for (const option of inventorySearchOptions) {
+      const normalizedCode = normalizeFabricSearch(option.code)
+      if (normalizedCode && !map.has(normalizedCode)) map.set(normalizedCode, option)
+    }
+    return map
+  }, [inventorySearchOptions])
+
+  // إيجاد صنف المخزون المطابق لبند مبيعة محفوظ: بالمعرّف ثم برقم القماش ثم بالاسم
+  const resolveFabricSaleOption = (fabricItem: FabricSaleItem) => {
+    if (fabricItem.inventory_id) {
+      const byKey = inventoryOptionByKey.get(
+        getFabricOptionKey(fabricItem.inventory_id, fabricItem.inventory_color_id)
+      )
+      if (byKey) return byKey
+      const byId = inventorySearchOptions.find(
+        (option) => option.inventory_id === fabricItem.inventory_id
+      )
+      if (byId) return byId
+    }
+    if (fabricItem.fabric_code) {
+      const byCode = inventoryOptionByCode.get(normalizeFabricSearch(fabricItem.fabric_code))
+      if (byCode) return byCode
+    }
+    const nameMatches = inventorySearchOptions.filter(
+      (option) => option.name === fabricItem.name
+    )
+    return nameMatches.length === 1 ? nameMatches[0] : undefined
+  }
+
+  // تفاصيل البند كما تُعرض في عنوان المبيعة
+  const describeFabricSaleItem = (fabricItem: FabricSaleItem) => {
+    const option = resolveFabricSaleOption(fabricItem)
+    return {
+      code: (fabricItem.fabric_code || option?.code || '').trim(),
+      primaryType: (option?.fabric_type || '').trim(),
+      secondaryTypes: (option?.secondary_fabric_types ?? []).filter((type) => type.trim()),
+      colorName: option?.color_name ?? null,
+      name: (fabricItem.name || '').trim(),
+    }
+  }
+
+  // عنوان البند = التصنيف الرئيسي • التصنيفات الثانوية — رقم القماشة
+  const formatFabricSaleItemTitle = (fabricItem: FabricSaleItem) => {
+    const { code, primaryType, secondaryTypes, name } = describeFabricSaleItem(fabricItem)
+    const classification = [primaryType, ...secondaryTypes].filter(Boolean).join(' • ')
+    const head = classification || name
+    if (code && normalizeFabricSearch(code) !== normalizeFabricSearch(head)) {
+      return head ? `${head} — ${code}` : code
+    }
+    return head || code || 'مبيعة قماش'
   }
 
   useEffect(() => {
@@ -1122,7 +1180,7 @@ function FabricsIncomeContent() {
               const mutationLocked = isLockedForFabricStoreManager(item)
               const titleName =
                 fabricItems.length > 0
-                  ? fabricItems.map((f) => f.name).join('، ')
+                  ? fabricItems.map(formatFabricSaleItemTitle).join('، ')
                   : item.customer_name && item.customer_name !== '-'
                     ? item.customer_name
                     : item.description || 'مبيعة قماش'
@@ -1151,7 +1209,7 @@ function FabricsIncomeContent() {
                             <span key={i} className="flex items-center gap-1 text-xs text-blue-600">
                               <Ruler className="w-3 h-3" />
                               <span>
-                                {f.name}
+                                {describeFabricSaleItem(f).code || f.name}
                                 {f.quantity_meters != null ? ` — ${formatFabricNumber(f.quantity_meters)} م` : ''}
                               </span>
                             </span>
@@ -1374,7 +1432,7 @@ function FabricsIncomeContent() {
 
                                       {showSearchResults && (
                                         <div
-                                          className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-xl"
+                                          className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-xl"
                                           role="listbox"
                                         >
                                           {searchResults.length > 0 ? (
@@ -1408,19 +1466,23 @@ function FabricsIncomeContent() {
                                                 >
                                                   <span className="min-w-0">
                                                     <span
-                                                      className="block font-bold text-gray-900"
+                                                      className="block font-mono font-bold text-gray-900"
                                                       dir="ltr"
                                                     >
                                                       {option.code}
                                                     </span>
-                                                    <span className="block truncate text-xs text-gray-500">
-                                                      {[option.fabric_type, option.color_name]
-                                                        .filter(Boolean)
-                                                        .join(' — ') || option.name}
+                                                    <span className="block truncate text-xs text-gray-600">
+                                                      التصنيف الرئيسي:{' '}
+                                                      {option.fabric_type?.trim() || option.name || '—'}
                                                     </span>
                                                     {option.secondary_fabric_types.length > 0 && (
                                                       <span className="block truncate text-[11px] font-medium text-amber-700">
                                                         التصنيف الثانوي: {option.secondary_fabric_types.join('، ')}
+                                                      </span>
+                                                    )}
+                                                    {option.color_name && (
+                                                      <span className="block truncate text-[11px] text-violet-700">
+                                                        اللون: {option.color_name}
                                                       </span>
                                                     )}
                                                   </span>
@@ -1449,16 +1511,33 @@ function FabricsIncomeContent() {
                                       )}
 
                                       {selectedOption && (
-                                        <p className="mt-1.5 flex items-center gap-1.5 px-1 text-xs text-emerald-700">
-                                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                          <span>
-                                            {selectedOption.color_name
-                                              ? `${selectedOption.color_name} — `
-                                              : ''}
+                                        <div className="mt-1.5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-2.5 py-2 text-xs text-emerald-800">
+                                          <p className="flex items-center gap-1.5 font-bold">
+                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                            <span dir="ltr" className="font-mono">
+                                              {selectedOption.code}
+                                            </span>
+                                          </p>
+                                          <p className="mt-1 truncate text-gray-700">
+                                            التصنيف الرئيسي:{' '}
+                                            {selectedOption.fabric_type?.trim() || selectedOption.name || '—'}
+                                          </p>
+                                          {selectedOption.secondary_fabric_types.length > 0 && (
+                                            <p className="truncate font-medium text-amber-700">
+                                              التصنيف الثانوي:{' '}
+                                              {selectedOption.secondary_fabric_types.join('، ')}
+                                            </p>
+                                          )}
+                                          {selectedOption.color_name && (
+                                            <p className="truncate text-violet-700">
+                                              اللون: {selectedOption.color_name}
+                                            </p>
+                                          )}
+                                          <p className="mt-1 font-medium">
                                             الرصيد {formatFabricNumber(selectedOption.current_quantity)}{' '}
                                             {selectedOption.unit === 'meter' ? 'متر' : 'قطعة'}
-                                          </span>
-                                        </p>
+                                          </p>
+                                        </div>
                                       )}
                                     </div>
 

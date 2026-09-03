@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { computePaymentBreakdown, type OrderPaymentInput } from '@/lib/payment-breakdown'
 import type {
   BranchType,
   ExpenseType,
@@ -10,6 +11,9 @@ import type {
   Expense,
   CreateExpenseInput,
   Income,
+  IncomeEntryKind,
+  PaymentMethod,
+  AlostazSyncStatus,
   CreateIncomeInput,
   FinancialSummary,
   CashBoxTransaction,
@@ -644,7 +648,117 @@ export async function deleteIncome(id: string): Promise<boolean> {
   }
 }
 
-// جلب الواردات من الطلبات المسلمة تلقائياً
+// ============================================================================
+// الواردات المشتقّة من الطلبات
+// ============================================================================
+// كل طلب يُنتج حركة واردة منفصلة لكل دفعة فعلية حُصِّلت، مفصولة حسب:
+//   • اللحظة  : عربون عند استلام الطلب / دفعة عند التسليم
+//   • الطريقة : كاش أو شبكة
+// أي أربع حركات كحد أقصى للطلب الواحد. لا تُسجَّل إلا المبالغ المحصّلة فعلياً،
+// فالطلب المسلَّم برصيد متبقٍّ لا يُحتسب منه إلا ما قُبض.
+
+const ORDER_INCOME_BASE_COLUMNS =
+  'id, order_number, client_name, price, paid_amount, delivery_date, order_received_date, ' +
+  'updated_at, created_at, branch, status'
+
+// أعمدة تفصيل طرق الدفع (هجرة 67)
+const ORDER_INCOME_PAYMENT_COLUMNS =
+  ', deposit_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount' +
+  ', remaining_payment_method, remaining_cash_amount, remaining_network_amount'
+
+// أعمدة ربط فواتير الأستاذ المرحلية (هجرتا 64 و82)
+const ORDER_INCOME_ALOSTAZ_COLUMNS =
+  ', alostaz_billing_version, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status' +
+  ', alostaz_synced_at, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code' +
+  ', alostaz_deposit_sync_status, alostaz_deposit_synced_at'
+
+// نتدرّج من المجموعة الكاملة نزولاً حتى تنجح البيئة مهما كانت الهجرات المطبّقة،
+// حتى لا يُفقد تفصيل الكاش/الشبكة لمجرّد غياب أعمدة الأستاذ.
+const ORDER_INCOME_COLUMN_TIERS = [
+  ORDER_INCOME_BASE_COLUMNS + ORDER_INCOME_PAYMENT_COLUMNS + ORDER_INCOME_ALOSTAZ_COLUMNS,
+  ORDER_INCOME_BASE_COLUMNS + ORDER_INCOME_PAYMENT_COLUMNS,
+  ORDER_INCOME_BASE_COLUMNS,
+]
+
+interface OrderIncomeRow extends OrderPaymentInput {
+  id: string
+  order_number?: string | null
+  client_name?: string | null
+  status?: string | null
+  delivery_date?: string | null
+  order_received_date?: string | null
+  updated_at?: string | null
+  created_at?: string | null
+  // ربط فواتير الأستاذ — مرحلة العربون ومرحلة التسليم منفصلتان
+  alostaz_billing_version?: number | null
+  alostaz_invoice_id?: number | null
+  alostaz_invoice_code?: string | null
+  alostaz_sync_status?: AlostazSyncStatus | null
+  alostaz_synced_at?: string | null
+  alostaz_deposit_invoice_id?: number | null
+  alostaz_deposit_invoice_code?: string | null
+  alostaz_deposit_sync_status?: AlostazSyncStatus | null
+  alostaz_deposit_synced_at?: string | null
+}
+
+/** ربط حركة شبكة واحدة بفاتورتها في تطبيق المحاسبة */
+interface AlostazEntryLink {
+  alostaz_invoice_id: number | null
+  alostaz_invoice_code: string | null
+  alostaz_sync_status: AlostazSyncStatus | null
+  alostaz_synced_at: string | null
+  alostaz_invoice_scope: 'phase' | 'full'
+}
+
+/**
+ * فاتورة الأستاذ المقابلة لحركة شبكة:
+ *   • عربون الشبكة  → أعمدة alostaz_deposit_*
+ *   • شبكة التسليم → الأعمدة الرئيسية alostaz_*
+ * طلبات الإصدار 1 لها فاتورة واحدة تغطي الطلب كاملاً، لذلك تُوسم بـ 'full'
+ * حتى لا يُفهم رقمها على أنه فاتورة هذه الدفعة وحدها.
+ */
+function buildAlostazLink(
+  order: OrderIncomeRow,
+  phase: 'deposit' | 'delivery'
+): AlostazEntryLink {
+  const isStaged = Number(order.alostaz_billing_version) >= 2
+  const useDepositColumns = phase === 'deposit' && isStaged
+
+  const invoiceId = useDepositColumns ? order.alostaz_deposit_invoice_id : order.alostaz_invoice_id
+  const invoiceCode = useDepositColumns
+    ? order.alostaz_deposit_invoice_code
+    : order.alostaz_invoice_code
+  const syncStatus = useDepositColumns
+    ? order.alostaz_deposit_sync_status
+    : order.alostaz_sync_status
+  const syncedAt = useDepositColumns ? order.alostaz_deposit_synced_at : order.alostaz_synced_at
+
+  // الطلبات القديمة قد تحمل رقم فاتورة عربون أُرسلت يدوياً قبل تفعيل الفوترة المرحلية
+  if (!isStaged && phase === 'deposit') {
+    return {
+      alostaz_invoice_id: order.alostaz_deposit_invoice_id ?? null,
+      alostaz_invoice_code: order.alostaz_deposit_invoice_code || null,
+      alostaz_sync_status: order.alostaz_deposit_sync_status ?? null,
+      alostaz_synced_at: order.alostaz_deposit_synced_at || null,
+      alostaz_invoice_scope: 'phase',
+    }
+  }
+
+  return {
+    alostaz_invoice_id: invoiceId ?? null,
+    alostaz_invoice_code: invoiceCode || null,
+    alostaz_sync_status: syncStatus ?? null,
+    alostaz_synced_at: syncedAt || null,
+    alostaz_invoice_scope: isStaged ? 'phase' : 'full',
+  }
+}
+
+// هل الخطأ ناتج عن عمود غير موجود (لم تُطبَّق هجرة تفصيل طرق الدفع بعد)؟
+function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return error.code === '42703' || /column .* does not exist/i.test(error.message || '')
+}
+
 export async function getDeliveredOrdersIncome(
   branch: BranchType,
   startDate?: string,
@@ -656,13 +770,25 @@ export async function getDeliveredOrdersIncome(
   }
 
   try {
-    // جلب جميع الطلبات (مسلّمة وغير مسلّمة) التي لها دفعة أولى أو تمّ تسليمها
-    const { data, error } = await supabase
-      .from('orders')
-      .select('id, order_number, client_name, price, paid_amount, delivery_date, order_received_date, updated_at, created_at, branch, status')
-      .eq('branch', branch)
-      .not('status', 'eq', 'cancelled')
-      .order('created_at', { ascending: false })
+    const fetchOrders = (columns: string) =>
+      supabase
+        .from('orders')
+        .select(columns)
+        .eq('branch', branch)
+        .not('status', 'eq', 'cancelled')
+        .order('created_at', { ascending: false })
+
+    let data: unknown = null
+    let error: { code?: string; message?: string } | null = null
+
+    // ننزل تدريجياً عبر مجموعات الأعمدة حتى تنجح واحدة مع الهجرات المطبّقة فعلياً
+    for (const columns of ORDER_INCOME_COLUMN_TIERS) {
+      const result = await fetchOrders(columns)
+      data = result.data
+      error = result.error
+      if (!error || !isMissingColumnError(error)) break
+      console.warn('⚠️ أعمدة غير موجودة في جدول الطلبات — يُرجى تطبيق الهجرات 67 و82')
+    }
 
     if (error) {
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
@@ -675,58 +801,51 @@ export async function getDeliveredOrdersIncome(
 
     const entries: Income[] = []
 
-    for (const order of data || []) {
-      const price = order.price || 0
-      const paidAmount = order.paid_amount || 0
-      const remaining = Math.max(0, price - paidAmount)
+    for (const order of (data || []) as unknown as OrderIncomeRow[]) {
       const orderLabel = order.order_number || order.id.substring(0, 8)
-      const receivedDate = (order.order_received_date || order.created_at || '').substring(0, 10)
-      const deliveryDate = (order.delivery_date || order.updated_at || order.created_at || '').substring(0, 10)
+      const customerName = order.client_name || 'عميل'
+      const receivedAt = order.order_received_date || order.created_at || ''
+      const deliveredAt = order.delivery_date || order.updated_at || order.created_at || ''
+      const breakdown = computePaymentBreakdown(order)
 
-      // سجل الدفعة الأولى عند استلام الطلب (إذا وجدت)
-      if (paidAmount > 0) {
+      const push = (
+        suffix: string,
+        kind: IncomeEntryKind,
+        method: PaymentMethod,
+        amount: number,
+        title: string,
+        occurredAt: string,
+        phase?: 'deposit' | 'delivery'
+      ) => {
+        if (amount < 0.005) return
+        // فواتير الأستاذ تخص الشبكة فقط؛ الكاش يبقى إيصالاً محلياً
+        const alostaz = method === 'network' && phase ? buildAlostazLink(order, phase) : null
         entries.push({
-          id: `${order.id}-deposit`,
+          id: `${order.id}-${suffix}`,
           branch,
           order_id: order.id,
-          customer_name: order.client_name || 'عميل',
-          description: `دفعة أولى - طلب ${orderLabel}`,
-          amount: paidAmount,
-          date: receivedDate,
+          order_number: orderLabel,
+          customer_name: customerName,
+          description: `${title} — طلب ${orderLabel}`,
+          amount: Number(amount.toFixed(2)),
+          payment_method: method,
+          entry_kind: kind,
+          date: occurredAt.substring(0, 10),
+          occurred_at: occurredAt || null,
           is_automatic: true,
-          created_at: order.created_at
+          created_at: order.created_at || occurredAt,
+          ...(alostaz ?? {}),
+          alostaz_billing_version: Number(order.alostaz_billing_version) || 1
         })
       }
 
-      // سجل المتبقي عند تسليم الطلب (إذا وجد وتمّ التسليم)
-      if (order.status === 'delivered' && remaining > 0) {
-        entries.push({
-          id: `${order.id}-remaining`,
-          branch,
-          order_id: order.id,
-          customer_name: order.client_name || 'عميل',
-          description: `المتبقي عند التسليم - طلب ${orderLabel}`,
-          amount: remaining,
-          date: deliveryDate,
-          is_automatic: true,
-          created_at: order.created_at
-        })
-      }
+      // ما قُبض قبل التسليم (عربون الطلب ودفعاته الإضافية)
+      push('deposit-cash', 'order_deposit', 'cash', breakdown.preDeliveryCash, 'عربون كاش', receivedAt)
+      push('deposit-network', 'order_deposit', 'network', breakdown.preDeliveryNetwork, 'عربون شبكة', receivedAt, 'deposit')
 
-      // طلب مسلّم بدون دفعة أولى: كامل المبلغ عند التسليم
-      if (order.status === 'delivered' && paidAmount === 0 && price > 0) {
-        entries.push({
-          id: `${order.id}-full`,
-          branch,
-          order_id: order.id,
-          customer_name: order.client_name || 'عميل',
-          description: `تسليم كامل - طلب ${orderLabel}`,
-          amount: price,
-          date: deliveryDate,
-          is_automatic: true,
-          created_at: order.created_at
-        })
-      }
+      // ما قُبض لحظة التسليم (الدفعة المتبقية بطريقتيها)
+      push('delivery-cash', 'order_delivery', 'cash', breakdown.remainingCash, 'كاش عند التسليم', deliveredAt)
+      push('delivery-network', 'order_delivery', 'network', breakdown.remainingNetwork, 'شبكة عند التسليم', deliveredAt, 'delivery')
     }
 
     // تطبيق فلتر التاريخ
@@ -737,6 +856,63 @@ export async function getDeliveredOrdersIncome(
     })
   } catch (err) {
     console.error('Error fetching orders income:', err)
+    return []
+  }
+}
+
+/**
+ * طلبات سُلِّمت وما زال عليها رصيد لم يُسجَّل تحصيله في النظام.
+ * ─────────────────────────────────────────────────────────────
+ * الواردات لا تحتسب هذه المبالغ لأنها غير مُثبتة كدفعات، لكنها تُعرض كتنبيه
+ * حتى لا تختفي بصمت: إمّا أن العميلة لم تدفع فعلاً، أو أن الدفعة قُبضت
+ * ولم تُسجَّل (طلبات ما قبل تفعيل تفصيل طرق الدفع).
+ */
+export interface UnrecordedDeliveredOrder {
+  id: string
+  order_number: string
+  customer_name: string
+  price: number
+  paid_amount: number
+  outstanding: number
+  date: string
+}
+
+export async function getUnrecordedDeliveredOrders(
+  branch: BranchType
+): Promise<UnrecordedDeliveredOrder[]> {
+  if (!isSupabaseConfigured()) return []
+
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, order_number, client_name, price, paid_amount, delivery_date, order_received_date, updated_at, created_at')
+      .eq('branch', branch)
+      .eq('status', 'delivered')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      if (error.code === '42P01' || error.message?.includes('does not exist')) return []
+      console.error('Error fetching unrecorded delivered orders:', error.message || error)
+      return []
+    }
+
+    return ((data || []) as OrderIncomeRow[])
+      .map(order => {
+        const price = Number(order.price) || 0
+        const paid = Number(order.paid_amount) || 0
+        return {
+          id: order.id,
+          order_number: order.order_number || order.id.substring(0, 8),
+          customer_name: order.client_name || 'عميل',
+          price,
+          paid_amount: paid,
+          outstanding: Number(Math.max(0, price - paid).toFixed(2)),
+          date: (order.delivery_date || order.updated_at || order.created_at || '').substring(0, 10)
+        }
+      })
+      .filter(order => order.outstanding >= 0.005)
+  } catch (err) {
+    console.error('Error fetching unrecorded delivered orders:', err)
     return []
   }
 }

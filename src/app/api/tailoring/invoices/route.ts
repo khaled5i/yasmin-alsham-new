@@ -2,9 +2,10 @@ import { randomUUID } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  createInvoiceForWomenWorkshop,
+  createInvoiceForTailoringManualSale,
   isAlostazInvoiceOutcomeUnknown,
 } from '@/lib/services/alostaz-service'
+import { ALOSTAZ_SERVICE_PRODUCT_NAME } from '@/lib/alostaz-config'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,18 +13,18 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-const OPERATION_CONFIG = {
-  external_measurement: { name: 'مقاس خارجي', accountingProduct: 'measurement' },
-  fitting: { name: 'بروفا', accountingProduct: 'fitting' },
-  bridal_measurement: { name: 'مقاس عروس', accountingProduct: 'measurement' },
-  dress_alteration: { name: 'تعديل فستان', accountingProduct: 'dress_alteration' },
-  other: { name: 'أخرى', accountingProduct: 'other' },
-} as const
+type PaymentMethod = 'cash' | 'network'
 
-type OperationType = keyof typeof OPERATION_CONFIG
-type PaymentMethod = 'cash' | 'card'
+/** العميل الافتراضي في الأستاذ — نفس الاسم المستخدم لفواتير المشغل النسائي. */
+const DEFAULT_CUSTOMER_NAME = 'عميل جديد'
+const MAX_NOTES_LENGTH = 1000
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** تاريخ اليوم بتوقيت الرياض (عمود income.date من نوع DATE). */
+function riyadhToday(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' })
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,48 +55,46 @@ export async function POST(request: NextRequest) {
 
     const payload = await request.json()
     const transactionId = String(payload?.transactionId || '').trim()
-    const operationType = String(payload?.operationType || '') as OperationType
     const paymentMethod = String(payload?.paymentMethod || '') as PaymentMethod
-    const customOperationName = String(payload?.customOperationName || '').trim()
+    const notes = String(payload?.notes || '').trim()
     const amount = Math.round((Number(payload?.amount) + Number.EPSILON) * 100) / 100
 
     if (!UUID_PATTERN.test(transactionId)) {
       return NextResponse.json({ error: 'معرّف العملية غير صالح' }, { status: 400 })
     }
-    if (!(operationType in OPERATION_CONFIG)) {
-      return NextResponse.json({ error: 'نوع العملية غير صالح' }, { status: 400 })
-    }
-    if (!['cash', 'card'].includes(paymentMethod)) {
+    if (!['cash', 'network'].includes(paymentMethod)) {
       return NextResponse.json({ error: 'طريقة الدفع غير صالحة' }, { status: 400 })
     }
     if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
       return NextResponse.json({ error: 'المبلغ غير صالح' }, { status: 400 })
     }
-
-    const operationName = operationType === 'other'
-      ? customOperationName
-      : OPERATION_CONFIG[operationType].name
-
-    if (operationName.length < 2 || operationName.length > 120) {
-      return NextResponse.json({ error: 'يرجى كتابة اسم العملية الأخرى' }, { status: 400 })
+    if (notes.length > MAX_NOTES_LENGTH) {
+      return NextResponse.json(
+        { error: `الملاحظات أطول من ${MAX_NOTES_LENGTH} حرف` },
+        { status: 400 }
+      )
     }
 
-    const syncToken = paymentMethod === 'card' ? randomUUID() : null
+    // إعادة الضغط على الحفظ بعد انقطاع الشبكة تستخدم المعرّف نفسه، فلا تُنشأ فاتورة ثانية.
+    const syncToken = paymentMethod === 'network' ? randomUUID() : null
     const nowIso = new Date().toISOString()
-    const { data: transaction, error: insertError } = await supabaseAdmin
-      .from('women_workshop_transactions')
+    const { data: income, error: insertError } = await supabaseAdmin
+      .from('income')
       .insert({
         id: transactionId,
-        source: 'manual_invoice',
-        operation_type: operationType,
-        operation_name: operationName,
+        branch: 'tailoring',
+        category: ALOSTAZ_SERVICE_PRODUCT_NAME,
+        customer_name: DEFAULT_CUSTOMER_NAME,
+        description: ALOSTAZ_SERVICE_PRODUCT_NAME,
         amount,
         payment_method: paymentMethod,
+        notes: notes || null,
+        date: riyadhToday(),
+        is_automatic: false,
         created_by: user.id,
-        occurred_at: nowIso,
-        alostaz_sync_status: paymentMethod === 'card' ? 'sending' : 'not_required',
+        alostaz_sync_status: paymentMethod === 'network' ? 'sending' : null,
         alostaz_sync_token: syncToken,
-        alostaz_synced_at: paymentMethod === 'card' ? nowIso : null,
+        alostaz_synced_at: paymentMethod === 'network' ? nowIso : null,
       })
       .select('*')
       .single()
@@ -103,7 +102,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       if (insertError.code === '23505') {
         const { data: existing } = await supabaseAdmin
-          .from('women_workshop_transactions')
+          .from('income')
           .select('*')
           .eq('id', transactionId)
           .maybeSingle()
@@ -119,20 +118,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // الكاش يبقى داخل الموقع: يرفع رصيد صندوق التفصيل ولا يُرسل إلى الأستاذ.
     if (paymentMethod === 'cash') {
-      return NextResponse.json({ data: transaction, sentToAccounting: false })
+      return NextResponse.json({ data: income, sentToAccounting: false })
     }
 
     try {
-      const invoice = await createInvoiceForWomenWorkshop({
-        operation_name: operationName,
-        amount,
-        product: OPERATION_CONFIG[operationType].accountingProduct,
-      })
+      const invoice = await createInvoiceForTailoringManualSale({ amount })
 
       const syncedAt = new Date().toISOString()
-      const { data: updatedTransaction, error: updateError } = await supabaseAdmin
-        .from('women_workshop_transactions')
+      const { data: updatedIncome, error: updateError } = await supabaseAdmin
+        .from('income')
         .update({
           alostaz_customer_id: invoice.customer_id,
           alostaz_invoice_id: invoice.invoice_id,
@@ -140,7 +136,6 @@ export async function POST(request: NextRequest) {
           alostaz_sync_status: 'sent',
           alostaz_sync_error: null,
           alostaz_synced_at: syncedAt,
-          updated_at: syncedAt,
         })
         .eq('id', transactionId)
         .eq('alostaz_sync_token', syncToken)
@@ -149,14 +144,14 @@ export async function POST(request: NextRequest) {
 
       if (updateError) {
         return NextResponse.json({
-          data: transaction,
+          data: income,
           sentToAccounting: true,
           warning: `تم إنشاء الفاتورة في الأستاذ برقم ${invoice.invoice_code || invoice.invoice_id}، لكن تعذّر حفظ مرجعها محلياً.`,
         })
       }
 
       return NextResponse.json({
-        data: updatedTransaction,
+        data: updatedIncome,
         sentToAccounting: true,
         draft: invoice.is_draft,
       })
@@ -164,34 +159,33 @@ export async function POST(request: NextRequest) {
       const outcomeUnknown = isAlostazInvoiceOutcomeUnknown(error)
       const errorMessage = error instanceof Error
         ? error.message
-        : 'فشل إرسال فاتورة المشغل النسائي إلى الأستاذ'
+        : 'فشل إرسال فاتورة التفصيل إلى الأستاذ'
       const failedAt = new Date().toISOString()
 
       await supabaseAdmin
-        .from('women_workshop_transactions')
+        .from('income')
         .update({
           alostaz_sync_status: outcomeUnknown ? 'review_required' : 'failed',
           alostaz_sync_error: errorMessage,
           alostaz_synced_at: failedAt,
-          updated_at: failedAt,
         })
         .eq('id', transactionId)
         .eq('alostaz_sync_token', syncToken)
 
       return NextResponse.json({
         data: {
-          ...transaction,
+          ...income,
           alostaz_sync_status: outcomeUnknown ? 'review_required' : 'failed',
           alostaz_sync_error: errorMessage,
         },
         sentToAccounting: false,
         warning: outcomeUnknown
           ? `${errorMessage} — العملية محفوظة محلياً ويلزم التحقق من الأستاذ قبل إعادة تسجيلها.`
-          : `${errorMessage} — العملية محفوظة محلياً ويمكن مراجعتها من تقرير المشغل النسائي.`,
+          : `${errorMessage} — العملية محفوظة محلياً ويمكن مراجعتها من صفحة واردات التفصيل.`,
       })
     }
   } catch (error: unknown) {
-    console.error('women-workshop invoice error:', error)
+    console.error('tailoring invoice error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'حدث خطأ غير متوقع' },
       { status: 500 }

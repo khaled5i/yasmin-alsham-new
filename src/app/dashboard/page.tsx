@@ -16,6 +16,7 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import AlterationTypeModal from '@/components/AlterationTypeModal'
 import OrderSearchModal from '@/components/OrderSearchModal'
 import WomenWorkshopInvoiceModal from '@/components/WomenWorkshopInvoiceModal'
+import TailoringInvoiceModal from '@/components/TailoringInvoiceModal'
 import { Order } from '@/lib/services/order-service'
 import {
   BarChart3,
@@ -60,6 +61,7 @@ function DashboardContent() {
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [showOrderSearchModal, setShowOrderSearchModal] = useState(false)
   const [showWomenWorkshopInvoiceModal, setShowWomenWorkshopInvoiceModal] = useState(false)
+  const [showTailoringInvoiceModal, setShowTailoringInvoiceModal] = useState(false)
 
   // عدد الإشعارات الجديدة عبر أقسام البروفا والاكتمال والتسليم — للمدير
   const [notificationsCount, setNotificationsCount] = useState(0)
@@ -533,7 +535,7 @@ function DashboardContent() {
             <div className="flex flex-col gap-4 sm:gap-6">
               {/* أزرار العمل للمدير */}
               {user?.role === 'admin' && (
-                <div className="grid w-full grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="grid w-full grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
                   <Link
                     href="/dashboard/add-order"
                     className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse px-2 py-3 sm:px-6 sm:py-4 group text-xs sm:text-base flex-1 min-w-0"
@@ -567,6 +569,16 @@ function DashboardContent() {
                     <ReceiptText className="h-4 w-4 flex-shrink-0 transition-transform duration-300 group-hover:scale-110 sm:h-5 sm:w-5" />
                     <span className="leading-tight">
                       {isArabic ? 'إضافة فاتورة للمشغل النسائي' : 'Women Workshop Invoice'}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowTailoringInvoiceModal(true)}
+                    className="group inline-flex min-w-0 flex-1 items-center justify-center space-x-2 space-x-reverse rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-2 py-3 text-xs font-semibold text-white shadow-md transition-all duration-300 hover:from-violet-600 hover:to-indigo-700 hover:shadow-lg sm:px-6 sm:py-4 sm:text-base"
+                  >
+                    <ReceiptText className="h-4 w-4 flex-shrink-0 transition-transform duration-300 group-hover:scale-110 sm:h-5 sm:w-5" />
+                    <span className="leading-tight">
+                      {isArabic ? 'إضافة فاتورة لياسمين الشام للخياطة' : 'Yasmin Al-Sham Tailoring Invoice'}
                     </span>
                   </button>
 
@@ -979,6 +991,11 @@ function DashboardContent() {
       <WomenWorkshopInvoiceModal
         isOpen={showWomenWorkshopInvoiceModal}
         onClose={() => setShowWomenWorkshopInvoiceModal(false)}
+      />
+
+      <TailoringInvoiceModal
+        isOpen={showTailoringInvoiceModal}
+        onClose={() => setShowTailoringInvoiceModal(false)}
       />
     </>
   )

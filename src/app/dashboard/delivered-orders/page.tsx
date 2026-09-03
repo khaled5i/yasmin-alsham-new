@@ -38,6 +38,7 @@ import {
 } from '@/lib/print-tailoring-receipt'
 import { dispatchTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
 import type { Order } from '@/lib/services/order-service'
+import { isAlostazDeliverySyncEligible } from '@/lib/alostaz-delivery-eligibility'
 
 const PAGE_SIZE = 50
 
@@ -145,7 +146,7 @@ export default function DeliveredOrdersPage() {
   const handleSendToAccounting = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation()
     if (sendingId) return
-    if (Number(order.alostaz_billing_version) >= 2) {
+    if (isAlostazDeliverySyncEligible(order)) {
       await performManualSend(order, 'network')
       return
     }
@@ -162,10 +163,10 @@ export default function DeliveredOrdersPage() {
     setSendChoiceOrder(null)
     if (sendingId) return
     setSendingId(order.id)
-    const stagedBilling = Number(order.alostaz_billing_version) >= 2
+    const deliverySyncEligible = isAlostazDeliverySyncEligible(order)
     const res = await sendInvoiceToAlostaz(
       order.id,
-      stagedBilling ? { phase: 'delivery' } : { phase: 'manual', mode }
+      deliverySyncEligible ? { phase: 'delivery' } : { phase: 'manual', mode }
     )
     setSendingId(null)
 

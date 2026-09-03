@@ -6,8 +6,9 @@
  * ⚠️ التوكن السرّي لا يوضع هنا إطلاقاً — يُقرأ من متغيّر البيئة
  *    ALOSTAZ_API_TOKEN داخل مسار الـ API الخادمي فقط (لا يصل للمتصفح).
  *
- * فواتير التفصيل تُسجَّل على «ياسمين الشام للخياطة»، وفواتير الأقمشة على
- * «بروكار الشرقية». يبقى فصل الأقسام داخل الموقع وقاعدة بياناته كما هو.
+ * فواتير التفصيل تُسجَّل على «ياسمين الشام للخياطة»، وأجرة المقاس وفواتير
+ * المشغل النسائي على «ياسمين الشام 2»، وفواتير الأقمشة على «بروكار الشرقية».
+ * يبقى فصل الأقسام داخل الموقع وقاعدة بياناته كما هو.
  */
 
 /** رابط قاعدة الـ API (غير سرّي). يمكن تجاوزه عبر متغيّر بيئة. */
@@ -17,6 +18,8 @@ export const ALOSTAZ_BASE_URL =
 // ── معرّفات ثابتة من الحساب ───────────────────────────────────
 /** فرع «ياسمين الشام للخياطة» الخاص بفواتير التفصيل. */
 export const ALOSTAZ_BRANCH_ID = 1
+/** فرع «ياسمين الشام 2» الخاص بأجرة المقاس وفواتير المشغل النسائي. */
+export const ALOSTAZ_WOMEN_WORKSHOP_BRANCH_ID = 4
 /** فرع «بروكار الشرقية» الخاص بفواتير الأقمشة. */
 export const ALOSTAZ_FABRICS_BRANCH_ID = 3
 /** قائمة الشركاء الافتراضية (يُنشأ العملاء داخلها) — مطلوب رغم عدم توثيقه */
@@ -25,12 +28,24 @@ export const ALOSTAZ_PARTNER_LIST_ID = 1
 export const ALOSTAZ_STOREHOUSE_ID = 1
 /** منتج الخدمة الثابت «أجرة تفصيل فستان» */
 export const ALOSTAZ_SERVICE_PRODUCT_ID = 2
-/** منتج الخدمة «أجرة مقاس» في فرع ياسمين الشام الأول (تم التحقق منه عملياً). */
+/** اسم منتج الخدمة كما هو مسجَّل مسبقاً في الأستاذ. */
+export const ALOSTAZ_SERVICE_PRODUCT_NAME = 'أجرة تفصيل فستان'
+/** منتج الخدمة «أجرة مقاس» (تم التحقق من توفره في فرع «ياسمين الشام 2»). */
 export const ALOSTAZ_MEASUREMENT_PRODUCT_ID =
   Number(process.env.ALOSTAZ_MEASUREMENT_PRODUCT_ID) || 22
 /** أجرة مقاس ياسمين الشام، شاملة ضريبة القيمة المضافة. */
 export const ALOSTAZ_MEASUREMENT_FEE_SAR = 85
 export const ALOSTAZ_MEASUREMENT_PRODUCT_NAME = 'أجرة مقاس'
+/** منتجات خدمات المشغل النسائي في فرع «ياسمين الشام 2». */
+export const ALOSTAZ_WOMEN_WORKSHOP_FITTING_PRODUCT_ID =
+  Number(process.env.ALOSTAZ_WOMEN_WORKSHOP_FITTING_PRODUCT_ID) || 109
+export const ALOSTAZ_WOMEN_WORKSHOP_FITTING_PRODUCT_NAME = 'بروفا'
+export const ALOSTAZ_WOMEN_WORKSHOP_DRESS_ALTERATION_PRODUCT_ID =
+  Number(process.env.ALOSTAZ_WOMEN_WORKSHOP_DRESS_ALTERATION_PRODUCT_ID) || 110
+export const ALOSTAZ_WOMEN_WORKSHOP_DRESS_ALTERATION_PRODUCT_NAME = 'تعديل فستان'
+export const ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_ID =
+  Number(process.env.ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_ID) || 111
+export const ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_NAME = 'أخرى'
 
 /**
  * ضريبة القيمة المضافة 15% «الشاملة» (inclusive) — id 2 في الحساب.

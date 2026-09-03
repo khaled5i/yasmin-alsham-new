@@ -5,20 +5,29 @@
  *    التوكن السرّي من process.env.ALOSTAZ_API_TOKEN. لا تستوردها في كود المتصفح.
  *
  * تتولّى: بناء الترويسات + إيجاد/إنشاء العميل + إنشاء فواتير التفصيل والأقمشة.
- * فواتير التفصيل تُوجَّه إلى «ياسمين الشام للخياطة»، وفواتير الأقمشة إلى
- * «بروكار الشرقية»، مع بقاء الفصل الداخلي في الموقع.
+ * فواتير التفصيل تُوجَّه إلى «ياسمين الشام للخياطة»، وأجرة المقاس وفواتير
+ * المشغل النسائي إلى «ياسمين الشام 2»، وفواتير الأقمشة إلى «بروكار الشرقية»،
+ * مع بقاء الفصل الداخلي في الموقع.
  */
 
 import {
   ALOSTAZ_BASE_URL,
   ALOSTAZ_BRANCH_ID,
+  ALOSTAZ_WOMEN_WORKSHOP_BRANCH_ID,
   ALOSTAZ_FABRICS_BRANCH_ID,
   ALOSTAZ_PARTNER_LIST_ID,
   ALOSTAZ_STOREHOUSE_ID,
   ALOSTAZ_SERVICE_PRODUCT_ID,
+  ALOSTAZ_SERVICE_PRODUCT_NAME,
   ALOSTAZ_MEASUREMENT_PRODUCT_ID,
   ALOSTAZ_MEASUREMENT_FEE_SAR,
   ALOSTAZ_MEASUREMENT_PRODUCT_NAME,
+  ALOSTAZ_WOMEN_WORKSHOP_FITTING_PRODUCT_ID,
+  ALOSTAZ_WOMEN_WORKSHOP_FITTING_PRODUCT_NAME,
+  ALOSTAZ_WOMEN_WORKSHOP_DRESS_ALTERATION_PRODUCT_ID,
+  ALOSTAZ_WOMEN_WORKSHOP_DRESS_ALTERATION_PRODUCT_NAME,
+  ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_ID,
+  ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_NAME,
   ALOSTAZ_VAT_TAX_ID,
   ALOSTAZ_API_VERSION,
   ALOSTAZ_LOCALE,
@@ -32,6 +41,7 @@ import {
   toExactAlostazLinePricing,
   normalizePhone,
 } from '../alostaz-config'
+import { resolveAlostazInvoiceDates } from '../alostaz-invoice-dates'
 
 // ── الحقول التي نحتاجها من الطلب لإنشاء الفاتورة ──────────────
 export interface AlostazOrderInput {
@@ -55,7 +65,35 @@ export interface AlostazInvoiceResult {
 export interface WomenWorkshopInvoiceInput {
   operation_name: string
   amount: number
-  use_measurement_product?: boolean
+  product: WomenWorkshopInvoiceProduct
+}
+
+export type WomenWorkshopInvoiceProduct =
+  | 'measurement'
+  | 'fitting'
+  | 'dress_alteration'
+  | 'other'
+
+const WOMEN_WORKSHOP_PRODUCTS: Record<
+  WomenWorkshopInvoiceProduct,
+  { id: number; name: string }
+> = {
+  measurement: {
+    id: ALOSTAZ_MEASUREMENT_PRODUCT_ID,
+    name: ALOSTAZ_MEASUREMENT_PRODUCT_NAME,
+  },
+  fitting: {
+    id: ALOSTAZ_WOMEN_WORKSHOP_FITTING_PRODUCT_ID,
+    name: ALOSTAZ_WOMEN_WORKSHOP_FITTING_PRODUCT_NAME,
+  },
+  dress_alteration: {
+    id: ALOSTAZ_WOMEN_WORKSHOP_DRESS_ALTERATION_PRODUCT_ID,
+    name: ALOSTAZ_WOMEN_WORKSHOP_DRESS_ALTERATION_PRODUCT_NAME,
+  },
+  other: {
+    id: ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_ID,
+    name: ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_NAME,
+  },
 }
 
 class AlostazRequestError extends Error {
@@ -221,6 +259,8 @@ export async function createInvoiceForOrder(
   opts?: {
     /** دفعات صريحة (كاش/شبكة) بدل الدفعة الواحدة الافتراضية — تسمح بتقسيم كاش+شبكة */
     payments?: Array<{ amount: number; method: 'cash' | 'card' }>
+    /** عند الإرسال اليدوي بعد التسليم: تاريخ الإصدار والاستحقاق معاً. */
+    invoiceDate?: string | null
   }
 ): Promise<AlostazInvoiceResult> {
   const customerId = await findOrCreateCustomer({
@@ -228,8 +268,10 @@ export async function createInvoiceForOrder(
     phone: order.client_phone,
   })
 
-  const nowIso = new Date().toISOString()
-  const dueIso = order.due_date ? new Date(order.due_date).toISOString() : nowIso
+  const { issueDate: issueIso, dueDate: dueIso } = resolveAlostazInvoiceDates({
+    plannedDueDate: order.due_date,
+    manualDeliveryDate: opts?.invoiceDate,
+  })
 
   const lineDescription = order.description?.trim() || 'أجرة تفصيل فستان'
 
@@ -242,7 +284,7 @@ export async function createInvoiceForOrder(
     nature: 'sale',
     type: 'invoice',
     status: invoiceStatus,
-    issue_date: nowIso,
+    issue_date: issueIso,
     due_date: dueIso,
     partner_id: customerId,
     partner_order_code: order.order_number || undefined,
@@ -305,7 +347,7 @@ export async function createInvoiceForOrder(
 
 /**
  * إنشاء فاتورة أجرة المقاس عند الدفع بالشبكة.
- * - الفرع: ياسمين الشام الأول.
+ * - الفرع: ياسمين الشام 2.
  * - المنتج: «أجرة مقاس».
  * - المبلغ: 85 ر.س مدفوع بالكامل عبر الشبكة.
  * - تاريخ الإصدار والاستحقاق: الوقت الحالي.
@@ -314,10 +356,17 @@ export async function createInvoiceForOrder(
 export async function createInvoiceForMeasurement(
   order: Pick<AlostazOrderInput, 'order_number' | 'client_name' | 'client_phone'>
 ): Promise<AlostazInvoiceResult> {
-  const customerId = await findOrCreateCustomer({
-    name: order.client_name,
-    phone: order.client_phone,
-  })
+  const branchHeaders = { 'X-Branch-Id': String(ALOSTAZ_WOMEN_WORKSHOP_BRANCH_ID) }
+  const customerId = await findOrCreateCustomer(
+    {
+      name: order.client_name,
+      phone: order.client_phone,
+    },
+    {
+      branchId: ALOSTAZ_WOMEN_WORKSHOP_BRANCH_ID,
+      partnerListId: ALOSTAZ_PARTNER_LIST_ID,
+    }
+  )
 
   const nowIso = new Date().toISOString()
   const invoiceStatus = ALOSTAZ_INVOICE_STATUS
@@ -357,6 +406,7 @@ export async function createInvoiceForMeasurement(
 
   const created = await alostazFetch('/invoices', {
     method: 'POST',
+    headers: branchHeaders,
     body: JSON.stringify(body),
   })
 
@@ -377,22 +427,26 @@ export async function createInvoiceForMeasurement(
 
 /**
  * إنشاء فاتورة شبكة لعملية مستقلة من المشغل النسائي.
- * يسجّلها في فرع ياسمين الشام باسم «عميل جديد»، مدفوعة بالكامل،
+ * يسجّلها في فرع «ياسمين الشام 2» باسم «عميل جديد»، مدفوعة بالكامل،
  * وبسعر شامل ضريبة القيمة المضافة.
  */
 export async function createInvoiceForWomenWorkshop(
   input: WomenWorkshopInvoiceInput
 ): Promise<AlostazInvoiceResult> {
-  const branchHeaders = { 'X-Branch-Id': String(ALOSTAZ_BRANCH_ID) }
+  const branchHeaders = { 'X-Branch-Id': String(ALOSTAZ_WOMEN_WORKSHOP_BRANCH_ID) }
   const customerId = await findOrCreateCustomer(
     { name: 'عميل جديد' },
-    { branchId: ALOSTAZ_BRANCH_ID, partnerListId: ALOSTAZ_PARTNER_LIST_ID }
+    {
+      branchId: ALOSTAZ_WOMEN_WORKSHOP_BRANCH_ID,
+      partnerListId: ALOSTAZ_PARTNER_LIST_ID,
+    }
   )
 
   const nowIso = new Date().toISOString()
   const invoiceStatus = ALOSTAZ_INVOICE_STATUS
   const isDraft = invoiceStatus === 'draft'
   const amountHalalas = toHalalas(input.amount)
+  const product = WOMEN_WORKSHOP_PRODUCTS[input.product]
 
   const body: Record<string, unknown> = {
     variant: 'standard',
@@ -404,9 +458,7 @@ export async function createInvoiceForWomenWorkshop(
     partner_id: customerId,
     line_items: [
       {
-        product_id: input.use_measurement_product
-          ? ALOSTAZ_MEASUREMENT_PRODUCT_ID
-          : ALOSTAZ_SERVICE_PRODUCT_ID,
+        product_id: product.id,
         storehouse_id: ALOSTAZ_STOREHOUSE_ID,
         description: input.operation_name,
         unit_quantity: ALOSTAZ_QUANTITY_SCALE,
@@ -435,6 +487,76 @@ export async function createInvoiceForWomenWorkshop(
   if (!created?.id) {
     throw new AlostazRequestError(
       'فشل إنشاء فاتورة المشغل النسائي في الأستاذ (لم يُرجَع معرّف).',
+      true
+    )
+  }
+
+  return {
+    invoice_id: Number(created.id),
+    invoice_code: String(created.code || ''),
+    customer_id: customerId,
+    is_draft: isDraft,
+  }
+}
+
+/**
+ * إنشاء فاتورة شبكة لعملية بيع يدوية من لوحة تحكم ياسمين الشام للخياطة.
+ * تُسجَّل في فرع «ياسمين الشام للخياطة» باسم «عميل جديد»، مدفوعة بالكامل عبر
+ * الحساب البنكي، على المنتج الثابت «أجرة تفصيل فستان» وبسعر شامل الضريبة.
+ */
+export async function createInvoiceForTailoringManualSale(
+  input: { amount: number }
+): Promise<AlostazInvoiceResult> {
+  const branchHeaders = { 'X-Branch-Id': String(ALOSTAZ_BRANCH_ID) }
+  const customerId = await findOrCreateCustomer(
+    { name: 'عميل جديد' },
+    { branchId: ALOSTAZ_BRANCH_ID, partnerListId: ALOSTAZ_PARTNER_LIST_ID }
+  )
+
+  const nowIso = new Date().toISOString()
+  const invoiceStatus = ALOSTAZ_INVOICE_STATUS
+  const isDraft = invoiceStatus === 'draft'
+  const amountHalalas = toHalalas(input.amount)
+
+  const body: Record<string, unknown> = {
+    variant: 'standard',
+    nature: 'sale',
+    type: 'invoice',
+    status: invoiceStatus,
+    issue_date: nowIso,
+    due_date: nowIso,
+    partner_id: customerId,
+    line_items: [
+      {
+        product_id: ALOSTAZ_SERVICE_PRODUCT_ID,
+        storehouse_id: ALOSTAZ_STOREHOUSE_ID,
+        description: ALOSTAZ_SERVICE_PRODUCT_NAME,
+        unit_quantity: ALOSTAZ_QUANTITY_SCALE,
+        unit_price: amountHalalas,
+        unit_content: 1,
+        ...(ALOSTAZ_VAT_TAX_ID ? { taxes: [{ id: ALOSTAZ_VAT_TAX_ID }] } : {}),
+      },
+    ],
+  }
+
+  if (!isDraft) {
+    body.payments = [
+      {
+        amount: amountHalalas,
+        treasury_id: ALOSTAZ_TREASURY_BANK,
+      },
+    ]
+  }
+
+  const created = await alostazFetch('/invoices', {
+    method: 'POST',
+    headers: branchHeaders,
+    body: JSON.stringify(body),
+  })
+
+  if (!created?.id) {
+    throw new AlostazRequestError(
+      'فشل إنشاء فاتورة التفصيل اليدوية في الأستاذ (لم يُرجَع معرّف).',
       true
     )
   }

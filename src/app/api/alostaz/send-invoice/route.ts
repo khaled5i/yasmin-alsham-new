@@ -8,6 +8,7 @@ import {
 } from '@/lib/services/alostaz-service'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import { ALOSTAZ_MEASUREMENT_FEE_SAR } from '@/lib/alostaz-config'
+import { isAlostazDeliverySyncEligible } from '@/lib/alostaz-delivery-eligibility'
 
 /**
  * مسار خادمي لفواتير التفصيل المرحلية في تطبيق الأستاذ.
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select(
-        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, status, has_measurements, measurement_source, measurement_payment_method, alostaz_billing_version, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code, alostaz_deposit_invoice_amount, alostaz_deposit_sync_status, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status, alostaz_measurement_invoice_id, alostaz_measurement_invoice_code, alostaz_measurement_sync_status'
+        'id, order_number, client_name, client_phone, description, price, paid_amount, payment_method, pre_delivery_cash_amount, pre_delivery_network_amount, remaining_payment_method, remaining_cash_amount, remaining_network_amount, deposit_amount, due_date, delivery_date, status, has_measurements, measurement_source, measurement_payment_method, alostaz_billing_version, alostaz_deposit_invoice_id, alostaz_deposit_invoice_code, alostaz_deposit_invoice_amount, alostaz_deposit_sync_status, alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status, alostaz_measurement_invoice_id, alostaz_measurement_invoice_code, alostaz_measurement_sync_status'
       )
       .eq('id', orderId)
       .single()
@@ -121,10 +122,14 @@ export async function POST(request: NextRequest) {
     }
 
     const stagedBilling = Number(order.alostaz_billing_version) >= 2
+    const deliverySyncEligible = isAlostazDeliverySyncEligible(order)
+    const manualInvoiceDate = requestedPhase === 'manual'
+      ? String(order.delivery_date || '').trim()
+      : undefined
     const isAdditionalDeposit = requestedPhase === 'deposit' && requestedPaymentAmount != null
     if (
-      (requestedPhase === 'delivery' || (requestedPhase === 'deposit' && !isAdditionalDeposit)) &&
-      !stagedBilling
+      (requestedPhase === 'delivery' && !deliverySyncEligible) ||
+      (requestedPhase === 'deposit' && !isAdditionalDeposit && !stagedBilling)
     ) {
       return NextResponse.json({
         data: { skipped: true, reason: 'legacy-order' },
@@ -135,6 +140,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'الطلبات الجديدة تُرسل بمرحلة العربون أو مرحلة التسليم فقط' },
         { status: 400 }
+      )
+    }
+    if (requestedPhase === 'manual' && (order.status !== 'delivered' || !manualInvoiceDate)) {
+      return NextResponse.json(
+        { error: 'لا يمكن إرسال الفاتورة يدوياً دون تاريخ تسليم فعلي محفوظ على الطلب' },
+        { status: 409 }
       )
     }
     if (requestedPhase === 'delivery' && order.status !== 'delivered') {
@@ -379,9 +390,12 @@ export async function POST(request: NextRequest) {
               price: invoiceAmount,
               paid_amount: invoiceAmount,
               payment_method: 'card',
-              due_date: order.due_date,
+              due_date: requestedPhase === 'manual' ? manualInvoiceDate : order.due_date,
             },
-            { payments: invoicePayments }
+            {
+              payments: invoicePayments,
+              invoiceDate: manualInvoiceDate,
+            }
           )
     } catch (error: unknown) {
       const outcomeUnknown = isAlostazInvoiceOutcomeUnknown(error)
