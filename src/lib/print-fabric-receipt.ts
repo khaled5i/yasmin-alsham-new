@@ -54,6 +54,8 @@ function getLocalCashNumber(item: Income): string {
 /**
  * الشبكة تستخدم حصراً رقم الأستاذ، والكاش يستخدم التسلسل المحلي المستقل.
  * لا نطبع رقماً محلياً على فاتورة شبكة حتى لا تبدو مطابقة لفاتورة المحاسبة وهي ليست كذلك.
+ * المبيعة المختلطة تأخذ الرقم المحلي: فاتورة الأستاذ تغطي جزء الشبكة وحده، فهي
+ * أصلاً ليست مطابقة لهذا الإيصال الذي يشمل الكاش والشبكة معاً.
  */
 export function getFabricReceiptNumber(item: Income): string {
   if (item.payment_method === 'network') {
@@ -133,7 +135,28 @@ export function buildFabricSaleReceiptHtml(
   const remainingAmount = 0
   const printedAt = formatPrintTimestamp()
   const customerName = item.buyer_name?.trim() || 'عميل'
-  const paymentLabel = item.payment_method === 'network' ? 'شبكة' : 'كاش'
+  const isMixedPayment = item.payment_method === 'mixed'
+  const mixedNetworkAmount = Math.max(0, Number(item.network_amount) || 0)
+  const mixedCashAmount = Math.max(0, Number(item.cash_amount) || 0)
+  const paymentLabel = isMixedPayment
+    ? 'كاش + شبكة'
+    : item.payment_method === 'network'
+      ? 'شبكة'
+      : 'كاش'
+  // تفصيل الدفعتين يُطبع للعميل حتى يعرف ما دفعه بكل وسيلة
+  const mixedBreakdownRows = isMixedPayment
+    ? `
+  <div class="summary-row">
+    <span class="label">المدفوع شبكة <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(mixedNetworkAmount)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row">
+    <span class="label">المدفوع كاش <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(mixedCashAmount)}</span>
+  </div>
+  <hr class="dash">`
+    : ''
   const rows = lines.map((line) => `
     <tr>
       <td class="description">${escapeHtml(line.name)}</td>
@@ -260,7 +283,7 @@ export function buildFabricSaleReceiptHtml(
     <span class="label">إجمالي المدفوع <span class="currency">(ر.س)</span></span>
     <span class="value">${formatMoney(paidAmount)}</span>
   </div>
-  <hr class="dash">
+  <hr class="dash">${mixedBreakdownRows}
   <div class="summary-row total">
     <span class="label">الباقي <span class="currency">(ر.س)</span></span>
     <span class="value">${formatMoney(remainingAmount)}</span>

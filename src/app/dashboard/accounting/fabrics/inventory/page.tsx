@@ -60,7 +60,10 @@ import type { FabricTypeCodeOption } from '@/lib/services/fabric-inventory-servi
 import { getSuppliers, createSupplier, type Supplier } from '@/lib/services/supplier-service'
 import { syncFabricProductToAlostaz } from '@/lib/services/alostaz-client'
 import { queueFabricInventoryLabels } from '@/lib/services/print-job-service'
-import type { FabricInventoryLabelPayload } from '@/lib/print-fabric-inventory-label'
+import {
+  formatFabricInventoryLabelCode,
+  type FabricInventoryLabelPayload,
+} from '@/lib/print-fabric-inventory-label'
 import { useAuthStore } from '@/store/authStore'
 import { formatFabricCodePreview, normalizeFabricTypeCode, suggestFabricTypeCode } from '@/lib/fabric-codes'
 import {
@@ -2556,6 +2559,13 @@ function FabricLabelPrintModal({ item, onClose }: FabricLabelPrintModalProps) {
     previewChoice?.quantity,
     item.unit
   )
+  const previewProductCode = previewChoice && previewPricing.amount != null
+    ? formatFabricInventoryLabelCode(
+        previewChoice.productCode,
+        previewPricing.amount,
+        previewPricing.unit
+      )
+    : previewChoice?.productCode ?? '—'
   const canPrint = item.sale_price_per_unit != null && selectedChoices.length > 0 && !sending
 
   useEffect(() => {
@@ -2743,21 +2753,10 @@ function FabricLabelPrintModal({ item, onClose }: FabricLabelPrintModalProps) {
                 <p className="text-center text-[clamp(14px,3.3vw,21px)] font-black leading-none">ياسمين الشام للأقمشة</p>
                 <p className="mt-1 text-center text-[9px] font-bold tracking-wide">بطاقة تعريف القماش</p>
                 <div className="my-[4%] border-t-2 border-black" />
-                <div className="grid grid-cols-[1.2fr_1fr] gap-2">
-                  <div>
-                    <p className="mb-1 text-[9px] font-bold">رقم المنتج</p>
-                    <div dir="ltr" className="flex min-h-10 items-center justify-center border-2 border-black px-1 font-mono text-[clamp(14px,3vw,20px)] font-black leading-none">
-                      {previewChoice?.productCode ?? '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-1 text-[9px] font-bold">سعر البيع</p>
-                    <div className="flex min-h-10 items-center justify-center border-2 border-black px-1 text-[clamp(12px,2.8vw,18px)] font-black leading-none">
-                      <span dir="ltr">{previewPricing.amount != null ? formatFabricNumber(previewPricing.amount) : '—'}</span>
-                      <span className="mr-1 text-[8px]">
-                        ر.س {getFabricPricingUnitLabel(previewPricing.unit)}
-                      </span>
-                    </div>
+                <div>
+                  <p className="mb-1 text-[9px] font-bold">رقم المنتج</p>
+                  <div dir="ltr" className="flex min-h-11 items-center justify-center border-2 border-black px-1 font-mono text-[clamp(17px,3.8vw,24px)] font-black leading-none">
+                    {previewProductCode}
                   </div>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2">

@@ -64,6 +64,7 @@ export interface OrderAlterationSummary {
   error_type?: AlterationErrorType | null
   description?: string | null
   notes?: string | null
+  alteration_photos?: string[] | null
   voice_transcriptions?: Array<{
     transcription?: string | null
   }> | null
@@ -635,7 +636,7 @@ export const alterationService = {
     try {
       const { data, error } = await supabase
         .from('alterations')
-        .select(`id,alteration_number,alteration_type,description,notes,voice_transcriptions,status,created_at${options.includeErrorType ? ',error_type' : ''},alteration_translations(target_language,source_text,translated_text,updated_at)`)
+        .select(`id,alteration_number,alteration_type,description,notes,alteration_photos,voice_transcriptions,status,created_at${options.includeErrorType ? ',error_type' : ''},alteration_translations(target_language,source_text,translated_text,updated_at)`)
         .eq('original_order_id', orderId)
         .neq('status', 'cancelled')
         .order('created_at', { ascending: true })

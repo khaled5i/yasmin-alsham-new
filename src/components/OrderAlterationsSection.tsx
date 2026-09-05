@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ChevronDown, Languages, Loader2, RefreshCw, Wrench } from 'lucide-react'
+import { AlertCircle, ChevronDown, ImageIcon, Languages, Loader2, RefreshCw, Wrench } from 'lucide-react'
 import { alterationService, type OrderAlterationSummary } from '@/lib/services/alteration-service'
 import { getAlterationText } from '@/lib/alteration-text'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -11,6 +11,7 @@ type TranslationMap = Record<string, string>
 interface OrderAlterationsSectionProps {
   orderId: string
   autoTranslateHindi?: boolean
+  onOpenImage: (index: number, images: string[]) => void
   /** سبب الخطأ يُعرض لمدير النظام فقط، ولا يُجلب من القاعدة لغيره. */
   showErrorReason?: boolean
 }
@@ -47,6 +48,7 @@ function getAlterationTheme(alterationType: string | null | undefined): Alterati
 export default function OrderAlterationsSection({
   orderId,
   autoTranslateHindi = false,
+  onOpenImage,
   showErrorReason = false,
 }: OrderAlterationsSectionProps) {
   const { t } = useTranslation()
@@ -272,6 +274,9 @@ export default function OrderAlterationsSection({
             : undefined
           const isTranslating = translatingKeys.has(alteration.id)
           const theme = getAlterationTheme(alteration.alteration_type)
+          const alterationPhotos = Array.from(new Set(
+            (alteration.alteration_photos || []).map(photo => photo.trim()).filter(Boolean)
+          ))
           const errorReason = showErrorReason && alteration.error_type
             ? t(`alteration_error_${alteration.error_type}`)
             : null
@@ -306,6 +311,43 @@ export default function OrderAlterationsSection({
               >
                 {translatedText || text || t('alteration_text_not_available')}
               </p>
+
+              {alterationPhotos.length > 0 ? (
+                <div className="mt-4 border-t border-slate-200/70 pt-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700">
+                      <ImageIcon className="h-3.5 w-3.5" />
+                      {t('alteration_photos_label')}
+                    </p>
+                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm">
+                      {alterationPhotos.length}
+                    </span>
+                  </div>
+                  <div className={`grid gap-2 ${alterationPhotos.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    {alterationPhotos.map((photo, photoIndex) => (
+                      <button
+                        key={photo}
+                        type="button"
+                        onClick={() => onOpenImage(photoIndex, alterationPhotos)}
+                        aria-label={t('open_alteration_photo', { number: photoIndex + 1 })}
+                        className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-white/90 bg-white/70 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- Stored alteration photos can include data URLs. */}
+                        <img
+                          src={photo}
+                          alt={t('alteration_photo_alt', { number: photoIndex + 1 })}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-contain p-1 transition-transform duration-300 group-hover:scale-[1.02]"
+                        />
+                        <span className="absolute bottom-1.5 end-1.5 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
+                          {photoIndex + 1}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {translationErrors[alteration.id] ? (
                 <p className="mt-2 text-xs font-medium text-red-600">

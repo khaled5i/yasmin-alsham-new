@@ -111,3 +111,55 @@ export function formatGregorianDate(
     ...options
   })
 }
+
+/**
+ * تنسيق تاريخ مع الساعة والدقيقة (ميلادي).
+ * يُستخدم لتوقيتات دقيقة مثل `worker_completed_at` حيث الساعة مهمّة وليس اليوم فقط.
+ */
+export function formatGregorianDateTime(
+  value: string | null | undefined,
+  locale: string = 'ar-SA-u-nu-latn',
+  options: Intl.DateTimeFormatOptions = {}
+): string {
+  if (!value) return ''
+
+  const parsed = parseDateForDisplay(value)
+  if (!parsed) return value
+
+  return parsed.toLocaleString(locale, {
+    calendar: 'gregory',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...options
+  })
+}
+
+/**
+ * يحوّل توقيتاً مخزَّناً (ISO) إلى صيغة حقل `<input type="datetime-local">` بالتوقيت المحلي.
+ * يُرجع '' إن كانت القيمة فارغة أو غير صالحة.
+ */
+export function toDateTimeLocalValue(value?: string | null): string {
+  const parsed = parseDateForDisplay(value)
+  if (!parsed) return ''
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`
+    + `T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`
+}
+
+/**
+ * يحوّل قيمة حقل `<input type="datetime-local">` (توقيت محلي) إلى ISO للتخزين.
+ * يُرجع null إن كانت القيمة فارغة أو غير صالحة.
+ */
+export function fromDateTimeLocalValue(value: string): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  return parsed.toISOString()
+}

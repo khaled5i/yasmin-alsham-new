@@ -64,6 +64,13 @@ export interface CreateExpenseInput {
 // طريقة الدفع
 export type PaymentMethod = 'cash' | 'network'
 
+/**
+ * طريقة دفع الواردات: تضيف 'mixed' لمبيعة أقمشة دُفع جزء منها شبكة وجزء كاش.
+ * عند 'mixed' يبقى amount هو الإجمالي، ويحمل network_amount/cash_amount التفصيل:
+ * جزء الشبكة وحده يُرسَل إلى المحاسبة، وجزء الكاش يدخل الصندوق فقط.
+ */
+export type IncomePaymentMethod = PaymentMethod | 'mixed'
+
 // بند قماش واحد داخل مبيعة أقمشة (تدعم عدّة أقمشة في مبيعة واحدة)
 export interface FabricSaleItem {
   inventory_id?: string | null   // معرّف صنف المخزون المطابق (للمرجع)
@@ -95,7 +102,9 @@ export interface Income {
   amount: number
   quantity_meters?: number | null // الكمية بالمتر (الإجمالي الكلّي عند تعدّد الأقمشة)
   fabric_items?: FabricSaleItem[] | null // بنود القماش المتعدّدة [{name, quantity_meters}] — NULL = قماش واحد
-  payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
+  payment_method?: IncomePaymentMethod | null // طريقة الدفع: كاش أو شبكة أو الاثنان معاً
+  cash_amount?: number | null            // جزء الكاش عند الدفع المختلط (للصندوق فقط)
+  network_amount?: number | null         // جزء الشبكة عند الدفع المختلط (قيمة فاتورة المحاسبة)
   customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)
   buyer_name?: string | null             // اسم العميل (اختياري) — customer_name يخزن اسم القماش
@@ -134,7 +143,9 @@ export interface CreateIncomeInput {
   amount: number
   quantity_meters?: number | null // الكمية بالمتر (الإجمالي الكلّي عند تعدّد الأقمشة)
   fabric_items?: FabricSaleItem[] | null // بنود القماش المتعدّدة [{name, quantity_meters}]
-  payment_method?: PaymentMethod | null // طريقة الدفع: كاش أو شبكة
+  payment_method?: IncomePaymentMethod | null // طريقة الدفع: كاش أو شبكة أو الاثنان معاً
+  cash_amount?: number | null            // جزء الكاش عند الدفع المختلط (للصندوق فقط)
+  network_amount?: number | null         // جزء الشبكة عند الدفع المختلط (قيمة فاتورة المحاسبة)
   customer_source?: string | null        // مصدر الزبونة: ياسمين الشام أو مصدر آخر
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)
   buyer_name?: string | null             // اسم العميل (اختياري) — customer_name يخزن اسم القماش

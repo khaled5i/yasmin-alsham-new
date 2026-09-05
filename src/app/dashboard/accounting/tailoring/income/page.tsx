@@ -35,7 +35,7 @@ import {
   getUnrecordedDeliveredOrders,
   type UnrecordedDeliveredOrder,
 } from '@/lib/services/simple-accounting-service'
-import type { Income, IncomeEntryKind, PaymentMethod } from '@/types/simple-accounting'
+import type { Income, IncomeEntryKind, IncomePaymentMethod, PaymentMethod } from '@/types/simple-accounting'
 
 // ============================================================================
 // مظهر كل نوع حركة — نفس لغة صندوق النقد حتى تُقرأ الصفحتان بنفس الطريقة
@@ -65,9 +65,11 @@ const entryAppearance: Record<
   },
 }
 
-const paymentAppearance: Record<PaymentMethod, { label: string; className: string }> = {
+// 'mixed' خاص بمبيعات الأقمشة ولا يظهر في التفصيل، لكنه مذكور ليبقى النوع مكتملاً
+const paymentAppearance: Record<IncomePaymentMethod, { label: string; className: string }> = {
   cash: { label: 'كاش', className: 'bg-amber-50 text-amber-700 ring-amber-200' },
   network: { label: 'شبكة', className: 'bg-sky-50 text-sky-700 ring-sky-200' },
+  mixed: { label: 'كاش + شبكة', className: 'bg-violet-50 text-violet-700 ring-violet-200' },
 }
 
 // ============================================================================

@@ -336,6 +336,16 @@ function isMissingBuyerColumns(error: { code?: string; message?: string } | null
   )
 }
 
+// هل الخطأ ناتج عن عمودي cash_amount/network_amount غير موجودين بعد (لم تُطبَّق الهجرة 86)؟
+// الفحص بالرسالة وحدها لأن رمز الخطأ نفسه (PGRST204/42703) يشترك مع أعمدة أخرى.
+function isMissingSplitAmountColumns(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    (error.message?.includes('cash_amount') ?? false) ||
+    (error.message?.includes('network_amount') ?? false)
+  )
+}
+
 // هل الخطأ ناتج عن عمود fabric_items غير موجود بعد (لم تُطبَّق الهجرة 69)؟
 function isMissingFabricItemsColumn(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
@@ -443,6 +453,20 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
         .single())
     }
 
+    // توافق تدريجي: إذا لم يُطبَّق عمودا cash_amount/network_amount بعد، أعد المحاولة بدونهما
+    if (error && isMissingSplitAmountColumns(error)) {
+      console.warn('⚠️ income.cash_amount/network_amount columns missing. Please run migrations/86-fabric-sale-mixed-payment.sql')
+      const withoutSplit = { ...payload }
+      delete withoutSplit.cash_amount
+      delete withoutSplit.network_amount
+      payload = withoutSplit
+      ;({ data, error } = await supabase
+        .from('income')
+        .insert(payload)
+        .select()
+        .single())
+    }
+
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_images بعد، أعد المحاولة بدونه
     if (error && isMissingFabricImagesColumn(error)) {
       console.warn('⚠️ income.fabric_images column missing. Please run migrations/57-income-fabric-images.sql')
@@ -534,6 +558,21 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
       delete withoutBuyer.buyer_name
       delete withoutBuyer.buyer_phone
       payload = withoutBuyer
+      ;({ data, error } = await supabase
+        .from('income')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single())
+    }
+
+    // توافق تدريجي: إذا لم يُطبَّق عمودا cash_amount/network_amount بعد، أعد المحاولة بدونهما
+    if (error && isMissingSplitAmountColumns(error)) {
+      console.warn('⚠️ income.cash_amount/network_amount columns missing. Please run migrations/86-fabric-sale-mixed-payment.sql')
+      const withoutSplit = { ...payload }
+      delete withoutSplit.cash_amount
+      delete withoutSplit.network_amount
+      payload = withoutSplit
       ;({ data, error } = await supabase
         .from('income')
         .update(payload)
@@ -976,28 +1015,59 @@ async function getPayrollSalariesForPeriod(
 // رصيد الصندوق (تراكمي عبر الأشهر)
 // ============================================================================
 
+type CashPortionRow = {
+  amount: number
+  payment_method?: string | null
+  cash_amount?: number | null
+}
+
 // إجمالي المبيعات الكاش (يرفع رصيد الصندوق) — حتى تاريخ معيّن اختيارياً
+// المبيعة المختلطة (mixed) تدخل بجزء الكاش وحده؛ جزء الشبكة لا يمسّ الصندوق.
 async function getAllTimeCashIncome(branch: BranchType, asOfDate?: string): Promise<number> {
   if (!isSupabaseConfigured()) return 0
 
-  try {
+  const sumCashPortion = (rows: CashPortionRow[] | null) =>
+    (rows || []).reduce(
+      (sum, row) =>
+        sum +
+        (row.payment_method === 'mixed'
+          ? Math.max(Number(row.cash_amount) || 0, 0)
+          : row.amount || 0),
+      0
+    )
+
+  const runQuery = (columns: string) => {
     let query = supabase
       .from('income')
-      .select('amount')
+      .select(columns)
       .eq('branch', branch)
-      .eq('payment_method', 'cash')
+      .in('payment_method', ['cash', 'mixed'])
 
     if (asOfDate) query = query.lte('date', asOfDate)
+    return query
+  }
 
-    const { data, error } = await query
+  try {
+    const { data, error } = await runQuery('amount, payment_method, cash_amount')
 
     if (error) {
       if (error.code === '42P01' || error.message?.includes('does not exist')) return 0
+
+      // لم تُطبَّق الهجرة 86 بعد: لا توجد مبيعات مختلطة أصلاً، فالكاش وحده يكفي
+      if (isMissingSplitAmountColumns(error)) {
+        const { data: legacyData, error: legacyError } = await runQuery('amount, payment_method')
+        if (legacyError) {
+          console.error('Error fetching all-time cash income:', legacyError.message || legacyError)
+          return 0
+        }
+        return sumCashPortion(legacyData as unknown as CashPortionRow[] | null)
+      }
+
       console.error('Error fetching all-time cash income:', error.message || error)
       return 0
     }
 
-    return (data as { amount: number }[] | null || []).reduce((sum, row) => sum + (row.amount || 0), 0)
+    return sumCashPortion(data as unknown as CashPortionRow[] | null)
   } catch (err) {
     console.error('Error fetching all-time cash income:', err)
     return 0

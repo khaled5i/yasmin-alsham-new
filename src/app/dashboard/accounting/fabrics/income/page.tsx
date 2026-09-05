@@ -42,7 +42,12 @@ import ReportPeriodPicker, {
   type DateRange,
 } from '@/components/ReportPeriodPicker'
 import { getIncome, createIncome, updateIncome, deleteIncome } from '@/lib/services/simple-accounting-service'
-import type { Income, CreateIncomeInput, FabricSaleItem } from '@/types/simple-accounting'
+import type {
+  Income,
+  CreateIncomeInput,
+  FabricSaleItem,
+  IncomePaymentMethod,
+} from '@/types/simple-accounting'
 import {
   getInventoryItemsWithColors,
   type FabricInventoryItem,
@@ -250,7 +255,11 @@ function FabricsIncomeContent() {
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'network' | ''>('')
+  const [paymentMethod, setPaymentMethod] = useState<IncomePaymentMethod | ''>('')
+  // الدفع المختلط: يُدخَل المبلغان منفصلين، والإجمالي = مجموعهما تلقائياً.
+  // جزء الشبكة وحده هو ما يُرسَل لتطبيق المحاسبة؛ جزء الكاش يدخل الصندوق فقط.
+  const [mixedNetworkAmount, setMixedNetworkAmount] = useState('')
+  const [mixedCashAmount, setMixedCashAmount] = useState('')
   const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
   const [otherSourceText, setOtherSourceText] = useState('')
   const [fabricImages, setFabricImages] = useState<string[]>([])
@@ -473,6 +482,8 @@ function FabricsIncomeContent() {
     setDescription('')
     setDate(new Date().toISOString().split('T')[0])
     setPaymentMethod('')
+    setMixedNetworkAmount('')
+    setMixedCashAmount('')
     setCustomerSource('')
     setOtherSourceText('')
     setFabricImages([])
@@ -488,6 +499,17 @@ function FabricsIncomeContent() {
     setFabricLines((ls) => (ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls))
   const updateFabricLine = (idx: number, patch: Partial<FabricLine>) =>
     setFabricLines((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
+
+  // ── الدفع المختلط (كاش + شبكة) ────────────────────────────────
+  const isMixedPayment = paymentMethod === 'mixed'
+  const parsePositiveAmount = (value: string) => {
+    const parsed = roundFabricNumber(parseFloat(value))
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+  }
+  const mixedNetworkValue = parsePositiveAmount(mixedNetworkAmount)
+  const mixedCashValue = parsePositiveAmount(mixedCashAmount)
+  // الإجمالي محسوب من المربعين ولا يُدخَل يدوياً، فلا يمكن أن يختلّ المجموع
+  const mixedTotal = roundFabricNumber(mixedNetworkValue + mixedCashValue)
 
   // هل القماش من نوع "شك"؟ (يُظهر خيار رفع صور القماش)
   const isShekFabric = (item?: FabricInventoryItem | null): boolean => {
@@ -525,8 +547,12 @@ function FabricsIncomeContent() {
     item.alostaz_sync_status === 'sent' ||
     !!sentMap[item.id]
 
+  // الشبكة والمختلط كلاهما يصل للمحاسبة (المختلط بجزء الشبكة)، فيُقفل بعد الإرسال
+  const hasNetworkPortion = (item: Income) =>
+    item.payment_method === 'network' || item.payment_method === 'mixed'
+
   const isLockedForFabricStoreManager = (item: Income) =>
-    isFabricStoreManager && item.payment_method === 'network' && isSent(item)
+    isFabricStoreManager && hasNetworkPortion(item) && isSent(item)
 
   const handleApplyPeriod = (period: DateRange, range: DateFilter) => {
     setSelectedPeriod(period)
@@ -590,9 +616,19 @@ function FabricsIncomeContent() {
         return
       }
     }
-    if (!amount) return
     if (!paymentMethod) {
-      alert('يرجى اختيار طريقة الدفع (كاش أو شبكة)')
+      alert('يرجى اختيار طريقة الدفع (كاش أو شبكة أو الاثنان معاً)')
+      return
+    }
+    if (isMixedPayment) {
+      if (mixedNetworkValue <= 0 || mixedCashValue <= 0) {
+        alert(
+          'عند الدفع المختلط أدخل قيمة الشبكة وقيمة الكاش، وكلاهما أكبر من صفر.\n' +
+          'إذا كانت الدفعة بوسيلة واحدة فاختر «كاش» أو «شبكة» مباشرة.'
+        )
+        return
+      }
+    } else if (!amount) {
       return
     }
     if (!customerSource) {
@@ -600,7 +636,8 @@ function FabricsIncomeContent() {
       return
     }
 
-    const amt = roundFabricNumber(parseFloat(amount))
+    // المختلط: الإجمالي = الشبكة + الكاش (محسوب، لا يُدخَل يدوياً)
+    const amt = isMixedPayment ? mixedTotal : roundFabricNumber(parseFloat(amount))
     const resolvedSource =
       customerSource === 'yasmin_alsham'
         ? 'ياسمين الشام'
@@ -620,6 +657,9 @@ function FabricsIncomeContent() {
       quantity_meters: totalMeters > 0 ? totalMeters : null,
       fabric_items: items,
       payment_method: paymentMethod,
+      // التفصيل يُحفَظ للمختلط فقط؛ تُصفَّر للطرق الأخرى كي لا تبقى قيم قديمة عند التعديل
+      network_amount: isMixedPayment ? mixedNetworkValue : null,
+      cash_amount: isMixedPayment ? mixedCashValue : null,
       customer_source: resolvedSource,
       fabric_images: showFabricImages ? fabricImages : [],
       buyer_name: buyerName.trim() || null,
@@ -749,7 +789,14 @@ function FabricsIncomeContent() {
     setFabricImages(item.fabric_images ?? [])
     setBuyerName(item.buyer_name ?? '')
     setBuyerPhone(item.buyer_phone ?? '')
-    setPaymentMethod((item.payment_method as 'cash' | 'network') || '')
+    setPaymentMethod((item.payment_method as IncomePaymentMethod) || '')
+    if (item.payment_method === 'mixed') {
+      setMixedNetworkAmount(item.network_amount != null ? String(item.network_amount) : '')
+      setMixedCashAmount(item.cash_amount != null ? String(item.cash_amount) : '')
+    } else {
+      setMixedNetworkAmount('')
+      setMixedCashAmount('')
+    }
     // مصدر الزبونة: تحويل القيمة المخزّنة إلى خيار النموذج
     if (item.customer_source === 'ياسمين الشام') {
       setCustomerSource('yasmin_alsham')
@@ -826,9 +873,11 @@ function FabricsIncomeContent() {
     }
   }
 
-  // الإرسال التلقائي عند إنشاء مبيعة جديدة (الشبكة فقط — الكاش لا يُرسَل تلقائياً)
+  // الإرسال التلقائي عند إنشاء مبيعة جديدة: الشبكة، والمختلط بجزء الشبكة وحده.
+  // الكاش الصافي لا يُرسَل تلقائياً، وجزء الكاش من المختلط لا يُرسَل إطلاقاً.
   async function maybeAutoSendFabricInvoice(rec: Income): Promise<Income> {
-    if (rec.payment_method !== 'network' || rec.alostaz_invoice_code) return rec
+    if (!hasNetworkPortion(rec) || rec.alostaz_invoice_code) return rec
+    if (rec.payment_method === 'mixed' && !(Number(rec.network_amount) > 0)) return rec
     if (!canSendToAccounting) return rec
 
     // نقرأ الإعداد عند كل فاتورة، كي يطبَّق الإيقاف من محطة الطباعة فوراً
@@ -936,6 +985,18 @@ function FabricsIncomeContent() {
       } else if (item.payment_method === 'cash') {
         nextBreakdown.cash.count++
         nextBreakdown.cash.total += item.amount
+      } else if (item.payment_method === 'mixed') {
+        // المبيعة الواحدة تُحتسب في الجهتين بقيمة كل جزء على حدة
+        const networkPortion = Math.max(0, Number(item.network_amount) || 0)
+        const cashPortion = Math.max(0, Number(item.cash_amount) || 0)
+        if (networkPortion > 0) {
+          nextBreakdown.network.count++
+          nextBreakdown.network.total += networkPortion
+        }
+        if (cashPortion > 0) {
+          nextBreakdown.cash.count++
+          nextBreakdown.cash.total += cashPortion
+        }
       }
 
       if (fabricKind === 'plain') {
@@ -1228,8 +1289,18 @@ function FabricsIncomeContent() {
                           </>
                         )}
                         {item.payment_method && (
-                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">
-                            {item.payment_method === 'cash' ? 'كاش' : 'شبكة'}
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                              item.payment_method === 'mixed'
+                                ? 'bg-violet-50 text-violet-700'
+                                : 'bg-indigo-50 text-indigo-600'
+                            }`}
+                          >
+                            {item.payment_method === 'cash'
+                              ? 'كاش'
+                              : item.payment_method === 'network'
+                                ? 'شبكة'
+                                : `شبكة ${formatCurrency(Number(item.network_amount) || 0)} + كاش ${formatCurrency(Number(item.cash_amount) || 0)}`}
                           </span>
                         )}
                         {item.customer_source && (
@@ -1615,29 +1686,32 @@ function FabricsIncomeContent() {
                         </div>
                       )}
 
-                      {/* المبلغ الإجمالي للمبيعة كلها */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ الإجمالي (ر.س) *</label>
-                        <input
-                          type="number"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                          min="0" step="0.01" required
-                        />
-                      </div>
+                      {/* المبلغ الإجمالي للمبيعة كلها — عند الدفع المختلط يُحسب من المربعين */}
+                      {!isMixedPayment && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ الإجمالي (ر.س) *</label>
+                          <input
+                            type="number"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                            min="0" step="0.01" required
+                          />
+                        </div>
+                      )}
 
                       {/* طريقة الدفع */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">طريقة الدفع *</label>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-3 gap-2 sm:gap-3">
                           {([
                             { value: 'cash', label: 'كاش' },
-                            { value: 'network', label: 'شبكة' }
+                            { value: 'network', label: 'شبكة' },
+                            { value: 'mixed', label: 'كاش وشبكة' }
                           ] as const).map((opt) => (
                             <label
                               key={opt.value}
-                              className={`flex items-center justify-center gap-2 px-4 py-2.5 border rounded-xl cursor-pointer transition-colors ${
+                              className={`flex items-center justify-center gap-1.5 px-2 py-2.5 border rounded-xl cursor-pointer transition-colors text-sm text-center ${
                                 paymentMethod === opt.value
                                   ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
                                   : 'border-gray-200 hover:bg-gray-50'
@@ -1649,12 +1723,59 @@ function FabricsIncomeContent() {
                                 value={opt.value}
                                 checked={paymentMethod === opt.value}
                                 onChange={() => setPaymentMethod(opt.value)}
-                                className="accent-emerald-600"
+                                className="accent-emerald-600 shrink-0"
                               />
                               <span>{opt.label}</span>
                             </label>
                           ))}
                         </div>
+
+                        {/* الدفع المختلط: مربع لقيمة الشبكة ومربع لقيمة الكاش */}
+                        {isMixedPayment && (
+                          <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="flex items-center gap-1.5 text-xs font-medium text-violet-800 mb-1">
+                                  <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                                  قيمة الشبكة (ر.س) *
+                                </label>
+                                <input
+                                  type="number"
+                                  value={mixedNetworkAmount}
+                                  onChange={(e) => setMixedNetworkAmount(e.target.value)}
+                                  className="w-full px-3 py-2 border border-violet-200 rounded-xl bg-white focus:ring-2 focus:ring-violet-500"
+                                  placeholder="0.00"
+                                  min="0.01"
+                                  step="0.01"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="flex items-center gap-1.5 text-xs font-medium text-violet-800 mb-1">
+                                  <Banknote className="w-3.5 h-3.5 shrink-0" />
+                                  قيمة الكاش (ر.س) *
+                                </label>
+                                <input
+                                  type="number"
+                                  value={mixedCashAmount}
+                                  onChange={(e) => setMixedCashAmount(e.target.value)}
+                                  className="w-full px-3 py-2 border border-violet-200 rounded-xl bg-white focus:ring-2 focus:ring-violet-500"
+                                  placeholder="0.00"
+                                  min="0.01"
+                                  step="0.01"
+                                  required
+                                />
+                              </div>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-between gap-2 text-sm">
+                              <span className="font-medium text-violet-900">الإجمالي</span>
+                              <span className="font-bold text-violet-900">{formatCurrency(mixedTotal)}</span>
+                            </div>
+                            <p className="mt-1.5 text-[11px] leading-relaxed text-violet-700">
+                              تُرسَل قيمة الشبكة وحدها إلى تطبيق المحاسبة، أما قيمة الكاش فتُضاف لرصيد الصندوق ولا تُرسَل.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* مصدر الزبونة */}
@@ -1696,57 +1817,61 @@ function FabricsIncomeContent() {
                         )}
                       </div>
 
-                      {/* اسم العميل (اختياري) */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">اسم العميل (اختياري)</label>
-                        <div className="relative">
-                          <UserRound className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      {/* اسم العميل ورقم هاتفه في سطر واحد (على الجوال أيضاً) */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="min-w-0">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">اسم العميل (اختياري)</label>
+                          <div className="relative">
+                            <UserRound className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={buyerName}
+                              onChange={(e) => setBuyerName(e.target.value)}
+                              className="w-full pr-9 pl-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                              placeholder="اسم العميل..."
+                            />
+                          </div>
+                        </div>
+
+                        <div className="min-w-0">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف (اختياري)</label>
+                          <div className="relative">
+                            <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <input
+                              type="tel"
+                              value={buyerPhone}
+                              onChange={(e) => setBuyerPhone(e.target.value)}
+                              dir="ltr"
+                              className="w-full pr-9 pl-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-right"
+                              placeholder="05xxxxxxxx"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* التاريخ والملاحظات في سطر واحد (على الجوال أيضاً) */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="min-w-0">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">التاريخ</label>
+                          <input
+                            type="date"
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                            required
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات (اختياري)</label>
                           <input
                             type="text"
-                            value={buyerName}
-                            onChange={(e) => setBuyerName(e.target.value)}
-                            className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                            placeholder="اسم العميل..."
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                            placeholder="أي تفاصيل إضافية..."
                           />
                         </div>
-                      </div>
-
-                      {/* رقم هاتف العميل (اختياري) */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف (اختياري)</label>
-                        <div className="relative">
-                          <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                          <input
-                            type="tel"
-                            value={buyerPhone}
-                            onChange={(e) => setBuyerPhone(e.target.value)}
-                            dir="ltr"
-                            className="w-full pr-9 pl-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-right"
-                            placeholder="05xxxxxxxx"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات (اختياري)</label>
-                        <input
-                          type="text"
-                          value={description}
-                          onChange={(e) => setDescription(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                          placeholder="أي تفاصيل إضافية..."
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">التاريخ</label>
-                        <input
-                          type="date"
-                          value={date}
-                          onChange={(e) => setDate(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-                          required
-                        />
                       </div>
                     </>
                   )}

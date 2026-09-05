@@ -525,6 +525,19 @@ export interface UpdateOrderData {
   }>
 }
 
+/**
+ * تاريخ إنجاز الطلب الفعلي لأغراض الترتيب وتوزيع الطلبات على الأشهر.
+ *
+ * الطلب الذي يُسلَّم مباشرةً (تسليم صامت مع مبلغ متبقٍّ، أو تسليم من قائمة الطلبات
+ * دون المرور بحالة «مكتمل») لا يحمل worker_completed_at، لذلك نرجع إلى تواريخ بديلة ثابتة.
+ * نفس السلسلة المستخدمة في فلتر الشهر داخل getAll حتى يتطابق العرض مع الاستعلام.
+ */
+export function getEffectiveCompletionDate(
+  order: Pick<Order, 'worker_completed_at' | 'admin_completed_at' | 'delivery_date'>
+): string | null {
+  return order.worker_completed_at || order.admin_completed_at || order.delivery_date || null
+}
+
 // ============================================================================
 // خدمة الطلبات
 // ============================================================================
@@ -827,7 +840,12 @@ export const orderService = {
         query = query.gte(dateField, dateStart).lt(dateField, dateEnd)
       }
 
-      // Month filter on worker_completed_at
+      // Month filter on worker_completed_at — مع سلسلة تواريخ بديلة.
+      // الطلب الذي يُسلَّم مباشرةً من دون المرور بحالة «مكتمل» (مثل التسليم
+      // الصامت مع مبلغ متبقٍّ) لا يحمل worker_completed_at، فكان يسقط نهائياً من
+      // متابعة العمال رغم ظهوره في صفحة العامل. لذلك نعتمد نفس سلسلة صفحة العامل:
+      //   worker_completed_at ← admin_completed_at ← delivery_date
+      // (تواريخ ثابتة لا تتغيّر مع أي تعديل لاحق، بعكس updated_at)
       if (filters?.monthFilter) {
         const [year, month] = filters.monthFilter.split('-').map(Number)
         const startDate = `${filters.monthFilter}-01`
@@ -837,7 +855,11 @@ export const orderService = {
         const nextYear = month === 12 ? year + 1 : year
         const nextMonth = month === 12 ? 1 : month + 1
         const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
-        query = query.gte('worker_completed_at', startDate).lt('worker_completed_at', endDate)
+        query = query.or([
+          `and(worker_completed_at.gte.${startDate},worker_completed_at.lt.${endDate})`,
+          `and(worker_completed_at.is.null,admin_completed_at.gte.${startDate},admin_completed_at.lt.${endDate})`,
+          `and(worker_completed_at.is.null,admin_completed_at.is.null,delivery_date.gte.${startDate},delivery_date.lt.${endDate})`,
+        ].join(','))
       }
 
       // إشعارات البروفا الثانية: الطلبات التي أبلغ العامل بجهوزية بروفتها الثانية ولم يُخفِها المدير

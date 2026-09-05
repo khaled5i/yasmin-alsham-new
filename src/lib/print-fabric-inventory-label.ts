@@ -67,12 +67,16 @@ function formatNumber(value: number): string {
   }).format(Number(value) || 0)
 }
 
-function formatPrice(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-    useGrouping: false,
-  }).format(Number(value) || 0)
+export function formatFabricInventoryLabelCode(
+  productCode: string,
+  salePricePerUnit: number,
+  priceUnit: 'meter' | 'piece'
+): string {
+  const insertionIndex = Math.min(2, productCode.length)
+  const priceCode = formatNumber(salePricePerUnit)
+  const unitCode = priceUnit === 'meter' ? 'm' : 'p'
+
+  return `${productCode.slice(0, insertionIndex)}${priceCode}${unitCode}${productCode.slice(insertionIndex)}`
 }
 
 export function buildFabricInventoryLabelHtml(
@@ -82,13 +86,17 @@ export function buildFabricInventoryLabelHtml(
   const size = getFabricLabelSize(options.size ?? '70x50')
   const compact = size.id === '60x40'
   const unitLabel = payload.unit === 'meter' ? 'متر' : 'قطعة'
-  const priceUnitLabel = (payload.price_unit ?? payload.unit) === 'meter' ? 'للمتر' : 'للقطعة'
+  const printedProductCode = formatFabricInventoryLabelCode(
+    payload.product_code,
+    payload.sale_price_per_unit,
+    payload.price_unit ?? payload.unit
+  )
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
 <meta charset="UTF-8">
-<title>ملصق ${escapeHtml(payload.product_code)}</title>
+<title>ملصق ${escapeHtml(printedProductCode)}</title>
 <style>
   * { box-sizing: border-box; }
   @page { size: ${size.widthMm}mm ${size.heightMm}mm; margin: 0; }
@@ -136,9 +144,7 @@ export function buildFabricInventoryLabelHtml(
     border-top: 0.45mm solid #000;
   }
   .primary {
-    display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-    gap: ${compact ? '1mm' : '1.5mm'};
+    width: 100%;
   }
   .field {
     min-width: 0;
@@ -150,10 +156,9 @@ export function buildFabricInventoryLabelHtml(
     font-weight: 700;
     line-height: 1;
   }
-  .product-code,
-  .price {
+  .product-code {
     display: flex;
-    min-height: ${compact ? '8mm' : '10.5mm'};
+    min-height: ${compact ? '9mm' : '11.5mm'};
     align-items: center;
     justify-content: center;
     border: 0.4mm solid #000;
@@ -165,20 +170,9 @@ export function buildFabricInventoryLabelHtml(
     unicode-bidi: isolate;
     padding: 0.8mm;
     font-family: Consolas, "Courier New", monospace;
-    font-size: ${compact ? '4.2mm' : '5.3mm'};
+    font-size: ${compact ? '4.8mm' : '5.9mm'};
     letter-spacing: 0.1mm;
     overflow-wrap: anywhere;
-  }
-  .price {
-    direction: rtl;
-    gap: 0.7mm;
-    padding: 0.8mm;
-    font-size: ${compact ? '3.7mm' : '4.6mm'};
-    white-space: nowrap;
-  }
-  .price-unit {
-    font-size: ${compact ? '1.8mm' : '2.1mm'};
-    font-weight: 700;
   }
   .details {
     display: grid;
@@ -218,7 +212,7 @@ export function buildFabricInventoryLabelHtml(
 </style>
 </head>
 <body>
-  <main class="label-card" aria-label="ملصق قماش ${escapeHtml(payload.product_code)}">
+  <main class="label-card" aria-label="ملصق قماش ${escapeHtml(printedProductCode)}">
     <header>
       <h1 class="brand">ياسمين الشام للأقمشة</h1>
       <p class="subtitle">بطاقة تعريف القماش</p>
@@ -229,14 +223,7 @@ export function buildFabricInventoryLabelHtml(
     <section class="primary">
       <div class="field">
         <span class="field-label">رقم المنتج</span>
-        <strong class="product-code">${escapeHtml(payload.product_code)}</strong>
-      </div>
-      <div class="field">
-        <span class="field-label">سعر البيع</span>
-        <strong class="price">
-          <span dir="ltr">${formatPrice(payload.sale_price_per_unit)}</span>
-          <span class="price-unit">ر.س ${priceUnitLabel}</span>
-        </strong>
+        <strong class="product-code">${escapeHtml(printedProductCode)}</strong>
       </div>
     </section>
 

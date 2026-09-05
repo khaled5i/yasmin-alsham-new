@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Loader2, Trash2, Play, Pause, Languages, Pencil, Check, X } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -56,6 +56,7 @@ export default function UnifiedNotesInput({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const transcriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Soniox refs
   const sonioxWsRef = useRef<WebSocket | null>(null)
@@ -73,6 +74,16 @@ export default function UnifiedNotesInput({
 
   useEffect(() => { voiceNotesRef.current = voiceNotes }, [voiceNotes])
   useEffect(() => { notesRef.current = notes }, [notes])
+
+  useLayoutEffect(() => {
+    if (!editingTranscriptionId) return
+
+    const textarea = transcriptionTextareaRef.current
+    if (!textarea) return
+
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 192)}px`
+  }, [editingTranscriptionId, transcriptionDraft])
 
   // قائمة اللغات المتاحة للترجمة
   const availableLanguages = [
@@ -659,7 +670,7 @@ export default function UnifiedNotesInput({
               <Mic className="w-4 h-4 text-pink-600" />
               التسجيلات الصوتية ({voiceNotes.length})
             </h4>
-            <div className="space-y-3 max-h-[500px] overflow-y-auto overflow-x-visible">
+            <div className={`space-y-3 overflow-x-visible ${editingTranscriptionId ? 'overflow-y-visible' : 'max-h-[500px] overflow-y-auto'}`}>
               {voiceNotes.map((note, index) => (
                 <div key={note.id} className="bg-white rounded-lg p-3 border border-gray-200 transition-all">
                   <div className="flex items-start justify-between gap-2 mb-2 relative">
@@ -671,42 +682,6 @@ export default function UnifiedNotesInput({
                         <p className="text-sm text-gray-700 leading-relaxed break-words">
                           {note.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
                         </p>
-                      )}
-                      {editingTranscriptionId === note.id && (
-                        <div className="flex-1 space-y-2">
-                          <label htmlFor={`voice-transcription-${note.id}`} className="sr-only">
-                            {t('edit_transcription')}
-                          </label>
-                          <textarea
-                            id={`voice-transcription-${note.id}`}
-                            value={transcriptionDraft}
-                            onChange={(event) => setTranscriptionDraft(event.target.value)}
-                            rows={3}
-                            dir="auto"
-                            autoFocus
-                            disabled={disabled}
-                            className="w-full resize-y rounded-lg border border-pink-300 bg-pink-50/40 px-3 py-2 text-sm leading-relaxed text-gray-800 outline-none transition focus:border-pink-500 focus:ring-2 focus:ring-pink-200 disabled:cursor-not-allowed disabled:opacity-60"
-                          />
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => saveTranscription(note.id)}
-                              disabled={disabled || !transcriptionDraft.trim()}
-                              className="inline-flex items-center gap-1.5 rounded-md bg-pink-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              {t('save')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelEditingTranscription}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              {t('cancel')}
-                            </button>
-                          </div>
-                        </div>
                       )}
                     </div>
 
@@ -758,6 +733,61 @@ export default function UnifiedNotesInput({
                       </button>
                     </div>
                   </div>
+
+                  {editingTranscriptionId === note.id && (
+                    <div
+                      className="space-y-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3 sm:p-4"
+                      dir={isArabic ? 'rtl' : 'ltr'}
+                    >
+                      <div>
+                        <label
+                          htmlFor={`voice-transcription-${note.id}`}
+                          className="flex items-center gap-2 text-sm font-semibold text-gray-800"
+                        >
+                          <Pencil className="h-4 w-4 text-pink-600" />
+                          {t('edit_transcription')}
+                        </label>
+                        <p id={`voice-transcription-help-${note.id}`} className="mt-1 text-xs leading-5 text-gray-500">
+                          {isArabic
+                            ? 'النص كامل أمامك، وسيزداد ارتفاع الحقل تلقائيًا أثناء التعديل.'
+                            : 'The full text is visible, and the field grows automatically while you edit.'}
+                        </p>
+                      </div>
+
+                      <textarea
+                        ref={transcriptionTextareaRef}
+                        id={`voice-transcription-${note.id}`}
+                        aria-describedby={`voice-transcription-help-${note.id}`}
+                        value={transcriptionDraft}
+                        onChange={(event) => setTranscriptionDraft(event.target.value)}
+                        rows={8}
+                        dir="auto"
+                        autoFocus
+                        disabled={disabled}
+                        className="block min-h-48 w-full resize-none overflow-y-hidden rounded-xl border border-pink-300 bg-white px-4 py-3 text-base leading-7 text-gray-900 shadow-sm outline-none transition focus:border-pink-500 focus:ring-2 focus:ring-pink-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelEditingTranscription}
+                          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                        >
+                          <X className="h-4 w-4" />
+                          {t('cancel')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => saveTranscription(note.id)}
+                          disabled={disabled || !transcriptionDraft.trim()}
+                          className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Check className="h-4 w-4" />
+                          {t('save')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {note.transcription && editingTranscriptionId !== note.id ? (
                     note.translatedText && (

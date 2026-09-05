@@ -260,9 +260,19 @@ export async function POST(request: NextRequest) {
               },
             ]
 
-      // توزيع الإجمالي الكلّي (المبلغ الواحد) على البنود بنسبة الأمتار،
-      // مع إعطاء الباقي للبند الأخير لضمان تطابق المجموع تماماً مع الإجمالي.
-      const total = Number(income.amount) || 0
+      // قيمة الفاتورة المرسلة للأستاذ: الإجمالي عادةً، أما المبيعة المختلطة
+      // (كاش + شبكة) فتُرسَل بقيمة الشبكة وحدها — الكاش لا يصل للمحاسبة إطلاقاً.
+      const total =
+        income.payment_method === 'mixed'
+          ? Math.max(Number(income.network_amount) || 0, 0)
+          : Number(income.amount) || 0
+
+      if (income.payment_method === 'mixed' && total <= 0) {
+        throw new Error('لا توجد قيمة شبكة في هذه المبيعة المختلطة، فلا فاتورة تُرسَل للمحاسبة')
+      }
+
+      // توزيع قيمة الفاتورة على البنود بنسبة الأمتار، مع إعطاء الباقي للبند
+      // الأخير لضمان تطابق المجموع تماماً مع القيمة المرسلة.
       const n = rawItems.length
       const meters = rawItems.map((it) => (Number(it.quantity_meters) > 0 ? Number(it.quantity_meters) : 0))
       const totalMeters = meters.reduce((s, m) => s + m, 0)
@@ -305,7 +315,8 @@ export async function POST(request: NextRequest) {
         invoice_number: income.invoice_number,
         customer_name: income.buyer_name,
         customer_phone: income.buyer_phone,
-        payment_method: income.payment_method,
+        // المبيعة المختلطة تُرسَل بجزء الشبكة فقط، فخزنتها في الأستاذ خزنة الشبكة
+        payment_method: income.payment_method === 'mixed' ? 'network' : income.payment_method,
         date: income.date,
         lines,
       })

@@ -1431,6 +1431,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               <OrderAlterationsSection
                 orderId={order.id}
                 autoTranslateHindi={autoTranslateAlterationsToHindi}
+                onOpenImage={openLightbox}
                 showErrorReason={user?.role === 'admin'}
               />
 
