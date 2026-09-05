@@ -505,7 +505,7 @@ export async function createInvoiceForWomenWorkshop(
  * الحساب البنكي، على المنتج الثابت «أجرة تفصيل فستان» وبسعر شامل الضريبة.
  */
 export async function createInvoiceForTailoringManualSale(
-  input: { amount: number }
+  input: { amount: number; date?: string | null }
 ): Promise<AlostazInvoiceResult> {
   const branchHeaders = { 'X-Branch-Id': String(ALOSTAZ_BRANCH_ID) }
   const customerId = await findOrCreateCustomer(
@@ -513,7 +513,10 @@ export async function createInvoiceForTailoringManualSale(
     { branchId: ALOSTAZ_BRANCH_ID, partnerListId: ALOSTAZ_PARTNER_LIST_ID }
   )
 
-  const nowIso = new Date().toISOString()
+  // تاريخ الفاتورة المختار في النموذج يصبح تاريخ الإصدار والاستحقاق معاً.
+  const invoiceIso = input.date
+    ? new Date(input.date).toISOString()
+    : new Date().toISOString()
   const invoiceStatus = ALOSTAZ_INVOICE_STATUS
   const isDraft = invoiceStatus === 'draft'
   const amountHalalas = toHalalas(input.amount)
@@ -523,8 +526,8 @@ export async function createInvoiceForTailoringManualSale(
     nature: 'sale',
     type: 'invoice',
     status: invoiceStatus,
-    issue_date: nowIso,
-    due_date: nowIso,
+    issue_date: invoiceIso,
+    due_date: invoiceIso,
     partner_id: customerId,
     line_items: [
       {

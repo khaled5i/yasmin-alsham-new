@@ -26,6 +26,31 @@ function riyadhToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' })
 }
 
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * تاريخ الفاتورة القادم من النموذج (YYYY-MM-DD). يُستخدم لعمود income.date
+ * ولتاريخي الإصدار والاستحقاق في الأستاذ، لذلك نتحقق أنه يوم تقويمي حقيقي
+ * وضمن مدى معقول قبل قبوله. القيمة الفارغة تعني «اليوم».
+ */
+function normalizeInvoiceDate(raw: unknown): string | null {
+  const value = String(raw || '').trim()
+  if (!value) return riyadhToday()
+  if (!DATE_PATTERN.test(value)) return null
+
+  const parsed = new Date(`${value}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime())) return null
+  // يرفض تواريخ مثل 2026-02-31 التي يعيد JavaScript ضبطها إلى يوم آخر.
+  if (parsed.toISOString().slice(0, 10) !== value) return null
+
+  const today = new Date(`${riyadhToday()}T00:00:00Z`)
+  const oneYearAhead = new Date(today)
+  oneYearAhead.setUTCFullYear(oneYearAhead.getUTCFullYear() + 1)
+  if (parsed < new Date('2000-01-01T00:00:00Z') || parsed > oneYearAhead) return null
+
+  return value
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
@@ -58,6 +83,7 @@ export async function POST(request: NextRequest) {
     const paymentMethod = String(payload?.paymentMethod || '') as PaymentMethod
     const notes = String(payload?.notes || '').trim()
     const amount = Math.round((Number(payload?.amount) + Number.EPSILON) * 100) / 100
+    const invoiceDate = normalizeInvoiceDate(payload?.date)
 
     if (!UUID_PATTERN.test(transactionId)) {
       return NextResponse.json({ error: 'معرّف العملية غير صالح' }, { status: 400 })
@@ -67,6 +93,9 @@ export async function POST(request: NextRequest) {
     }
     if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
       return NextResponse.json({ error: 'المبلغ غير صالح' }, { status: 400 })
+    }
+    if (!invoiceDate) {
+      return NextResponse.json({ error: 'تاريخ الفاتورة غير صالح' }, { status: 400 })
     }
     if (notes.length > MAX_NOTES_LENGTH) {
       return NextResponse.json(
@@ -89,7 +118,7 @@ export async function POST(request: NextRequest) {
         amount,
         payment_method: paymentMethod,
         notes: notes || null,
-        date: riyadhToday(),
+        date: invoiceDate,
         is_automatic: false,
         created_by: user.id,
         alostaz_sync_status: paymentMethod === 'network' ? 'sending' : null,
@@ -124,7 +153,11 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const invoice = await createInvoiceForTailoringManualSale({ amount })
+      // تاريخ الفاتورة المختار هو نفسه تاريخ الإصدار والاستحقاق في الأستاذ.
+      const invoice = await createInvoiceForTailoringManualSale({
+        amount,
+        date: invoiceDate,
+      })
 
       const syncedAt = new Date().toISOString()
       const { data: updatedIncome, error: updateError } = await supabaseAdmin

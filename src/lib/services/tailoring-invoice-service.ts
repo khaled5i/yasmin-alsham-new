@@ -14,6 +14,8 @@ export interface CreateTailoringInvoiceInput {
   amount: number
   paymentMethod: PaymentMethod
   notes?: string
+  /** تاريخ الفاتورة (YYYY-MM-DD) — يُحفظ في العمود date ويصبح تاريخ الإصدار والاستحقاق في الأستاذ */
+  date?: string
 }
 
 export interface CreateTailoringInvoiceResult {

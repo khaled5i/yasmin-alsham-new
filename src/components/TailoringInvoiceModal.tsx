@@ -5,8 +5,10 @@ import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import {
   Banknote,
+  CalendarDays,
   CreditCard,
   ReceiptText,
+  RotateCcw,
   Send,
   Sparkles,
   X,
@@ -27,12 +29,30 @@ interface TailoringInvoiceModalProps {
 /** اسم المنتج الثابت المسجَّل مسبقاً في تطبيق الأستاذ. */
 const SERVICE_PRODUCT_NAME = 'أجرة تفصيل فستان'
 
+/** تاريخ اليوم بتوقيت الرياض بصيغة YYYY-MM-DD (نفس صيغة عمود income.date). */
+function riyadhToday(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' })
+}
+
+/** عرض التاريخ للمستخدم بصيغة عربية مقروءة. */
+function formatArabicDate(value: string): string {
+  const parsed = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('ar-SA-u-ca-gregory', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
 export default function TailoringInvoiceModal({
   isOpen,
   onClose,
 }: TailoringInvoiceModalProps) {
   const { user } = useAuthStore()
   const [amount, setAmount] = useState('')
+  const [invoiceDate, setInvoiceDate] = useState(riyadhToday)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('network')
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -42,6 +62,7 @@ export default function TailoringInvoiceModal({
   useEffect(() => {
     if (!isOpen) return
     setAmount('')
+    setInvoiceDate(riyadhToday())
     setPaymentMethod('network')
     setNotes('')
     setError(null)
@@ -81,6 +102,10 @@ export default function TailoringInvoiceModal({
       setError('يرجى إدخال مبلغ صحيح أكبر من صفر')
       return
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate)) {
+      setError('يرجى اختيار تاريخ صحيح للفاتورة')
+      return
+    }
 
     setIsSubmitting(true)
     setError(null)
@@ -91,6 +116,7 @@ export default function TailoringInvoiceModal({
         amount: parsedAmount,
         paymentMethod,
         notes: notes.trim(),
+        date: invoiceDate,
       })
 
       if (!result.success) {
@@ -152,7 +178,7 @@ export default function TailoringInvoiceModal({
                       إضافة فاتورة لياسمين الشام للخياطة
                     </h2>
                     <p className="mt-1 text-sm text-violet-50">
-                      المبلغ شامل الضريبة، والتاريخ يُسجّل تلقائياً وقت الحفظ
+                      المبلغ شامل الضريبة، ويمكنك تعديل تاريخ الفاتورة قبل الحفظ
                     </p>
                   </div>
                 </div>
@@ -190,6 +216,41 @@ export default function TailoringInvoiceModal({
                     ر.س
                   </span>
                 </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label htmlFor="tailoring-invoice-date" className="block text-sm font-bold text-slate-800">
+                    تاريخ الفاتورة
+                  </label>
+                  {invoiceDate !== riyadhToday() && (
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceDate(riyadhToday())}
+                      disabled={isSubmitting}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span>تاريخ اليوم</span>
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    id="tailoring-invoice-date"
+                    type="date"
+                    value={invoiceDate}
+                    disabled={isSubmitting}
+                    onChange={(event) => setInvoiceDate(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 pr-12 text-base font-bold text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+                  />
+                  <CalendarDays className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-violet-500" />
+                </div>
+                <p className="mt-2 text-xs font-medium text-slate-500">
+                  {invoiceDate
+                    ? `تُسجَّل العملية بتاريخ ${formatArabicDate(invoiceDate)}.`
+                    : 'اختر تاريخ الفاتورة.'}
+                </p>
               </div>
 
               <fieldset>
@@ -256,8 +317,8 @@ export default function TailoringInvoiceModal({
                   <Sparkles className="mt-0.5 h-5 w-5 shrink-0" />
                   <p>
                     {paymentMethod === 'network'
-                      ? `ستُرسل فاتورة مدفوعة بالكامل إلى تطبيق الأستاذ في فرع ياسمين الشام على المنتج «${SERVICE_PRODUCT_NAME}».`
-                      : 'سيُفتح درج صندوق المحل ويُضاف المبلغ إلى رصيد الصندوق، ولن تُرسل الفاتورة إلى تطبيق الأستاذ.'}
+                      ? `ستُرسل فاتورة مدفوعة بالكامل إلى تطبيق الأستاذ في فرع ياسمين الشام على المنتج «${SERVICE_PRODUCT_NAME}»، وسيكون تاريخا الإصدار والاستحقاق فيها مطابقين لتاريخ الفاتورة المختار أعلاه.`
+                      : 'سيُفتح درج صندوق المحل ويُضاف المبلغ إلى رصيد الصندوق بالتاريخ المختار، ولن تُرسل الفاتورة إلى تطبيق الأستاذ.'}
                   </p>
                 </div>
               </div>
