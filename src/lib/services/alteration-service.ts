@@ -238,6 +238,59 @@ export interface UpdateAlterationData {
 // خدمة طلبات التعديلات
 // ============================================================================
 
+/**
+ * هل الخطأ ناتج عن تكرار رقم التعديل؟ (unique_violation على alteration_number)
+ */
+function isDuplicateAlterationNumberError(error: any): boolean {
+  if (!error) return false
+  const message = `${error.message || ''} ${error.details || ''}`.toLowerCase()
+  return (
+    (error.code === '23505' || message.includes('duplicate key')) &&
+    message.includes('alteration_number')
+  )
+}
+
+/**
+ * توليد رقم التعديل التالي من جهة العميل.
+ * شبكة أمان تعمل فقط إذا لم تُطبَّق migration 87 بعد على قاعدة البيانات،
+ * حيث كانت الدالة القديمة تعتمد على COUNT(*) فتُعيد رقماً مستخدماً بعد حذف تعديلات قديمة.
+ */
+async function generateNextAlterationNumber(): Promise<string | null> {
+  const yearPrefix = String(new Date().getFullYear())
+
+  const { data, error } = await supabase
+    .from('alterations')
+    .select('alteration_number')
+    .like('alteration_number', `ALT-${yearPrefix}-%`)
+
+  if (error) {
+    console.error('❌ Error reading existing alteration numbers:', error)
+    return null
+  }
+
+  const used = new Set<string>()
+  let maxSeq = 0
+
+  for (const row of data || []) {
+    const value = String(row.alteration_number || '')
+    used.add(value)
+    const match = value.match(/^ALT-(\d{4})-(\d+)$/)
+    if (match && match[1] === yearPrefix) {
+      const seq = parseInt(match[2], 10)
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq
+    }
+  }
+
+  let next = maxSeq + 1
+  let candidate = `ALT-${yearPrefix}-${String(next).padStart(4, '0')}`
+  while (used.has(candidate)) {
+    next += 1
+    candidate = `ALT-${yearPrefix}-${String(next).padStart(4, '0')}`
+  }
+
+  return candidate
+}
+
 export const alterationService = {
   /**
    * إنشاء طلب تعديل جديد (Admin فقط)
@@ -319,15 +372,49 @@ export const alterationService = {
         voice_transcriptions: `[${insertData.voice_transcriptions?.length || 0} transcriptions]`
       })
 
-      const { data, error } = await supabase
-        .from('alterations')
-        .insert([insertData])
-        .select()
-        .single()
+      const hasExplicitNumber = Boolean(insertData.alteration_number)
+      let data: any = null
+      let error: any = null
 
-      if (error) {
+      // محاولات محدودة: إذا تكرر رقم التعديل نولّد رقماً جديداً ونعيد المحاولة
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const response = await supabase
+          .from('alterations')
+          .insert([insertData])
+          .select()
+          .single()
+
+        data = response.data
+        error = response.error
+
+        if (!error) break
+
+        if (!isDuplicateAlterationNumberError(error)) {
+          console.error('❌ Error creating alteration:', error)
+          return { data: null, error: error.message }
+        }
+
+        if (hasExplicitNumber && attempt === 0) {
+          return {
+            data: null,
+            error: `رقم التعديل «${insertData.alteration_number}» مستخدم مسبقاً. اترك الحقل فارغاً ليُولّد رقم جديد تلقائياً، أو أدخل رقماً آخر.`
+          }
+        }
+
+        console.warn(`⚠️ Duplicate alteration_number, regenerating (attempt ${attempt + 1})`)
+        const nextNumber = await generateNextAlterationNumber()
+        if (!nextNumber) break
+        insertData.alteration_number = nextNumber
+      }
+
+      if (error || !data) {
         console.error('❌ Error creating alteration:', error)
-        return { data: null, error: error.message }
+        return {
+          data: null,
+          error: isDuplicateAlterationNumberError(error)
+            ? 'تعذّر توليد رقم تعديل غير مكرر. الرجاء المحاولة مجدداً.'
+            : (error?.message || 'فشل إنشاء طلب التعديل')
+        }
       }
 
       console.log('✅ Alteration created successfully:', data.alteration_number)
