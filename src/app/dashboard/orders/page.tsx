@@ -565,7 +565,9 @@ function OrdersPageInner() {
       ? { first_proof_review_status: review.status, first_proof_reviewed_at: review.created_at }
       : review.stage === 'second_proof'
         ? { second_proof_review_status: review.status, second_proof_reviewed_at: review.created_at }
-        : { final_review_status: review.status, final_reviewed_at: review.created_at }
+        : review.stage === 'post_delivery'
+          ? { post_delivery_review_status: review.status, post_delivery_reviewed_at: review.created_at }
+          : { final_review_status: review.status, final_reviewed_at: review.created_at }
 
     const patchOrder = (candidate: Order) => candidate.id === review.order_id
       ? { ...candidate, ...patch }
@@ -1088,7 +1090,9 @@ function OrdersPageInner() {
       ? order?.first_proof_review_status
       : stage === 'second_proof'
         ? order?.second_proof_review_status
-        : order?.final_review_status
+        : stage === 'post_delivery'
+          ? order?.post_delivery_review_status
+          : order?.final_review_status
     return value === 'passed' || value === 'failed' ? value : 'pending'
   }
 
@@ -1319,6 +1323,10 @@ function OrdersPageInner() {
                           ? [{ stage: 'second_proof' as const, number: 2, ar: 'البروفا الثانية', en: 'Second proof' }]
                           : []),
                         { stage: 'final_dress' as const, number: 3, ar: 'الفستان النهائي', en: 'Final dress' },
+                        // اختبار رابع يظهر فقط للطلبات التي سُجّل عليها تعديل بعد التسليم.
+                        ...((order.alteration_count ?? 0) > 0
+                          ? [{ stage: 'post_delivery' as const, number: 4, ar: 'تعديلات ما بعد التسليم', en: 'Post-delivery alterations' }]
+                          : []),
                       ]).map(reviewButton => {
                         const reviewStatus = getQualityReviewStatus(order, reviewButton.stage)
                         const statusLabel = reviewStatus === 'passed'

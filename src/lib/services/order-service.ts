@@ -79,6 +79,9 @@ const ORDER_LIST_COLUMNS = [
   'second_proof_reviewed_at',
   'final_review_status',
   'final_reviewed_at',
+  // اختبار تعديلات ما بعد التسليم (migration 20260906120000)
+  'post_delivery_review_status',
+  'post_delivery_reviewed_at',
   // إشعارات البروفا الثانية (migration 54)
   'second_proof_completed',
   'second_proof_completed_at',
@@ -175,6 +178,9 @@ export interface Order {
   second_proof_reviewed_at?: string | null
   final_review_status?: 'pending' | 'passed' | 'failed'
   final_reviewed_at?: string | null
+  // اختبار تعديلات ما بعد التسليم (migration 20260906120000)
+  post_delivery_review_status?: 'pending' | 'passed' | 'failed'
+  post_delivery_reviewed_at?: string | null
   // إشعارات البروفا الثانية (migration 54)
   second_proof_completed?: boolean
   second_proof_completed_at?: string | null

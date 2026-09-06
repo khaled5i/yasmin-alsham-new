@@ -416,21 +416,23 @@ export default function AlterationsPage() {
                     ) : null}
                   </div>
 
-                  {/* Price */}
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 cursor-pointer" onClick={() => router.push(`/dashboard/alterations/add?editId=${alteration.id}`)}>
-                    <div>
-                      <p className="text-xs text-gray-500">{isArabic ? 'السعر' : 'Price'}</p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {alteration.price.toFixed(2)} {isArabic ? 'ر.س' : 'SAR'}
-                      </p>
+                  {/* السعر والمدفوع للتعديلات الخارجية فقط: التعديل الداخلي محسوب ضمن الطلب الأصلي */}
+                  {!alteration.original_order_id ? (
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-200 cursor-pointer" onClick={() => router.push(`/dashboard/alterations/add?editId=${alteration.id}`)}>
+                      <div>
+                        <p className="text-xs text-gray-500">{isArabic ? 'السعر' : 'Price'}</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {alteration.price.toFixed(2)} {isArabic ? 'ر.س' : 'SAR'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">{isArabic ? 'المدفوع' : 'Paid'}</p>
+                        <p className="text-sm font-semibold text-green-600">
+                          {alteration.paid_amount.toFixed(2)} {isArabic ? 'ر.س' : 'SAR'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500">{isArabic ? 'المدفوع' : 'Paid'}</p>
-                      <p className="text-sm font-semibold text-green-600">
-                        {alteration.paid_amount.toFixed(2)} {isArabic ? 'ر.س' : 'SAR'}
-                      </p>
-                    </div>
-                  </div>
+                  ) : null}
                 </motion.div>
               )
             })}

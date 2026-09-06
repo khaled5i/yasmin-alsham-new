@@ -10,6 +10,7 @@ import {
   Check,
   CheckCircle2,
   ClipboardCheck,
+  ImageIcon,
   Images,
   Loader2,
   MessageCircle,
@@ -17,12 +18,15 @@ import {
   RefreshCw,
   RotateCcw,
   Ruler,
+  Wrench,
   X,
   XCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import DesignSummaryRecorder from '@/components/DesignSummaryRecorder'
 import { cleanTranscriptText, recordingBlobToWav } from '@/lib/audio-utils'
+import { getAlterationText } from '@/lib/alteration-text'
+import { alterationService, type OrderAlterationSummary } from '@/lib/services/alteration-service'
 import { orderQualityReviewService } from '@/lib/services/order-quality-review-service'
 import { orderService } from '@/lib/services/order-service'
 import { isVideoFile } from '@/lib/utils/media'
@@ -33,6 +37,7 @@ import type { DesignSummaryNote } from '@/types/design-comments'
 import type {
   OrderQualityMeasurementCheck,
   OrderQualityReview,
+  OrderQualityReviewedAlteration,
   OrderQualityReviewStage,
 } from '@/types/order-quality-review'
 
@@ -43,6 +48,7 @@ interface ReviewOrderSummary {
   client_phone?: string | null
   images?: string[] | null
   admin_confirmed?: boolean | null
+  has_second_proof?: boolean | null
 }
 
 interface Props {
@@ -102,8 +108,10 @@ const COPY = {
     firstProof: 'مراجعة البروفا الأولى',
     secondProof: 'مراجعة البروفا الثانية',
     finalDress: 'مراجعة الفستان النهائي',
+    postDelivery: 'مراجعة تعديلات ما بعد التسليم',
     stepMeasurements: 'مطابقة المقاسات',
     stepDesign: 'مطابقة التصميم',
+    stepDesignWithAlterations: 'مطابقة التصميم ومراجعة التعديلات',
     measurementsIntro: 'راجع كل مقاس حقيقي وحدد هل يطابق المقاس المسجل في الطلب.',
     noMeasurements: 'لا توجد مقاسات مسجلة لهذا الطلب. أضف المقاسات أولاً قبل بدء المراجعة.',
     matches: 'مطابق',
@@ -155,6 +163,24 @@ const COPY = {
     firstProofNoun: 'البروفا الأولى',
     secondProofNoun: 'البروفا الثانية',
     finalDressNoun: 'الفستان النهائي',
+    postDeliveryNoun: 'الفستان بعد التعديل',
+    alterationsTitle: 'مراجعة التعديلات المطلوبة سابقاً',
+    alterationsIntro: 'اقرأ كل تعديل مسجّل وتأكّد من تنفيذه على الفستان قبل الإجابة.',
+    firstProofAlterations: 'تعديلات البروفا الأولى',
+    secondProofAlterations: 'تعديلات البروفا الثانية',
+    postDeliveryAlterations: 'تعديلات ما بعد التسليم',
+    alterationLabel: 'تعديل',
+    alterationPhotos: 'صور التعديل',
+    alterationTextMissing: 'لا يوجد نص مسجل لهذا التعديل',
+    alterationsLoading: 'جارٍ تحميل التعديلات السابقة...',
+    alterationsQuestion: 'هل تم تطبيق التعديلات التي طلبت في المرة السابقة؟',
+    alterationsApplied: 'نعم، تم تطبيقها',
+    alterationsNotApplied: 'لا، لم تُطبّق',
+    answerAlterations: 'أجب عن سؤال تطبيق التعديلات قبل المتابعة.',
+    alterationsResult: 'تطبيق التعديلات السابقة',
+    reviewedAlterations: 'التعديلات التي جرت مراجعتها',
+    failureDesign: 'التصميم غير مطابق',
+    failureAlterations: 'التعديلات السابقة لم تُطبّق',
   },
   en: {
     loading: 'Preparing the review...',
@@ -164,8 +190,10 @@ const COPY = {
     firstProof: 'First Proof Review',
     secondProof: 'Second Proof Review',
     finalDress: 'Final Dress Review',
+    postDelivery: 'Post-delivery Alterations Review',
     stepMeasurements: 'Measurement check',
     stepDesign: 'Design check',
+    stepDesignWithAlterations: 'Design & alterations check',
     measurementsIntro: 'Check every actual measurement and mark whether it matches the order.',
     noMeasurements: 'This order has no saved measurements. Add measurements before starting the review.',
     matches: 'Matches',
@@ -217,6 +245,24 @@ const COPY = {
     firstProofNoun: 'first proof',
     secondProofNoun: 'second proof',
     finalDressNoun: 'final dress',
+    postDeliveryNoun: 'altered dress',
+    alterationsTitle: 'Review of previously requested alterations',
+    alterationsIntro: 'Read every recorded alteration and confirm it was carried out on the dress before answering.',
+    firstProofAlterations: 'First proof alterations',
+    secondProofAlterations: 'Second proof alterations',
+    postDeliveryAlterations: 'Post-delivery alterations',
+    alterationLabel: 'Alteration',
+    alterationPhotos: 'Alteration photos',
+    alterationTextMissing: 'No text recorded for this alteration',
+    alterationsLoading: 'Loading previous alterations...',
+    alterationsQuestion: 'Were the alterations requested last time applied?',
+    alterationsApplied: 'Yes, they were applied',
+    alterationsNotApplied: 'No, they were not applied',
+    answerAlterations: 'Answer the alterations question before continuing.',
+    alterationsResult: 'Previous alterations applied',
+    reviewedAlterations: 'Reviewed alterations',
+    failureDesign: 'Design does not match',
+    failureAlterations: 'Previous alterations were not applied',
   },
 } as const
 
@@ -295,7 +341,55 @@ function base64ToBlob(base64: string) {
 function getStageNumber(stage: OrderQualityReviewStage) {
   if (stage === 'first_proof') return 1
   if (stage === 'second_proof') return 2
-  return 3
+  if (stage === 'final_dress') return 3
+  return 4
+}
+
+type PreviousAlterationType = 'first_proof' | 'second_proof' | 'after_delivery'
+
+/**
+ * التعديلات التي يجب التأكد من تطبيقها داخل كل اختبار:
+ * البروفا الثانية تراجع تعديلات البروفا الأولى، والتسليم النهائي يراجع تعديلات
+ * البروفا الثانية (وتعديلات الأولى للطلبات التي لا تملك بروفا ثانية)،
+ * والاختبار الرابع يراجع تعديلات ما بعد التسليم نفسها.
+ */
+function getPreviousAlterationType(
+  stage: OrderQualityReviewStage,
+  hasSecondProof: boolean
+): PreviousAlterationType | null {
+  if (stage === 'second_proof') return 'first_proof'
+  if (stage === 'final_dress') return hasSecondProof ? 'second_proof' : 'first_proof'
+  if (stage === 'post_delivery') return 'after_delivery'
+  return null
+}
+
+/** رسائل أخطاء triggers قاعدة البيانات كما تصل حرفياً من Postgres. */
+const REVIEW_ERROR_MESSAGES: Record<string, { ar: string; en: string }> = {
+  passed_review_cannot_be_retested: {
+    ar: 'هذا الاختبار نجح سابقاً ولا يمكن إعادته إلا بعد تسجيل تعديل جديد.',
+    en: 'This test already passed and can only be repeated after a new alteration is recorded.',
+  },
+  post_delivery_alterations_required: {
+    ar: 'لا توجد تعديلات مسجلة بعد التسليم لهذا الطلب.',
+    en: 'This order has no recorded post-delivery alterations.',
+  },
+  second_proof_not_enabled_for_order: {
+    ar: 'هذا الطلب لا يحتوي على بروفا ثانية.',
+    en: 'This order does not have a second proof.',
+  },
+  previous_alterations_answer_required: {
+    ar: 'يجب الإجابة عن سؤال تطبيق التعديلات السابقة.',
+    en: 'The previous-alterations question must be answered.',
+  },
+  design_discrepancy_details_required: {
+    ar: 'اكتب الاختلاف أو سجل ملاحظة صوتية واضحة.',
+    en: 'Type the difference or record a clear voice note.',
+  },
+}
+
+function translateReviewError(error: string, language: 'ar' | 'en') {
+  const match = Object.keys(REVIEW_ERROR_MESSAGES).find(key => error.includes(key))
+  return match ? REVIEW_ERROR_MESSAGES[match][language] : error
 }
 
 function normalizeWhatsAppPhone(phone: string) {
@@ -322,6 +416,8 @@ export default function OrderQualityReviewModal({
   const [measurementsData, setMeasurementsData] = useState<Record<string, unknown> | null>(null)
   const [answers, setAnswers] = useState<Record<string, boolean | null>>({})
   const [designMatches, setDesignMatches] = useState<boolean | null>(null)
+  const [previousAlterations, setPreviousAlterations] = useState<OrderAlterationSummary[]>([])
+  const [previousAlterationsApplied, setPreviousAlterationsApplied] = useState<boolean | null>(null)
   const [discrepancyText, setDiscrepancyText] = useState('')
   const [voiceNotes, setVoiceNotes] = useState<DesignSummaryNote[]>([])
   const [latestReview, setLatestReview] = useState<OrderQualityReview | null>(null)
@@ -344,16 +440,49 @@ export default function OrderQualityReviewModal({
     ? copy.firstProof
     : stage === 'second_proof'
       ? copy.secondProof
-      : copy.finalDress
+      : stage === 'final_dress'
+        ? copy.finalDress
+        : copy.postDelivery
   const stageNoun = stage === 'first_proof'
     ? copy.firstProofNoun
     : stage === 'second_proof'
       ? copy.secondProofNoun
-      : copy.finalDressNoun
+      : stage === 'final_dress'
+        ? copy.finalDressNoun
+        : copy.postDeliveryNoun
+
+  const previousAlterationType = stage
+    ? getPreviousAlterationType(stage, order?.has_second_proof === true)
+    : null
+  const previousAlterationsLabel = previousAlterationType === 'first_proof'
+    ? copy.firstProofAlterations
+    : previousAlterationType === 'second_proof'
+      ? copy.secondProofAlterations
+      : copy.postDeliveryAlterations
+  const hasPreviousAlterations = previousAlterations.length > 0
+
+  const reviewedAlterationsPayload = useMemo<OrderQualityReviewedAlteration[]>(
+    () => previousAlterations.map(alteration => ({
+      id: alteration.id,
+      alteration_number: alteration.alteration_number,
+      alteration_type: alteration.alteration_type,
+      text: getAlterationText(alteration),
+    })),
+    [previousAlterations]
+  )
+
+  // ما بعد التسليم وحده يُعاد اختباره بعد النجاح، وذلك عند تسجيل تعديل أحدث من آخر مراجعة.
+  const hasAlterationNewerThanReview = useMemo(() => {
+    if (!latestReview || stage !== 'post_delivery') return false
+    return previousAlterations.some(
+      alteration => new Date(alteration.created_at).getTime() > new Date(latestReview.created_at).getTime()
+    )
+  }, [latestReview, previousAlterations, stage])
 
   const startTestWithRows = useCallback((rows: ReturnType<typeof getMeasurementRows>) => {
     setAnswers(Object.fromEntries(rows.map(row => [row.key, null])))
     setDesignMatches(null)
+    setPreviousAlterationsApplied(null)
     setDiscrepancyText('')
     setVoiceNotes([])
     setTranscriptionError(null)
@@ -373,21 +502,37 @@ export default function OrderQualityReviewModal({
     setScreen('loading')
     setLoadError(null)
     setLatestReview(null)
+    setPreviousAlterations([])
     setIsWhatsAppSent(order.admin_confirmed === true)
+
+    const alterationTypeToReview = getPreviousAlterationType(stage, order.has_second_proof === true)
 
     void Promise.all([
       orderService.getMeasurements(order.id),
       orderQualityReviewService.getLatestReview(order.id, stage),
-    ]).then(([measurementsResult, reviewResult]) => {
+      // فشل تحميل التعديلات لا يمنع الاختبار؛ تُعرض قائمة فارغة ويُسجَّل الخطأ فقط.
+      alterationTypeToReview
+        ? alterationService.getByOriginalOrderId(order.id)
+        : Promise.resolve({ data: [], error: null }),
+    ]).then(([measurementsResult, reviewResult, alterationsResult]) => {
       if (loadRequestRef.current !== requestId) return
       if (measurementsResult.error || reviewResult.error) {
         setLoadError(measurementsResult.error || reviewResult.error || copy.loadError)
         return
       }
 
+      if (alterationsResult.error) {
+        console.error('Could not load alterations for the quality review:', alterationsResult.error)
+      }
+
       const loadedMeasurements = (measurementsResult.data || {}) as Record<string, unknown>
       const rows = getMeasurementRows(loadedMeasurements)
       setMeasurementsData(loadedMeasurements)
+      setPreviousAlterations(alterationTypeToReview
+        ? (alterationsResult.data || []).filter(
+            alteration => alteration.alteration_type === alterationTypeToReview
+          )
+        : [])
       setLatestReview(reviewResult.data)
       if (reviewResult.data) {
         setScreen(
@@ -461,13 +606,17 @@ export default function OrderQualityReviewModal({
   const allMeasurementsAnswered = measurementRows.length > 0 && measurementRows.every(
     row => typeof answers[row.key] === 'boolean'
   )
+  const alterationsAnswered = !hasPreviousAlterations || typeof previousAlterationsApplied === 'boolean'
+  const designStepAnswered = designMatches !== null && alterationsAnswered
+  // أي إجابة سلبية (تصميم غير مطابق أو تعديلات غير مطبقة) توجب تسجيل التفاصيل.
+  const needsFailureDetails = designMatches === false || previousAlterationsApplied === false
   const hasDiscrepancyDetails = discrepancyText.trim().length > 0 || voiceNotes.some(
     note => Boolean(note.transcription?.trim())
   )
 
   const submitReview = async () => {
-    if (!allMeasurementsAnswered || designMatches === null) return
-    if (!designMatches && !hasDiscrepancyDetails) {
+    if (!allMeasurementsAnswered || designMatches === null || !alterationsAnswered) return
+    if (needsFailureDetails && !hasDiscrepancyDetails) {
       toast.error(copy.detailsRequired)
       return
     }
@@ -486,13 +635,15 @@ export default function OrderQualityReviewModal({
       stage,
       measurementChecks,
       designMatches,
+      previousAlterationsApplied: hasPreviousAlterations ? previousAlterationsApplied : null,
+      reviewedAlterations: reviewedAlterationsPayload,
       discrepancyText,
       voiceNotes,
     })
 
     if (result.error || !result.data) {
       setIsSaving(false)
-      toast.error(result.error || copy.loadError)
+      toast.error(result.error ? translateReviewError(result.error, language) : copy.loadError)
       return
     }
 
@@ -509,6 +660,13 @@ export default function OrderQualityReviewModal({
 
   const openWhatsAppReminder = async () => {
     if (!order.client_phone) return
+
+    // ما بعد التسليم يعيد إرسال رسالة الاستلام بلا علم admin_confirmed،
+    // لأن الطلب سبق أن سُلّم مرة وسيُسلَّم مجدداً بعد التعديل.
+    if (stage === 'post_delivery') {
+      sendReadyForPickupWhatsApp(order.client_name || '', order.client_phone)
+      return
+    }
 
     if (stage === 'final_dress') {
       if (isWhatsAppSent) return
@@ -617,7 +775,11 @@ export default function OrderQualityReviewModal({
                 <div className="mb-7 grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1.5">
                   {[
                     { id: 'measurements', label: copy.stepMeasurements, icon: Ruler },
-                    { id: 'design', label: copy.stepDesign, icon: Images },
+                    {
+                      id: 'design',
+                      label: hasPreviousAlterations ? copy.stepDesignWithAlterations : copy.stepDesign,
+                      icon: hasPreviousAlterations ? Wrench : Images,
+                    },
                   ].map((item, index) => {
                     const active = item.id === step || (item.id === 'design' && step === 'discrepancy')
                     const complete = item.id === 'measurements' && step !== 'measurements'
@@ -755,6 +917,106 @@ export default function OrderQualityReviewModal({
                       </details>
                     ) : null}
 
+                    {hasPreviousAlterations ? (
+                      <section className="mt-5 overflow-hidden rounded-2xl border border-amber-300 bg-amber-50/50">
+                        <header className="flex items-center justify-between gap-3 border-b border-amber-200 bg-white/70 px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                              <Wrench className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <h3 className="font-black text-slate-900">{copy.alterationsTitle}</h3>
+                              <p className="mt-0.5 text-[11px] font-bold text-amber-700">{previousAlterationsLabel}</p>
+                            </div>
+                          </div>
+                          <span className="flex-none rounded-full border border-amber-200 bg-white px-2.5 py-1 text-xs font-bold text-amber-800">
+                            {previousAlterations.length}
+                          </span>
+                        </header>
+
+                        <p className="px-4 pt-3 text-xs leading-6 text-amber-900">{copy.alterationsIntro}</p>
+
+                        <div className="grid gap-3 p-4 sm:grid-cols-2">
+                          {previousAlterations.map((alteration, alterationIndex) => {
+                            const alterationText = getAlterationText(alteration)
+                            const alterationPhotos = Array.from(new Set(
+                              (alteration.alteration_photos || [])
+                                .map(photo => photo.trim())
+                                .filter(Boolean)
+                            ))
+
+                            return (
+                              <article key={alteration.id} className="flex flex-col rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+                                <div className="mb-2 flex items-start justify-between gap-2">
+                                  <h4 className="text-sm font-black text-slate-900">
+                                    {copy.alterationLabel} {alterationIndex + 1}
+                                  </h4>
+                                  <span className="flex-none rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                                    {alteration.alteration_number}
+                                  </span>
+                                </div>
+                                <p className="flex-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                  {alterationText || copy.alterationTextMissing}
+                                </p>
+
+                                {alterationPhotos.length > 0 ? (
+                                  <div className="mt-3 border-t border-amber-100 pt-3">
+                                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold text-slate-600">
+                                      <ImageIcon className="h-3.5 w-3.5" />
+                                      {copy.alterationPhotos}
+                                    </p>
+                                    <div className={`grid gap-2 ${alterationPhotos.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                                      {alterationPhotos.map((photo, photoIndex) => (
+                                        // eslint-disable-next-line @next/next/no-img-element -- صور التعديلات قد تكون data URLs
+                                        <img
+                                          key={photo}
+                                          src={photo}
+                                          alt={`${copy.alterationPhotos} ${photoIndex + 1}`}
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="aspect-[4/3] w-full rounded-xl border border-amber-100 bg-stone-50 object-contain p-1"
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </article>
+                            )
+                          })}
+                        </div>
+
+                        <div className="border-t border-amber-200 bg-white/70 p-4">
+                          <h3 className="text-center text-base font-black leading-7 text-slate-900 sm:text-lg">
+                            {copy.alterationsQuestion}
+                          </h3>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              onClick={() => setPreviousAlterationsApplied(true)}
+                              className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3.5 font-bold transition ${
+                                previousAlterationsApplied === true
+                                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                                  : 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'
+                              }`}
+                            >
+                              <CheckCircle2 className="h-5 w-5" /> {copy.alterationsApplied}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviousAlterationsApplied(false)}
+                              className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3.5 font-bold transition ${
+                                previousAlterationsApplied === false
+                                  ? 'border-red-600 bg-red-600 text-white'
+                                  : 'border-red-200 bg-white text-red-700 hover:bg-red-50'
+                              }`}
+                            >
+                              <XCircle className="h-5 w-5" /> {copy.alterationsNotApplied}
+                            </button>
+                          </div>
+                        </div>
+                      </section>
+                    ) : null}
+
                     <div className="mt-5 rounded-2xl border border-[#ddbf85]/60 bg-[#fffaf0] p-5">
                       <h3 className="text-center text-lg font-black leading-7 text-slate-900">
                         {copy.designQuestion.replace('{stage}', stageNoun)}
@@ -773,30 +1035,48 @@ export default function OrderQualityReviewModal({
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setDesignMatches(false)
-                            setStep('discrepancy')
-                          }}
-                          className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3.5 font-bold text-red-700 transition hover:bg-red-50"
+                          onClick={() => setDesignMatches(false)}
+                          className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3.5 font-bold transition ${
+                            designMatches === false
+                              ? 'border-red-600 bg-red-600 text-white'
+                              : 'border-red-200 bg-white text-red-700 hover:bg-red-50'
+                          }`}
                         >
                           <XCircle className="h-5 w-5" /> {copy.no}
                         </button>
                       </div>
                     </div>
 
-                    <div className="mt-6 flex items-center justify-between gap-3">
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
                       <button type="button" onClick={() => setStep('measurements')} className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-slate-600 transition hover:bg-stone-100">
                         <PreviousIcon className="h-4 w-4" /> {copy.previous}
                       </button>
-                      <button
-                        type="button"
-                        onClick={submitReview}
-                        disabled={designMatches !== true || isSaving}
-                        className="flex items-center gap-2 rounded-xl bg-[#6f2034] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#541827] disabled:cursor-not-allowed disabled:bg-stone-300"
-                      >
-                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-                        {isSaving ? copy.saving : copy.finish}
-                      </button>
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        {hasPreviousAlterations && !alterationsAnswered ? (
+                          <p className="text-xs font-medium text-amber-700">{copy.answerAlterations}</p>
+                        ) : null}
+                        {/* أي إجابة سلبية تنقل إلى خطوة تسجيل الخطأ بدل الإنهاء مباشرة. */}
+                        {needsFailureDetails ? (
+                          <button
+                            type="button"
+                            onClick={() => setStep('discrepancy')}
+                            disabled={!designStepAnswered}
+                            className="flex items-center gap-2 rounded-xl bg-red-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-stone-300"
+                          >
+                            {copy.next} <NextIcon className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={submitReview}
+                            disabled={designMatches !== true || !alterationsAnswered || isSaving}
+                            className="flex items-center gap-2 rounded-xl bg-[#6f2034] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#541827] disabled:cursor-not-allowed disabled:bg-stone-300"
+                          >
+                            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
+                            {isSaving ? copy.saving : copy.finish}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 ) : null}
@@ -811,6 +1091,19 @@ export default function OrderQualityReviewModal({
                         <div>
                           <h3 className="text-xl font-black text-slate-900">{copy.discrepancyTitle}</h3>
                           <p className="mt-1 text-sm leading-6 text-slate-600">{copy.discrepancyHelp}</p>
+                          {/* ما الذي أسقط الاختبار: التصميم، التعديلات غير المطبقة، أو كلاهما. */}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {designMatches === false ? (
+                              <span className="rounded-full bg-red-100 px-3 py-1 text-[11px] font-bold text-red-800">
+                                {copy.failureDesign}
+                              </span>
+                            ) : null}
+                            {previousAlterationsApplied === false ? (
+                              <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-bold text-amber-900">
+                                {copy.failureAlterations}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
 
@@ -923,6 +1216,25 @@ export default function OrderQualityReviewModal({
                         {latestReview.design_matches ? copy.yes : copy.no}
                       </p>
                     </div>
+                    {latestReview.reviewed_alterations.length > 0 ? (
+                      <div>
+                        <p className="text-xs font-bold text-stone-500">{copy.alterationsResult}</p>
+                        <p className={`mt-1 flex items-center gap-2 font-black ${latestReview.previous_alterations_applied ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {latestReview.previous_alterations_applied ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
+                          {latestReview.previous_alterations_applied ? copy.alterationsApplied : copy.alterationsNotApplied}
+                        </p>
+                        <ul className="mt-2 space-y-1.5">
+                          {latestReview.reviewed_alterations.map(reviewedAlteration => (
+                            <li key={reviewedAlteration.id} className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2">
+                              <p className="text-[10px] font-bold text-amber-700">{reviewedAlteration.alteration_number}</p>
+                              <p className="whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                                {reviewedAlteration.text || copy.alterationTextMissing}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                     <div>
                       <p className="text-xs font-bold text-stone-500">{copy.discrepancy}</p>
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{latestReview.discrepancy_text || copy.noDiscrepancy}</p>
@@ -950,7 +1262,7 @@ export default function OrderQualityReviewModal({
                 </div>
 
                 <div className="mt-6 flex justify-end gap-3">
-                  {latestReview.status === 'failed' ? (
+                  {latestReview.status === 'failed' || hasAlterationNewerThanReview ? (
                     <button type="button" onClick={resetTest} className="flex items-center gap-2 rounded-xl bg-red-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-800">
                       <RotateCcw className="h-4 w-4" /> {copy.retest}
                     </button>
@@ -973,21 +1285,25 @@ export default function OrderQualityReviewModal({
                 <div className="mt-8 w-full max-w-xl rounded-3xl border border-[#ddbf85]/70 bg-[#fffaf0] p-6">
                   <MessageCircle className="mx-auto h-8 w-8 text-[#6f2034]" />
                   <h4 className="mt-3 text-lg font-black text-slate-900">
-                    {stage === 'final_dress' ? copy.readyWhatsappTitle : copy.whatsappTitle}
+                    {stage === 'final_dress' || stage === 'post_delivery' ? copy.readyWhatsappTitle : copy.whatsappTitle}
                   </h4>
                   <p className="mt-1 text-sm text-slate-600">
-                    {stage === 'final_dress' ? copy.readyWhatsappHelp : copy.whatsappHelp}
+                    {stage === 'final_dress' || stage === 'post_delivery' ? copy.readyWhatsappHelp : copy.whatsappHelp}
                   </p>
                   <button
                     type="button"
                     onClick={() => void openWhatsAppReminder()}
-                    disabled={!order.client_phone || isSendingWhatsApp || isWhatsAppSent}
+                    disabled={!order.client_phone || isSendingWhatsApp || (isWhatsAppSent && stage !== 'post_delivery')}
                     className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#187b54] px-5 py-3.5 font-bold text-white transition hover:bg-[#126342] disabled:cursor-not-allowed disabled:bg-stone-300"
                   >
-                    {isSendingWhatsApp ? <Loader2 className="h-5 w-5 animate-spin" /> : isWhatsAppSent ? <CheckCircle2 className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
-                    {isWhatsAppSent
+                    {isSendingWhatsApp
+                      ? <Loader2 className="h-5 w-5 animate-spin" />
+                      : isWhatsAppSent && stage !== 'post_delivery'
+                        ? <CheckCircle2 className="h-5 w-5" />
+                        : <MessageCircle className="h-5 w-5" />}
+                    {isWhatsAppSent && stage !== 'post_delivery'
                       ? copy.whatsappAlreadySent
-                      : stage === 'final_dress'
+                      : stage === 'final_dress' || stage === 'post_delivery'
                         ? copy.sendReadyWhatsApp
                         : copy.sendWhatsApp}
                   </button>

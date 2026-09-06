@@ -13,6 +13,8 @@ const REVIEW_SELECT = `
   status,
   measurement_checks,
   design_matches,
+  previous_alterations_applied,
+  reviewed_alterations,
   discrepancy_text,
   voice_notes,
   reviewed_by,
@@ -26,6 +28,9 @@ function normalizeReview(data: unknown): OrderQualityReview {
   }
   return {
     ...review,
+    // الأعمدة أُضيفت في migration 20260906120000؛ نضمن القيم الافتراضية للسجلات الأقدم.
+    previous_alterations_applied: review.previous_alterations_applied ?? null,
+    reviewed_alterations: Array.isArray(review.reviewed_alterations) ? review.reviewed_alterations : [],
     reviewer: Array.isArray(review.reviewer) ? (review.reviewer[0] || null) : (review.reviewer || null),
   }
 }
@@ -84,6 +89,8 @@ export const orderQualityReviewService = {
           stage: input.stage,
           measurement_checks: input.measurementChecks,
           design_matches: input.designMatches,
+          previous_alterations_applied: input.previousAlterationsApplied ?? null,
+          reviewed_alterations: input.reviewedAlterations || [],
           discrepancy_text: input.discrepancyText?.trim() || null,
           voice_notes: input.voiceNotes || [],
         })
