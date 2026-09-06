@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { getWorkerPayrollMonthsInRange } from './worker-payroll-service'
 import { computePaymentBreakdown, type OrderPaymentInput } from '@/lib/payment-breakdown'
 import type {
   BranchType,
@@ -970,45 +971,9 @@ async function getPayrollSalariesForPeriod(
   endDate: string
 ): Promise<number> {
   if (!isSupabaseConfigured()) return 0
-
-  try {
-    // استخراج السنة والشهر مباشرة من النص لتجنب مشاكل المنطقة الزمنية
-    const [startYear, startMonth] = startDate.split('-').map(Number)
-    const [endYear, endMonth] = endDate.split('-').map(Number)
-    const months: { year: number; month: number }[] = []
-
-    let year = startYear
-    let month = startMonth
-    while (year < endYear || (year === endYear && month <= endMonth)) {
-      months.push({ year, month })
-      month++
-      if (month > 12) { month = 1; year++ }
-    }
-
-    if (months.length === 0) return 0
-
-    let total = 0
-    for (const { year, month } of months) {
-      const { data, error } = await supabase
-        .from('worker_payroll_months')
-        .select('total_paid')
-        .eq('branch', branch)
-        .eq('payroll_year', year)
-        .eq('payroll_month', month)
-
-      if (!error && data) {
-        total += (data as { total_paid: number }[]).reduce(
-          (sum, row) => sum + (row.total_paid || 0),
-          0
-        )
-      }
-    }
-
-    return total
-  } catch (err) {
-    console.error('Error fetching payroll salaries for period:', err)
-    return 0
-  }
+  const rows = await getWorkerPayrollMonthsInRange(branch, new Date(`${startDate}T12:00:00`), new Date(`${endDate}T12:00:00`))
+  // Tailoring salary expense matches Reports; retain the paid basis for other branches.
+  return rows.reduce((total, row) => total + Number((branch === 'tailoring' ? row.net_due : row.total_paid) || 0), 0)
 }
 
 // ============================================================================

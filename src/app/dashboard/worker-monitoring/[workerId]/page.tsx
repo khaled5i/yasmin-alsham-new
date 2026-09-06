@@ -17,6 +17,12 @@ import {
   shiftDate,
   toDateTimeLocalValue,
 } from '@/lib/date-utils'
+import CutOrdersTab from '@/components/CutOrdersTab'
+import OrderCutterInfo from '@/components/OrderCutterInfo'
+import { useTranslation } from '@/hooks/useTranslation'
+import toast from 'react-hot-toast'
+import { saveOrderPricing } from '@/lib/services/order-pricing-save-queue'
+import { pieceworkAmount, payrollMoney } from '@/lib/payroll-display'
 import OrderModal from '@/components/OrderModal'
 import PaginationControls from '@/components/PaginationControls'
 import {
@@ -116,7 +122,7 @@ function sanitizeNum(val: string): string {
   return parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned
 }
 
-type TabType = 'active' | 'completed' | 'payroll' | 'attendance'
+type TabType = 'cut' | 'active' | 'completed' | 'payroll' | 'attendance'
 
 
 // ترتيب الطلبات المنجزة تنازلياً حسب تاريخ الإنجاز الفعلي.
@@ -141,6 +147,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
 }
 
 export default function WorkerDetailPage() {
+  const { t, isArabic } = useTranslation()
   const router = useRouter()
   const params = useParams()
   const workerId = params.workerId as string
@@ -150,7 +157,12 @@ export default function WorkerDetailPage() {
   const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
 
   const [worker, setWorker] = useState<WorkerWithUser | null>(null)
-  const [activeTab, setActiveTab] = useState<TabType>('active')
+  const [isLoadingWorker, setIsLoadingWorker] = useState(true)
+  const [selectedTab, setActiveTab] = useState<TabType>('active')
+  const isCutter = worker?.worker_type === 'workshop_manager'
+  const activeTab = isCutter && (selectedTab === 'active' || selectedTab === 'completed')
+    ? 'cut' : !isCutter && selectedTab === 'cut' ? 'active' : selectedTab
+  const [cutRefresh, setCutRefresh] = useState(0)
 
   // Active orders tab
   const [activeOrders, setActiveOrders] = useState<Order[]>([])
@@ -204,9 +216,15 @@ export default function WorkerDetailPage() {
   // Fetch worker profile
   useEffect(() => {
     if (!workerId) return
+    let cancelled = false
+    setIsLoadingWorker(true)
+    setWorker(null)
     workerService.getById(workerId).then(({ data }) => {
-      if (data) setWorker(data)
+      if (cancelled) return
+      setWorker(data)
+      setIsLoadingWorker(false)
     })
+    return () => { cancelled = true }
   }, [workerId])
 
   // Load workers for OrderModal prop
@@ -232,9 +250,9 @@ export default function WorkerDetailPage() {
   }, [workerId])
 
   useEffect(() => {
-    if (!workerId) return
+    if (!workerId || !worker || isCutter) return
     fetchActiveOrders(activeOrdersPage)
-  }, [workerId, activeOrdersPage, fetchActiveOrders])
+  }, [workerId, worker, isCutter, activeOrdersPage, fetchActiveOrders])
 
   // Fetch completed orders (lazy) — بدون ترقيم: نعرض كل طلبات الشهر المحدد دفعةً واحدة
   // `silent` = إعادة جلب في الخلفية دون إظهار مؤشر التحميل (بعد تعديل تاريخ الإنهاء مثلاً)
@@ -378,7 +396,10 @@ export default function WorkerDetailPage() {
     }
   }, [completedOrders, orderFullDetails, isExpandingAll])
 
-  const handleSavePricing = useCallback((orderId: string, data: OrderPricingData) => {
+  const pricingVersions = useRef(new Map<string, number>())
+  const handleSavePricing = useCallback(async (orderId: string, data: OrderPricingData): Promise<boolean> => {
+    const version = (pricingVersions.current.get(orderId) || 0) + 1
+    pricingVersions.current.set(orderId, version)
     setPricingForms((prev) => ({ ...prev, [orderId]: data }))
     const updates = {
       worker_price:  data.price  ? parseFloat(data.price)  : null,
@@ -390,8 +411,16 @@ export default function WorkerDetailPage() {
     setCompletedOrders((prev) => prev.map((order) => (
       order.id === orderId ? { ...order, ...updates } : order
     )))
-    orderService.update(orderId, updates).catch(() => { /* تجاهل — الحالة المحلية لا تزال محدَّثة */ })
-  }, [])
+    try {
+      await saveOrderPricing(orderId, updates)
+      return pricingVersions.current.get(orderId) === version
+    } catch {
+      if (pricingVersions.current.get(orderId) === version) {
+        toast.error(isArabic ? 'تعذر حفظ التسعير ومزامنة الراتب. المدخلات محفوظة في الشاشة؛ اضغط حفظ لإعادة المحاولة.' : 'Pricing and payroll sync failed. Your input is still on screen; press Save to retry.')
+      }
+      return false
+    }
+  }, [isArabic])
 
   const handleToggleRatingVisibility = useCallback(async (order: Order) => {
     const newVal = !order.worker_rating_visible
@@ -481,7 +510,7 @@ export default function WorkerDetailPage() {
     router.push('/login')
   }
 
-  if (permissionsLoading || (!worker && isLoadingActive)) {
+  if (permissionsLoading || isLoadingWorker) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -492,11 +521,18 @@ export default function WorkerDetailPage() {
     )
   }
 
+  if (!worker) {
+    return <div className="p-8 text-center" dir={isArabic ? 'rtl' : 'ltr'}>
+      <p>{isArabic ? 'تعذّر تحميل ملف العامل' : 'Unable to load worker profile'}</p>
+      <Link href="/dashboard/worker-monitoring" className="mt-3 inline-block text-teal-700 underline">{isArabic ? 'متابعة العمال' : 'Worker monitoring'}</Link>
+    </div>
+  }
+
   const name = worker?.user?.full_name || 'عاملة'
   const firstLetter = name[0] || '؟'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50" dir={isArabic ? 'rtl' : 'ltr'}>
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-teal-100 shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -574,8 +610,8 @@ export default function WorkerDetailPage() {
               </div>
             </div>
 
-            {/* Quick KPIs */}
-            <div className="flex gap-4 sm:gap-6 flex-shrink-0">
+            {/* Quick KPIs apply to tailor work only. */}
+            {!isCutter && <div className="flex gap-4 sm:gap-6 flex-shrink-0">
               <div className="text-center">
                 <p className="text-2xl font-bold text-blue-600">{activeOrdersTotal}</p>
                 <p className="text-xs text-gray-400 mt-0.5">نشطة</p>
@@ -593,7 +629,7 @@ export default function WorkerDetailPage() {
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">تقييم</p>
               </div>
-            </div>
+            </div>}
           </div>
         </motion.div>
 
@@ -608,10 +644,12 @@ export default function WorkerDetailPage() {
           <div className="flex border-b border-slate-100">
             {(
               [
+                ...(isCutter ? [{ key: 'cut' as TabType, label: t('cut_orders'), icon: Package, count: null }] : [
                 { key: 'active' as TabType, label: 'الطلبات النشطة', icon: Package, count: activeOrdersTotal },
                 { key: 'completed' as TabType, label: 'الطلبات المكتملة', icon: CheckCircle, count: completedOrdersTotal },
-                { key: 'payroll' as TabType, label: 'الراتب', icon: Wallet, count: null },
-                { key: 'attendance' as TabType, label: 'الحضور', icon: Fingerprint, count: null },
+                ]),
+                { key: 'payroll' as TabType, label: isArabic ? 'الراتب' : 'Salary', icon: Wallet, count: null },
+                { key: 'attendance' as TabType, label: isArabic ? 'الحضور' : 'Attendance', icon: Fingerprint, count: null },
               ] as const
             ).map((tab) => {
               const Icon = tab.icon
@@ -628,7 +666,7 @@ export default function WorkerDetailPage() {
                   <Icon className="w-4 h-4" />
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">
-                    {tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : tab.key === 'payroll' ? 'الراتب' : 'الحضور'}
+                    {isCutter ? tab.label : tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : tab.key === 'payroll' ? 'الراتب' : 'الحضور'}
                   </span>
                   {tab.count !== null && tab.count > 0 && (
                     <span className="hidden rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 sm:inline-flex">
@@ -642,6 +680,7 @@ export default function WorkerDetailPage() {
 
           {/* Tab content */}
           <div className="p-4 sm:p-6">
+            {activeTab === 'cut' && <CutOrdersTab workerId={workerId} refreshKey={cutRefresh} onOrderClick={openOrderModal} />}
             {activeTab === 'active' && (
               <OrdersTab
                 orders={activeOrders}
@@ -697,9 +736,15 @@ export default function WorkerDetailPage() {
       {/* Order Modal */}
       <OrderModal
         order={selectedOrder}
+        onOrderUpdated={updated => {
+          setSelectedOrder(updated)
+          setActiveOrders(previous => previous.map(order => order.id === updated.id ? updated : order))
+          setCompletedOrders(previous => previous.map(order => order.id === updated.id ? updated : order))
+          setCutRefresh(value => value + 1)
+        }}
         workers={workers}
         isOpen={isModalOpen}
-        onClose={() => { setIsModalOpen(false); setSelectedOrder(null) }}
+        onClose={() => { setIsModalOpen(false); setSelectedOrder(null); setCutRefresh(value => value + 1) }}
       />
 
       {/* Lightbox — عرض صورة بالشاشة الكاملة */}
@@ -864,6 +909,7 @@ function OrderRow({
             <p className="text-sm text-gray-500 line-clamp-2 mb-2">{order.description}</p>
           )}
 
+          <OrderCutterInfo order={order} />
           <div className="space-y-1">
             {order.due_date && (
               <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -1008,7 +1054,7 @@ function CompletedOrdersTab({
   unratedOnly: boolean
   onFilterChange: (monthFilter: string, unratedOnly: boolean) => void
   onTogglePricing: (order: Order) => void
-  onSavePricing: (orderId: string, data: OrderPricingData) => void
+  onSavePricing: (orderId: string, data: OrderPricingData) => Promise<boolean>
   onOpenModal: (order: Order) => void
   onLightbox: (src: string) => void
   onExpandAll: () => void
@@ -1044,8 +1090,8 @@ function CompletedOrdersTab({
 
   // مجموع تسعير القطع للطلبات المعروضة (أي طلبات الشهر المحدَّد في الفلتر)
   const totalWorkerPrice = orders.reduce((sum, order) => {
-    const value = parseFloat(pricingForms[order.id]?.price ?? '')
-    return Number.isFinite(value) ? sum + value : sum
+    const form = pricingForms[order.id]
+    return sum + pieceworkAmount(form?.price, form?.bonus)
   }, 0)
   const monthLabel = monthFilter
     ? (recentMonths.find((m) => m.key === monthFilter)?.label || monthFilter)
@@ -1154,9 +1200,9 @@ function CompletedOrdersTab({
           <div className="flex-1 bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
             <Tag className="w-4 h-4 text-pink-600 flex-shrink-0" />
             <p className="text-sm text-pink-800">
-              مجموع تسعير القطع ({monthLabel}):{' '}
+              القطع والمكافآت المعروضة ({monthLabel}):{' '}
               <span className="font-bold">
-                {totalWorkerPrice.toLocaleString('ar-SA-u-nu-latn', { maximumFractionDigits: 2 })} ر.س
+                {payrollMoney(totalWorkerPrice)}
               </span>
             </p>
           </div>
@@ -1237,7 +1283,7 @@ function CompletedOrderRow({
   orderFullDetail: Order | null
   completionGap: number | null
   onToggle: (order: Order) => void
-  onSavePricing: (orderId: string, data: OrderPricingData) => void
+  onSavePricing: (orderId: string, data: OrderPricingData) => Promise<boolean>
   onOpenModal: (order: Order) => void
   onLightbox: (src: string) => void
   onToggleRatingVisibility: (order: Order) => void
@@ -1262,9 +1308,14 @@ function CompletedOrderRow({
   }, [isEditingCompletedAt, order.worker_completed_at])
 
   // حفظ ثم طي البطاقة
-  function handleSaveAndCollapse() {
-    onSavePricing(order.id, pricingData)
-    onToggle(order) // ينغلق لأنه مفتوح حالياً
+  const [savingPricing, setSavingPricing] = useState(false)
+  async function handleSaveAndCollapse() {
+    if (savingPricing) return
+    setSavingPricing(true)
+    try {
+      const saved = await onSavePricing(order.id, pricingData)
+      if (saved) onToggle(order)
+    } finally { setSavingPricing(false) }
   }
 
   const completedImages = orderFullDetail?.completed_images || []
@@ -1335,6 +1386,7 @@ function CompletedOrderRow({
               )}
             </button>
 
+            <OrderCutterInfo order={order} />
             <div className="space-y-1 mt-1">
               {/* تاريخ وساعة إنهاء العامل — قابل للتعديل يدوياً من قبل المدير */}
               {isEditingCompletedAt ? (
@@ -1613,10 +1665,11 @@ function CompletedOrderRow({
               <div className="flex justify-end pt-1">
                 <button
                   onClick={handleSaveAndCollapse}
+                  disabled={savingPricing}
                   className="inline-flex items-center gap-2 rounded-lg bg-pink-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pink-700 transition-colors shadow-sm"
                 >
                   <Save className="w-4 h-4" />
-                  حفظ وطي
+                  {savingPricing ? 'جاري الحفظ والمزامنة…' : 'حفظ وطي'}
                 </button>
               </div>
             </div>

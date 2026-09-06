@@ -1,5 +1,7 @@
 'use client'
 
+import OrderCutterInfo from '@/components/OrderCutterInfo'
+
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -667,6 +669,7 @@ export default function NotificationsPage() {
                           </span>{' '}
                           {formatDate(isDelivery ? order.delivery_date : order.due_date)}
                         </p>
+                        <OrderCutterInfo order={order} />
                         {order.worker_id && getWorkerName(order.worker_id) && (
                           <p className="text-sm text-gray-600"><span className="font-medium">{isArabic ? 'العامل:' : 'Worker:'}</span> {getWorkerName(order.worker_id)}</p>
                         )}
@@ -745,6 +748,10 @@ export default function NotificationsPage() {
 
       {/* المودالات */}
       <OrderModal
+        onOrderUpdated={updated => {
+          refreshOrderInList(updated.id, updated)
+          setSelectedOrder(updated)
+        }}
         order={selectedOrder}
         workers={workers}
         isOpen={showViewModal}

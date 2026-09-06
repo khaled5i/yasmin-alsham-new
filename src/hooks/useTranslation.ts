@@ -9,6 +9,15 @@ type Translations = { [key: string]: TranslationValue }
 
 // الترجمات العربية
 const arTranslations: Translations = {
+  'cutter': 'القصّاص',
+  'select_cutter': 'اختيار القصّاص',
+  'select_cutter_first': 'اختر القصّاص أولاً قبل تحديد العامل الخياط',
+  'cutter_saved': 'تم حفظ القصّاص وتاريخ القص',
+  'cut_date': 'تاريخ القص',
+  'cut_orders': 'الطلبات التي تم قصّها',
+  'no_cut_orders': 'لا توجد طلبات تم قصّها في الفترة المحددة',
+  'workshop_managers': 'مدراء الورشة',
+  'no_cutters': 'لا يوجد مدراء ورشة متاحون للاختيار',
   // التنقل والعناوين الرئيسية
   'dashboard': 'لوحة التحكم',
   'orders': 'الطلبات',
@@ -679,6 +688,15 @@ const arTranslations: Translations = {
 
 // الترجمات الإنجليزية
 const enTranslations: Translations = {
+  'cutter': 'Cutter',
+  'select_cutter': 'Select cutter',
+  'select_cutter_first': 'Select the cutter before assigning the tailor',
+  'cutter_saved': 'Cutter and cutting date saved',
+  'cut_date': 'Cutting date',
+  'cut_orders': 'Cut orders',
+  'no_cut_orders': 'No cut orders in the selected period',
+  'workshop_managers': 'Workshop managers',
+  'no_cutters': 'No workshop managers available for assignment',
   // التنقل والعناوين الرئيسية
   'dashboard': 'Dashboard',
   'orders': 'Orders',

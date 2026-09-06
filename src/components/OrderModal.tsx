@@ -55,6 +55,7 @@ import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measur
 import { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote } from './InteractiveImageAnnotation'
 import DesignSummarySection from './DesignSummarySection'
 import OrderAlterationsSection from './OrderAlterationsSection'
+import OrderWorkerAssignmentModal from './OrderWorkerAssignmentModal'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatGregorianDate, parseDateForDisplay, shiftDate } from '@/lib/date-utils'
@@ -65,6 +66,7 @@ interface OrderModalProps {
   workers: any[] // Using any to handle WorkerWithUser and legacy Worker types
   isOpen: boolean
   onClose: () => void
+  onOrderUpdated?: (order: Order) => void
   showCartoonButton?: boolean
   onStartWork?: (orderId: string) => void
   onCompleteWork?: (order: any) => void
@@ -73,9 +75,9 @@ interface OrderModalProps {
   autoTranslateAlterationsToHindi?: boolean
 }
 
-export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId, autoTranslateAlterationsToHindi = false }: OrderModalProps) {
+export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, onOrderUpdated, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId, autoTranslateAlterationsToHindi = false }: OrderModalProps) {
   const { user } = useAuthStore()
-  const { t } = useTranslation()
+  const { t, isArabic } = useTranslation()
   // Lightbox state
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [lightboxImages, setLightboxImages] = useState<string[]>([])
@@ -169,6 +171,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
   const { updateOrder } = useOrderStore()
   const { workerType } = useWorkerPermissions() // للتحقق من صلاجيات مدير الورشة
+  const canEditAssignment = user?.role === 'admin' || (workerType === 'workshop_manager' && order?.status !== 'completed')
 
   // زر تحويل الصورة إلى كرتون: يظهر لأي طلب مكتمل للمدراء ومدراء الورشة فقط
   const canShowCartoonButton =
@@ -255,10 +258,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [cartoonNotes, setCartoonNotes] = useState('')
   const cartoonImageRef = useRef<HTMLDivElement | null>(null)
 
-  // حالات تعديل العامل
-  const [isEditingWorker, setIsEditingWorker] = useState(false)
-  const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
-  const [isLoading, setIsLoading] = useState(false)
+  const [showWorkerAssignment, setShowWorkerAssignment] = useState(false)
 
   // حالات تعديل الحالة (للمدير فقط)
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
@@ -669,34 +669,24 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     })
   })
 
-  // تحديث حالة العامل المحدد عند فتح المودال
   useEffect(() => {
-    if (order) {
-      setSelectedWorkerId(order.worker_id || '')
-    }
-  }, [order])
+    setShowWorkerAssignment(false)
+  }, [isOpen, initialOrder?.id])
 
-  // حفظ تغيير العامل
-  const handleSaveWorker = async (workerId?: string) => {
+  const handleAssignWorker = async (kind: 'cutter' | 'tailor', workerId: string) => {
     if (!order) return
-
-    const idToSave = workerId !== undefined ? workerId : selectedWorkerId
-    setIsLoading(true)
-    try {
-      const result = await updateOrder(order.id, { worker_id: idToSave || null })
-
-      if (result.success) {
-        setIsEditingWorker(false)
-        toast.success(t('worker_updated_successfully') || 'تم تحديث العامل بنجاح')
-      } else {
-        toast.error(result.error || 'فشل تحديث العامل')
-      }
-    } catch (error) {
-      console.error('Error updating worker:', error)
-      toast.error('حدث خطأ غير متوقع')
-    } finally {
-      setIsLoading(false)
+    if (kind === 'tailor' && !order.cutter_id) throw new Error(t('select_cutter_first'))
+    const result = await updateOrder(order.id, kind === 'cutter'
+      ? (workerId ? { cutter_id: workerId } : { cutter_id: null, worker_id: null })
+      : { worker_id: workerId || null })
+    if (!result.success || !result.data) {
+      throw new Error(result.error || (isArabic ? 'تعذّر حفظ الاختيار' : 'Unable to save assignment'))
     }
+    setFullOrder(result.data)
+    onOrderUpdated?.(result.data)
+    toast.success(kind === 'cutter' && !workerId
+      ? (isArabic ? 'تم إلغاء التعيين' : 'Assignment removed')
+      : kind === 'cutter' ? t('cutter_saved') : t('worker_updated_successfully'))
   }
 
   // تشغيل/إيقاف الصوت للتعليق
@@ -1139,65 +1129,25 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     </div>
                   )}
 
-                  {/* العامل المسؤول - مع إمكانية التعديل للمشرفين */}
+                  {/* ملخص العمال مع نافذة واحدة للتعيين */}
                   <div className="bg-white p-2 sm:p-3 rounded-lg">
-                    <div className="flex items-center justify-between mb-0.5 sm:mb-1">
-                      <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600">
-                        <UserCheck className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium truncate">{t('assigned_worker')}:</span>
-                      </div>
-
-                      {/* زر التعديل للمشرفين */}
-                      {!isEditingWorker && (user?.role === 'admin' || (workerType === 'workshop_manager' && order.status !== 'completed')) && (
-                        <button
-                          onClick={() => setIsEditingWorker(true)}
-                          className="text-pink-600 hover:text-pink-800 p-0.5 rounded transition-colors"
-                          title={t('edit') || 'تعديل'}
-                        >
-                          <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+                      <span className="flex items-center gap-1 text-xs font-medium text-gray-600 sm:text-sm">
+                        <UserCheck className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" />
+                        {t('workers')}
+                      </span>
+                      {canEditAssignment && (
+                        <button type="button" onClick={() => setShowWorkerAssignment(true)} className="rounded-md bg-pink-50 px-2 py-1 text-xs font-medium text-pink-700 transition-colors hover:bg-pink-100">
+                          {isArabic ? 'اختيار العمال' : 'Assign workers'}
                         </button>
                       )}
                     </div>
-
-                    {isEditingWorker ? (
-                      <div className="flex items-center gap-1 mt-1">
-                        <select
-                          className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 focus:ring-1 focus:ring-pink-500 focus:border-pink-500 outline-none"
-                          value={selectedWorkerId || ''}
-                          onChange={(e) => {
-                            const newId = e.target.value
-                            setSelectedWorkerId(newId)
-                            handleSaveWorker(newId)
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          disabled={isLoading}
-                        >
-                          <option value="">{t('select_worker')}</option>
-                          {workers
-                            .filter(worker => worker.worker_type === 'tailor' && worker.is_available)
-                            .map(worker => (
-                              <option key={worker.id} value={worker.id}>
-                                {getWorkerName(worker.id)}
-                              </option>
-                            ))}
-                        </select>
-                        {isLoading && <Loader2 className="w-3 h-3 animate-spin text-pink-500 flex-shrink-0" />}
-                        <button
-                          onClick={() => {
-                            setIsEditingWorker(false)
-                            setSelectedWorkerId(order.worker_id || '')
-                          }}
-                          className="bg-gray-200 text-gray-600 p-1 rounded hover:bg-gray-300 transition-colors flex-shrink-0"
-                          title={t('cancel') || 'إلغاء'}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="text-xs sm:text-base font-semibold text-gray-800 truncate">
-                        {getWorkerName(selectedWorkerId || order.worker_id)}
-                      </p>
-                    )}
+                    <p className="truncate text-xs text-gray-700 sm:text-sm" title={getWorkerName(order.worker_id)}>
+                      <span className="text-gray-500">{isArabic ? 'الخياط' : 'Tailor'}: </span>{getWorkerName(order.worker_id)}
+                    </p>
+                    <p className="truncate text-xs text-gray-700 sm:text-sm" title={order.cutter_name || t('not_specified')}>
+                      <span className="text-gray-500">{t('cutter')}: </span>{order.cutter_name || t('not_specified')}
+                    </p>
                   </div>
 
                   {/* الحالة */}
@@ -2490,6 +2440,16 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
         </div>
       </div>,
       document.body
+    )}
+
+    {isOpen && showWorkerAssignment && canEditAssignment && order && (
+      <OrderWorkerAssignmentModal
+        key={order.id}
+        order={order}
+        workers={workers}
+        onAssign={handleAssignWorker}
+        onClose={() => setShowWorkerAssignment(false)}
+      />
     )}
 
     {/* نافذة الدفعة المتبقية (إجبارية عند التسليم مع وجود متبقٍ) — تحدّد طريقة دفع المتبقي */}

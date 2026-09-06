@@ -1,5 +1,7 @@
 'use client'
 
+import OrderCutterInfo from '@/components/OrderCutterInfo'
+
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
@@ -608,6 +610,7 @@ https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
                           {formatActualDeliveryDate(order)}
                         </p>
                       </div>
+                      <OrderCutterInfo order={order} />
                       {order.worker_id && (
                         <p className="text-sm text-gray-600">
                           <span className="font-medium">{t('worker') || (isArabic ? 'العامل:' : 'Worker:')}</span>{' '}

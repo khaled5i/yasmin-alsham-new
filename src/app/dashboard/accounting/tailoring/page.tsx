@@ -18,6 +18,7 @@ import {
   WalletCards
 } from 'lucide-react'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
+import { usePayrollRefresh } from '@/hooks/usePayrollRefresh'
 import type { FinancialSummary } from '@/types/simple-accounting'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
@@ -88,6 +89,9 @@ function TailoringAccountingContent() {
   const { workerType, getDashboardRoute } = useWorkerPermissions()
 
   const isAccountant = user?.role === 'worker' && workerType === 'accountant'
+  usePayrollRefresh(() => {
+    if (!isAccountant) void getQuickStats('tailoring').then(setStats).catch(error => console.error('Payroll summary refresh failed', error))
+  })
   const visibleSections = isAccountant
     ? sections.filter((section) => section.id === 'materials' || section.id === 'cash-box')
     : sections

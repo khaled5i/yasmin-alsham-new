@@ -1,5 +1,7 @@
 'use client'
 
+import OrderCutterInfo from '@/components/OrderCutterInfo'
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -61,6 +63,8 @@ interface OrderOnDate {
     order_number: string
     status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
     worker_id?: string | null
+    cutter_name?: string | null
+    cut_at?: string | null
 }
 
 const SCHEDULE_PAGE_SIZE = 500
@@ -432,6 +436,7 @@ function DateOrdersModal({ dateKey, orders, mode, workerNameMap, loadingOrderId,
                                             {ORDER_STATUS_LABEL[order.status]}
                                         </span>
                                     </div>
+                                    <OrderCutterInfo order={order} />
                                     {order.worker_id && workerNameMap[order.worker_id] && (
                                         <p className="text-xs text-gray-600 flex items-center gap-1 mt-0.5">
                                             <User className="w-3 h-3" />
@@ -541,6 +546,8 @@ export default function OrderSchedulePage() {
                     order_number: order.order_number,
                     status: order.status,
                     worker_id: order.worker_id || null,
+                    cutter_name: order.cutter_name,
+                    cut_at: order.cut_at,
                 })
             })
             setStats(newStats)
@@ -739,6 +746,14 @@ export default function OrderSchedulePage() {
 
             <OrderModal
                 order={viewingOrder}
+                onOrderUpdated={updated => {
+                    setViewingOrder(updated)
+                    setOrdersMap(previous => Object.fromEntries(Object.entries(previous).map(([date, orders]) => [
+                        date, orders.map(order => order.id === updated.id ? {
+                            ...order, worker_id: updated.worker_id, cutter_name: updated.cutter_name, cut_at: updated.cut_at,
+                        } : order),
+                    ])))
+                }}
                 workers={workers}
                 isOpen={!!viewingOrder}
                 onClose={() => setViewingOrder(null)}

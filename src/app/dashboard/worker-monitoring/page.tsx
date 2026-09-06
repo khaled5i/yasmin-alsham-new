@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useTranslation } from '@/hooks/useTranslation'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { workerService, WorkerWithUser } from '@/lib/services/worker-service'
@@ -40,10 +41,14 @@ function getRecentMonths(count: number): { key: string; label: string }[] {
 }
 
 export default function WorkerMonitoringPage() {
+  const { t, isArabic } = useTranslation()
   const router = useRouter()
   const { user, signOut } = useAuthStore()
   const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
 
+  const [managers, setManagers] = useState<WorkerWithUser[]>([])
+  const [cutCounts, setCutCounts] = useState<Record<string, number>>({})
+  const [cutError, setCutError] = useState<string | null>(null)
   const [tailors, setTailors] = useState<WorkerWithUser[]>([])
   const [activeOrderCounts, setActiveOrderCounts] = useState<Record<string, number>>({})
   const [completedOrderCounts, setCompletedOrderCounts] = useState<Record<string, number>>({})
@@ -70,7 +75,7 @@ export default function WorkerMonitoringPage() {
     async function fetchData() {
       setIsLoading(true)
       try {
-        const [workersResult, activeResult, completedResult] = await Promise.all([
+        const [workersResult, activeResult, completedResult, cutResult] = await Promise.all([
           workerService.getAll(),
           orderService.getAll({
             status: ['pending', 'in_progress'],
@@ -83,7 +88,15 @@ export default function WorkerMonitoringPage() {
             lightweight: true,
             monthFilter: selectedMonth || undefined,
           }),
+          orderService.getAll({ cutOrdersOnly: true, cutMonth: selectedMonth || undefined, noPagination: true }),
         ])
+        setManagers((workersResult.data || []).filter(w => w.worker_type === 'workshop_manager'))
+        setCutError(cutResult.error || workersResult.error)
+        const counts: Record<string, number> = {}
+        for (const order of cutResult.data || []) {
+          if (order.cutter_id) counts[order.cutter_id] = (counts[order.cutter_id] || 0) + 1
+        }
+        setCutCounts(counts)
 
         const tailorsList = (workersResult.data || []).filter(
           (w) => w.worker_type === 'tailor' && w.is_available
@@ -137,7 +150,7 @@ export default function WorkerMonitoringPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-slate-50" dir={isArabic ? 'rtl' : 'ltr'}>
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-teal-100 shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -263,6 +276,19 @@ export default function WorkerMonitoringPage() {
             ))}
           </div>
         )}
+        <section className="mt-10" aria-label={t('workshop_managers')}>
+          <h2 className="mb-4 text-xl font-bold text-gray-800">{t('workshop_managers')}</h2>
+          {cutError && <p role="alert" className="mb-3 text-sm text-red-600">{cutError}</p>}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {managers.map(manager => (
+              <Link key={manager.id} href={`/dashboard/worker-monitoring/${manager.id}`} className="rounded-2xl border-2 border-teal-100 bg-white p-5 transition-colors hover:border-teal-400">
+                <h3 className="font-bold text-gray-800">{manager.user?.full_name || t('not_specified')}</h3>
+                <p className="mt-1 text-xs text-gray-500">{t('cutter')}</p>
+                <p className="mt-4 text-sm text-teal-700">{t('cut_orders')}: <strong>{cutError ? '—' : cutCounts[manager.id] || 0}</strong></p>
+              </Link>
+            ))}
+          </div>
+        </section>
       </main>
     </div>
   )

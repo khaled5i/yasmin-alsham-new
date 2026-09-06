@@ -1,5 +1,7 @@
 'use client'
 
+import OrderCutterInfo from '@/components/OrderCutterInfo'
+
 import { useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -761,6 +763,7 @@ export default function CompletedOrdersPage() {
                             {formatDate(order.due_date)}
                           </p>
                         </div>
+                        <OrderCutterInfo order={order} />
                         {order.worker_id && (
                           <p className="text-sm text-gray-600">
                             <span className="font-medium">{t('worker') || (isArabic ? 'العامل:' : 'Worker:')}</span>{' '}

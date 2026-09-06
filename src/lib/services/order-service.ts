@@ -14,6 +14,7 @@ import { extractDateKey } from '../date-utils'
 import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
 import { uploadOrderImages } from './storage-service'
 import { isVideoFile } from '@/lib/utils/media'
+import { notifyPayrollChanged } from '@/lib/payroll-display'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -32,6 +33,9 @@ const ORDER_LIST_COLUMNS = [
   'order_number',
   'user_id',
   'worker_id',
+  'cutter_id',
+  'cutter_name',
+  'cut_at',
   'client_name',
   'client_phone',
   'client_email',
@@ -143,6 +147,9 @@ export interface Order {
   order_number: string
   user_id?: string | null
   worker_id?: string | null
+  cutter_id?: string | null
+  cutter_name?: string | null
+  cut_at?: string | null
   client_name: string
   client_phone: string
   client_email?: string | null
@@ -262,6 +269,7 @@ export interface CreateOrderData {
   order_number?: string
   user_id?: string
   worker_id?: string
+  cutter_id?: string
   client_name: string
   client_phone: string
   client_email?: string
@@ -380,6 +388,7 @@ export interface CreateOrderData {
 export interface UpdateOrderData {
   order_number?: string
   worker_id?: string | null
+  cutter_id?: string | null
   client_name?: string
   client_phone?: string
   client_email?: string | null
@@ -586,6 +595,7 @@ export const orderService = {
       const insertData: any = {
         user_id: orderData.user_id || null,
         worker_id: orderData.worker_id || null,
+        cutter_id: orderData.cutter_id || null,
         client_name: orderData.client_name,
         client_phone: orderData.client_phone,
         client_email: orderData.client_email || null,
@@ -750,6 +760,11 @@ export const orderService = {
   async getAll(filters?: {
     status?: string | string[]  // single status or array of statuses
     worker_id?: string
+    cutter_id?: string
+    cutOrdersOnly?: boolean
+    cutMonth?: string // Riyadh calendar month, independent of order completion
+    cutFrom?: string
+    cutTo?: string
     user_id?: string
     payment_status?: string
     page?: number       // 0-indexed page number
@@ -794,6 +809,17 @@ export const orderService = {
       }
       if (filters?.worker_id) {
         query = query.eq('worker_id', filters.worker_id)
+      }
+      if (filters?.cutter_id) query = query.eq('cutter_id', filters.cutter_id)
+      if (filters?.orderBy === 'cut_at') query = query.order('id', { ascending: true })
+      if (filters?.cutOrdersOnly) query = query.not('cutter_id', 'is', null)
+      if (filters?.cutFrom) query = query.gte('cut_at', filters.cutFrom)
+      if (filters?.cutTo) query = query.lt('cut_at', filters.cutTo)
+      if (filters?.cutMonth) {
+        const [year, month] = filters.cutMonth.split('-').map(Number)
+        const nextMonth = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`
+        query = query.gte('cut_at', `${filters.cutMonth}-01T00:00:00+03:00`)
+          .lt('cut_at', `${nextMonth}-01T00:00:00+03:00`)
       }
       if (filters?.user_id) {
         query = query.eq('user_id', filters.user_id)
@@ -1270,6 +1296,10 @@ export const orderService = {
       }
 
       if (isDev) console.log('✅ Order updated successfully')
+
+      if (['worker_price', 'worker_bonus', 'worker_completed_at', 'worker_id', 'status'].some(key => key in updates)) {
+        notifyPayrollChanged()
+      }
 
       return { data, error: null }
     } catch (error: any) {

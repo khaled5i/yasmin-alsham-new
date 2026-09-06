@@ -1,5 +1,7 @@
 'use client'
 
+import OrderCutterInfo from '@/components/OrderCutterInfo'
+
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -8,6 +10,8 @@ import { useAuthStore } from '@/store/authStore'
 import { useOrderStore } from '@/store/orderStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useTranslation } from '@/hooks/useTranslation'
+import { usePayrollRefresh } from '@/hooks/usePayrollRefresh'
+import { pieceworkAmount, payrollMoney } from '@/lib/payroll-display'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { orderService } from '@/lib/services/order-service'
 import { getSupabaseImageSrcSet, getSupabaseImageUrl } from '@/lib/utils/media'
@@ -58,6 +62,7 @@ export default function WorkerCompletedOrdersPage() {
   const { t, isArabic } = useTranslation()
   const router = useRouter()
   const { workerType, isLoading: permissionsLoading, getDashboardRoute } = useWorkerPermissions()
+  usePayrollRefresh(() => { if (user && !authLoading) void useOrderStore.getState().forceRefresh() })
 
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -196,7 +201,7 @@ export default function WorkerCompletedOrdersPage() {
         && order.worker_price != null
       ))
   const visibleSalaryTotal = salaryOrders.reduce((total, order) => (
-    total + Number(order.worker_price || 0) + Number(order.worker_bonus || 0)
+    total + pieceworkAmount(order.worker_price, order.worker_bonus)
   ), 0)
   const completedOrderIdsKey = completedOrders.map(order => order.id).sort().join(',')
 
@@ -482,11 +487,10 @@ export default function WorkerCompletedOrdersPage() {
             <div className="min-w-[220px] rounded-2xl border border-emerald-200 bg-white/90 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-xs font-bold text-emerald-700">
                 <Wallet className="h-4 w-4" />
-                {t('visible_salary_total')}
+                {isArabic ? 'قيمة الأعمال المسعّرة المعروضة' : 'Displayed priced work'}
               </div>
               <p className="mt-1 text-2xl font-black text-slate-900">
-                {visibleSalaryTotal.toLocaleString('en-US')}
-                <span className="mr-1.5 text-sm font-bold text-emerald-700">{t('sar_unit')}</span>
+                {payrollMoney(visibleSalaryTotal, isArabic)}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">{t('visible_salary_note')}</p>
             </div>
@@ -698,6 +702,7 @@ export default function WorkerCompletedOrdersPage() {
                         <Calendar className="w-3.5 h-3.5 text-gray-400" />
                         <span>{formatDate(order.due_date)}</span>
                       </div>
+                      <OrderCutterInfo order={order} />
                       {order.worker_id && (
                         <div className="flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-gray-400" />

@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { usePayrollRefresh } from '@/hooks/usePayrollRefresh'
+import { payrollMoney } from '@/lib/payroll-display'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -237,7 +239,10 @@ export default function ReportsPage() {
   const [materialExpenses, setMaterialExpenses] = useState<Expense[]>([])
   const [fixedExpenses, setFixedExpenses] = useState<Expense[]>([])
   const [workerSalaries, setWorkerSalaries] = useState<WorkerPayrollMonth[]>([])
-  const { t } = useTranslation()
+  const [payrollError, setPayrollError] = useState(false)
+  const [payrollLoading, setPayrollLoading] = useState(true)
+  const payrollRequest = useRef(0)
+  const { t, isArabic } = useTranslation()
   const router = useRouter()
 
   // ============================================================================
@@ -506,12 +511,19 @@ export default function ReportsPage() {
   }, [filteredData, materialExpenses, fixedExpenses, workerSalaries])
 
   // تحميل رواتب العمال عند تغيير نطاق التاريخ
-  useEffect(() => {
-    const range = getDateRange()
-    getWorkerPayrollMonthsInRange('tailoring', range.startDate, range.endDate)
-      .then(setWorkerSalaries)
-      .catch(() => { })
+  const loadPayroll = useCallback(async () => {
+    const request = ++payrollRequest.current
+    setPayrollLoading(true)
+    try {
+      const rows = await getWorkerPayrollMonthsInRange('tailoring', periodRange.startDate, periodRange.endDate)
+      if (request !== payrollRequest.current) return
+      setWorkerSalaries(rows)
+      setPayrollError(false)
+    } catch { if (request === payrollRequest.current) setPayrollError(true) }
+    finally { if (request === payrollRequest.current) setPayrollLoading(false) }
   }, [periodRange])
+  useEffect(() => { void loadPayroll() }, [loadPayroll])
+  usePayrollRefresh(() => { void loadPayroll() })
 
   // Price Distribution
   const priceDistribution = useMemo(() => {
@@ -1038,10 +1050,12 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <h3 className="text-lg sm:text-2xl lg:text-3xl font-bold text-violet-700 mb-0.5 sm:mb-1 leading-tight">
-                  {isLoadingOrders ? '...' : tailoringExpensesStats.totalWorkerSalaries.toLocaleString('en-US')} ر.س
+                  {payrollError ? '—' : payrollLoading ? '…' : payrollMoney(tailoringExpensesStats.totalWorkerSalaries, isArabic)}
                 </h3>
                 <p className="text-xs sm:text-sm font-semibold text-violet-800 leading-tight">رواتب العمال</p>
-                <p className="text-[10px] sm:text-xs text-violet-600 mt-0.5 sm:mt-1">صافي المستحق للعمال</p>
+                <p className="text-[10px] sm:text-xs text-violet-600 mt-0.5 sm:mt-1">{isArabic ? 'مستحق الرواتب · مطابق لقسم الرواتب' : 'Salary entitlement · matches payroll'}</p>
+                {payrollError && <button onClick={() => loadPayroll()} className="mt-2 text-xs text-rose-700 underline">{isArabic ? 'تعذر تحديث الرواتب — إعادة المحاولة' : 'Payroll update failed — retry'}</button>}
+                <Link href="/dashboard/accounting/tailoring/salaries/" className="mt-2 inline-block py-2 text-xs font-semibold text-violet-800">{isArabic ? 'فتح الرواتب' : 'Open payroll'}</Link>
               </div>
             </motion.div>
           </div>
@@ -1058,7 +1072,7 @@ export default function ReportsPage() {
               </div>
             </div>
             <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-red-700">
-              {tailoringExpensesStats.totalExpenses.toLocaleString('en-US')} ر.س
+              {payrollError ? '—' : payrollLoading ? '…' : tailoringExpensesStats.totalExpenses.toLocaleString('en-US')} ر.س
             </h3>
           </div>
 
@@ -1071,13 +1085,13 @@ export default function ReportsPage() {
               <div>
                 <p className="text-xs sm:text-sm font-semibold text-pink-800">متوسط تكلفة الفستان</p>
                 <p className="text-[10px] sm:text-xs text-pink-600">
-                  {tailoringExpensesStats.totalExpenses.toLocaleString('en-US')} ÷ {tailoringExpensesStats.completedOrdersCount} طلب مكتمل
+                  {payrollError ? '—' : tailoringExpensesStats.totalExpenses.toLocaleString('en-US')} ÷ {tailoringExpensesStats.completedOrdersCount} طلب مكتمل
                 </p>
               </div>
             </div>
             <div className="text-left">
               <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-pink-700">
-                {tailoringExpensesStats.avgDressCost.toLocaleString('en-US')} ر.س
+                {payrollError ? '—' : payrollLoading ? '…' : tailoringExpensesStats.avgDressCost.toLocaleString('en-US')} ر.س
               </h3>
               {tailoringExpensesStats.completedOrdersCount === 0 && (
                 <p className="text-[10px] text-pink-500 text-left">لا توجد طلبات مكتملة</p>

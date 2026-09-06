@@ -121,6 +121,7 @@ interface FormDataType {
   paymentMethod: 'cash' | 'card' | null
   orderReceivedDate: string
   assignedWorker: string
+  assignedCutter: string
   dueDate: string
   proofDeliveryDate: string
   notes: string
@@ -158,6 +159,7 @@ const getInitialFormData = (): FormDataType => ({
   paymentMethod: null,
   orderReceivedDate: new Date().toISOString().split('T')[0],
   assignedWorker: '',
+  assignedCutter: '',
   dueDate: '',
   proofDeliveryDate: '',
   notes: '',
@@ -1014,6 +1016,7 @@ function AddOrderContent() {
         payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        cutter_id: formData.assignedCutter || undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
@@ -1174,6 +1177,7 @@ function AddOrderContent() {
         payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        cutter_id: formData.assignedCutter || undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
@@ -1324,6 +1328,7 @@ function AddOrderContent() {
         price: price, payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        cutter_id: formData.assignedCutter || undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
@@ -1446,6 +1451,7 @@ function AddOrderContent() {
         price: price, payment_method: (formData.paymentMethod || 'cash'),
         order_received_date: formData.orderReceivedDate,
         worker_id: formData.assignedWorker && formData.assignedWorker !== '' ? formData.assignedWorker : undefined,
+        cutter_id: formData.assignedCutter || undefined,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
@@ -1763,6 +1769,21 @@ function AddOrderContent() {
                 {/* 11. تحديد العامل المسؤول - يظهر فقط لمدير الورشة */}
                 {workerType === 'workshop_manager' && (
                   <div className="col-span-2 sm:col-span-1">
+                    <label htmlFor="assigned-cutter" className="mb-2 block text-sm font-medium text-gray-700">
+                      {isArabic ? 'القصّاص' : 'Cutter'}
+                    </label>
+                    <select
+                      id="assigned-cutter"
+                      value={formData.assignedCutter}
+                      onChange={(event) => handleInputChange('assignedCutter', event.target.value)}
+                      disabled={isSubmitting}
+                      className="mb-3 w-full rounded-lg border border-teal-300 bg-white px-4 py-3 focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="" disabled>{isArabic ? 'اختر القصّاص أولاً...' : 'Select cutter first...'}</option>
+                      {workers.filter(w => w.worker_type === 'workshop_manager' && w.is_available && w.user?.is_active !== false).map(w => (
+                        <option key={w.id} value={w.id}>{w.user?.full_name}</option>
+                      ))}
+                    </select>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {isArabic ? 'العامل المسؤول' : 'Assigned Worker'}
                     </label>
@@ -1770,11 +1791,11 @@ function AddOrderContent() {
                       value={formData.assignedWorker}
                       onChange={(e) => handleInputChange('assignedWorker', e.target.value)}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 bg-white"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !formData.assignedCutter}
                     >
                       <option value="">{isArabic ? 'اختر العامل المسؤول...' : 'Select worker...'}</option>
-                      {workers.map((worker) => (
-                        <option key={worker.id} value={worker.user_id}>
+                      {workers.filter(w => w.worker_type === 'tailor' && w.is_available && w.user?.is_active !== false).map((worker) => (
+                        <option key={worker.id} value={worker.id}>
                           {worker.user.full_name}
                         </option>
                       ))}

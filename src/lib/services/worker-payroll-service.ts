@@ -72,47 +72,15 @@ export async function getWorkerPayrollMonthsInRange(
   startDate: Date,
   endDate: Date
 ): Promise<WorkerPayrollMonth[]> {
-  if (!isSupabaseConfigured()) {
-    return []
-  }
-
-  try {
-    const startYear = startDate.getFullYear()
-    const startMonth = startDate.getMonth() + 1
-    const endYear = endDate.getFullYear()
-    const endMonth = endDate.getMonth() + 1
-
-    const { data, error } = await supabase
-      .from('worker_payroll_months')
-      .select('*')
-      .eq('branch', branch)
-      .or(
-        `and(payroll_year.gt.${startYear},payroll_year.lt.${endYear}),` +
-        `and(payroll_year.eq.${startYear},payroll_month.gte.${startMonth},payroll_year.eq.${endYear},payroll_month.lte.${endMonth}),` +
-        `and(payroll_year.eq.${startYear},payroll_year.eq.${endYear},payroll_month.gte.${startMonth},payroll_month.lte.${endMonth}),` +
-        `and(payroll_year.eq.${startYear},payroll_year.lt.${endYear},payroll_month.gte.${startMonth}),` +
-        `and(payroll_year.gt.${startYear},payroll_year.eq.${endYear},payroll_month.lte.${endMonth})`
-      )
-      .order('payroll_year', { ascending: false })
-      .order('payroll_month', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching worker payroll months range:', error)
-      return []
-    }
-
-    // تصفية يدوية دقيقة لضمان الدقة
-    const result = (data || []).filter((row: WorkerPayrollMonth) => {
-      const rowDate = new Date(row.payroll_year, row.payroll_month - 1, 1)
-      const startOfMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
-      const endOfMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
-      return rowDate >= startOfMonth && rowDate <= endOfMonth
-    })
-
-    return result as WorkerPayrollMonth[]
-  } catch (error) {
-    console.error('Error fetching worker payroll months range:', error)
-    return []
+  const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const rows: WorkerPayrollMonth[] = []
+  for (let from = 0; ; from += 500) {
+    const { data, error } = await supabase.rpc('get_worker_payroll_report_months', {
+      p_branch: branch, p_start: dateKey(startDate), p_end: dateKey(endDate),
+    }).range(from, from + 499)
+    if (error) throw new Error(toErrorMessage(error))
+    rows.push(...((data || []) as WorkerPayrollMonth[]))
+    if (!data || data.length < 500) return rows
   }
 }
 
@@ -258,7 +226,7 @@ export async function getWorkerOperationsAllPeriods(
       .select('*')
       .eq('branch', branch)
       .eq('worker_id', workerId)
-      .in('operation_type', ['salary', 'payment', 'deduction'])
+      .in('operation_type', ['salary', 'payment', 'deduction', 'advance'])
       .order('operation_date', { ascending: false })
       .order('created_at', { ascending: false })
 
@@ -302,6 +270,34 @@ export async function getWorkerPayrollPeriodLock(
     console.error('Error fetching worker payroll lock:', error)
     return null
   }
+}
+
+export async function saveTailoringSalarySettings(input: {
+  workerId: string
+  monthValue: string
+  salaryType: PayrollSalaryType
+  fixedSalaryValue: number
+  overtimeTotal?: number
+  applyFuture?: boolean
+  onlyIfMissing?: boolean
+  operationDate?: string
+  note?: string
+}): Promise<{ month: WorkerPayrollMonth; operation: WorkerPayrollOperation | null }> {
+  const { year, month } = monthToYearMonth(input.monthValue)
+  const { data, error } = await supabase.rpc('save_tailoring_salary_settings', {
+    p_worker_id: input.workerId,
+    p_year: year,
+    p_month: month,
+    p_salary_type: input.salaryType,
+    p_fixed_salary_value: input.fixedSalaryValue,
+    p_overtime_total: input.overtimeTotal ?? 0,
+    p_apply_future: input.applyFuture ?? false,
+    p_only_if_missing: input.onlyIfMissing ?? false,
+    p_operation_date: input.operationDate || null,
+    p_note: input.note || null
+  })
+  if (error) throw new Error(toErrorMessage(error))
+  return data
 }
 
 interface SaveSalarySnapshotInput {
@@ -700,7 +696,7 @@ export interface SettleWorkerDebtResult {
  * تسديد دفعة من الدين مع احتسابها ضمن سداد راتب الشهر (تسوية):
  * - يُخفَّض الدين المتراكم ويُسجَّل في سجل دفعات الديون
  * - يُسجَّل الجزء المتاح كدفعة راتب بعلامة debt_settlement (لا يُحتسب نقداً فعلياً)
- * يتراجع تلقائياً للسلوك القديم (تخفيض الدين فقط) إذا لم تُطبَّق migration 59 بعد.
+ * فشل توفر دالة التسوية يُعرض للمستخدم؛ لا يتحول إلى تخفيض دين بأثر مالي مختلف.
  */
 export async function settleWorkerDebtFromSalary(
   input: SettleWorkerDebtFromSalaryInput
@@ -720,18 +716,7 @@ export async function settleWorkerDebtFromSalary(
   })
 
   if (error) {
-    if (isMissingSupabaseResourceError(error)) {
-      // migration 59 غير مطبَّقة بعد — نستخدم التسديد القديم (بدون احتساب في الراتب)
-      const fallback = await payWorkerDeductionDebt({
-        branch: input.branch,
-        workerId: input.workerId,
-        workerName: input.workerName,
-        amount: input.amount,
-        paymentDate: input.paymentDate,
-        note: input.note
-      })
-      return { ...fallback, salary_part: 0 }
-    }
+    if (isMissingSupabaseResourceError(error)) throw new Error('تعذر تنفيذ تسوية الدين من الراتب. لم تُسجل العملية؛ يلزم تحديث خدمة الرواتب.')
     throw new Error(toErrorMessage(error))
   }
 
@@ -805,13 +790,13 @@ export async function propagateSalaryToFutureMonths(
     })
 
     if (error) {
-      console.error('Error propagating salary to future months:', error)
-      return
+      throw new Error(toErrorMessage(error))
     }
 
     console.log(`Propagated salary to ${data} future month(s) for worker ${workerId}`)
   } catch (err) {
     console.error('Error propagating salary to future months:', err)
+    throw err
   }
 }
 
