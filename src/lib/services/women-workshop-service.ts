@@ -36,6 +36,7 @@ export interface WomenWorkshopTransaction {
   payment_method: WomenWorkshopPaymentMethod
   order_id?: string | null
   customer_name?: string | null
+  notes?: string | null
   created_by?: string | null
   occurred_at: string
   alostaz_customer_id?: number | null
@@ -89,11 +90,14 @@ export interface CreateWomenWorkshopInvoiceResult {
   error?: string
 }
 
+export const WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH = 500
+
 export interface CreateWomenWorkshopExpenseInput {
   transactionId: string
   expenseCategory: WomenWorkshopExpenseCategory
   amount: number
   paymentMethod: WomenWorkshopPaymentMethod
+  notes?: string
 }
 
 export interface CreateWomenWorkshopExpenseResult {

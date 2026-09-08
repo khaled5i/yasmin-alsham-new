@@ -18,6 +18,8 @@ type PaymentMethod = 'cash' | 'card'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+const MAX_NOTES_LENGTH = 500
+
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
@@ -50,6 +52,7 @@ export async function POST(request: NextRequest) {
     const expenseCategory = String(payload?.expenseCategory || '') as ExpenseCategory
     const paymentMethod = String(payload?.paymentMethod || '') as PaymentMethod
     const amount = Math.round((Number(payload?.amount) + Number.EPSILON) * 100) / 100
+    const notes = String(payload?.notes ?? '').trim()
 
     if (!UUID_PATTERN.test(transactionId)) {
       return NextResponse.json({ error: 'معرّف العملية غير صالح' }, { status: 400 })
@@ -63,25 +66,42 @@ export async function POST(request: NextRequest) {
     if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
       return NextResponse.json({ error: 'المبلغ غير صالح' }, { status: 400 })
     }
+    if (notes.length > MAX_NOTES_LENGTH) {
+      return NextResponse.json(
+        { error: `الملاحظات طويلة جداً — الحد الأقصى ${MAX_NOTES_LENGTH} حرف` },
+        { status: 400 }
+      )
+    }
 
     const nowIso = new Date().toISOString()
-    const { data: transaction, error: insertError } = await supabaseAdmin
+    const baseRow = {
+      id: transactionId,
+      source: 'manual_expense',
+      transaction_kind: 'expense',
+      expense_category: expenseCategory,
+      operation_type: 'other',
+      operation_name: EXPENSE_CONFIG[expenseCategory],
+      amount,
+      payment_method: paymentMethod,
+      created_by: user.id,
+      occurred_at: nowIso,
+      alostaz_sync_status: 'not_required',
+    }
+
+    let { data: transaction, error: insertError } = await supabaseAdmin
       .from('women_workshop_transactions')
-      .insert({
-        id: transactionId,
-        source: 'manual_expense',
-        transaction_kind: 'expense',
-        expense_category: expenseCategory,
-        operation_type: 'other',
-        operation_name: EXPENSE_CONFIG[expenseCategory],
-        amount,
-        payment_method: paymentMethod,
-        created_by: user.id,
-        occurred_at: nowIso,
-        alostaz_sync_status: 'not_required',
-      })
+      .insert({ ...baseRow, notes: notes || null })
       .select('*')
       .single()
+
+    // The notes column ships with its own migration; keep saving expenses if it is missing.
+    if (insertError?.code === '42703') {
+      ;({ data: transaction, error: insertError } = await supabaseAdmin
+        .from('women_workshop_transactions')
+        .insert(baseRow)
+        .select('*')
+        .single())
+    }
 
     if (insertError) {
       if (insertError.code === '23505') {

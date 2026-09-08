@@ -120,11 +120,12 @@ function ExpensesTable({ transactions }: { transactions: WomenWorkshopTransactio
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-right text-sm">
+          <table className="w-full min-w-[820px] text-right text-sm">
             <thead className="bg-slate-50 text-xs font-bold text-slate-500">
               <tr>
                 <th className="px-5 py-3">التاريخ</th>
                 <th className="px-5 py-3">نوع المصروف</th>
+                <th className="px-5 py-3">الملاحظات</th>
                 <th className="px-5 py-3">طريقة الدفع</th>
                 <th className="px-5 py-3">المبلغ</th>
                 <th className="px-5 py-3">الحالة</th>
@@ -137,6 +138,15 @@ function ExpensesTable({ transactions }: { transactions: WomenWorkshopTransactio
                     {formatDate(transaction.occurred_at)}
                   </td>
                   <td className="px-5 py-4 font-bold text-slate-900">{transaction.operation_name}</td>
+                  <td className="max-w-[260px] px-5 py-4 align-top">
+                    {transaction.notes ? (
+                      <p className="whitespace-pre-wrap break-words font-medium leading-relaxed text-slate-700">
+                        {transaction.notes}
+                      </p>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-4">
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${
                       transaction.payment_method === 'card'
@@ -306,6 +316,7 @@ export default function WomenWorkshopAccountingPage() {
         || transaction.operation_name.toLowerCase().includes(normalizedSearch)
         || String(transaction.customer_name || '').toLowerCase().includes(normalizedSearch)
         || String(transaction.alostaz_invoice_code || '').toLowerCase().includes(normalizedSearch)
+        || String(transaction.notes || '').toLowerCase().includes(normalizedSearch)
       const occurredAt = new Date(transaction.occurred_at).getTime()
       const matchesDate = occurredAt >= rangeStart && occurredAt <= rangeEnd
       return matchesSearch && matchesDate

@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Banknote,
   CreditCard,
+  NotebookPen,
   ReceiptText,
   Send,
   Sparkles,
@@ -15,6 +16,7 @@ import {
 import {
   createWomenWorkshopExpense,
   createWomenWorkshopInvoice,
+  WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH,
   WOMEN_WORKSHOP_EXPENSE_OPTIONS,
   WOMEN_WORKSHOP_OPERATION_OPTIONS,
   type WomenWorkshopExpenseCategory,
@@ -41,6 +43,7 @@ export default function WomenWorkshopInvoiceModal({
   const [expenseCategory, setExpenseCategory] = useState<WomenWorkshopExpenseCategory>('salaries')
   const [customOperationName, setCustomOperationName] = useState('')
   const [amount, setAmount] = useState('85')
+  const [expenseNotes, setExpenseNotes] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<WomenWorkshopPaymentMethod>('card')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -58,6 +61,7 @@ export default function WomenWorkshopInvoiceModal({
     setExpenseCategory('salaries')
     setCustomOperationName('')
     setAmount('85')
+    setExpenseNotes('')
     setPaymentMethod('card')
     setError(null)
     transactionIdRef.current = crypto.randomUUID()
@@ -77,6 +81,7 @@ export default function WomenWorkshopInvoiceModal({
     setExpenseCategory('salaries')
     setCustomOperationName('')
     setAmount(mode === 'sale' ? '85' : '')
+    setExpenseNotes('')
     setPaymentMethod(mode === 'sale' ? 'card' : 'cash')
     setError(null)
     transactionIdRef.current = crypto.randomUUID()
@@ -94,6 +99,13 @@ export default function WomenWorkshopInvoiceModal({
       setError('يرجى كتابة اسم العملية غير المدرجة')
       return
     }
+    const trimmedNotes = expenseNotes.trim()
+    if (entryMode === 'expense' && trimmedNotes.length > WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH) {
+      setError(isArabic
+        ? `الملاحظات طويلة جداً — الحد الأقصى ${WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH} حرف`
+        : `Notes are too long — ${WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH} characters max`)
+      return
+    }
 
     setIsSubmitting(true)
     setError(null)
@@ -105,6 +117,7 @@ export default function WomenWorkshopInvoiceModal({
             expenseCategory,
             amount: parsedAmount,
             paymentMethod,
+            notes: trimmedNotes,
           })
         : await createWomenWorkshopInvoice({
             transactionId,
@@ -376,6 +389,38 @@ export default function WomenWorkshopInvoiceModal({
                   })}
                 </div>
               </fieldset>
+
+              {entryMode === 'expense' && (
+                <div>
+                  <label
+                    htmlFor="women-workshop-expense-notes"
+                    className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800"
+                  >
+                    <NotebookPen className="h-4 w-4 text-indigo-600" />
+                    {isArabic ? 'ملاحظات (اختياري)' : 'Notes (optional)'}
+                  </label>
+                  <textarea
+                    id="women-workshop-expense-notes"
+                    value={expenseNotes}
+                    disabled={isSubmitting}
+                    onChange={(event) => {
+                      setExpenseNotes(event.target.value)
+                      setError(null)
+                    }}
+                    rows={3}
+                    maxLength={WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH}
+                    placeholder={isArabic
+                      ? 'مثال: راتب شهر محرم للخياطة سميرة'
+                      : 'e.g. Muharram salary for the seamstress'}
+                    className="w-full resize-y rounded-2xl border border-indigo-200 bg-indigo-50/60 px-4 py-3.5 font-medium leading-relaxed text-slate-800 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  />
+                  <p className="mt-2 text-xs font-medium text-slate-500">
+                    {isArabic
+                      ? `تظهر الملاحظة في جدول مصروفات المشغل — ${expenseNotes.length}/${WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH} حرف`
+                      : `Shown in the workshop expenses table — ${expenseNotes.length}/${WOMEN_WORKSHOP_EXPENSE_NOTES_MAX_LENGTH} characters`}
+                  </p>
+                </div>
+              )}
 
               <div className={`rounded-2xl border p-4 text-sm font-medium ${
                 entryMode === 'expense'
