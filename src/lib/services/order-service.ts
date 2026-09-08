@@ -1362,16 +1362,18 @@ export const orderService = {
   async getOrderStatsByDate(
     startDate: string,
     endDate: string,
-    options?: { useCustomerDueDate?: boolean }
+    options?: { useCustomerDueDate?: boolean; excludeCompleted?: boolean }
   ): Promise<{ data: Record<string, number> | null; error: string | null }> {
     if (!isSupabaseConfigured()) {
       return { data: null, error: 'Supabase is not configured.' }
     }
 
     const useCustomerDueDate = options?.useCustomerDueDate ?? false
+    // استثناء الطلبات المكتملة من العدّ (الشغل عليها انتهى ولا يشغل يوم التسليم)
+    const excludeCompleted = options?.excludeCompleted ?? false
 
     try {
-      if (isDev) console.log('📊 Fetching order stats by date:', { startDate, endDate, useCustomerDueDate })
+      if (isDev) console.log('📊 Fetching order stats by date:', { startDate, endDate, useCustomerDueDate, excludeCompleted })
 
       // عند الاعتماد على `customer_due_date`، يجب جلب الطلبات بدلالة كلا العمودين
       // لأن أيّاً منهما قد يقع داخل نطاق العرض.
@@ -1380,6 +1382,10 @@ export const orderService = {
         .select(useCustomerDueDate ? 'due_date, customer_due_date' : 'due_date')
         .not('status', 'eq', 'cancelled')
         .not('status', 'eq', 'delivered')
+
+      if (excludeCompleted) {
+        query = query.not('status', 'eq', 'completed')
+      }
 
       if (useCustomerDueDate) {
         // نطاق أوسع: أي طلب تاريخه الحقيقي أو الداخلي ضمن المدى

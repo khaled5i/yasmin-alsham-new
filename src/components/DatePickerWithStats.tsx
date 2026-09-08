@@ -21,6 +21,8 @@ interface DatePickerWithStatsProps {
   // بدل التاريخ الداخلي المُزاح (`due_date`). الطلبات القديمة التي لا تحوي القيمة
   // تستخدم `due_date` كـ fallback.
   useCustomerDueDate?: boolean
+  // إذا كانت true، تُستثنى الطلبات المكتملة من أرقام العدّ الظاهرة على كل تاريخ
+  excludeCompleted?: boolean
 }
 
 // أسماء الأشهر الهجرية
@@ -73,7 +75,8 @@ export default function DatePickerWithStats({
   required = false,
   className = '',
   statsType = 'orders', // القيمة الافتراضية هي الطلبات
-  useCustomerDueDate = false
+  useCustomerDueDate = false,
+  excludeCompleted = false
 }: DatePickerWithStatsProps) {
   const { t, isArabic } = useTranslation()
   const [stats, setStats] = useState<Record<string, number>>({})
@@ -104,7 +107,7 @@ export default function DatePickerWithStats({
   // جلب الإحصائيات عند تحميل المكون أو تغيير النوع
   useEffect(() => {
     fetchStats()
-  }, [statsType, useCustomerDueDate])
+  }, [statsType, useCustomerDueDate, excludeCompleted])
 
   // إنشاء portal container في body عند تحميل المكون
   useEffect(() => {
@@ -142,7 +145,7 @@ export default function DatePickerWithStats({
         data = result.data
         error = result.error
       } else {
-        const result = await orderService.getOrderStatsByDate(startDate, endDate, { useCustomerDueDate })
+        const result = await orderService.getOrderStatsByDate(startDate, endDate, { useCustomerDueDate, excludeCompleted })
         data = result.data
         error = result.error
       }

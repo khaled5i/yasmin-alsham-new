@@ -1659,6 +1659,7 @@ function AddOrderContent() {
                     minDate={new Date()}
                     required={true}
                     useCustomerDueDate={true}
+                    excludeCompleted={true}
                   />
                 </div>
 
