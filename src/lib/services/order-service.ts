@@ -1303,7 +1303,7 @@ export const orderService = {
 
       if (isDev) console.log('✅ Order updated successfully')
 
-      if (['worker_price', 'worker_bonus', 'worker_completed_at', 'worker_id', 'status'].some(key => key in updates)) {
+      if (['worker_price', 'worker_bonus', 'worker_completed_at', 'admin_completed_at', 'delivery_date', 'worker_id', 'status'].some(key => key in updates)) {
         notifyPayrollChanged()
       }
 

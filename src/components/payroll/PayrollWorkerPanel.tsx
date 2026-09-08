@@ -20,7 +20,7 @@ import type {
   PayrollSalaryType
 } from '@/types/worker-payroll'
 import {
-  registerWorkerPayrollPayment,
+  recordTailoringDisbursement,
   registerWorkerPayrollAdjustment,
   settleWorkerDebtFromSalary,
   saveTailoringSalarySettings,
@@ -39,12 +39,14 @@ import {
 } from '@/lib/payroll-display'
 import PayrollDialog, { payrollInput, payrollPrimary, payrollSecondary } from './PayrollDialog'
 import PayrollLedger from './PayrollLedger'
+import { attendanceService } from '@/lib/services/attendance-service'
 
 export type PayrollPanelTab = 'payments' | 'debts' | 'log' | 'settings'
 export interface PayrollWorkerPanelProps {
   worker: WorkerWithUser
   row?: WorkerPayrollMonth
   previous?: WorkerPayrollMonth
+  previousSuspended?: boolean
   operations: WorkerPayrollOperation[]
   debt: number
   suspended: boolean
@@ -63,6 +65,7 @@ export default function PayrollWorkerPanel({
   worker,
   row,
   previous,
+  previousSuspended = false,
   operations,
   debt,
   suspended,
@@ -86,6 +89,29 @@ export default function PayrollWorkerPanel({
   const [full, setFull] = useState(false)
   const [date, setDate] = useState(payrollDate(month))
   const [note, setNote] = useState('')
+  const [deduction, setDeduction] = useState('')
+  const [deductionNote, setDeductionNote] = useState('')
+  const [absentDays, setAbsentDays] = useState<number | null>(null)
+  const [absenceError, setAbsenceError] = useState(false)
+  const [ongoingSuspension, setOngoingSuspension] = useState(false)
+  const requestId = useRef<string | null>(null)
+  useEffect(() => {
+    if (form !== 'payment') return
+    let active = true
+    setAbsentDays(null)
+    setAbsenceError(false)
+    attendanceService
+      .getWorkerMonthAbsence(worker.id, month)
+      .then((days) => {
+        if (active) setAbsentDays(days)
+      })
+      .catch(() => {
+        if (active) setAbsenceError(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [form, worker.id, month])
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [error, setError] = useState('')
@@ -117,7 +143,9 @@ export default function PayrollWorkerPanel({
     form === 'settlement'
       ? Math.max(0, Math.min(debt, values.remaining))
       : Math.max(0, values.remaining)
-  const paymentAmount = full ? available : Number(amount || 0)
+  const deductionAmount = form === 'payment' ? Number(deduction || 0) : 0
+  const availablePayment = Math.max(0, available - deductionAmount)
+  const paymentAmount = full ? availablePayment : Number(amount || 0)
   const maxDate = payrollDate(month) // current month defaults to today; past months to the last day
   const periodEnd = `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()}`
 
@@ -133,6 +161,9 @@ export default function PayrollWorkerPanel({
       setAmount('')
       setFull(false)
       setNote('')
+      setDeduction('')
+      setDeductionNote('')
+      requestId.current = null
       setConfirmation(null)
       setFormDirty(false)
       toast.success(success)
@@ -159,7 +190,12 @@ export default function PayrollWorkerPanel({
       setError(
         message.includes('uq_worker_payroll_payment_duplicate')
           ? t('هذه الدفعة مسجلة بالفعل.', 'This payment is already recorded.')
-          : message
+          : message.includes('different details')
+            ? t(
+                'حُفظ طلب التسجيل السابق بتفاصيل مختلفة. أعد تحميل البيانات قبل تسجيل عملية جديدة.',
+                'The previous request was saved with different details. Reload before recording a new entry.'
+              )
+            : message
       )
     } finally {
       busyRef.current = false
@@ -172,17 +208,24 @@ export default function PayrollWorkerPanel({
     event.preventDefault()
     if (
       !Number.isFinite(paymentAmount) ||
-      paymentAmount <= 0 ||
+      paymentAmount < 0 ||
+      paymentAmount + deductionAmount <= 0 ||
+      !Number.isInteger(deductionAmount) ||
+      deductionAmount < 0 ||
       (!full && !Number.isInteger(paymentAmount))
     ) {
       setError(t('أدخل مبلغًا صحيحًا أكبر من صفر.', 'Enter a whole amount greater than zero.'))
+      return
+    }
+    if (deductionAmount > 0 && !deductionNote.trim()) {
+      setError(t('أدخل سبب الخصم ليظهر في السجل.', 'Enter a deduction reason for the ledger.'))
       return
     }
     if (!date.startsWith(`${month}-`) || date > periodEnd) {
       setError(t('اختر تاريخًا ضمن الشهر المعروض.', 'Choose a date within the displayed month.'))
       return
     }
-    if (form !== 'debt' && paymentAmount > available + 0.009) {
+    if (form !== 'debt' && paymentAmount + deductionAmount > available + 0.009) {
       setError(
         t(
           'المبلغ أكبر من المستحق المتاح. لتسجيل مبلغ مستقل استخدم إضافة دين.',
@@ -202,7 +245,15 @@ export default function PayrollWorkerPanel({
     }
     await perform(
       async () => {
-        if (form === 'payment') return registerWorkerPayrollPayment(base)
+        if (form === 'payment') {
+          requestId.current ||= crypto.randomUUID()
+          return recordTailoringDisbursement({
+            ...base,
+            requestId: requestId.current,
+            deduction: deductionAmount,
+            deductionNote
+          })
+        }
         if (form === 'debt')
           return registerWorkerPayrollAdjustment({ ...base, operationType: 'deduction' })
         return settleWorkerDebtFromSalary({ ...base, paymentDate: date })
@@ -216,6 +267,9 @@ export default function PayrollWorkerPanel({
     setAmount('')
     setFull(false)
     setNote('')
+    setDeduction('')
+    setDeductionNote('')
+    requestId.current = null
     setError('')
     setDate(maxDate)
   }
@@ -366,7 +420,15 @@ export default function PayrollWorkerPanel({
       <div id={`payroll-tab-${worker.id}`}>
         {tab === 'payments' && (
           <div className="space-y-5">
-            {previous && previous.remaining_due > 0.009 && (
+            {Number(row?.salary_deductions_total) > 0 && (
+              <p className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">
+                {t(
+                  `يتضمن صافي المستحق خصومات بقيمة ${money(row?.salary_deductions_total || 0)}. الأسباب والتفاصيل في السجل.`,
+                  `Net entitlement includes ${money(row?.salary_deductions_total || 0)} in salary deductions. Reasons are available in History.`
+                )}
+              </p>
+            )}
+            {previous && !previousSuspended && previous.remaining_due > 0.009 && (
               <div className="rounded-xl bg-amber-50 p-3 text-sm leading-6 text-amber-900">
                 {t(
                   `يوجد ${money(previous.remaining_due)} متبقٍ في آخر شهر مسجل (${previous.payroll_year}-${String(previous.payroll_month).padStart(2, '0')}). راجعه في شهره؛ لا يُضاف إلى مبلغ الشهر الحالي.`,
@@ -502,13 +564,13 @@ export default function PayrollWorkerPanel({
                   autoFocus
                   type={full ? 'text' : 'number'}
                   inputMode="numeric"
-                  min="1"
+                  min={form === 'payment' ? '0' : '1'}
                   step="1"
                   value={
                     full
                       ? t(
-                          `كامل المستحق · ${money(available)}`,
-                          `Full entitlement · ${money(available)}`
+                          `كامل المستحق بعد الخصم · ${money(availablePayment)}`,
+                          `Full entitlement after deduction · ${money(availablePayment)}`
                         )
                       : amount
                   }
@@ -517,9 +579,71 @@ export default function PayrollWorkerPanel({
                     setAmount(e.target.value)
                     setError('')
                   }}
-                  required
+                  required={deductionAmount <= 0}
                 />
               </label>
+              {form === 'payment' && (
+                <div className="space-y-3 rounded-xl bg-stone-50 p-3">
+                  <div className="grid gap-3 sm:grid-cols-2 sm:items-center">
+                    <label className="block text-sm font-medium text-stone-700">
+                      {t('خصم من الراتب (اختياري)', 'Salary deduction (optional)')}
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputMode="numeric"
+                        className={payrollInput}
+                        value={deduction}
+                        onChange={(e) => setDeduction(e.target.value)}
+                        placeholder="0"
+                      />
+                    </label>
+                    <p
+                      className={`text-sm leading-6 ${absentDays && absentDays > 0 ? 'text-amber-800' : 'text-stone-500'}`}
+                    >
+                      {absenceError
+                        ? t(
+                            'تعذر جلب الغياب. راجع صفحة الحضور والغياب.',
+                            'Could not load absence; check attendance.'
+                          )
+                        : absentDays === null
+                          ? t('جاري جلب الغياب…', 'Loading absence…')
+                          : absentDays > 0
+                            ? t(
+                                `مسجل ${absentDays} أيام غياب في ${month} حسب صفحة الحضور والغياب. حدد الخصم المناسب بعد المراجعة.`,
+                                `${absentDays} absence days in ${month} from attendance. Review before choosing a deduction.`
+                              )
+                            : t(
+                                'لا توجد أيام غياب محتسبة لهذا الشهر.',
+                                'No counted absence days this month.'
+                              )}
+                      <Link
+                        href={`/dashboard/worker-monitoring/attendance/?workerId=${worker.id}&month=${month}`}
+                        className="block min-h-11 py-2 font-semibold text-teal-800"
+                      >
+                        {t('مراجعة الحضور والغياب', 'Review attendance')}
+                      </Link>
+                    </p>
+                  </div>
+                  {deductionAmount > 0 && (
+                    <label className="block text-sm text-stone-700">
+                      {t('سبب الخصم', 'Deduction reason')}
+                      <input
+                        className={payrollInput}
+                        value={deductionNote}
+                        onChange={(e) => setDeductionNote(e.target.value)}
+                        required
+                      />
+                    </label>
+                  )}
+                  <p className="text-xs leading-5 text-stone-500">
+                    {t(
+                      'الخصم يخفض المستحق ولا يُسجل دينًا أو دفعة نقدية. يمكن تسجيل الخصم وحده بترك مبلغ الدفعة صفرًا.',
+                      'A deduction reduces entitlement without creating debt or cash outflow. Set payment to zero to record only a deduction.'
+                    )}
+                  </p>
+                </div>
+              )}
               {form !== 'debt' && (
                 <button
                   type="button"
@@ -533,8 +657,8 @@ export default function PayrollWorkerPanel({
                   {full
                     ? t('تم اختيار كامل المبلغ المتاح', 'Full available amount selected')
                     : t(
-                        `استخدام كامل المبلغ: ${money(available)}`,
-                        `Use full amount: ${money(available)}`
+                        `استخدام كامل المبلغ: ${money(availablePayment)}`,
+                        `Use full amount: ${money(availablePayment)}`
                       )}
                 </button>
               )}
@@ -566,7 +690,7 @@ export default function PayrollWorkerPanel({
                   </label>
                 </div>
               </details>
-              {paymentAmount > 0 && (
+              {paymentAmount + deductionAmount > 0 && (
                 <p className="rounded-xl bg-teal-50 p-3 text-sm leading-6 text-teal-900">
                   {form === 'debt'
                     ? t(
@@ -574,8 +698,8 @@ export default function PayrollWorkerPanel({
                         `Debt after this entry: ${money(debt + paymentAmount)}. Salary entitlement is unchanged.`
                       )
                     : t(
-                        `المتبقي من الراتب بعد العملية: ${money(values.remaining - paymentAmount)}${form === 'settlement' ? `، والدين: ${money(debt - paymentAmount)}` : ''}.`,
-                        `Salary remaining after this entry: ${money(values.remaining - paymentAmount)}${form === 'settlement' ? `; debt: ${money(debt - paymentAmount)}` : ''}.`
+                        `المتبقي من الراتب بعد العملية: ${money(values.remaining - paymentAmount - deductionAmount)}${form === 'settlement' ? `، والدين: ${money(debt - paymentAmount)}` : ''}.`,
+                        `Salary remaining after this entry: ${money(values.remaining - paymentAmount - deductionAmount)}${form === 'settlement' ? `; debt: ${money(debt - paymentAmount)}` : ''}.`
                       )}
                 </p>
               )}
@@ -717,6 +841,20 @@ export default function PayrollWorkerPanel({
             </fieldset>
             {admin && (
               <div className="border-t border-stone-100 pt-4">
+                {!suspended && (
+                  <label className="mb-3 flex items-start gap-2 text-sm leading-6 text-stone-600">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 accent-teal-800"
+                      checked={ongoingSuspension}
+                      onChange={(e) => setOngoingSuspension(e.target.checked)}
+                    />
+                    {t(
+                      'استمرار التعليق للشهور القادمة حتى العودة. اتركه دون تحديد لتعليق هذا الشهر فقط.',
+                      'Continue suspension until return. Leave unchecked to suspend only this month.'
+                    )}
+                  </label>
+                )}
                 <button
                   type="button"
                   disabled={busy}
@@ -725,17 +863,28 @@ export default function PayrollWorkerPanel({
                     setConfirmation({
                       message: suspended
                         ? t(
-                            'إعادة إدراج العامل في إجماليات الرواتب من تاريخ التعليق؟',
-                            'Include this worker in payroll totals again from the suspension date?'
+                            `استئناف الراتب من ${month}؟ تبقى الشهور السابقة معلّقة، ويُلغى تعليق الشهر المعروض.`,
+                            `Resume payroll from ${month}? Earlier suspended months remain excluded; the displayed month resumes.`
                           )
                         : t(
-                            `تعليق احتساب راتب العامل من ${month} وما بعده؟ ستبقى السجلات والدفعات محفوظة.`,
-                            `Suspend payroll from ${month} onward? Existing entries and payments are preserved.`
+                            ongoingSuspension
+                              ? `تعليق راتب العامل من ${month} حتى العودة؟`
+                              : `تعليق راتب العامل لشهر ${month} فقط؟ لا تتغير بقية الشهور.`,
+                            ongoingSuspension
+                              ? `Suspend payroll from ${month} until return?`
+                              : `Suspend payroll for ${month} only? Other months stay unchanged.`
                           ),
                       run: () =>
                         suspended
                           ? unsuspendWorkerPayroll('tailoring', worker.id, month)
-                          : suspendWorkerPayroll('tailoring', worker.id, workerName, month)
+                          : suspendWorkerPayroll(
+                              'tailoring',
+                              worker.id,
+                              workerName,
+                              month,
+                              undefined,
+                              ongoingSuspension
+                            )
                     })
                   }
                 >

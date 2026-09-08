@@ -78,7 +78,6 @@ export interface FilterState {
   priceRange: { min: number; max: number } | null
   colors: string[]
   searchQuery: string
-  availability: 'all' | 'available'
 }
 
 // تعريف نوع الترتيب
@@ -115,8 +114,7 @@ const defaultFilters: FilterState = {
   category: [],
   priceRange: null,
   colors: [],
-  searchQuery: '',
-  availability: 'all'
+  searchQuery: ''
 }
 
 // ============================================
@@ -215,11 +213,6 @@ export const useFabricStore = create<FabricStoreState>()(
               fabric.stock_quantity
             ).amount
             if (displayedPrice == null || displayedPrice < min || displayedPrice > max) return false
-          }
-
-          // فلتر التوفر
-          if (filters.availability === 'available') {
-            if (!fabric.is_available) return false
           }
 
           // فلتر الألوان

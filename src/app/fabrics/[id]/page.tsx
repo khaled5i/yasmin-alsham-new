@@ -10,6 +10,7 @@ import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/stor
 import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import { requestFabricBrowseReturn } from '@/lib/fabric-browse-position'
 
 export default function FabricDetailPage() {
   const params = useParams()
@@ -57,7 +58,7 @@ export default function FabricDetailPage() {
       <div className="min-h-screen bg-[#fbf8f3] pt-20 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-[#211b19] mb-4">القماش غير موجود</h1>
-          <Link href="/fabrics" className="inline-flex items-center space-x-2 space-x-reverse text-[#6b1726] hover:text-[#2f0c14] transition-colors duration-300">
+          <Link href="/fabrics" onNavigate={() => requestFabricBrowseReturn(fabricId)} className="inline-flex items-center space-x-2 space-x-reverse text-[#6b1726] hover:text-[#2f0c14] transition-colors duration-300">
             <ArrowRight className="w-4 h-4" />
             <span>العودة إلى متجر الأقمشة</span>
           </Link>
@@ -125,6 +126,7 @@ export default function FabricDetailPage() {
         >
           <Link
             href="/fabrics"
+            onNavigate={() => requestFabricBrowseReturn(fabricId)}
             className="inline-flex items-center space-x-2 space-x-reverse text-[#6b1726] hover:text-[#2f0c14] transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
           >
             <ArrowRight className="w-4 h-4" />

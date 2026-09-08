@@ -1,7 +1,7 @@
 import type { BranchType } from './simple-accounting'
 
 export type PayrollStatus = 'unpaid' | 'partial' | 'paid' | 'negative' | 'zero'
-export type PayrollOperationType = 'salary' | 'payment' | 'advance' | 'deduction'
+export type PayrollOperationType = 'salary' | 'payment' | 'advance' | 'deduction' | 'salary_deduction'
 export type PayrollPaymentAccount = 'cash' | 'bank'
 export type PayrollSalaryType = 'fixed' | 'piecework'
 
@@ -25,6 +25,7 @@ export interface WorkerPayrollMonth {
   overtime_total: number
   allowances_total: number
   deductions_total: number
+  salary_deductions_total?: number
   advances_total: number
   net_due: number
   total_paid: number

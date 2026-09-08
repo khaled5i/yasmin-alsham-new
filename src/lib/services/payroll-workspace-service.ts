@@ -28,6 +28,7 @@ export interface PayrollWorkspace {
   operations: WorkerPayrollOperation[]
   debts: WorkerPayrollBigDebt[]
   suspended: Set<string>
+  previousSuspended: Set<string>
 }
 
 export interface PayrollPricingEvent {
@@ -94,29 +95,39 @@ export async function getPayrollWorkspace(
       ),
       supabase
         .from('worker_payroll_suspensions')
-        .select('worker_id')
+        .select('worker_id, payroll_year, payroll_month')
         .eq('branch', 'tailoring')
-        .eq('payroll_year', year)
-        .eq('payroll_month', part),
+        .or(`payroll_year.lt.${year},and(payroll_year.eq.${year},payroll_month.lte.${part})`),
       supabase
         .from('worker_payroll_persistent_suspensions')
-        .select('worker_id')
+        .select('worker_id, start_year, start_month')
         .eq('branch', 'tailoring')
         .or(`start_year.lt.${year},and(start_year.eq.${year},start_month.lte.${part})`)
     ]
   )
   for (const result of [previousResult, monthly, persistent])
     if (result.error) throw new Error(result.error.message)
+  const isSuspendedAt = (id: string, y: number, m: number) =>
+    (monthly.data || []).some(
+      (s) => s.worker_id === id && s.payroll_year === y && s.payroll_month === m
+    ) ||
+    (persistent.data || []).some(
+      (s) => s.worker_id === id && (s.start_year < y || (s.start_year === y && s.start_month <= m))
+    )
+  const previous = (previousResult.data || []) as WorkerPayrollMonth[]
   return {
     workers: workers.filter(
       (w) => w.user && (w.user.is_active !== false || rows.some((row) => row.worker_id === w.id))
     ),
     rows,
-    previous: (previousResult.data || []) as WorkerPayrollMonth[],
+    previous,
     operations,
     debts,
-    suspended: new Set(
-      [...(monthly.data || []), ...(persistent.data || [])].map((row) => row.worker_id)
+    suspended: new Set(workers.filter((w) => isSuspendedAt(w.id, year, part)).map((w) => w.id)),
+    previousSuspended: new Set(
+      previous
+        .filter((row) => isSuspendedAt(row.worker_id, row.payroll_year, row.payroll_month))
+        .map((row) => row.worker_id)
     )
   }
 }

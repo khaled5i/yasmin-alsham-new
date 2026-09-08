@@ -140,13 +140,15 @@ export default function PayrollLedger({
                 ? t('سداد دين', 'Debt repayment')
                 : op?.operation_type === 'salary'
                   ? t('حفظ إعداد الراتب', 'Salary settings saved')
-                  : op?.operation_type === 'deduction'
-                    ? t('دين جديد للعامل', 'New worker debt')
-                    : op?.operation_type === 'advance'
-                      ? t('خصم تاريخي من الراتب', 'Historical salary adjustment')
-                      : op && isDebtSettlement(op)
-                        ? t('تسوية دين من الراتب', 'Debt settled from salary')
-                        : t('دفعة راتب', 'Salary payment')
+                  : op?.operation_type === 'salary_deduction'
+                    ? t('خصم من الراتب', 'Salary deduction')
+                    : op?.operation_type === 'deduction'
+                      ? t('دين جديد للعامل', 'New worker debt')
+                      : op?.operation_type === 'advance'
+                        ? t('خصم تاريخي من الراتب', 'Historical salary adjustment')
+                        : op && isDebtSettlement(op)
+                          ? t('تسوية دين من الراتب', 'Debt settled from salary')
+                          : t('دفعة راتب', 'Salary payment')
             const description = pricing
               ? t(
                   'أُعيد حساب مبلغ القطع والمكافآت من تسعير الأعمال المكتملة تلقائيًا. الدفعات المسجلة محفوظة.',
@@ -167,20 +169,25 @@ export default function PayrollLedger({
                       'حُفظت مكونات راتب الشهر. هذه عملية احتساب استحقاق، وليست دفعة نقدية للعامل.',
                       'Monthly salary components were saved. This records entitlement, not a cash payment.'
                     )
-                  : op?.operation_type === 'deduction'
+                  : op?.operation_type === 'salary_deduction'
                     ? t(
-                        'مبلغ صُرف للعامل وسُجّل دينًا مستقلًا. لا يُخصم من الراتب تلقائيًا؛ يُسوّى عند تسجيل سداد الدين.',
-                        'Money issued to the worker and recorded as a separate debt. It is not automatically deducted from salary.'
+                        'خُفّض مستحق الشهر بمبلغ الخصم المبين. لم تُسجّل دفعة نقدية أو زيادة في الدين؛ سبب الخصم موضح أدناه.',
+                        'Monthly entitlement was reduced by this deduction. No cash payment or debt was created; the reason is shown below.'
                       )
-                    : op?.operation_type === 'advance'
+                    : op?.operation_type === 'deduction'
                       ? t(
-                          'قيد من النظام السابق خُصم من مستحق الراتب. حُفظ أثره المالي كما سُجّل، ولا تُنشأ قيود جديدة من هذا النوع.',
-                          'An adjustment from the previous system reduced salary entitlement. Its recorded financial effect is preserved; no new entries of this type are created.'
+                          'مبلغ صُرف للعامل وسُجّل دينًا مستقلًا. لا يُخصم من الراتب تلقائيًا؛ يُسوّى عند تسجيل سداد الدين.',
+                          'Money issued to the worker and recorded as a separate debt. It is not automatically deducted from salary.'
                         )
-                      : t(
-                          'دفعة تخفّض المتبقي من راتب الشهر. الديون المستقلة لا تتغير بهذه العملية.',
-                          'This payment reduces the remaining monthly salary. Separate debts are unchanged.'
-                        )
+                      : op?.operation_type === 'advance'
+                        ? t(
+                            'قيد من النظام السابق خُصم من مستحق الراتب. حُفظ أثره المالي كما سُجّل، ولا تُنشأ قيود جديدة من هذا النوع.',
+                            'An adjustment from the previous system reduced salary entitlement. Its recorded financial effect is preserved; no new entries of this type are created.'
+                          )
+                        : t(
+                            'دفعة تخفّض المتبقي من راتب الشهر. الديون المستقلة لا تتغير بهذه العملية.',
+                            'This payment reduces the remaining monthly salary. Separate debts are unchanged.'
+                          )
             const before = pricing?.before_amount ?? debt?.before_amount ?? op?.before_amount ?? 0
             const after = pricing?.after_amount ?? debt?.after_amount ?? op?.after_amount ?? 0
             const amount = pricing

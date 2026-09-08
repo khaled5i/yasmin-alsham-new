@@ -229,6 +229,21 @@ export const attendanceService = {
     return payload.days
   },
 
+  async getWorkerMonthAbsence(workerId: string, monthKey: string): Promise<number> {
+    const [month, result] = await Promise.all([
+      this.getMonth(monthKey),
+      supabase.from('attendance_worker_suspensions').select('*').eq('worker_id', workerId)
+    ])
+    if (result.error) throw new Error(result.error.message)
+    const mappings = new Map(month.mappings.map(mapping => [`${mapping.device_id}:${mapping.device_user_id}`, mapping.worker_id]))
+    const events = month.events.filter(event =>
+      (event.worker_id || mappings.get(`${event.device_id}:${event.device_user_id}`)) === workerId)
+    const suspensions = (result.data || []) as AttendanceWorkerSuspension[]
+    const excluded = new Set(getMonthDateKeys(monthKey).filter(dateKey =>
+      suspensions.some(suspension => isAttendanceSuspendedOnDate(suspension, dateKey))))
+    return buildAttendanceMonthSummary(monthKey, groupAttendanceEventsByRiyadhDate(events), new Map(), new Date(), excluded).absentDays
+  },
+
   async getMySummary(userId: string): Promise<WorkerAttendanceSummary> {
     const { data: worker, error: workerError } = await supabase
       .from('workers')

@@ -1,12 +1,14 @@
 import Image from 'next/image'
+import Link from 'next/link'
 import { ArrowLeft, MessageCircle } from 'lucide-react'
 import ResponsiveHeroMedia from './ResponsiveHeroMedia'
 import TailoringShowcase from './TailoringShowcase'
 import TrackedLink from './TrackedLink'
+import TrackedRouteLink from './TrackedRouteLink'
 import { homeMedia, tailoringShowcase, tailoringWhatsAppUrl } from './home-data'
 import styles from './home.module.css'
 
-export type HomeSectionKey = 'tailoring' | 'fabrics'
+export type HomeSectionKey = 'tailoring'
 
 type SectionSelectionProps = {
   onSelectSection: (section: HomeSectionKey) => void
@@ -36,18 +38,14 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
           >
             تفصيل فستان سهرة
           </TrackedLink>
-          <TrackedLink
-            href="#fabrics"
+          <TrackedRouteLink
+            href="/fabrics"
             className={styles.secondaryButton}
             eventName="hero_cta_click"
             eventProperties={{ destination: 'fabrics' }}
-            onClick={(event) => {
-              event.preventDefault()
-              onSelectSection('fabrics')
-            }}
           >
             متجر الأقمشة
-          </TrackedLink>
+          </TrackedRouteLink>
         </div>
       </div>
 
@@ -94,13 +92,9 @@ export function BusinessGateway({ onSelectSection }: SectionSelectionProps) {
           </span>
         </a>
 
-        <a
-          href="#fabrics"
+        <Link
+          href="/fabrics"
           className={`${styles.gatewayCard} ${styles.gatewayFabrics}`}
-          onClick={(event) => {
-            event.preventDefault()
-            onSelectSection('fabrics')
-          }}
         >
           <Image
             src={homeMedia.transitionPoster}
@@ -117,13 +111,13 @@ export function BusinessGateway({ onSelectSection }: SectionSelectionProps) {
             <span>تشكيلة مختارة للمناسبات والتصاميم المميزة.</span>
             <em>تصفحي المتجر <ArrowLeft aria-hidden="true" /></em>
           </span>
-        </a>
+        </Link>
       </div>
     </section>
   )
 }
 
-export function TailoringStory({ onSelectSection }: SectionSelectionProps) {
+export function TailoringStory() {
   return (
     <>
       <section className={styles.tailoringHero} aria-labelledby="tailoring-title">
@@ -172,50 +166,19 @@ export function TailoringStory({ onSelectSection }: SectionSelectionProps) {
             </TrackedLink>
             <div className={styles.fabricStorePrompt}>
               <p>ليس لديكِ قماش بعد؟</p>
-              <TrackedLink
-                href="#fabrics"
+              <TrackedRouteLink
+                href="/fabrics"
                 className={styles.fabricStorePromptButton}
                 eventName="hero_cta_click"
                 eventProperties={{ destination: 'fabrics', placement: 'tailoring_footer' }}
-                onClick={(event) => {
-                  event.preventDefault()
-                  onSelectSection('fabrics')
-                }}
               >
                 زوري متجر الأقمشة
                 <ArrowLeft aria-hidden="true" />
-              </TrackedLink>
+              </TrackedRouteLink>
             </div>
           </div>
         </div>
       </section>
     </>
-  )
-}
-
-export function FabricTransition() {
-  return (
-    <section className={`${styles.tailoringHero} ${styles.fabricTransition}`} aria-labelledby="fabric-hero-title">
-      <ResponsiveHeroMedia {...homeMedia.fabricsHero} />
-      <div className={`${styles.tailoringHeroShade} ${styles.fabricHeroShade}`} />
-      <div className={styles.heroGrain} />
-
-      <div className={`${styles.tailoringHeroContent} ${styles.fabricHeroContent}`}>
-        <p className={styles.heroEyebrow}>متجر أقمشة ياسمين الشام <span aria-hidden="true" /> الخبر</p>
-        <h1 id="fabric-hero-title">كل فستانٍ جميل…<br />يبدأ بقماشٍ استثنائي</h1>
-        <p>تشكيلة منتقاة بعناية، لتمنح فكرتكِ البداية الأجمل.</p>
-        <TrackedLink
-          href="#fabric-collection"
-          className={styles.tailoringHeroButton}
-          eventName="hero_cta_click"
-          eventProperties={{ destination: 'fabric_collection' }}
-        >
-          شاهدي مجموعة الأقمشة
-        </TrackedLink>
-      </div>
-      <a className={styles.tailoringScrollMark} href="#fabric-collection" aria-label="الانتقال إلى مجموعة الأقمشة">
-        <span aria-hidden="true" />
-      </a>
-    </section>
   )
 }

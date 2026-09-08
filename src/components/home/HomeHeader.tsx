@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
@@ -17,10 +18,13 @@ import { trackHomeEvent } from './home-analytics'
 import type { HomeSectionKey } from './HomeSections'
 import styles from './home.module.css'
 
-const navItems = [
+const sectionNavItems = [
   { label: 'التفصيل', href: '#tailoring', section: 'tailoring' },
-  { label: 'متجر الأقمشة', href: '#fabrics', section: 'fabrics' },
 ] satisfies Array<{ label: string; href: string; section: HomeSectionKey }>
+
+const routeNavItems = [
+  { label: 'متجر الأقمشة', href: '/fabrics' },
+]
 
 const serviceItems = [
   { label: 'تتبع الطلب', href: '/track-order', icon: Search },
@@ -50,9 +54,7 @@ export default function HomeHeader({
   const scrollFrameRef = useRef<number | null>(null)
   const router = useRouter()
   const isSectionExperience = activeSection !== null
-  const useSolidHeader = !isSectionExperience
-    ? forceSolid || isScrolled || isMenuOpen
-    : activeSection === 'fabrics' && (forceSolid || isScrolled || isMenuOpen)
+  const useSolidHeader = !isSectionExperience && (forceSolid || isScrolled || isMenuOpen)
 
   useEffect(() => {
     const updateHeader = () => {
@@ -149,7 +151,7 @@ export default function HomeHeader({
   return (
     <header
       ref={headerRef}
-      className={`${styles.homeHeader} ${isSectionExperience ? styles.tailoringHomeHeader : ''} ${activeSection === 'fabrics' ? styles.fabricHomeHeader : ''} ${useSolidHeader ? styles.headerSolid : ''}`}
+      className={`${styles.homeHeader} ${isSectionExperience ? styles.tailoringHomeHeader : ''} ${useSolidHeader ? styles.headerSolid : ''}`}
       data-open={isMenuOpen}
     >
       <div className={`${styles.headerInner} ${isSectionExperience ? styles.tailoringHeaderInner : ''}`}>
@@ -177,9 +179,9 @@ export default function HomeHeader({
             <span>{isMenuOpen ? 'إغلاق' : 'القائمة'}</span>
           </button>
 
-          {isSectionExperience
-            ? null
-            : navItems.map((item) => (
+          {isSectionExperience ? null : (
+            <>
+              {sectionNavItems.map((item) => (
                 <a
                   key={item.href}
                   href={item.href}
@@ -192,6 +194,13 @@ export default function HomeHeader({
                   {item.label}
                 </a>
               ))}
+              {routeNavItems.map((item) => (
+                <Link key={item.href} href={item.href} onClick={closeMenu}>
+                  {item.label}
+                </Link>
+              ))}
+            </>
+          )}
         </nav>
 
         <a

@@ -11,16 +11,14 @@ import dynamic from 'next/dynamic'
 import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
+import { FABRICS_PER_PAGE, useFabricBrowsePosition } from '@/hooks/useFabricBrowsePosition'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
-  ssr: false,
-  loading: () => <div className="hidden lg:block w-80 h-screen animate-pulse bg-[#f6f0e8] rounded-2xl" />
+  ssr: false
 })
 
 const FabricQuickViewModal = dynamic(() => import('@/components/FabricQuickViewModal'), { ssr: false })
-
-const FABRICS_PER_PAGE = 12
 
 function FabricSkeleton() {
   return (
@@ -42,11 +40,14 @@ function FabricSkeleton() {
 
 export default function FabricsPage() {
   const { fabrics, loadFabrics, isLoading, error, getFilteredFabrics, filters, sortBy, setFilters, resetFilters } = useFabricStore()
-  const [currentImageIndexes, setCurrentImageIndexes] = useState<{ [key: string]: number }>({})
-  const [isSingleColumn, setIsSingleColumn] = useState(false)
-  const [displayedFabrics, setDisplayedFabrics] = useState<Fabric[]>([])
-  const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(true)
+  const filteredFabrics = getFilteredFabrics()
+  const {
+    page, setPage, isSingleColumn, setIsSingleColumn,
+    currentImageIndexes, setCurrentImageIndexes,
+    isReady, isRestoring, restoredCount, rememberFabric,
+  } = useFabricBrowsePosition(JSON.stringify({ filters, sortBy }), filteredFabrics, isLoading)
+  const displayedFabrics = isReady ? filteredFabrics.slice(0, page * FABRICS_PER_PAGE) : []
+  const hasMore = displayedFabrics.length < filteredFabrics.length
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [quickViewFabric, setQuickViewFabric] = useState<Fabric | null>(null)
   const [isQuickViewOpen, setIsQuickViewOpen] = useState(false)
@@ -58,18 +59,7 @@ export default function FabricsPage() {
   }, [loadFabrics])
 
   useEffect(() => {
-    if (fabrics.length === 0) return
-    const filteredFabrics = getFilteredFabrics()
-    const totalFabrics = filteredFabrics.length
-    const fabricsToShow = page * FABRICS_PER_PAGE
-    const newDisplayedFabrics = filteredFabrics.slice(0, Math.min(fabricsToShow, totalFabrics))
-    setDisplayedFabrics(newDisplayedFabrics)
-    setHasMore(fabricsToShow < totalFabrics)
-  }, [fabrics, page, filters, sortBy, getFilteredFabrics])
-
-  useEffect(() => { setPage(1) }, [filters, sortBy])
-
-  useEffect(() => {
+    if (!isReady || isRestoring) return
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !isLoading) {
@@ -80,38 +70,22 @@ export default function FabricsPage() {
     )
     const observerNode = observerTarget.current
     if (observerNode) observer.observe(observerNode)
-    return () => { if (observerNode) observer.unobserve(observerNode) }
-  }, [hasMore, isLoading])
-
-  useEffect(() => {
-    if (fabrics.length > 0) {
-      const initialIndexes: { [key: string]: number } = {}
-      fabrics.forEach(fabric => { initialIndexes[fabric.id] = 0 })
-      setCurrentImageIndexes(initialIndexes)
-    }
-  }, [fabrics])
+    return () => observer.disconnect()
+  }, [hasMore, isLoading, isReady, isRestoring, displayedFabrics.length, setPage])
 
   const nextImage = useCallback((fabricId: string, totalImages: number) => {
     setCurrentImageIndexes(prev => ({ ...prev, [fabricId]: ((prev[fabricId] || 0) + 1) % totalImages }))
-  }, [])
+  }, [setCurrentImageIndexes])
 
   const prevImage = useCallback((fabricId: string, totalImages: number) => {
     setCurrentImageIndexes(prev => ({ ...prev, [fabricId]: ((prev[fabricId] || 0) - 1 + totalImages) % totalImages }))
-  }, [])
-
-  // تحميل حالة العرض من localStorage
-  useEffect(() => {
-    const savedViewMode = localStorage.getItem('yasmin-fabrics-view-mode')
-    if (savedViewMode === 'single') {
-      setIsSingleColumn(true)
-    }
-  }, [])
+  }, [setCurrentImageIndexes])
 
   // حفظ حالة العرض في localStorage
   const toggleViewMode = () => {
     const newMode = !isSingleColumn
     setIsSingleColumn(newMode)
-    localStorage.setItem('yasmin-fabrics-view-mode', newMode ? 'single' : 'double')
+    try { localStorage.setItem('yasmin-fabrics-view-mode', newMode ? 'single' : 'double') } catch { /* Optional preference. */ }
   }
 
   // فتح QuickView
@@ -142,7 +116,7 @@ export default function FabricsPage() {
           >
             <div className="relative flex items-center justify-center">
               <Link
-                href="/#fabrics"
+                href="/"
                 className="group absolute right-0 top-1/2 inline-flex h-9 -translate-y-1/2 items-center gap-1 px-1 text-[#6b1726] transition-colors duration-200 hover:text-[#2f0c14] focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3] sm:right-1 lg:right-2"
               >
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -306,13 +280,14 @@ export default function FabricsPage() {
                   return (
                     <motion.div
                       key={fabric.id}
-                      initial={{ opacity: 0, y: 30 }}
+                      id={`fabric-card-${fabric.id}`}
+                      initial={index < restoredCount ? false : { opacity: 0, y: 30 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.6, delay: index * 0.05 }}
+                      transition={{ duration: 0.6, delay: (index % FABRICS_PER_PAGE) * 0.05 }}
                       className="group"
                     >
                       <div className="relative overflow-hidden rounded-2xl border border-[#d8c5ae]/60 bg-[#f6f0e8] shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
-                        <Link href={`/fabrics/${fabric.id}`}>
+                        <Link href={`/fabrics/${fabric.id}`} onNavigate={() => rememberFabric(fabric.id)}>
                           <div className="aspect-[9/16] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35 relative overflow-hidden cursor-pointer">
                             {currentImageIsVideo ? (
                               <video
@@ -441,13 +416,12 @@ export default function FabricsPage() {
           fabric={quickViewFabric}
           isOpen={isQuickViewOpen}
           onClose={closeQuickView}
+          onViewDetails={rememberFabric}
         />
       </main>
     </>
   )
 }
-
-
 
 
 

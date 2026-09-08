@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowRight,
@@ -18,6 +18,7 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useTranslation } from '@/hooks/useTranslation'
 import { usePayrollRefresh } from '@/hooks/usePayrollRefresh'
+import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import {
   getPayrollWorkspace,
   type PayrollWorkspace
@@ -26,6 +27,7 @@ import { saveTailoringSalarySettings } from '@/lib/services/worker-payroll-servi
 import { workerService } from '@/lib/services/worker-service'
 import {
   payrollAmounts,
+  payrollSortGroup,
   payrollDate,
   payrollMoney,
   payrollMonth,
@@ -53,7 +55,8 @@ export default function TailoringPayrollDashboard({
   const admin = useAuthStore((state) => state.user?.role === 'admin')
   const t = (ar: string, en: string) => (isArabic ? ar : en)
   const money = (n: number) => payrollMoney(n, isArabic)
-  const [month, setMonth] = useState(payrollMonth)
+  // الشهر المشترك مع أقسام متابعة العمال — محفوظ لبقية اليوم
+  const [month, setMonth] = useSelectedMonth()
   const [data, setData] = useState<PayrollWorkspace | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -169,6 +172,7 @@ export default function TailoringPayrollDashboard({
           worker,
           row,
           previous: prior,
+          previousSuspended: data.previousSuspended.has(worker.id),
           operations: ops,
           debt: debts.get(worker.id) || 0,
           suspended: data.suspended.has(worker.id),
@@ -178,7 +182,7 @@ export default function TailoringPayrollDashboard({
       })
       .sort(
         (a, b) =>
-          Number(a.suspended) - Number(b.suspended) ||
+          payrollSortGroup(a) - payrollSortGroup(b) ||
           a.worker.user.full_name.localeCompare(b.worker.user.full_name, 'ar')
       )
   }, [data])
@@ -538,68 +542,79 @@ export default function TailoringPayrollDashboard({
               ) : (
                 <>
                   <div className="space-y-3 lg:hidden">
-                    {visible.map((entry) => (
-                      <article
-                        key={entry.worker.id}
-                        className="rounded-2xl border border-stone-200 bg-white p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                    {visible.map((entry, index) => (
+                      <Fragment key={entry.worker.id}>
+                        {entry.suspended && (index === 0 || !visible[index - 1].suspended) && (
+                          <div className="flex items-center gap-3 pb-1 pt-6 text-sm font-semibold text-stone-500">
+                            <span className="h-px flex-1 bg-stone-300" />
+                            {t('العمال المعلّقون', 'Suspended workers')}
+                            <span className="h-px flex-1 bg-stone-300" />
+                          </div>
+                        )}
+                        <article
+                          key={entry.worker.id}
+                          className="rounded-2xl border border-stone-200 bg-white p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <button
+                                className="min-h-9 break-words text-start font-bold text-stone-900"
+                                onClick={() => open(entry.worker.id)}
+                              >
+                                {entry.worker.user.full_name}
+                              </button>
+                              <p className="mt-1 text-xs text-stone-500">
+                                {entry.salaryType === 'piecework'
+                                  ? t('بالقطعة · تلقائي', 'Piecework · automatic')
+                                  : t('راتب ثابت', 'Fixed salary')}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium ${entry.suspended ? 'bg-stone-100 text-stone-500' : entry.remaining > 0.009 ? 'bg-amber-50 text-amber-800' : 'bg-teal-50 text-teal-800'}`}
+                            >
+                              {status(entry)}
+                            </span>
+                          </div>
+                          <div className="mt-4 flex items-end justify-between gap-3">
+                            <div>
+                              <p className="text-xs text-stone-500">
+                                {t('المتبقي من الراتب', 'Salary remaining')}
+                              </p>
+                              <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">
+                                {money(entry.remaining)}
+                              </p>
+                            </div>
+                            {entry.debt > 0.009 && (
+                              <button
+                                className="min-h-11 text-xs font-medium text-amber-800"
+                                onClick={() => open(entry.worker.id, false, 'debts')}
+                              >
+                                {t('دين:', 'Debt:')} {money(entry.debt)}
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-4 flex gap-2">
+                            {admin && (
+                              <button
+                                disabled={error || (!entry.suspended && entry.remaining <= 0.009)}
+                                className={`${payrollPrimary} flex-1`}
+                                onClick={() => open(entry.worker.id, !entry.suspended)}
+                              >
+                                <Wallet className="h-4 w-4" />
+                                {entry.suspended
+                                  ? t('لوحة التحكم', 'Control panel')
+                                  : t('تسجيل دفعة', 'Pay')}
+                              </button>
+                            )}
                             <button
-                              className="min-h-9 break-words text-start font-bold text-stone-900"
+                              className={`${payrollSecondary} ${admin ? '' : 'flex-1'}`}
                               onClick={() => open(entry.worker.id)}
                             >
-                              {entry.worker.user.full_name}
+                              {t('التفاصيل', 'Details')}
                             </button>
-                            <p className="mt-1 text-xs text-stone-500">
-                              {entry.salaryType === 'piecework'
-                                ? t('بالقطعة · تلقائي', 'Piecework · automatic')
-                                : t('راتب ثابت', 'Fixed salary')}
-                            </p>
                           </div>
-                          <span
-                            className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium ${entry.suspended ? 'bg-stone-100 text-stone-500' : entry.remaining > 0.009 ? 'bg-amber-50 text-amber-800' : 'bg-teal-50 text-teal-800'}`}
-                          >
-                            {status(entry)}
-                          </span>
-                        </div>
-                        <div className="mt-4 flex items-end justify-between gap-3">
-                          <div>
-                            <p className="text-xs text-stone-500">
-                              {t('المتبقي من الراتب', 'Salary remaining')}
-                            </p>
-                            <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">
-                              {money(entry.remaining)}
-                            </p>
-                          </div>
-                          {entry.debt > 0.009 && (
-                            <button
-                              className="min-h-11 text-xs font-medium text-amber-800"
-                              onClick={() => open(entry.worker.id, false, 'debts')}
-                            >
-                              {t('دين:', 'Debt:')} {money(entry.debt)}
-                            </button>
-                          )}
-                        </div>
-                        <div className="mt-4 flex gap-2">
-                          {admin && (
-                            <button
-                              disabled={error || entry.remaining <= 0.009}
-                              className={`${payrollPrimary} flex-1`}
-                              onClick={() => open(entry.worker.id, true)}
-                            >
-                              <Wallet className="h-4 w-4" />
-                              {t('تسجيل دفعة', 'Pay')}
-                            </button>
-                          )}
-                          <button
-                            className={`${payrollSecondary} ${admin ? '' : 'flex-1'}`}
-                            onClick={() => open(entry.worker.id)}
-                          >
-                            {t('التفاصيل', 'Details')}
-                          </button>
-                        </div>
-                      </article>
+                        </article>
+                      </Fragment>
                     ))}
                   </div>
                   <div className="hidden overflow-hidden rounded-2xl border border-stone-200 bg-white lg:block">
@@ -621,51 +636,62 @@ export default function TailoringPayrollDashboard({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-100">
-                        {visible.map((entry) => (
-                          <tr key={entry.worker.id} className="hover:bg-stone-50/60">
-                            <td className="px-4 py-4">
-                              <button
-                                onClick={() => open(entry.worker.id)}
-                                className="min-h-9 text-start font-semibold text-stone-900"
-                              >
-                                {entry.worker.user.full_name}
-                              </button>
-                              <p className="text-xs text-stone-500">
-                                {entry.salaryType === 'piecework'
-                                  ? t('بالقطعة · تلقائي', 'Piecework · automatic')
-                                  : t('راتب ثابت', 'Fixed salary')}
-                                {entry.debt > 0.009
-                                  ? ` · ${t('دين', 'Debt')} ${money(entry.debt)}`
-                                  : ''}
-                              </p>
-                            </td>
-                            <td className="px-4 py-4 tabular-nums">{money(entry.due)}</td>
-                            <td className="px-4 py-4 tabular-nums text-stone-500">
-                              {money(entry.paid)}
-                            </td>
-                            <td className="px-4 py-4 font-bold tabular-nums">
-                              {money(entry.remaining)}
-                            </td>
-                            <td className="px-4 py-4 text-xs text-stone-600">{status(entry)}</td>
-                            <td className="px-4 py-4">
-                              {admin && entry.remaining > 0.009 ? (
+                        {visible.map((entry, index) => (
+                          <Fragment key={entry.worker.id}>
+                            {entry.suspended && (index === 0 || !visible[index - 1].suspended) && (
+                              <tr className="border-t-2 border-stone-300 bg-stone-100">
+                                <td colSpan={6} className="px-4 py-4 font-semibold text-stone-600">
+                                  {t('العمال المعلّقون', 'Suspended workers')}
+                                </td>
+                              </tr>
+                            )}
+                            <tr key={entry.worker.id} className="hover:bg-stone-50/60">
+                              <td className="px-4 py-4">
                                 <button
-                                  disabled={error}
-                                  className={payrollPrimary}
-                                  onClick={() => open(entry.worker.id, true)}
-                                >
-                                  {t('تسجيل دفعة', 'Pay')}
-                                </button>
-                              ) : (
-                                <button
-                                  className={payrollSecondary}
                                   onClick={() => open(entry.worker.id)}
+                                  className="min-h-9 text-start font-semibold text-stone-900"
                                 >
-                                  {t('التفاصيل', 'Details')}
+                                  {entry.worker.user.full_name}
                                 </button>
-                              )}
-                            </td>
-                          </tr>
+                                <p className="text-xs text-stone-500">
+                                  {entry.salaryType === 'piecework'
+                                    ? t('بالقطعة · تلقائي', 'Piecework · automatic')
+                                    : t('راتب ثابت', 'Fixed salary')}
+                                  {entry.debt > 0.009
+                                    ? ` · ${t('دين', 'Debt')} ${money(entry.debt)}`
+                                    : ''}
+                                </p>
+                              </td>
+                              <td className="px-4 py-4 tabular-nums">{money(entry.due)}</td>
+                              <td className="px-4 py-4 tabular-nums text-stone-500">
+                                {money(entry.paid)}
+                              </td>
+                              <td className="px-4 py-4 font-bold tabular-nums">
+                                {money(entry.remaining)}
+                              </td>
+                              <td className="px-4 py-4 text-xs text-stone-600">{status(entry)}</td>
+                              <td className="px-4 py-4">
+                                {admin && entry.remaining > 0.009 && !entry.suspended ? (
+                                  <button
+                                    disabled={error}
+                                    className={payrollPrimary}
+                                    onClick={() => open(entry.worker.id, true)}
+                                  >
+                                    {t('تسجيل دفعة', 'Pay')}
+                                  </button>
+                                ) : (
+                                  <button
+                                    className={payrollSecondary}
+                                    onClick={() => open(entry.worker.id)}
+                                  >
+                                    {entry.suspended
+                                      ? t('لوحة التحكم', 'Control panel')
+                                      : t('التفاصيل', 'Details')}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>

@@ -48,6 +48,8 @@ import {
   type AttendancePrayerTime,
 } from '@/lib/attendance-analysis'
 import MonthlyAttendanceReport from '@/app/dashboard/worker-monitoring/attendance/MonthlyAttendanceReport'
+import { useSelectedMonth } from '@/hooks/useSelectedMonth'
+import { readSelectedMonth } from '@/lib/selected-month'
 
 const RIYADH_TIME_ZONE = 'Asia/Riyadh'
 
@@ -61,6 +63,15 @@ function getRiyadhDateKey() {
 
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
   return `${values.year}-${values.month}-${values.day}`
+}
+
+/** اليوم المعروض داخل الشهر المختار: اليوم نفسه في الشهر الحالي، وإلا آخر أيام ذلك الشهر. */
+function defaultDayInMonth(month: string) {
+  const today = getRiyadhDateKey()
+  if (today.slice(0, 7) === month) return today
+  const [year, part] = month.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(year, part, 0)).getUTCDate()
+  return `${month}-${String(lastDay).padStart(2, '0')}`
 }
 
 function formatTime(value: string | null) {
@@ -131,18 +142,22 @@ interface MappingRemovalAction {
 
 interface AttendanceMonitoringDashboardProps {
   embeddedWorkerId?: string
+  initialWorkerId?: string
+  initialMonth?: string
 }
 
-export default function AttendanceMonitoringDashboard({ embeddedWorkerId }: AttendanceMonitoringDashboardProps = {}) {
+export default function AttendanceMonitoringDashboard({ embeddedWorkerId, initialWorkerId, initialMonth }: AttendanceMonitoringDashboardProps = {}) {
   const router = useRouter()
   const { user } = useAuthStore()
   const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
-  const [dateKey, setDateKey] = useState(getRiyadhDateKey)
+  // الشهر المشترك مع بقية أقسام متابعة العمال وصفحة الرواتب — محفوظ لبقية اليوم
+  const [selectedMonth, setSelectedMonth] = useSelectedMonth()
+  const [dateKey, setDateKey] = useState(() => (initialMonth ? defaultDayInMonth(initialMonth) : getRiyadhDateKey()))
   const [workers, setWorkers] = useState<WorkerWithUser[]>([])
   const [suspensions, setSuspensions] = useState<AttendanceWorkerSuspension[]>([])
   const [attendance, setAttendance] = useState<AttendanceDayData>({ devices: [], deviceUsers: [], mappings: [], events: [] })
   const [prayerTimes, setPrayerTimes] = useState<AttendancePrayerTime[]>([])
-  const [view, setView] = useState<'daily' | 'monthly'>('daily')
+  const [view, setView] = useState<'daily' | 'monthly'>(initialMonth ? 'monthly' : 'daily')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [prayerError, setPrayerError] = useState<string | null>(null)
@@ -152,6 +167,26 @@ export default function AttendanceMonitoringDashboard({ embeddedWorkerId }: Atte
   const [removingMappingId, setRemovingMappingId] = useState<string | null>(null)
   const [attendanceAction, setAttendanceAction] = useState<AttendanceAction | null>(null)
   const [updatingSuspensionWorkerId, setUpdatingSuspensionWorkerId] = useState<string | null>(null)
+
+  // شهر قادم من الرابط = اختيار صريح يُحفظ للأقسام الأخرى
+  useEffect(() => {
+    if (initialMonth) setSelectedMonth(initialMonth)
+  }, [initialMonth, setSelectedMonth])
+
+  // اليوم المعروض يبقى داخل الشهر المختار مهما تغيّر من أي قسم آخر.
+  // نقرأ الشهر من مصدره لا من لقطة العرض، لأن شهر الرابط أعلاه قد يكون كُتب للتوّ في هذه الدورة.
+  useEffect(() => {
+    void selectedMonth
+    const month = readSelectedMonth()
+    setDateKey((current) => (current.slice(0, 7) === month ? current : defaultDayInMonth(month)))
+  }, [selectedMonth])
+
+  /** اختيار يوم هو اختيارٌ لشهره أيضاً. */
+  const selectDate = useCallback((value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return
+    setDateKey(value)
+    setSelectedMonth(value.slice(0, 7))
+  }, [setSelectedMonth])
 
   const isAuthorized = Boolean(
     user && (
@@ -490,7 +525,7 @@ export default function AttendanceMonitoringDashboard({ embeddedWorkerId }: Atte
                     <input
                       type="date"
                       value={dateKey}
-                      onChange={(event) => setDateKey(event.target.value)}
+                      onChange={(event) => selectDate(event.target.value)}
                       className="w-full rounded-xl border border-teal-200 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
                     />
                   </label>
@@ -533,7 +568,7 @@ export default function AttendanceMonitoringDashboard({ embeddedWorkerId }: Atte
                   <input
                     type="date"
                     value={dateKey}
-                    onChange={(event) => setDateKey(event.target.value)}
+                    onChange={(event) => selectDate(event.target.value)}
                     className="min-w-0 flex-1 bg-transparent text-left text-sm font-bold text-white outline-none [color-scheme:dark]"
                   />
                 </label>
@@ -735,7 +770,7 @@ export default function AttendanceMonitoringDashboard({ embeddedWorkerId }: Atte
           <MonthlyAttendanceReport
             workers={activeWorkers}
             suspensions={suspensions}
-            initialMonth={dateKey.slice(0, 7)}
+            initialWorkerId={initialWorkerId}
           />
         )}
       </main>

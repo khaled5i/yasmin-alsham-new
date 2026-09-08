@@ -14,6 +14,10 @@ function load(file, mocks = {}) {
 }
 async function main() {
   const model = load('src/lib/payroll-display.ts')
+  assert.equal(model.payrollSortGroup({ suspended: false, remaining: 500, paid: 2500 }),0)
+  assert.equal(model.payrollSortGroup({ suspended: false, remaining: 0, paid: 0 }),1)
+  assert.equal(model.payrollSortGroup({ suspended: false, remaining: 0, paid: 3000 }),2)
+  assert.equal(model.payrollSortGroup({ suspended: true, remaining: 3000, paid: 0 }),3)
   assert.equal(model.pieceworkAmount(0, 50), 0)
   assert.equal(model.pieceworkAmount(100, 25), 125)
   assert.equal(model.pieceworkAmount(null, 25), 0)
@@ -26,6 +30,7 @@ async function main() {
     { operation_type: 'payment', amount: 300, metadata: {} },
     { operation_type: 'payment', amount: 100, metadata: { debt_settlement: true } },
     { operation_type: 'deduction', amount: 50, metadata: {} },
+    { operation_type: 'salary_deduction', amount: 200, metadata: {} },
   ])
   assert.equal(amounts.remaining, 600)
   assert.equal(amounts.cashOut, 350)

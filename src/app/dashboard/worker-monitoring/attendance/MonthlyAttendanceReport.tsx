@@ -29,11 +29,12 @@ import {
   type AttendanceDayAnalysis,
   type AttendancePrayerTime,
 } from '@/lib/attendance-analysis'
+import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 
 interface MonthlyAttendanceReportProps {
   workers: WorkerWithUser[]
   suspensions: AttendanceWorkerSuspension[]
-  initialMonth: string
+  initialWorkerId?: string
 }
 
 interface MonthData {
@@ -63,9 +64,10 @@ function durationOrDash(minutes: number) {
   return minutes > 0 ? formatAttendanceDuration(minutes) : '—'
 }
 
-export default function MonthlyAttendanceReport({ workers, suspensions, initialMonth }: MonthlyAttendanceReportProps) {
-  const [monthKey, setMonthKey] = useState(initialMonth)
-  const [workerId, setWorkerId] = useState(workers[0]?.id ?? '')
+export default function MonthlyAttendanceReport({ workers, suspensions, initialWorkerId }: MonthlyAttendanceReportProps) {
+  // الشهر المشترك مع بقية أقسام متابعة العمال وصفحة الرواتب — محفوظ لبقية اليوم
+  const [monthKey, setMonthKey] = useSelectedMonth()
+  const [workerId, setWorkerId] = useState(initialWorkerId ?? workers[0]?.id ?? '')
   const [monthData, setMonthData] = useState<MonthData>({ mappings: [], events: [] })
   const [prayerTimes, setPrayerTimes] = useState<AttendancePrayerTime[]>([])
   const [isLoading, setIsLoading] = useState(true)

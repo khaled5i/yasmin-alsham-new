@@ -916,157 +916,6 @@
   background: var(--ivory);
 }
 
-/* Fabric transition */
-.fabricTransition {
-  background: #26100f;
-}
-
-.fabricHeroContent {
-  text-align: right;
-}
-
-/* Fabric store */
-.fabricStoreSection {
-  padding: 88px 0 120px;
-  background:
-    radial-gradient(circle at 0 30%, rgba(201, 142, 148, 0.09), transparent 26%),
-    var(--ivory-soft);
-  scroll-margin-top: 72px;
-  content-visibility: auto;
-  contain-intrinsic-size: 2600px;
-}
-
-.fabricStoreHeader {
-  margin-bottom: 0;
-}
-
-.tailoringWorksHeader.fabricStoreHeader h2 {
-  color: var(--wine);
-}
-
-.tailoringWorksHeader.fabricStoreHeader h2::before {
-  background: linear-gradient(90deg, transparent, rgba(107, 23, 38, 0.48));
-}
-
-.tailoringWorksHeader.fabricStoreHeader h2::after {
-  background: linear-gradient(90deg, rgba(107, 23, 38, 0.48), transparent);
-}
-
-.fabricStoreHeader + :is(.fabricSkeletonGrid, .fabricStatus) {
-  margin-top: 24px;
-}
-
-.fabricMedia {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.fabricSkeletonGrid {
-  display: flex;
-  gap: 14px;
-  overflow: hidden;
-}
-
-.fabricSkeleton {
-  flex: 0 0 80vw;
-  max-width: 430px;
-  padding-bottom: 20px;
-  overflow: hidden;
-  background: var(--white);
-  border-radius: 18px;
-}
-
-.fabricSkeleton span {
-  display: block;
-  aspect-ratio: 4 / 5;
-  background: linear-gradient(100deg, #e9dfd2 20%, #f5eee7 40%, #e9dfd2 60%);
-  background-size: 200% 100%;
-  animation: skeletonShimmer 1.5s infinite linear;
-}
-
-.fabricSkeleton i,
-.fabricSkeleton b {
-  display: block;
-  height: 10px;
-  margin: 18px 18px 0;
-  background: #eadfd4;
-  border-radius: 5px;
-}
-
-.fabricSkeleton b {
-  width: 52%;
-  margin-top: 10px;
-}
-
-.fabricStatus {
-  display: grid;
-  min-height: 240px;
-  place-items: center;
-  padding: 36px 20px;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.52);
-  border: 1px solid rgba(107, 23, 38, 0.12);
-  border-radius: 18px;
-}
-
-.fabricStatus p {
-  color: rgba(33, 27, 25, 0.66);
-  line-height: 1.8;
-}
-
-.fabricStatus div {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 18px;
-}
-
-.fabricStatus :is(a, button) {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 15px;
-  color: var(--wine);
-  font: inherit;
-  font-size: 0.84rem;
-  text-decoration: none;
-  background: transparent;
-  border: 1px solid rgba(107, 23, 38, 0.24);
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.fabricStatus svg {
-  width: 15px;
-}
-
-.fabricsAllLink {
-  display: flex;
-  justify-content: center;
-  margin-top: 38px;
-}
-
-.fabricsAllLink a {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  padding: 12px 22px;
-  color: var(--white);
-  font-weight: 600;
-  text-decoration: none;
-  background: var(--wine);
-  border-radius: 12px;
-}
-
-.fabricsAllLink svg {
-  width: 18px;
-}
-
 .homeFooter {
   padding: 78px 20px 24px;
   color: var(--ivory);
@@ -1394,9 +1243,6 @@
     flex-basis: 62vw;
   }
 
-  .fabricSkeleton {
-    flex-basis: 46vw;
-  }
 }
 
 @media (min-width: 768px) {
@@ -1501,20 +1347,6 @@
   .tailoringCta {
     margin-top: 150px;
     padding-block: 100px 120px;
-  }
-
-  .fabricStoreSection {
-    padding-block: 96px 160px;
-  }
-
-  .fabricSkeletonGrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 24px;
-  }
-
-  .fabricSkeleton {
-    max-width: none;
   }
 
   .footerTop {
@@ -1675,9 +1507,6 @@
     max-width: 600px;
   }
 
-  .fabricSkeletonGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1697,11 +1526,6 @@
   background: var(--deep-wine);
 }
 
-.experiencePanel[data-section='fabrics'] {
-  scroll-margin-top: 0;
-  background: var(--ivory-soft);
-}
-
 .tailoringHomeHeader {
   --tailoring-header-progress: 0;
   color: var(--white);
@@ -1712,20 +1536,6 @@
 
 .tailoringHomeHeader[data-open='true'] {
   --tailoring-header-progress: 1 !important;
-}
-
-.fabricHomeHeader {
-  color: var(--white);
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.fabricHomeHeader.headerSolid {
-  color: var(--wine);
-  background: color-mix(in srgb, var(--ivory) 93%, transparent);
-  box-shadow: 0 1px 0 rgba(107, 23, 38, 0.1);
-  backdrop-filter: blur(18px);
 }
 
 .tailoringHeaderInner {
@@ -1791,12 +1601,6 @@
   background:
     linear-gradient(180deg, rgba(27, 5, 10, 0.46) 0%, rgba(27, 5, 10, 0.13) 37%, rgba(27, 5, 10, 0.9) 100%),
     linear-gradient(90deg, rgba(27, 5, 10, 0.05), rgba(52, 10, 19, 0.48));
-}
-
-.fabricHeroShade {
-  background:
-    linear-gradient(180deg, rgba(24, 10, 8, 0.43) 0%, rgba(24, 10, 8, 0.1) 37%, rgba(24, 10, 8, 0.9) 100%),
-    linear-gradient(90deg, rgba(35, 13, 10, 0.04), rgba(50, 19, 14, 0.5));
 }
 
 .tailoringHeroContent {
@@ -1877,10 +1681,6 @@
     radial-gradient(circle at 15% 32%, rgba(201, 142, 148, 0.13), transparent 25%),
     radial-gradient(circle at 86% 74%, rgba(185, 154, 104, 0.08), transparent 23%),
     var(--deep-wine);
-  scroll-margin-top: 0;
-}
-
-.fabricCollectionAnchor {
   scroll-margin-top: 0;
 }
 
@@ -2137,138 +1937,6 @@
   font-size: 0.62rem;
 }
 
-.fabricDeckGallery {
-  margin-top: 24px;
-}
-
-.fabricDeckCard {
-  background: #eadfd2;
-}
-
-.fabricDeckLink {
-  position: absolute;
-  inset: 0;
-  display: block;
-  overflow: hidden;
-  color: inherit;
-  text-decoration: none;
-}
-
-.fabricDeckCard .fabricMedia {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  user-select: none;
-}
-
-.fabricDeckCard .deckCardShade {
-  background:
-    linear-gradient(180deg, rgba(38, 7, 13, 0.19) 0%, transparent 34%, rgba(38, 7, 13, 0.92) 100%),
-    linear-gradient(90deg, rgba(38, 7, 13, 0.12), transparent 48%);
-}
-
-.fabricDeckCard .deckCardTopline small:last-child {
-  max-width: 52%;
-  overflow: hidden;
-  direction: rtl;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fabricDeckDiscount {
-  position: absolute;
-  z-index: 2;
-  top: 48px;
-  right: 17px;
-  padding: 6px 10px;
-  color: var(--white);
-  font-size: 0.67rem;
-  font-weight: 600;
-  background: var(--wine);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  pointer-events: none;
-}
-
-.fabricDeckCaption {
-  align-items: flex-end;
-}
-
-.fabricDeckDetails {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.fabricDeckDetails > strong {
-  display: -webkit-box;
-  overflow: hidden;
-  text-align: right;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.fabricDeckPrice {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-top: 5px;
-  color: rgba(255, 255, 255, 0.88) !important;
-  font-size: 0.7rem !important;
-  direction: rtl !important;
-  letter-spacing: 0;
-}
-
-.fabricDeckPrice b {
-  font-weight: 600;
-}
-
-.fabricDeckPrice del {
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 0.6rem;
-}
-
-.fabricDeckAction {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 5px;
-  padding-bottom: 3px;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 0.65rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.42);
-}
-
-.fabricDeckAction svg {
-  width: 14px;
-  height: 14px;
-}
-
-.fabricDeckLink:hover .fabricMedia {
-  transform: scale(1.035);
-}
-
-.fabricDeckGallery .deckControls button {
-  color: var(--wine);
-  background: rgba(255, 255, 255, 0.58);
-  border-color: rgba(107, 23, 38, 0.24);
-}
-
-.fabricDeckGallery .deckControls button:hover {
-  color: var(--white);
-  background: var(--wine);
-}
-
-.fabricDeckGallery .deckControls p {
-  color: var(--wine);
-}
-
-.fabricDeckGallery .deckHint {
-  color: rgba(33, 27, 25, 0.5);
-}
-
 .tailoringContactCta {
   max-width: 650px;
   margin: 60px auto 0;
@@ -2456,12 +2124,6 @@
     background:
       linear-gradient(180deg, rgba(27, 5, 10, 0.45), rgba(27, 5, 10, 0.06) 36%, rgba(27, 5, 10, 0.82)),
       linear-gradient(90deg, rgba(27, 5, 10, 0.08), rgba(27, 5, 10, 0.68) 82%);
-  }
-
-  .fabricHeroShade {
-    background:
-      linear-gradient(180deg, rgba(24, 10, 8, 0.42), rgba(24, 10, 8, 0.05) 36%, rgba(24, 10, 8, 0.84)),
-      linear-gradient(90deg, rgba(24, 10, 8, 0.07), rgba(43, 16, 12, 0.66) 82%);
   }
 
   .tailoringHeroContent {

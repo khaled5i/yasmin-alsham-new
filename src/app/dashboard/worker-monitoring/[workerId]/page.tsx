@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerStore } from '@/store/workerStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import { workerService, WorkerWithUser } from '@/lib/services/worker-service'
 import { orderService, getEffectiveCompletionDate, Order } from '@/lib/services/order-service'
 import {
@@ -176,10 +177,10 @@ export default function WorkerDetailPage() {
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false)
 
   // Completed orders filters
-  const [completedMonthFilter, setCompletedMonthFilter] = useState(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
+  // الشهر المشترك بين كل أقسام متابعة العمال وصفحة الرواتب — محفوظ لبقية اليوم
+  const [selectedMonth, setSelectedMonth] = useSelectedMonth()
+  const [completedAllMonths, setCompletedAllMonths] = useState(false)
+  const completedMonthFilter = completedAllMonths ? '' : selectedMonth
   const [completedUnratedOnly, setCompletedUnratedOnly] = useState(false)
 
   // Modal
@@ -200,7 +201,8 @@ export default function WorkerDetailPage() {
   const [savingCompletedAtId, setSavingCompletedAtId] = useState<string | null>(null)
   const [completedAtError, setCompletedAtError] = useState<string | null>(null)
 
-  const loadedTabs = useRef<Set<TabType>>(new Set())
+  // آخر فلتر جُلبت به الطلبات المكتملة، حتى لا يتكرر الجلب عند العودة للتبويب نفسه
+  const lastCompletedFetch = useRef<string | null>(null)
 
   // Access guard
   useEffect(() => {
@@ -308,20 +310,26 @@ export default function WorkerDetailPage() {
     }
   }, [isAdmin, workerId])
 
-  // Tab switch handler
+  // Tab switch handler — الجلب يتكفّل به تأثير الطلبات المكتملة أدناه
   function handleTabSwitch(tab: TabType) {
     setActiveTab(tab)
-    if (!loadedTabs.current.has(tab)) {
-      loadedTabs.current.add(tab)
-      if (tab === 'completed') fetchCompletedOrders(completedMonthFilter, completedUnratedOnly)
-    }
   }
 
+  // «كل الأشهر» ليس شهراً، فيبقى محلياً ولا يمحو الشهر المختار لبقية الأقسام
   const handleCompletedFilterChange = useCallback((monthFilter: string, unratedOnly: boolean) => {
-    setCompletedMonthFilter(monthFilter)
+    setCompletedAllMonths(!monthFilter)
+    if (monthFilter) setSelectedMonth(monthFilter)
     setCompletedUnratedOnly(unratedOnly)
-    fetchCompletedOrders(monthFilter, unratedOnly)
-  }, [fetchCompletedOrders])
+  }, [setSelectedMonth])
+
+  // جلب كسول للطلبات المكتملة: عند فتح التبويب، وعند أي تغيير للشهر ولو جاء من قسم آخر
+  useEffect(() => {
+    if (!workerId || !worker || activeTab !== 'completed') return
+    const key = `${completedMonthFilter}|${completedUnratedOnly}`
+    if (lastCompletedFetch.current === key) return
+    lastCompletedFetch.current = key
+    fetchCompletedOrders(completedMonthFilter, completedUnratedOnly)
+  }, [workerId, worker, activeTab, completedMonthFilter, completedUnratedOnly, fetchCompletedOrders])
 
   function openOrderModal(order: Order) {
     setSelectedOrder(order)

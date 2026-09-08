@@ -1,6 +1,11 @@
 import type { WorkerPayrollMonth, WorkerPayrollOperation } from '@/types/worker-payroll'
 
 export const PAYROLL_CHANGED_EVENT = 'yasmin:payroll-changed'
+export function payrollSortGroup(entry: { suspended: boolean; remaining: number; paid: number }) {
+  if (entry.suspended) return 3
+  if (entry.remaining > 0.009) return 0
+  return entry.paid > 0 && Math.abs(entry.remaining) <= 0.009 ? 2 : 1
+}
 export const payrollMoney = (value: number, arabic = true) => {
   const amount = Number(value) || 0
   const number =

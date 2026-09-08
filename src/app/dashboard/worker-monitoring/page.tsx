@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import { workerService, WorkerWithUser } from '@/lib/services/worker-service'
 import { orderService } from '@/lib/services/order-service'
 import {
@@ -23,11 +24,6 @@ import {
 } from 'lucide-react'
 
 const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
-
-function getCurrentMonthKey() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
 
 function getRecentMonths(count: number): { key: string; label: string }[] {
   const months = []
@@ -53,8 +49,17 @@ export default function WorkerMonitoringPage() {
   const [activeOrderCounts, setActiveOrderCounts] = useState<Record<string, number>>({})
   const [completedOrderCounts, setCompletedOrderCounts] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey)
+  // الشهر المشترك مع بقية أقسام متابعة العمال وصفحة الرواتب — محفوظ لبقية اليوم
+  const [sharedMonth, setSharedMonth] = useSelectedMonth()
+  const [allMonths, setAllMonths] = useState(false)
+  const selectedMonth = allMonths ? '' : sharedMonth
   const recentMonths = getRecentMonths(18)
+
+  // «كل الأشهر» ليس شهراً، فيبقى محلياً ولا يمحو الشهر المختار للأقسام الأخرى
+  function handleMonthChange(value: string) {
+    setAllMonths(!value)
+    if (value) setSharedMonth(value)
+  }
 
   // Access guard
   useEffect(() => {
@@ -215,7 +220,7 @@ export default function WorkerMonitoringPage() {
               <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-500 pointer-events-none" />
               <select
                 value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
+                onChange={(e) => handleMonthChange(e.target.value)}
                 className="pr-9 pl-4 py-2 text-sm border border-teal-200 rounded-xl bg-white focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100 appearance-none cursor-pointer font-medium text-gray-700 shadow-sm"
               >
                 <option value="">كل الأشهر</option>

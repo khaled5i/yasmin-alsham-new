@@ -226,7 +226,7 @@ export async function getWorkerOperationsAllPeriods(
       .select('*')
       .eq('branch', branch)
       .eq('worker_id', workerId)
-      .in('operation_type', ['salary', 'payment', 'deduction', 'advance'])
+      .in('operation_type', ['salary', 'payment', 'deduction', 'advance', 'salary_deduction'])
       .order('operation_date', { ascending: false })
       .order('created_at', { ascending: false })
 
@@ -353,6 +353,21 @@ export async function saveWorkerPayrollSnapshot(input: SaveSalarySnapshotInput):
     throw new Error(toErrorMessage(error))
   }
 
+  return data as WorkerPayrollRpcResult
+}
+
+export async function recordTailoringDisbursement(input: {
+  workerId: string; monthValue: string; operationDate: string; requestId: string;
+  amount: number; deduction: number; note: string; deductionNote: string
+}): Promise<WorkerPayrollRpcResult> {
+  const { year, month } = monthToYearMonth(input.monthValue)
+  const { data, error } = await supabase.rpc('record_tailoring_payroll_disbursement', {
+    p_worker_id: input.workerId, p_year: year, p_month: month,
+    p_operation_date: input.operationDate, p_request_id: input.requestId,
+    p_payment: input.amount, p_deduction: input.deduction,
+    p_note: input.note, p_deduction_note: input.deductionNote
+  })
+  if (error) throw new Error(toErrorMessage(error))
   return data as WorkerPayrollRpcResult
 }
 
@@ -871,11 +886,19 @@ export async function suspendWorkerPayroll(
   workerId: string,
   workerName: string,
   monthValue: string,
-  reason?: string
+  reason?: string,
+  ongoing = false
 ): Promise<void> {
   if (!isSupabaseConfigured()) return
 
   const { year, month } = monthToYearMonth(monthValue)
+  if (branch === 'tailoring') {
+    const { error } = await supabase.rpc('set_tailoring_payroll_suspension', {
+      p_worker_id: workerId, p_year: year, p_month: month, p_suspended: true, p_ongoing: ongoing
+    })
+    if (error) throw new Error(toErrorMessage(error))
+    return
+  }
   const { error } = await supabase
     .from('worker_payroll_persistent_suspensions')
     .upsert(
@@ -903,11 +926,18 @@ export async function suspendWorkerPayroll(
 export async function unsuspendWorkerPayroll(
   branch: BranchType,
   workerId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _monthValue: string
+  monthValue: string
 ): Promise<void> {
   if (!isSupabaseConfigured()) return
 
+  if (branch === 'tailoring') {
+    const { year, month } = monthToYearMonth(monthValue)
+    const { error } = await supabase.rpc('set_tailoring_payroll_suspension', {
+      p_worker_id: workerId, p_year: year, p_month: month, p_suspended: false
+    })
+    if (error) throw new Error(toErrorMessage(error))
+    return
+  }
   const { error } = await supabase
     .from('worker_payroll_persistent_suspensions')
     .delete()

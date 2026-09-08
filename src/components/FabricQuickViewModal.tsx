@@ -14,9 +14,10 @@ interface FabricQuickViewModalProps {
   fabric: Fabric | null
   isOpen: boolean
   onClose: () => void
+  onViewDetails?: (fabricId: string) => void
 }
 
-export default function FabricQuickViewModal({ fabric, isOpen, onClose }: FabricQuickViewModalProps) {
+export default function FabricQuickViewModal({ fabric, isOpen, onClose, onViewDetails }: FabricQuickViewModalProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const touchStartX = useRef<number>(0)
   const touchEndX = useRef<number>(0)
@@ -416,6 +417,7 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose }: Fabric
                   <div className="mt-8 space-y-3">
                     <Link
                       href={`/fabrics/${fabric.id}`}
+                      onNavigate={() => onViewDetails?.(fabric.id)}
                       className="block w-full bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] py-3 px-6 rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
                     >
                       عرض التفاصيل الكاملة

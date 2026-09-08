@@ -1,13 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import FeaturedFabricStore from './FeaturedFabricStore'
 import HomeFooter from './HomeFooter'
 import HomeHeader from './HomeHeader'
 import {
   BusinessGateway,
   CinematicHero,
-  FabricTransition,
   TailoringStory,
   type HomeSectionKey,
 } from './HomeSections'
@@ -18,8 +16,7 @@ function getSectionFromHash(): HomeSectionKey | null {
 
   const hash = window.location.hash.slice(1)
   if (hash === 'tailoring-work') return 'tailoring'
-  if (hash === 'fabric-collection') return 'fabrics'
-  return hash === 'tailoring' || hash === 'fabrics' ? hash : null
+  return hash === 'tailoring' ? hash : null
 }
 
 export default function HomeExperience() {
@@ -30,7 +27,7 @@ export default function HomeExperience() {
   const scrollToActivePanel = useCallback(() => {
     window.requestAnimationFrame(() => {
       const hash = window.location.hash.slice(1)
-      const scrollTarget = hash === 'tailoring-work' || hash === 'fabric-collection'
+      const scrollTarget = hash === 'tailoring-work'
         ? document.getElementById(hash)
         : panelRef.current
 
@@ -109,16 +106,7 @@ export default function HomeExperience() {
             tabIndex={-1}
             data-section={activeSection}
           >
-            {activeSection === 'tailoring' ? (
-              <TailoringStory onSelectSection={selectSection} />
-            ) : (
-              <>
-                <FabricTransition />
-                <div id="fabric-collection" className={styles.fabricCollectionAnchor}>
-                  <FeaturedFabricStore />
-                </div>
-              </>
-            )}
+            <TailoringStory />
           </div>
         ) : (
           <>

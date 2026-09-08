@@ -78,7 +78,81 @@ async function main() {
   await assert.rejects(db.exec(`SELECT save_tailoring_salary_settings('${a}',2026,9,'fixed',1500,12,true,false,'2026-09-06')`), /fixture future failure/)
   assert.equal(Number((await month(a,9)).fixed_salary_value),1000,'Future update failure rolls back current salary too')
   assert.equal(Number((await db.query('SELECT count(*) FROM worker_payroll_operations')).rows[0].count),operationCount,'Failed settings leave no partial ledger entries')
+  await db.exec(`DROP TRIGGER fixture_fail_future ON worker_payroll_months;
+    ALTER TABLE orders ADD COLUMN admin_completed_at timestamptz, ADD COLUMN delivery_date date;
+    ALTER TABLE worker_payroll_operations ADD CONSTRAINT worker_payroll_operations_operation_type_check CHECK(operation_type IN ('salary','payment','advance','deduction'));
+    ALTER TABLE worker_payroll_operations ADD COLUMN created_at timestamptz DEFAULT now();
+    CREATE UNIQUE INDEX uq_worker_payroll_payment_duplicate ON worker_payroll_operations(branch,worker_id,payroll_year,payroll_month,operation_date,amount,COALESCE(metadata->>'debt_settlement','false')) WHERE operation_type='payment';
+    CREATE UNIQUE INDEX fixture_operation_reference ON worker_payroll_operations(reference);
+    ALTER TABLE worker_payroll_suspensions ADD COLUMN worker_name text, ADD COLUMN suspended_by uuid, ADD COLUMN reason text, ADD UNIQUE(branch,worker_id,payroll_year,payroll_month);
+    ALTER TABLE worker_payroll_persistent_suspensions ADD COLUMN worker_name text, ADD COLUMN suspended_by uuid, ADD COLUMN updated_at timestamptz, ADD UNIQUE(branch,worker_id);
+    INSERT INTO orders(id,worker_id,worker_price,status,delivery_date) VALUES('${order}','${b}',160,'delivered','2026-09-06');`)
+  await db.exec(read('supabase/tests/payroll-disbursement-dependencies.sql'))
+  await db.exec(`INSERT INTO users(id,full_name,role) VALUES('00000000-0000-4000-8000-000000000004','Legacy fixture','worker');
+    INSERT INTO workers VALUES('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000004','tailor');
+    ALTER TABLE worker_payroll_months DISABLE TRIGGER trg_enforce_piecework_payroll_pricing_source;
+    INSERT INTO worker_payroll_months(branch,worker_id,worker_name,payroll_year,payroll_month,salary_type,piece_total,works_total)
+    VALUES('tailoring','00000000-0000-4000-8000-000000000004','Legacy fixture',2026,9,'piecework',500,500);
+    ALTER TABLE worker_payroll_months ENABLE TRIGGER trg_enforce_piecework_payroll_pricing_source;
+    INSERT INTO orders(id,worker_id,worker_price,status,delivery_date) VALUES('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000004',200,'delivered','2026-09-06');
+    ALTER TABLE worker_payroll_operations ADD COLUMN is_approved boolean DEFAULT true;
+    CREATE FUNCTION fixture_immutable_operations() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF COALESCE(current_setting('app.bypass_trigger',true),'')='true' THEN RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END; END IF;
+      IF OLD.is_approved THEN RAISE EXCEPTION 'Approved payroll operations cannot be changed'; END IF;
+      RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+    END $$;
+    CREATE TRIGGER fixture_immutable_operations BEFORE UPDATE OR DELETE ON worker_payroll_operations FOR EACH ROW EXECUTE FUNCTION fixture_immutable_operations();`)
+  await db.exec(read('supabase/migrations/20260906120650_payroll_payments_suspensions_and_delivery.sql'))
+  await db.exec(read('supabase/migrations/20260906134400_preserve_payroll_debt_settlement_deduplication.sql'))
+  assert.equal(Number((await month('00000000-0000-4000-8000-000000000004',9)).piece_total),500,'Backfill preserves higher legacy snapshots rather than reducing their entitlement')
+  assert.equal(Number((await month(b,9)).piece_total),160,'Migration backfills delivered work with no worker completion date')
+  await db.exec(`UPDATE orders SET delivery_date='2026-10-02' WHERE id='${order}'`)
+  assert.equal(Number((await month(b,9)).piece_total),0)
+  assert.equal(Number((await month(b,10)).piece_total),160,'Delivery-date changes move the salary to the correct month')
+  await db.exec(`UPDATE orders SET admin_completed_at='2026-09-05T12:00:00Z' WHERE id='${order}'`)
+  assert.equal(Number((await month(b,9)).piece_total),160,'Admin completion date has priority over delivery date')
+  assert.equal(Number((await month(b,10)).piece_total),0)
+  await db.exec(`UPDATE worker_payroll_months SET basic_salary=1000,works_total=0,overtime_total=0,allowances_total=0,advances_total=0,total_paid=0 WHERE worker_id='${a}' AND payroll_month=9`)
+  const requestOne='00000000-0000-4000-8000-000000000011', requestTwo='00000000-0000-4000-8000-000000000012', requestCut='00000000-0000-4000-8000-000000000013'
+  const pay = (id,value=500) => db.exec(`SELECT record_tailoring_payroll_disbursement('${a}',2026,9,'2026-09-06','${id}',${value})`)
+  await pay(requestOne)
+  await pay(requestOne)
+  assert.equal(Number((await month(a,9)).total_paid),500,'Retrying a saved request never duplicates payment')
+  await pay(requestTwo)
+  const settlementFixture = `INSERT INTO worker_payroll_operations(branch,worker_id,payroll_year,payroll_month,operation_type,operation_date,amount,metadata)
+    VALUES('tailoring','${a}',2026,9,'payment','2026-09-06',5,'{"debt_settlement":true}')`
+  await db.exec(settlementFixture)
+  await assert.rejects(db.exec(settlementFixture), /uq_worker_payroll_payment_duplicate/)
+  assert.equal(Number((await month(a,9)).remaining_due),0,'Two separate 500 payments on the same day are allowed')
+  await assert.rejects(pay(requestOne,400), /different details/)
+  await db.exec(`SELECT record_tailoring_payroll_disbursement('${b}',2026,9,'2026-09-06','${requestCut}',100,20,NULL,'Fixture absence deduction')`)
+  assert.equal(Number((await month(b,9)).salary_deductions_total),20)
+  assert.equal(Number((await month(b,9)).net_due),140)
+  assert.equal(Number((await month(b,9)).total_paid),100)
+  await db.exec(`CREATE FUNCTION fixture_fail_payment() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.operation_type='payment' THEN RAISE EXCEPTION 'fixture payment failure'; END IF; RETURN NEW; END $$;
+    CREATE TRIGGER fixture_fail_payment BEFORE INSERT ON worker_payroll_operations FOR EACH ROW EXECUTE FUNCTION fixture_fail_payment()`)
+  await assert.rejects(db.exec(`SELECT record_tailoring_payroll_disbursement('${b}',2026,9,'2026-09-06','00000000-0000-4000-8000-000000000014',5,5,NULL,'Fixture rollback')`),/fixture payment failure/)
+  assert.equal(Number((await month(b,9)).salary_deductions_total),20,'Payment failure rolls back its accompanying deduction and preserves the earlier deduction')
+  await db.exec('DROP TRIGGER fixture_fail_payment ON worker_payroll_operations')
+  assert.equal(Number((await month(b,9)).remaining_due),40,'Deduction reduces entitlement, not cash payments or debt')
+  await db.exec(`SELECT record_tailoring_payroll_disbursement('${b}',2026,9,'2026-09-06','${requestCut}',100,20,NULL,'Fixture absence deduction')`)
+  assert.equal(Number((await month(b,9)).salary_deductions_total),20)
+  const cutId=(await db.query("SELECT id FROM worker_payroll_operations WHERE reference=$1",['CUT-'+requestCut])).rows[0].id
+  await db.exec(`SELECT delete_worker_payroll_operation('${cutId}')`)
+  assert.equal(Number((await month(b,9)).net_due),160,'Deleting the deduction restores entitlement only')
+  assert.equal(Number((await month(b,9)).total_paid),100)
+  await db.exec(`SELECT set_tailoring_payroll_suspension('${a}',2026,7,true,true); SELECT set_tailoring_payroll_suspension('${a}',2026,9,false)`)
+  const past=(await db.query(`SELECT payroll_month FROM worker_payroll_suspensions WHERE worker_id='${a}' ORDER BY payroll_month`)).rows
+  assert.deepEqual(past.map(x=>x.payroll_month),[7,8],'Resuming preserves every earlier vacation month')
+  await db.exec(`SELECT set_tailoring_payroll_suspension('${a}',2026,10,true,false)`)
+  assert.equal((await db.query(`SELECT count(*) FROM worker_payroll_persistent_suspensions WHERE worker_id='${a}'`)).rows[0].count,0)
+  await db.exec(`SELECT set_tailoring_payroll_suspension('${a}',2026,10,false)`)
+  assert.equal((await db.query(`SELECT count(*) FROM worker_payroll_suspensions WHERE worker_id='${a}'`)).rows[0].count,2)
+  await db.exec(`UPDATE users SET role='worker' WHERE id='${a}'`)
+  await assert.rejects(pay('00000000-0000-4000-8000-000000000099'),/Only administrators/)
+  await assert.rejects(db.exec(`SELECT set_tailoring_payroll_suspension('${b}',2026,9,true)`),/Only administrators/)
   await db.close()
+  console.log('PASS: same-day separate payments, retry safety, salary deductions/reversal, monthly suspension history and manager-delivered piecework backfill.')
   console.log('PASS: automatic price/bonus sync, zero clearing, month/worker changes, reopening/deletion, payment/history preservation, retired locks/advances, report suspensions, audit trail, RLS, admin-only atomic settings and idempotent preparation.')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })
