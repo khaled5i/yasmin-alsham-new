@@ -47,6 +47,7 @@ import {
   Sparkles,
   Tag,
   Wallet,
+  RotateCcw,
 } from 'lucide-react'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
@@ -62,6 +63,8 @@ export default function WorkerCompletedOrdersPage() {
   const { t, isArabic } = useTranslation()
   const router = useRouter()
   const { workerType, isLoading: permissionsLoading, getDashboardRoute } = useWorkerPermissions()
+  // أرشيف الشكّاك = الطلبات التي انتهى فيها عمل الشك، أياً كانت حالة الطلب نفسه
+  const isShakWorker = workerType === 'shak_worker'
   usePayrollRefresh(() => { if (user && !authLoading) void useOrderStore.getState().forceRefresh() })
 
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
@@ -75,6 +78,8 @@ export default function WorkerCompletedOrdersPage() {
   const [orderToDeliver, setOrderToDeliver] = useState<any>(null)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [completedImageThumbnails, setCompletedImageThumbnails] = useState<Record<string, string>>({})
+  // التراجع عن إنهاء الشك — الملاذ الوحيد للشكّاك بعد ضغطة خاطئة، فالطلب يغادر قائمته فوراً
+  const [undoingShakId, setUndoingShakId] = useState<string | null>(null)
 
   // حالات modal حذف الطلب
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -100,9 +105,13 @@ export default function WorkerCompletedOrdersPage() {
 
     // نجلب كل الطلبات المكتملة/المسلّمة بدون ترقيم صفحات (noPagination)
     // وإلا يكتفي الخادم بأحدث 50 طلباً عالمياً فتختفي طلبات الأشهر القديمة للعامل
-    loadOrders({ status: ['completed', 'delivered'], noPagination: true })
+    loadOrders(
+      isShakWorker
+        ? { hasShakWork: true, shakCompleted: true, noPagination: true }
+        : { status: ['completed', 'delivered'], noPagination: true }
+    )
     loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers, isShakWorker])
 
   // الشهر الحالي كـ "YYYY-MM"
   const currentMonthKey = new Date().toISOString().slice(0, 7)
@@ -113,6 +122,7 @@ export default function WorkerCompletedOrdersPage() {
   // بدلاً من دفع الطلب إلى الشهر الحالي
   const getOrderMonthKey = (order: any): string => {
     const dateStr =
+      (isShakWorker ? order.shak_completed_at : null) ||
       order.worker_completed_at ||
       order.admin_completed_at ||
       order.delivery_date ||
@@ -134,14 +144,19 @@ export default function WorkerCompletedOrdersPage() {
   const currentWorker = workers.find(worker => worker.user_id === user?.id)
   const currentWorkerId = currentWorker?.id
 
-  const completedOrders = orders.filter(order => {
+  const isArchivedForViewer = (order: any): boolean => {
+    // الشكّاك: العبرة بانتهاء الشك لا بحالة الطلب ولا بإسناد العامل
+    if (isShakWorker) return order.has_shak_work === true && order.shak_completed === true
     if (!validStatuses.includes(order.status)) return false
-
-    // التأكد من أن الطلب يخص هذا العامل فقط (إذا لم يكن أدمن)
     if (user?.role !== 'admin') {
       if (!currentWorkerId) return false
       if (order.worker_id !== currentWorkerId) return false
     }
+    return true
+  }
+
+  const completedOrders = orders.filter(order => {
+    if (!isArchivedForViewer(order)) return false
 
     const searchLower = searchTerm.toLowerCase()
     const matchesSearch = !searchTerm ||
@@ -161,14 +176,7 @@ export default function WorkerCompletedOrdersPage() {
       [
         currentMonthKey,
         ...orders
-          .filter(order => {
-            if (!validStatuses.includes(order.status)) return false
-            if (user?.role !== 'admin') {
-              if (!currentWorkerId) return false
-              if (order.worker_id !== currentWorkerId) return false
-            }
-            return true
-          })
+          .filter(isArchivedForViewer)
           .map(o => getOrderMonthKey(o))
       ]
     )
@@ -283,6 +291,18 @@ export default function WorkerCompletedOrdersPage() {
   const handleViewOrder = (order: any) => {
     setSelectedOrder(order)
     setShowViewModal(true)
+  }
+
+  const handleUndoShakCompleted = async (orderId: string) => {
+    setUndoingShakId(orderId)
+    try {
+      const result = await updateOrder(orderId, { shak_completed: false } as any)
+      if (!result.success) {
+        alert(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'))
+      }
+    } finally {
+      setUndoingShakId(null)
+    }
   }
 
   const handleMarkAsDelivered = async (orderId: string) => {
@@ -477,9 +497,13 @@ export default function WorkerCompletedOrdersPage() {
               <CheckCircle className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">{t('completed_orders')}</h1>
+              <h1 className="text-3xl font-bold text-gray-800">
+                {isShakWorker ? (t('shak_completed_orders') || 'شك مكتمل') : t('completed_orders')}
+              </h1>
               <p className="text-gray-600 mt-1">
-                {t('completed_orders_subtitle')}
+                {isShakWorker
+                  ? (t('view_completed_shak_archive') || 'سجل الطلبات التي انتهى فيها عمل الشك')
+                  : t('completed_orders_subtitle')}
               </p>
             </div>
           </div>
@@ -782,6 +806,24 @@ export default function WorkerCompletedOrdersPage() {
 
                     {/* السعر - مخفي للعمال */}
                   </div>
+
+                  {/* التراجع عن إنهاء الشك — للشكّاك وحده */}
+                  {isShakWorker && (
+                    <div className="flex lg:flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleUndoShakCompleted(order.id)}
+                        disabled={undoingShakId === order.id}
+                        className="p-3 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition-all duration-200 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={isArabic ? 'التراجع عن إنهاء الشك وإعادة الطلب إلى قائمتي' : 'Undo shak completion and return the order to my list'}
+                      >
+                        {undoingShakId === order.id ? (
+                          <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                        ) : (
+                          <RotateCcw className="w-5 h-5 mx-auto" />
+                        )}
+                      </button>
+                    </div>
+                  )}
 
                   {/* الإجراءات */}
                   {showActions && (

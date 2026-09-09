@@ -18,7 +18,9 @@ import {
   dispatchCashDrawerOpen,
   type CashDrawerWithdrawalVoucher,
 } from '@/lib/services/cash-drawer-service'
-import type { PaymentMethod } from '@/types/simple-accounting'
+import { createManualTailoringInvoiceReceiptPayload } from '@/lib/print-tailoring-receipt'
+import { dispatchTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
+import type { Income, PaymentMethod } from '@/types/simple-accounting'
 import { useAuthStore } from '@/store/authStore'
 
 interface TailoringInvoiceModalProps {
@@ -96,6 +98,48 @@ export default function TailoringInvoiceModal({
     }
   }
 
+  /**
+   * تُطبع الفاتورة بنفس شكل إيصال تسليم الطلب عبر محطة طباعة التفصيل.
+   * الشبكة تنتظر رقم الأستاذ؛ إن لم يصل (فشل أو تعذّر حفظه محلياً) لا نطبع رقماً
+   * محلياً على فاتورة شبكة. فشل الطباعة لا يلغي الفاتورة المحفوظة.
+   */
+  const printInvoiceReceipt = async (saved: Income, savedAmount: number) => {
+    // إعادة الحفظ بنفس المعرّف تُعيد السجل المخزَّن، فنطبع قيمه هو لا قيم النموذج.
+    const savedMethod: PaymentMethod = saved.payment_method === 'cash' ? 'cash'
+      : saved.payment_method === 'network' ? 'network'
+      : paymentMethod
+    const amountToPrint = Number(saved.amount) || savedAmount
+    const accountingCode = String(saved.alostaz_invoice_code || '').trim()
+    if (savedMethod === 'network' && !accountingCode) {
+      toast(
+        'لم تُطبع الفاتورة لأن رقمها لم يصل من تطبيق الأستاذ — يمكن مراجعتها من صفحة واردات التفصيل.',
+        { icon: '🧾', duration: 8000 }
+      )
+      return
+    }
+
+    try {
+      const receipt = createManualTailoringInvoiceReceiptPayload({
+        id: saved.id,
+        amount: amountToPrint,
+        paymentMethod: savedMethod,
+        date: saved.date || invoiceDate,
+        customerName: saved.customer_name,
+        itemDescription: saved.description || saved.category,
+        alostazInvoiceCode: accountingCode,
+      })
+
+      // الدرج يُفتح بأمر مستقل بعد الحفظ، فلا نطلب فتحه مع الطباعة أيضاً.
+      await dispatchTailoringReceiptPrint(receipt, { openCashDrawer: false })
+      toast.success(`أُضيفت الفاتورة ${receipt.invoice_code} إلى طابور الطباعة`, { icon: '🧾' })
+    } catch (printError) {
+      const message = printError instanceof Error
+        ? printError.message
+        : 'تعذّر إرسال الفاتورة إلى محطة الطباعة'
+      toast.error(`تم حفظ الفاتورة، لكن تعذّرت طباعتها: ${message}`, { duration: 9000 })
+    }
+  }
+
   const handleSubmit = async () => {
     const parsedAmount = Number(amount)
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
@@ -133,6 +177,10 @@ export default function TailoringInvoiceModal({
         toast.success(
           `تم حفظ العملية وإرسال فاتورة الشبكة للمحاسبة${invoiceCode ? ` — ${invoiceCode}` : ''}`
         )
+      }
+
+      if (result.income?.id) {
+        await printInvoiceReceipt(result.income, parsedAmount)
       }
 
       if (paymentMethod === 'cash' && result.income?.id) {

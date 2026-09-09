@@ -116,6 +116,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
     customDesignImage: null as File | null,
     savedDesignComments: [] as SavedDesignComment[],
     hasSecondProof: null as 'yes' | 'no' | null,
+    hasShakWork: null as 'yes' | 'no' | null,
     designSummaryNotes: [] as DesignSummaryNote[]
   })
 
@@ -239,6 +240,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         customDesignImage: null as File | null, // File objects are set via handleDesignImageChange
         savedDesignComments: savedComments,
         hasSecondProof: order.has_second_proof === true ? 'yes' : order.has_second_proof === false ? 'no' : null,
+        hasShakWork: order.has_shak_work === true ? 'yes' : order.has_shak_work === false ? 'no' : null,
         // ملخص التصميم الصوتي (migration 50): من العمود المستقل، ثم fallback لـ measurements
         designSummaryNotes: (orderAny.design_summary_notes?.length ? orderAny.design_summary_notes : null) || measurements?.design_summary_notes || []
       })
@@ -566,6 +568,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
+    if (!formData.hasShakWork) {
+      setSaveError('يرجى تحديد هل يوجد أعمال شك أم لا')
+      return
+    }
+
     if (annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return
@@ -658,6 +665,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         client_phone: formData.clientPhone,
         description: formData.description,
         has_second_proof: formData.hasSecondProof === 'yes',
+        has_shak_work: formData.hasShakWork === 'yes',
         // إرسال null بدلاً من undefined للحقول النصية القابلة للحذف (للتأكد من حفظ الحذف في قاعدة البيانات)
         fabric: formData.fabric || null,
         price: price,
@@ -763,6 +771,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
+    if (!formData.hasShakWork) {
+      setSaveError('يرجى تحديد هل يوجد أعمال شك أم لا')
+      return
+    }
+
     if (annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return
@@ -852,6 +865,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         client_phone: formData.clientPhone,
         description: formData.description,
         has_second_proof: formData.hasSecondProof === 'yes',
+        has_shak_work: formData.hasShakWork === 'yes',
         // إرسال null بدلاً من undefined للحقول النصية القابلة للحذف (للتأكد من حفظ الحذف في قاعدة البيانات)
         fabric: formData.fabric || null,
         price: price,
@@ -1221,6 +1235,44 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                                   : 'This date can be changed independently from the final delivery date.'}
                               </p>
                             </div>
+                          )}
+                        </div>
+
+                        {/* هل يوجد أعمال شك؟ — سحب العلم يلغي أي إنهاء شك مسجّل على الطلب */}
+                        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            هل يوجد أعمال شك؟ <span className="text-red-500">*</span>
+                          </label>
+                          <div className="flex flex-wrap gap-x-6 gap-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="hasShakWorkEdit"
+                                value="yes"
+                                checked={formData.hasShakWork === 'yes'}
+                                onChange={(e) => handleInputChange('hasShakWork', e.target.value)}
+                                className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                                disabled={isSubmitting}
+                              />
+                              <span className="text-gray-700 font-medium">نعم</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="hasShakWorkEdit"
+                                value="no"
+                                checked={formData.hasShakWork === 'no'}
+                                onChange={(e) => handleInputChange('hasShakWork', e.target.value)}
+                                className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                                disabled={isSubmitting}
+                              />
+                              <span className="text-gray-700 font-medium">لا</span>
+                            </label>
+                          </div>
+                          {order?.shak_completed && formData.hasShakWork === 'no' && (
+                            <p className="mt-3 text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                              عمل الشك مُسجَّل كمنتهٍ على هذا الطلب — الحفظ بـ«لا» سيلغي هذا التسجيل.
+                            </p>
                           )}
                         </div>
                       </div>

@@ -21,6 +21,8 @@ export default function WorkerDashboard() {
   const { user, signOut } = useAuthStore()
   const { workerType, permissions, isLoading } = useWorkerPermissions()
   const { t, language, changeLanguage } = useTranslation()
+  // الشكّاك يشارك الخياط الواجهة نفسها؛ يتغيّر النص فقط وما تعرضه صفحتا الطلبات
+  const isShakWorker = workerType === 'shak_worker'
 
   useEffect(() => {
     // التحقق من تسجيل الدخول
@@ -36,8 +38,8 @@ export default function WorkerDashboard() {
         return
       }
 
-      // إذا كان العامل ليس خياط، إعادة توجيهه إلى لوحة التحكم المناسبة
-      if (workerType && workerType !== 'tailor') {
+      // إذا كان العامل ليس خياطاً ولا شكّاكاً، إعادة توجيهه إلى لوحة التحكم المناسبة
+      if (workerType && workerType !== 'tailor' && workerType !== 'shak_worker') {
         const correctRoute = permissions?.dashboardRoute || '/dashboard'
         router.push(correctRoute)
         return
@@ -78,11 +80,11 @@ export default function WorkerDashboard() {
                   {t('welcome')}, {user?.full_name || user?.email}
                 </h1>
                 <p className="text-gray-600 text-xs sm:text-sm truncate">
-                  {t('tailor_dashboard') || 'لوحة تحكم الخياط'}
+                  {isShakWorker ? (t('shak_worker_dashboard') || 'لوحة تحكم الشكّاك') : (t('tailor_dashboard') || 'لوحة تحكم الخياط')}
                 </p>
               </div>
               <span className="px-2 sm:px-3 py-1 bg-gradient-to-r from-pink-100 to-rose-100 text-pink-700 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0">
-                {t('tailor') || 'خياط'}
+                {isShakWorker ? (t('shak_worker') || 'شكّاك') : (t('tailor') || 'خياط')}
               </span>
             </div>
 
@@ -140,10 +142,12 @@ export default function WorkerDashboard() {
                 </div>
                 <div>
                   <h4 className="text-base sm:text-lg font-bold text-blue-800 mb-1 sm:mb-2">
-                    {t('current_orders') || 'الطلبات الجارية'}
+                    {isShakWorker ? (t('shak_orders') || 'طلبات الشك') : (t('current_orders') || 'الطلبات الجارية')}
                   </h4>
                   <p className="text-xs sm:text-sm text-blue-600">
-                    {t('view_update_orders') || 'عرض وتحديث حالة الطلبات المسندة إليك'}
+                    {isShakWorker
+                      ? (t('view_pending_shak_orders') || 'الطلبات التي فيها أعمال شك ولم تنتهِ بعد')
+                      : (t('view_update_orders') || 'عرض وتحديث حالة الطلبات المسندة إليك')}
                   </p>
                 </div>
               </div>
@@ -160,10 +164,12 @@ export default function WorkerDashboard() {
                 </div>
                 <div>
                   <h4 className="text-base sm:text-lg font-bold text-green-800 mb-1 sm:mb-2">
-                    {t('completed_orders') || 'الطلبات المكتملة'}
+                    {isShakWorker ? (t('shak_completed_orders') || 'شك مكتمل') : (t('completed_orders') || 'الطلبات المكتملة')}
                   </h4>
                   <p className="text-xs sm:text-sm text-green-600">
-                    {t('view_completed_archive') || 'عرض سجل الطلبات التي أنجزتها'}
+                    {isShakWorker
+                      ? (t('view_completed_shak_archive') || 'سجل الطلبات التي انتهى فيها عمل الشك')
+                      : (t('view_completed_archive') || 'عرض سجل الطلبات التي أنجزتها')}
                   </p>
                 </div>
               </div>

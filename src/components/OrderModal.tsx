@@ -58,7 +58,7 @@ import OrderAlterationsSection from './OrderAlterationsSection'
 import OrderWorkerAssignmentModal from './OrderWorkerAssignmentModal'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
-import { formatGregorianDate, parseDateForDisplay, shiftDate } from '@/lib/date-utils'
+import { formatGregorianDate, formatGregorianDateTime, parseDateForDisplay, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 
 interface OrderModalProps {
@@ -1148,6 +1148,29 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     <p className="truncate text-xs text-gray-700 sm:text-sm" title={order.cutter_name || t('not_specified')}>
                       <span className="text-gray-500">{t('cutter')}: </span>{order.cutter_name || t('not_specified')}
                     </p>
+                    {(order as any).has_shak_work === true && (
+                      <p className="text-xs text-gray-700 sm:text-sm">
+                        <span className="text-gray-500">{t('shak_worker') || (isArabic ? 'الشكّاك' : 'Shak worker')}: </span>
+                        {(order as any).shak_completed ? (
+                          <span className="text-green-700 font-medium">
+                            {(order as any).shak_worker_name || t('not_specified')}
+                            {(order as any).shak_completed_at && (
+                              <>
+                                {' — '}
+                                {isArabic ? 'أنهى الشك' : 'finished shak'}:{' '}
+                                {formatGregorianDateTime(
+                                  (order as any).shak_completed_at,
+                                  isArabic ? 'ar-SA-u-nu-latn' : 'en-GB',
+                                  { timeZone: 'Asia/Riyadh' }
+                                )}
+                              </>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-amber-700">{isArabic ? 'لم ينتهِ عمل الشك بعد' : 'Shak work not finished yet'}</span>
+                        )}
+                      </p>
+                    )}
                   </div>
 
                   {/* الحالة */}

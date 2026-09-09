@@ -19,6 +19,7 @@ import {
   toDateTimeLocalValue,
 } from '@/lib/date-utils'
 import CutOrdersTab from '@/components/CutOrdersTab'
+import ShakOrdersTab from '@/components/ShakOrdersTab'
 import OrderCutterInfo from '@/components/OrderCutterInfo'
 import { useTranslation } from '@/hooks/useTranslation'
 import toast from 'react-hot-toast'
@@ -123,7 +124,7 @@ function sanitizeNum(val: string): string {
   return parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned
 }
 
-type TabType = 'cut' | 'active' | 'completed' | 'payroll' | 'attendance'
+type TabType = 'cut' | 'shak' | 'active' | 'completed' | 'payroll' | 'attendance'
 
 
 // ترتيب الطلبات المنجزة تنازلياً حسب تاريخ الإنجاز الفعلي.
@@ -161,8 +162,14 @@ export default function WorkerDetailPage() {
   const [isLoadingWorker, setIsLoadingWorker] = useState(true)
   const [selectedTab, setActiveTab] = useState<TabType>('active')
   const isCutter = worker?.worker_type === 'workshop_manager'
-  const activeTab = isCutter && (selectedTab === 'active' || selectedTab === 'completed')
-    ? 'cut' : !isCutter && selectedTab === 'cut' ? 'active' : selectedTab
+  const isShakWorker = worker?.worker_type === 'shak_worker'
+  // القصّاص والشكّاك لا يملكان طلبات مُسندة، فتبويباهما يحلّان محل «النشطة/المكتملة»
+  const ownTab: TabType | null = isCutter ? 'cut' : isShakWorker ? 'shak' : null
+  const activeTab = ownTab
+    ? (selectedTab === 'active' || selectedTab === 'completed' || selectedTab === 'cut' || selectedTab === 'shak'
+        ? ownTab
+        : selectedTab)
+    : (selectedTab === 'cut' || selectedTab === 'shak' ? 'active' : selectedTab)
   const [cutRefresh, setCutRefresh] = useState(0)
 
   // Active orders tab
@@ -252,9 +259,9 @@ export default function WorkerDetailPage() {
   }, [workerId])
 
   useEffect(() => {
-    if (!workerId || !worker || isCutter) return
+    if (!workerId || !worker || isCutter || isShakWorker) return
     fetchActiveOrders(activeOrdersPage)
-  }, [workerId, worker, isCutter, activeOrdersPage, fetchActiveOrders])
+  }, [workerId, worker, isCutter, isShakWorker, activeOrdersPage, fetchActiveOrders])
 
   // Fetch completed orders (lazy) — بدون ترقيم: نعرض كل طلبات الشهر المحدد دفعةً واحدة
   // `silent` = إعادة جلب في الخلفية دون إظهار مؤشر التحميل (بعد تعديل تاريخ الإنهاء مثلاً)
@@ -619,7 +626,7 @@ export default function WorkerDetailPage() {
             </div>
 
             {/* Quick KPIs apply to tailor work only. */}
-            {!isCutter && <div className="flex gap-4 sm:gap-6 flex-shrink-0">
+            {!isCutter && !isShakWorker && <div className="flex gap-4 sm:gap-6 flex-shrink-0">
               <div className="text-center">
                 <p className="text-2xl font-bold text-blue-600">{activeOrdersTotal}</p>
                 <p className="text-xs text-gray-400 mt-0.5">نشطة</p>
@@ -652,7 +659,11 @@ export default function WorkerDetailPage() {
           <div className="flex border-b border-slate-100">
             {(
               [
-                ...(isCutter ? [{ key: 'cut' as TabType, label: t('cut_orders'), icon: Package, count: null }] : [
+                ...(isCutter
+                  ? [{ key: 'cut' as TabType, label: t('cut_orders'), icon: Package, count: null }]
+                  : isShakWorker
+                    ? [{ key: 'shak' as TabType, label: t('shak_orders') || 'طلبات الشك', icon: Package, count: null }]
+                    : [
                 { key: 'active' as TabType, label: 'الطلبات النشطة', icon: Package, count: activeOrdersTotal },
                 { key: 'completed' as TabType, label: 'الطلبات المكتملة', icon: CheckCircle, count: completedOrdersTotal },
                 ]),
@@ -674,7 +685,7 @@ export default function WorkerDetailPage() {
                   <Icon className="w-4 h-4" />
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">
-                    {isCutter ? tab.label : tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : tab.key === 'payroll' ? 'الراتب' : 'الحضور'}
+                    {isCutter || isShakWorker ? tab.label : tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : tab.key === 'payroll' ? 'الراتب' : 'الحضور'}
                   </span>
                   {tab.count !== null && tab.count > 0 && (
                     <span className="hidden rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 sm:inline-flex">
@@ -689,6 +700,7 @@ export default function WorkerDetailPage() {
           {/* Tab content */}
           <div className="p-4 sm:p-6">
             {activeTab === 'cut' && <CutOrdersTab workerId={workerId} refreshKey={cutRefresh} onOrderClick={openOrderModal} />}
+            {activeTab === 'shak' && <ShakOrdersTab workerId={workerId} refreshKey={cutRefresh} onOrderClick={openOrderModal} />}
             {activeTab === 'active' && (
               <OrdersTab
                 orders={activeOrders}

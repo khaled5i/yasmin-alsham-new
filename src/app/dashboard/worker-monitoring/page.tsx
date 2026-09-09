@@ -45,6 +45,9 @@ export default function WorkerMonitoringPage() {
   const [managers, setManagers] = useState<WorkerWithUser[]>([])
   const [cutCounts, setCutCounts] = useState<Record<string, number>>({})
   const [cutError, setCutError] = useState<string | null>(null)
+  const [shakWorkers, setShakWorkers] = useState<WorkerWithUser[]>([])
+  const [shakPendingTotal, setShakPendingTotal] = useState(0)
+  const [shakDoneCounts, setShakDoneCounts] = useState<Record<string, number>>({})
   const [tailors, setTailors] = useState<WorkerWithUser[]>([])
   const [activeOrderCounts, setActiveOrderCounts] = useState<Record<string, number>>({})
   const [completedOrderCounts, setCompletedOrderCounts] = useState<Record<string, number>>({})
@@ -80,7 +83,7 @@ export default function WorkerMonitoringPage() {
     async function fetchData() {
       setIsLoading(true)
       try {
-        const [workersResult, activeResult, completedResult, cutResult] = await Promise.all([
+        const [workersResult, activeResult, completedResult, cutResult, shakPendingResult, shakDoneResult] = await Promise.all([
           workerService.getAll(),
           orderService.getAll({
             status: ['pending', 'in_progress'],
@@ -94,8 +97,18 @@ export default function WorkerMonitoringPage() {
             monthFilter: selectedMonth || undefined,
           }),
           orderService.getAll({ cutOrdersOnly: true, cutMonth: selectedMonth || undefined, noPagination: true }),
+          // طلبات الشك المعلّقة مشتركة بين كل الشكّاكين، فتُعرض كرقم واحد
+          orderService.getAll({ hasShakWork: true, shakCompleted: false, noPagination: true, lightweight: true }),
+          orderService.getAll({ hasShakWork: true, shakCompleted: true, noPagination: true, lightweight: true }),
         ])
         setManagers((workersResult.data || []).filter(w => w.worker_type === 'workshop_manager'))
+        setShakWorkers((workersResult.data || []).filter(w => w.worker_type === 'shak_worker'))
+        setShakPendingTotal(shakPendingResult.total ?? (shakPendingResult.data || []).length)
+        const shakCounts: Record<string, number> = {}
+        for (const order of shakDoneResult.data || []) {
+          if (order.shak_worker_id) shakCounts[order.shak_worker_id] = (shakCounts[order.shak_worker_id] || 0) + 1
+        }
+        setShakDoneCounts(shakCounts)
         setCutError(cutResult.error || workersResult.error)
         const counts: Record<string, number> = {}
         for (const order of cutResult.data || []) {
@@ -294,6 +307,29 @@ export default function WorkerMonitoringPage() {
             ))}
           </div>
         </section>
+        {shakWorkers.length > 0 && (
+          <section className="mt-10" aria-label={t('shak_workers') || 'الشكّاكون'}>
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-xl font-bold text-gray-800">{t('shak_workers') || 'الشكّاكون'}</h2>
+              <p className="text-sm text-gray-500">
+                {t('shak_pending_orders') || 'شك قيد التنفيذ'}: <strong className="text-amber-700">{shakPendingTotal}</strong>
+                <span className="mx-1 text-gray-300">|</span>
+                <span className="text-xs">{isArabic ? 'مشتركة بين الجميع' : 'shared by all'}</span>
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {shakWorkers.map(shakWorker => (
+                <Link key={shakWorker.id} href={`/dashboard/worker-monitoring/${shakWorker.id}`} className="rounded-2xl border-2 border-indigo-100 bg-white p-5 transition-colors hover:border-indigo-400">
+                  <h3 className="font-bold text-gray-800">{shakWorker.user?.full_name || t('not_specified')}</h3>
+                  <p className="mt-1 text-xs text-gray-500">{t('shak_worker') || 'شكّاك'}</p>
+                  <p className="mt-4 text-sm text-indigo-700">
+                    {t('shak_completed_orders') || 'شك مكتمل'}: <strong>{shakDoneCounts[shakWorker.id] || 0}</strong>
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   )

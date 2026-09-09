@@ -54,6 +54,7 @@ import DesignSummarySection from '@/components/DesignSummarySection'
 import { Order } from '@/lib/services/order-service'
 import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
 import { issueOrderPaymentReceipt } from '@/lib/services/order-payment-receipt'
+import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 
 // مفتاح localStorage للحفظ التلقائي
 const FORM_STORAGE_KEY = 'add-order-form-draft'
@@ -74,6 +75,15 @@ const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أم
 async function printNewOrderPreliminaryReceipt(
   order: Order
 ): Promise<void> {
+  // لا فاتورة بلا مبلغ محصَّل: الطلب بدون عربون والحجز المسبق بدون دفعة لا يُطبع
+  // لهما شيء. نقرأ التفصيل نفسه الذي يعتمده مسار المحاسبة، فإن كان الكاش
+  // والشبكة صفرين فلا يوجد أصلاً ما يُرسل للأستاذ ولا يتغير سلوك الإرسال.
+  const collected = computePaymentBreakdown(order)
+  if (collected.cashTotal + collected.networkTotal < 0.005) {
+    toast('لا يوجد عربون — لم تُطبع فاتورة مبدئية', { icon: '🧾' })
+    return
+  }
+
   try {
     const result = await issueOrderPaymentReceipt(order)
     if (result.accountingSynced && !result.accountingAlreadySent) {
@@ -141,6 +151,7 @@ interface FormDataType {
   savedDesignComments: SavedDesignComment[]
   designSummaryNotes: DesignSummaryNote[]
   hasSecondProof: 'yes' | 'no' | null
+  hasShakWork: 'yes' | 'no' | null
   // موعد البروفا الثانية المُعدّل يدوياً (فارغ = يُحسب تلقائياً كـ dueDate - 3 أيام)
   secondProofDate: string
   designLinks: string
@@ -171,6 +182,7 @@ const getInitialFormData = (): FormDataType => ({
   savedDesignComments: [],
   designSummaryNotes: [],
   hasSecondProof: null,
+  hasShakWork: null,
   secondProofDate: '',
   designLinks: ''
 })
@@ -194,7 +206,8 @@ const isFormDataEmpty = (data: FormDataType): boolean => {
     !data.customDesignImage &&
     data.savedDesignComments.length === 0 &&
     data.designSummaryNotes.length === 0 &&
-    !data.hasSecondProof
+    !data.hasSecondProof &&
+    !data.hasShakWork
   )
 }
 
@@ -514,6 +527,8 @@ function AddOrderContent() {
       errorMessage = t('fill_required_fields') || 'يرجى تعبئة الحقول المطلوبة'
     } else if (!formData.hasSecondProof) {
       errorMessage = 'يرجى تحديد هل يوجد بروفا ثانية أم لا'
+    } else if (!formData.hasShakWork) {
+      errorMessage = 'يرجى تحديد هل يوجد أعمال شك أم لا'
     } else if ((Number(formData.paidAmount) || 0) > 0 && !formData.paymentMethod) {
       errorMessage = 'يرجى تحديد طريقة دفع العربون'
     }
@@ -528,6 +543,7 @@ function AddOrderContent() {
     formData.clientPhone,
     formData.dueDate,
     formData.hasSecondProof,
+    formData.hasShakWork,
     formData.paidAmount,
     formData.paymentMethod,
     formData.price,
@@ -1020,6 +1036,7 @@ function AddOrderContent() {
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
+        has_shak_work: formData.hasShakWork === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
         // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
@@ -1181,6 +1198,7 @@ function AddOrderContent() {
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
+        has_shak_work: formData.hasShakWork === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
         // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
@@ -1332,6 +1350,7 @@ function AddOrderContent() {
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
+        has_shak_work: formData.hasShakWork === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
         // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
@@ -1455,6 +1474,7 @@ function AddOrderContent() {
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
         customer_due_date: formData.dueDate,  // migration 49: التاريخ الحقيقي للزبون
         has_second_proof: formData.hasSecondProof === 'yes',
+        has_shak_work: formData.hasShakWork === 'yes',
         proof_delivery_date: formData.proofDeliveryDate && formData.proofDeliveryDate !== '' ? formData.proofDeliveryDate : undefined,
         // البروفا الثانية: يُحفظ الموعد المُعدّل يدوياً فقط؛ غيابه يعني الحساب التلقائي (due_date - 1)
         // الطلبات الجديدة: نُخزّن موعد البروفا الثانية صراحةً (يدوي أو محسوب مع تفادي الجمعة)
@@ -1860,7 +1880,8 @@ function AddOrderContent() {
                       )}
                     </div>
 
-                    {/* 13. هل يوجد بروفا ثانية؟ */}
+                    {/* 13. هل يوجد بروفا ثانية؟ / هل يوجد أعمال شك؟ */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-start">
                     <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
                       <label className="block text-sm font-medium text-gray-700 mb-3">
                         هل يوجد بروفا ثانية؟ <span className="text-red-500">*</span>
@@ -1938,6 +1959,45 @@ function AddOrderContent() {
                           </div>
                         )
                       })()}
+                    </div>
+
+                    {/* هل يوجد أعمال شك؟ — الطلب ينتقل تلقائياً إلى الشكّاكين عند اختيار «نعم» */}
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        هل يوجد أعمال شك؟ <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex flex-wrap gap-x-6 gap-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="hasShakWork"
+                            value="yes"
+                            checked={formData.hasShakWork === 'yes'}
+                            onChange={(e) => handleInputChange('hasShakWork', e.target.value)}
+                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="text-gray-700 font-medium">نعم</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="hasShakWork"
+                            value="no"
+                            checked={formData.hasShakWork === 'no'}
+                            onChange={(e) => handleInputChange('hasShakWork', e.target.value)}
+                            className="w-5 h-5 text-pink-600 border-gray-300 focus:ring-pink-500 cursor-pointer"
+                            disabled={isSubmitting}
+                          />
+                          <span className="text-gray-700 font-medium">لا</span>
+                        </label>
+                      </div>
+                      {formData.hasShakWork === 'yes' && (
+                        <p className="mt-3 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                          سينتقل هذا الطلب تلقائياً إلى لوحة الشكّاك.
+                        </p>
+                      )}
+                    </div>
                     </div>
 
                   </div>

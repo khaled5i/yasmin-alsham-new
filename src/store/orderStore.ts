@@ -53,6 +53,8 @@ interface OrderState {
     noPagination?: boolean
     orderBy?: string
     orderAscending?: boolean
+    hasShakWork?: boolean
+    shakCompleted?: boolean
   }) => Promise<void>
 
   loadMoreOrders: (filters?: {
@@ -65,6 +67,8 @@ interface OrderState {
     lightweight?: boolean
     orderBy?: string
     orderAscending?: boolean
+    hasShakWork?: boolean
+    shakCompleted?: boolean
   }) => Promise<void>
 
   loadOrderById: (id: string) => Promise<void>

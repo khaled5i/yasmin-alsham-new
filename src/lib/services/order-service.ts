@@ -72,6 +72,12 @@ const ORDER_LIST_COLUMNS = [
   'is_flagged',        // migration 40
   'fabric_type',
   'has_second_proof',  // migration 23
+  // أعمال الشك (migration 20260908130000)
+  'has_shak_work',
+  'shak_completed',
+  'shak_completed_at',
+  'shak_worker_id',
+  'shak_worker_name',
   // مراحل مراجعة الجودة (البروفا الأولى والثانية والفستان النهائي)
   'first_proof_review_status',
   'first_proof_reviewed_at',
@@ -172,6 +178,12 @@ export interface Order {
   is_flagged: boolean   // migration 40
   // بروفا ثانية (migration 23)
   has_second_proof: boolean
+  // أعمال الشك — مستقلة تماماً عن status (migration 20260908130000)
+  has_shak_work?: boolean
+  shak_completed?: boolean
+  shak_completed_at?: string | null
+  shak_worker_id?: string | null
+  shak_worker_name?: string | null
   first_proof_review_status?: 'pending' | 'passed' | 'failed'
   first_proof_reviewed_at?: string | null
   second_proof_review_status?: 'pending' | 'passed' | 'failed'
@@ -289,6 +301,7 @@ export interface CreateOrderData {
   is_urgent?: boolean   // migration 39
   is_flagged?: boolean  // migration 40
   has_second_proof?: boolean // migration 23
+  has_shak_work?: boolean // migration 20260908130000
   price: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -419,6 +432,8 @@ export interface UpdateOrderData {
   is_pre_booking?: boolean
   is_flagged?: boolean  // migration 40
   has_second_proof?: boolean | null // migration 23
+  has_shak_work?: boolean | null // migration 20260908130000
+  shak_completed?: boolean
   // إشعارات البروفا الثانية (migration 54)
   second_proof_completed?: boolean
   second_proof_completed_at?: string | null
@@ -626,6 +641,7 @@ export const orderService = {
         is_urgent: orderData.is_urgent ?? false,  // migration 39
         is_flagged: orderData.is_flagged ?? false, // migration 40
         has_second_proof: orderData.has_second_proof ?? false, // migration 23
+        has_shak_work: orderData.has_shak_work ?? false, // migration 20260908130000
         price: orderData.price,
         paid_amount: orderData.paid_amount || 0,
         payment_status: orderData.payment_status || 'unpaid',
@@ -771,6 +787,9 @@ export const orderService = {
     cutMonth?: string // Riyadh calendar month, independent of order completion
     cutFrom?: string
     cutTo?: string
+    hasShakWork?: boolean   // طلبات أعمال الشك وحدها
+    shakCompleted?: boolean // تقسيم طلبات الشك إلى قيد التنفيذ / منتهية
+    shakWorkerId?: string   // من أنهى الشك فعلياً
     user_id?: string
     payment_status?: string
     page?: number       // 0-indexed page number
@@ -819,6 +838,9 @@ export const orderService = {
       if (filters?.cutter_id) query = query.eq('cutter_id', filters.cutter_id)
       if (filters?.orderBy === 'cut_at') query = query.order('id', { ascending: true })
       if (filters?.cutOrdersOnly) query = query.not('cutter_id', 'is', null)
+      if (filters?.hasShakWork !== undefined) query = query.eq('has_shak_work', filters.hasShakWork)
+      if (filters?.shakCompleted !== undefined) query = query.eq('shak_completed', filters.shakCompleted)
+      if (filters?.shakWorkerId) query = query.eq('shak_worker_id', filters.shakWorkerId)
       if (filters?.cutFrom) query = query.gte('cut_at', filters.cutFrom)
       if (filters?.cutTo) query = query.lt('cut_at', filters.cutTo)
       if (filters?.cutMonth) {

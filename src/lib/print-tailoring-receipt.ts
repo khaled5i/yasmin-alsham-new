@@ -403,3 +403,65 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
 </body>
 </html>`
 }
+
+export interface ManualTailoringInvoice {
+  /** معرّف سجل income — مرجع الطباعة ومصدر الرقم المحلي */
+  id: string
+  amount: number
+  paymentMethod: 'cash' | 'network'
+  /** تاريخ الفاتورة (YYYY-MM-DD) كما اختاره المستخدم */
+  date: string
+  customerName?: string | null
+  itemDescription?: string | null
+  alostazInvoiceCode?: string | null
+}
+
+/**
+ * مرجع قصير للفاتورة اليدوية. الفاتورة ليست مرتبطة بطلب، لذلك يحل هذا المرجع
+ * محل رقم الطلب على الورق ويبقى قابلاً لتتبّع سجل income الذي اشتُقّ منه.
+ */
+function buildManualInvoiceReference(incomeId: string): string {
+  const digits = String(incomeId || '').replace(/\D/g, '').slice(-6)
+  return (digits || String(Date.now()).slice(-6)).padStart(6, '0')
+}
+
+/**
+ * فاتورة «إضافة فاتورة لياسمين الشام للخياطة» بنفس شكل إيصال تسليم الطلب.
+ * الشبكة تُطبع برقم الأستاذ حصراً، والكاش يأخذ رقماً محلياً ببادئة CASH كي لا
+ * يبدو رقماً محاسبياً. المبلغ مدفوع بالكامل، فالباقي صفر دائماً.
+ */
+export function createManualTailoringInvoiceReceiptPayload(
+  invoice: ManualTailoringInvoice
+): TailoringReceiptPayload {
+  const amount = Math.max(0, Number(invoice?.amount) || 0)
+  const isNetwork = invoice?.paymentMethod === 'network'
+  const accountingCode = String(invoice?.alostazInvoiceCode || '').trim()
+
+  if (isNetwork && !accountingCode) {
+    throw new Error('لا يمكن طباعة فاتورة شبكة قبل استلام رقمها من برنامج الأستاذ')
+  }
+
+  const rawDate = String(invoice?.date || '').trim()
+  // التاريخ المجرّد (YYYY-MM-DD) مدعوم في محرّكي الطباعة معاً؛ أي صيغة أخرى
+  // تُستبدل بطابع زمني كامل بإزاحة زمنية حتى يقرأه عارض المحطة.
+  const issuedAt = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : new Date().toISOString()
+  const issuedYear = new Date(`${issuedAt.slice(0, 10)}T00:00:00`).getFullYear()
+  const reference = buildManualInvoiceReference(String(invoice?.id || ''))
+
+  return {
+    order_id: String(invoice?.id || ''),
+    order_number: `M-${reference}`,
+    invoice_code: isNetwork
+      ? accountingCode
+      : `CASH-${String(issuedYear).slice(-2)}-${reference}`,
+    invoice_code_source: isNetwork ? 'alostaz' : 'local',
+    receipt_type: 'delivery',
+    customer_name: String(invoice?.customerName || 'عميل'),
+    item_description: String(invoice?.itemDescription || 'أجرة تفصيل فستان'),
+    total: amount,
+    paid_amount: amount,
+    cash_amount: isNetwork ? 0 : amount,
+    network_amount: isNetwork ? amount : 0,
+    delivered_at: issuedAt,
+  }
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -51,7 +51,8 @@ import {
   Zap,
   AlertTriangle,
   Bell,
-  BellRing
+  BellRing,
+  Check
 } from 'lucide-react'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import OrderQualityReviewModal from '@/components/OrderQualityReviewModal'
@@ -89,6 +90,15 @@ function OrdersPageInner() {
   const [currentPage, setCurrentPage] = useState(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
+  // الشكّاك يرى طلبات الشك غير المنتهية فقط، بلا إسناد ولا علاقة بحالة الطلب.
+  // نضمّ 'completed' لأن الخياط قد ينهي الطلب قبل أن ينهي الشكّاك شكّه.
+  const isShakWorker = workerType === 'shak_worker'
+  const listFilters = useMemo(() => (
+    isShakWorker
+      ? { status: ['pending', 'in_progress', 'completed'], hasShakWork: true, shakCompleted: false }
+      : { status: ['pending', 'in_progress', 'cancelled'] }
+  ), [isShakWorker])
+
   // التحقق من الصلاحيات وتحميل البيانات
   useEffect(() => {
     if (authLoading) return
@@ -101,22 +111,22 @@ function OrdersPageInner() {
     // دائماً نبدأ من الصفحة الأولى عند التحميل الأولي
     setCurrentPage(0)
     loadOrders({
-      status: ['pending', 'in_progress', 'cancelled'],
+      ...listFilters,
       page: 0,
       pageSize: PAGE_SIZE
     })
     loadWorkers()
-  }, [user, authLoading, router, loadOrders, loadWorkers])
+  }, [user, authLoading, router, loadOrders, loadWorkers, listFilters])
 
   // تحميل المزيد عند تغيير currentPage (يُفعَّل من IntersectionObserver)
   useEffect(() => {
     if (currentPage === 0) return
     loadMoreOrders({
-      status: ['pending', 'in_progress', 'cancelled'],
+      ...listFilters,
       page: currentPage,
       pageSize: PAGE_SIZE
     })
-  }, [currentPage, loadMoreOrders])
+  }, [currentPage, loadMoreOrders, listFilters])
 
   // IntersectionObserver: عند الوصول لآخر العناصر يتم تحميل الدفعة التالية
   useEffect(() => {
@@ -142,7 +152,7 @@ function OrdersPageInner() {
     console.log('🔄 OrdersPage: re-fetching data after app resume')
     setCurrentPage(0)
     loadOrders({
-      status: ['pending', 'in_progress', 'cancelled'],
+      ...listFilters,
       page: 0,
       pageSize: PAGE_SIZE
     })
@@ -255,6 +265,7 @@ function OrdersPageInner() {
   const [orderToStartWork, setOrderToStartWork] = useState<any>(null)
   // إبلاغ المدير بجهوزية البروفا الثانية (للعامل) — معرف الطلب قيد المعالجة
   const [notifyingSecondProofId, setNotifyingSecondProofId] = useState<string | null>(null)
+  const [togglingShakId, setTogglingShakId] = useState<string | null>(null)
   const [qualityReviewTarget, setQualityReviewTarget] = useState<{
     order: Order
     stage: OrderQualityReviewStage
@@ -1018,6 +1029,30 @@ function OrdersPageInner() {
     }
   }
 
+  // إنهاء عمل الشك — يقلب علم الشك وحده ولا يمسّ حالة الطلب الرئيسية إطلاقاً
+  const handleToggleShakCompleted = async (order: any) => {
+    if (!user || user.role !== 'worker') return
+
+    const markCompleted = !order.shak_completed
+    setTogglingShakId(order.id)
+    try {
+      const result = await updateOrder(order.id, { shak_completed: markCompleted } as any)
+
+      if (result.success) {
+        toast.success(
+          markCompleted
+            ? (isArabic ? 'تم تسجيل انتهاء عمل الشك' : 'Shak work marked complete')
+            : (isArabic ? 'تم التراجع عن إنهاء الشك' : 'Shak completion undone'),
+          { icon: markCompleted ? '✓' : '↩️' }
+        )
+      } else {
+        toast.error(result.error || (isArabic ? 'حدث خطأ' : 'An error occurred'), { icon: '✗' })
+      }
+    } finally {
+      setTogglingShakId(null)
+    }
+  }
+
   // فتح نافذة إنهاء الطلب
   const handleOpenCompleteModal = (order: any) => {
     setSelectedOrder(order)
@@ -1101,9 +1136,14 @@ function OrdersPageInner() {
     let matchesRole = user?.role === 'admin' || workerType === 'workshop_manager'
 
     if (!matchesRole && user?.role === 'worker') {
-      const currentWorker = workers.find(w => w.user_id === user.id)
-      if (currentWorker) {
-        matchesRole = order.worker_id === currentWorker.id
+      if (isShakWorker) {
+        // لا إسناد للشكّاك: كل طلب فيه أعمال شك لم تنتهِ بعد يصله تلقائياً
+        matchesRole = order.has_shak_work === true && order.shak_completed !== true
+      } else {
+        const currentWorker = workers.find(w => w.user_id === user.id)
+        if (currentWorker) {
+          matchesRole = order.worker_id === currentWorker.id
+        }
       }
     }
 
@@ -1403,6 +1443,14 @@ function OrdersPageInner() {
                                 </span>
                               </div>
                             )}
+                            {(order as any).has_shak_work === true && (
+                              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-100">
+                                <span className="text-sm font-semibold text-indigo-700">{isArabic ? 'شك' : 'Shak'}</span>
+                                {(order as any).shak_completed === true && (
+                                  <Check className="w-3.5 h-3.5 text-green-600" strokeWidth={3.5} />
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <h3 className="font-bold text-gray-900 text-lg mb-1 truncate">{order.client_name}</h3>
@@ -1427,8 +1475,40 @@ function OrdersPageInner() {
                         </div>
                       </div>
 
+                      {/* زر الشكّاك — إنهاء عمل الشك وحده، حالة الطلب تبقى كما هي */}
+                      {isShakWorker && order.has_shak_work && (
+                        <div className="pt-4 border-t border-gray-100">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleToggleShakCompleted(order) }}
+                            disabled={togglingShakId === order.id}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 text-base font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm border-2 ${
+                              order.shak_completed
+                                ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100'
+                                : 'bg-green-600 border-green-600 text-white hover:bg-green-700'
+                            }`}
+                            title={order.shak_completed
+                              ? (isArabic ? 'انتهى عمل الشك — اضغط للتراجع' : 'Shak done — tap to undo')
+                              : (isArabic ? 'تسجيل انتهاء عمل الشك على هذا الطلب' : 'Mark shak work complete')}
+                          >
+                            {togglingShakId === order.id ? (
+                              <div className={`w-5 h-5 border-2 ${order.shak_completed ? 'border-green-600' : 'border-white'} border-t-transparent rounded-full animate-spin`}></div>
+                            ) : (
+                              <CheckCircle className="w-5 h-5" />
+                            )}
+                            <span>
+                              {order.shak_completed
+                                ? (t('shak_done') || (isArabic ? 'انتهى عمل الشك' : 'Shak work done'))
+                                : (t('complete_shak_work') || (isArabic ? 'إنهاء عمل الشك' : 'Complete shak work'))}
+                            </span>
+                          </button>
+                          <p className="mt-2 text-center text-xs text-gray-500">
+                            {isArabic ? 'لا يغيّر حالة الطلب الرئيسية' : 'Does not change the order status'}
+                          </p>
+                        </div>
+                      )}
+
                       {/* أزرار العمل في الأسفل */}
-                      {currentWorkerId && order.worker_id === currentWorkerId && (
+                      {!isShakWorker && currentWorkerId && order.worker_id === currentWorkerId && (
                         <div className="pt-4 border-t border-gray-100 flex flex-col gap-2.5">
                           {order.status === 'pending' && (
                             <button
@@ -1593,6 +1673,19 @@ function OrdersPageInner() {
                                 ? `تعديل${(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}`
                                 : `Alteration${(order as any).alteration_count > 1 ? ` (${(order as any).alteration_count})` : ''}`}
                             </span>
+                          </div>
+                        )}
+                        {(order as any).has_shak_work === true && (
+                          <div
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100"
+                            title={(order as any).shak_completed
+                              ? (isArabic ? 'انتهى عمل الشك' : 'Shak work done')
+                              : (isArabic ? 'يوجد أعمال شك' : 'Has shak work')}
+                          >
+                            <span className="text-xs font-medium text-indigo-700">{isArabic ? 'شك' : 'Shak'}</span>
+                            {(order as any).shak_completed === true && (
+                              <Check className="w-3 h-3 text-green-600" strokeWidth={3.5} />
+                            )}
                           </div>
                         )}
 
@@ -1809,7 +1902,7 @@ function OrdersPageInner() {
                   })()}
 
                   {/* Footer - Price (Full Width) */}
-                  {workerType !== 'workshop_manager' && workerType !== 'tailor' && (
+                  {workerType !== 'workshop_manager' && workerType !== 'tailor' && !isShakWorker && (
                     <div className="flex items-center justify-between pt-4 border-t border-gray-200 mt-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
                       <div>
                         <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
@@ -1846,8 +1939,8 @@ function OrdersPageInner() {
           workers={workers}
           isOpen={showViewModal}
           onClose={handleCloseModals}
-          onStartWork={user.role === 'worker' ? handleStartWork : undefined}
-          onCompleteWork={user.role === 'worker' ? handleOpenCompleteModal : undefined}
+          onStartWork={user.role === 'worker' && !isShakWorker ? handleStartWork : undefined}
+          onCompleteWork={user.role === 'worker' && !isShakWorker ? handleOpenCompleteModal : undefined}
           isProcessing={isProcessing}
           currentWorkerId={currentWorkerId || undefined}
           autoTranslateAlterationsToHindi={user.role === 'worker' && workerType === 'tailor'}

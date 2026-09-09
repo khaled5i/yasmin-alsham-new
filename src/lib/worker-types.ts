@@ -11,7 +11,8 @@ export const WORKER_TYPE_NAMES_AR: Record<WorkerType, string> = {
   fabric_store_manager: 'مدير متجر الأقمشة',
   accountant: 'محاسب',
   general_manager: 'مدير عام',
-  workshop_manager: 'مدير الورشة'
+  workshop_manager: 'مدير الورشة',
+  shak_worker: 'شكّاك'
 }
 
 // أسماء أنواع العمال بالإنجليزية
@@ -20,7 +21,8 @@ export const WORKER_TYPE_NAMES_EN: Record<WorkerType, string> = {
   fabric_store_manager: 'Fabric Store Manager',
   accountant: 'Accountant',
   general_manager: 'General Manager',
-  workshop_manager: 'Workshop Manager'
+  workshop_manager: 'Workshop Manager',
+  shak_worker: 'Shak Worker'
 }
 
 // الصلاحيات المتاحة لكل نوع عامل
@@ -83,6 +85,17 @@ export const WORKER_PERMISSIONS: Record<WorkerType, {
     canAccessAppointments: false,
     canAccessSettings: false,
     dashboardRoute: '/dashboard/workshop-manager'
+  },
+  // الشكّاك يستخدم واجهة الخياط نفسها؛ الفرق كله في الطلبات التي تصله وفي زر الإنهاء
+  shak_worker: {
+    canAccessOrders: true,
+    canAccessFabrics: false,
+    canAccessProducts: false,
+    canAccessAccounting: false,
+    canAccessWorkers: false,
+    canAccessAppointments: false,
+    canAccessSettings: false,
+    dashboardRoute: '/dashboard/worker'
   }
 }
 
@@ -112,7 +125,8 @@ export const WORKER_TYPES_OPTIONS = [
   { value: 'fabric_store_manager', label: 'مدير متجر الأقمشة', labelEn: 'Fabric Store Manager' },
   { value: 'accountant', label: 'محاسب', labelEn: 'Accountant' },
   { value: 'general_manager', label: 'مدير عام', labelEn: 'General Manager' },
-  { value: 'workshop_manager', label: 'مدير الورشة', labelEn: 'Workshop Manager' }
+  { value: 'workshop_manager', label: 'مدير الورشة', labelEn: 'Workshop Manager' },
+  { value: 'shak_worker', label: 'شكّاك', labelEn: 'Shak Worker' }
 ] as const
 
 // وصف كل نوع عامل
@@ -121,6 +135,7 @@ export const WORKER_TYPE_DESCRIPTIONS: Record<WorkerType, string> = {
   fabric_store_manager: 'مسؤول عن إدارة متجر الأقمشة (إضافة، تعديل، حذف الأقمشة)',
   accountant: 'مسؤول عن النظام المحاسبي والتقارير المالية',
   general_manager: 'صلاحيات كاملة على جميع أقسام النظام',
-  workshop_manager: 'مسؤول عن متابعة الطلبات (الحديثة، المكتملة، المسلمة)'
+  workshop_manager: 'مسؤول عن متابعة الطلبات (الحديثة، المكتملة، المسلمة)',
+  shak_worker: 'مسؤول عن أعمال الشك — تصله تلقائياً كل الطلبات التي فيها أعمال شك'
 }
 
