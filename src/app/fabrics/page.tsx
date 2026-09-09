@@ -20,6 +20,8 @@ const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSideb
 
 const FabricQuickViewModal = dynamic(() => import('@/components/FabricQuickViewModal'), { ssr: false })
 
+const FabricColorFilterBar = dynamic(() => import('@/components/FabricColorFilterBar'), { ssr: false })
+
 function FabricSkeleton() {
   return (
     <div className="group">
@@ -105,7 +107,7 @@ export default function FabricsPage() {
   return (
     <>
       <main className="min-h-screen bg-[#fbf8f3] text-[#211b19] pt-4 lg:pt-8">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 pb-28 lg:py-12 lg:pb-32">
 
           {/* العنوان مع زر العودة */}
           <motion.header
@@ -410,6 +412,9 @@ export default function FabricsPage() {
             )}
           </div>
         </div>
+
+        {/* شريط عائم للتسوق حسب اللون */}
+        <FabricColorFilterBar />
 
         {/* QuickView Modal */}
         <FabricQuickViewModal
