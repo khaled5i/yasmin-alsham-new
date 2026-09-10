@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, MessageCircle, Shirt } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Fabric, formatFabricPrice, getFinalPrice } from '@/store/fabricStore'
@@ -55,7 +55,11 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose, onViewDe
 
   if (!fabric) return null
 
-  const fabricImages = fabric.images || []
+  // صور القماش أولاً ثم صور التصاميم النهائية ضمن نفس المعرض
+  const designImages = fabric.design_images || []
+  const fabricImages = [...(fabric.images || []), ...designImages]
+  const designStartIndex = fabric.images?.length || 0
+  const currentIsDesign = designImages.length > 0 && currentImageIndex >= designStartIndex
   const currentImage = fabricImages[currentImageIndex] || '/fabric-placeholder.jpg'
   const isExternalImage = currentImage.startsWith('http')
   const isBase64 = currentImage.startsWith('data:')
@@ -187,6 +191,13 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose, onViewDe
                         />
                       )}
                     </div>
+
+                    {currentIsDesign && (
+                      <div className="absolute top-4 left-4 z-10 flex items-center gap-1 rounded-full bg-[#f6f0e8]/95 px-3 py-1 text-xs font-bold text-[#6b1726] shadow-lg">
+                        <Shirt className="w-3.5 h-3.5" />
+                        <span>تصميم فستان</span>
+                      </div>
+                    )}
 
                     {/* أزرار التنقل */}
                     {fabricImages.length > 1 && (

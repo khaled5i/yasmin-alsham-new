@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2 } from 'lucide-react'
-import { useFabricStore, Fabric, getFinalPrice } from '@/store/fabricStore'
+import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2, Shirt } from 'lucide-react'
+import { useFabricStore, Fabric, getFinalPrice, hasFabricDesignImages } from '@/store/fabricStore'
 import FabricSortOptions from '@/components/FabricSortOptions'
 
 import dynamic from 'next/dynamic'
@@ -21,6 +21,8 @@ const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSideb
 const FabricQuickViewModal = dynamic(() => import('@/components/FabricQuickViewModal'), { ssr: false })
 
 const FabricColorFilterBar = dynamic(() => import('@/components/FabricColorFilterBar'), { ssr: false })
+
+const DESIGNS_VIEW_STORAGE_KEY = 'yasmin-fabrics-show-designs'
 
 function FabricSkeleton() {
   return (
@@ -42,7 +44,11 @@ function FabricSkeleton() {
 
 export default function FabricsPage() {
   const { fabrics, loadFabrics, isLoading, error, getFilteredFabrics, filters, sortBy, setFilters, resetFilters } = useFabricStore()
-  const filteredFabrics = getFilteredFabrics()
+  // وضع «التصاميم النهائية»: يعرض الأقمشة التي تملك تصاميم فقط، وبصورة التصميم بدل صورة القماش
+  const [showDesigns, setShowDesigns] = useState(false)
+  const designsCount = fabrics.filter(hasFabricDesignImages).length
+  const matchingFabrics = getFilteredFabrics()
+  const filteredFabrics = showDesigns ? matchingFabrics.filter(hasFabricDesignImages) : matchingFabrics
   const {
     page, setPage, isSingleColumn, setIsSingleColumn,
     currentImageIndexes, setCurrentImageIndexes,
@@ -59,6 +65,13 @@ export default function FabricsPage() {
     console.log('🔄 تحميل الأقمشة من Supabase...')
     loadFabrics(true) // forceReload = true للحصول على أحدث الأقمشة
   }, [loadFabrics])
+
+  // استرجاع تفضيل عرض التصاميم
+  useEffect(() => {
+    try {
+      setShowDesigns(localStorage.getItem(DESIGNS_VIEW_STORAGE_KEY) === 'on')
+    } catch { /* Optional preference. */ }
+  }, [])
 
   useEffect(() => {
     if (!isReady || isRestoring) return
@@ -82,6 +95,13 @@ export default function FabricsPage() {
   const prevImage = useCallback((fabricId: string, totalImages: number) => {
     setCurrentImageIndexes(prev => ({ ...prev, [fabricId]: ((prev[fabricId] || 0) - 1 + totalImages) % totalImages }))
   }, [setCurrentImageIndexes])
+
+  // تبديل عرض التصاميم النهائية + حفظ التفضيل
+  const toggleDesignsView = () => {
+    const newMode = !showDesigns
+    setShowDesigns(newMode)
+    try { localStorage.setItem(DESIGNS_VIEW_STORAGE_KEY, newMode ? 'on' : 'off') } catch { /* Optional preference. */ }
+  }
 
   // حفظ حالة العرض في localStorage
   const toggleViewMode = () => {
@@ -179,6 +199,23 @@ export default function FabricsPage() {
                   <SlidersHorizontal className="w-5 h-5 text-[#6b1726]" />
                   <span className="text-sm font-medium text-[#211b19]">الفلاتر</span>
                 </button>
+
+                {/* عرض التصاميم النهائية للأقمشة */}
+                {designsCount > 0 && (
+                  <button
+                    onClick={toggleDesignsView}
+                    aria-pressed={showDesigns}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] ${showDesigns
+                      ? 'bg-[#6b1726] border-[#6b1726] text-[#f6f0e8] shadow-md'
+                      : 'bg-[#f6f0e8] border-[#d8c5ae] text-[#211b19] hover:border-[#6b1726] hover:shadow-md'
+                      }`}
+                  >
+                    <Shirt className={`w-5 h-5 ${showDesigns ? 'text-[#f6f0e8]' : 'text-[#6b1726]'}`} />
+                    <span className="text-sm font-medium">
+                      {showDesigns ? 'عرض جميع الأقمشة' : `عرض التصاميم النهائية للأقمشة (${designsCount})`}
+                    </span>
+                  </button>
+                )}
               </div>
 
               {/* الترتيب + تبديل العرض */}
@@ -228,13 +265,31 @@ export default function FabricsPage() {
             {/* لا توجد نتائج */}
             {!isLoading && displayedFabrics.length === 0 && fabrics.length > 0 && (
               <div className="text-center py-20">
-                <p className="text-[#211b19]/70 text-lg mb-4">لا توجد أقمشة تطابق معايير البحث</p>
-                <button
-                  onClick={resetFilters}
-                  className="px-6 py-3 bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] rounded-xl hover:shadow-lg transition-all duration-300 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]"
-                >
-                  إعادة تعيين الفلاتر
-                </button>
+                {showDesigns ? (
+                  <>
+                    <p className="text-[#211b19]/70 text-lg mb-4">
+                      {matchingFabrics.length > 0
+                        ? 'لا توجد أقمشة بتصاميم نهائية ضمن نتائج البحث الحالية'
+                        : 'لا توجد أقمشة تطابق معايير البحث'}
+                    </p>
+                    <button
+                      onClick={toggleDesignsView}
+                      className="px-6 py-3 bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] rounded-xl hover:shadow-lg transition-all duration-300 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]"
+                    >
+                      عرض جميع الأقمشة
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[#211b19]/70 text-lg mb-4">لا توجد أقمشة تطابق معايير البحث</p>
+                    <button
+                      onClick={resetFilters}
+                      className="px-6 py-3 bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] rounded-xl hover:shadow-lg transition-all duration-300 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]"
+                    >
+                      إعادة تعيين الفلاتر
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -252,11 +307,16 @@ export default function FabricsPage() {
                 : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
                 }`} aria-label="قائمة الأقمشة">
                 {displayedFabrics.map((fabric, index) => {
-                  const fabricImages = fabric.images || []
-                  const currentIndex = currentImageIndexes[fabric.id] || 0
+                  // في وضع «التصاميم النهائية» تعرض البطاقة صور التصميم بدل صور القماش،
+                  // أما الأقمشة التي لا تملك تصاميم فتبقى كما هي.
+                  const designImages = fabric.design_images || []
+                  const isShowingDesign = showDesigns && designImages.length > 0
+                  const fabricImages = isShowingDesign ? designImages : (fabric.images || [])
+                  const currentIndex = fabricImages.length > 0
+                    ? (currentImageIndexes[fabric.id] || 0) % fabricImages.length
+                    : 0
                   const originalImage = fabricImages[currentIndex]
-                    || fabric.image_url
-                    || fabric.thumbnail_image
+                    || (isShowingDesign ? designImages[0] : fabric.image_url || fabric.thumbnail_image)
                     || '/wedding-dress-1.jpg.jpg'
                   const currentImageIsVideo = isVideoFile(originalImage)
                   const currentImage = currentImageIsVideo
@@ -273,7 +333,7 @@ export default function FabricsPage() {
                       { width: 540, height: 960 },
                       { width: 720, height: 1280 },
                     ])
-                  const fallbackImage = fabric.thumbnail_image || originalImage
+                  const fallbackImage = isShowingDesign ? originalImage : (fabric.thumbnail_image || originalImage)
                   const finalPrice = getFinalPrice(fabric)
                   const displayedPricing = getFabricDisplayPricing(finalPrice, fabric.stock_quantity)
                   const priceLabel = displayedPricing.amount != null && displayedPricing.amount > 0
@@ -289,7 +349,11 @@ export default function FabricsPage() {
                       className="group"
                     >
                       <div className="relative overflow-hidden rounded-2xl border border-[#d8c5ae]/60 bg-[#f6f0e8] shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
-                        <Link href={`/fabrics/${fabric.id}`} onNavigate={() => rememberFabric(fabric.id)}>
+                        {/* عند القدوم من وضع التصاميم يفتح معرض التفاصيل على التصميم مباشرة */}
+                        <Link
+                          href={`/fabrics/${fabric.id}${isShowingDesign ? '?view=designs' : ''}`}
+                          onNavigate={() => rememberFabric(fabric.id)}
+                        >
                           <div className="aspect-[9/16] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35 relative overflow-hidden cursor-pointer">
                             {currentImageIsVideo ? (
                               <video
@@ -349,6 +413,13 @@ export default function FabricsPage() {
                             {fabric.is_on_sale && (
                               <div className="absolute top-4 right-4 bg-[#6b1726] text-[#f6f0e8] px-3 py-1 rounded-full text-sm font-bold shadow-lg">
                                 خصم {fabric.discount_percentage}%
+                              </div>
+                            )}
+
+                            {designImages.length > 0 && (
+                              <div className="absolute top-4 left-4 flex items-center gap-1 bg-[#f6f0e8]/95 text-[#6b1726] px-2.5 py-1 rounded-full text-[10px] font-bold shadow-lg sm:px-3 sm:text-xs">
+                                <Shirt className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                <span>تحتوي على {designImages.length} تصميم</span>
                               </div>
                             )}
 

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, MessageCircle } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, MessageCircle, Shirt } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
 import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
@@ -42,6 +42,13 @@ export default function FabricDetailPage() {
     }
   }, [fabric])
 
+  // القدوم من وضع «التصاميم النهائية» في المتجر ⇒ ابدأ المعرض من أول تصميم
+  useEffect(() => {
+    if (!fabric || !(fabric.design_images?.length)) return
+    const wantsDesigns = new URLSearchParams(window.location.search).get('view') === 'designs'
+    if (wantsDesigns) setCurrentImageIndex(fabric.images?.length || 0)
+  }, [fabric])
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#fbf8f3] pt-20 flex items-center justify-center">
@@ -69,14 +76,21 @@ export default function FabricDetailPage() {
 
   if (!fabric) return null
 
+  // صور القماش أولاً ثم صور التصاميم النهائية، ضمن معرض واحد مع تمييز التصاميم
+  const fabricImages = fabric.images || []
+  const designImages = fabric.design_images || []
+  const galleryImages = [...fabricImages, ...designImages]
+  const isDesignIndex = (index: number) => index >= fabricImages.length
+  const currentIsDesign = isDesignIndex(currentImageIndex)
+
   const nextImage = () => {
     if (!fabric) return
-    setCurrentImageIndex((prev) => (prev + 1) % (fabric.images?.length || 1))
+    setCurrentImageIndex((prev) => (prev + 1) % (galleryImages.length || 1))
   }
 
   const prevImage = () => {
     if (!fabric) return
-    setCurrentImageIndex((prev) => prev === 0 ? (fabric.images?.length || 1) - 1 : prev - 1)
+    setCurrentImageIndex((prev) => prev === 0 ? (galleryImages.length || 1) - 1 : prev - 1)
   }
 
   const openGallery = () => {
@@ -137,14 +151,14 @@ export default function FabricDetailPage() {
         <div className="grid lg:grid-cols-2 gap-12">
           <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
             <div
-              className={`relative ${isVideoFile(fabric.images?.[currentImageIndex] || '') ? 'bg-[#2f0c14]/5' : 'aspect-[4/5] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35'} rounded-2xl overflow-hidden mb-4 group cursor-pointer border border-[#d8c5ae]/60`}
+              className={`relative ${isVideoFile(galleryImages[currentImageIndex] || '') ? 'bg-[#2f0c14]/5' : 'aspect-[4/5] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35'} rounded-2xl overflow-hidden mb-4 group cursor-pointer border border-[#d8c5ae]/60`}
               onClick={openGallery}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              {isVideoFile(fabric.images?.[currentImageIndex] || '') ? (
+              {isVideoFile(galleryImages[currentImageIndex] || '') ? (
                 <video
-                  src={fabric.images?.[currentImageIndex]}
+                  src={galleryImages[currentImageIndex]}
                   controls
                   preload="metadata"
                   className="w-full object-contain rounded-2xl"
@@ -152,7 +166,7 @@ export default function FabricDetailPage() {
                 />
               ) : (
                 <Image
-                  src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
+                  src={galleryImages[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
                   alt={`${fabricLabel} - صورة ${currentImageIndex + 1}`}
                   fill
                   sizes="(max-width: 768px) 100vw, 50vw"
@@ -162,7 +176,14 @@ export default function FabricDetailPage() {
                 />
               )}
 
-              {(fabric.images?.length || 0) > 1 && (
+              {currentIsDesign && (
+                <div className="absolute top-4 right-4 z-10 flex items-center gap-1 rounded-full bg-[#f6f0e8]/95 px-3 py-1 text-xs font-bold text-[#6b1726] shadow-lg">
+                  <Shirt className="w-3.5 h-3.5" />
+                  <span>تصميم فستان من هذا القماش</span>
+                </div>
+              )}
+
+              {galleryImages.length > 1 && (
                 <>
                   <button onClick={(e) => { e.stopPropagation(); nextImage() }} className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-[#2f0c14]/65 hover:bg-[#2f0c14]/85 text-[#f6f0e8] rounded-full p-2 transition-all duration-300 z-10" aria-label="الصورة التالية">
                     <ChevronLeft className="w-5 h-5" />
@@ -175,14 +196,14 @@ export default function FabricDetailPage() {
             </div>
 
             {/* صور مصغرة محسّنة */}
-            {(fabric.images?.length || 0) > 1 && (
+            {galleryImages.length > 1 && (
               <div className="relative">
                 {/* عرض في صف واحد إذا كانت الصور 5 أو أقل، وصفين إذا كانت أكثر من 5 */}
-                <div className={`gap-3 pb-2 ${(fabric.images?.length || 0) > 5
+                <div className={`gap-3 pb-2 ${galleryImages.length > 5
                   ? 'grid grid-cols-5'
                   : 'flex overflow-x-auto scrollbar-thin scrollbar-thumb-[#6b1726] scrollbar-track-[#f6f0e8]'
                   }`}>
-                  {fabric.images?.map((image, index) => (
+                  {galleryImages.map((image, index) => (
                     <motion.button
                       key={index}
                       onClick={() => setCurrentImageIndex(index)}
@@ -192,6 +213,7 @@ export default function FabricDetailPage() {
                         ? 'border-[#6b1726] shadow-lg ring-2 ring-[#d8c5ae]'
                         : 'border-[#d8c5ae] hover:border-[#6b1726]'
                         }`}
+                      aria-label={isDesignIndex(index) ? `تصميم ${index - fabricImages.length + 1}` : `صورة ${index + 1}`}
                     >
                       {isVideoFile(image) ? (
                         <video
@@ -210,6 +232,11 @@ export default function FabricDetailPage() {
                           loading="lazy"
                           quality={60}
                         />
+                      )}
+                      {isDesignIndex(index) && (
+                        <span className="absolute bottom-0 inset-x-0 bg-[#6b1726]/85 text-[#f6f0e8] text-[10px] font-bold py-0.5 text-center pointer-events-none">
+                          تصميم
+                        </span>
                       )}
                       {currentImageIndex === index && (
                         <div className="absolute inset-0 bg-[#6b1726]/20 pointer-events-none" />
@@ -315,16 +342,16 @@ export default function FabricDetailPage() {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            {isVideoFile(fabric.images?.[currentImageIndex] || '') ? (
+            {isVideoFile(galleryImages[currentImageIndex] || '') ? (
               <video
-                src={fabric.images?.[currentImageIndex]}
+                src={galleryImages[currentImageIndex]}
                 controls
                 preload="metadata"
                 className="max-w-full max-h-full object-contain"
               />
             ) : (
               <Image
-                src={fabric.images?.[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
+                src={galleryImages[currentImageIndex] || fabric.image_url || '/wedding-dress-1.jpg.jpg'}
                 alt={`${fabricLabel} - صورة ${currentImageIndex + 1}`}
                 fill
                 sizes="100vw"
@@ -332,7 +359,7 @@ export default function FabricDetailPage() {
                 quality={95}
               />
             )}
-            {(fabric.images?.length || 0) > 1 && (
+            {galleryImages.length > 1 && (
               <>
                 <button onClick={nextImage} className="absolute left-4 bg-[#f6f0e8]/20 hover:bg-[#f6f0e8]/30 text-[#f6f0e8] rounded-full p-3 transition-all duration-300" aria-label="الصورة التالية">
                   <ChevronLeft className="w-6 h-6" />

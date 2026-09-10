@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-service'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import { matchesFabricSearch } from '@/lib/fabric-search'
 import {
   getFabricDisplayPricing,
   hasFabricDisplayPrice,
@@ -31,6 +32,8 @@ export interface Fabric {
   image_url: string
   thumbnail_image?: string | null
   images: string[]
+  /** صور تصاميم الفساتين المنفَّذة من هذا القماش (منفصلة عن images) */
+  design_images: string[]
   available_colors: string[]
   width_cm?: number | null
   is_available: boolean
@@ -69,8 +72,13 @@ export interface Fabric {
 const convertSupabaseFabric = (fabric: SupabaseFabric): Fabric => ({
   ...fabric,
   categories: fabric.categories?.length ? fabric.categories : [fabric.category],
+  design_images: fabric.design_images ?? [],
   price_per_meter: fabric.price_per_meter ?? null
 })
+
+/** هل يملك القماش صور تصاميم فساتين جاهزة للعرض؟ */
+export const hasFabricDesignImages = (fabric: Pick<Fabric, 'design_images'>): boolean =>
+  Array.isArray(fabric.design_images) && fabric.design_images.length > 0
 
 // تعريف حالة الفلاتر
 export interface FilterState {
@@ -223,15 +231,13 @@ export const useFabricStore = create<FabricStoreState>()(
             if (!hasMatchingColor) return false
           }
 
-          // فلتر البحث
+          // فلتر البحث: الاسم، الرقم، النوع/الفئة، اللون، والوصف — مع تطبيع الحروف العربية
           if (filters.searchQuery) {
-            const query = filters.searchQuery.toLowerCase()
-            const matchesName = fabric.name?.toLowerCase().includes(query)
-            const matchesDescription = fabric.description?.toLowerCase().includes(query)
-            const matchesCategory = (fabric.categories?.length ? fabric.categories : [fabric.category])
-              .some(category => category.toLowerCase().includes(query))
-            const matchesCode = fabric.fabric_code?.toLowerCase().includes(query)
-            if (!matchesName && !matchesDescription && !matchesCategory && !matchesCode) return false
+            const searchable = {
+              ...fabric,
+              categories: fabric.categories?.length ? fabric.categories : [fabric.category]
+            }
+            if (!matchesFabricSearch(searchable, filters.searchQuery, { includeDescription: true })) return false
           }
 
           return true

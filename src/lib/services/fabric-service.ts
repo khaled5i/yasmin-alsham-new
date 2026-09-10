@@ -27,6 +27,8 @@ export interface Fabric {
   image_url: string
   thumbnail_image?: string | null
   images: string[]
+  /** صور تصاميم الفساتين المنفَّذة من هذا القماش (منفصلة عن images ليعرفها الموقع كتصاميم) */
+  design_images?: string[] | null
   available_colors: string[]
   width_cm?: number | null
   is_available: boolean
@@ -76,6 +78,7 @@ export interface CreateFabricData {
   image_url: string
   thumbnail_image?: string
   images?: string[]
+  design_images?: string[]
   available_colors?: string[]
   width_cm?: number
   is_available?: boolean
@@ -112,6 +115,7 @@ export interface UpdateFabricData {
   image_url?: string
   thumbnail_image?: string
   images?: string[]
+  design_images?: string[]
   available_colors?: string[]
   width_cm?: number
   is_available?: boolean
@@ -140,6 +144,16 @@ export interface FabricTypeCode {
   fabric_type: string
   type_code: string
   last_sequence: number
+}
+
+// هل الخطأ ناتج عن عمود design_images غير موجود بعد (لم تُطبَّق الهجرة 88)؟
+function isMissingDesignImagesColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    error.code === 'PGRST204' ||
+    error.code === '42703' ||
+    (error.message?.includes('design_images') ?? false)
+  )
 }
 
 // ============================================================================
@@ -283,11 +297,25 @@ export const fabricService = {
 
       await ensureValidSession()
 
-      const { data, error } = await supabase
+      let payload: CreateFabricData = fabricData
+      let { data, error } = await supabase
         .from('fabrics')
-        .insert([fabricData])
+        .insert([payload])
         .select()
         .single()
+
+      // توافق تدريجي: إذا لم يُطبَّق عمود design_images بعد، أعد المحاولة بدونه
+      if (error && payload.design_images && isMissingDesignImagesColumn(error)) {
+        console.warn('⚠️ fabrics.design_images column missing. Please run migrations/88-fabric-design-images.sql')
+        const withoutDesigns = { ...payload }
+        delete withoutDesigns.design_images
+        payload = withoutDesigns
+        ;({ data, error } = await supabase
+          .from('fabrics')
+          .insert([payload])
+          .select()
+          .single())
+      }
 
       if (error) {
         console.error('❌ خطأ في إنشاء القماش:', {
@@ -346,10 +374,20 @@ export const fabricService = {
       }
 
       // تحديث القماش
-      const { error: updateError } = await supabase
+      let { error: updateError } = await supabase
         .from('fabrics')
         .update(cleanUpdates)
         .eq('id', id)
+
+      // توافق تدريجي: إذا لم يُطبَّق عمود design_images بعد، أعد المحاولة بدونه
+      if (updateError && 'design_images' in cleanUpdates && isMissingDesignImagesColumn(updateError)) {
+        console.warn('⚠️ fabrics.design_images column missing. Please run migrations/88-fabric-design-images.sql')
+        delete cleanUpdates.design_images
+        ;({ error: updateError } = await supabase
+          .from('fabrics')
+          .update(cleanUpdates)
+          .eq('id', id))
+      }
 
       if (updateError) {
         console.error('❌ خطأ في تحديث القماش:', {

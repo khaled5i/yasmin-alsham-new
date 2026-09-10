@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { motion } from 'framer-motion'
-import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2, Eye, EyeOff, Database, Hash, Boxes } from 'lucide-react'
+import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2, Eye, EyeOff, Database, Hash, Boxes, Shirt, Search } from 'lucide-react'
 import ImageUpload from '@/components/ImageUpload'
 import Link from 'next/link'
 import { fabricService, Fabric, UpdateFabricData, CreateFabricData } from '@/lib/services/fabric-service'
@@ -10,6 +10,7 @@ import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import { matchesFabricSearch } from '@/lib/fabric-search'
 
 function FabricsAdminContent() {
   const { user } = useAuthStore()
@@ -23,6 +24,13 @@ function FabricsAdminContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  // البحث بالاسم أو الرقم أو النوع أو اللون
+  const filteredFabrics = useMemo(
+    () => searchQuery.trim() ? fabrics.filter(fabric => matchesFabricSearch(fabric, searchQuery)) : fabrics,
+    [fabrics, searchQuery]
+  )
 
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [newFabricData, setNewFabricData] = useState<Partial<Fabric>>({
@@ -30,6 +38,7 @@ function FabricsAdminContent() {
     description: '',
     price_per_meter: 0,
     images: [],
+    design_images: [],
     available_colors: [],
     is_available: true,
     is_featured: false,
@@ -113,6 +122,7 @@ function FabricsAdminContent() {
         description: editData.description?.trim() || null,
         price_per_meter: priceValue as any, // استخدام null بدلاً من undefined لحذف القيمة
         images: editData.images,
+        design_images: editData.design_images || [],
         image_url: editData.images?.[0],
         thumbnail_image: editData.thumbnail_image || editData.images?.[0],
         available_colors: editData.available_colors,
@@ -159,6 +169,7 @@ function FabricsAdminContent() {
       description: '',
       price_per_meter: 0,
       images: [],
+      design_images: [],
       available_colors: [],
       is_available: true,
       is_featured: false,
@@ -176,6 +187,7 @@ function FabricsAdminContent() {
       description: '',
       price_per_meter: 0,
       images: [],
+      design_images: [],
       available_colors: [],
       is_available: true,
       is_featured: false,
@@ -222,6 +234,7 @@ function FabricsAdminContent() {
         description: newFabricData.description?.trim() || null,
         price_per_meter: newFabricData.price_per_meter && newFabricData.price_per_meter > 0 ? newFabricData.price_per_meter : undefined,
         images: newFabricData.images!,
+        design_images: newFabricData.design_images || [],
         image_url: newFabricData.images![0],
         thumbnail_image: newFabricData.thumbnail_image || newFabricData.images![0],
         available_colors: newFabricData.available_colors || [],
@@ -254,6 +267,7 @@ function FabricsAdminContent() {
             description: '',
             price_per_meter: 0,
             images: [],
+            design_images: [],
             available_colors: [],
             is_available: true,
             is_featured: false,
@@ -415,6 +429,40 @@ function FabricsAdminContent() {
           </p>
         </div>
 
+        {/* شريط البحث: الاسم / الرقم / النوع / اللون */}
+        {!editingId && (
+          <div className="mb-6">
+            <div className="relative" dir="rtl">
+              <Search className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-pink-600" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ابحث بالاسم أو الرقم أو النوع أو اللون..."
+                aria-label="البحث في الأقمشة"
+                className="w-full rounded-xl border-2 border-pink-200 bg-white py-3 pr-12 pl-12 text-gray-800 shadow-sm transition-all placeholder:text-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-pink-400"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-pink-600"
+                  aria-label="مسح البحث"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+            {searchQuery.trim() && (
+              <p className="mt-2 text-sm font-medium text-gray-600">
+                {filteredFabrics.length > 0
+                  ? `عدد النتائج: ${filteredFabrics.length} من ${fabrics.length}`
+                  : 'لا توجد نتائج مطابقة'}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* نموذج إضافة قماش جديد */}
         {isAddingNew && (
           <motion.div
@@ -525,6 +573,24 @@ function FabricsAdminContent() {
                   images={newFabricData.images || []}
                   onImagesChange={(images) => handleNewFabricChange('images', images)}
                   onPrimaryThumbnailChange={(thumbnail) => handleNewFabricChange('thumbnail_image', thumbnail)}
+                  maxImages={5}
+                  useSupabaseStorage={true}
+                  acceptVideo={false}
+                />
+              </div>
+
+              {/* صور تصاميم الفساتين */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">
+                  صور تصاميم الفساتين <span className="text-gray-400 font-normal">(اختياري)</span>
+                </label>
+                <p className="mb-2 text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 leading-relaxed">
+                  صور فساتين جاهزة مُنفَّذة من هذا القماش. تُحفظ منفصلة عن صور القماش، ويستخدمها
+                  المتجر في زر «عرض التصاميم النهائية للأقمشة» لعرض التصميم بدل صورة القماش.
+                </p>
+                <ImageUpload
+                  images={newFabricData.design_images || []}
+                  onImagesChange={(images) => handleNewFabricChange('design_images', images)}
                   maxImages={5}
                   useSupabaseStorage={true}
                   acceptVideo={false}
@@ -726,6 +792,24 @@ function FabricsAdminContent() {
                 />
               </div>
 
+              {/* صور تصاميم الفساتين */}
+              <div>
+                <label className="block font-medium mb-2 text-gray-700">
+                  صور تصاميم الفساتين <span className="text-gray-400 font-normal">(اختياري)</span>
+                </label>
+                <p className="mb-2 text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 leading-relaxed">
+                  صور فساتين جاهزة مُنفَّذة من هذا القماش. تُحفظ منفصلة عن صور القماش، ويستخدمها
+                  المتجر في زر «عرض التصاميم النهائية للأقمشة» لعرض التصميم بدل صورة القماش.
+                </p>
+                <ImageUpload
+                  images={editData.design_images || []}
+                  onImagesChange={(images) => handleEditChange('design_images', images)}
+                  maxImages={5}
+                  useSupabaseStorage={true}
+                  acceptVideo={false}
+                />
+              </div>
+
               {/* خيارات إضافية */}
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -812,7 +896,7 @@ function FabricsAdminContent() {
           </div>
         ) : !editingId ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {fabrics.map((fabric, index) => (
+            {filteredFabrics.map((fabric, index) => (
               <motion.div
                 key={fabric.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -840,6 +924,12 @@ function FabricsAdminContent() {
                     {fabric.is_featured && (
                       <div className="absolute top-2 left-2 bg-yellow-500 text-white px-3 py-1 rounded-full text-sm font-bold">
                         ⭐ مميز
+                      </div>
+                    )}
+                    {(fabric.design_images?.length || 0) > 0 && (
+                      <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-purple-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow">
+                        <Shirt className="h-3.5 w-3.5" />
+                        {fabric.design_images!.length} تصميم
                       </div>
                     )}
                     {!fabric.is_active && (
@@ -932,6 +1022,19 @@ function FabricsAdminContent() {
                 </div>
               </motion.div>
             ))}
+
+            {filteredFabrics.length === 0 && fabrics.length > 0 && (
+              <div className="col-span-full rounded-2xl border-2 border-dashed border-pink-200 bg-white/70 py-12 text-center">
+                <Search className="mx-auto mb-3 h-10 w-10 text-pink-300" />
+                <p className="mb-4 font-bold text-gray-700">لا يوجد قماش يطابق «{searchQuery.trim()}»</p>
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="rounded-full bg-pink-600 px-6 py-2 font-bold text-white transition-colors hover:bg-pink-700"
+                >
+                  مسح البحث
+                </button>
+              </div>
+            )}
           </div>
         ) : null}
 
