@@ -41,6 +41,7 @@ import {
 import { dispatchTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
 import type { Order } from '@/lib/services/order-service'
 import { isAlostazDeliverySyncEligible } from '@/lib/alostaz-delivery-eligibility'
+import { sendDeliveredWhatsApp } from '@/utils/whatsapp'
 
 const PAGE_SIZE = 50
 
@@ -324,28 +325,18 @@ export default function DeliveredOrdersPage() {
   }
 
   // Send Thank You WhatsApp Message
-  const handleSendThankYouMessage = (order: Order) => {
+  // نستخدم الرسالة الموحّدة كي تحمل كود خصم الهدية مثل بقية مسارات التسليم.
+  // إعادة الإرسال تُعيد الكود نفسه ما دام سارياً وغير مستخدَم.
+  const handleSendThankYouMessage = async (order: Order) => {
     if (!order.client_phone) {
       toast.error('لا يوجد رقم هاتف للعميل')
       return
     }
 
-    const message = `مرحباً ${order.client_name}
-
-لقد تم تسليم فستانك بنجاح!
-
-نأمل أن ينال إعجابك.
-
-يمكنك ترك تعليق لطيف لنا عبر الرابط التالي:
-https://maps.app.goo.gl/oor8FHoTwaGS8GMb9
-
-ننتظر زيارتكم مرة أخرى
-
-ياسمين الشام للأزياء`
-
-    const encodedMessage = encodeURIComponent(message)
-    const whatsappUrl = `https://wa.me/${order.client_phone}?text=${encodedMessage}`
-    window.open(whatsappUrl, '_blank')
+    const coupon = await sendDeliveredWhatsApp(order.client_name, order.client_phone, order.id)
+    if (coupon?.code) {
+      toast.success(`تم إرفاق كود الخصم ${coupon.code} برسالة العميلة`, { icon: '🎁' })
+    }
   }
 
   // Delete Order Handlers

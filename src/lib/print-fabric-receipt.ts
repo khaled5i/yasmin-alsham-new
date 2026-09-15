@@ -87,12 +87,32 @@ function getFabricItems(item: Income): FabricSaleItem[] {
   }]
 }
 
-/** توزيع الإجمالي على الأصناف بنسبة الأمتار، بنفس منطق فاتورة الأستاذ. */
+/** قيمة الخصم المطبَّق على المبيعة (صفر إن لم يُستخدم كود خصم) */
+function getDiscountAmount(item: Income): number {
+  const discount = Math.max(0, Number(item.discount_amount) || 0)
+  return item.coupon_code && discount > 0 ? Math.round(discount * 100) / 100 : 0
+}
+
+/** الإجمالي قبل الخصم؛ amount محفوظ دائماً بعد الخصم */
+function getSubtotalAmount(item: Income): number {
+  const total = Math.max(0, Number(item.amount) || 0)
+  const discount = getDiscountAmount(item)
+  if (discount <= 0) return total
+  const stored = Number(item.subtotal_amount)
+  return Number.isFinite(stored) && stored > 0
+    ? Math.round(stored * 100) / 100
+    : Math.round((total + discount) * 100) / 100
+}
+
+/**
+ * توزيع الإجمالي على الأصناف بنسبة الأمتار، بنفس منطق فاتورة الأستاذ.
+ * عند وجود خصم تُعرض أسعار الأصناف قبل الخصم، ويظهر الخصم كسطر مستقل في الملخّص.
+ */
 function buildReceiptLines(item: Income): FabricReceiptLine[] {
   const fabrics = getFabricItems(item)
   const quantities = fabrics.map((fabric) => Math.max(0, Number(fabric.quantity_meters) || 0))
   const totalQuantity = quantities.reduce((sum, quantity) => sum + quantity, 0)
-  const invoiceTotal = Number(item.amount) || 0
+  const invoiceTotal = getSubtotalAmount(item)
   const round2 = (value: number) => Math.round(value * 100) / 100
   let allocated = 0
 
@@ -129,6 +149,8 @@ export function buildFabricSaleReceiptHtml(
   const receiptNumber = getFabricReceiptNumber(item)
   const lines = buildReceiptLines(item)
   const total = Math.max(0, Number(item.amount) || 0)
+  const discountAmount = getDiscountAmount(item)
+  const subtotalAmount = getSubtotalAmount(item)
   const priceBeforeTax = total / 1.15
   const vatAmount = total - priceBeforeTax
   const paidAmount = total
@@ -157,6 +179,21 @@ export function buildFabricSaleReceiptHtml(
   </div>
   <hr class="dash">`
     : ''
+  // سطرا الخصم يظهران قبل تفصيل الضريبة كي تقرأ العميلة السعر الأصلي وما وُفِّر عليها
+  const discountRows = discountAmount > 0
+    ? `
+  <div class="summary-row">
+    <span class="label">الإجمالي قبل الخصم <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(subtotalAmount)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row">
+    <span class="label">خصم كود ${escapeHtml(item.coupon_code || '')} <span class="currency">(ر.س)</span></span>
+    <span class="value">- ${formatMoney(discountAmount)}</span>
+  </div>
+  <hr class="dash">`
+    : ''
+
   const rows = lines.map((line) => `
     <tr>
       <td class="description">${escapeHtml(line.name)}</td>
@@ -263,7 +300,7 @@ export function buildFabricSaleReceiptHtml(
     <tbody>${rows}</tbody>
   </table>
   <hr class="rule" style="margin-top: 0">
-
+${discountRows}
   <div class="summary-row">
     <span class="label">السعر (غير شامل الضريبة)</span>
     <span class="value">${formatMoney(priceBeforeTax)}</span>

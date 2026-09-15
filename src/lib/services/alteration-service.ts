@@ -5,6 +5,10 @@
 
 import { extractDateKey } from '../date-utils'
 import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
+import {
+  normalizeAlterationAccessories,
+  type AlterationAccessory,
+} from '../alteration-accessories'
 
 const ALTERATION_LIST_COLUMNS = [
   'id',
@@ -96,6 +100,8 @@ export interface Alteration {
   order_received_date?: string
   notes?: string | null
   admin_notes?: string | null
+  /** مستلزمات القياس التي أحضرتها العميلة؛ ما ليس فيها يُعدّ غير مُحضَر. */
+  brought_accessories?: AlterationAccessory[]
   images?: string[]
   alteration_photos?: string[]
   completed_images?: string[]
@@ -131,6 +137,7 @@ export interface CreateAlterationData {
   order_received_date?: string
   notes?: string
   admin_notes?: string
+  brought_accessories?: AlterationAccessory[]
   images?: string[]
   alteration_photos?: string[]
   voice_notes?: string[]
@@ -222,6 +229,7 @@ export interface UpdateAlterationData {
   delivery_date?: string | null
   notes?: string | null
   admin_notes?: string | null
+  brought_accessories?: AlterationAccessory[]
   images?: string[]
   alteration_photos?: string[]
   voice_notes?: string[]
@@ -248,6 +256,15 @@ function isDuplicateAlterationNumberError(error: any): boolean {
     (error.code === '23505' || message.includes('duplicate key')) &&
     message.includes('alteration_number')
   )
+}
+
+/**
+ * هل الخطأ ناتج عن عمود brought_accessories غير موجود بعد (لم تُطبَّق هجرة 20260913120000)؟
+ * الفحص بالرسالة وحدها لأن رمز الخطأ نفسه (PGRST204/42703) يشترك مع أعمدة أخرى.
+ */
+function isMissingBroughtAccessoriesColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return error.message?.includes('brought_accessories') ?? false
 }
 
 /**
@@ -347,6 +364,7 @@ export const alterationService = {
         delivery_date: alterationData.delivery_date || null,
         notes: alterationData.notes || null,
         admin_notes: alterationData.admin_notes || null,
+        brought_accessories: normalizeAlterationAccessories(alterationData.brought_accessories),
         images: alterationData.images || [],
         alteration_photos: alterationData.alteration_photos || [],
         voice_notes: alterationData.voice_notes || [],
@@ -388,6 +406,14 @@ export const alterationService = {
         error = response.error
 
         if (!error) break
+
+        // إعادة المحاولة بدون العمود الجديد إذا لم تُطبَّق هجرته بعد،
+        // فالحفظ لا يجوز أن يتوقف على معلومة إضافية.
+        if (isMissingBroughtAccessoriesColumn(error) && 'brought_accessories' in insertData) {
+          console.warn('⚠️ brought_accessories column is missing, retrying without it')
+          delete insertData.brought_accessories
+          continue
+        }
 
         if (!isDuplicateAlterationNumberError(error)) {
           console.error('❌ Error creating alteration:', error)
@@ -538,12 +564,31 @@ export const alterationService = {
 
       console.log('🔧 Updating alteration:', id, updateData)
 
-      const { data, error } = await supabase
+      const payload: UpdateAlterationData = { ...updateData }
+      if (payload.brought_accessories !== undefined) {
+        payload.brought_accessories = normalizeAlterationAccessories(payload.brought_accessories)
+      }
+
+      let { data, error } = await supabase
         .from('alterations')
-        .update(updateData)
+        .update(payload)
         .eq('id', id)
         .select()
         .single()
+
+      // إعادة المحاولة بدون العمود الجديد إذا لم تُطبَّق هجرته بعد.
+      if (error && isMissingBroughtAccessoriesColumn(error) && 'brought_accessories' in payload) {
+        console.warn('⚠️ brought_accessories column is missing, retrying update without it')
+        delete payload.brought_accessories
+        const retry = await supabase
+          .from('alterations')
+          .update(payload)
+          .eq('id', id)
+          .select()
+          .single()
+        data = retry.data
+        error = retry.error
+      }
 
       if (error) {
         console.error('❌ Error updating alteration:', error)

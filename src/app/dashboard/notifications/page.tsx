@@ -293,7 +293,7 @@ export default function NotificationsPage() {
     }
     setSendingWhatsAppId(order.id)
     try {
-      sendDeliveredWhatsApp(order.client_name, order.client_phone)
+      const coupon = await sendDeliveredWhatsApp(order.client_name, order.client_phone, order.id)
       if (order.delivery_whatsapp_sent !== true) {
         const result = await updateOrder(order.id, { delivery_whatsapp_sent: true })
         if (!result.success) {
@@ -302,7 +302,14 @@ export default function NotificationsPage() {
         }
         setDeliveryOrders(prev => prev.map(o => o.id === order.id ? { ...o, delivery_whatsapp_sent: true } : o))
       }
-      toast.success(isArabic ? 'تم فتح واتساب لإرسال رسالة التسليم والتقييم' : 'WhatsApp opened (delivery and review message)', { icon: '📱', duration: 3000 })
+      toast.success(
+        coupon?.code
+          ? (isArabic
+              ? `تم فتح واتساب مع كود خصم الهدية ${coupon.code}`
+              : `WhatsApp opened with gift discount code ${coupon.code}`)
+          : (isArabic ? 'تم فتح واتساب لإرسال رسالة التسليم والتقييم' : 'WhatsApp opened (delivery and review message)'),
+        { icon: coupon?.code ? '🎁' : '📱', duration: 3000 }
+      )
     } catch {
       toast.error(isArabic ? 'حدث خطأ أثناء فتح واتساب' : 'Failed to open WhatsApp', { icon: '⚠️' })
     } finally {

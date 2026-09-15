@@ -4,6 +4,30 @@
  */
 
 import { formatGregorianDate, shiftDate } from '../lib/date-utils'
+import {
+  formatCouponExpiry,
+  issueDeliveryCoupon,
+  type DeliveryDiscountCoupon,
+} from '../lib/services/discount-coupon-service'
+
+/**
+ * هل نعمل داخل تطبيق Capacitor؟
+ * نقرأ الكائن العام الذي يحقنه التطبيق بدل استيراد @capacitor/core،
+ * كي لا يدخل الحزمة في بناء الويب (SSR) بلا حاجة.
+ */
+function isCapacitorNative(): boolean {
+  if (typeof window === 'undefined') return false
+  const capacitor = (window as unknown as {
+    Capacitor?: { isNativePlatform?: () => boolean }
+  }).Capacitor
+  return capacitor?.isNativePlatform?.() === true
+}
+
+/** عرض نسبة الخصم بلا كسور زائدة: 20 لا 20.00 */
+function formatDiscountPercent(percent: number | null | undefined): string {
+  const value = Number(percent) || 0
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '')
+}
 
 interface OrderDetails {
   clientName: string
@@ -293,18 +317,33 @@ export function generateReadyForPickupMessage(clientName: string): string {
 /**
  * تجهيز رسالة "تم التسليم" بعد استلام العميل للطلب
  * @param clientName - اسم العميل
+ * @param coupon - كود خصم الهدية (اختياري) — يُدرَج كقسم مستقل بعد خبر التسليم
  * @returns نص الرسالة المنسق
  */
-export function generateDeliveredMessage(clientName: string): string {
+export function generateDeliveredMessage(
+  clientName: string,
+  coupon?: DeliveryDiscountCoupon | null
+): string {
   let message = `مرحباً ${clientName}\n\n`
   message += `لقد تم تسليم فستانك بنجاح!\n\n`
-  message += `نأمل أن ينال إعجابك.\n\n`
-  message += `*تقييمك يهمنا:*\n`
-  message += `يمكنك ترك تعليق لطيف لنا عبر الرابط التالي:\n`
-  message += `https://maps.app.goo.gl/oor8FHoTwaGS8GMb9\n\n`
-  message += `ننتظر زيارتكم مرة أخرى\n\n`
-  message += `شكراً لثقتكم بنا\n`
-  message += `ياسمين الشام`
+
+  // هدية الخصم تظهر فقط عند نجاح توليد الكود، فلا تَعِد الرسالة بما لا يوجد
+  if (coupon?.code) {
+    const percent = formatDiscountPercent(coupon.discount_percent)
+    const expiry = formatCouponExpiry(coupon.expires_at)
+    message += `🎁 *هدية خاصة لكِ:*\n`
+    message += `كود خصم ${percent}% على مشترياتك من *محل ياسمين الشام للأقمشة*\n`
+    message += `*الكود: ${coupon.code}*\n`
+    message += expiry
+      ? `صالح لمدة شهر — حتى ${expiry}\n\n`
+      : `صالح لمدة شهر من تاريخه\n\n`
+    message += `يمكنك إستخدامه بشكل شخصي أو إهدائه لمن تحبين\n\n`
+  }
+
+  message += `رابط المتجر الإلكتروني\n`
+  message += `https://www.yasmin-alsham.fashion/fabrics\n\n`
+  message += `موقع المحل\n`
+  message += `مقابل متجر ياسمين الشام للخياطة في الجهة المقابلة`
 
   return message
 }
@@ -360,16 +399,42 @@ export function sendReadyForPickupWhatsApp(clientName: string, clientPhone: stri
 }
 
 /**
- * إرسال رسالة "تم التسليم" عبر واتساب
+ * إرسال رسالة "تم التسليم" عبر واتساب مع كود خصم الهدية.
+ *
+ * يُولَّد لكل طلب مُسلَّم كود خصم 20% صالح شهراً يُستخدَم في محل الأقمشة.
+ * التوليد idempotent: إعادة فتح الرسالة لنفس الطلب تُعيد الكود نفسه ما دام
+ * سارياً وغير مستخدَم. عند غياب معرّف الطلب أو فشل التوليد تُرسَل الرسالة
+ * كما كانت بدون كود، فلا يتعطّل إشعار التسليم بسبب الهدية.
+ *
+ * على المتصفح تُفتح النافذة فوراً داخل سياق نقرة المستخدم ثم يُوجَّه عنوانها
+ * بعد وصول الكود، لأن window.open بعد await يُحجَب في بعض المتصفحات. على
+ * التطبيق (Capacitor) لا نفعل ذلك: هناك يفتح `_blank` تطبيق واتساب مباشرة
+ * وصفحة فارغة وسيطة تُفسد الانتقال.
+ *
  * @param clientName - اسم العميل
  * @param clientPhone - رقم هاتف العميل
+ * @param orderId - معرّف الطلب المُسلَّم (بدونه تُرسَل الرسالة بلا كود)
  */
-export function sendDeliveredWhatsApp(clientName: string, clientPhone: string): void {
+export async function sendDeliveredWhatsApp(
+  clientName: string,
+  clientPhone: string,
+  orderId?: string | null
+): Promise<DeliveryDiscountCoupon | null> {
   // تنسيق رقم الهاتف
   const formattedPhone = formatPhoneNumber(clientPhone)
 
+  // فتح النافذة الآن (ضمن سياق النقرة) لتفادي حجب النوافذ المنبثقة في المتصفح
+  const popup = isCapacitorNative() ? null : window.open('', '_blank')
+
+  // توليد كود الهدية — لا يمنع الإرسال إن فشل
+  const coupon = await issueDeliveryCoupon({
+    orderId,
+    clientName,
+    clientPhone: formattedPhone,
+  })
+
   // تجهيز نص الرسالة
-  const message = generateDeliveredMessage(clientName)
+  const message = generateDeliveredMessage(clientName, coupon)
 
   // تشفير الرسالة
   const encodedMessage = encodeURIComponent(message)
@@ -377,6 +442,12 @@ export function sendDeliveredWhatsApp(clientName: string, clientPhone: string): 
   // بناء رابط WhatsApp API
   const whatsappLink = `https://wa.me/${formattedPhone}?text=${encodedMessage}`
 
-  // فتح الرابط في نافذة جديدة
-  window.open(whatsappLink, '_blank')
+  // توجيه النافذة المفتوحة، أو فتح واحدة جديدة إن حُجبت الأولى
+  if (popup && !popup.closed) {
+    popup.location.href = whatsappLink
+  } else {
+    window.open(whatsappLink, '_blank')
+  }
+
+  return coupon
 }

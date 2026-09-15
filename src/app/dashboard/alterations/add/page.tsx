@@ -39,6 +39,14 @@ import {
   Printer
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
+import {
+  ALTERATION_ACCESSORY_KEYS,
+  buildAccessoriesLines,
+  getAccessoryLabel,
+  normalizeAlterationAccessories,
+  toggleAlterationAccessory,
+  type AlterationAccessory,
+} from '@/lib/alteration-accessories'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 
@@ -119,6 +127,7 @@ function AddAlterationContent() {
         errorType: (alteration.error_type as AlterationErrorType) || '',
         errorNotes: alteration.error_notes || '',
         errorVoiceNotes: (alteration as any).error_voice_transcriptions || [],
+        broughtAccessories: normalizeAlterationAccessories((alteration as any).brought_accessories),
         notes: alteration.notes || '',
         voiceNotes: (alteration as any).voice_transcriptions || [],
         images: alteration.images || [],
@@ -201,6 +210,8 @@ function AddAlterationContent() {
       translatedText?: string
       translationLanguage?: string
     }>,
+    // المستلزمات التي أحضرتها العميلة؛ الغائب عن القائمة يُطبع كغير مُحضَر.
+    broughtAccessories: [] as AlterationAccessory[],
     notes: '',
     voiceNotes: [] as Array<{
       id: string
@@ -620,6 +631,7 @@ function AddAlterationContent() {
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || null,
           error_notes: formData.errorNotes || null,
+          brought_accessories: formData.broughtAccessories,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -665,6 +677,7 @@ function AddAlterationContent() {
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || undefined,
           error_notes: formData.errorNotes || undefined,
+          brought_accessories: formData.broughtAccessories,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -815,6 +828,7 @@ function AddAlterationContent() {
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || null,
           error_notes: formData.errorNotes || null,
+          brought_accessories: formData.broughtAccessories,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -850,6 +864,7 @@ function AddAlterationContent() {
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || undefined,
           error_notes: formData.errorNotes || undefined,
+          brought_accessories: formData.broughtAccessories,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -1182,6 +1197,62 @@ function AddAlterationContent() {
                 </div>
               </div>
             )}
+          </motion.div>
+
+          {/* 2.5 مستلزمات القياس التي أحضرتها العميلة */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.12 }}
+            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+          >
+            <h2 className="text-xl font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <Package className="w-5 h-5 text-pink-500" />
+              {isArabic ? 'المستلزمات المُحضَرة' : 'Accessories Brought'}
+            </h2>
+            <p className="text-sm text-gray-500 mb-5">
+              {isArabic
+                ? 'اختر ما أحضرته العميلة معها. ما لا تختاره يُطبع على ورقة الورشة كغير مُحضَر.'
+                : 'Select what the client brought in. Anything left unselected prints on the workshop slip as not brought.'}
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" dir="rtl">
+              {ALTERATION_ACCESSORY_KEYS.map((accessory) => {
+                const isSelected = formData.broughtAccessories.includes(accessory)
+                return (
+                  <button
+                    key={accessory}
+                    type="button"
+                    role="switch"
+                    aria-checked={isSelected}
+                    disabled={isSubmitting}
+                    onClick={() => setFormData(prev => ({
+                      ...prev,
+                      broughtAccessories: toggleAlterationAccessory(prev.broughtAccessories, accessory)
+                    }))}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 font-medium text-sm transition-all disabled:opacity-50 ${
+                      isSelected
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700'
+                    }`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isSelected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                    {getAccessoryLabel(accessory, isArabic ? 'ar' : 'en')}
+                    {isSelected && <CheckCircle className="w-4 h-4 mr-auto flex-shrink-0" />}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* معاينة ما سيُطبع، حتى لا يُكتشف الخطأ بعد خروج الورقة */}
+            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-4" dir="rtl">
+              <p className="text-xs font-medium text-gray-500 mb-2">
+                {isArabic ? 'سيظهر على ورقة الورشة:' : 'Will appear on the workshop slip:'}
+              </p>
+              <pre className="text-sm text-gray-800 font-sans whitespace-pre-wrap leading-6 m-0">
+                {buildAccessoriesLines(formData.broughtAccessories, 'ar')}
+              </pre>
+            </div>
           </motion.div>
 
           {/* 3. سبب التعديل */}

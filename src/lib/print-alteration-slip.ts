@@ -9,6 +9,7 @@
 
 import type { AlterationType } from '@/lib/services/alteration-service'
 import { getAlterationText, type AlterationTextSource } from '@/lib/alteration-text'
+import { buildAccessoriesLines } from '@/lib/alteration-accessories'
 
 export const ALTERATION_SLIP_JOB_TYPE = 'alteration_slip'
 export const ALTERATION_TEST_SLIP_JOB_TYPE = 'alteration_test_slip'
@@ -68,7 +69,14 @@ export interface AlterationSlipSource extends AlterationTextSource {
   alteration_type?: AlterationType | null
   client_name?: string | null
   alteration_due_date?: string | null
+  /** مستلزمات القياس المُحضَرة؛ تُطبع كسطري «تم إحضار» و«لم يتم إحضار». */
+  brought_accessories?: string[] | null
   created_at?: string | null
+}
+
+function appendSection(body: string, section: string): string {
+  if (!section) return body
+  return body ? `${body}\n\n${section}` : section
 }
 
 /**
@@ -81,8 +89,14 @@ export function buildAlterationSlipPayload(
   hindiContent: string
 ): AlterationSlipPayload {
   const alterationType: AlterationType = alteration.alteration_type ?? 'after_delivery'
-  const contentAr = getAlterationText(alteration)
-  const contentHi = hindiContent.trim()
+  // سطرا المستلزمات يُركَّبان هنا بعد الترجمة لا قبلها: نصّهما ثابت بلغتين
+  // جاهزتين، فلا يُخاطَر بإرسالهما إلى الترجمة الآلية ولا يُبطِلان الترجمة المخزّنة.
+  const accessoriesAr = buildAccessoriesLines(alteration.brought_accessories, 'ar')
+  const accessoriesHi = buildAccessoriesLines(alteration.brought_accessories, 'hi')
+  const contentAr = appendSection(getAlterationText(alteration), accessoriesAr)
+  // الورقة الهندية لا تُطبع أصلًا بلا محتوى مترجم، فلا معنى لبنائها من المستلزمات وحدها.
+  const hindiBody = hindiContent.trim()
+  const contentHi = hindiBody ? appendSection(hindiBody, accessoriesHi) : ''
 
   return {
     alteration_id: String(alteration.id || ''),

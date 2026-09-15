@@ -109,6 +109,13 @@ export interface Income {
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)
   buyer_name?: string | null             // اسم العميل (اختياري) — customer_name يخزن اسم القماش
   buyer_phone?: string | null            // رقم هاتف العميل (اختياري)
+  // ── كود خصم الهدية المطبَّق على المبيعة ──
+  // amount يبقى دائماً المبلغ المدفوع بعد الخصم؛ الحقول التالية للعرض والتدقيق.
+  coupon_id?: string | null              // معرّف الكوبونة المستخدَمة
+  coupon_code?: string | null            // نسخة نصّية من الكود تبقى حتى لو حُذفت الكوبونة
+  discount_percent?: number | null       // نسبة الخصم المطبَّقة
+  discount_amount?: number | null        // قيمة الخصم بالريال
+  subtotal_amount?: number | null        // الإجمالي قبل الخصم = amount + discount_amount
   invoice_number?: number | null          // رقم الفاتورة التسلسلي (فرع الأقمشة فقط، يُعيَّن تلقائياً)
   date: string
   is_automatic: boolean   // هل تم إضافته تلقائياً من الطلبات
@@ -150,6 +157,12 @@ export interface CreateIncomeInput {
   fabric_images?: string[] | null        // روابط صور القماش المباع (خصوصاً قماش الشك)
   buyer_name?: string | null             // اسم العميل (اختياري) — customer_name يخزن اسم القماش
   buyer_phone?: string | null            // رقم هاتف العميل (اختياري)
+  // ── كود خصم الهدية — amount يُرسَل دائماً بعد الخصم ──
+  coupon_id?: string | null
+  coupon_code?: string | null
+  discount_percent?: number | null
+  discount_amount?: number | null
+  subtotal_amount?: number | null
   date: string
   is_automatic?: boolean
 }

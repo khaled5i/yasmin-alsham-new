@@ -357,6 +357,19 @@ function isMissingFabricItemsColumn(error: { code?: string; message?: string } |
   )
 }
 
+// هل الخطأ ناتج عن أعمدة كود الخصم غير الموجودة بعد (لم تُطبَّق الهجرة 89)؟
+function isMissingCouponColumns(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  const message = error.message || ''
+  return (
+    message.includes('coupon_id') ||
+    message.includes('coupon_code') ||
+    message.includes('discount_percent') ||
+    message.includes('discount_amount') ||
+    message.includes('subtotal_amount')
+  )
+}
+
 function isNetworkFetchError(error: { message?: string } | Error | null | undefined): boolean {
   const message = error?.message || ''
   return /failed to fetch|networkerror|load failed|fetch failed/i.test(message)
@@ -481,6 +494,24 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
         .single())
     }
 
+    // توافق تدريجي: إذا لم تُطبَّق أعمدة كود الخصم بعد، أعد المحاولة بدونها.
+    // amount محفوظ أصلاً بعد الخصم، فالمبيعة تبقى صحيحة مالياً وتفقد التفصيل فقط.
+    if (error && isMissingCouponColumns(error)) {
+      console.warn('⚠️ income coupon columns missing. Please run migrations/89-delivery-discount-coupons.sql')
+      const withoutCoupon = { ...payload }
+      delete withoutCoupon.coupon_id
+      delete withoutCoupon.coupon_code
+      delete withoutCoupon.discount_percent
+      delete withoutCoupon.discount_amount
+      delete withoutCoupon.subtotal_amount
+      payload = withoutCoupon
+      ;({ data, error } = await supabase
+        .from('income')
+        .insert(payload)
+        .select()
+        .single())
+    }
+
     // توافق تدريجي: إذا لم يُطبَّق عمود fabric_items بعد، أعد المحاولة بدونه
     if (error && isMissingFabricItemsColumn(error)) {
       console.warn('⚠️ income.fabric_items column missing. Please run migrations/69-income-fabric-items.sql')
@@ -588,6 +619,24 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
       const withoutImages = { ...payload }
       delete withoutImages.fabric_images
       payload = withoutImages
+      ;({ data, error } = await supabase
+        .from('income')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single())
+    }
+
+    // توافق تدريجي: إذا لم تُطبَّق أعمدة كود الخصم بعد، أعد المحاولة بدونها
+    if (error && isMissingCouponColumns(error)) {
+      console.warn('⚠️ income coupon columns missing. Please run migrations/89-delivery-discount-coupons.sql')
+      const withoutCoupon = { ...payload }
+      delete withoutCoupon.coupon_id
+      delete withoutCoupon.coupon_code
+      delete withoutCoupon.discount_percent
+      delete withoutCoupon.discount_amount
+      delete withoutCoupon.subtotal_amount
+      payload = withoutCoupon
       ;({ data, error } = await supabase
         .from('income')
         .update(payload)

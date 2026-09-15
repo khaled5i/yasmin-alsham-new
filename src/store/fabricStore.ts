@@ -1,7 +1,6 @@
 'use client'
 
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-service'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { matchesFabricSearch } from '@/lib/fabric-search'
@@ -129,8 +128,13 @@ const defaultFilters: FilterState = {
 // إنشاء المتجر
 // ============================================
 
+// الفلاتر والترتيب في الذاكرة فقط: تبقى أثناء التنقل داخل الموقع
+// وتُصفَّر عند تحديث الصفحة أو الخروج من الموقع ثم العودة
+if (typeof window !== 'undefined') {
+  try { window.localStorage.removeItem('yasmin-alsham-fabric-shop') } catch { /* Legacy key cleanup. */ }
+}
+
 export const useFabricStore = create<FabricStoreState>()(
-  persist(
     (set, get) => ({
       // الأقمشة من Supabase
       fabrics: [],
@@ -287,17 +291,7 @@ export const useFabricStore = create<FabricStoreState>()(
       setError: (error: string | null) => {
         set({ error })
       }
-    }),
-    {
-      name: 'yasmin-alsham-fabric-shop',
-      partialize: (state) => ({
-        // حفظ الفلاتر والترتيب في localStorage فقط
-        filters: state.filters,
-        sortBy: state.sortBy
-        // لا نحفظ الأقمشة - يتم تحميلها من Supabase دائماً
-      })
-    }
-  )
+    })
 )
 
 // دالة مساعدة لتنسيق السعر

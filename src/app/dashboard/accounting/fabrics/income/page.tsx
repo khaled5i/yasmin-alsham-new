@@ -31,7 +31,9 @@ import {
   Loader,
   UserRound,
   AlertTriangle,
-  LockKeyhole
+  LockKeyhole,
+  TicketPercent,
+  BadgeCheck
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
@@ -66,6 +68,14 @@ import {
   formatFabricNumber,
   roundFabricNumber,
 } from '@/lib/fabric-number-format'
+import {
+  COUPON_STATUS_MESSAGES,
+  formatCouponExpiry,
+  normalizeCouponCode,
+  redeemCoupon,
+  releaseCouponForIncome,
+  validateCoupon,
+} from '@/lib/services/discount-coupon-service'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
 type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
@@ -97,6 +107,16 @@ type FabricInventorySearchOption = {
   color_name: string | null
   current_quantity: number
   unit: FabricInventoryItem['unit']
+}
+
+// كود الخصم المطبَّق على النموذج الحالي (بعد التحقق منه أو المحمَّل من مبيعة محفوظة)
+type AppliedCoupon = {
+  id: string | null
+  code: string
+  discount_percent: number
+  expires_at: string | null
+  /** محمَّل من مبيعة محفوظة سابقاً — لا يحتاج تحقّقاً جديداً لعرضه */
+  fromSavedSale?: boolean
 }
 
 const createEmptyFabricLine = (): FabricLine => ({
@@ -266,6 +286,12 @@ function FabricsIncomeContent() {
   // اسم العميل ورقم هاتفه (اختياريان — لا يمنعان حفظ المبيعة)
   const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
+  // ── كود خصم الهدية الصادر مع رسالة تسليم طلب التفصيل ──
+  // يُدخَل الكود هنا فيُتحقَّق منه ثم يُخصم من إجمالي المبيعة.
+  const [couponInput, setCouponInput] = useState('')
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null)
+  const [couponChecking, setCouponChecking] = useState(false)
+  const [couponError, setCouponError] = useState<string | null>(null)
   // يبقى ثابتاً عند فشل الشبكة حتى تكون إعادة الحفظ آمنة ولا تنشئ مبيعة مكررة.
   const pendingIncomeIdRef = useRef<string | null>(null)
 
@@ -489,6 +515,10 @@ function FabricsIncomeContent() {
     setFabricImages([])
     setBuyerName('')
     setBuyerPhone('')
+    setCouponInput('')
+    setAppliedCoupon(null)
+    setCouponError(null)
+    setCouponChecking(false)
   }
 
   // ── إدارة أسطر الأقمشة المتعدّدة ──────────────────────────────
@@ -510,6 +540,22 @@ function FabricsIncomeContent() {
   const mixedCashValue = parsePositiveAmount(mixedCashAmount)
   // الإجمالي محسوب من المربعين ولا يُدخَل يدوياً، فلا يمكن أن يختلّ المجموع
   const mixedTotal = roundFabricNumber(mixedNetworkValue + mixedCashValue)
+
+  // ── حساب الخصم ────────────────────────────────────────────────
+  // القاعدة: حقل «المبلغ الإجمالي» هو السعر قبل الخصم، والمحفوظ في amount هو
+  // المبلغ بعد الخصم — أي ما دفعته العميلة فعلاً. هكذا يبقى الصندوق وفاتورة
+  // الأستاذ والإحصائيات صحيحة بلا منطق إضافي في أي مكان آخر.
+  // عند الدفع المختلط بلا كود يبقى الإجمالي = مجموع المربعين كما كان.
+  const hasCoupon = !!appliedCoupon
+  const couponPercent = appliedCoupon?.discount_percent ?? 0
+  const subtotalValue =
+    isMixedPayment && !hasCoupon ? mixedTotal : roundFabricNumber(parseFloat(amount))
+  const safeSubtotal = Number.isFinite(subtotalValue) && subtotalValue > 0 ? subtotalValue : 0
+  const discountValue = hasCoupon ? roundFabricNumber((safeSubtotal * couponPercent) / 100) : 0
+  const payableTotal = roundFabricNumber(Math.max(0, safeSubtotal - discountValue))
+  // عند المختلط مع كود: المربعان يجب أن يساويا المطلوب بعد الخصم
+  const mixedMatchesPayable =
+    !isMixedPayment || !hasCoupon || Math.abs(mixedTotal - payableTotal) < 0.01
 
   // هل القماش من نوع "شك"؟ (يُظهر خيار رفع صور القماش)
   const isShekFabric = (item?: FabricInventoryItem | null): boolean => {
@@ -557,6 +603,51 @@ function FabricsIncomeContent() {
   const handleApplyPeriod = (period: DateRange, range: DateFilter) => {
     setSelectedPeriod(period)
     setPeriodRange(range)
+  }
+
+  // ── كود الخصم ─────────────────────────────────────────────────
+  // التحقق هنا للعرض فقط؛ الحجز الفعلي يتم لحظة الحفظ عبر redeemCoupon
+  // كي لا يُحجَز كود لمبيعة قد لا تُحفَظ أبداً.
+  const handleCheckCoupon = async () => {
+    const code = normalizeCouponCode(couponInput)
+    if (!code) {
+      setCouponError('أدخل كود الخصم أولاً')
+      return
+    }
+
+    setCouponChecking(true)
+    setCouponError(null)
+    try {
+      const result = await validateCoupon(code)
+
+      if (result.status !== 'valid') {
+        setAppliedCoupon(null)
+        setCouponError(COUPON_STATUS_MESSAGES[result.status])
+        return
+      }
+
+      setAppliedCoupon({
+        id: result.id,
+        code: result.code || code,
+        discount_percent: result.discount_percent ?? 0,
+        expires_at: result.expires_at,
+      })
+      setCouponInput(result.code || code)
+      toast.success(`كود صحيح — خصم ${formatFabricNumber(result.discount_percent ?? 0)}%`, {
+        icon: '🎁',
+      })
+    } catch (error) {
+      setAppliedCoupon(null)
+      setCouponError(error instanceof Error ? error.message : 'تعذّر التحقق من كود الخصم')
+    } finally {
+      setCouponChecking(false)
+    }
+  }
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null)
+    setCouponInput('')
+    setCouponError(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -631,13 +722,37 @@ function FabricsIncomeContent() {
     } else if (!amount) {
       return
     }
+    // مع كود الخصم يصبح حقل «المبلغ الإجمالي» إجبارياً حتى في الدفع المختلط،
+    // لأن الخصم يُحسب من السعر قبل الخصم لا من المبلغ المحصَّل.
+    if (hasCoupon) {
+      if (safeSubtotal <= 0) {
+        alert('أدخل الإجمالي قبل الخصم لتطبيق كود الخصم')
+        return
+      }
+      if (!mixedMatchesPayable) {
+        alert(
+          `مجموع الشبكة والكاش يجب أن يساوي المطلوب بعد الخصم: ${formatCurrency(payableTotal)}`
+        )
+        return
+      }
+      if (payableTotal <= 0) {
+        alert('المبلغ بعد الخصم يجب أن يكون أكبر من صفر')
+        return
+      }
+    }
     if (!customerSource) {
       alert('يرجى اختيار مصدر الزبونة')
       return
     }
 
-    // المختلط: الإجمالي = الشبكة + الكاش (محسوب، لا يُدخَل يدوياً)
-    const amt = isMixedPayment ? mixedTotal : roundFabricNumber(parseFloat(amount))
+    // المبلغ المحفوظ = ما دفعته العميلة فعلاً:
+    //   • بلا كود خصم: كما كان (المختلط = الشبكة + الكاش، وغيره = المبلغ المدخَل)
+    //   • مع كود خصم: الإجمالي المدخَل ناقص قيمة الخصم
+    const amt = hasCoupon
+      ? payableTotal
+      : isMixedPayment
+        ? mixedTotal
+        : roundFabricNumber(parseFloat(amount))
     const resolvedSource =
       customerSource === 'yasmin_alsham'
         ? 'ياسمين الشام'
@@ -664,6 +779,12 @@ function FabricsIncomeContent() {
       fabric_images: showFabricImages ? fabricImages : [],
       buyer_name: buyerName.trim() || null,
       buyer_phone: buyerPhone.trim() || null,
+      // كود الخصم: تُصفَّر الحقول عند نزعه كي يحرّره الـ trigger على الخادم
+      coupon_id: appliedCoupon?.id ?? null,
+      coupon_code: appliedCoupon?.code ?? null,
+      discount_percent: hasCoupon ? couponPercent : null,
+      discount_amount: hasCoupon ? discountValue : null,
+      subtotal_amount: hasCoupon ? safeSubtotal : null,
       date,
     }
 
@@ -677,6 +798,21 @@ function FabricsIncomeContent() {
       // تعديل سجل موجود
       setSaving(true)
       try {
+        // حجز الكود (أو تحديث قيمه) قبل الحفظ؛ نزعه يحرّره الـ trigger بعد التحديث
+        if (hasCoupon && appliedCoupon) {
+          try {
+            await redeemCoupon({
+              code: appliedCoupon.code,
+              incomeId: editingId,
+              subtotal: safeSubtotal,
+              discount: discountValue,
+            })
+          } catch (couponError) {
+            alert(`❌ ${couponError instanceof Error ? couponError.message : 'تعذّر تطبيق كود الخصم'}`)
+            return
+          }
+        }
+
         const result = await updateIncome(editingId, commonFields)
         if (result) {
           setIncome((current) => current.map((it) => (it.id === editingId ? result : it)))
@@ -709,12 +845,39 @@ function FabricsIncomeContent() {
         category: 'fabric_sale',
         ...commonFields,
       }
-      const result = await createIncome(payload)
+
+      // الحجز قبل الإنشاء: لو استُخدم الكود على جهاز آخر في اللحظة نفسها
+      // تفشل هذه الخطوة ولا تُسجَّل مبيعة بخصم غير مستحق.
+      if (hasCoupon && appliedCoupon) {
+        try {
+          await redeemCoupon({
+            code: appliedCoupon.code,
+            incomeId,
+            subtotal: safeSubtotal,
+            discount: discountValue,
+          })
+        } catch (couponError) {
+          alert(`❌ ${couponError instanceof Error ? couponError.message : 'تعذّر تطبيق كود الخصم'}`)
+          return
+        }
+      }
+
+      let result: Income | null = null
+      try {
+        result = await createIncome(payload)
+      } catch (error) {
+        // فشل الإنشاء بعد الحجز: نحرّر الكود فوراً كي يبقى صالحاً للعميلة
+        if (hasCoupon) await releaseCouponForIncome(incomeId)
+        throw error
+      }
+
       if (result) {
-        setIncome((current) => [result, ...current])
+        setIncome((current) => [result as Income, ...current])
         await refreshInventoryItems()
         await sendReceiptToPrintStation(result)
       } else {
+        // لا نحرّر الكود هنا: قد تكون المبيعة حُفظت فعلاً وانقطع الرد فقط،
+        // وإعادة الضغط على الحفظ تستخدم المعرّف نفسه فيبقى الحجز صحيحاً.
         alert(
           '⚠️ تعذّر تأكيد نتيجة الحفظ بسبب الاتصال. بقي النموذج مفتوحاً، وإعادة الضغط على الحفظ آمنة ولن تنشئ فاتورة مكررة.'
         )
@@ -783,7 +946,32 @@ function FabricsIncomeContent() {
         },
       ])
     }
-    setAmount(item.amount.toString())
+    // مع كود خصم محفوظ يعود حقل المبلغ إلى «الإجمالي قبل الخصم» كي يُعاد حساب
+    // الخصم بنفس الطريقة عند إعادة الحفظ.
+    const savedDiscount = Math.max(0, Number(item.discount_amount) || 0)
+    const savedCouponCode = item.coupon_code?.trim() || ''
+    if (savedCouponCode && savedDiscount > 0) {
+      const savedSubtotal = roundFabricNumber(
+        Number(item.subtotal_amount) || Number(item.amount) + savedDiscount
+      )
+      setAmount(savedSubtotal.toString())
+      setCouponInput(savedCouponCode)
+      setAppliedCoupon({
+        id: item.coupon_id ?? null,
+        code: savedCouponCode,
+        discount_percent:
+          Number(item.discount_percent) ||
+          (savedSubtotal > 0 ? roundFabricNumber((savedDiscount * 100) / savedSubtotal) : 0),
+        expires_at: null,
+        fromSavedSale: true,
+      })
+      setCouponError(null)
+    } else {
+      setAmount(item.amount.toString())
+      setCouponInput('')
+      setAppliedCoupon(null)
+      setCouponError(null)
+    }
     setDescription(item.description || '')
     setDate(item.date)
     setFabricImages(item.fabric_images ?? [])
@@ -1314,6 +1502,14 @@ function FabricsIncomeContent() {
                             {item.buyer_phone}
                           </span>
                         )}
+                        {/* كود الخصم المطبَّق — المبلغ المعروض أصلاً بعد الخصم */}
+                        {!!item.coupon_code && Number(item.discount_amount) > 0 && (
+                          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 font-medium">
+                            <TicketPercent className="w-3 h-3 shrink-0" />
+                            <span dir="ltr">{item.coupon_code}</span>
+                            <span>— خصم {formatCurrency(Number(item.discount_amount) || 0)}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1686,10 +1882,14 @@ function FabricsIncomeContent() {
                         </div>
                       )}
 
-                      {/* المبلغ الإجمالي للمبيعة كلها — عند الدفع المختلط يُحسب من المربعين */}
-                      {!isMixedPayment && (
+                      {/* المبلغ الإجمالي للمبيعة كلها.
+                          بلا كود خصم: يبقى مخفياً عند الدفع المختلط لأنه يُحسب من المربعين.
+                          مع كود خصم: يظهر دائماً لأنه السعر قبل الخصم الذي تُحسب منه النسبة. */}
+                      {(!isMixedPayment || hasCoupon) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">المبلغ الإجمالي (ر.س) *</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {hasCoupon ? 'الإجمالي قبل الخصم (ر.س) *' : 'المبلغ الإجمالي (ر.س) *'}
+                          </label>
                           <input
                             type="number"
                             value={amount}
@@ -1699,6 +1899,120 @@ function FabricsIncomeContent() {
                           />
                         </div>
                       )}
+
+                      {/* ── كود الخصم ──────────────────────────────────────
+                          كود هدية التسليم الصادر للعميلة مع رسالة تسليم فستانها.
+                          يُستخدَم مرة واحدة، والخصم يُطبَّق على إجمالي المبيعة. */}
+                      <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3">
+                        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-800">
+                          <TicketPercent className="h-4 w-4 shrink-0" />
+                          كود الخصم (اختياري)
+                        </label>
+
+                        {!appliedCoupon ? (
+                          <>
+                            <div className="flex items-stretch gap-2">
+                              <input
+                                type="text"
+                                value={couponInput}
+                                onChange={(e) => {
+                                  setCouponInput(e.target.value.toUpperCase())
+                                  if (couponError) setCouponError(null)
+                                }}
+                                onKeyDown={(e) => {
+                                  // Enter داخل الحقل يتحقق من الكود بدل إرسال النموذج
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    void handleCheckCoupon()
+                                  }
+                                }}
+                                dir="ltr"
+                                className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-center font-mono tracking-widest uppercase focus:ring-2 focus:ring-amber-500"
+                                placeholder="YS-XXXXXX"
+                                autoComplete="off"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleCheckCoupon()}
+                                disabled={couponChecking || !couponInput.trim()}
+                                className="shrink-0 rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {couponChecking ? (
+                                  <Loader className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  'تحقق'
+                                )}
+                              </button>
+                            </div>
+                            {couponError && (
+                              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-red-600">
+                                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                {couponError}
+                              </p>
+                            )}
+                            <p className="mt-2 text-[11px] leading-relaxed text-amber-700">
+                              كود هدية التسليم الذي وصل العميلة عبر واتساب بعد استلام فستانها.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <BadgeCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                                <div className="min-w-0">
+                                  <p className="truncate font-mono text-sm font-bold tracking-widest text-emerald-700" dir="ltr">
+                                    {appliedCoupon.code}
+                                  </p>
+                                  <p className="text-[11px] text-emerald-700">
+                                    كود صحيح — خصم {formatFabricNumber(couponPercent)}%
+                                    {appliedCoupon.expires_at
+                                      ? ` — صالح حتى ${formatCouponExpiry(appliedCoupon.expires_at)}`
+                                      : appliedCoupon.fromSavedSale
+                                        ? ' — مطبَّق على هذه المبيعة'
+                                        : ''}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleRemoveCoupon}
+                                className="shrink-0 rounded-lg p-1.5 text-red-500 transition-colors hover:bg-red-50"
+                                title="إزالة كود الخصم"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+
+                            <div className="mt-2.5 space-y-1.5 text-sm">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-amber-900">الإجمالي قبل الخصم</span>
+                                <span className="font-medium text-amber-900">{formatCurrency(safeSubtotal)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-amber-900">
+                                  الخصم ({formatFabricNumber(couponPercent)}%)
+                                </span>
+                                <span className="font-medium text-red-600">- {formatCurrency(discountValue)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 border-t border-amber-200 pt-1.5">
+                                <span className="font-bold text-amber-900">الإجمالي بعد الخصم</span>
+                                <span className="font-bold text-emerald-700">{formatCurrency(payableTotal)}</span>
+                              </div>
+                            </div>
+
+                            {isMixedPayment && (
+                              <p
+                                className={`mt-2 text-[11px] leading-relaxed ${
+                                  mixedMatchesPayable ? 'text-amber-700' : 'font-medium text-red-600'
+                                }`}
+                              >
+                                وزّع {formatCurrency(payableTotal)} بين الشبكة والكاش؛ مجموع المربعين
+                                حالياً {formatCurrency(mixedTotal)}.
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
 
                       {/* طريقة الدفع */}
                       <div>
@@ -1768,8 +2082,16 @@ function FabricsIncomeContent() {
                               </div>
                             </div>
                             <div className="mt-2.5 flex items-center justify-between gap-2 text-sm">
-                              <span className="font-medium text-violet-900">الإجمالي</span>
-                              <span className="font-bold text-violet-900">{formatCurrency(mixedTotal)}</span>
+                              <span className="font-medium text-violet-900">
+                                {hasCoupon ? 'المحصَّل (بعد الخصم)' : 'الإجمالي'}
+                              </span>
+                              <span
+                                className={`font-bold ${
+                                  hasCoupon && !mixedMatchesPayable ? 'text-red-600' : 'text-violet-900'
+                                }`}
+                              >
+                                {formatCurrency(mixedTotal)}
+                              </span>
                             </div>
                             <p className="mt-1.5 text-[11px] leading-relaxed text-violet-700">
                               تُرسَل قيمة الشبكة وحدها إلى تطبيق المحاسبة، أما قيمة الكاش فتُضاف لرصيد الصندوق ولا تُرسَل.

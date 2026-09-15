@@ -855,7 +855,7 @@ function OrdersPageInner() {
         // ننتظر الطباعة قبل فتح واتساب كي لا يوقف أندرويد الاتصال المحلي عند مغادرة التطبيق.
         await autoSendOnDelivery({ ...order, ...updates, id: orderId }, user?.role)
         if (order && order.client_phone) {
-          sendDeliveredWhatsApp(order.client_name, order.client_phone)
+          await sendDeliveredWhatsApp(order.client_name, order.client_phone, order.id)
         }
       } else {
         toast.error(result.error || 'حدث خطأ', { icon: '✗' })
@@ -915,14 +915,16 @@ function OrdersPageInner() {
   }
 
   // إرسال رسالة شكر للعميل بعد التسليم (للطلبات المستلمة في نتائج البحث)
-  const handleSendThankYouMessage = (order: any) => {
+  // الرسالة الموحّدة تحمل كود خصم الهدية؛ إعادة الإرسال تُعيد الكود نفسه.
+  const handleSendThankYouMessage = async (order: any) => {
     if (!order.client_phone) {
       toast.error('لا يوجد رقم هاتف للعميل', { icon: '⚠️' })
       return
     }
-    const message = `مرحباً ${order.client_name}\n\nلقد تم تسليم فستانك بنجاح!\n\nنأمل أن ينال إعجابك.\n\nيمكنك ترك تعليق لطيف لنا عبر الرابط التالي:\nhttps://maps.app.goo.gl/oor8FHoTwaGS8GMb9\n\nننتظر زيارتكم مرة أخرى\n\nياسمين الشام للأزياء`
-    const encodedMessage = encodeURIComponent(message)
-    window.open(`https://wa.me/${order.client_phone}?text=${encodedMessage}`, '_blank')
+    const coupon = await sendDeliveredWhatsApp(order.client_name, order.client_phone, order.id)
+    if (coupon?.code) {
+      toast.success(`تم إرفاق كود الخصم ${coupon.code} برسالة العميلة`, { icon: '🎁' })
+    }
   }
 
   // إعادة الطلب المكتمل لحالة سابقة (للطلبات المكتملة في نتائج البحث)

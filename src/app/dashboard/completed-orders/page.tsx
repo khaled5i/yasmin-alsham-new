@@ -296,11 +296,13 @@ export default function CompletedOrdersPage() {
         // إرسال رسالة واتساب تلقائياً بعد التسليم
         if (order && order.client_phone && order.client_phone.trim() !== '') {
           try {
-            sendDeliveredWhatsApp(order.client_name, order.client_phone)
-            toast.success('تم فتح واتساب لإرسال رسالة التقييم للعميل', {
-              icon: '📱',
-              duration: 3000,
-            })
+            const coupon = await sendDeliveredWhatsApp(order.client_name, order.client_phone, order.id)
+            toast.success(
+              coupon?.code
+                ? `تم فتح واتساب مع كود خصم الهدية ${coupon.code}`
+                : 'تم فتح واتساب لإرسال رسالة التقييم للعميل',
+              { icon: coupon?.code ? '🎁' : '📱', duration: 3000 }
+            )
           } catch (whatsappError) {
             console.error('❌ Error opening WhatsApp:', whatsappError)
             // لا نعرض رسالة خطأ هنا لأن التسليم تم بنجاح

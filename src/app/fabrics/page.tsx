@@ -66,11 +66,9 @@ export default function FabricsPage() {
     loadFabrics(true) // forceReload = true للحصول على أحدث الأقمشة
   }, [loadFabrics])
 
-  // استرجاع تفضيل عرض التصاميم
+  // عرض التصاميم يُصفَّر مع الفلاتر عند تحديث الصفحة (نمسح القيمة القديمة المحفوظة)
   useEffect(() => {
-    try {
-      setShowDesigns(localStorage.getItem(DESIGNS_VIEW_STORAGE_KEY) === 'on')
-    } catch { /* Optional preference. */ }
+    try { localStorage.removeItem(DESIGNS_VIEW_STORAGE_KEY) } catch { /* Legacy key cleanup. */ }
   }, [])
 
   useEffect(() => {
@@ -96,11 +94,9 @@ export default function FabricsPage() {
     setCurrentImageIndexes(prev => ({ ...prev, [fabricId]: ((prev[fabricId] || 0) - 1 + totalImages) % totalImages }))
   }, [setCurrentImageIndexes])
 
-  // تبديل عرض التصاميم النهائية + حفظ التفضيل
+  // تبديل عرض التصاميم النهائية
   const toggleDesignsView = () => {
-    const newMode = !showDesigns
-    setShowDesigns(newMode)
-    try { localStorage.setItem(DESIGNS_VIEW_STORAGE_KEY, newMode ? 'on' : 'off') } catch { /* Optional preference. */ }
+    setShowDesigns(prev => !prev)
   }
 
   // حفظ حالة العرض في localStorage
