@@ -153,6 +153,8 @@ export default function WorkersPage() {
       return
     }
 
+    const newPassword = (editingWorker.password || '').trim()
+
     setIsSubmitting(true)
     setMessage(null)
 
@@ -174,43 +176,45 @@ export default function WorkersPage() {
       if (editingWorker.bio) updates.bio = editingWorker.bio
       if (editingWorker.experience_years !== undefined) updates.experience_years = editingWorker.experience_years
 
+      // تحديث بيانات الدخول أولاً (البريد/كلمة المرور) لأنها الأكثر عرضة للرفض
+      const worker = workers.find(w => w.id === editingWorker.id)
+      const newEmail = (editingWorker.email || '').trim()
+      const emailChanged = newEmail !== '' && newEmail.toLowerCase() !== (worker?.user?.email || '').toLowerCase()
+
+      if (worker?.user_id && (emailChanged || newPassword !== '')) {
+        console.log('🔐 Updating credentials...', { emailChanged, passwordChanged: newPassword !== '' })
+
+        const { data: { session } } = await supabase.auth.getSession()
+
+        const credentialsResponse = await fetch('/api/workers/update-credentials', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({
+            userId: worker.user_id,
+            ...(emailChanged ? { email: newEmail } : {}),
+            ...(newPassword !== '' ? { password: newPassword } : {})
+          })
+        })
+
+        const credentialsResult = await credentialsResponse.json()
+
+        if (!credentialsResponse.ok) {
+          console.error('❌ Error updating credentials:', credentialsResult.error)
+          setMessage({ type: 'error', text: credentialsResult.error || 'فشل تحديث بيانات الدخول' })
+          return
+        }
+
+        console.log('✅ Credentials updated successfully')
+      }
+
       console.log('📝 Updating worker with data:', updates)
 
       const result = await updateWorkerSupabase(editingWorker.id, updates)
 
       if (result.success) {
-        // تحديث كلمة المرور إذا تم إدخالها
-        if (editingWorker.password && editingWorker.password.trim() !== '') {
-          console.log('🔐 Updating password...')
-
-          const worker = workers.find(w => w.id === editingWorker.id)
-          if (worker?.user_id) {
-            const { data: { session } } = await supabase.auth.getSession()
-
-            const passwordResponse = await fetch('/api/workers/update-password', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
-              },
-              body: JSON.stringify({
-                userId: worker.user_id,
-                password: editingWorker.password
-              })
-            })
-
-            const passwordResult = await passwordResponse.json()
-
-            if (!passwordResponse.ok) {
-              console.error('❌ Error updating password:', passwordResult.error)
-              setMessage({ type: 'error', text: `تم تحديث البيانات لكن فشل تحديث كلمة المرور: ${passwordResult.error}` })
-              return
-            }
-
-            console.log('✅ Password updated successfully')
-          }
-        }
-
         setMessage({ type: 'success', text: t('worker_updated_success') || 'تم تحديث العامل بنجاح' })
         setShowEditModal(false)
         setEditingWorker(null)

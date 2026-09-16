@@ -813,7 +813,7 @@ function CashBoxContent() {
 export default function TailoringCashBoxPage() {
   const router = useRouter()
   const { user, isLoading } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+  const { isLoading: permissionsLoading } = useWorkerPermissions()
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -821,12 +821,11 @@ export default function TailoringCashBoxPage() {
       return
     }
 
+    // الصندوق للمدير وحده — المحاسب لا يملك صلاحية الوصول إليه
     if (!isLoading && !permissionsLoading && user) {
-      const isAdmin = user.role === 'admin'
-      const isAccountant = user.role === 'worker' && workerType === 'accountant'
-      if (!isAdmin && !isAccountant) router.push('/dashboard')
+      if (user.role !== 'admin') router.push('/dashboard')
     }
-  }, [isLoading, permissionsLoading, router, user, workerType])
+  }, [isLoading, permissionsLoading, router, user])
 
   if (isLoading || permissionsLoading) {
     return (
@@ -839,10 +838,6 @@ export default function TailoringCashBoxPage() {
     )
   }
 
-  const authorized =
-    user?.role === 'admin' ||
-    (user?.role === 'worker' && workerType === 'accountant')
-
-  if (!authorized) return null
+  if (user?.role !== 'admin') return null
   return <CashBoxContent />
 }

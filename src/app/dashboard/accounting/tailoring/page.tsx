@@ -15,7 +15,8 @@ import {
   Users,
   ChevronLeft,
   Settings,
-  WalletCards
+  WalletCards,
+  UserRound
 } from 'lucide-react'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
 import { usePayrollRefresh } from '@/hooks/usePayrollRefresh'
@@ -69,6 +70,14 @@ const sections = [
     color: 'from-purple-500 to-purple-600'
   },
   {
+    id: 'personal-expenses',
+    name: 'مصروفات شخصية',
+    description: 'مصروفات خاصة كاش أو شبكة',
+    icon: UserRound,
+    href: '/dashboard/accounting/tailoring/personal-expenses',
+    color: 'from-violet-500 to-indigo-600'
+  },
+  {
     id: 'categories',
     name: 'إدارة الفئات',
     description: 'إضافة وتعديل فئات المحاسبة',
@@ -92,8 +101,9 @@ function TailoringAccountingContent() {
   usePayrollRefresh(() => {
     if (!isAccountant) void getQuickStats('tailoring').then(setStats).catch(error => console.error('Payroll summary refresh failed', error))
   })
+  // المحاسب يرى مصروفات المواد فقط — الصندوق للمدير وحده
   const visibleSections = isAccountant
-    ? sections.filter((section) => section.id === 'materials' || section.id === 'cash-box')
+    ? sections.filter((section) => section.id === 'materials')
     : sections
 
   useEffect(() => {

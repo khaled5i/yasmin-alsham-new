@@ -44,7 +44,8 @@ import {
   ShoppingBag,
   Boxes,
   WalletCards,
-  ReceiptText
+  ReceiptText,
+  UserRound
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 
@@ -798,6 +799,14 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون متجر الأقمشة' : 'Fabric Store Inventory'}</span>
                   </Link>
 
+                  <Link
+                    href="/dashboard/accounting/tailoring/personal-expenses"
+                    className="p-4 bg-gradient-to-r from-violet-50 to-indigo-100 rounded-lg border border-violet-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <UserRound className="w-6 h-6 text-violet-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-violet-800">{isArabic ? 'مصروفات شخصية' : 'Personal Expenses'}</span>
+                  </Link>
+
                 </div>
               </motion.div>
             )}
@@ -982,6 +991,14 @@ function DashboardContent() {
                   >
                     <Boxes className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون متجر الأقمشة' : 'Fabric Store Inventory'}</span>
+                  </Link>
+
+                  <Link
+                    href="/dashboard/accounting/tailoring/personal-expenses"
+                    className="p-4 bg-gradient-to-r from-violet-50 to-indigo-100 rounded-lg border border-violet-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <UserRound className="w-6 h-6 text-violet-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-violet-800">{isArabic ? 'مصروفات شخصية' : 'Personal Expenses'}</span>
                   </Link>
 
                 </div>

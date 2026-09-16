@@ -356,6 +356,7 @@ export const workerService = {
       // 3. تحديث بيانات العامل في جدول workers
       const workerUpdates: any = {}
       if (updates.specialty !== undefined) workerUpdates.specialty = updates.specialty
+      if (updates.worker_type !== undefined) workerUpdates.worker_type = updates.worker_type
       if (updates.experience_years !== undefined) workerUpdates.experience_years = updates.experience_years
       if (updates.hourly_rate !== undefined) workerUpdates.hourly_rate = updates.hourly_rate
       if (updates.skills !== undefined) workerUpdates.skills = updates.skills

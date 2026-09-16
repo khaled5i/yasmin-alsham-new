@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
-import { ArrowRight, Calculator, ShoppingBag, LogOut, WalletCards } from 'lucide-react'
+import { ArrowRight, Calculator, ShoppingBag, LogOut } from 'lucide-react'
 
 export default function AccountantDashboard() {
   const router = useRouter()
@@ -94,22 +94,6 @@ export default function AccountantDashboard() {
           className="mb-8"
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Link
-              href="/dashboard/accounting/tailoring/cash-box"
-              className="group block bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-amber-100 hover:shadow-lg transition-all duration-300"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <WalletCards className="w-6 h-6 text-white" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-amber-500 transition-colors rotate-180" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-800 mb-2">الصندوق</h3>
-              <p className="text-gray-600 text-sm">
-                رصيد الكاش في الدرج، سجل الحركات وإجراء عمليات السحب
-              </p>
-            </Link>
-
             <Link
               href="/dashboard/accounting/tailoring/materials"
               className="group block bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-blue-100 hover:shadow-lg transition-all duration-300"

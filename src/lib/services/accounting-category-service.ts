@@ -19,6 +19,7 @@ export interface AccountingCategory {
   category_id: string
   label_ar: string
   label_en?: string | null
+  label_ar_latin?: string | null
   description?: string | null
   display_order: number
   is_active: boolean
@@ -34,6 +35,7 @@ export interface CreateCategoryInput {
   category_id: string
   label_ar: string
   label_en?: string
+  label_ar_latin?: string
   description?: string
   display_order?: number
 }
@@ -41,6 +43,7 @@ export interface CreateCategoryInput {
 export interface UpdateCategoryInput {
   label_ar?: string
   label_en?: string
+  label_ar_latin?: string
   description?: string
   display_order?: number
   is_active?: boolean

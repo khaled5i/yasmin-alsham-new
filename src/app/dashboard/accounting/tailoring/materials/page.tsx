@@ -19,6 +19,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import { MATERIAL_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
+import { getCategories, createCategory, type AccountingCategory } from '@/lib/services/accounting-category-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 import { getSuppliers, type Supplier } from '@/lib/services/supplier-service'
 
@@ -33,6 +34,14 @@ function MaterialExpensesContent() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [categories, setCategories] = useState<AccountingCategory[]>([])
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [savingCategory, setSavingCategory] = useState(false)
+  const [categoryForm, setCategoryForm] = useState({
+    label_ar: '',
+    label_en: '',
+    label_ar_latin: ''
+  })
   const [supplierFilter, setSupplierFilter] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -62,6 +71,7 @@ function MaterialExpensesContent() {
   useEffect(() => {
     loadExpenses()
     loadSuppliers()
+    loadCategories()
   }, [])
 
   const loadSuppliers = async () => {
@@ -70,6 +80,65 @@ function MaterialExpensesContent() {
       setSuppliers(data)
     } catch (error) {
       console.error('Error loading suppliers:', error)
+    }
+  }
+
+  const loadCategories = async () => {
+    try {
+      const data = await getCategories('tailoring', 'purchase')
+      setCategories(data)
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
+  // توليد معرف الفئة تلقائياً من الاسم الإنجليزي أو العربي بأحرف إنجليزية
+  const buildCategoryId = (source: string) => {
+    const base = source
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+
+    const prefix = base || `category_${Date.now()}`
+    const taken = new Set(categories.map(c => c.category_id))
+    if (!taken.has(prefix)) return prefix
+
+    let counter = 2
+    while (taken.has(`${prefix}_${counter}`)) counter++
+    return `${prefix}_${counter}`
+  }
+
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!categoryForm.label_ar.trim()) return
+
+    setSavingCategory(true)
+    try {
+      const categoryId = buildCategoryId(categoryForm.label_en || categoryForm.label_ar_latin)
+      const result = await createCategory({
+        category_type: 'purchase',
+        branch: 'tailoring',
+        category_id: categoryId,
+        label_ar: categoryForm.label_ar.trim(),
+        label_en: categoryForm.label_en.trim() || undefined,
+        label_ar_latin: categoryForm.label_ar_latin.trim() || undefined
+      })
+
+      if (!result.success) {
+        alert(`❌ ${result.error || 'فشل إضافة الفئة'}`)
+        return
+      }
+
+      await loadCategories()
+      setFormData(prev => ({ ...prev, category: categoryId }))
+      setShowCategoryModal(false)
+      setCategoryForm({ label_ar: '', label_en: '', label_ar_latin: '' })
+    } catch (error) {
+      console.error('Error creating category:', error)
+      alert('❌ حدث خطأ أثناء إضافة الفئة')
+    } finally {
+      setSavingCategory(false)
     }
   }
 
@@ -207,8 +276,27 @@ function MaterialExpensesContent() {
     })
   }
 
+  // خيارات القوائم المنسدلة: الاسم العربي ويليه الإنجليزي إن وُجد
+  const categoryOptions = categories.map(cat => ({
+    id: cat.category_id,
+    label: [cat.label_ar, cat.label_en, cat.label_ar_latin].filter(Boolean).join(' - ')
+  }))
+
+  // اسم الفئة من قسم الفئات، مع الرجوع للفئات القديمة لعرض السجلات السابقة
   const getCategoryLabel = (categoryId: string) => {
-    return MATERIAL_EXPENSE_CATEGORIES.find(c => c.id === categoryId)?.label || categoryId
+    return categories.find(c => c.category_id === categoryId)?.label_ar
+      || MATERIAL_EXPENSE_CATEGORIES.find(c => c.id === categoryId)?.label
+      || categoryId
+  }
+
+  // الاسم الإنجليزي للفئة كما هو مضاف في قسم الفئات
+  const getCategoryLabelEn = (categoryId: string) => {
+    return categories.find(c => c.category_id === categoryId)?.label_en || ''
+  }
+
+  // الاسم العربي بأحرف إنجليزية كما هو مضاف في قسم الفئات
+  const getCategoryLabelArLatin = (categoryId: string) => {
+    return categories.find(c => c.category_id === categoryId)?.label_ar_latin || ''
   }
 
   return (
@@ -305,7 +393,7 @@ function MaterialExpensesContent() {
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent appearance-none bg-white"
               >
                 <option value="">كل الفئات</option>
-                {MATERIAL_EXPENSE_CATEGORIES.map(cat => (
+                {categoryOptions.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.label}</option>
                 ))}
               </select>
@@ -387,7 +475,19 @@ function MaterialExpensesContent() {
                         <ShoppingBag className="w-6 h-6 text-orange-600" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-gray-900">{getCategoryLabel(item.category)}</h4>
+                        <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                          <span>{getCategoryLabel(item.category)}</span>
+                          {getCategoryLabelEn(item.category) && (
+                            <span className="text-sm font-medium text-gray-400" dir="ltr">
+                              {getCategoryLabelEn(item.category)}
+                            </span>
+                          )}
+                          {getCategoryLabelArLatin(item.category) && (
+                            <span className="text-sm font-medium text-gray-400" dir="ltr">
+                              {getCategoryLabelArLatin(item.category)}
+                            </span>
+                          )}
+                        </h4>
                         <p className="text-sm text-gray-500">{item.description || 'بدون وصف'}</p>
                         <p className="text-xs text-gray-400 mt-1">{formatDate(item.date)}</p>
                       </div>
@@ -453,17 +553,27 @@ function MaterialExpensesContent() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">الفئة</label>
-                    <select
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
-                      required
-                    >
-                      <option value="">اختر الفئة</option>
-                      {MATERIAL_EXPENSE_CATEGORIES.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.label}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={formData.category}
+                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                        className="flex-1 p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
+                        required
+                      >
+                        <option value="">اختر الفئة</option>
+                        {categoryOptions.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.label}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowCategoryModal(true)}
+                        className="p-3 bg-orange-100 text-orange-600 rounded-xl hover:bg-orange-200 transition-colors"
+                        title="إضافة فئة جديدة"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">المورد (اختياري)</label>
@@ -521,6 +631,82 @@ function MaterialExpensesContent() {
                     className="w-full py-3 bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-xl font-medium hover:shadow-lg transition-all"
                   >
                     {isEditing ? 'تحديث المصروف' : 'حفظ المصروف'}
+                  </button>
+                </form>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal إضافة فئة جديدة */}
+        <AnimatePresence>
+          {showCategoryModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+              onClick={() => setShowCategoryModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white rounded-2xl p-6 w-full max-w-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-bold text-gray-900">إضافة فئة جديدة</h3>
+                  <button
+                    onClick={() => setShowCategoryModal(false)}
+                    className="p-2 hover:bg-gray-100 rounded-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <form onSubmit={handleCreateCategory} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">الاسم بالعربية *</label>
+                    <input
+                      type="text"
+                      value={categoryForm.label_ar}
+                      onChange={(e) => setCategoryForm({ ...categoryForm, label_ar: e.target.value })}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
+                      placeholder="مثال: خيوط حريرية"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">الاسم بالإنجليزية</label>
+                    <input
+                      type="text"
+                      value={categoryForm.label_en}
+                      onChange={(e) => setCategoryForm({ ...categoryForm, label_en: e.target.value })}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
+                      placeholder="Example: Silk Threads"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">عربي بأحرف إنجليزية</label>
+                    <input
+                      type="text"
+                      value={categoryForm.label_ar_latin}
+                      onChange={(e) => setCategoryForm({ ...categoryForm, label_ar_latin: e.target.value })}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500"
+                      placeholder="مثال: Khoyot Hareeriya"
+                      dir="ltr"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    تُضاف الفئة إلى قسم الفئات (المواد) وتُختار تلقائياً في هذا المصروف.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={savingCategory}
+                    className="w-full py-3 bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50"
+                  >
+                    {savingCategory ? 'جاري الحفظ...' : 'حفظ الفئة'}
                   </button>
                 </form>
               </motion.div>

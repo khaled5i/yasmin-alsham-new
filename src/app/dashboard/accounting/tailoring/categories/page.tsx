@@ -67,6 +67,7 @@ function CategoriesManagementContent() {
     category_id: '',
     label_ar: '',
     label_en: '',
+    label_ar_latin: '',
     description: ''
   })
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
@@ -135,6 +136,7 @@ function CategoriesManagementContent() {
       category_id: '',
       label_ar: '',
       label_en: '',
+      label_ar_latin: '',
       description: ''
     })
     setShowAddModal(true)
@@ -146,6 +148,7 @@ function CategoriesManagementContent() {
       category_id: category.category_id,
       label_ar: category.label_ar,
       label_en: category.label_en || '',
+      label_ar_latin: category.label_ar_latin || '',
       description: category.description || ''
     })
     setShowAddModal(true)
@@ -204,6 +207,7 @@ function CategoriesManagementContent() {
         const result = await updateCategory(editingCategory.id, {
           label_ar: formData.label_ar,
           label_en: formData.label_en || undefined,
+          label_ar_latin: formData.label_ar_latin || undefined,
           description: formData.description || undefined
         })
 
@@ -222,6 +226,7 @@ function CategoriesManagementContent() {
           category_id: formData.category_id,
           label_ar: formData.label_ar,
           label_en: formData.label_en || undefined,
+          label_ar_latin: formData.label_ar_latin || undefined,
           description: formData.description || undefined
         })
 
@@ -458,6 +463,9 @@ function CategoriesManagementContent() {
                       {category.label_en && (
                         <p className="text-sm text-gray-500 mt-1">{category.label_en}</p>
                       )}
+                      {category.label_ar_latin && (
+                        <p className="text-sm text-gray-500 mt-1" dir="ltr">{category.label_ar_latin}</p>
+                      )}
                       {category.description && (
                         <p className="text-sm text-gray-600 mt-1">{category.description}</p>
                       )}
@@ -603,6 +611,20 @@ function CategoriesManagementContent() {
                           onChange={(e) => setFormData({ ...formData, label_en: e.target.value })}
                           className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                           placeholder="Example: Silk Threads"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          عربي بأحرف إنجليزية
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.label_ar_latin}
+                          onChange={(e) => setFormData({ ...formData, label_ar_latin: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                          placeholder="مثال: Khoyot Hareeriya"
+                          dir="ltr"
                         />
                       </div>
 
