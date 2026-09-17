@@ -8,6 +8,7 @@ import type {
 import type { WorkerDeductionPayment } from './worker-payroll-service'
 
 const PAGE = 500
+const PAYROLL_WORKER_TYPES: string[] = ['tailor', 'workshop_manager']
 type QueryResult<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>
 export async function payrollPages<T>(
   query: (from: number, to: number) => QueryResult<T>
@@ -52,10 +53,9 @@ export async function getPayrollWorkspace(
   const [workers, rows, previousResult, operations, debts, monthly, persistent] = await Promise.all(
     [
       payrollPages<WorkerWithUser>((a, b) => {
+        // لا نفلتر بالنوع هنا: تغيير نوع العامل (مثلاً إلى شكّاك أو محاسب) يجب ألا يُخفي سجله المالي
         let query = supabase.from('workers').select('*, user:users(*)').order('id')
-        query = workerId
-          ? query.eq('id', workerId)
-          : query.in('worker_type', ['tailor', 'workshop_manager'])
+        if (workerId) query = query.eq('id', workerId)
         return query.range(a, b)
       }),
       payrollPages<WorkerPayrollMonth>((a, b) => {
@@ -116,9 +116,19 @@ export async function getPayrollWorkspace(
     )
   const previous = (previousResult.data || []) as WorkerPayrollMonth[]
   return {
-    workers: workers.filter(
-      (w) => w.user && (w.user.is_active !== false || rows.some((row) => row.worker_id === w.id))
-    ),
+    workers: workers.filter((w) => {
+      const hasRow = rows.some((row) => row.worker_id === w.id)
+      const hasHistory =
+        hasRow ||
+        previous.some((row) => row.worker_id === w.id) ||
+        debts.some((debt) => debt.worker_id === w.id && Number(debt.remaining_amount) > 0)
+      const payrollType = PAYROLL_WORKER_TYPES.includes(w.worker_type as string)
+      return (
+        !!w.user &&
+        (workerId ? true : payrollType || hasHistory) &&
+        (w.user.is_active !== false || hasRow)
+      )
+    }),
     rows,
     previous,
     operations,
