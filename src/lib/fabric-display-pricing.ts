@@ -10,6 +10,32 @@ export interface FabricDisplayPricing {
 
 const WHOLE_PIECE_METER_QUANTITIES = new Set([3, 3.5])
 
+/** الحقول التي تكفي لاشتقاق سعر المتر الصافي، دون ربط بنوع Fabric كاملاً. */
+export interface FabricDiscountFields {
+  price_per_meter: number | null | undefined
+  is_on_sale?: boolean | null
+  discount_percentage?: number | null
+}
+
+/**
+ * سعر المتر بعد الخصم — الموضع الوحيد الذي يُطبَّق فيه الخصم.
+ *
+ * `null` تعني «السعر عند الطلب»، والصفر يبقى صفراً ولا يتحول إلى سعر افتراضي.
+ * لا يقرّب الناتج: التقريب مسؤولية طبقة العرض أو السلة، فلا يتراكم.
+ */
+export function getFabricNetPricePerMeter(fabric: FabricDiscountFields): number | null {
+  if (fabric.price_per_meter == null) return null
+
+  const base = Number(fabric.price_per_meter)
+  if (!Number.isFinite(base)) return null
+
+  const discount = Number(fabric.discount_percentage) || 0
+  if (fabric.is_on_sale && discount > 0) {
+    return base * (1 - discount / 100)
+  }
+  return base
+}
+
 export function isWholeFabricPiece(
   quantity: number | null | undefined,
   inventoryUnit: FabricPricingUnit = 'meter'

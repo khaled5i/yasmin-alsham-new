@@ -11,6 +11,9 @@ import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { requestFabricBrowseReturn } from '@/lib/fabric-browse-position'
+import FabricAddToCartButton from '@/components/fabrics/FabricAddToCartButton'
+import FabricFavoriteButton from '@/components/fabrics/FabricFavoriteButton'
+import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
 
 export default function FabricDetailPage() {
   const params = useParams()
@@ -136,7 +139,7 @@ export default function FabricDetailPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="mb-8"
+          className="mb-8 flex flex-wrap items-center justify-between gap-4"
         >
           <Link
             href="/fabrics"
@@ -146,6 +149,8 @@ export default function FabricDetailPage() {
             <ArrowRight className="w-4 h-4" />
             <span>العودة إلى متجر الأقمشة</span>
           </Link>
+
+          <FabricStoreActionsBar />
         </motion.div>
 
         <div className="grid lg:grid-cols-2 gap-12">
@@ -292,6 +297,8 @@ export default function FabricDetailPage() {
                   )}
                 </div>
               )}
+
+              <FabricFavoriteButton fabric={fabric} size="lg" className="self-start sm:self-auto" />
             </div>
 
             {fabric.available_colors && fabric.available_colors.length > 0 && (
@@ -315,6 +322,8 @@ export default function FabricDetailPage() {
               </div>
             )}
 
+
+            <FabricAddToCartButton fabric={fabric} whatsappLink={whatsappLink} />
 
             {/* زر الاستفسار عبر الواتساب */}
             <a

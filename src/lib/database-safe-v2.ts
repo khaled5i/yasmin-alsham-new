@@ -103,23 +103,6 @@ export interface Order {
   updated_at: string
 }
 
-export interface Favorite {
-  id: string
-  user_id: string
-  design_id: string
-  created_at: string
-}
-
-export interface CartItem {
-  id: string
-  user_id: string
-  design_id: string
-  quantity: number
-  customization_notes?: string
-  created_at: string
-  updated_at: string
-}
-
 // بيانات تجريبية محدثة للتطوير عندما لا يكون Supabase مُعد
 const mockData = {
   users: [
@@ -452,53 +435,6 @@ const mockData = {
       created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString()
     }
-  ],
-
-  favorites: [
-    {
-      id: 'favorite-1',
-      user_id: '550e8400-e29b-41d4-a716-446655440003',
-      design_id: 'design-1',
-      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
-    },
-    {
-      id: 'favorite-2',
-      user_id: '550e8400-e29b-41d4-a716-446655440003',
-      design_id: 'design-4',
-      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
-    },
-    {
-      id: 'favorite-3',
-      user_id: '550e8400-e29b-41d4-a716-446655440004',
-      design_id: 'design-2',
-      created_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
-    }
-  ],
-
-  cartItems: [
-    {
-      id: 'cart-1',
-      user_id: '550e8400-e29b-41d4-a716-446655440004',
-      design_id: 'design-3',
-      product_id: undefined,
-      fabric_id: undefined,
-      item_type: 'design' as const,
-      quantity: 1,
-      customizations: {
-        color: 'أزرق',
-        size: 'M',
-        sleeve_length: 'أكمام قصيرة',
-        pattern: 'سادة'
-      },
-      measurements: {
-        chest: '85cm',
-        waist: '65cm',
-        length: '120cm'
-      },
-      notes: 'أريده مريح للعمل',
-      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date().toISOString()
-    }
   ]
 }
 
@@ -652,90 +588,6 @@ export const safeDatabase = {
     }
   },
 
-  // خدمة المفضلة
-  favorites: {
-    async getUserFavorites(userId: string) {
-      const userFavorites = mockData.favorites
-        .filter(f => f.user_id === userId)
-        .map(f => ({
-          ...f,
-          design: mockData.designs.find(d => d.id === f.design_id)
-        }))
-      return { data: userFavorites, error: null }
-    },
-
-    async addToFavorites(userId: string, designId: string) {
-      const newFavorite = {
-        id: `favorite-${Date.now()}`,
-        user_id: userId,
-        design_id: designId,
-        created_at: new Date().toISOString()
-      }
-      mockData.favorites.push(newFavorite)
-      return { data: newFavorite, error: null }
-    },
-
-    async removeFromFavorites(userId: string, designId: string) {
-      const favoriteIndex = mockData.favorites.findIndex(
-        f => f.user_id === userId && f.design_id === designId
-      )
-      if (favoriteIndex !== -1) {
-        mockData.favorites.splice(favoriteIndex, 1)
-      }
-      return { error: null }
-    }
-  },
-
-  // خدمة عربة التسوق
-  cart: {
-    async getCartItems(userId: string) {
-      const userCartItems = mockData.cartItems
-        .filter(c => c.user_id === userId)
-        .map(c => ({
-          ...c,
-          design: c.design_id ? mockData.designs.find(d => d.id === c.design_id) : undefined
-        }))
-      return { data: userCartItems, error: null }
-    },
-
-    async addToCart(cartItemData: any) {
-      const newCartItem = {
-        ...cartItemData,
-        id: `cart-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-      mockData.cartItems.push(newCartItem)
-      return { data: newCartItem, error: null }
-    },
-
-    async updateCartItem(cartItemId: string, updates: any) {
-      const cartItemIndex = mockData.cartItems.findIndex(c => c.id === cartItemId)
-      if (cartItemIndex !== -1) {
-        mockData.cartItems[cartItemIndex] = {
-          ...mockData.cartItems[cartItemIndex],
-          ...updates,
-          updated_at: new Date().toISOString()
-        }
-        return { data: mockData.cartItems[cartItemIndex], error: null }
-      }
-      return { data: null, error: 'Cart item not found' }
-    },
-
-    async removeFromCart(cartItemId: string) {
-      const cartItemIndex = mockData.cartItems.findIndex(c => c.id === cartItemId)
-      if (cartItemIndex !== -1) {
-        mockData.cartItems.splice(cartItemIndex, 1)
-      }
-      return { error: null }
-    },
-
-    async clearCart(userId: string) {
-      mockData.cartItems = mockData.cartItems.filter(c => c.user_id !== userId)
-      return { error: null }
-    }
-  },
-
   // خدمة المستخدمين
   users: {
     async getProfile(userId: string) {
@@ -768,9 +620,7 @@ export const getDatabaseStatus = () => {
       designs: mockData.designs.length,
       appointments: mockData.appointments.length,
       orders: mockData.orders.length,
-      workers: mockData.workers.length,
-      favorites: mockData.favorites.length,
-      cartItems: mockData.cartItems.length
+      workers: mockData.workers.length
     }
   }
 }

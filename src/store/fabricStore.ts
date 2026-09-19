@@ -6,6 +6,7 @@ import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { matchesFabricSearch } from '@/lib/fabric-search'
 import {
   getFabricDisplayPricing,
+  getFabricNetPricePerMeter,
   hasFabricDisplayPrice,
   type FabricPricingUnit,
 } from '@/lib/fabric-display-pricing'
@@ -52,7 +53,6 @@ export interface Fabric {
   features: string[]
   tags: string[]
   views_count: number
-  favorites_count: number
   orders_count: number
   rating: number
   reviews_count: number
@@ -68,7 +68,8 @@ export interface Fabric {
 }
 
 // تحويل من نوع Supabase إلى نوع التطبيق
-const convertSupabaseFabric = (fabric: SupabaseFabric): Fabric => ({
+// مُصدَّرة ليستعملها جالب السلة/المفضلة بالمعرّفات ولا يتكرر التطبيع في مكانين.
+export const convertSupabaseFabric = (fabric: SupabaseFabric): Fabric => ({
   ...fabric,
   categories: fabric.categories?.length ? fabric.categories : [fabric.category],
   design_images: fabric.design_images ?? [],
@@ -304,13 +305,8 @@ export const formatFabricPrice = (
 }
 
 // دالة مساعدة للحصول على السعر النهائي (بعد التخفيض)
-export const getFinalPrice = (fabric: Fabric): number | null => {
-  if (fabric.price_per_meter == null) return null
-  if (fabric.is_on_sale && fabric.discount_percentage > 0) {
-    return fabric.price_per_meter * (1 - fabric.discount_percentage / 100)
-  }
-  return fabric.price_per_meter
-}
+// الخصم مُعرَّف في مكان واحد داخل fabric-display-pricing حتى لا يُطبَّق مرتين.
+export const getFinalPrice = (fabric: Fabric): number | null => getFabricNetPricePerMeter(fabric)
 
 // دالة مساعدة للحصول على جميع الفئات الفريدة
 export const getUniqueCategories = (fabrics: Fabric[]): string[] => {

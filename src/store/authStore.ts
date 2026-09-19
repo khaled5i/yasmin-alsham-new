@@ -18,7 +18,6 @@ interface AuthState {
   user: AuthUser | null
   isLoading: boolean
   error: string | null
-  anonymousUserId: string | null
   lastVerifiedAt: number | null
   _hasHydrated: boolean
 
@@ -32,7 +31,6 @@ interface AuthState {
   forceRevalidate: () => Promise<void>
   isAuthenticated: () => boolean
   isSessionFresh: () => boolean
-  ensureAnonymousUser: () => Promise<string>
   invalidateDataCaches: () => void
   setHasHydrated: (hasHydrated: boolean) => void
 }
@@ -77,7 +75,6 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isLoading: false,
       error: null,
-      anonymousUserId: null,
       lastVerifiedAt: null,
       _hasHydrated: false,
 
@@ -101,53 +98,6 @@ export const useAuthStore = create<AuthState>()(
         _cacheInvalidationListeners.forEach(listener => {
           try { listener() } catch (e) { console.error('Cache invalidation listener error:', e) }
         })
-      },
-
-      ensureAnonymousUser: async () => {
-        const state = get()
-
-        // إذا كان المستخدم مسجل دخول، استخدم user_id الخاص به
-        if (state.user) {
-          return state.user.id
-        }
-
-        // إذا كان لدينا anonymous user ID محفوظ، استخدمه
-        if (state.anonymousUserId) {
-          return state.anonymousUserId
-        }
-
-        // إنشاء anonymous user جديد في Supabase
-        if (isSupabaseConfigured()) {
-          try {
-            console.log('🔐 إنشاء مستخدم مجهول جديد...')
-
-            const { data, error } = await supabase.auth.signInAnonymously()
-
-            if (error) {
-              console.error('❌ خطأ في إنشاء مستخدم مجهول:', error.message)
-              throw error
-            }
-
-            if (data.user) {
-              console.log('✅ تم إنشاء مستخدم مجهول:', data.user.id)
-              set({ anonymousUserId: data.user.id })
-              return data.user.id
-            }
-          } catch (error: any) {
-            console.error('❌ خطأ في إنشاء مستخدم مجهول:', error)
-          }
-        }
-
-        // Fallback: استخدام session_id من localStorage
-        const sessionId = localStorage.getItem('yasmin-session-id')
-        if (sessionId) {
-          return sessionId
-        }
-
-        // إنشاء session_id جديد
-        const newSessionId = crypto.randomUUID()
-        localStorage.setItem('yasmin-session-id', newSessionId)
-        return newSessionId
       },
 
       signIn: async (email: string, password: string) => {

@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import FabricCommerceProvider from '@/components/fabrics/FabricCommerceProvider'
 
 export const metadata: Metadata = {
   title: 'متجر الأقمشة النسائية - ياسمين الشام الخبر',
@@ -12,5 +13,11 @@ export const metadata: Metadata = {
 }
 
 export default function FabricsLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return (
+    <>
+      {/* يحمّل السلة والمفضلة من التخزين المحلي ويزامن التبويبات لكل صفحات المتجر */}
+      <FabricCommerceProvider />
+      {children}
+    </>
+  )
 }

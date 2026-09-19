@@ -12,6 +12,8 @@ import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { FABRICS_PER_PAGE, useFabricBrowsePosition } from '@/hooks/useFabricBrowsePosition'
+import FabricFavoriteButton from '@/components/fabrics/FabricFavoriteButton'
+import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
@@ -143,6 +145,7 @@ export default function FabricsPage() {
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-[#6b1726]">
                 متجر الأقمشة
               </h1>
+              <FabricStoreActionsBar className="absolute left-0 top-1/2 -translate-y-1/2 sm:left-1 lg:left-2" />
             </div>
           </motion.header>
 
@@ -424,6 +427,11 @@ export default function FabricsPage() {
                                 <span className="bg-[#f6f0e8] text-[#6b1726] px-4 py-2 rounded-lg font-bold">غير متوفر</span>
                               </div>
                             )}
+
+                            {/* القلب: يوقف الحدث فلا يفتح القماش ولا يحرّك المعرض */}
+                            <div className="absolute bottom-[22%] left-2 z-20 sm:left-3">
+                              <FabricFavoriteButton fabric={fabric} variant="floating" size="sm" />
+                            </div>
 
                             {/* زر نظرة سريعة - مخفي على الجوال */}
                             <button

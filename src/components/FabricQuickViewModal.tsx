@@ -9,6 +9,8 @@ import { Fabric, formatFabricPrice, getFinalPrice } from '@/store/fabricStore'
 import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import FabricAddToCartButton from '@/components/fabrics/FabricAddToCartButton'
+import FabricFavoriteButton from '@/components/fabrics/FabricFavoriteButton'
 
 interface FabricQuickViewModalProps {
   fabric: Fabric | null
@@ -426,6 +428,15 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose, onViewDe
 
                   {/* الأزرار */}
                   <div className="mt-8 space-y-3">
+                    <div className="flex items-stretch gap-2">
+                      <FabricAddToCartButton
+                        fabric={fabric}
+                        whatsappLink={whatsappLink}
+                        className="flex-1"
+                      />
+                      <FabricFavoriteButton fabric={fabric} size="lg" className="self-center" />
+                    </div>
+
                     <Link
                       href={`/fabrics/${fabric.id}`}
                       onNavigate={() => onViewDetails?.(fabric.id)}

@@ -48,7 +48,6 @@ export interface Fabric {
   features: string[]
   tags: string[]
   views_count: number
-  favorites_count: number
   orders_count: number
   rating: number
   reviews_count: number
@@ -279,6 +278,40 @@ export const fabricService = {
       return { data, error: null }
     } catch (error: any) {
       console.error('❌ خطأ غير متوقع في جلب القماش:', error)
+      return { data: null, error: error.message }
+    }
+  },
+
+  /**
+   * جلب أقمشة محددة بمعرّفاتها — للسلة والمفضلة.
+   *
+   * تتجنّب تحميل الكتالوج كاملاً لعرض بضعة أسطر. تشمل الأقمشة المخفية
+   * والمحذوفة عمداً حتى تستطيع السلة أن تقول «لم يعد متاحاً» بدل أن يختفي
+   * السطر بصمت؛ منع الشراء يتم في `resolveCartLine` لا بإخفاء الصف.
+   */
+  async getByIds(ids: string[]): Promise<{ data: Fabric[] | null; error: string | null }> {
+    try {
+      const uniqueIds = [...new Set(ids.filter(Boolean))]
+      if (uniqueIds.length === 0) return { data: [], error: null }
+
+      if (!isSupabaseConfigured()) {
+        console.warn('⚠️ Supabase غير مُكوّن')
+        return { data: null, error: 'Supabase not configured' }
+      }
+
+      const { data, error } = await supabase
+        .from('fabrics')
+        .select('*')
+        .in('id', uniqueIds)
+
+      if (error) {
+        console.error('❌ خطأ في جلب أقمشة السلة:', error.message)
+        return { data: null, error: error.message }
+      }
+
+      return { data: data || [], error: null }
+    } catch (error: any) {
+      console.error('❌ خطأ غير متوقع في جلب أقمشة السلة:', error)
       return { data: null, error: error.message }
     }
   },

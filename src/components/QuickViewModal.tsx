@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronLeft, ChevronRight, Star, ShoppingCart } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Product, formatPrice } from '@/store/shopStore'
