@@ -67,24 +67,12 @@ export default function DeleteOrderModal({ isOpen, onClose, onConfirm, orderInfo
 
         console.log('✅ Password verified successfully')
       } else {
-        // Fallback: التحقق من localStorage (للتطوير فقط)
-        console.warn('⚠️ Supabase not configured, using localStorage fallback')
-
-        const storedUsers = localStorage.getItem('yasmin-users')
-        if (storedUsers) {
-          const users = JSON.parse(storedUsers)
-          const foundUser = users.find((u: any) => u.email === email && u.password === password)
-
-          if (!foundUser) {
-            setError(t('incorrect_password'))
-            setIsLoading(false)
-            return
-          }
-        } else {
-          setError(t('incorrect_password'))
-          setIsLoading(false)
-          return
-        }
+        // لا مسار احتياطي: تأكيد كلمة المرور قبل الحذف يتم عبر Supabase حصراً.
+        // المقارنة النصية مقابل localStorage كانت تقبل المستخدم الافتراضي المزروع.
+        console.error('❌ Supabase غير مهيأ — تعذّر التحقق من كلمة المرور')
+        setError(t('incorrect_password'))
+        setIsLoading(false)
+        return
       }
 
       // إذا وصلنا هنا، فإن كلمة المرور صحيحة

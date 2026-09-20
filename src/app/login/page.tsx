@@ -93,8 +93,15 @@ export default function LoginPage() {
             return
           }
         } else {
-          // Supabase not configured, trust localStorage (demo mode)
-          await redirectUser(user)
+          // بغير تهيئة Supabase لا يمكن التحقق من الجلسة، فلا نوجّه المستخدم
+          // إلى اللوحة اعتماداً على الكاش المحلي — حارس اللوحة سيعيده فوراً.
+          console.error('Supabase غير مهيأ — تعذّر التحقق من الجلسة')
+          useAuthStore.setState({ user: null, lastVerifiedAt: null })
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('yasmin-auth-user')
+          }
+          setIsValidatingSession(false)
+          return
         }
       }
       setIsValidatingSession(false)

@@ -80,16 +80,14 @@ export default function DashboardSessionBoundary({
     let isCurrentCheck = true
 
     async function validateSession() {
-      const cachedUser = useAuthStore.getState().user
-
-      // Keep the existing local development fallback intact when Supabase is
-      // intentionally not configured. Production sessions are always verified.
+      // يُمنع الدخول عند غياب تهيئة Supabase بدل منحه من الكاش المحلي.
+      // المسار القديم كان يقبل أي ملف مخزّن في localStorage بلا تحقق خادمي،
+      // فيتحوّل أي نشر بمتغيرات بيئة ناقصة إلى لوحة إدارة مفتوحة.
+      // لا وظيفة تُفقد: بغير تهيئة Supabase لا تعمل أي استعلامات أصلاً.
       if (!isSupabaseConfigured()) {
-        if (cachedUser?.is_active) {
-          setCheckState('authenticated')
-        } else {
-          router.replace(getLoginUrl())
-        }
+        console.error('Supabase غير مهيأ — تعذّر التحقق من الجلسة')
+        clearCachedUser()
+        router.replace(getLoginUrl())
         return
       }
 

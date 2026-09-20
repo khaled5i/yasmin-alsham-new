@@ -35,30 +35,9 @@ interface AuthState {
   setHasHydrated: (hasHydrated: boolean) => void
 }
 
-// بيانات المستخدمين الافتراضية (سيتم استبدالها بنظام إدارة العمال)
-const getStoredUsers = () => {
-  if (typeof window === 'undefined') return []
-
-  const stored = localStorage.getItem('yasmin-users')
-  if (stored) {
-    return JSON.parse(stored)
-  }
-
-  // المستخدمين الافتراضيين
-  const defaultUsers = [
-    {
-      id: '1',
-      email: 'admin@yasminalsham.com',
-      password: 'admin123',
-      full_name: 'مدير النظام',
-      role: 'admin' as const,
-      is_active: true
-    }
-  ]
-
-  localStorage.setItem('yasmin-users', JSON.stringify(defaultUsers))
-  return defaultUsers
-}
+// أُزيل getStoredUsers ومعه المستخدم الافتراضي admin@yasminalsham.com.
+// كان يزرع حساب admin بكلمة مرور ثابتة في localStorage عند أول استدعاء،
+// وتُقارَن كلمة المرور نصياً. المصادقة الآن عبر Supabase حصراً.
 
 // Listeners for data cache invalidation (used by orderStore, etc.)
 type CacheInvalidationListener = () => void
@@ -116,9 +95,8 @@ export const useAuthStore = create<AuthState>()(
             })
 
             if (authError) {
+              // لا يوجد مسار احتياطي بعد الآن — يسقط التنفيذ إلى رسالة الخطأ في النهاية.
               console.error('❌ خطأ في تسجيل الدخول عبر Supabase:', authError.message)
-              // الانتقال إلى localStorage كـ fallback
-              console.log('⚠️ التحول إلى localStorage...')
             } else if (authData.user) {
               console.log('✅ تم تسجيل الدخول عبر Supabase:', authData.user.email)
 
@@ -163,47 +141,24 @@ export const useAuthStore = create<AuthState>()(
             }
           }
 
-          // Fallback: استخدام localStorage
-          console.log('📦 استخدام localStorage للمصادقة...')
-          await new Promise(resolve => setTimeout(resolve, 1000))
-
-          const users = getStoredUsers()
-          const foundUser = users.find(
-            (user: any) => user.email.toLowerCase() === email.toLowerCase() && user.password === password
-          )
-
-          if (foundUser) {
-            console.log('✅ تم العثور على المستخدم في localStorage:', foundUser.full_name)
-
-            const user: AuthUser = {
-              id: foundUser.id,
-              email: foundUser.email,
-              full_name: foundUser.full_name,
-              role: foundUser.role,
-              is_active: foundUser.is_active,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              token: `demo-token-${foundUser.id}-${Date.now()}`
-            }
-
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('yasmin-auth-user', JSON.stringify(user))
-              console.log('💾 تم حفظ المستخدم في localStorage')
-            }
-
-            set({ user, isLoading: false, error: null, lastVerifiedAt: Date.now() })
-            get().invalidateDataCaches()
-            console.log('🎉 تم تسجيل الدخول بنجاح عبر localStorage!')
-
-            return true
-          } else {
-            console.log('❌ بيانات تسجيل الدخول غير صحيحة')
+          // لا يوجد مسار احتياطي: المصادقة تتم عبر Supabase حصراً.
+          // المسار القديم كان يقارن كلمة المرور نصياً مقابل localStorage، ويزرع
+          // مستخدماً افتراضياً بصلاحية admin، فيُنتج جلسة بلا أي تحقق خادمي.
+          if (!isSupabaseConfigured()) {
+            console.error('❌ Supabase غير مهيأ — تسجيل الدخول متوقف')
             set({
-              error: 'بيانات تسجيل الدخول غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.',
+              error: 'تعذّر الاتصال بخادم المصادقة. يرجى مراجعة مسؤول النظام.',
               isLoading: false
             })
             return false
           }
+
+          console.log('❌ بيانات تسجيل الدخول غير صحيحة')
+          set({
+            error: 'بيانات تسجيل الدخول غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.',
+            isLoading: false
+          })
+          return false
         } catch (error) {
           console.error('💥 خطأ في تسجيل الدخول:', error)
           set({ error: 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.', isLoading: false })
