@@ -3207,12 +3207,27 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         setAsyncTranscribingId(annotationId)
         const audioBlob = new Blob([blob], { type: mimeType })
         const ext = mimeType.split('/')[1]?.split(';')[0] || 'webm'
-        const form = new FormData()
-        form.append('audio', audioBlob, `recording.${ext}`)
 
-        fetch('/api/soniox-async-transcribe', { method: 'POST', body: form })
-          .then(res => res.ok ? res.json() : Promise.reject(res.statusText))
-          .then(({ text }: { text: string }) => {
+        // نفس معالجة مسار ملخص التصميم أعلاه: webm الخام من MediaRecorder يجعل
+        // معالج Soniox يتوقّف (timed out)، و«trailingSlash: true» يحوّل الطلب بـ308
+        // فيُرفع الصوت مرتين. المسار هنا كان يفتقد الاثنين.
+        ;(async () => {
+          try {
+            let uploadBlob: Blob = audioBlob
+            let filename = `recording.${ext}`
+            try {
+              uploadBlob = await recordingBlobToWav(audioBlob)
+              filename = 'recording.wav'
+            } catch (convErr) {
+              console.warn('WAV conversion failed, sending original recording:', convErr)
+            }
+            const form = new FormData()
+            form.append('audio', uploadBlob, filename)
+
+            const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', body: form })
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(body?.message || body?.error || res.statusText)
+            const text: string = body.text
             if (text) {
               const updated = annotationsRef.current.map(a =>
                 a.id === annotationId
@@ -3221,9 +3236,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               )
               onAnnotationsChange(updated)
             }
-          })
-          .catch(err => console.error('Soniox async fallback failed:', err))
-          .finally(() => setAsyncTranscribingId(null))
+          } catch (err) {
+            console.error('Soniox async fallback failed:', err)
+          } finally {
+            setAsyncTranscribingId(null)
+          }
+        })()
       }
     }
     reader.readAsDataURL(new Blob([blob], { type: mimeType }))
@@ -3401,6 +3419,12 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 soxAudioQueueRef.current.push(buffer)
               }
             }
+          } else {
+            // فشل جلب تفويض Soniox (401/403/500...): لا يوجد اتصال لحظي ولن تصل أي أحداث ws.
+            // بدون ضبط العلم هنا يخرج tryFinalizeAnnotation مبكراً فيضيع التسجيل كاملاً —
+            // حتى الملف الصوتي نفسه. بضبطه نسلك المسار الاحتياطي async تماماً كحالة useRealtime=false.
+            console.warn('Soniox realtime unavailable, falling back to async transcription:', tokenRes.status)
+            soxFinishedRef.current = true
           }
         } catch (e) {
           console.error('Soniox setup failed:', e)
@@ -3518,6 +3542,10 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         sonioxWsRef.current.close()
         sonioxWsRef.current = null
       }
+      soxFinishedRef.current = true
+    } else {
+      // لا يوجد اتصال لحظي أصلاً (تعذّر التفويض، أو مسار async مثل ملخص التصميم).
+      // شبكة أمان: لولاها يبقى العلم false فيتجاهل onstop حفظ التسجيل بالكامل.
       soxFinishedRef.current = true
     }
   }
