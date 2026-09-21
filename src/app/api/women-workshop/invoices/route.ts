@@ -44,11 +44,15 @@ export async function POST(request: NextRequest) {
 
     const { data: userData, error: roleError } = await supabaseAdmin
       .from('users')
-      .select('role')
+      .select('role, is_active')
       .eq('id', user.id)
       .single()
 
-    if (roleError || userData?.role !== 'admin') {
+    // يُرفض الحساب الموقوف صراحةً حتى لو كان دوره admin
+    if (roleError || !userData?.is_active) {
+      return NextResponse.json({ error: 'غير مسموح - الحساب غير نشط أو غير موجود' }, { status: 403 })
+    }
+    if (userData.role !== 'admin') {
       return NextResponse.json({ error: 'غير مسموح - للمدير فقط' }, { status: 403 })
     }
 

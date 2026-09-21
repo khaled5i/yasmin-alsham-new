@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Play, Pause, Trash2, Languages, Loader2, ChevronDown } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useAuthStore } from '@/store/authStore'
+import { useVoiceNoteTranscription } from '@/hooks/useVoiceNoteTranscription'
+import { getAuthHeader } from '@/lib/client-auth'
 
 interface VoiceNote {
   id: string
@@ -19,6 +21,8 @@ interface VoiceNote {
 interface VoiceNotesProps {
   voiceNotes?: VoiceNote[]
   onVoiceNotesChange: (voiceNotes: VoiceNote[]) => void
+  isSessionActive?: () => boolean
+  onBusyChange?: (busy: boolean) => void
   disabled?: boolean
   readOnly?: boolean // للسماح بالترجمة فقط دون التسجيل أو الحذف
   orderId?: string // معرف الطلب لحفظ الترجمات
@@ -43,6 +47,8 @@ const getLanguageName = (code: string) => {
 export default function VoiceNotes({
   voiceNotes = [],
   onVoiceNotesChange,
+  onBusyChange,
+  isSessionActive,
   disabled = false,
   readOnly = false,
   orderId,
@@ -71,6 +77,8 @@ export default function VoiceNotes({
   const finalTokensRef = useRef<string[]>([])
   const currentBlobRef = useRef<Blob | null>(null)
   const sonioxFinishedRef = useRef<boolean>(false)
+  const transcription = useVoiceNoteTranscription(onBusyChange, isSessionActive)
+  const transcribingIds = transcription.pendingIds
   const hasSonioxRef = useRef<boolean>(false)
   const recordingIdRef = useRef<string>('')
   const recordingDurationRef = useRef<number>(0)
@@ -138,6 +146,23 @@ export default function VoiceNotes({
     return new Blob([byteArray], { type: 'audio/webm' })
   }
 
+  // المسار الاحتياطي للتفريغ: يُستدعى حين لا ينتج التحويل اللحظي نصاً — سواء
+  // تعذّر تفويض Soniox (401/403/500) أو انقطع الاتصال. الملف يُرسل إلى التفريغ
+  // الخادمي حيث يبقى المفتاح على الخادم.
+  // يطابق المعالجة المستقرة في DesignSummarySection: تحويل إلى WAV أولاً لأن
+  // webm الخام من MediaRecorder يجعل معالج Soniox يتوقّف، وشرطة مائلة ختامية
+  // لتجنّب توجيه 308 الذي يرفع الصوت مرتين.
+  const transcribeNoteFallback = (noteId: string, blob: Blob) =>
+    transcription.transcribe(noteId, blob, cleaned => {
+      // A deleted recording must not contribute text to either field.
+      if (!voiceNotesRef.current.some(note => note.id === noteId)) return
+      const updated = voiceNotesRef.current.map(note =>
+        note.id === noteId ? { ...note, transcription: cleaned } : note
+      )
+      voiceNotesRef.current = updated
+      onVoiceNotesChange(updated)
+    })
+
   // إنشاء الملاحظة الصوتية عندما يكون الصوت والنص جاهزين
   const tryFinalizeNote = () => {
     const blob = currentBlobRef.current
@@ -154,7 +179,9 @@ export default function VoiceNotes({
     sonioxFinishedRef.current = false
 
     const reader = new FileReader()
+    reader.onerror = () => transcription.finishRecording()
     reader.onloadend = () => {
+      if (!transcription.isActive() || reader.error) return
       const base64 = reader.result as string
       const newNote: VoiceNote = {
         id: noteId,
@@ -163,7 +190,16 @@ export default function VoiceNotes({
         duration,
         transcription: finalText || undefined
       }
-      onVoiceNotesChange([...voiceNotesRef.current, newNote])
+      const updated = [...voiceNotesRef.current, newNote]
+      voiceNotesRef.current = updated
+      onVoiceNotesChange(updated)
+
+      // لم ينتج التحويل اللحظي نصاً — نرسل الملف إلى التفريغ الخادمي.
+      if (!finalText) {
+        void transcribeNoteFallback(noteId, blob)
+      }
+      transcription.finishRecording()
+
       setLiveTranscription('')
     }
     reader.readAsDataURL(blob)
@@ -171,6 +207,7 @@ export default function VoiceNotes({
 
   // بدء التسجيل مع Soniox real-time STT
   const startRecording = async () => {
+    transcription.beginRecording()
     try {
       setError(null)
       setLiveTranscription('')
@@ -186,6 +223,7 @@ export default function VoiceNotes({
         try {
           await navigator.mediaDevices.getUserMedia({ audio: true })
         } catch (permError) {
+          transcription.finishRecording()
           console.error('Permission error:', permError)
           setError('يرجى السماح بالوصول إلى الميكروفون من إعدادات التطبيق')
           return
@@ -203,7 +241,7 @@ export default function VoiceNotes({
       // --- إعداد Soniox WebSocket للتحويل الفوري ---
       if (typeof window !== 'undefined' && !(window as any).Capacitor) {
         try {
-          const tokenRes = await fetch('/api/soniox-token')
+          const tokenRes = await fetch('/api/soniox-token/', { method: 'POST', headers: await getAuthHeader(), signal: AbortSignal.timeout(15_000) })
           if (tokenRes.ok) {
             const { apiKey } = await tokenRes.json()
 
@@ -303,6 +341,12 @@ export default function VoiceNotes({
                 audioQueueRef.current.push(buffer)
               }
             }
+          } else {
+            // فشل جلب تفويض Soniox (401/403/500...): لا يوجد اتصال لحظي ولن تصل
+            // أي أحداث ws. بدون ضبط العلم هنا تخرج tryFinalizeNote مبكراً
+            // فيضيع التسجيل كاملاً — حتى الملف الصوتي نفسه.
+            console.warn('Soniox realtime unavailable, saving recording without live transcription:', tokenRes.status)
+            sonioxFinishedRef.current = true
           }
         } catch (e) {
           console.error('Soniox setup failed:', e)
@@ -315,6 +359,12 @@ export default function VoiceNotes({
       }
 
       // --- MediaRecorder لحفظ الصوت ---
+      if (!transcription.isActive()) {
+        stream.getTracks().forEach(track => track.stop())
+        sonioxWsRef.current?.close()
+        void audioContextRef.current?.close()
+        return
+      }
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
@@ -339,6 +389,7 @@ export default function VoiceNotes({
       }, 1000)
 
     } catch (error) {
+      transcription.finishRecording()
       console.error('خطأ في بدء التسجيل:', error)
       setError('فشل الوصول إلى الميكروفون. يرجى التحقق من الأذونات في إعدادات التطبيق.')
     }
@@ -382,6 +433,10 @@ export default function VoiceNotes({
       sonioxWsRef.current.close()
       sonioxWsRef.current = null
       sonioxFinishedRef.current = true
+    } else {
+      // لا يوجد اتصال لحظي أصلاً (تعذّر التفويض مثلاً). شبكة أمان: لولاها
+      // يبقى العلم false فيتجاهل onstop حفظ التسجيل بالكامل.
+      sonioxFinishedRef.current = true
     }
   }
 
@@ -416,6 +471,8 @@ export default function VoiceNotes({
 
   // حذف ملاحظة صوتية محددة
   const deleteVoiceNote = (noteId: string) => {
+    transcription.cancel(noteId)
+    voiceNotesRef.current = voiceNotesRef.current.filter(note => note.id !== noteId)
     const audioRefs = audioRefsRef.current
     const audio = audioRefs.get(noteId)
 
@@ -774,8 +831,13 @@ export default function VoiceNotes({
                         </div>
                       )}
                     </div>
+                  ) : transcribingIds.has(note.id) ? (
+                    <p className="text-sm text-gray-500 mr-6 flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      جارٍ تحويل التسجيل إلى نص...
+                    </p>
                   ) : (
-                    <p className="text-sm text-gray-500 mr-6">تسجيل صوتي - في انتظار التحويل إلى نص...</p>
+                    <p className="text-sm text-gray-500 mr-6">تسجيل صوتي</p>
                   )}
                 </div>
               ))}

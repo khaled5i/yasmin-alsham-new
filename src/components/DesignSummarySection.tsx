@@ -6,6 +6,7 @@ import { AlertCircle, Check, Loader2, Mic, Pause, Pencil, Play, RefreshCw, Trash
 import type { DesignSummaryNote } from '@/components/InteractiveImageAnnotation'
 import DesignSummaryRecorder from '@/components/DesignSummaryRecorder'
 import { recordingBlobToWav, cleanTranscriptText } from '@/lib/audio-utils'
+import { getAuthHeader } from '@/lib/client-auth'
 
 interface Props {
   notes: DesignSummaryNote[]
@@ -127,7 +128,7 @@ export default function DesignSummarySection({
       const form = new FormData()
       form.append('audio', uploadBlob, filename)
       // trailing slash لتجنّب توجيه 308 الذي يرفع الصوت مرتين
-      const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', body: form })
+      const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', headers: await getAuthHeader(), body: form })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body?.message || body?.error || res.statusText)
       const text: string = body.text

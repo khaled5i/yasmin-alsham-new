@@ -313,6 +313,7 @@ function AddOrderContent() {
   const [customDesignImageFile, setCustomDesignImageFile] = useState<File | null>(null)
 
   // ref للوصول إلى دوال InteractiveImageAnnotation
+  const voiceBusyRef = useRef(false)
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
 
   // حالات modal الطباعة
@@ -583,7 +584,7 @@ function AddOrderContent() {
   // الحفظ في هذه اللحظة يخزّن الملاحظة بدون نص (تظهر "جاري التحويل" للأبد في صفحة الطلب)
   // ويضيع ناتج التحويل لأن الصفحة تُغادر قبل اكتماله.
   const requireTranscriptionDone = useCallback((): boolean => {
-    if (annotationRef.current?.isTranscribing()) {
+    if (voiceBusyRef.current || annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return false
     }
@@ -1280,6 +1281,7 @@ function AddOrderContent() {
   // حفظ الطلب كحجز مسبق
   const handleSubmitAsPreBooking = async (e: React.MouseEvent) => {
     e.preventDefault()
+    if (!requireTranscriptionDone()) return
 
     if (isSubmittingRef.current) return
 
@@ -2099,6 +2101,7 @@ function AddOrderContent() {
                 voiceNotes={formData.voiceNotes}
                 onNotesChange={(notes) => handleInputChange('notes', notes)}
                 onVoiceNotesChange={handleVoiceNotesChange}
+                onBusyChange={busy => { voiceBusyRef.current = busy }}
                 disabled={isSubmitting}
               />
             </div>

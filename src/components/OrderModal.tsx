@@ -76,6 +76,11 @@ interface OrderModalProps {
 }
 
 export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, onOrderUpdated, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId, autoTranslateAlterationsToHindi = false }: OrderModalProps) {
+  const voiceSessionRef = useRef({ id: initialOrder?.id, open: isOpen, version: 0 })
+  if (voiceSessionRef.current.id !== initialOrder?.id || voiceSessionRef.current.open !== isOpen) {
+    voiceSessionRef.current = { id: initialOrder?.id, open: isOpen, version: voiceSessionRef.current.version + 1 }
+  }
+  const voiceSessionVersion = voiceSessionRef.current.version
   const { user } = useAuthStore()
   const { t, isArabic } = useTranslation()
   // Lightbox state
@@ -1390,6 +1395,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     {/* الملاحظات الصوتية - مدمجة مباشرة */}
                     {voiceNotes.length > 0 && (
                       <VoiceNotes
+                        key={`${order.id}:${voiceSessionVersion}`}
+                        isSessionActive={() => voiceSessionRef.current.open && voiceSessionRef.current.version === voiceSessionVersion}
                         voiceNotes={voiceNotes}
                         onVoiceNotesChange={setVoiceNotes}
                         readOnly={true}

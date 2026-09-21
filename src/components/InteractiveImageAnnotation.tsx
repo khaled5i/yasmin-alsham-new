@@ -10,6 +10,7 @@ import Image from 'next/image'
 import { renderDrawingsOnCanvas, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
 import { recordingBlobToWav } from '@/lib/audio-utils'
 import ImageCropRotateModal from '@/components/ImageCropRotateModal'
+import { getAuthHeader } from '@/lib/client-auth'
 
 
 // نوع نقطة الرسم
@@ -3163,7 +3164,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               const form = new FormData()
               form.append('audio', uploadBlob, filename)
               // trailing slash لتجنّب توجيه 308 (trailingSlash:true) الذي يرفع الصوت مرتين
-              const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', body: form })
+              const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', headers: await getAuthHeader(), body: form })
               const body = await res.json().catch(() => ({}))
               if (!res.ok) throw new Error(body?.message || body?.error || res.statusText)
               const text: string = body.text
@@ -3224,7 +3225,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             const form = new FormData()
             form.append('audio', uploadBlob, filename)
 
-            const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', body: form })
+            const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', headers: await getAuthHeader(), body: form })
             const body = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(body?.message || body?.error || res.statusText)
             const text: string = body.text
@@ -3319,7 +3320,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       const useRealtime = !(window as any).Capacitor && annotationId !== '__design_summary__'
       if (useRealtime) {
         try {
-          const tokenRes = await fetch('/api/soniox-token')
+          const tokenRes = await fetch('/api/soniox-token/', { method: 'POST', headers: await getAuthHeader() })
           if (tokenRes.ok) {
             const { apiKey } = await tokenRes.json()
 

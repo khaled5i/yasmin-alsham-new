@@ -69,7 +69,13 @@ interface EditOrderModalProps {
 }
 
 export default function EditOrderModal({ order: initialOrder, isOpen, onClose, onSave }: EditOrderModalProps) {
+  const voiceSessionRef = useRef({ id: initialOrder?.id, open: isOpen, version: 0 })
+  if (voiceSessionRef.current.id !== initialOrder?.id || voiceSessionRef.current.open !== isOpen) {
+    voiceSessionRef.current = { id: initialOrder?.id, open: isOpen, version: voiceSessionRef.current.version + 1 }
+  }
+  const voiceSessionVersion = voiceSessionRef.current.version
   const { t, isArabic } = useTranslation()
+  const voiceBusyRef = useRef(false)
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
   const initialDesignStateRef = useRef<{ annotations: string; drawings: string; comments: string; hasCustomImage: boolean }>({
     annotations: '[]',
@@ -573,7 +579,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
-    if (annotationRef.current?.isTranscribing()) {
+    if (voiceBusyRef.current || annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return
     }
@@ -776,7 +782,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
-    if (annotationRef.current?.isTranscribing()) {
+    if (voiceBusyRef.current || annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return
     }
@@ -1348,10 +1354,13 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                   </h3>
 
                   <UnifiedNotesInput
+                    key={`${order.id}:${voiceSessionVersion}`}
+                    isSessionActive={() => voiceSessionRef.current.open && voiceSessionRef.current.version === voiceSessionVersion}
                     notes={formData.notes}
                     voiceNotes={formData.voiceNotes}
                     onNotesChange={(notes) => handleInputChange('notes', notes)}
                     onVoiceNotesChange={handleVoiceNotesChange}
+                    onBusyChange={busy => { voiceBusyRef.current = busy }}
                     disabled={isSubmitting}
                   />
                 </div>

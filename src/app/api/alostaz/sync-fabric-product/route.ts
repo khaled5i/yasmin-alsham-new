@@ -42,12 +42,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'غير مصرّح - توكن غير صالح' }, { status: 401 })
     }
 
-    const { data: userData } = await supabase
+    // قرار الصلاحية يُتخذ بعميل الخادم بعد التحقق من التوكن، حتى لا يعتمد على
+    // سياسات القراءة في users، ومع فحص نشاط الحساب صراحةً: الحساب الموقوف
+    // الذي ما زال يحمل رمزاً صالحاً يجب أن يُرفض حتى لو كان دوره admin.
+    const { data: userData, error: roleError } = await getSupabaseAdmin()
       .from('users')
-      .select('role')
+      .select('role, is_active')
       .eq('id', user.id)
       .single()
-    if (userData?.role !== 'admin') {
+    if (roleError || !userData?.is_active) {
+      return NextResponse.json({ error: 'غير مسموح - الحساب غير نشط أو غير موجود' }, { status: 403 })
+    }
+    if (userData.role !== 'admin') {
       return NextResponse.json({ error: 'غير مسموح - للمدير فقط' }, { status: 403 })
     }
 

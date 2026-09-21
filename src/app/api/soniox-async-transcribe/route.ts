@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireActiveStaff } from '@/lib/server/api-auth'
 
 const SONIOX_API = 'https://api.soniox.com/v1'
 const MODEL = 'stt-async-v4'
 const POLL_INTERVAL_MS = 2000
 const MAX_WAIT_MS = 120_000
 
+// حدود المدخلات: الملف يُرفع إلى خدمة مدفوعة، فالحجم والنوع يُفحصان قبل الإرسال.
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024 // 25 ميغابايت
+const ALLOWED_AUDIO_PREFIX = 'audio/'
+
 export async function POST(request: NextRequest) {
+  // SEC-05: كان هذا المسار مفتوحاً للجميع، فأي شخص يفرّغ صوتاً على حساب المالك.
+  const auth = await requireActiveStaff(request)
+  if (!auth.ok) return auth.response
+
   const apiKey = process.env.SONIOX_API_KEY
   if (!apiKey) {
-    return NextResponse.json({ error: 'Soniox API key not configured' }, { status: 500 })
+    console.error('SONIOX_API_KEY is not configured')
+    return NextResponse.json({ error: 'خدمة التحويل الصوتي غير مهيأة' }, { status: 500 })
   }
 
   const headers = { Authorization: `Bearer ${apiKey}` }
@@ -21,6 +31,28 @@ export async function POST(request: NextRequest) {
 
     if (!audioFile) {
       return NextResponse.json({ error: 'No audio file provided' }, { status: 400 })
+    }
+
+    // حقل نصي بدل ملف: بلا هذا الفحص تصبح audioFile.size غير معرّفة فتتخطّى
+    // فحوص الحجم والنوع، ثم يرمي الرفع لاحقاً فيعود 500 بدل 400.
+    if (typeof audioFile === 'string' || typeof audioFile.arrayBuffer !== 'function') {
+      return NextResponse.json({ error: 'حقل الصوت ليس ملفاً' }, { status: 400 })
+    }
+
+    if (audioFile.size === 0) {
+      return NextResponse.json({ error: 'الملف الصوتي فارغ' }, { status: 400 })
+    }
+
+    if (audioFile.size > MAX_AUDIO_BYTES) {
+      return NextResponse.json(
+        { error: 'الملف الصوتي أكبر من الحد المسموح' },
+        { status: 413 }
+      )
+    }
+
+    // النوع يأتي من العميل فلا يُوثق به وحده، لكنه يردّ المدخلات الواضحة الخطأ.
+    if (audioFile.type && !audioFile.type.startsWith(ALLOWED_AUDIO_PREFIX)) {
+      return NextResponse.json({ error: 'نوع الملف غير مدعوم' }, { status: 415 })
     }
 
     // 1. رفع الملف الصوتي

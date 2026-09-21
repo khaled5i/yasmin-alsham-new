@@ -72,6 +72,8 @@ const getNextDesignViewTitle = (view: 'front' | 'back', comments: SavedDesignCom
 function AddAlterationContent() {
   const { user } = useAuthStore()
   const { t, isArabic } = useTranslation()
+  const voiceBusyRef = useRef(false)
+  const errorVoiceBusyRef = useRef(false)
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -546,6 +548,10 @@ function AddAlterationContent() {
       return
     }
 
+    if (voiceBusyRef.current || errorVoiceBusyRef.current || annotationRef.current?.isTranscribing()) {
+      toast.error('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار قبل حفظ الطلب.')
+      return
+    }
     setIsSubmitting(true)
 
     try {
@@ -741,6 +747,10 @@ function AddAlterationContent() {
       return
     }
 
+    if (voiceBusyRef.current || errorVoiceBusyRef.current || annotationRef.current?.isTranscribing()) {
+      toast.error('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار قبل حفظ الطلب.')
+      return
+    }
     setIsSubmitting(true)
 
     try {
@@ -1134,6 +1144,7 @@ function AddAlterationContent() {
               voiceNotes={formData.voiceNotes}
               onNotesChange={(notes) => handleInputChange('notes', notes)}
               onVoiceNotesChange={handleVoiceNotesChange}
+              onBusyChange={busy => { voiceBusyRef.current = busy }}
               appendTranscriptionToNotes={false}
               allowTranscriptionEditing
             />
@@ -1321,6 +1332,7 @@ function AddAlterationContent() {
                 voiceNotes={formData.errorVoiceNotes}
                 onNotesChange={(notes) => setFormData(prev => ({ ...prev, errorNotes: notes }))}
                 onVoiceNotesChange={handleErrorVoiceNotesChange}
+                onBusyChange={busy => { errorVoiceBusyRef.current = busy }}
                 disabled={isSubmitting}
                 placeholder={isArabic ? 'أضف ملاحظات إضافية حول سبب التعديل أو اضغط على المايكروفون...' : 'Add additional notes about the error or press the mic...'}
                 appendTranscriptionToNotes={false}

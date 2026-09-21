@@ -40,6 +40,7 @@ import type {
   OrderQualityReviewedAlteration,
   OrderQualityReviewStage,
 } from '@/types/order-quality-review'
+import { getAuthHeader } from '@/lib/client-auth'
 
 interface ReviewOrderSummary {
   id: string
@@ -580,7 +581,7 @@ export default function OrderQualityReviewModal({
 
       const form = new FormData()
       form.append('audio', uploadBlob, filename)
-      const response = await fetch('/api/soniox-async-transcribe/', { method: 'POST', body: form })
+      const response = await fetch('/api/soniox-async-transcribe/', { method: 'POST', headers: await getAuthHeader(), body: form })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body?.message || body?.error || response.statusText)
       const transcription = cleanTranscriptText(String(body?.text || ''))

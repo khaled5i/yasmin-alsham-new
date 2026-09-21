@@ -26,27 +26,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'غير مصرح - رمز دخول غير صالح' }, { status: 401 })
     }
 
-    const { data: currentUserData } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (currentUserData?.role !== 'admin') {
-      return NextResponse.json({ error: 'غير مصرح - للمدير فقط' }, { status: 403 })
-    }
-
-    // 2. قراءة البيانات المطلوبة
-    const { userId, email, password } = await request.json()
-
-    if (!userId) {
-      return NextResponse.json({ error: 'معرّف المستخدم مفقود' }, { status: 400 })
-    }
-
-    if (!email && !password) {
-      return NextResponse.json({ error: 'لا توجد بيانات للتحديث' }, { status: 400 })
-    }
-
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       console.error('❌ SUPABASE_SERVICE_ROLE_KEY is not defined')
       return NextResponse.json({ error: 'خطأ في إعدادات الخادم' }, { status: 500 })
@@ -62,6 +41,34 @@ export async function POST(request: NextRequest) {
         }
       }
     )
+
+    // قرار الصلاحية يُتخذ بعميل الخادم بعد التحقق من التوكن، حتى لا يعتمد على
+    // سياسات القراءة في users، ومع فحص نشاط الحساب صراحةً: الحساب الموقوف
+    // الذي ما زال يحمل رمزاً صالحاً يجب أن يُرفض حتى لو كان دوره admin.
+    const { data: currentUserData, error: roleError } = await supabaseAdmin
+      .from('users')
+      .select('role, is_active')
+      .eq('id', user.id)
+      .single()
+
+    if (roleError || !currentUserData?.is_active) {
+      return NextResponse.json({ error: 'غير مصرح - الحساب غير نشط أو غير موجود' }, { status: 403 })
+    }
+
+    if (currentUserData.role !== 'admin') {
+      return NextResponse.json({ error: 'غير مصرح - للمدير فقط' }, { status: 403 })
+    }
+
+    // 2. قراءة البيانات المطلوبة
+    const { userId, email, password } = await request.json()
+
+    if (!userId) {
+      return NextResponse.json({ error: 'معرّف المستخدم مفقود' }, { status: 400 })
+    }
+
+    if (!email && !password) {
+      return NextResponse.json({ error: 'لا توجد بيانات للتحديث' }, { status: 400 })
+    }
 
     // 3. تحديث Supabase Auth
     const authUpdates: { email?: string; email_confirm?: boolean; password?: string } = {}
