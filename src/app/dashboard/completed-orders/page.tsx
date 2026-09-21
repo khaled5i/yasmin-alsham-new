@@ -963,6 +963,8 @@ export default function CompletedOrdersPage() {
       <RemainingPaymentWarningModal
         isOpen={showPaymentWarning}
         remainingAmount={orderToDeliver?.remaining_amount || 0}
+        order={orderToDeliver}
+        onOrderUpdated={setOrderToDeliver}
         onCancel={() => {
           setShowPaymentWarning(false)
           setOrderToDeliver(null)

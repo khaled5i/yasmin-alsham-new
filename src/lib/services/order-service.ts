@@ -15,6 +15,7 @@ import { supabase, isSupabaseConfigured, ensureValidSession } from '../supabase'
 import { uploadOrderImages } from './storage-service'
 import { isVideoFile } from '@/lib/utils/media'
 import { notifyPayrollChanged } from '@/lib/payroll-display'
+import type { OrderExpense, OrderPriceAdjustment } from '@/lib/order-price-extras'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -53,6 +54,9 @@ const ORDER_LIST_COLUMNS = [
   'remaining_cash_amount',
   'remaining_network_amount',
   'deposit_amount',
+  // مصروفات الطلب + سجل تعديل السعر (migration 20260921120000)
+  'order_expenses',
+  'price_adjustments',
   'order_received_date',
   'status',
   'due_date',
@@ -236,6 +240,9 @@ export interface Order {
   remaining_cash_amount?: number | null
   remaining_network_amount?: number | null
   deposit_amount?: number | null
+  // مصروفات الطلب + سجل تعديل السعر (migration 20260921120000)
+  order_expenses?: OrderExpense[] | null
+  price_adjustments?: OrderPriceAdjustment[] | null
   order_received_date?: string
   status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date: string
@@ -315,6 +322,9 @@ export interface CreateOrderData {
   remaining_cash_amount?: number | null
   remaining_network_amount?: number | null
   deposit_amount?: number | null
+  // مصروفات الطلب + سجل تعديل السعر (migration 20260921120000)
+  order_expenses?: OrderExpense[] | null
+  price_adjustments?: OrderPriceAdjustment[] | null
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date: string
@@ -462,6 +472,9 @@ export interface UpdateOrderData {
   remaining_cash_amount?: number | null
   remaining_network_amount?: number | null
   deposit_amount?: number | null
+  // مصروفات الطلب + سجل تعديل السعر (migration 20260921120000)
+  order_expenses?: OrderExpense[] | null
+  price_adjustments?: OrderPriceAdjustment[] | null
   order_received_date?: string
   status?: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
   due_date?: string

@@ -90,6 +90,7 @@ export type AlostazSyncStatus = 'sending' | 'sent' | 'failed' | 'review_required
 export type IncomeEntryKind =
   | 'order_deposit'    // عربون عند استلام الطلب
   | 'order_delivery'   // الدفعة المحصّلة لحظة التسليم
+  | 'order_payment'    // دفعة أُضيفت لاحقاً من نافذة تعديل الطلب
   | 'manual_income'    // وارد مسجّل يدوياً
 
 export interface Income {
@@ -193,6 +194,7 @@ export interface FinancialSummary {
 export type CashBoxTransactionType =
   | 'order_deposit'
   | 'order_delivery'
+  | 'order_payment'
   | 'cash_income'
   | 'box_expense'
   | 'balance_adjustment'
@@ -230,6 +232,24 @@ export interface CreateCashBoxWithdrawalInput {
 export interface CreateCashBoxWithdrawalResult {
   withdrawal: CashBoxWithdrawal
   newBalance: number
+}
+
+export interface CashBoxAdvanceWorker {
+  id: string
+  name: string
+}
+
+/** سحب سلفة لعامل: يُسجَّل تلقائيًا دفعةَ راتب على شهر اليوم في قسم الرواتب */
+export interface CreateCashBoxWorkerAdvanceInput {
+  workerId: string
+  amount: number
+  /** معرّف ثابت للطلب يجعل إعادة المحاولة آمنة */
+  requestId: string
+  note?: string
+}
+
+export interface CreateCashBoxWorkerAdvanceResult extends CreateCashBoxWithdrawalResult {
+  workerName: string
 }
 
 // ============================================================================

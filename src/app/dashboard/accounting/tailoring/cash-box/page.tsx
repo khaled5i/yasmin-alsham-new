@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
@@ -30,6 +31,7 @@ import {
   RefreshCw,
   ShoppingBag,
   SlidersHorizontal,
+  UserRound,
   WalletCards,
   X,
 } from 'lucide-react'
@@ -39,16 +41,20 @@ import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import {
   getCashBoxBalance,
+  getCashBoxAdvanceWorkers,
   getCashBoxTransactions,
   withdrawFromCashBox,
+  withdrawWorkerAdvanceFromCashBox,
 } from '@/lib/services/simple-accounting-service'
 import {
   dispatchCashDrawerOpen,
   type CashDrawerWithdrawalVoucher,
 } from '@/lib/services/cash-drawer-service'
 import type {
+  CashBoxAdvanceWorker,
   CashBoxTransaction,
   CashBoxTransactionType,
+  CreateCashBoxWithdrawalResult,
 } from '@/types/simple-accounting'
 
 type MovementFilter = 'all' | 'in' | 'out'
@@ -85,6 +91,12 @@ const transactionAppearance: Record<
     iconClass: 'text-teal-700',
     containerClass: 'bg-teal-50 ring-teal-100',
     badge: 'عند التسليم',
+  },
+  order_payment: {
+    icon: Banknote,
+    iconClass: 'text-cyan-700',
+    containerClass: 'bg-cyan-50 ring-cyan-100',
+    badge: 'دفعة إضافية',
   },
   cash_income: {
     icon: CircleDollarSign,
@@ -127,11 +139,17 @@ function getErrorMessage(error: unknown): string {
   return 'حدث خطأ غير متوقع. حاول مرة أخرى.'
 }
 
+type WithdrawalKind = 'regular' | 'advance'
+
+type WithdrawalSubmission =
+  | { kind: 'regular'; amount: number; reason: string }
+  | { kind: 'advance'; amount: number; workerId: string; requestId: string; note: string }
+
 interface WithdrawalModalProps {
   balance: number
   submitting: boolean
   onClose: () => void
-  onSubmit: (amount: number, reason: string) => Promise<void>
+  onSubmit: (submission: WithdrawalSubmission) => Promise<void>
 }
 
 function WithdrawalModal({
@@ -140,10 +158,18 @@ function WithdrawalModal({
   onClose,
   onSubmit,
 }: WithdrawalModalProps) {
+  const [kind, setKind] = useState<WithdrawalKind>('regular')
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
+  const [workerId, setWorkerId] = useState('')
+  const [workers, setWorkers] = useState<CashBoxAdvanceWorker[] | null>(null)
+  const [workersError, setWorkersError] = useState('')
   const [error, setError] = useState('')
+  // معرّف ثابت لكل محاولة سلفة؛ يتجدد عند تغيير العامل أو المبلغ
+  const advanceRequestId = useRef<string | null>(null)
+  const isAdvance = kind === 'advance'
   const numericAmount = Number(amount)
+  const todayLabel = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' })
   const balanceAfter =
     Number.isFinite(numericAmount) && numericAmount > 0
       ? Math.max(0, balance - numericAmount)
@@ -157,6 +183,27 @@ function WithdrawalModal({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose, submitting])
 
+  useEffect(() => {
+    if (!isAdvance || workers !== null) return
+    let cancelled = false
+    getCashBoxAdvanceWorkers()
+      .then((list) => {
+        if (!cancelled) setWorkers(list)
+      })
+      .catch((loadError) => {
+        if (cancelled) return
+        setWorkers([])
+        setWorkersError(getErrorMessage(loadError))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isAdvance, workers])
+
+  useEffect(() => {
+    advanceRequestId.current = null
+  }, [amount, workerId])
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError('')
@@ -169,13 +216,28 @@ function WithdrawalModal({
       setError('قيمة السحب أكبر من الرصيد الموجود في الصندوق.')
       return
     }
-    if (reason.trim().length < 3) {
+    if (isAdvance && !workerId) {
+      setError('اختر العامل الذي استلم السلفة.')
+      return
+    }
+    if (!isAdvance && reason.trim().length < 3) {
       setError('اكتب سببًا واضحًا للسحب من 3 أحرف على الأقل.')
       return
     }
 
     try {
-      await onSubmit(numericAmount, reason.trim())
+      if (isAdvance) {
+        advanceRequestId.current ||= crypto.randomUUID()
+        await onSubmit({
+          kind: 'advance',
+          amount: numericAmount,
+          workerId,
+          requestId: advanceRequestId.current,
+          note: reason.trim(),
+        })
+      } else {
+        await onSubmit({ kind: 'regular', amount: numericAmount, reason: reason.trim() })
+      }
     } catch (submitError) {
       setError(getErrorMessage(submitError))
     }
@@ -227,6 +289,71 @@ function WithdrawalModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          <div
+            role="radiogroup"
+            aria-label="نوع السحب"
+            className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1.5"
+          >
+            {(
+              [
+                { value: 'regular', label: 'سحب عادي', icon: HandCoins },
+                { value: 'advance', label: 'سحب سلفة', icon: UserRound },
+              ] as const
+            ).map((option) => {
+              const Icon = option.icon
+              const active = kind === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={submitting}
+                  onClick={() => {
+                    setKind(option.value)
+                    setError('')
+                  }}
+                  className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-black transition disabled:opacity-60 ${
+                    active
+                      ? 'bg-white text-stone-950 shadow-sm ring-1 ring-stone-200'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {isAdvance ? (
+            <div>
+              <label htmlFor="withdrawal-worker" className="mb-2 block text-sm font-black text-stone-800">
+                العامل <span className="text-rose-600">*</span>
+              </label>
+              <select
+                id="withdrawal-worker"
+                value={workerId}
+                onChange={(event) => setWorkerId(event.target.value)}
+                disabled={submitting || workers === null}
+                required
+                className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3.5 text-sm font-bold text-stone-900 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-200 disabled:opacity-60"
+              >
+                <option value="">
+                  {workers === null ? 'جارٍ تحميل العمال...' : 'اختر العامل'}
+                </option>
+                {(workers || []).map((worker) => (
+                  <option key={worker.id} value={worker.id}>
+                    {worker.name}
+                  </option>
+                ))}
+              </select>
+              {workersError ? (
+                <p className="mt-2 text-xs font-bold text-rose-600">{workersError}</p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-3 rounded-2xl border border-stone-200 bg-white p-4">
             <div>
               <p className="text-xs font-bold text-stone-500">الرصيد الحالي</p>
@@ -266,7 +393,15 @@ function WithdrawalModal({
           <div>
             <div className="mb-2 flex items-center justify-between">
               <label htmlFor="withdrawal-reason" className="text-sm font-black text-stone-800">
-                سبب السحب <span className="text-rose-600">*</span>
+                {isAdvance ? (
+                  <>
+                    ملاحظة <span className="text-xs font-bold text-stone-400">(اختياري)</span>
+                  </>
+                ) : (
+                  <>
+                    سبب السحب <span className="text-rose-600">*</span>
+                  </>
+                )}
               </label>
               <span className="text-xs text-stone-400">{reason.length}/500</span>
             </div>
@@ -275,9 +410,9 @@ function WithdrawalModal({
               value={reason}
               onChange={(event) => setReason(event.target.value.slice(0, 500))}
               disabled={submitting}
-              required
-              rows={3}
-              placeholder="مثال: تسليم عهدة نقدية للإدارة"
+              required={!isAdvance}
+              rows={isAdvance ? 2 : 3}
+              placeholder={isAdvance ? 'مثال: طلب العامل سلفة لظرف طارئ' : 'مثال: تسليم عهدة نقدية للإدارة'}
               className="w-full resize-none rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-amber-400 focus:ring-2 focus:ring-amber-200 disabled:opacity-60"
             />
           </div>
@@ -285,7 +420,9 @@ function WithdrawalModal({
           <div className="flex items-center gap-3 rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-600">
             <CalendarClock className="h-5 w-5 shrink-0 text-stone-500" />
             <p>
-              سيُسجّل التاريخ والوقت تلقائيًا، ثم يُرسل أمر فتح الدرج بعد نجاح الحفظ.
+              {isAdvance
+                ? `ستُسجَّل السلفة دفعةً على راتب العامل في قسم الرواتب بملاحظة «سحب من الصندوق بتاريخ ${todayLabel}»، ثم يُرسل أمر فتح الدرج.`
+                : 'سيُسجّل التاريخ والوقت تلقائيًا، ثم يُرسل أمر فتح الدرج بعد نجاح الحفظ.'}
             </p>
           </div>
 
@@ -309,12 +446,12 @@ function WithdrawalModal({
             {submitting ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />
-                جارٍ تسجيل السحب...
+                {isAdvance ? 'جارٍ تسجيل السلفة...' : 'جارٍ تسجيل السحب...'}
               </>
             ) : (
               <>
                 <HandCoins className="h-5 w-5" />
-                تسجيل السحب وفتح الدرج
+                {isAdvance ? 'تسجيل السلفة وفتح الدرج' : 'تسجيل السحب وفتح الدرج'}
               </>
             )}
           </button>
@@ -387,15 +524,29 @@ function CashBoxContent() {
     return { incoming, outgoing, count }
   }, [todayKey, transactions])
 
-  const handleWithdrawal = async (amount: number, reason: string) => {
+  const handleWithdrawal = async (submission: WithdrawalSubmission) => {
     setSubmitting(true)
 
     try {
-      const result = await withdrawFromCashBox({
-        branch: 'tailoring',
-        amount,
-        reason,
-      })
+      let result: CreateCashBoxWithdrawalResult
+      let successMessage: string
+      if (submission.kind === 'advance') {
+        const advance = await withdrawWorkerAdvanceFromCashBox({
+          workerId: submission.workerId,
+          amount: submission.amount,
+          requestId: submission.requestId,
+          note: submission.note,
+        })
+        result = advance
+        successMessage = `تم تسجيل سلفة ${formatCurrency(advance.withdrawal.amount)} للعامل ${advance.workerName} وإضافتها في الرواتب`
+      } else {
+        result = await withdrawFromCashBox({
+          branch: 'tailoring',
+          amount: submission.amount,
+          reason: submission.reason,
+        })
+        successMessage = `تم تسجيل سحب ${formatCurrency(result.withdrawal.amount)} بنجاح`
+      }
 
       const voucher: CashDrawerWithdrawalVoucher = {
         withdrawalId: result.withdrawal.id,
@@ -421,10 +572,7 @@ function CashBoxContent() {
       ])
       setShowWithdrawalModal(false)
       setDrawerRetry(null)
-      toast.success(
-        `تم تسجيل سحب ${formatCurrency(result.withdrawal.amount)} بنجاح`,
-        { icon: '✅' }
-      )
+      toast.success(successMessage, { icon: '✅' })
 
       try {
         await dispatchCashDrawerOpen(voucher)

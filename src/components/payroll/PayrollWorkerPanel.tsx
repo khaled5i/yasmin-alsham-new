@@ -225,7 +225,18 @@ export default function PayrollWorkerPanel({
       setError(t('اختر تاريخًا ضمن الشهر المعروض.', 'Choose a date within the displayed month.'))
       return
     }
-    if (form !== 'debt' && paymentAmount + deductionAmount > available + 0.009) {
+    // الدفعة النقدية مسموحة فوق المستحق (عامل القطعة مستحقه صفر أول الشهر)؛
+    // الخصم والتسوية وحدهما لا يتجاوزان المتاح.
+    if (form === 'payment' && deductionAmount > available + 0.009) {
+      setError(
+        t(
+          'الخصم أكبر من المستحق المتاح لهذا الشهر.',
+          'The deduction exceeds the available entitlement for this month.'
+        )
+      )
+      return
+    }
+    if (form === 'settlement' && paymentAmount > available + 0.009) {
       setError(
         t(
           'المبلغ أكبر من المستحق المتاح. لتسجيل مبلغ مستقل استخدم إضافة دين.',
@@ -439,7 +450,6 @@ export default function PayrollWorkerPanel({
             {!form && admin && (
               <button
                 className={`${payrollPrimary} w-full sm:w-auto`}
-                disabled={values.remaining <= 0.009 || !row}
                 onClick={() => startForm('payment')}
               >
                 <Wallet className="h-4 w-4" />
@@ -582,6 +592,14 @@ export default function PayrollWorkerPanel({
                   required={deductionAmount <= 0}
                 />
               </label>
+              {form === 'payment' && !full && paymentAmount > availablePayment + 0.009 && (
+                <p className="rounded-xl bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+                  {t(
+                    `الدفعة أكبر من المستحق الحالي (${money(availablePayment)}). سيصبح المتبقي بالسالب ويُعوَّض تلقائيًا مما يُضاف لاحقًا من راتب أو تسعير قطع.`,
+                    `This payment exceeds the current entitlement (${money(availablePayment)}). The remaining balance goes negative and is offset by later salary or priced work.`
+                  )}
+                </p>
+              )}
               {form === 'payment' && (
                 <div className="space-y-3 rounded-xl bg-stone-50 p-3">
                   <div className="grid gap-3 sm:grid-cols-2 sm:items-center">
@@ -644,7 +662,7 @@ export default function PayrollWorkerPanel({
                   </p>
                 </div>
               )}
-              {form !== 'debt' && (
+              {form !== 'debt' && (full || availablePayment > 0.009) && (
                 <button
                   type="button"
                   className="flex min-h-11 items-center gap-2 text-sm font-semibold text-teal-800"

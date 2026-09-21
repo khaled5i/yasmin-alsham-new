@@ -408,6 +408,8 @@ export default function NotificationsPage() {
     if (updates.description !== undefined) supabaseUpdates.description = updates.description
     if (updates.fabric !== undefined) supabaseUpdates.fabric = updates.fabric
     if (updates.price !== undefined) supabaseUpdates.price = updates.price
+    // مصروفات الطلب (migration 20260921120000) — السعر أعلاه يشملها
+    if (updates.order_expenses !== undefined) supabaseUpdates.order_expenses = updates.order_expenses
     if (updates.fabric_type !== undefined) supabaseUpdates.fabric_type = updates.fabric_type
     if (updates.needs_review !== undefined) supabaseUpdates.needs_review = updates.needs_review
     if (updates.is_pre_booking !== undefined) supabaseUpdates.is_pre_booking = updates.is_pre_booking

@@ -18,7 +18,10 @@ import {
   Banknote,
   CreditCard,
   PlusCircle,
-  WalletCards
+  WalletCards,
+  Receipt,
+  Trash2,
+  History
 } from 'lucide-react'
 import { openWhatsApp } from '@/utils/whatsapp'
 import { shiftDate, DUE_DATE_BACKDATE_DAYS } from '@/lib/date-utils'
@@ -32,9 +35,19 @@ import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignCo
 import DesignSummarySection from './DesignSummarySection'
 import { Order, orderService } from '@/lib/services/order-service'
 import { issueOrderPaymentReceipt } from '@/lib/services/order-payment-receipt'
+import { recordOrderAdditionalPayment } from '@/lib/services/simple-accounting-service'
 import type { AdditionalOrderPaymentReceipt } from '@/lib/print-tailoring-receipt'
 import { WorkerWithUser } from '@/lib/services/worker-service'
 import { useTranslation } from '@/hooks/useTranslation'
+import {
+  type OrderExpense,
+  createPriceExtraId,
+  describePriceAdjustment,
+  formatAdjustmentDate,
+  getOrderPriceBreakdown,
+  roundMoney,
+  sumOrderExpenses
+} from '@/lib/order-price-extras'
 
 const createPaymentId = () =>
   typeof globalThis.crypto?.randomUUID === 'function'
@@ -133,6 +146,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
   const [newPaymentAmount, setNewPaymentAmount] = useState('')
   const [newPaymentMethod, setNewPaymentMethod] = useState<'cash' | 'card' | null>(null)
   const [pendingPayment, setPendingPayment] = useState<AdditionalOrderPaymentReceipt | null>(null)
+  // مصروفات الطلب (migration 20260921120000): تُضاف فوق السعر الأساسي
+  const [expenses, setExpenses] = useState<OrderExpense[]>([])
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false)
+  const [newExpenseAmount, setNewExpenseAmount] = useState('')
+  const [newExpenseNote, setNewExpenseNote] = useState('')
 
   // Fetch full order data when opened with lightweight-loaded order
   useEffect(() => {
@@ -182,6 +200,8 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       // custom_design_image: أولاً من العمود المستقل (migration 33)، ثم fallback لـ measurements
       const customImage = orderAny.custom_design_image || measurements?.custom_design_image || null
       const currentPaidAmount = Number(order.paid_amount) || 0
+      // حقل السعر يعرض السعر الأساسي؛ المصروفات تُجمع فوقه عند الحفظ
+      const priceBreakdown = getOrderPriceBreakdown(order)
       const storedPreDeliveryCash = Math.max(0, Number(order.pre_delivery_cash_amount) || 0)
       const storedPreDeliveryNetwork = Math.max(0, Number(order.pre_delivery_network_amount) || 0)
       const hasValidStoredPreDeliveryAmounts =
@@ -228,7 +248,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         clientPhone: order.client_phone,
         description: order.description || '',
         fabric: order.fabric || '',
-        price: order.price.toString(),
+        price: priceBreakdown.basePrice.toString(),
         paidAmount: currentPaidAmount.toString(),
         paymentMethod: normalizedPaymentMethod,
         preDeliveryCashAmount,
@@ -254,6 +274,10 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       setNewPaymentAmount('')
       setNewPaymentMethod(null)
       setPendingPayment(null)
+      setExpenses(priceBreakdown.expenses)
+      setShowAddExpenseModal(false)
+      setNewExpenseAmount('')
+      setNewExpenseNote('')
 
       // نحفظ نسخة من التعليقات بدون compositeImage لأنها كبيرة ولا تفيد في المقارنة
       const commentsForComparison = savedComments.map((c: any) => {
@@ -280,12 +304,18 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
     }
   }, [order])
 
+  // السعر الكلي = السعر الأساسي + المصروفات
+  const expensesTotal = useMemo(() => sumOrderExpenses(expenses), [expenses])
+  const totalPrice = roundMoney((Number(formData.price) || 0) + expensesTotal)
+  const priceAdjustments = useMemo(() => getOrderPriceBreakdown(order).adjustments, [order])
+  const canAddExpenses = order?.status !== 'delivered' && order?.status !== 'cancelled'
+  const parsedNewExpenseAmount = roundMoney(Number(newExpenseAmount) || 0)
+
   // حساب المبلغ المتبقي
   const remainingAmount = useMemo(() => {
-    const price = Number(formData.price) || 0
     const paidAmount = Number(formData.paidAmount) || 0
-    return Math.max(0, price - paidAmount)
-  }, [formData.price, formData.paidAmount])
+    return Math.max(0, totalPrice - paidAmount)
+  }, [totalPrice, formData.paidAmount])
   const hasReceivedPayment = (Number(formData.paidAmount) || 0) > 0
   const parsedNewPaymentAmount =
     Math.round(((Number(newPaymentAmount) || 0) + Number.EPSILON) * 100) / 100
@@ -348,6 +378,32 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
     setNewPaymentMethod(null)
     toast.success('تمت إضافة الدفعة؛ اضغط تحديث الطلب لحفظها وطباعة فاتورتها')
   }, [newPaymentAmount, newPaymentMethod, remainingAmount])
+
+  const openAddExpenseModal = useCallback(() => {
+    setNewExpenseAmount('')
+    setNewExpenseNote('')
+    setShowAddExpenseModal(true)
+  }, [])
+
+  const confirmAddExpense = useCallback(() => {
+    const amount = roundMoney(Number(newExpenseAmount) || 0)
+    if (amount <= 0) {
+      toast.error('يرجى إدخال مبلغ المصروف')
+      return
+    }
+    setExpenses(prev => [
+      ...prev,
+      { id: createPriceExtraId(), amount, note: newExpenseNote.trim(), created_at: new Date().toISOString() }
+    ])
+    setShowAddExpenseModal(false)
+    setNewExpenseAmount('')
+    setNewExpenseNote('')
+    toast.success('تمت إضافة المصروف إلى سعر الطلب؛ اضغط تحديث الطلب لحفظه')
+  }, [newExpenseAmount, newExpenseNote])
+
+  const removeExpense = useCallback((expenseId: string) => {
+    setExpenses(prev => prev.filter(expense => expense.id !== expenseId))
+  }, [])
 
   // معالجة تغيير الحقول
   const handleInputChange = useCallback((field: string, value: string | string[] | DesignSummaryNote[] | null) => {
@@ -584,6 +640,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
+    if (totalPrice + 0.005 < (Number(formData.paidAmount) || 0)) {
+      setSaveError('السعر الكلي للطلب (مع المصروفات) أقل من المبلغ المدفوع')
+      return
+    }
+
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -605,7 +666,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       }))
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
-      const price = Number(formData.price)
+      const price = totalPrice
       const paidAmount = Number(formData.paidAmount) || 0
 
       // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
@@ -675,6 +736,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         // إرسال null بدلاً من undefined للحقول النصية القابلة للحذف (للتأكد من حفظ الحذف في قاعدة البيانات)
         fabric: formData.fabric || null,
         price: price,
+        order_expenses: expenses,
         payment_method: formData.paymentMethod,
         order_received_date: formData.orderReceivedDate,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
@@ -712,10 +774,42 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
             throw new Error(refreshedOrder.error || 'تعذّر تحميل الطلب بعد حفظ الدفعة')
           }
 
+          // سجل الدفعة المستقل: يُظهرها بتاريخها في سجل الصندوق والواردات.
+          // فشله لا يوقف الفوترة؛ يبقى المبلغ محسوباً ضمن العربون كما كان سابقاً.
+          const paymentRecord = {
+            paymentId: pendingPayment.id,
+            orderId: order.id,
+            amount: pendingPayment.amount,
+            method: pendingPayment.method,
+            occurredAt: pendingPayment.receivedAt,
+          }
+          let paymentRecorded = false
+          try {
+            await recordOrderAdditionalPayment(paymentRecord)
+            paymentRecorded = true
+          } catch (recordError) {
+            console.error('⚠️ Failed to record additional payment:', recordError)
+            toast(
+              `حُفظت الدفعة على الطلب لكنها لم تُسجَّل كحركة مستقلة في الصندوق/الواردات: ${
+                recordError instanceof Error ? recordError.message : ''
+              }`,
+              { icon: '⚠️' }
+            )
+          }
+
           const receiptResult = await issueOrderPaymentReceipt(
             refreshedOrder.data,
             pendingPayment
           )
+
+          if (paymentRecorded && pendingPayment.method === 'card' && receiptResult.invoiceCode) {
+            await recordOrderAdditionalPayment({
+              ...paymentRecord,
+              alostazInvoiceCode: receiptResult.invoiceCode,
+            }).catch((codeError) => {
+              console.error('⚠️ Failed to attach Alostaz code to payment:', codeError)
+            })
+          }
 
           if (pendingPayment.method === 'card' && !receiptResult.accountingAlreadySent) {
             toast.success(`تم إرسال دفعة الشبكة للمحاسبة — ${receiptResult.invoiceCode}`)
@@ -787,6 +881,11 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
+    if (totalPrice + 0.005 < (Number(formData.paidAmount) || 0)) {
+      setSaveError('السعر الكلي للطلب (مع المصروفات) أقل من المبلغ المدفوع')
+      return
+    }
+
     setIsSubmitting(true)
     setSaveError(null)
 
@@ -808,7 +907,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       }))
 
       // تحويل السعر والدفعة المستلمة إلى أرقام
-      const price = Number(formData.price)
+      const price = totalPrice
       const paidAmount = Number(formData.paidAmount) || 0
 
       // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
@@ -875,6 +974,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
         // إرسال null بدلاً من undefined للحقول النصية القابلة للحذف (للتأكد من حفظ الحذف في قاعدة البيانات)
         fabric: formData.fabric || null,
         price: price,
+        order_expenses: expenses,
         payment_method: formData.paymentMethod,
         order_received_date: formData.orderReceivedDate,
         due_date: shiftDate(formData.dueDate, -DUE_DATE_BACKDATE_DAYS),
@@ -1087,11 +1187,26 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
 
                     {/* 7. السعر */}
                     <div>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          {expenses.length > 0 ? 'السعر الأساسي (ر.س) *' : t('price_sar')}
+                        </label>
+                        {canAddExpenses && (
+                          <button
+                            type="button"
+                            onClick={openAddExpenseModal}
+                            disabled={isSubmitting}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-pink-600 transition-colors hover:text-pink-700 disabled:cursor-not-allowed disabled:text-gray-400"
+                          >
+                            <PlusCircle className="h-4 w-4" />
+                            <span>إضافة مصروفات للطلب</span>
+                          </button>
+                        )}
+                      </div>
                       <NumericInput
                         value={formData.price}
                         onChange={(value) => handleInputChange('price', value)}
                         type="price"
-                        label={t('price_sar')}
                         placeholder="0"
                         required
                         disabled={isSubmitting}
@@ -1135,6 +1250,87 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                         {remainingAmount.toFixed(2)} {t('sar')}
                       </div>
                     </div>
+
+                    {/* تفصيل السعر: الأساسي + المصروفات = الكلي */}
+                    {expenses.length > 0 && (
+                      <div className="col-span-2 sm:col-span-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3 sm:p-4">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-900">
+                          <Receipt className="h-4 w-4" />
+                          <span>مصروفات الطلب</span>
+                        </div>
+                        <ul className="space-y-2">
+                          {expenses.map(expense => (
+                            <li
+                              key={expense.id}
+                              className="flex items-start justify-between gap-3 rounded-lg border border-amber-100 bg-white px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-semibold text-gray-800" dir="ltr">
+                                  {expense.amount.toFixed(2)} {t('sar')}
+                                </p>
+                                {expense.note && (
+                                  <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-gray-600">{expense.note}</p>
+                                )}
+                              </div>
+                              {canAddExpenses && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeExpense(expense.id)}
+                                  disabled={isSubmitting}
+                                  aria-label="حذف المصروف"
+                                  className="shrink-0 rounded-lg p-1.5 text-red-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-3 grid grid-cols-3 gap-2 border-t border-amber-200 pt-3 text-center text-xs sm:text-sm">
+                          <div>
+                            <p className="text-gray-500">السعر الأساسي</p>
+                            <p className="mt-0.5 font-bold text-gray-800" dir="ltr">
+                              {(Number(formData.price) || 0).toFixed(2)} {t('sar')}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500">المصروفات</p>
+                            <p className="mt-0.5 font-bold text-amber-700" dir="ltr">
+                              + {expensesTotal.toFixed(2)} {t('sar')}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500">السعر الكلي</p>
+                            <p className="mt-0.5 font-bold text-pink-700" dir="ltr">
+                              {totalPrice.toFixed(2)} {t('sar')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* سجل تعديل سعر الطلب (من نافذة تنبيه الدفعة المتبقية) */}
+                    {priceAdjustments.length > 0 && (
+                      <div className="col-span-2 sm:col-span-3 rounded-xl border border-violet-200 bg-violet-50/70 p-3 sm:p-4">
+                        <div className="mb-2 flex items-center gap-2 text-sm font-bold text-violet-900">
+                          <History className="h-4 w-4" />
+                          <span>تنبيه: تم تعديل سعر هذا الطلب</span>
+                        </div>
+                        <ul className="space-y-2">
+                          {priceAdjustments.map(adjustment => (
+                            <li key={adjustment.id} className="rounded-lg border border-violet-100 bg-white px-3 py-2 text-xs text-gray-700">
+                              <p className="font-medium">{describePriceAdjustment(adjustment)}</p>
+                              {adjustment.reason && (
+                                <p className="mt-1 whitespace-pre-wrap break-words text-gray-600">السبب: {adjustment.reason}</p>
+                              )}
+                              <p className="mt-1 text-[11px] text-gray-400">
+                                {[formatAdjustmentDate(adjustment.created_at), adjustment.created_by_name].filter(Boolean).join(' • ')}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                     {/* الصف الأخير: طريقة الدفع | هل يوجد بروفا ثانية */}
                     <div className="col-span-2 sm:col-span-3">
@@ -1612,6 +1808,137 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                 >
                   <PlusCircle className="h-5 w-5" />
                   <span>إضافة الدفعة</span>
+                </button>
+              </div>
+            </motion.form>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAddExpenseModal ? (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+              onClick={() => setShowAddExpenseModal(false)}
+            />
+            <motion.form
+              initial={{ opacity: 0, scale: 0.94, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 18 }}
+              onSubmit={(event) => {
+                event.preventDefault()
+                confirmAddExpense()
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-expense-title"
+              className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            >
+              <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-5 text-white">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-white/15 p-2.5">
+                      <Receipt className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 id="add-expense-title" className="text-lg font-bold">إضافة مصروفات للطلب</h3>
+                      <p className="mt-0.5 text-xs text-amber-50">
+                        ستُضاف إلى السعر الإجمالي للطلب
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddExpenseModal(false)}
+                    aria-label="إغلاق"
+                    className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-5 p-5">
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-center">
+                  <div>
+                    <p className="text-xs text-gray-500">السعر الكلي حاليًا</p>
+                    <p className="mt-1 font-bold text-gray-800" dir="ltr">
+                      {totalPrice.toFixed(2)} {t('sar')}
+                    </p>
+                  </div>
+                  <div className="border-r border-gray-200">
+                    <p className="text-xs text-gray-500">المصروفات الحالية</p>
+                    <p className="mt-1 font-bold text-amber-600" dir="ltr">
+                      {expensesTotal.toFixed(2)} {t('sar')}
+                    </p>
+                  </div>
+                </div>
+
+                <NumericInput
+                  id="new-expense-amount"
+                  value={newExpenseAmount}
+                  onChange={setNewExpenseAmount}
+                  type="price"
+                  label="مبلغ المصروف"
+                  placeholder="0.00"
+                />
+
+                <div>
+                  <label htmlFor="new-expense-note" className="mb-2 block text-sm font-semibold text-gray-700">
+                    ملاحظات
+                  </label>
+                  <textarea
+                    id="new-expense-note"
+                    value={newExpenseNote}
+                    onChange={(event) => setNewExpenseNote(event.target.value)}
+                    rows={3}
+                    maxLength={500}
+                    placeholder="مثال: إكسسوارات إضافية، تطريز، توصيل..."
+                    className="w-full resize-none rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-transparent focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                {parsedNewExpenseAmount > 0 ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium text-gray-600">السعر الكلي بعد الإضافة</span>
+                      <span className="font-bold text-amber-700" dir="ltr">
+                        {roundMoney(totalPrice + parsedNewExpenseAmount).toFixed(2)} {t('sar')}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between gap-3">
+                      <span className="font-medium text-gray-600">المتبقي بعد الإضافة</span>
+                      <span className="font-bold text-orange-600" dir="ltr">
+                        {roundMoney(remainingAmount + parsedNewExpenseAmount).toFixed(2)} {t('sar')}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                <p className="text-center text-xs text-gray-500">
+                  بعد الإضافة اضغط «تحديث الطلب» لحفظ المصروف في الطلب.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 border-t border-gray-100 bg-gray-50 p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddExpenseModal(false)}
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-700 transition hover:bg-gray-100"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={parsedNewExpenseAmount <= 0}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 font-semibold text-white shadow-md transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
+                >
+                  <PlusCircle className="h-5 w-5" />
+                  <span>إضافة المصروف</span>
                 </button>
               </div>
             </motion.form>

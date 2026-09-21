@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  CalendarClock,
   Check,
   CheckCircle2,
   ClipboardCheck,
@@ -41,6 +42,7 @@ import type {
   OrderQualityReviewStage,
 } from '@/types/order-quality-review'
 import { getAuthHeader } from '@/lib/client-auth'
+import { extractDateKey, formatGregorianDate, shiftDate } from '@/lib/date-utils'
 
 interface ReviewOrderSummary {
   id: string
@@ -50,6 +52,9 @@ interface ReviewOrderSummary {
   images?: string[] | null
   admin_confirmed?: boolean | null
   has_second_proof?: boolean | null
+  proof_delivery_date?: string | null
+  second_proof_date?: string | null
+  due_date?: string | null
 }
 
 interface Props {
@@ -152,7 +157,11 @@ const COPY = {
     reviewedBy: 'تمت المراجعة بواسطة',
     retest: 'إعادة الاختبار',
     whatsappTitle: 'إرسال تذكير للزبونة',
-    whatsappHelp: 'يمكنك الآن فتح واتساب وإرسال تذكير بالحضور.',
+    whatsappHelp: 'حدّد موعد حضور الزبونة ثم افتح واتساب لإرسال الرسالة.',
+    appointmentTitle: 'موعد الزبونة',
+    appointmentDate: 'التاريخ',
+    appointmentTime: 'الساعة',
+    appointmentRequired: 'حدّد التاريخ والساعة قبل إرسال الرسالة.',
     sendWhatsApp: 'فتح واتساب وإرسال التذكير',
     readyWhatsappTitle: 'إرسال رسالة جاهز للاستلام',
     readyWhatsappHelp: 'سيتم استخدام نفس قالب واتساب الموجود في صفحة الطلبات المكتملة وتسجيل الرسالة كمرسلة.',
@@ -234,7 +243,11 @@ const COPY = {
     reviewedBy: 'Reviewed by',
     retest: 'Repeat test',
     whatsappTitle: 'Send a customer reminder',
-    whatsappHelp: 'You can now open WhatsApp and remind the customer to attend.',
+    whatsappHelp: 'Set the customer appointment, then open WhatsApp to send the message.',
+    appointmentTitle: 'Customer appointment',
+    appointmentDate: 'Date',
+    appointmentTime: 'Time',
+    appointmentRequired: 'Set the date and time before sending the message.',
     sendWhatsApp: 'Open WhatsApp and send reminder',
     readyWhatsappTitle: 'Send ready-for-pickup message',
     readyWhatsappHelp: 'The completed-orders WhatsApp template will be used and the message will be marked as sent.',
@@ -393,6 +406,27 @@ function translateReviewError(error: string, language: 'ar' | 'en') {
   return match ? REVIEW_ERROR_MESSAGES[match][language] : error
 }
 
+/** الموعد المحدد مسبقاً للبروفا — القيمة الافتراضية لتاريخ موعد الزبونة */
+function getScheduledProofDate(order: ReviewOrderSummary, stage: OrderQualityReviewStage): string {
+  if (stage === 'first_proof') return order.proof_delivery_date ? extractDateKey(order.proof_delivery_date) : ''
+  if (stage === 'second_proof') {
+    // نفس الحساب المعروض في صفحة الطلبات: الموعد المُعدّل يدوياً وإلا due_date − 1
+    if (order.second_proof_date) return extractDateKey(order.second_proof_date)
+    return shiftDate(order.due_date, -1)
+  }
+  return ''
+}
+
+/** "17:30" → "5:30 مساءً" / "5:30 PM" */
+function formatAppointmentTime(time: string, isArabic: boolean): string {
+  const [hoursText, minutesText = '00'] = time.split(':')
+  const hours = Number(hoursText)
+  if (!Number.isFinite(hours)) return time
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12
+  const period = hours < 12 ? (isArabic ? 'صباحاً' : 'AM') : (isArabic ? 'مساءً' : 'PM')
+  return `${hour12}:${minutesText.padStart(2, '0')} ${period}`
+}
+
 function normalizeWhatsAppPhone(phone: string) {
   const digits = phone.replace(/\D/g, '')
   if (digits.startsWith('966')) return digits
@@ -428,6 +462,9 @@ export default function OrderQualityReviewModal({
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null)
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false)
   const [isWhatsAppSent, setIsWhatsAppSent] = useState(false)
+  // موعد حضور الزبونة للبروفا — يدخل في رسالة واتساب فقط ولا يُحفظ في الطلب
+  const [appointmentDate, setAppointmentDate] = useState('')
+  const [appointmentTime, setAppointmentTime] = useState('')
   const loadRequestRef = useRef(0)
 
   const measurementRows = useMemo(() => getMeasurementRows(measurementsData), [measurementsData])
@@ -505,6 +542,8 @@ export default function OrderQualityReviewModal({
     setLatestReview(null)
     setPreviousAlterations([])
     setIsWhatsAppSent(order.admin_confirmed === true)
+    setAppointmentDate(getScheduledProofDate(order, stage))
+    setAppointmentTime('')
 
     const alterationTypeToReview = getPreviousAlterationType(stage, order.has_second_proof === true)
 
@@ -693,16 +732,30 @@ export default function OrderQualityReviewModal({
     }
 
     const phone = normalizeWhatsAppPhone(order.client_phone)
-    if (!phone) return
+    if (!phone || !appointmentDate || !appointmentTime) return
 
-    const actionAr = `للحضور وقياس ${stage === 'first_proof' ? 'البروفا الأولى' : 'البروفا الثانية'}`
-    const actionEn = `to attend your ${stage === 'first_proof' ? 'first' : 'second'} proof fitting`
+    const clientName = order.client_name || ''
+    const formattedTime = formatAppointmentTime(appointmentTime, isArabic)
+    const formattedDate = formatGregorianDate(
+      appointmentDate,
+      isArabic ? 'ar-SA-u-nu-latn' : 'en-GB',
+      { weekday: 'long', day: 'numeric', month: 'long' }
+    )
     const message = isArabic
-      ? `مرحباً ${order.client_name || ''}،\nنذكّرك ${actionAr} في ياسمين الشام.\nرقم الطلب: ${order.order_number || order.id}`
-      : `Hello ${order.client_name || ''},\nThis is a reminder ${actionEn} at Yasmin Al Sham.\nOrder: ${order.order_number || order.id}`
+      ? `السلام عليكم ${clientName}\n`
+        + `بروفتك ${stage === 'first_proof' ? 'الأولى' : 'الثانية'} جاهزة في القسم النسائي\n`
+        + `يرجى إحضار الكعب والمشد والستيان الخاص بك لضبط المقاسات\n`
+        + `موعدك يوم ${formattedDate} في الساعة ${formattedTime}\n`
+        + `يرجى الحضور في الموعد المحدد لضمان تقديم أفضل خدمة`
+      : `Hello ${clientName}\n`
+        + `Your ${stage === 'first_proof' ? 'first' : 'second'} proof is ready in the women's section\n`
+        + `Please bring your heels, corset and bra for accurate fitting\n`
+        + `Your appointment is on ${formattedDate} at ${formattedTime}\n`
+        + `Please arrive on time so we can give you the best service`
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
 
+  const isProofStage = stage === 'first_proof' || stage === 'second_proof'
   const directionIcon = isArabic ? ArrowLeft : ArrowRight
   const PreviousIcon = isArabic ? ArrowRight : ArrowLeft
   const NextIcon = directionIcon
@@ -1291,10 +1344,45 @@ export default function OrderQualityReviewModal({
                   <p className="mt-1 text-sm text-slate-600">
                     {stage === 'final_dress' || stage === 'post_delivery' ? copy.readyWhatsappHelp : copy.whatsappHelp}
                   </p>
+                  {isProofStage ? (
+                    <div className="mt-5 rounded-2xl border border-stone-200 bg-white p-4 text-start">
+                      <p className="flex items-center gap-2 text-sm font-black text-slate-900">
+                        <CalendarClock className="h-4 w-4 text-[#6f2034]" /> {copy.appointmentTitle}
+                      </p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="text-xs font-bold text-stone-500">{copy.appointmentDate}</span>
+                          <input
+                            type="date"
+                            value={appointmentDate}
+                            onChange={event => setAppointmentDate(event.target.value)}
+                            className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm font-semibold text-slate-800 focus:border-[#6f2034] focus:outline-none focus:ring-2 focus:ring-[#6f2034]/20"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold text-stone-500">{copy.appointmentTime}</span>
+                          <input
+                            type="time"
+                            value={appointmentTime}
+                            onChange={event => setAppointmentTime(event.target.value)}
+                            className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm font-semibold text-slate-800 focus:border-[#6f2034] focus:outline-none focus:ring-2 focus:ring-[#6f2034]/20"
+                          />
+                        </label>
+                      </div>
+                      {!appointmentDate || !appointmentTime
+                        ? <p className="mt-2 text-xs font-medium text-amber-700">{copy.appointmentRequired}</p>
+                        : null}
+                    </div>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => void openWhatsAppReminder()}
-                    disabled={!order.client_phone || isSendingWhatsApp || (isWhatsAppSent && stage !== 'post_delivery')}
+                    disabled={
+                      !order.client_phone
+                      || isSendingWhatsApp
+                      || (isWhatsAppSent && stage !== 'post_delivery')
+                      || (isProofStage && (!appointmentDate || !appointmentTime))
+                    }
                     className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#187b54] px-5 py-3.5 font-bold text-white transition hover:bg-[#126342] disabled:cursor-not-allowed disabled:bg-stone-300"
                   >
                     {isSendingWhatsApp

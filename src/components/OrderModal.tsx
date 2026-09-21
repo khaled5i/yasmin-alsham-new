@@ -49,6 +49,7 @@ import {
 } from '@/lib/services/delivery-service'
 import RemainingPaymentWarningModal, { type RemainingPaymentDetails } from '@/components/RemainingPaymentWarningModal'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
+import { describePriceAdjustment, formatAdjustmentDate, getOrderPriceBreakdown } from '@/lib/order-price-extras'
 import VoiceNotes from './VoiceNotes'
 import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
@@ -1318,8 +1319,52 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         <span className="text-xs sm:text-sm font-medium truncate">{t('price')}:</span>
                       </div>
                       <p className="text-xs sm:text-base font-semibold text-green-600 truncate">{order.price} {t('sar')}</p>
+                      {(() => {
+                        const { expensesTotal, basePrice } = getOrderPriceBreakdown(order)
+                        return expensesTotal > 0 ? (
+                          <p className="mt-0.5 text-[10px] sm:text-xs text-amber-700">
+                            {basePrice.toFixed(2)} + مصروفات {expensesTotal.toFixed(2)}
+                          </p>
+                        ) : null
+                      })()}
                     </div>
                   )}
+
+                  {/* مصروفات الطلب وسجل تعديل السعر - للمدراء فقط */}
+                  {user?.role === 'admin' && (() => {
+                    const { expenses, adjustments } = getOrderPriceBreakdown(order)
+                    if (expenses.length === 0 && adjustments.length === 0) return null
+                    return (
+                      <div className="col-span-3 sm:col-span-2 lg:col-span-3 space-y-2 bg-white p-2 sm:p-3 rounded-lg text-xs sm:text-sm">
+                        {expenses.length > 0 && (
+                          <div>
+                            <p className="font-medium text-amber-800 mb-1">مصروفات الطلب:</p>
+                            <ul className="space-y-0.5 text-gray-700">
+                              {expenses.map(expense => (
+                                <li key={expense.id} className="break-words">
+                                  • {expense.amount.toFixed(2)} {t('sar')}{expense.note ? ` — ${expense.note}` : ''}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {adjustments.length > 0 && (
+                          <div>
+                            <p className="font-medium text-violet-800 mb-1">تنبيه: تم تعديل سعر هذا الطلب</p>
+                            <ul className="space-y-1 text-gray-700">
+                              {adjustments.map(adjustment => (
+                                <li key={adjustment.id} className="break-words">
+                                  • {describePriceAdjustment(adjustment)}
+                                  {adjustment.reason ? ` — السبب: ${adjustment.reason}` : ''}
+                                  {formatAdjustmentDate(adjustment.created_at) ? ` (${formatAdjustmentDate(adjustment.created_at)})` : ''}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   {/* الدفعة المستلمة - للمدراء فقط */}
                   {user?.role === 'admin' && (
@@ -2490,6 +2535,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           ? Number((order as any).remaining_amount)
           : Math.max(0, (Number(order?.price) || 0) - (Number(order?.paid_amount) || 0))
       }
+      order={order}
+      onOrderUpdated={(updated) => setFullOrder(prev => ({ ...(prev || initialOrder || {}), ...updated } as Order))}
       onMarkAsPaid={(payment) => performDeliver(true, payment)}
       onIgnore={performSilentOutstandingDelivery}
       onCancel={() => setShowDeliverWarning(false)}

@@ -918,6 +918,8 @@ export default function WorkerCompletedOrdersPage() {
       <RemainingPaymentWarningModal
         isOpen={showPaymentWarning}
         remainingAmount={orderToDeliver?.remaining_amount || 0}
+        order={orderToDeliver}
+        onOrderUpdated={setOrderToDeliver}
         onMarkAsPaid={(payment) => {
           if (orderToDeliver) {
             return deliverOrder(orderToDeliver.id, true, payment)

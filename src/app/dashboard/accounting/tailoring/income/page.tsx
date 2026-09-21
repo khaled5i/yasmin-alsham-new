@@ -57,6 +57,12 @@ const entryAppearance: Record<
     containerClass: 'bg-teal-50 ring-teal-100',
     badge: 'عند التسليم',
   },
+  order_payment: {
+    icon: Wallet,
+    iconClass: 'text-cyan-700',
+    containerClass: 'bg-cyan-50 ring-cyan-100',
+    badge: 'دفعة إضافية',
+  },
   manual_income: {
     icon: CircleDollarSign,
     iconClass: 'text-green-700',
@@ -89,7 +95,11 @@ interface InvoiceState {
  */
 function getInvoiceState(entry: Income): InvoiceState | null {
   if (entry.payment_method !== 'network') return null
-  if (entry.entry_kind !== 'order_deposit' && entry.entry_kind !== 'order_delivery') return null
+  if (
+    entry.entry_kind !== 'order_deposit' &&
+    entry.entry_kind !== 'order_delivery' &&
+    entry.entry_kind !== 'order_payment'
+  ) return null
 
   const sent = Boolean(entry.alostaz_invoice_id) || entry.alostaz_sync_status === 'sent'
   if (sent) {
@@ -154,6 +164,7 @@ const KIND_FILTERS: { key: KindFilter; label: string }[] = [
   { key: 'all', label: 'كل العمليات' },
   { key: 'order_deposit', label: 'عربون الطلبات' },
   { key: 'order_delivery', label: 'دفعات التسليم' },
+  { key: 'order_payment', label: 'دفعات إضافية' },
   { key: 'manual_income', label: 'واردات يدوية' },
 ]
 

@@ -115,7 +115,10 @@ export function buildDeliveryUpdates(order: DeliveryOrder | null | undefined, op
     updates.paid_amount = price
     updates.payment_status = 'paid'
 
-    if (opts.remainingPayment) {
+    // بعد تخفيض الدفعة المتبقية إلى صفر لا يوجد ما يُوزَّع بين الكاش والشبكة.
+    const hasRemainingToAllocate = price - preDeliveryPaid >= 0.005
+
+    if (opts.remainingPayment && hasRemainingToAllocate) {
       const cashAmount = Math.round(
         (Math.max(0, Number(opts.remainingPayment.cashAmount) || 0) + Number.EPSILON) * 100
       ) / 100

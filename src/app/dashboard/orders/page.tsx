@@ -388,6 +388,8 @@ function OrdersPageInner() {
     if (updates.description !== undefined) supabaseUpdates.description = updates.description
     if (updates.fabric !== undefined) supabaseUpdates.fabric = updates.fabric
     if (updates.price !== undefined) supabaseUpdates.price = updates.price
+    // مصروفات الطلب (migration 20260921120000) — السعر أعلاه يشملها
+    if (updates.order_expenses !== undefined) supabaseUpdates.order_expenses = updates.order_expenses
 
     // أعمدة مستقلة (migration 29)
     if (updates.fabric_type !== undefined) supabaseUpdates.fabric_type = updates.fabric_type
@@ -2098,6 +2100,8 @@ function OrdersPageInner() {
         <RemainingPaymentWarningModal
           isOpen={showPaymentWarning}
           remainingAmount={orderToDeliver?.remaining_amount || 0}
+          order={orderToDeliver}
+          onOrderUpdated={setOrderToDeliver}
           onCancel={() => { setShowPaymentWarning(false); setOrderToDeliver(null) }}
           onMarkAsPaid={(payment) => {
             if (orderToDeliver) {

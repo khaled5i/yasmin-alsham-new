@@ -19,7 +19,10 @@ import type {
   FinancialSummary,
   CashBoxTransaction,
   CreateCashBoxWithdrawalInput,
-  CreateCashBoxWithdrawalResult
+  CreateCashBoxWithdrawalResult,
+  CashBoxAdvanceWorker,
+  CreateCashBoxWorkerAdvanceInput,
+  CreateCashBoxWorkerAdvanceResult
 } from '@/types/simple-accounting'
 
 const ONE_TIME_RECURRENCE: ExpenseRecurrenceType = 'one_time'
@@ -842,6 +845,79 @@ function buildAlostazLink(
   }
 }
 
+// ============================================================================
+// الدفعات الإضافية للطلب (نافذة تعديل الطلب)
+// ============================================================================
+
+interface OrderAdditionalPaymentRow {
+  id: string
+  order_id: string
+  method: 'cash' | 'card'
+  amount: number | string
+  occurred_at: string
+  alostaz_invoice_code?: string | null
+}
+
+/** تاريخ اليوم بتوقيت الرياض لحركة وقعت في لحظة محددة */
+function toRiyadhDate(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso.substring(0, 10)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(date)
+}
+
+/** الدفعات الإضافية مجمّعة حسب الطلب؛ تُرجع خريطة فارغة إن لم تُطبَّق الهجرة بعد */
+async function getOrderAdditionalPayments(
+  branch: BranchType
+): Promise<Map<string, OrderAdditionalPaymentRow[]>> {
+  const byOrder = new Map<string, OrderAdditionalPaymentRow[]>()
+  const { data, error } = await supabase
+    .from('order_additional_payments')
+    .select('id, order_id, method, amount, occurred_at, alostaz_invoice_code')
+    .eq('branch', branch)
+    .order('occurred_at', { ascending: true })
+
+  if (error) {
+    console.warn('⚠️ تعذّر تحميل الدفعات الإضافية للطلبات:', error.message)
+    return byOrder
+  }
+
+  for (const row of (data || []) as OrderAdditionalPaymentRow[]) {
+    const list = byOrder.get(row.order_id) || []
+    list.push(row)
+    byOrder.set(row.order_id, list)
+  }
+  return byOrder
+}
+
+/**
+ * يسجّل دفعة أُضيفت من نافذة تعديل الطلب كحركة مستقلة بتاريخها، بعد حفظ
+ * مبالغها على الطلب. إعادة الاستدعاء بنفس المعرّف آمنة وتُكمل رقم فاتورة الأستاذ فقط.
+ */
+export async function recordOrderAdditionalPayment(input: {
+  paymentId: string
+  orderId: string
+  amount: number
+  method: 'cash' | 'card'
+  occurredAt?: string
+  alostazInvoiceCode?: string | null
+}): Promise<void> {
+  const { error } = await supabase.rpc('record_order_additional_payment', {
+    p_payment_id: input.paymentId,
+    p_order_id: input.orderId,
+    p_amount: input.amount,
+    p_method: input.method,
+    p_occurred_at: input.occurredAt || null,
+    p_alostaz_invoice_code: input.alostazInvoiceCode || null,
+  })
+
+  if (error) {
+    if (error.code === '42883' || error.code === 'PGRST202') {
+      throw new Error('سجل الدفعات الإضافية غير مفعّل في قاعدة البيانات بعد (هجرة 20260921130000).')
+    }
+    throw new Error(error.message || 'تعذّر تسجيل الدفعة في سجل الصندوق والواردات')
+  }
+}
+
 // هل الخطأ ناتج عن عمود غير موجود (لم تُطبَّق هجرة تفصيل طرق الدفع بعد)؟
 function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
@@ -889,6 +965,7 @@ export async function getDeliveredOrdersIncome(
     }
 
     const entries: Income[] = []
+    const additionalPayments = await getOrderAdditionalPayments(branch)
 
     for (const order of (data || []) as unknown as OrderIncomeRow[]) {
       const orderLabel = order.order_number || order.id.substring(0, 8)
@@ -928,9 +1005,51 @@ export async function getDeliveredOrdersIncome(
         })
       }
 
-      // ما قُبض قبل التسليم (عربون الطلب ودفعاته الإضافية)
-      push('deposit-cash', 'order_deposit', 'cash', breakdown.preDeliveryCash, 'عربون كاش', receivedAt)
-      push('deposit-network', 'order_deposit', 'network', breakdown.preDeliveryNetwork, 'عربون شبكة', receivedAt, 'deposit')
+      // الدفعات المضافة لاحقاً تظهر كلٌّ بتاريخها، وتُطرح من العربون حتى لا تُحتسب مرتين
+      const payments = additionalPayments.get(order.id) || []
+      let extraCash = 0
+      let extraNetwork = 0
+      for (const payment of payments) {
+        const amount = Number(payment.amount) || 0
+        if (payment.method === 'cash') extraCash += amount
+        else extraNetwork += amount
+      }
+
+      // ما قُبض قبل التسليم (عربون الطلب)
+      push('deposit-cash', 'order_deposit', 'cash', Math.max(0, breakdown.preDeliveryCash - extraCash), 'عربون كاش', receivedAt)
+      push('deposit-network', 'order_deposit', 'network', Math.max(0, breakdown.preDeliveryNetwork - extraNetwork), 'عربون شبكة', receivedAt, 'deposit')
+
+      for (const payment of payments) {
+        const amount = Number(payment.amount) || 0
+        if (amount < 0.005) continue
+        const isCash = payment.method === 'cash'
+        const invoiceCode = String(payment.alostaz_invoice_code || '').trim() || null
+        entries.push({
+          id: `${order.id}-payment-${payment.id}`,
+          branch,
+          order_id: order.id,
+          order_number: orderLabel,
+          customer_name: customerName,
+          description: `${isCash ? 'دفعة كاش' : 'دفعة شبكة'} — طلب ${orderLabel}`,
+          amount: Number(amount.toFixed(2)),
+          payment_method: isCash ? 'cash' : 'network',
+          entry_kind: 'order_payment',
+          date: toRiyadhDate(payment.occurred_at),
+          occurred_at: payment.occurred_at,
+          is_automatic: true,
+          created_at: payment.occurred_at,
+          ...(isCash
+            ? {}
+            : {
+                alostaz_invoice_id: null,
+                alostaz_invoice_code: invoiceCode,
+                alostaz_sync_status: invoiceCode ? 'sent' as const : null,
+                alostaz_synced_at: invoiceCode ? payment.occurred_at : null,
+                alostaz_invoice_scope: 'phase' as const,
+              }),
+          alostaz_billing_version: Number(order.alostaz_billing_version) || 1
+        })
+      }
 
       // ما قُبض لحظة التسليم (الدفعة المتبقية بطريقتيها)
       push('delivery-cash', 'order_delivery', 'cash', breakdown.remainingCash, 'كاش عند التسليم', deliveredAt)
@@ -1276,6 +1395,80 @@ export async function withdrawFromCashBox(
       created_at: createdAt
     },
     newBalance: balanceAfter
+  }
+}
+
+/** العمال المتاحون لسحب سلفة من الصندوق */
+export async function getCashBoxAdvanceWorkers(): Promise<CashBoxAdvanceWorker[]> {
+  if (!isSupabaseConfigured()) return []
+
+  const { data, error } = await supabase.rpc('get_cash_box_advance_workers')
+  if (error) {
+    if (error.code === '42883' || error.code === 'PGRST202') {
+      throw new Error('ميزة سحب السلفة غير مفعّلة في قاعدة البيانات بعد.')
+    }
+    throw new Error(error.message || 'تعذّر تحميل قائمة العمال.')
+  }
+
+  return ((data || []) as Array<{ worker_id: string; worker_name: string }>).map((row) => ({
+    id: String(row.worker_id),
+    name: String(row.worker_name)
+  }))
+}
+
+/**
+ * سحب سلفة لعامل من صندوق التفصيل.
+ * السحب ودفعة الراتب («سحب من الصندوق بتاريخ ...») يُحفظان معًا في معاملة واحدة.
+ */
+export async function withdrawWorkerAdvanceFromCashBox(
+  input: CreateCashBoxWorkerAdvanceInput
+): Promise<CreateCashBoxWorkerAdvanceResult> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('قاعدة البيانات غير متصلة. تعذّر حفظ السلفة.')
+  }
+
+  const amount = Math.round((Number(input.amount) + Number.EPSILON) * 100) / 100
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('أدخل قيمة سلفة صحيحة أكبر من صفر.')
+  }
+  if (!input.workerId) {
+    throw new Error('اختر العامل.')
+  }
+
+  const { data, error } = await supabase.rpc('withdraw_cash_box_worker_advance', {
+    p_worker_id: input.workerId,
+    p_amount: amount,
+    p_request_id: input.requestId,
+    p_note: input.note?.trim() || null
+  })
+
+  if (error) {
+    if (error.code === '42883' || error.code === 'PGRST202') {
+      throw new Error('ميزة سحب السلفة غير مفعّلة في قاعدة البيانات بعد.')
+    }
+    throw new Error(error.message || 'تعذّر حفظ السلفة.')
+  }
+
+  const row = data as Record<string, unknown> | null
+  if (!row?.withdrawal_id) {
+    throw new Error('لم تُرجع قاعدة البيانات تأكيد عملية السحب.')
+  }
+
+  const balanceAfter = Number(row.balance_after) || 0
+
+  return {
+    withdrawal: {
+      id: String(row.withdrawal_id),
+      branch: 'tailoring',
+      amount,
+      reason: String(row.reason || ''),
+      balance_before: Number(row.balance_before) || 0,
+      balance_after: balanceAfter,
+      created_by_name: String(row.created_by_name || 'مستخدم النظام'),
+      created_at: String(row.created_at || new Date().toISOString())
+    },
+    newBalance: balanceAfter,
+    workerName: String(row.worker_name || '')
   }
 }
 
