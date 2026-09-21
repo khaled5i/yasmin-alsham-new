@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { Calendar, Search, Scissors, Palette, Heart, Sparkles, Home } from 'lucide-react'
 import Link from 'next/link'
-import Header from '@/components/Header'
+import SiteHeader from '@/components/SiteHeader'
 
 export default function ServicesPage() {
   const services = [
@@ -60,7 +60,7 @@ export default function ServicesPage() {
 
   return (
     <div className="min-h-screen">
-      <Header />
+      <SiteHeader />
       <main className="pt-20">
         <section className="py-12 lg:py-20 bg-white">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">

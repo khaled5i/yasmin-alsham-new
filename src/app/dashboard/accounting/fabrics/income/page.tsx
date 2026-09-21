@@ -76,6 +76,13 @@ import {
   releaseCouponForIncome,
   validateCoupon,
 } from '@/lib/services/discount-coupon-service'
+import {
+  INFLUENCER_STATUS_MESSAGES,
+  isDeliveryCouponCode,
+  redeemInfluencerCode,
+  releaseInfluencerCodeForIncome,
+  validateInfluencerCode,
+} from '@/lib/services/influencer-code-service'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
 type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
@@ -111,8 +118,11 @@ type FabricInventorySearchOption = {
 
 // كود الخصم المطبَّق على النموذج الحالي (بعد التحقق منه أو المحمَّل من مبيعة محفوظة)
 type AppliedCoupon = {
+  /** delivery = كوبون هدية التسليم (YS-)، influencer = كود مشهور */
+  kind: 'delivery' | 'influencer'
   id: string | null
   code: string
+  partner_name?: string | null
   discount_percent: number
   expires_at: string | null
   /** محمَّل من مبيعة محفوظة سابقاً — لا يحتاج تحقّقاً جديداً لعرضه */
@@ -618,6 +628,30 @@ function FabricsIncomeContent() {
     setCouponChecking(true)
     setCouponError(null)
     try {
+      // كود المشهور: مرة واحدة لكل رقم هاتف، فيُتحقق منه مع هاتف العميلة
+      if (!isDeliveryCouponCode(code)) {
+        const influencer = await validateInfluencerCode(code, buyerPhone, editingId)
+        if (influencer.status !== 'valid') {
+          setAppliedCoupon(null)
+          setCouponError(INFLUENCER_STATUS_MESSAGES[influencer.status])
+          return
+        }
+        setAppliedCoupon({
+          kind: 'influencer',
+          id: influencer.id,
+          code: influencer.code || code,
+          partner_name: influencer.partner_name,
+          discount_percent: influencer.discount_percent ?? 0,
+          expires_at: influencer.valid_until ? `${influencer.valid_until}T23:59:59+03:00` : null,
+        })
+        setCouponInput(influencer.code || code)
+        toast.success(
+          `كود ${influencer.partner_name || 'مشهور'} — خصم ${formatFabricNumber(influencer.discount_percent ?? 0)}%`,
+          { icon: '🌟' }
+        )
+        return
+      }
+
       const result = await validateCoupon(code)
 
       if (result.status !== 'valid') {
@@ -627,6 +661,7 @@ function FabricsIncomeContent() {
       }
 
       setAppliedCoupon({
+        kind: 'delivery',
         id: result.id,
         code: result.code || code,
         discount_percent: result.discount_percent ?? 0,
@@ -648,6 +683,20 @@ function FabricsIncomeContent() {
     setAppliedCoupon(null)
     setCouponInput('')
     setCouponError(null)
+  }
+
+  // حجز الكود للمبيعة بمعرّفها الثابت (قبل الإنشاء/التعديل) حسب نوعه
+  const reserveAppliedCoupon = async (coupon: AppliedCoupon, incomeId: string) => {
+    if (coupon.kind === 'influencer') {
+      await redeemInfluencerCode({ code: coupon.code, incomeId, clientPhone: buyerPhone.trim() })
+      return
+    }
+    await redeemCoupon({
+      code: coupon.code,
+      incomeId,
+      subtotal: safeSubtotal,
+      discount: discountValue,
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -739,6 +788,10 @@ function FabricsIncomeContent() {
         alert('المبلغ بعد الخصم يجب أن يكون أكبر من صفر')
         return
       }
+      if (appliedCoupon?.kind === 'influencer' && buyerPhone.replace(/\D/g, '').length < 9) {
+        alert('كود المشهور يُستخدم مرة واحدة لكل عميلة — أدخلي رقم هاتف العميلة')
+        return
+      }
     }
     if (!customerSource) {
       alert('يرجى اختيار مصدر الزبونة')
@@ -779,8 +832,9 @@ function FabricsIncomeContent() {
       fabric_images: showFabricImages ? fabricImages : [],
       buyer_name: buyerName.trim() || null,
       buyer_phone: buyerPhone.trim() || null,
-      // كود الخصم: تُصفَّر الحقول عند نزعه كي يحرّره الـ trigger على الخادم
-      coupon_id: appliedCoupon?.id ?? null,
+      // كود الخصم: تُصفَّر الحقول عند نزعه كي يحرّره الـ trigger على الخادم.
+      // coupon_id مفتاح أجنبي لكوبونات التسليم فقط؛ كود المشهور يُربط بجدول استخداماته.
+      coupon_id: appliedCoupon?.kind === 'delivery' ? appliedCoupon.id ?? null : null,
       coupon_code: appliedCoupon?.code ?? null,
       discount_percent: hasCoupon ? couponPercent : null,
       discount_amount: hasCoupon ? discountValue : null,
@@ -801,12 +855,7 @@ function FabricsIncomeContent() {
         // حجز الكود (أو تحديث قيمه) قبل الحفظ؛ نزعه يحرّره الـ trigger بعد التحديث
         if (hasCoupon && appliedCoupon) {
           try {
-            await redeemCoupon({
-              code: appliedCoupon.code,
-              incomeId: editingId,
-              subtotal: safeSubtotal,
-              discount: discountValue,
-            })
+            await reserveAppliedCoupon(appliedCoupon, editingId)
           } catch (couponError) {
             alert(`❌ ${couponError instanceof Error ? couponError.message : 'تعذّر تطبيق كود الخصم'}`)
             return
@@ -850,12 +899,7 @@ function FabricsIncomeContent() {
       // تفشل هذه الخطوة ولا تُسجَّل مبيعة بخصم غير مستحق.
       if (hasCoupon && appliedCoupon) {
         try {
-          await redeemCoupon({
-            code: appliedCoupon.code,
-            incomeId,
-            subtotal: safeSubtotal,
-            discount: discountValue,
-          })
+          await reserveAppliedCoupon(appliedCoupon, incomeId)
         } catch (couponError) {
           alert(`❌ ${couponError instanceof Error ? couponError.message : 'تعذّر تطبيق كود الخصم'}`)
           return
@@ -867,7 +911,10 @@ function FabricsIncomeContent() {
         result = await createIncome(payload)
       } catch (error) {
         // فشل الإنشاء بعد الحجز: نحرّر الكود فوراً كي يبقى صالحاً للعميلة
-        if (hasCoupon) await releaseCouponForIncome(incomeId)
+        if (hasCoupon) {
+          if (appliedCoupon?.kind === 'influencer') await releaseInfluencerCodeForIncome(incomeId)
+          else await releaseCouponForIncome(incomeId)
+        }
         throw error
       }
 
@@ -957,6 +1004,8 @@ function FabricsIncomeContent() {
       setAmount(savedSubtotal.toString())
       setCouponInput(savedCouponCode)
       setAppliedCoupon({
+        // coupon_id يُملأ لكوبونات التسليم فقط؛ غيابه مع كود بلا YS- = كود مشهور
+        kind: item.coupon_id || isDeliveryCouponCode(savedCouponCode) ? 'delivery' : 'influencer',
         id: item.coupon_id ?? null,
         code: savedCouponCode,
         discount_percent:
@@ -1928,7 +1977,7 @@ function FabricsIncomeContent() {
                                 }}
                                 dir="ltr"
                                 className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-center font-mono tracking-widest uppercase focus:ring-2 focus:ring-amber-500"
-                                placeholder="YS-XXXXXX"
+                                placeholder="YS-XXXXXX / NOOR15"
                                 autoComplete="off"
                               />
                               <button
@@ -1951,7 +2000,7 @@ function FabricsIncomeContent() {
                               </p>
                             )}
                             <p className="mt-2 text-[11px] leading-relaxed text-amber-700">
-                              كود هدية التسليم الذي وصل العميلة عبر واتساب بعد استلام فستانها.
+                              كود هدية التسليم (YS-) أو كود أحد المشاهير. كود المشهور يحتاج رقم هاتف العميلة.
                             </p>
                           </>
                         ) : (
@@ -1964,6 +2013,9 @@ function FabricsIncomeContent() {
                                     {appliedCoupon.code}
                                   </p>
                                   <p className="text-[11px] text-emerald-700">
+                                    {appliedCoupon.kind === 'influencer' && appliedCoupon.partner_name
+                                      ? `كود المشهور ${appliedCoupon.partner_name} — `
+                                      : ''}
                                     كود صحيح — خصم {formatFabricNumber(couponPercent)}%
                                     {appliedCoupon.expires_at
                                       ? ` — صالح حتى ${formatCouponExpiry(appliedCoupon.expires_at)}`

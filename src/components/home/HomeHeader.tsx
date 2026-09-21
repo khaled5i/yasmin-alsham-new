@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
+  Handshake,
   HelpCircle,
   Menu,
   MessageCircle,
@@ -31,6 +32,7 @@ const serviceItems = [
   { label: 'خدماتنا', href: '/services', icon: Sparkles },
   { label: 'الأسئلة الشائعة', href: '/faq', icon: HelpCircle },
   { label: 'تواصل معنا', href: '/social', icon: Share2 },
+  { label: 'شركاء النجاح', href: '/partners', icon: Handshake },
 ]
 
 type HomeHeaderProps = {

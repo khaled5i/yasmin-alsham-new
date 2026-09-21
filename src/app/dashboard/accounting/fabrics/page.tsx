@@ -17,7 +17,8 @@ import {
   Wallet,
   Pencil,
   X,
-  Calendar
+  Calendar,
+  Megaphone
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -80,6 +81,15 @@ const sections = [
     icon: Boxes,
     href: '/dashboard/accounting/fabrics/inventory',
     color: 'from-teal-500 to-teal-600'
+  },
+  {
+    id: 'influencers',
+    name: 'أكواد المشاهير',
+    description: 'أكواد الخصم وأرباح شركاء النجاح',
+    icon: Megaphone,
+    href: '/dashboard/accounting/fabrics/influencers',
+    color: 'from-fuchsia-500 to-pink-600',
+    adminOnly: true
   }
 ]
 
@@ -309,7 +319,7 @@ function FabricsAccountingContent() {
         >
           <h2 className="text-lg font-bold text-gray-900 mb-4">الأقسام</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {sections.map((section, index) => (
+            {sections.filter((section) => !section.adminOnly || isAdmin).map((section, index) => (
               <Link key={section.id} href={section.href}>
                 <motion.div
                   initial={{ opacity: 0, x: -20 }}

@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAppointmentStore } from '@/store/appointmentStore'
 import NumericInput from '@/components/NumericInput'
-import Header from '@/components/Header'
+import SiteHeader from '@/components/SiteHeader'
 
 export default function BookAppointmentPage() {
   const [selectedDate, setSelectedDate] = useState<string>('')
@@ -260,7 +260,7 @@ export default function BookAppointmentPage() {
 
   return (
     <>
-      <Header />
+      <SiteHeader />
       <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20 lg:pt-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-12">
 

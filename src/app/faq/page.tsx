@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, HelpCircle, Home } from 'lucide-react'
 import Link from 'next/link'
-import Header from '@/components/Header'
+import SiteHeader from '@/components/SiteHeader'
 
 export default function FAQPage() {
   const [openIndex, setOpenIndex] = useState<number | null>(0)
@@ -46,7 +46,7 @@ export default function FAQPage() {
 
   return (
     <div className="min-h-screen">
-      <Header />
+      <SiteHeader />
       <main className="pt-20">
         <section className="py-12 lg:py-20 bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">

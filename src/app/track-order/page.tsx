@@ -6,7 +6,7 @@ import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare 
 import { useOrderStore } from '@/store/orderStore'
 import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import NumericInput from '@/components/NumericInput'
-import Header from '@/components/Header'
+import SiteHeader from '@/components/SiteHeader'
 import { useTranslation } from '@/hooks/useTranslation'
 
 const EXCLUDED_KEYS = [
@@ -440,7 +440,7 @@ export default function TrackOrderPage() {
 
   return (
     <>
-      <Header />
+      <SiteHeader />
       <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
 

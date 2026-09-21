@@ -15,6 +15,49 @@
   font-family: var(--font-home-sans), sans-serif;
 }
 
+/* شريط الواجهة الجديدة داخل الصفحات الداخلية (SiteHeader): نفس الألوان والخط
+   دون فرض خلفية أو تنسيقات الصفحة الرئيسية على محتوى الصفحة */
+.siteHeaderScope {
+  /* ألوان وردية تطابق الصفحات الداخلية (rose/pink) — الرئيسية تبقى بالنبيذي */
+  --wine: #be185d;
+  --deep-wine: #831843;
+  --ivory: #fff1f2;
+  --ivory-soft: #fff7f8;
+  --sand: #fbcfe8;
+  --rose: #f472b6;
+  --charcoal: #374151;
+  --gold: #ec4899;
+  --white: #fff;
+  font-family: var(--font-home-sans), sans-serif;
+}
+
+/* الحدود والظلال المكتوبة بلون النبيذي صراحةً في الشريط */
+.siteHeaderScope .headerSolid {
+  box-shadow: 0 1px 0 rgba(219, 39, 119, 0.12);
+}
+
+.siteHeaderScope .serviceMenuGrid a:hover {
+  border-color: rgba(219, 39, 119, 0.18);
+}
+
+@media (min-width: 960px) {
+  .siteHeaderScope .menuPanel {
+    border-color: rgba(219, 39, 119, 0.16);
+    box-shadow: 0 24px 70px rgba(131, 24, 67, 0.16);
+  }
+
+  .siteHeaderScope .menuPanelHeading {
+    border-bottom-color: rgba(219, 39, 119, 0.14);
+  }
+}
+
+.siteHeaderScope :is(a, button):focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
 .homeShell *,
 .homeShell *::before,
 .homeShell *::after {
