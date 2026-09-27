@@ -106,6 +106,19 @@ const FABRIC_SERIAL_COLLATOR = new Intl.Collator('ar', {
   sensitivity: 'base',
 })
 
+/**
+ * رسائل حارس المخزون في قاعدة البيانات بصيغة «CODE|نص للموظف»: الكمية المحجوزة
+ * لطلب إلكتروني قيد الدفع، ومنع حذف مخزون محجوز. تُعرض كما هي بدل رسالة عامة،
+ * فيعرف الموظف السبب ومتى يعود المحجوز. تُرجع null لأي خطأ آخر.
+ */
+function getStockGuardMessage(error: unknown): string | null {
+  const message =
+    error && typeof error === 'object' && 'message' in error ? String(error.message) : ''
+  if (!message.startsWith('FABRIC_STOCK_')) return null
+  const separator = message.indexOf('|')
+  return separator >= 0 ? message.slice(separator + 1) : message
+}
+
 function getInventoryItemSerialCode(item: FabricInventoryItem): string | null {
   return item.base_fabric_code || item.colors?.find(color => color.fabric_code)?.fabric_code || null
 }
@@ -331,8 +344,8 @@ function ColorManager({
       if (!confirm('هل تريد حذف هذا اللون؟ سيتم حذف حركاته أيضاً.')) return
       try {
         await deleteColor(id)
-      } catch {
-        alert('❌ خطأ في حذف اللون')
+      } catch (error) {
+        alert(`❌ ${getStockGuardMessage(error) ?? 'خطأ في حذف اللون'}`)
         return
       }
     }
@@ -1619,7 +1632,12 @@ function MovementModal({ item, type, onClose, onSave }: MovementModalProps) {
       const message = error && typeof error === 'object' && 'message' in error
         ? String(error.message)
         : ''
-      alert(message.includes('تحديد لون القماش') ? `❌ ${message}` : '❌ حدث خطأ أثناء الحفظ')
+      const stockMessage = getStockGuardMessage(error)
+      alert(
+        stockMessage
+          ? `❌ ${stockMessage}`
+          : message.includes('تحديد لون القماش') ? `❌ ${message}` : '❌ حدث خطأ أثناء الحفظ'
+      )
     } finally {
       setSaving(false)
     }
@@ -2942,8 +2960,8 @@ function FabricsInventoryContent() {
     try {
       await deleteInventoryItem(id)
       setItems(prev => prev.filter(it => it.id !== id))
-    } catch {
-      alert('❌ خطأ في الحذف')
+    } catch (error) {
+      alert(`❌ ${getStockGuardMessage(error) ?? 'خطأ في الحذف'}`)
     }
   }
 

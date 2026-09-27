@@ -18,10 +18,21 @@ export interface FabricDiscountFields {
 }
 
 /**
- * سعر المتر بعد الخصم — الموضع الوحيد الذي يُطبَّق فيه الخصم.
+ * نسبة الخصم الفعّالة على القماش (0 إن لم يكن في تخفيض) — القاعدة الوحيدة
+ * لتفعيل الخصم. يقرؤها العرض هنا، وحساب الهللة في `fabric-store/pricing.ts`،
+ * فلا يُطبَّق الخصم مرتين ولا بقاعدتين مختلفتين.
+ */
+export function getEffectiveFabricDiscountPercent(fabric: FabricDiscountFields): number {
+  const discount = Number(fabric.discount_percentage) || 0
+  return fabric.is_on_sale && discount > 0 ? discount : 0
+}
+
+/**
+ * سعر المتر بعد الخصم للعرض في الكتالوج (رقم عشري بالريال).
  *
  * `null` تعني «السعر عند الطلب»، والصفر يبقى صفراً ولا يتحول إلى سعر افتراضي.
- * لا يقرّب الناتج: التقريب مسؤولية طبقة العرض أو السلة، فلا يتراكم.
+ * لا يقرّب الناتج: التقريب مسؤولية طبقة العرض، فلا يتراكم. ما تدفعه الزبونة
+ * يُحسب بالهللة في `fabric-store/pricing.ts` من نفس قاعدة الخصم.
  */
 export function getFabricNetPricePerMeter(fabric: FabricDiscountFields): number | null {
   if (fabric.price_per_meter == null) return null
@@ -29,8 +40,8 @@ export function getFabricNetPricePerMeter(fabric: FabricDiscountFields): number 
   const base = Number(fabric.price_per_meter)
   if (!Number.isFinite(base)) return null
 
-  const discount = Number(fabric.discount_percentage) || 0
-  if (fabric.is_on_sale && discount > 0) {
+  const discount = getEffectiveFabricDiscountPercent(fabric)
+  if (discount > 0) {
     return base * (1 - discount / 100)
   }
   return base

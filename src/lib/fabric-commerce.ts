@@ -1,10 +1,12 @@
 'use client'
 
 /**
- * عقد بيانات السلة والمفضلة لمتجر الأقمشة + قواعد التسعير.
+ * عقد بيانات السلة والمفضلة لمتجر الأقمشة + طبقة عرض الأسعار.
  *
- * هذا الملف هو المرجع الوحيد لحساب الأسعار في المتجر. لا تحسب سعراً في مكوّن
- * أو صفحة مباشرة، وإلا تعرّض الخصم للتطبيق مرتين.
+ * قواعد البيع والتسعير نفسها في `fabric-store/pricing.ts` (بالهللة والسنتيمتر)،
+ * وهو المرجع الوحيد الذي سيعتمده الخادم أيضاً عند إنشاء الطلب. هذا الملف يحوّل
+ * نتائجه إلى ريال ومتر للعرض. لا تحسب سعراً في مكوّن أو صفحة مباشرة، وإلا
+ * تعرّض الخصم للتطبيق مرتين أو اختلف ما تراه الزبونة عمّا تدفعه.
  *
  * القواعد المعتمدة من المالك (19 سبتمبر 2026):
  * - طريقة البيع مشتقة من المخزون: مخزون 3 أو 3.5 متر بالضبط ⇒ «قطعة كاملة»،
@@ -18,11 +20,26 @@
 import { z } from 'zod'
 import type { Fabric } from '@/store/fabricStore'
 import {
-  getFabricNetPricePerMeter,
-  isWholeFabricPiece,
-  type FabricPricingUnit,
-} from './fabric-display-pricing'
+  FABRIC_MAX_CM_PER_LINE,
+  FABRIC_METER_MIN_FALLBACK_CM,
+  FABRIC_METER_STEP_CM,
+  FABRIC_VAT_BASIS_POINTS,
+  computeFabricLineNetHalalas,
+  computeFabricOrderTotals,
+  getFabricMeterBounds,
+  getFabricPurchaseMode,
+  getFabricStockCentimeters,
+  getFabricUnitPriceHalalas,
+  isFabricPubliclyVisible,
+  type FabricPurchaseMode,
+} from './fabric-store/pricing'
+import { centimetersToMeters, halalasToSar, metersToCentimeters } from './fabric-store/money'
 import { formatFabricNumber, roundFabricNumber } from './fabric-number-format'
+
+// القاعدتان تعيشان في وحدة التسعير المشتركة؛ تُعاد تصديرهما بأسمائهما القديمة
+// حتى لا يتغيّر أي مستورد في السلة والمفضلة.
+export { getFabricPurchaseMode, isFabricPubliclyVisible }
+export type { FabricPurchaseMode }
 
 // ============================================
 // الثوابت
@@ -32,22 +49,20 @@ import { formatFabricNumber, roundFabricNumber } from './fabric-number-format'
 export const FABRIC_COMMERCE_SCHEMA_VERSION = 1
 
 /** ضريبة القيمة المضافة تُضاف فوق السعر المعروض (الأسعار المخزّنة غير شاملة). */
-export const FABRIC_VAT_RATE = 0.15
+export const FABRIC_VAT_RATE = FABRIC_VAT_BASIS_POINTS / 10_000
 
 /** خطوة الكمية للبيع بالمتر. */
-export const FABRIC_METER_STEP = 0.5
+export const FABRIC_METER_STEP = centimetersToMeters(FABRIC_METER_STEP_CM)
 
 /** الحد الأدنى للبيع بالمتر حين لا يحدد الصنف حداً أدنى خاصاً به. */
-export const FABRIC_METER_MIN_FALLBACK = 1
+export const FABRIC_METER_MIN_FALLBACK = centimetersToMeters(FABRIC_METER_MIN_FALLBACK_CM)
 
 /** سقف أمان لعدد أسطر السلة/المفضلة المحفوظة محلياً. */
 export const MAX_CART_LINES = 40
 export const MAX_FAVORITE_ITEMS = 200
 
 /** سقف أمان لكمية السطر الواحد، فوق قيد المخزون. */
-export const MAX_METERS_PER_LINE = 100
-
-export type FabricPurchaseMode = FabricPricingUnit
+export const MAX_METERS_PER_LINE = centimetersToMeters(FABRIC_MAX_CM_PER_LINE)
 
 // ============================================
 // عقد بيانات السطر المحفوظ
@@ -109,31 +124,15 @@ export function getCartLineKey(fabricId: string, purchaseMode: FabricPurchaseMod
 // ============================================
 
 /**
- * طريقة البيع مشتقة من المخزون الحيّ، لا من قيمة محفوظة.
- * لذلك يجب إعادة اشتقاقها في كل مرة تُفتح فيها السلة، والتنبيه إذا تغيّرت.
- */
-export function getFabricPurchaseMode(fabric: Pick<Fabric, 'stock_quantity'>): FabricPurchaseMode {
-  return isWholeFabricPiece(fabric.stock_quantity) ? 'piece' : 'meter'
-}
-
-/**
- * سعر الوحدة الواحدة بعد الخصم وقبل الضريبة.
+ * سعر الوحدة الواحدة بعد الخصم وقبل الضريبة، بالريال للعرض.
  * - بالمتر: سعر المتر بعد الخصم.
  * - بالقطعة: سعر المتر بعد الخصم × أمتار القطعة (مثال: 3.5 × 100 = 350 للقطعة).
  *
- * الخصم يُطبّق مرة واحدة فقط داخل `getFabricNetPricePerMeter`؛ لا تضربه هنا ثانية.
+ * يُحسب بالهللة في `getFabricUnitPriceHalalas` (الخصم مرة واحدة هناك)، ثم يُحوَّل.
  */
 export function getFabricUnitPrice(fabric: Fabric): number | null {
-  const discounted = getFabricNetPricePerMeter(fabric)
-  if (discounted == null || !Number.isFinite(discounted) || discounted <= 0) return null
-
-  if (getFabricPurchaseMode(fabric) === 'piece') {
-    const meters = roundFabricNumber(Number(fabric.stock_quantity) || 0)
-    if (meters <= 0) return null
-    return roundFabricNumber(discounted * meters)
-  }
-
-  return roundFabricNumber(discounted)
+  const halalas = getFabricUnitPriceHalalas(fabric)
+  return halalas == null ? null : halalasToSar(halalas)
 }
 
 /** حدود الكمية المسموحة لهذا القماش بطريقة بيعه الحالية. */
@@ -146,18 +145,18 @@ export interface FabricQuantityBounds {
 }
 
 export function getFabricQuantityBounds(fabric: Fabric): FabricQuantityBounds {
-  const stock = roundFabricNumber(Number(fabric.stock_quantity) || 0)
-
   // القطعة الكاملة هي كامل المخزون المتبقي ⇒ قطعة واحدة فقط، بلا كسور.
   if (getFabricPurchaseMode(fabric) === 'piece') {
     return { min: 1, max: 1, step: 1, decimals: 0 }
   }
 
-  const configuredMin = roundFabricNumber(Number(fabric.min_order_meters) || 0)
-  const min = configuredMin > 0 ? configuredMin : FABRIC_METER_MIN_FALLBACK
-  const max = roundFabricNumber(Math.min(stock > 0 ? stock : 0, MAX_METERS_PER_LINE))
-
-  return { min, max, step: FABRIC_METER_STEP, decimals: 2 }
+  const bounds = getFabricMeterBounds(fabric)
+  return {
+    min: centimetersToMeters(bounds.minCm),
+    max: centimetersToMeters(bounds.maxCm),
+    step: centimetersToMeters(bounds.stepCm),
+    decimals: 2,
+  }
 }
 
 /** يُثبّت الكمية على الخطوة وداخل الحدود. يُرجع null إذا تعذّر الشراء أصلاً. */
@@ -212,18 +211,31 @@ export interface ResolvedFabricCartLine {
   unitPrice: number | null
   quantity: number
   bounds: FabricQuantityBounds | null
+  /** إجمالي السطر قبل الضريبة بالريال (للعرض). */
   lineTotal: number | null
+  /** نفس الإجمالي بالهللة — منه تُجمع الإجماليات، لا من الرقم العشري. */
+  lineTotalHalalas: number | null
   notices: FabricLineNotice[]
 }
 
-/** هل القماش معروض للبيع في واجهة المتجر؟ */
-export function isFabricPubliclyVisible(fabric: Fabric): boolean {
-  return (
-    fabric.deleted_at == null &&
-    fabric.is_active !== false &&
-    fabric.is_available !== false &&
-    fabric.is_manually_hidden !== true
-  )
+/** إجمالي سطر السلة بالهللة من سعر الوحدة والكمية المثبّتة على حدودها. */
+function getCartLineNetHalalas(
+  fabric: Fabric,
+  unitPriceHalalas: number,
+  purchaseMode: FabricPurchaseMode,
+  quantity: number
+): number {
+  if (purchaseMode === 'piece') {
+    return computeFabricLineNetHalalas(unitPriceHalalas, {
+      unit: 'piece',
+      pieces: quantity,
+      pieceLengthCm: getFabricStockCentimeters(fabric),
+    })
+  }
+  return computeFabricLineNetHalalas(unitPriceHalalas, {
+    unit: 'meter',
+    centimeters: metersToCentimeters(quantity) ?? 0,
+  })
 }
 
 /**
@@ -250,6 +262,7 @@ export function resolveCartLine(
     quantity: line.quantity,
     bounds: null,
     lineTotal: null,
+    lineTotalHalalas: null,
     unitPrice: null,
     purchaseMode: line.purchaseMode,
     notices,
@@ -276,10 +289,11 @@ export function resolveCartLine(
     return { ...base, fabric, purchaseMode, status: 'out-of-stock', isPurchasable: false }
   }
 
-  const unitPrice = getFabricUnitPrice(fabric)
-  if (unitPrice == null) {
+  const unitPriceHalalas = getFabricUnitPriceHalalas(fabric)
+  if (unitPriceHalalas == null) {
     return { ...base, fabric, purchaseMode, status: 'price-on-request', isPurchasable: false }
   }
+  const unitPrice = halalasToSar(unitPriceHalalas)
 
   const bounds = getFabricQuantityBounds(fabric)
 
@@ -310,6 +324,8 @@ export function resolveCartLine(
   }
   if (clamped !== roundFabricNumber(line.quantity)) notices.push('quantity-adjusted')
 
+  const lineTotalHalalas = getCartLineNetHalalas(fabric, unitPriceHalalas, purchaseMode, clamped)
+
   return {
     // المفتاح يُبنى دائماً من طريقة البيع المحفوظة لا الحيّة: هو عنوان السطر
     // في المتجر، فلو انقلبت طريقة البيع لتوقّف الحذف وتعديل الكمية عن المطابقة.
@@ -322,7 +338,8 @@ export function resolveCartLine(
     unitPrice,
     quantity: clamped,
     bounds,
-    lineTotal: roundFabricNumber(unitPrice * clamped),
+    lineTotal: halalasToSar(lineTotalHalalas),
+    lineTotalHalalas,
     notices,
   }
 }
@@ -345,17 +362,19 @@ export interface FabricCartTotals {
 }
 
 /**
- * الإجمالي المحلي تقديري للعرض فقط؛ الخادم هو مرجع السعر النهائي عند الطلب.
- * الأسطر غير القابلة للشراء لا تدخل الإجمالي لكنها تبقى ظاهرة في السلة.
+ * الإجمالي المحلي تقديري للعرض فقط؛ الخادم هو مرجع السعر النهائي عند الطلب،
+ * لكنه يحسبه بنفس الدالة (`computeFabricOrderTotals`) فلا يختلف الرقمان إلا إن
+ * تغيّرت البيانات نفسها. الأسطر غير القابلة للشراء لا تدخل الإجمالي لكنها
+ * تبقى ظاهرة في السلة.
  */
 export function computeCartTotals(lines: ResolvedFabricCartLine[]): FabricCartTotals {
-  let subtotal = 0
+  const lineNetHalalas: number[] = []
   let purchasableCount = 0
   let blockedCount = 0
 
   for (const line of lines) {
-    if (line.isPurchasable && line.lineTotal != null) {
-      subtotal = roundFabricNumber(subtotal + line.lineTotal)
+    if (line.isPurchasable && line.lineTotalHalalas != null) {
+      lineNetHalalas.push(line.lineTotalHalalas)
       purchasableCount += 1
     } else if (line.status !== 'pending') {
       // السطر قيد التحميل ليس سطراً «معطّلاً»؛ أما المنتظر إعادة اختيار الكمية
@@ -364,11 +383,11 @@ export function computeCartTotals(lines: ResolvedFabricCartLine[]): FabricCartTo
     }
   }
 
-  const vat = roundFabricNumber(subtotal * FABRIC_VAT_RATE)
+  const totals = computeFabricOrderTotals(lineNetHalalas)
   return {
-    subtotal,
-    vat,
-    total: roundFabricNumber(subtotal + vat),
+    subtotal: halalasToSar(totals.itemsNetHalalas),
+    vat: halalasToSar(totals.vatHalalas),
+    total: halalasToSar(totals.totalHalalas),
     purchasableCount,
     blockedCount,
   }

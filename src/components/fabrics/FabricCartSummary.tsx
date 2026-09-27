@@ -1,8 +1,10 @@
 'use client'
 
-import { Info, Loader2, MessageCircle } from 'lucide-react'
+import Link from 'next/link'
+import { Info, Loader2, MessageCircle, ShieldCheck } from 'lucide-react'
 import { FABRIC_VAT_RATE, type FabricCartTotals, type ResolvedFabricCartLine } from '@/lib/fabric-commerce'
 import { buildCartInquiryLink } from '@/lib/fabric-cart-whatsapp'
+import { IS_FABRIC_STORE_CHECKOUT_ENABLED } from '@/lib/fabric-store/checkout-contract'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 
 interface FabricCartSummaryProps {
@@ -13,8 +15,8 @@ interface FabricCartSummaryProps {
 /**
  * ملخّص السلة.
  *
- * الخطوة التالية في هذه المرحلة هي استفسار واتساب لا دفع: لا يوجد زر دفع
- * يعمل شكلياً. يُستبدل ببدء checkout خلف إعداد تفعيل عند اكتمال الخطة الثانية.
+ * الخطوة التالية استفسار واتساب. زر «إتمام الطلب» (صفحة الدفع، المرحلة 4 من خطة
+ * الدفع) يظهر فقط حين يُفعَّل NEXT_PUBLIC_FABRIC_STORE_CHECKOUT_ENABLED.
  */
 export default function FabricCartSummary({ lines, totals }: FabricCartSummaryProps) {
   // لا يُرسل استفسار قبل اكتمال التحقق من الخادم: الإجمالي سيكون ناقصاً
@@ -53,6 +55,24 @@ export default function FabricCartSummary({ lines, totals }: FabricCartSummaryPr
             ? 'عنصر واحد في السلة غير محتسب في الإجمالي — راجعي حالته أعلاه.'
             : `${formatFabricNumber(totals.blockedCount)} عناصر في السلة غير محتسبة في الإجمالي — راجعي حالتها أعلاه.`}
         </p>
+      )}
+
+      {IS_FABRIC_STORE_CHECKOUT_ENABLED && (
+        <Link
+          href="/fabrics/checkout/"
+          aria-disabled={!canSend}
+          onClick={event => {
+            if (!canSend) event.preventDefault()
+          }}
+          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-bold transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f6f0e8] ${
+            canSend
+              ? 'bg-[#6b1726] text-[#f6f0e8] shadow-lg hover:bg-[#2f0c14] hover:shadow-xl'
+              : 'pointer-events-none bg-[#d8c5ae]/60 text-[#211b19]/40'
+          }`}
+        >
+          <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          <span>إتمام الطلب</span>
+        </Link>
       )}
 
       <a
