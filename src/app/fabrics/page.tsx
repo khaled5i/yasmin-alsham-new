@@ -10,7 +10,7 @@ import FabricSortOptions from '@/components/FabricSortOptions'
 import dynamic from 'next/dynamic'
 import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
-import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
+import { getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
 import { FABRICS_PER_PAGE, useFabricBrowsePosition } from '@/hooks/useFabricBrowsePosition'
 import FabricFavoriteButton from '@/components/fabrics/FabricFavoriteButton'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
@@ -334,7 +334,7 @@ export default function FabricsPage() {
                     ])
                   const fallbackImage = isShowingDesign ? originalImage : (fabric.thumbnail_image || originalImage)
                   const finalPrice = getFinalPrice(fabric)
-                  const displayedPricing = getFabricDisplayPricing(finalPrice, fabric.stock_quantity)
+                  const displayedPricing = getFabricStorefrontPricing(finalPrice, fabric.stock_quantity)
                   const priceLabel = displayedPricing.amount != null && displayedPricing.amount > 0
                     ? `السعر : ${formatFabricNumber(displayedPricing.amount)} ريال / ${displayedPricing.unit === 'piece' ? 'القطعة' : 'متر'}`
                     : 'السعر عند الطلب'

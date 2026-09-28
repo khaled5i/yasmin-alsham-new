@@ -163,6 +163,7 @@ const COPY = {
     appointmentTime: 'الساعة',
     appointmentRequired: 'حدّد التاريخ والساعة قبل إرسال الرسالة.',
     sendWhatsApp: 'فتح واتساب وإرسال التذكير',
+    sendWhatsAppWithoutAppointment: 'إرسال الرسالة دون تحديد موعد',
     readyWhatsappTitle: 'إرسال رسالة جاهز للاستلام',
     readyWhatsappHelp: 'سيتم استخدام نفس قالب واتساب الموجود في صفحة الطلبات المكتملة وتسجيل الرسالة كمرسلة.',
     sendReadyWhatsApp: 'فتح واتساب وإرسال رسالة الاستلام',
@@ -249,6 +250,7 @@ const COPY = {
     appointmentTime: 'Time',
     appointmentRequired: 'Set the date and time before sending the message.',
     sendWhatsApp: 'Open WhatsApp and send reminder',
+    sendWhatsAppWithoutAppointment: 'Send message without an appointment',
     readyWhatsappTitle: 'Send ready-for-pickup message',
     readyWhatsappHelp: 'The completed-orders WhatsApp template will be used and the message will be marked as sent.',
     sendReadyWhatsApp: 'Open WhatsApp and send pickup message',
@@ -698,7 +700,7 @@ export default function OrderQualityReviewModal({
     }
   }
 
-  const openWhatsAppReminder = async () => {
+  const openWhatsAppReminder = async (withoutAppointment = false) => {
     if (!order.client_phone) return
 
     // ما بعد التسليم يعيد إرسال رسالة الاستلام بلا علم admin_confirmed،
@@ -732,9 +734,25 @@ export default function OrderQualityReviewModal({
     }
 
     const phone = normalizeWhatsAppPhone(order.client_phone)
-    if (!phone || !appointmentDate || !appointmentTime) return
+    if (!phone) return
 
     const clientName = order.client_name || ''
+
+    // رسالة بلا موعد: نفس النص دون سطري التاريخ والالتزام بالموعد
+    if (withoutAppointment) {
+      const message = isArabic
+        ? `السلام عليكم ${clientName}\n`
+          + `بروفتك ${stage === 'first_proof' ? 'الأولى' : 'الثانية'} جاهزة في القسم النسائي\n`
+          + `يرجى إحضار الكعب والمشد والستيان الخاص بك لضبط المقاسات`
+        : `Hello ${clientName}\n`
+          + `Your ${stage === 'first_proof' ? 'first' : 'second'} proof is ready in the women's section\n`
+          + `Please bring your heels, corset and bra for accurate fitting`
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    if (!appointmentDate || !appointmentTime) return
+
     const formattedTime = formatAppointmentTime(appointmentTime, isArabic)
     const formattedDate = formatGregorianDate(
       appointmentDate,
@@ -1396,6 +1414,17 @@ export default function OrderQualityReviewModal({
                         ? copy.sendReadyWhatsApp
                         : copy.sendWhatsApp}
                   </button>
+                  {isProofStage ? (
+                    <button
+                      type="button"
+                      onClick={() => void openWhatsAppReminder(true)}
+                      disabled={!order.client_phone}
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#187b54] bg-white px-5 py-3 font-bold text-[#187b54] transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-stone-300 disabled:text-stone-400"
+                    >
+                      <MessageCircle className="h-5 w-5" />
+                      {copy.sendWhatsAppWithoutAppointment}
+                    </button>
+                  ) : null}
                   {!order.client_phone ? <p className="mt-2 text-xs font-medium text-red-700">{copy.noPhone}</p> : null}
                 </div>
 

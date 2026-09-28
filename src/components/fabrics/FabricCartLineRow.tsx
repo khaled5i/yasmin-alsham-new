@@ -13,6 +13,7 @@ import {
   type ResolvedFabricCartLine,
 } from '@/lib/fabric-commerce'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import { withFabricVat } from '@/lib/fabric-display-pricing'
 import { useFabricCartStore } from '@/store/fabricCartStore'
 import { useFabricFavoritesStore } from '@/store/fabricFavoritesStore'
 import FabricQuantitySelector from './FabricQuantitySelector'
@@ -210,11 +211,12 @@ export default function FabricCartLineRow({ line, compact = false, onNavigate }:
 
             <div className="text-left" dir="rtl">
               <p className="text-xs text-[#211b19]/60">
-                {formatUnitPriceLabel(line.unitPrice, line.purchaseMode)}
+                {formatUnitPriceLabel(withFabricVat(line.unitPrice), line.purchaseMode)}
               </p>
               <p className="text-base font-bold text-[#6b1726] sm:text-lg">
-                {line.lineTotal != null ? `${formatFabricNumber(line.lineTotal)} ريال` : '—'}
+                {line.lineTotal != null ? `${formatFabricNumber(withFabricVat(line.lineTotal))} ريال` : '—'}
               </p>
+              {line.lineTotal != null && <p className="text-[10px] text-[#211b19]/50">شامل الضريبة</p>}
             </div>
           </div>
 

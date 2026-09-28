@@ -50,13 +50,13 @@ export const FABRIC_STORE_MAX_ORDER_TOTAL_HALALAS = 2_000_000
 export const FABRIC_STORE_MAX_LINES = 40
 
 /**
- * إصدارات السياسات التي توافق عليها الزبونة. **مسودّات**: صفحات الشروط والاسترجاع
- * والخصوصية تُنشر في المرحلة 10 قبل الإطلاق، ويُرفع الإصدار عندها.
+ * إصدارات السياسات التي توافق عليها الزبونة: /sales-terms و/return-policy و/privacy-policy
+ * (مضمونها في `src/lib/store-legal.ts`). أي تغيير في مضمون سياسة يرفع إصدارها.
  */
 export const FABRIC_STORE_POLICY_VERSIONS = {
-  terms: 'draft-2026-09-24',
-  returns: 'draft-2026-09-24',
-  privacy: 'draft-2026-09-24',
+  terms: '2026-09-28',
+  returns: '2026-09-28',
+  privacy: '2026-09-28',
 } as const
 
 // ============================================
@@ -84,14 +84,14 @@ export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliver
     method: 'pickup',
     code: 'shop_pickup',
     label: 'استلام من المحل',
-    description: 'نجهّز طلبك ونبلغك حين يكون جاهزاً للاستلام.',
+    description: 'جاهز في نفس يوم العمل، ونبلغك حين يكون جاهزاً للاستلام.',
     shippingNetHalalas: 0,
   },
   shipping: {
     method: 'shipping',
     code: 'ksa_flat',
     label: 'شحن داخل السعودية',
-    description: 'سعر شحن موحّد لكل مدن المملكة.',
+    description: 'سعر موحّد لكل مدن المملكة — التوصيل من 3 إلى 5 أيام عمل.',
     shippingNetHalalas: 5_000,
   },
 }

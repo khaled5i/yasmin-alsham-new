@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { FileText, CheckCircle, AlertTriangle, Clock, CreditCard, Phone, Mail } from 'lucide-react'
+import { FileText, CheckCircle, AlertTriangle, Clock, CreditCard, Phone, MessageCircle } from 'lucide-react'
 
 export default function TermsPage() {
   const sections = [
@@ -32,7 +32,7 @@ export default function TermsPage() {
         'يُطلب دفع مقدم 50% عند أخذ المقاسات وتأكيد الطلب',
         'الباقي يُدفع عند استلام الفستان المكتمل',
         'الأسعار المعلنة لا تشمل التعديلات الإضافية غير المتفق عليها',
-        'نقبل الدفع نقداً أو عبر التحويل البنكي'
+        'نقبل الدفع نقداً أو بالشبكة (مدى والبطاقات) أو عبر التحويل البنكي'
       ]
     },
     {
@@ -110,7 +110,7 @@ export default function TermsPage() {
         >
           <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-pink-100 inline-block">
             <p className="text-gray-600">
-              <strong>آخر تحديث:</strong> يناير 2024
+              <strong>آخر تحديث:</strong> سبتمبر 2026
             </p>
           </div>
         </motion.div>
@@ -225,11 +225,13 @@ export default function TermsPage() {
               </a>
               
               <a
-                href="mailto:legal@yasminalsham.com"
+                href="https://wa.me/966598862609"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse"
               >
-                <Mail className="w-5 h-5" />
-                <span>راسلينا</span>
+                <MessageCircle className="w-5 h-5" />
+                <span>واتساب</span>
               </a>
             </div>
           </div>

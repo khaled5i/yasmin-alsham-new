@@ -3,6 +3,7 @@ import { Instagram, MapPin, MessageCircle, Phone } from 'lucide-react'
 import { tailoringWhatsAppUrl } from './home-data'
 import type { HomeSectionKey } from './HomeSections'
 import styles from './home.module.css'
+import { STORE_ENTITY } from '@/lib/store-legal'
 
 type HomeFooterProps = {
   onSelectSection: (section: HomeSectionKey) => void
@@ -55,8 +56,13 @@ export default function HomeFooter({ onSelectSection }: HomeFooterProps) {
         <div>
           <Link href="/privacy-policy">سياسة الخصوصية</Link>
           <Link href="/terms-of-service">شروط الخدمة</Link>
+          <Link href="/sales-terms">شروط البيع</Link>
+          <Link href="/return-policy">الاسترجاع والاستبدال</Link>
+          <Link href="/shipping-policy">الشحن والتوصيل</Link>
         </div>
-        <p>© 2026 ياسمين الشام.</p>
+        <p>
+          © 2026 ياسمين الشام — {STORE_ENTITY.legalName} · السجل التجاري <bdi dir="ltr">{STORE_ENTITY.commercialRegistration}</bdi> · الرقم الضريبي <bdi dir="ltr">{STORE_ENTITY.vatNumber}</bdi>
+        </p>
       </div>
     </footer>
   )

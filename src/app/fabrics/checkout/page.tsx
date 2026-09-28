@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Loader2, ShieldCheck, Store, Truck } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock, CreditCard, Loader2, MessageCircle, ShieldCheck, Store, Truck } from 'lucide-react'
 import { IS_FABRIC_CART_ENABLED, formatQuantityLabel } from '@/lib/fabric-commerce'
 import {
   FABRIC_DELIVERY_OPTIONS,
@@ -17,6 +17,7 @@ import {
   type FabricQuoteResponse,
 } from '@/lib/fabric-store/checkout-contract'
 import FabricPayNowButton from '@/components/fabrics/FabricPayNowButton'
+import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { useFabricCartStore } from '@/store/fabricCartStore'
 
@@ -201,9 +202,29 @@ export default function FabricCheckoutPage() {
               <p className="mt-2 text-xs text-[#211b19]/60">إن لم يكتمل الدفع قبل انتهاء الحجز يعود القماش للبيع تلقائياً.</p>
             </div>
           ) : (
-            <p className="rounded-xl bg-[#b99a68]/20 px-4 py-3 text-sm font-semibold text-[#2f0c14]">
-              الدفع الإلكتروني لم يُفعَّل بعد — هذه مرحلة تجريبية، ولن يُحصَّل أي مبلغ. إن لم يكتمل الدفع يعود القماش للبيع تلقائياً.
-            </p>
+            // قبل اعتماد ميسر: مسار الشراء كاملاً ظاهر، والدفع نفسه «قريباً» ويُكمَل الطلب عبر واتساب.
+            <div className="space-y-3 text-start">
+              <button
+                type="button"
+                disabled
+                className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-[#d8c5ae]/60 px-6 py-3.5 font-bold text-[#211b19]/50"
+              >
+                <CreditCard className="h-5 w-5" aria-hidden="true" />
+                <span>الدفع الإلكتروني — قريباً</span>
+              </button>
+              <p className="rounded-xl bg-[#b99a68]/20 px-4 py-3 text-sm font-semibold text-[#2f0c14]">
+                الدفع بالبطاقة (مدى، Visa، Mastercard) يُفعَّل قريباً. لإتمام طلبك الآن أرسلي رقم الطلب عبر واتساب قبل انتهاء الحجز، ولم يُحصَّل منكِ أي مبلغ.
+              </p>
+              <a
+                href={`https://wa.me/${FABRIC_STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(`مرحباً، أود إتمام طلبي من متجر الأقمشة رقم ${order.orderNumber}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6b1726] px-6 py-3.5 font-bold text-[#f6f0e8] shadow-lg transition-all duration-300 hover:bg-[#2f0c14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
+              >
+                <MessageCircle className="h-5 w-5" aria-hidden="true" />
+                <span>إتمام الطلب عبر واتساب</span>
+              </a>
+            </div>
           )}
           <Link href="/fabrics/" className="mt-6 inline-block text-sm font-semibold text-[#6b1726] hover:text-[#2f0c14]">
             العودة إلى متجر الأقمشة
@@ -228,6 +249,12 @@ export default function FabricCheckoutPage() {
           <span>العودة إلى السلة</span>
         </Link>
         <h1 className="mb-6 mt-4 text-2xl font-bold text-[#6b1726] sm:text-3xl">إتمام الطلب</h1>
+        {!IS_FABRIC_STORE_PAYMENTS_ENABLED && (
+          <p role="status" className="mb-6 flex items-start gap-2 rounded-xl border-2 border-[#b99a68]/60 bg-[#b99a68]/15 px-4 py-3 text-sm font-semibold text-[#2f0c14]">
+            <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-[#6b1726]" aria-hidden="true" />
+            <span>الدفع الإلكتروني بالبطاقة قريباً. يمكنكِ الآن تسجيل طلبك وحجز القماش، ثم إتمامه معنا عبر واتساب.</span>
+          </p>
+        )}
 
         {hasHydrated && cartLines.length === 0 && (
           <p className="rounded-xl bg-[#f6f0e8] px-4 py-6 text-center">
@@ -427,8 +454,14 @@ export default function FabricCheckoutPage() {
               <label className="mt-4 flex items-start gap-2 text-xs leading-relaxed">
                 <input type="checkbox" checked={form.acceptPolicies} className="mt-0.5 accent-[#6b1726]"
                   onChange={event => update('acceptPolicies', event.target.checked)} />
-                {/* نص السياسات نفسه يُعتمد ويُنشر في المرحلة 10 قبل الإطلاق؛ لا يُكتب هنا ما لم يقرره المالك. */}
-                <span>أوافق على شروط البيع وسياسة الاسترجاع وسياسة الخصوصية.</span>
+                {/* الإصدارات المحفوظة مع الطلب: FABRIC_STORE_POLICY_VERSIONS؛ المضمون في store-legal.ts */}
+                <span>
+                  أوافق على{' '}
+                  <Link href="/sales-terms" target="_blank" className="font-semibold text-[#6b1726] underline">شروط البيع</Link> و
+                  <Link href="/return-policy" target="_blank" className="font-semibold text-[#6b1726] underline">سياسة الاسترجاع والاستبدال</Link> و
+                  <Link href="/privacy-policy" target="_blank" className="font-semibold text-[#6b1726] underline">سياسة الخصوصية</Link>.
+                  {' '}القماش المقصوص بالمتر لا يُسترجع إلا لعيب أو خطأ منّا.
+                </span>
               </label>
               <label className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-[#211b19]/75">
                 <input type="checkbox" checked={form.marketingOptIn} className="mt-0.5 accent-[#6b1726]"

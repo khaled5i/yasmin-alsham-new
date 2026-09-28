@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
 import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, MessageCircle, Shirt } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
-import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
+import { getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { requestFabricBrowseReturn } from '@/lib/fabric-browse-position'
@@ -120,8 +121,8 @@ export default function FabricDetailPage() {
   }
 
   const finalPrice = getFinalPrice(fabric)
-  const displayedFinalPrice = getFabricDisplayPricing(finalPrice, fabric.stock_quantity)
-  const displayedOriginalPrice = getFabricDisplayPricing(
+  const displayedFinalPrice = getFabricStorefrontPricing(finalPrice, fabric.stock_quantity)
+  const displayedOriginalPrice = getFabricStorefrontPricing(
     fabric.price_per_meter,
     fabric.stock_quantity
   )
@@ -129,7 +130,7 @@ export default function FabricDetailPage() {
   // رابط واتساب للاستفسار
   const fabricLabel = fabric.name || fabric.fabric_code || 'قماش'
   const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabricLabel}`
-  const whatsappLink = `https://wa.me/966502901534?text=${encodeURIComponent(whatsappMessage)}`
+  const whatsappLink = `https://wa.me/${FABRIC_STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`
 
   return (
     <div className="min-h-screen bg-[#fbf8f3] text-[#211b19] pt-16 lg:pt-20">
@@ -295,6 +296,7 @@ export default function FabricDetailPage() {
                   ) : (
                     <span>{formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}</span>
                   )}
+                  <p className="mt-1 text-sm font-normal text-[#211b19]/55">شامل ضريبة القيمة المضافة 15%</p>
                 </div>
               )}
 

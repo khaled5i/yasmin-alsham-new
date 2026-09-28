@@ -41,7 +41,7 @@ export default function FabricCartSummary({ lines, totals }: FabricCartSummaryPr
           <dd className="font-semibold text-[#211b19]">{formatFabricNumber(totals.vat)} ريال</dd>
         </div>
         <div className="mt-3 flex items-center justify-between gap-4 border-t-2 border-[#d8c5ae] pt-3">
-          <dt className="font-bold text-[#211b19]">الإجمالي التقديري</dt>
+          <dt className="font-bold text-[#211b19]">الإجمالي شامل الضريبة</dt>
           <dd className="text-xl font-bold text-[#6b1726]">{formatFabricNumber(totals.total)} ريال</dd>
         </div>
       </dl>

@@ -16,6 +16,7 @@ import {
   isFabricPubliclyVisible,
 } from '@/lib/fabric-commerce'
 import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
+import { withFabricVat } from '@/lib/fabric-display-pricing'
 import { useFabricFavoritesStore } from '@/store/fabricFavoritesStore'
 
 export default function FabricFavoritesPage() {
@@ -206,7 +207,8 @@ export default function FabricFavoritesPage() {
                     </div>
 
                     <p className="mt-2 text-sm font-bold text-[#6b1726]">
-                      {formatUnitPriceLabel(unitPrice, mode)}
+                      {formatUnitPriceLabel(withFabricVat(unitPrice), mode)}
+                      {unitPrice != null && <span className="font-normal text-[#211b19]/55"> شامل الضريبة</span>}
                     </p>
 
                     <div className="mt-auto pt-4">

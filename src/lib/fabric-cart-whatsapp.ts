@@ -14,9 +14,10 @@ import {
   type ResolvedFabricCartLine,
 } from './fabric-commerce'
 import { formatFabricNumber } from './fabric-number-format'
+import { STORE_SUPPORT_PHONE } from './store-legal'
 
 /** نفس رقم الاستفسار المستخدم في صفحة القماش والمعاينة السريعة. */
-export const FABRIC_STORE_WHATSAPP_NUMBER = '966502901534'
+export const FABRIC_STORE_WHATSAPP_NUMBER = STORE_SUPPORT_PHONE.e164.slice(1)
 
 export function buildCartInquiryMessage(
   lines: ResolvedFabricCartLine[],

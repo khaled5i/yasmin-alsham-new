@@ -1,4 +1,5 @@
 import { roundFabricNumber } from './fabric-number-format'
+import { FABRIC_VAT_BASIS_POINTS } from './fabric-store/pricing'
 
 export type FabricPricingUnit = 'meter' | 'piece'
 
@@ -80,6 +81,26 @@ export function getFabricDisplayPricing(
     : roundFabricNumber(price)
 
   return { amount, unit, isWholePiecePrice }
+}
+
+/**
+ * السعر شاملاً ضريبة القيمة المضافة — ما تراه الزبونة في واجهة المتجر (الأسعار المخزّنة
+ * غير شاملة). للعرض فقط: ما يُدفع يُحسب بالهللة في `fabric-store/pricing.ts`، والضريبة
+ * هناك على مجموع الطلب، فقد يختلف مجموع الأسطر المعروضة عن الإجمالي بهللة.
+ */
+export function withFabricVat(amount: number | null): number | null {
+  if (amount == null || !Number.isFinite(amount)) return null
+  return roundFabricNumber(amount * (1 + FABRIC_VAT_BASIS_POINTS / 10_000))
+}
+
+/** `getFabricDisplayPricing` للواجهة العامة: نفس الوحدة، والمبلغ شامل الضريبة. */
+export function getFabricStorefrontPricing(
+  pricePerInventoryUnit: number | null | undefined,
+  availableQuantity: number | null | undefined,
+  inventoryUnit: FabricPricingUnit = 'meter'
+): FabricDisplayPricing {
+  const pricing = getFabricDisplayPricing(pricePerInventoryUnit, availableQuantity, inventoryUnit)
+  return { ...pricing, amount: withFabricVat(pricing.amount) }
 }
 
 export function getFabricPricingUnitLabel(unit: FabricPricingUnit): string {

@@ -6,6 +6,7 @@ import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { matchesFabricSearch } from '@/lib/fabric-search'
 import {
   getFabricDisplayPricing,
+  getFabricStorefrontPricing,
   getFabricNetPricePerMeter,
   hasFabricDisplayPrice,
   type FabricPricingUnit,
@@ -221,7 +222,8 @@ export const useFabricStore = create<FabricStoreState>()(
           // فلتر السعر
           if (filters.priceRange) {
             const { min, max } = filters.priceRange
-            const displayedPrice = getFabricDisplayPricing(
+            // النطاق يُختار على السعر الظاهر للزبونة (شامل الضريبة)
+            const displayedPrice = getFabricStorefrontPricing(
               fabric.price_per_meter,
               fabric.stock_quantity
             ).amount

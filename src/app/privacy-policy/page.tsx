@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import { Shield, Lock, Eye, UserCheck, FileText, Mail, Home } from 'lucide-react'
 import Link from 'next/link'
+import { STORE_ENTITY, STORE_POLICIES_UPDATED_AT, STORE_SUPPORT_PHONE } from '@/lib/store-legal'
 
 export default function PrivacyPolicyPage() {
   return (
@@ -20,13 +21,13 @@ export default function PrivacyPolicyPage() {
               <Shield className="w-16 h-16 text-pink-600" />
             </div>
             <h1 className="text-4xl font-bold text-gray-800 mb-2">سياسة الخصوصية</h1>
-            <p className="text-gray-600">آخر تحديث: ديسمبر 2024</p>
+            <p className="text-gray-600">آخر تحديث: {STORE_POLICIES_UPDATED_AT}</p>
           </div>
 
           {/* المقدمة */}
           <section className="mb-8">
             <p className="text-gray-700 leading-relaxed">
-              نحن في <strong>ياسمين الشام</strong> نلتزم بحماية خصوصيتك وبياناتك الشخصية. توضح هذه السياسة كيفية جمع واستخدام وحماية المعلومات التي تقدمها لنا عند استخدام موقعنا الإلكتروني.
+              نحن في <strong>ياسمين الشام</strong> ({STORE_ENTITY.legalName}، سجل تجاري <bdi dir="ltr">{STORE_ENTITY.commercialRegistration}</bdi>) نلتزم بحماية خصوصيتك وبياناتك الشخصية. توضح هذه السياسة كيفية جمع واستخدام وحماية المعلومات التي تقدمها لنا عند استخدام موقعنا الإلكتروني.
             </p>
           </section>
 
@@ -39,6 +40,7 @@ export default function PrivacyPolicyPage() {
             <div className="bg-pink-50 rounded-lg p-6 space-y-3">
               <p className="text-gray-700"><strong>• المعلومات الشخصية:</strong> الاسم، البريد الإلكتروني، رقم الهاتف، العنوان عند إجراء طلب.</p>
               <p className="text-gray-700"><strong>• معلومات الطلب:</strong> تفاصيل المنتجات المطلوبة، تفضيلات التصميم، المقاسات.</p>
+              <p className="text-gray-700"><strong>• معلومات الدفع:</strong> حالة الدفع ورقم العملية وآخر أرقام البطاقة كما تعيدها بوابة الدفع. <strong>لا نستلم رقم بطاقتك كاملاً ولا رمز التحقق ولا نخزنهما</strong>؛ تُدخَل بيانات البطاقة مباشرة في صفحة الدفع الآمنة لدى ميسر.</p>
             </div>
           </section>
 
@@ -105,6 +107,18 @@ export default function PrivacyPolicyPage() {
             <ul className="space-y-2 text-gray-700 mt-3">
               <li className="flex items-start gap-2">
                 <span className="text-pink-600 mt-1">•</span>
+                <span>بوابة الدفع ميسر (Moyasar) المرخّصة من البنك المركزي السعودي، لمعالجة المدفوعات والاسترداد</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600 mt-1">•</span>
+                <span>شركة الشحن، بالقدر اللازم لتوصيل طلبك (الاسم ورقم الجوال والعنوان)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600 mt-1">•</span>
+                <span>مزود نظام الفوترة والمحاسبة، لإصدار الفواتير الضريبية</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600 mt-1">•</span>
                 <span>الجهات القانونية عند الضرورة القانونية</span>
               </li>
             </ul>
@@ -139,7 +153,9 @@ export default function PrivacyPolicyPage() {
               إذا كان لديك أي أسئلة أو استفسارات حول سياسة الخصوصية، يرجى التواصل معنا عبر:
             </p>
             <div className="mt-4 bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg p-4">
-              <p className="text-gray-700"><strong>الهاتف / واتساب:</strong> +966598862609</p>
+              <p className="text-gray-700"><strong>التفصيل — الهاتف / واتساب:</strong> <bdi dir="ltr">+966598862609</bdi></p>
+              <p className="text-gray-700"><strong>متجر الأقمشة — الهاتف / واتساب:</strong> <bdi dir="ltr">{STORE_SUPPORT_PHONE.e164}</bdi></p>
+              <p className="text-gray-700"><strong>العنوان:</strong> {STORE_ENTITY.address}</p>
             </div>
           </section>
 
@@ -147,7 +163,7 @@ export default function PrivacyPolicyPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">تحديثات السياسة</h2>
             <p className="text-gray-700 leading-relaxed">
-              قد نقوم بتحديث سياسة الخصوصية من وقت لآخر. سيتم نشر أي تغييرات على هذه الصفحة مع تحديث تاريخ "آخر تحديث" في الأعلى.
+              قد نقوم بتحديث سياسة الخصوصية من وقت لآخر. سيتم نشر أي تغييرات على هذه الصفحة مع تحديث تاريخ «آخر تحديث» في الأعلى.
             </p>
           </section>
 

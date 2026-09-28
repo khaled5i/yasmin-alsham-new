@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { useFabricStore } from '@/store/fabricStore'
-import { getFabricDisplayPricing } from '@/lib/fabric-display-pricing'
+import { getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
 
 interface FabricFilterSidebarProps {
   isOpen: boolean
@@ -37,7 +37,7 @@ export default function FabricFilterSidebar({ isOpen, onClose }: FabricFilterSid
   useEffect(() => {
     if (fabrics.length > 0) {
       const prices = fabrics
-        .map(f => getFabricDisplayPricing(f.price_per_meter, f.stock_quantity).amount)
+        .map(f => getFabricStorefrontPricing(f.price_per_meter, f.stock_quantity).amount)
         .filter((price): price is number => price != null)
       const minPrice = Math.min(...prices, 0)
       const maxPrice = Math.max(...prices, 1000)
