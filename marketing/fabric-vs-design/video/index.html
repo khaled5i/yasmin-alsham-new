@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ar" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="assets/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Tajawal"; font-weight: 500; src: url(assets/fonts/tajawal-500-ar.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+200C-200E, U+FB50-FDFF, U+FE70-FEFC; }
+      @font-face { font-family: "Tajawal"; font-weight: 500; src: url(assets/fonts/tajawal-500-lat.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+      @font-face { font-family: "Tajawal"; font-weight: 800; src: url(assets/fonts/tajawal-800-ar.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+200C-200E, U+FB50-FDFF, U+FE70-FEFC; }
+      @font-face { font-family: "Tajawal"; font-weight: 800; src: url(assets/fonts/tajawal-800-lat.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+      @font-face { font-family: "Aref Ruqaa"; font-weight: 700; src: url(assets/fonts/aref-700-ar.woff2) format("woff2"); }
+
+      :root {
+        --cream: #f4ebdf;
+        --cream-2: #e9dccb;
+        --brown: #4a2511;
+        --brown-2: #6b3d22;
+        --gold: #94661f;
+        --gold-2: #d9b26a;
+        --rose: #c98e78;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--cream); }
+      #root {
+        position: relative; width: 1080px; height: 1920px; overflow: hidden;
+        font-family: "Tajawal", sans-serif; color: var(--brown); direction: rtl;
+        background:
+          radial-gradient(1200px 900px at 75% 18%, #faf4ec 0%, rgba(250,244,236,0) 60%),
+          radial-gradient(900px 900px at 10% 85%, #e4d2bd 0%, rgba(228,210,189,0) 65%),
+          linear-gradient(170deg, #f3e9dc 0%, #ecdfcf 55%, #e6d6c3 100%);
+      }
+      .grain {
+        position: absolute; inset: 0; pointer-events: none; opacity: .35; mix-blend-mode: multiply;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .32  0 0 0 0 .22  0 0 0 .35 0'/></filter><rect width='400' height='400' filter='url(%23n)'/></svg>");
+        z-index: 50;
+      }
+      .scene { position: absolute; inset: 0; width: 1080px; height: 1920px; }
+      .center { position: absolute; left: 0; right: 0; text-align: center; }
+      .h-xl { font-weight: 800; font-size: 104px; line-height: 1.15; }
+      .h-l { font-weight: 800; font-size: 84px; line-height: 1.2; }
+      .h-m { font-weight: 800; font-size: 64px; line-height: 1.25; }
+      .t-m { font-weight: 500; font-size: 46px; line-height: 1.4; }
+      .gold { color: var(--gold); }
+      .w { display: inline-block; }
+      .hl { position: relative; display: inline-block; isolation: isolate; }
+      .hl .bar { position: absolute; left: -10px; right: -10px; bottom: 10px; height: 26px; background: var(--gold-2); opacity: .55; z-index: -1; transform-origin: right center; border-radius: 6px; }
+      .card {
+        position: absolute; border-radius: 28px; overflow: hidden;
+        box-shadow: 0 30px 60px rgba(74,37,17,.22), 0 0 0 3px rgba(255,250,243,.9), 0 0 0 5px rgba(184,134,59,.55);
+        background: var(--cream-2);
+      }
+      .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .badge {
+        position: absolute; top: 18px; right: 18px; width: 86px; height: 86px; border-radius: 50%;
+        background: var(--brown); color: var(--cream); font-weight: 800; font-size: 52px;
+        display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 18px rgba(0,0,0,.25);
+      }
+      .pill {
+        position: absolute; left: 50%; white-space: nowrap;
+        padding: 22px 46px; border-radius: 999px; background: var(--brown); color: var(--cream);
+        font-weight: 800; font-size: 50px; box-shadow: 0 14px 30px rgba(74,37,17,.3);
+      }
+      .chip {
+        display: inline-block; padding: 14px 34px; border-radius: 999px; border: 3px solid var(--gold);
+        color: var(--brown-2); font-weight: 500; font-size: 42px; background: rgba(255,250,243,.6);
+      }
+      .ruqaa { font-family: "Aref Ruqaa", serif; font-weight: 700; }
+      .wipe { position: absolute; top: 560px; height: 800px; width: 2500px; z-index: 40; left: 0; }
+      .wipe img { height: 100%; width: 100%; object-fit: cover; display: block; filter: drop-shadow(0 30px 40px rgba(74,37,17,.35)); }
+      .counter { position: absolute; top: 190px; right: 80px; font-weight: 800; font-size: 54px; color: var(--gold); letter-spacing: 2px; }
+      .line { position: absolute; height: 4px; background: var(--gold); border-radius: 4px; transform-origin: right center; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="42" data-width="1080" data-height="1920">
+
+      <!-- ============ S1 HOOK 0 → 4.2 ============ -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="4.4" data-track-index="0">
+        <div class="center h-l" style="top:200px"><span class="w s1w">نفس</span> <span class="w s1w">التصميم</span> <span class="w s1w">بالضبط…</span></div>
+        <div class="center h-xl" style="top:310px"><span class="hl"><span class="bar" id="s1bar"></span><span class="w s1w2">٤</span> <span class="w s1w2">فساتين</span> <span class="w s1w2 gold">مختلفة!</span></span></div>
+        <div class="card s1c" style="left:546px; top:520px; width:420px; height:564px"><img src="assets/img/satin.webp" /><div class="badge">١</div></div>
+        <div class="card s1c" style="left:106px; top:520px; width:420px; height:564px"><img src="assets/img/chiffon.webp" /><div class="badge">٢</div></div>
+        <div class="card s1c" style="left:546px; top:1108px; width:420px; height:564px"><img src="assets/img/velvet.webp" /><div class="badge">٣</div></div>
+        <div class="card s1c" style="left:106px; top:1108px; width:420px; height:564px"><img src="assets/img/embroidery.webp" /><div class="badge">٤</div></div>
+        <div class="pill" id="s1pill" style="top:1610px">أي رقم تختارين؟</div>
+      </div>
+
+      <!-- ============ S2 PROOF 4.2 → 8.8 ============ -->
+      <div id="s2" class="scene clip" data-start="4.2" data-duration="4.8" data-track-index="0">
+        <div class="center h-m" style="top:190px"><span class="w s2w">نفس</span> <span class="w s2w">الموديل…</span> <span class="w s2w gold">قماشين</span></div>
+        <div class="card" id="s2a" style="left:560px; top:330px; width:400px; height:862px"><img src="assets/img/grey-lace.webp" /></div>
+        <div class="card" id="s2b" style="left:120px; top:330px; width:400px; height:862px"><img src="assets/img/grey-satin.webp" /></div>
+        <div class="chip" id="s2la" style="position:absolute; top:1222px; right:155px">دانتيل مطرّز</div>
+        <div class="chip" id="s2lb" style="position:absolute; top:1222px; left:225px">ساتان</div>
+        <div class="center t-m" id="s2no" style="top:1330px; color:var(--brown-2); font-size:56px">المشكلة غالبًا <span style="position:relative;display:inline-block">مو في التصميم<span class="line" id="s2strike" style="left:-6px; right:-6px; top:42px; height:6px; background:#a3442b"></span></span></div>
+        <div class="center h-xl" id="s2yes" style="top:1430px"><span class="hl"><span class="bar" id="s2bar"></span>الفرق في <span class="gold">القماش</span></span></div>
+      </div>
+
+      <!-- ============ S3–S6 FABRICS ============ -->
+      <div id="s3" class="scene clip fab" data-start="8.8" data-duration="4.2" data-track-index="0">
+        <div class="counter">١ / ٤</div>
+        <div class="card fcard" style="left:230px; top:290px; width:620px; height:832px"><img src="assets/img/satin.webp" /></div>
+        <div class="center fname" style="top:1150px; font-size:150px; font-weight:800; line-height:1.1">الساتان</div>
+        <div class="center h-m ftrait" style="top:1350px">لمعة <span class="gold">•</span> حضور</div>
+        <div class="center fchip" style="top:1460px"><span class="chip">يناسب: السهرات والإضاءة القوية</span></div>
+      </div>
+      <div id="s4" class="scene clip fab" data-start="12.8" data-duration="4.2" data-track-index="0">
+        <div class="counter">٢ / ٤</div>
+        <div class="card fcard" style="left:230px; top:290px; width:620px; height:832px"><img src="assets/img/chiffon.webp" /></div>
+        <div class="center fname" style="top:1150px; font-size:150px; font-weight:800; line-height:1.1">الشيفون</div>
+        <div class="center h-m ftrait" style="top:1350px">خفّة <span class="gold">•</span> حركة</div>
+        <div class="center fchip" style="top:1460px"><span class="chip">يناسب: الصيف والمناسبات النهارية</span></div>
+      </div>
+      <div id="s5" class="scene clip fab" data-start="16.8" data-duration="4.2" data-track-index="0">
+        <div class="counter">٣ / ٤</div>
+        <div class="card fcard" style="left:230px; top:290px; width:620px; height:832px"><img src="assets/img/velvet.webp" /></div>
+        <div class="center fname" style="top:1150px; font-size:150px; font-weight:800; line-height:1.1">المخمل</div>
+        <div class="center h-m ftrait" style="top:1350px">دفء <span class="gold">•</span> فخامة</div>
+        <div class="center fchip" style="top:1460px"><span class="chip">يناسب: سهرات الشتاء</span></div>
+      </div>
+      <div id="s6" class="scene clip fab" data-start="20.8" data-duration="4.4" data-track-index="0">
+        <div class="counter">٤ / ٤</div>
+        <div class="card fcard" style="left:230px; top:290px; width:620px; height:832px"><img src="assets/img/embroidery.webp" /></div>
+        <div class="center fname" style="top:1150px; font-size:150px; font-weight:800; line-height:1.1">المطرّز</div>
+        <div class="center h-m ftrait" style="top:1350px">يغنيك عن الإكسسوار</div>
+        <div class="center fchip" style="top:1460px"><span class="chip">يناسب: الأعراس والمناسبات الكبيرة</span></div>
+      </div>
+
+      <!-- ============ S7 ORDER 25 → 30 ============ -->
+      <div id="s7" class="scene clip" data-start="25" data-duration="5.2" data-track-index="0">
+        <div class="center h-l" id="s7t" style="top:210px">الترتيب <span class="gold">الصح</span> للاختيار</div>
+        <div class="step" id="st1" style="position:absolute; top:470px; left:200px; right:200px; height:200px; display:flex; align-items:center; gap:40px">
+          <div class="badge" style="position:static; width:150px; height:150px; font-size:86px">١</div><div class="h-l">المناسبة</div>
+        </div>
+        <div class="step" id="st2" style="position:absolute; top:760px; left:160px; right:160px; height:230px; display:flex; align-items:center; gap:40px; background:rgba(217,178,106,.28); border-radius:120px; padding-right:40px">
+          <div class="badge" style="position:static; width:170px; height:170px; font-size:96px; background:var(--gold)">٢</div><div class="h-xl">القماش</div>
+        </div>
+        <div class="step" id="st3" style="position:absolute; top:1080px; left:200px; right:200px; height:200px; display:flex; align-items:center; gap:40px">
+          <div class="badge" style="position:static; width:150px; height:150px; font-size:86px">٣</div><div class="h-l">التصميم</div>
+        </div>
+        <div class="center h-m" id="s7no" style="top:1340px; color:#a3442b">مو العكس!</div>
+        <img id="s7strip" src="assets/img/fabric-strip.webp" style="position:absolute; left:0; top:1480px; width:1080px; height:347px; object-fit:cover; opacity:.9" />
+      </div>
+
+      <!-- ============ S8 READY vs TAILORED 30 → 35.5 ============ -->
+      <div id="s8" class="scene clip" data-start="30" data-duration="5.7" data-track-index="0">
+        <div class="card" id="s8a" style="left:540px; top:220px; width:480px; height:400px"><img src="assets/img/rack.webp" /></div>
+        <div id="s8at" style="position:absolute; top:270px; left:60px; width:450px">
+          <div class="h-m">الجاهز</div><div class="t-m" style="color:var(--brown-2)">تختارين من الموجود</div>
+        </div>
+        <div class="center ruqaa gold" id="s8or" style="top:650px; font-size:110px">أو</div>
+        <div class="card" id="s8b" style="left:60px; top:820px; width:480px; height:362px"><img src="assets/img/tailor.webp" /></div>
+        <div id="s8bt" style="position:absolute; top:850px; right:60px; width:450px">
+          <div class="h-m gold">التفصيل</div><div class="t-m" style="color:var(--brown-2)">تختارين قماشك وتصنعين فستانك</div>
+        </div>
+        <div class="center h-l" id="s8l1" style="top:1290px">على <span class="hl"><span class="bar" id="s8bar1"></span>ذوقك</span>…</div>
+        <div class="center h-l" id="s8l2" style="top:1410px">وعلى <span class="hl gold"><span class="bar" id="s8bar2"></span>ميزانيتك</span></div>
+      </div>
+
+      <!-- ============ S9 CTA 35.5 → 42 ============ -->
+      <div id="s9" class="scene clip" data-start="35.5" data-duration="6.5" data-track-index="0" style="background:linear-gradient(175deg,#4a2511 0%,#3a1c0d 100%)">
+        <div class="center h-l" id="s9h1" style="top:200px; color:var(--cream)">ابدئي من القماش…</div>
+        <div class="center h-l" id="s9h2" style="top:310px; color:var(--gold-2)">والباقي يصير أسهل</div>
+        <div class="card" id="s9img" style="left:330px; top:470px; width:420px; height:782px; box-shadow:0 30px 60px rgba(0,0,0,.45), 0 0 0 3px rgba(217,178,106,.8)"><img src="assets/img/atelier.webp" /></div>
+        <img id="s9logo" src="assets/img/logo.png" style="position:absolute; left:250px; top:1290px; width:580px" />
+        <div class="center t-m" id="s9sub" style="top:1500px; color:var(--cream); letter-spacing:4px">—— للأقمشة ——</div>
+        <div class="pill" id="s9pill" style="top:1600px; background:var(--gold-2); color:var(--brown); font-size:44px; display:flex; align-items:center; gap:18px">
+          <svg width="40" height="50" viewBox="0 0 40 50"><path d="M4 2h32v46L20 36 4 48z" fill="#4a2511"/></svg>
+          احفظي الفيديو… وأرسليه لصديقتك المحتارة
+        </div>
+      </div>
+
+      <!-- fabric wipe transitions -->
+      <div class="wipe clip" id="wipe1" data-start="3.75" data-duration="0.9" data-track-index="1"><img src="assets/img/fabric-strip.webp" /></div>
+      <div class="wipe clip" id="wipe2" data-start="24.55" data-duration="0.9" data-track-index="1"><img src="assets/img/fabric-strip.webp" /></div>
+      <div class="wipe clip" id="wipe3" data-start="35.05" data-duration="0.9" data-track-index="1"><img src="assets/img/fabric-strip.webp" /></div>
+
+      <div class="grain"></div>
+    </div>
+
+    <script>
+      gsap.set(".pill", { xPercent: -50 });
+      const tl = gsap.timeline({ paused: true });
+      const E = "power3.out";
+
+      // ---------- S1 ----------
+      tl.from(".s1w", { y: -40, opacity: 0.3, duration: 0.3, stagger: 0.05, ease: "back.out(2)" }, 0);
+      tl.from(".s1w2", { scale: 0.6, opacity: 0.2, duration: 0.35, stagger: 0.06, ease: "back.out(2.5)" }, 0.1);
+      tl.from("#s1bar", { scaleX: 0, duration: 0.4, ease: E }, 0.5);
+      tl.from(".s1c", { scale: 0.85, opacity: 0.35, rotation: (i) => [4, -4, -3, 3][i], duration: 0.4, stagger: 0.06, ease: "back.out(1.6)" }, 0);
+      tl.from("#s1 .badge", { scale: 0, duration: 0.3, stagger: 0.1, ease: "back.out(3)" }, 0.45);
+      tl.from("#s1pill", { y: 80, opacity: 0, duration: 0.4, ease: "back.out(2)" }, 1.6);
+      tl.to("#s1pill", { scale: 1.08, duration: 0.25, yoyo: true, repeat: 3, ease: "sine.inOut" }, 2.1);
+      tl.to(".s1c", { scale: 1.04, duration: 3.3, ease: "none" }, 0.45);
+
+      // wipe helper: fabric sweeps right → left across the frame
+      function wipe(id, t) {
+        tl.fromTo(id, { x: 1100 }, { x: -2600, duration: 0.9, ease: "power2.inOut" }, t);
+      }
+      wipe("#wipe1", 3.75);
+      wipe("#wipe2", 24.55);
+      wipe("#wipe3", 35.05);
+
+      // ---------- S2 ----------
+      const s2 = 4.2;
+      tl.from(".s2w", { y: -50, opacity: 0, duration: 0.4, stagger: 0.1, ease: "back.out(2)" }, s2 + 0.25);
+      tl.from("#s2a", { x: 300, opacity: 0, rotation: 6, duration: 0.6, ease: E }, s2 + 0.3);
+      tl.from("#s2b", { x: -300, opacity: 0, rotation: -6, duration: 0.6, ease: E }, s2 + 0.42);
+      tl.from(["#s2la", "#s2lb"], { y: 30, opacity: 0, duration: 0.35, stagger: 0.1, ease: E }, s2 + 0.9);
+      tl.from("#s2no", { opacity: 0, y: 20, duration: 0.35, ease: E }, s2 + 1.5);
+      tl.from("#s2strike", { scaleX: 0, duration: 0.35, ease: "power2.in" }, s2 + 2.1);
+      tl.from("#s2yes", { scale: 0.5, opacity: 0, duration: 0.5, ease: "back.out(2.2)" }, s2 + 2.6);
+      tl.from("#s2bar", { scaleX: 0, duration: 0.45, ease: E }, s2 + 3.0);
+      tl.to(["#s2a", "#s2b"], { scale: 1.03, duration: 4, ease: "none" }, s2 + 0.9);
+      tl.to("#s2", { opacity: 0, duration: 0.3 }, 8.5);
+
+      // ---------- S3–S6 fabrics ----------
+      [["#s3", 8.8, 4.0], ["#s4", 12.8, 4.0], ["#s5", 16.8, 4.0], ["#s6", 20.8, 4.4]].forEach(([id, t, d], i) => {
+        const dir = i % 2 === 0 ? 1 : -1;
+        tl.from(id + " .fcard", { x: 420 * dir, rotation: 7 * dir, opacity: 0, duration: 0.55, ease: E }, t);
+        tl.to(id + " .fcard img", { scale: 1.12, duration: d, ease: "none" }, t);
+        tl.from(id + " .counter", { opacity: 0, y: -20, duration: 0.3 }, t + 0.1);
+        tl.from(id + " .fname", { scale: 1.6, opacity: 0, duration: 0.5, ease: "power4.out" }, t + 0.25);
+        tl.from(id + " .ftrait", { y: 40, opacity: 0, duration: 0.4, ease: E }, t + 0.6);
+        tl.from(id + " .fchip", { y: 40, opacity: 0, duration: 0.4, ease: E }, t + 1.0);
+        if (i < 3) {
+          tl.to(id + " .fcard", { x: -420 * dir, rotation: -7 * dir, opacity: 0, duration: 0.4, ease: "power2.in" }, t + d - 0.4);
+          tl.to([id + " .fname", id + " .ftrait", id + " .fchip", id + " .counter"], { opacity: 0, duration: 0.3 }, t + d - 0.35);
+        }
+      });
+
+      // ---------- S7 ----------
+      const s7 = 25;
+      tl.from("#s7t", { y: -50, opacity: 0, duration: 0.45, ease: "back.out(2)" }, s7 + 0.3);
+      tl.from("#st1", { x: 300, opacity: 0, duration: 0.45, ease: E }, s7 + 1.0);
+      tl.from("#st2", { scale: 0.6, opacity: 0, duration: 0.55, ease: "back.out(2)" }, s7 + 2.0);
+      tl.from("#st3", { x: 300, opacity: 0, duration: 0.45, ease: E }, s7 + 3.1);
+      tl.from("#s7no", { scale: 0.4, opacity: 0, rotation: -6, duration: 0.4, ease: "back.out(3)" }, s7 + 4.0);
+      tl.from("#s7strip", { y: 200, opacity: 0, duration: 0.8, ease: E }, s7 + 0.5);
+      tl.to("#st2", { scale: 1.05, duration: 0.3, yoyo: true, repeat: 1, ease: "sine.inOut" }, s7 + 2.7);
+
+      // ---------- S8 ----------
+      const s8 = 30.2;
+      tl.from("#s8a", { x: 400, opacity: 0, duration: 0.5, ease: E }, s8);
+      tl.from("#s8at", { opacity: 0, x: -60, duration: 0.4, ease: E }, s8 + 0.35);
+      tl.from("#s8or", { scale: 0, opacity: 0, duration: 0.4, ease: "back.out(3)" }, s8 + 1.5);
+      tl.from("#s8b", { x: -400, opacity: 0, duration: 0.5, ease: E }, s8 + 1.9);
+      tl.from("#s8bt", { opacity: 0, x: 60, duration: 0.4, ease: E }, s8 + 2.2);
+      tl.from("#s8l1", { y: 40, opacity: 0, duration: 0.4, ease: E }, s8 + 3.5);
+      tl.from("#s8bar1", { scaleX: 0, duration: 0.4, ease: E }, s8 + 3.8);
+      tl.from("#s8l2", { y: 40, opacity: 0, duration: 0.4, ease: E }, s8 + 4.2);
+      tl.from("#s8bar2", { scaleX: 0, duration: 0.4, ease: E }, s8 + 4.5);
+
+      // ---------- S9 ----------
+      const s9 = 35.5;
+      tl.from("#s9h1", { y: -50, opacity: 0, duration: 0.5, ease: E }, s9 + 0.35);
+      tl.from("#s9h2", { y: -30, opacity: 0, duration: 0.5, ease: E }, s9 + 1.2);
+      tl.from("#s9img", { y: 120, opacity: 0, scale: 0.9, duration: 0.7, ease: E }, s9 + 0.5);
+      tl.to("#s9img img", { scale: 1.08, duration: 6, ease: "none" }, s9 + 0.5);
+      tl.from("#s9logo", { scale: 0.7, opacity: 0, duration: 0.8, ease: "power2.out" }, s9 + 2.2);
+      tl.from("#s9sub", { opacity: 0, duration: 0.5 }, s9 + 2.7);
+      tl.from("#s9pill", { y: 80, opacity: 0, duration: 0.5, ease: "back.out(2)" }, s9 + 3.6);
+      tl.to("#s9pill", { scale: 1.06, duration: 0.3, yoyo: true, repeat: 3, ease: "sine.inOut" }, s9 + 4.4);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
