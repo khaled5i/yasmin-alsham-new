@@ -26,7 +26,7 @@ CREATE TABLE public.worker_payroll_months(
 );
 CREATE TABLE public.worker_payroll_operations(id uuid DEFAULT gen_random_uuid(),branch varchar,operation_type text);
 CREATE TABLE public.worker_payroll_suspensions(branch varchar,worker_id uuid,payroll_year integer,payroll_month integer);
-CREATE TABLE public.worker_payroll_persistent_suspensions(branch varchar,worker_id uuid,start_year integer,start_month integer);
+CREATE TABLE public.worker_payroll_persistent_suspensions(branch varchar,worker_id text,start_year integer,start_month integer);
 CREATE FUNCTION public.worker_payroll_status(p_net numeric,p_paid numeric) RETURNS text LANGUAGE sql AS $$
  SELECT CASE WHEN p_net<0 THEN 'negative' WHEN p_net=0 THEN 'zero' WHEN p_paid>=p_net THEN 'paid' WHEN p_paid>0 THEN 'partial' ELSE 'unpaid' END
 $$;

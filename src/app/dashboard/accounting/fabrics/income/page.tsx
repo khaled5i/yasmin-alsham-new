@@ -1195,6 +1195,8 @@ function FabricsIncomeContent() {
     let nextTotalIncome = 0
     for (const item of filteredIncome) {
       nextTotalIncome += item.amount
+      // المرحلة 8: مرتجع المتجر (سالب) يُنقص المجاميع ولا يُعدّ عملية بيع.
+      const counted = item.amount < 0 ? 0 : 1
       const fabricKind = classifyFabric(item)
       let sourceBucket: ReturnType<typeof emptySourceStat> | null = null
 
@@ -1205,42 +1207,42 @@ function FabricsIncomeContent() {
       }
 
       if (sourceBucket) {
-        sourceBucket.count++
+        sourceBucket.count += counted
         sourceBucket.total += item.amount
         if (fabricKind === 'plain') {
-          sourceBucket.plain.count++
+          sourceBucket.plain.count += counted
           sourceBucket.plain.total += item.amount
         } else if (fabricKind === 'shek') {
-          sourceBucket.shek.count++
+          sourceBucket.shek.count += counted
           sourceBucket.shek.total += item.amount
         }
       }
 
       if (item.payment_method === 'network') {
-        nextBreakdown.network.count++
+        nextBreakdown.network.count += counted
         nextBreakdown.network.total += item.amount
       } else if (item.payment_method === 'cash') {
-        nextBreakdown.cash.count++
+        nextBreakdown.cash.count += counted
         nextBreakdown.cash.total += item.amount
       } else if (item.payment_method === 'mixed') {
         // المبيعة الواحدة تُحتسب في الجهتين بقيمة كل جزء على حدة
         const networkPortion = Math.max(0, Number(item.network_amount) || 0)
         const cashPortion = Math.max(0, Number(item.cash_amount) || 0)
         if (networkPortion > 0) {
-          nextBreakdown.network.count++
+          nextBreakdown.network.count += counted
           nextBreakdown.network.total += networkPortion
         }
         if (cashPortion > 0) {
-          nextBreakdown.cash.count++
+          nextBreakdown.cash.count += counted
           nextBreakdown.cash.total += cashPortion
         }
       }
 
       if (fabricKind === 'plain') {
-        nextBreakdown.plain.count++
+        nextBreakdown.plain.count += counted
         nextBreakdown.plain.total += item.amount
       } else if (fabricKind === 'shek') {
-        nextBreakdown.shek.count++
+        nextBreakdown.shek.count += counted
         nextBreakdown.shek.total += item.amount
       }
     }
@@ -1476,6 +1478,8 @@ function FabricsIncomeContent() {
               const mutationPermissionPending =
                 user?.role === 'worker' && (workerPermissionsLoading || !workerType)
               const mutationLocked = isLockedForFabricStoreManager(item)
+              // المرحلة 8: مرتجع طلب إلكتروني (مبلغ سالب) — لا فاتورة بيع ولا إيصال، ومقفل في القاعدة.
+              const isStoreRefund = item.category === 'fabric_store_refund'
               const titleName =
                 fabricItems.length > 0
                   ? fabricItems.map(formatFabricSaleItemTitle).join('، ')
@@ -1496,7 +1500,12 @@ function FabricsIncomeContent() {
                       <Boxes className="w-6 h-6 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="font-bold text-gray-900">{titleName}</p>
+                      <p className="font-bold text-gray-900">
+                        {isStoreRefund && (
+                          <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">مرتجع</span>
+                        )}
+                        {titleName}
+                      </p>
                       {item.description && item.description !== titleName && (
                         <p className="text-sm text-gray-500">{item.description}</p>
                       )}
@@ -1564,7 +1573,7 @@ function FabricsIncomeContent() {
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-left">
-                      <p className="text-lg font-bold text-emerald-600">{formatCurrency(item.amount)}</p>
+                      <p className={`text-lg font-bold ${item.amount < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatCurrency(item.amount)}</p>
                       {!isMultiFabric && item.quantity_meters && item.quantity_meters > 0 && (
                         <p className="text-xs text-gray-500 mt-1">
                           {formatCurrency(item.amount / item.quantity_meters)}/م
@@ -1573,7 +1582,7 @@ function FabricsIncomeContent() {
                     </div>
                     <div className="flex gap-2">
                       {/* إرسال للمحاسبة (الأستاذ) — لمدير النظام والعامل المخوّل محاسبياً */}
-                      {canSendToAccounting && (
+                      {canSendToAccounting && !isStoreRefund && (
                         isSent(item) ? (
                           <div
                             className="p-2 text-emerald-600 rounded-lg border border-emerald-100 bg-emerald-50 cursor-default"
@@ -1608,6 +1617,7 @@ function FabricsIncomeContent() {
                           </button>
                         )
                       )}
+                      {!isStoreRefund && (
                       <button
                         onClick={() => { void sendReceiptToPrintStation(item, false) }}
                         className="p-2 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
@@ -1615,6 +1625,7 @@ function FabricsIncomeContent() {
                       >
                         <Send className="w-4 h-4" />
                       </button>
+                      )}
                       {!item.is_automatic && (
                         mutationPermissionPending ? (
                           <div

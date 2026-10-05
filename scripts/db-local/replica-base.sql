@@ -94,22 +94,161 @@ create table public.fabrics (
   deleted_at timestamptz
 );
 
+-- columns as on production (read 29 Sep 2026; stage 6 writes the sale row itself)
 create table public.income (
   id uuid primary key default gen_random_uuid(),
   branch varchar not null,
-  category varchar,
+  order_id uuid,
   customer_name varchar,
-  description varchar,
-  amount numeric,
-  fabric_items jsonb,
-  quantity_meters numeric,
+  description text,
+  amount numeric not null default 0,
   date date not null default current_date,
+  is_automatic boolean default false,
+  notes text,
+  created_at timestamptz default now(),
   created_by uuid,
+  quantity_meters numeric,
+  category varchar,
+  payment_method varchar,
+  customer_source varchar,
+  fabric_images text[] default '{}'::text[],
+  buyer_name text,
+  buyer_phone text,
   invoice_number bigint,
+  alostaz_customer_id integer,
+  alostaz_invoice_id integer,
+  alostaz_invoice_code text,
+  alostaz_sync_status text,
+  alostaz_synced_at timestamptz,
+  alostaz_sync_token uuid,
+  alostaz_sync_error text,
+  fabric_items jsonb,
   fabric_inventory_tracked boolean not null default false,
-  created_at timestamptz default now()
+  cash_amount numeric,
+  network_amount numeric,
+  coupon_id uuid,
+  coupon_code text,
+  discount_percent numeric,
+  discount_amount numeric,
+  subtotal_amount numeric,
+  constraint income_alostaz_sync_status_valid check (alostaz_sync_status is null
+    or alostaz_sync_status = any (array['sending', 'sent', 'failed', 'review_required'])),
+  constraint income_branch_check check (branch in ('tailoring', 'fabrics', 'ready_designs')),
+  constraint income_payment_method_check check (payment_method is null or payment_method in ('cash', 'network', 'mixed')),
+  constraint income_split_amounts_check check ((cash_amount is null or cash_amount >= 0)
+    and (network_amount is null or network_amount >= 0)
+    and (payment_method is distinct from 'mixed' or (cash_amount is not null and network_amount is not null)))
 );
 create sequence public.fabrics_invoice_number_seq;
+
+-- columns and checks as on production (read 1 Oct 2026, fix batch A / AUD-01).
+-- Not replicated: created_by → auth.users (no auth.users here).
+create table public.expenses (
+  id uuid primary key default gen_random_uuid(),
+  branch varchar not null,
+  type varchar not null,
+  category varchar not null,
+  description text,
+  amount numeric not null default 0,
+  date date not null default current_date,
+  notes text,
+  created_at timestamptz default now(),
+  created_by uuid,
+  updated_at timestamptz default now(),
+  supplier_id uuid,
+  supplier_name text,
+  recurrence_type varchar not null default 'one_time',
+  recurring_day_of_month smallint,
+  recurring_source_id uuid references public.expenses(id) on delete cascade,
+  recurring_month date,
+  is_auto_generated boolean not null default false,
+  payment_method varchar,
+  cash_source varchar,
+  constraint expenses_branch_check check (branch in ('tailoring', 'fabrics', 'ready_designs')),
+  constraint expenses_cash_source_check check (cash_source in ('box', 'external')),
+  constraint expenses_payment_method_check check (payment_method in ('cash', 'network')),
+  constraint expenses_recurrence_type_check check (recurrence_type in ('one_time', 'monthly')),
+  constraint expenses_recurring_day_of_month_check check (recurring_day_of_month is null or (recurring_day_of_month >= 1 and recurring_day_of_month <= 31)),
+  constraint expenses_recurring_source_month_unique unique (recurring_source_id, recurring_month),
+  constraint expenses_type_check check (type in ('material', 'fixed', 'salary', 'other'))
+);
+
+-- live definitions (read 1 Oct 2026): same statements and attributes; line endings LF and the
+-- INSERT column lists joined onto fewer lines (whitespace only)
+create or replace function public.update_expenses_updated_at()
+returns trigger language plpgsql as $function$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$function$;
+create trigger expenses_updated_at_trigger before update on public.expenses
+  for each row execute function update_expenses_updated_at();
+
+create or replace function public.generate_recurring_expenses(p_branch character varying default null::character varying, p_until date default current_date)
+returns integer language plpgsql security definer set search_path to 'public' as $function$
+DECLARE
+  v_template RECORD;
+  v_day INTEGER;
+  v_month DATE;
+  v_start_month DATE;
+  v_end_month DATE;
+  v_due_date DATE;
+  v_last_day INTEGER;
+  v_inserted INTEGER := 0;
+  v_rows INTEGER := 0;
+BEGIN
+  IF p_until IS NULL THEN
+    p_until := CURRENT_DATE;
+  END IF;
+
+  FOR v_template IN
+    SELECT *
+    FROM expenses
+    WHERE type IN ('fixed', 'salary')
+      AND recurrence_type = 'monthly'
+      AND recurring_source_id IS NULL
+      AND (p_branch IS NULL OR branch = p_branch)
+  LOOP
+    v_day := COALESCE(v_template.recurring_day_of_month, EXTRACT(DAY FROM v_template.date)::INT);
+    v_day := GREATEST(1, LEAST(31, v_day));
+
+    v_start_month := (date_trunc('month', v_template.date)::DATE + INTERVAL '1 month')::DATE;
+    v_end_month := date_trunc('month', p_until)::DATE;
+    v_month := v_start_month;
+
+    WHILE v_month <= v_end_month LOOP
+      v_last_day := EXTRACT(DAY FROM (date_trunc('month', v_month)::DATE + INTERVAL '1 month - 1 day'))::INT;
+      v_due_date := make_date(
+        EXTRACT(YEAR FROM v_month)::INT,
+        EXTRACT(MONTH FROM v_month)::INT,
+        LEAST(v_day, v_last_day)
+      );
+
+      IF v_due_date <= p_until THEN
+        INSERT INTO expenses (
+          branch, type, category, description, amount, date, notes, created_by,
+          recurrence_type, recurring_day_of_month, recurring_source_id, recurring_month, is_auto_generated
+        )
+        VALUES (
+          v_template.branch, v_template.type, v_template.category, v_template.description, v_template.amount,
+          v_due_date, v_template.notes, v_template.created_by,
+          'monthly', v_day, v_template.id, v_month, true
+        )
+        ON CONFLICT (recurring_source_id, recurring_month) DO NOTHING;
+
+        GET DIAGNOSTICS v_rows = ROW_COUNT;
+        v_inserted := v_inserted + v_rows;
+      END IF;
+
+      v_month := (v_month + INTERVAL '1 month')::DATE;
+    END LOOP;
+  END LOOP;
+
+  RETURN v_inserted;
+END;
+$function$;
+
 create table public.fabric_inventory_movements (
   id uuid primary key default gen_random_uuid(),
   inventory_item_id uuid not null references public.fabric_inventory(id) on delete cascade,

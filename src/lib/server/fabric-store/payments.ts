@@ -20,6 +20,7 @@ import {
   webhookSecretMatches,
   type MoyasarClient,
   type MoyasarConfig,
+  type MoyasarInvoice,
   type MoyasarPayment,
 } from './moyasar'
 
@@ -32,6 +33,11 @@ export interface PaymentDeps {
   rpc: Rpc
   moyasar: MoyasarClient
   config: MoyasarConfig
+  /**
+   * المرحلة 6: بعد سداد موثّق لطلب — اعتماد البيع فوراً. أي فشل فيه لا يمس السداد
+   * المسجّل (مهمة confirm_order في الطابور تُعيده).
+   */
+  onPaid?: (orderId: string) => Promise<void>
 }
 
 const bytea = (hex: string) => `\\x${hex}`
@@ -65,6 +71,15 @@ const START_MESSAGES: Record<string, [number, string]> = {
   rate_limited: [429, 'محاولات كثيرة خلال وقت قصير — انتظري دقائق ثم أعيدي المحاولة'],
   in_progress: [409, 'جاري تجهيز صفحة الدفع — أعيدي الضغط بعد لحظات'],
   bad_request: [400, 'طلب غير صالح'],
+  // الدفعة B (AUD-02): الحجز يبدأ عند «ادفعي»
+  order_expired: [409, 'مضت مهلة الطلب قبل الدفع — أعيدي إنشاء الطلب من السلة'],
+}
+
+/** سقوف المحجوز في وقت واحد (الدفعة B): الرسالة حسب ما بلغ سقفه. */
+const HOLD_LIMIT_MESSAGES: Record<string, string> = {
+  phone: 'لهذا الرقم أقمشة قيد الدفع بالفعل — أكملي دفعها أو انتظري انتهاء حجزها، أو تواصلي مع المحل',
+  client: 'لديكِ أقمشة قيد الدفع بالفعل من هذا الجهاز — أكملي دفعها أو انتظري انتهاء حجزها، أو تواصلي مع المحل',
+  store: 'الطلبات الإلكترونية كثيرة الآن — أعيدي المحاولة بعد دقائق، أو تواصلي مع المحل',
 }
 
 export async function startPayment(
@@ -72,17 +87,36 @@ export async function startPayment(
   input: { accessHash: string; clientHash: string; origin: string }
 ): Promise<StartPaymentResult> {
   const { rpc, moyasar, config } = deps
-  const begin = await call<{
+  type Begin = {
     status: string; attempt_id?: string; checkout_url?: string; amount_halalas?: number
-    expires_at?: string; order_number?: string
-  }>(rpc, 'fabric_store_begin_payment', {
-    p_access_hash: bytea(input.accessHash),
-    p_environment: config.environment,
-    p_client_hash: bytea(input.clientHash),
-  })
+    expires_at?: string; order_number?: string; scope?: string; code?: string; message?: string
+  }
+  let begin: Begin
+  try {
+    begin = await call<Begin>(rpc, 'fabric_store_begin_payment', {
+      p_access_hash: bytea(input.accessHash),
+      p_environment: config.environment,
+      p_client_hash: bytea(input.clientHash),
+    })
+  } catch (error) {
+    // الدفعة B: «ادفعي» يحجز الآن، فمبيعة في المحل على القماش نفسه تجعله يتراجع (55P03) ولا يؤخرها.
+    if (error instanceof RpcFailure && error.code === '55P03') {
+      return { ok: false, httpStatus: 503, code: 'busy', error: 'القماش قيد البيع في المحل هذه اللحظة — أعيدي الضغط بعد ثوانٍ' }
+    }
+    throw error
+  }
 
   if (begin.status === 'existing' && begin.checkout_url && begin.attempt_id) {
     return { ok: true, checkoutUrl: begin.checkout_url, attemptId: begin.attempt_id, reused: true }
+  }
+  if (begin.status === 'hold_limit') {
+    const error = HOLD_LIMIT_MESSAGES[begin.scope ?? ''] ?? HOLD_LIMIT_MESSAGES.store
+    return { ok: false, httpStatus: 429, code: `hold-limit-${begin.scope ?? 'store'}`, error }
+  }
+  if (begin.status === 'rejected') {
+    // تغيّر السعر أو المتاح أو الظهور منذ إنشاء الطلب. رسائل القاعدة عربية ومكتوبة للزبونة.
+    return { ok: false, httpStatus: 409, code: begin.code || 'rejected',
+             error: begin.message || 'تغيّر شيء في طلبك منذ إنشائه — أعيدي إنشاء الطلب من السلة' }
   }
   if (begin.status !== 'created' || !begin.attempt_id || !begin.amount_halalas || !begin.expires_at) {
     const [httpStatus, error] = START_MESSAGES[begin.status] ?? [400, 'تعذّر بدء الدفع']
@@ -164,6 +198,14 @@ export async function applyVerifiedPayment(
     const hint = invoice.metadata?.attempt_id
     if (typeof hint === 'string' && /^[0-9a-f-]{36}$/i.test(hint)) {
       outcome = await call<ApplyOutcome>(rpc, 'fabric_store_apply_payment', { ...args, p_attempt_hint: hint })
+    }
+  }
+  // «already_paid» أيضاً: إن تعثّر الاعتماد عند أول مشاهدة، تكمله المشاهدة التالية.
+  if ((outcome.status === 'paid' || outcome.status === 'already_paid') && outcome.order_id && deps.onPaid) {
+    try {
+      await deps.onPaid(outcome.order_id)
+    } catch (error) {
+      console.error('fabric-store: after-payment step failed (the job will retry):', (error as Error).message)
     }
   }
   return outcome
@@ -280,6 +322,75 @@ export async function handleMoyasarWebhook(deps: PaymentDeps, rawBody: string): 
   }
 }
 
+/**
+ * دفعات فاتورة جُلبت من ميسر بمفتاحنا ⇒ سجل الأحداث ثم التطبيق (صفحة الرجوع، والمطابقة
+ * الدورية في المرحلة 9). الحدث نفسه لا يُطبَّق مرتين. للمطابقة يدخل `refunded` في مفتاح
+ * الحدث، فاسترداد لاحق لدى ميسر يُرى حدثاً جديداً.
+ */
+async function applyInvoicePayments(
+  deps: PaymentDeps,
+  invoice: MoyasarInvoice,
+  source: 'return' | 'poll'
+): Promise<Record<string, number>> {
+  const outcomes: Record<string, number> = {}
+  for (const payment of invoice.payments ?? []) {
+    const eventId = source === 'return'
+      ? `return:${payment.id}:${payment.status}`
+      : `poll:${payment.id}:${payment.status}:${payment.refunded ?? 0}`
+    const recorded = await recordEvent(deps.rpc, {
+      environment: deps.config.environment,
+      source,
+      eventId,
+      type: `payment_${payment.status}`,
+      invoiceId: invoice.id,
+      paymentId: payment.id,
+      payload: { data: redactPayment(payment as Record<string, unknown>) },
+    })
+    if (recorded.status === 'duplicate' && recorded.processing_status !== 'received' && recorded.processing_status !== 'failed') {
+      outcomes.seen = (outcomes.seen ?? 0) + 1
+      continue
+    }
+    const outcome = await applyVerifiedPayment(deps, recorded.event_id, { ...payment, invoice_id: payment.invoice_id ?? invoice.id })
+    outcomes[outcome.status] = (outcomes[outcome.status] ?? 0) + 1
+  }
+  return outcomes
+}
+
+/**
+ * المرحلة 9 — المطابقة الدورية: المحاولات التي تستحق السؤال (القاعدة تختارها وتستلمها)،
+ * تُجلب فاتورة كل منها من ميسر وتُطبَّق دفعاتها بالمسار نفسه. دفعة نجحت ولم يصل بها
+ * webhook والزبونة أغلقت الصفحة تُعتمد هنا؛ واسترداد أو إلغاء لدى ميسر خارج النظام يُحجر
+ * للمراجعة (قاعدة `fabric_store_apply_payment`).
+ */
+export async function reconcilePayments(deps: PaymentDeps, limit = 20): Promise<Record<string, number>> {
+  const due = await call<Array<{ attempt_id: string; invoice_id: string; status: string; claim_token: string }>>(
+    deps.rpc, 'fabric_store_due_reconciliation', { p_environment: deps.config.environment, p_limit: limit })
+  const counts: Record<string, number> = {}
+  const add = (key: string, n = 1) => { counts[key] = (counts[key] ?? 0) + n }
+  for (const attempt of Array.isArray(due) ? due : []) {
+    let invoice: MoyasarInvoice
+    try {
+      invoice = await deps.moyasar.fetchInvoice(attempt.invoice_id)
+    } catch (error) {
+      add(error instanceof MoyasarError && error.kind === 'not_found' ? 'invoice_not_found' : 'unavailable')
+      continue
+    }
+    try {
+      const outcomes = await applyInvoicePayments(deps, invoice, 'poll')
+      const completed = await call<{ status: string }>(deps.rpc, 'fabric_store_complete_reconciliation', {
+        p_attempt_id: attempt.attempt_id, p_claim_token: attempt.claim_token,
+      })
+      if (completed.status !== 'ok') throw new Error(`reconciliation claim: ${completed.status}`)
+      for (const [key, n] of Object.entries(outcomes)) add(key, n)
+      if (!(invoice.payments ?? []).length) add('no_payment')
+    } catch (error) {
+      console.error('fabric-store: reconciliation failed for', attempt.attempt_id, (error as Error).message)
+      add('error')
+    }
+  }
+  return counts
+}
+
 // ============================================
 // صفحة الرجوع: الحالة الموثّقة من خادمنا
 // ============================================
@@ -318,22 +429,7 @@ export async function viewPaymentForReturn(
   }
 
   try {
-    const invoice = await moyasar.fetchInvoice(attempt.provider_invoice_id)
-    for (const payment of (invoice.payments ?? []).slice(0, 10)) {
-      const recorded = await recordEvent(rpc, {
-        environment: config.environment,
-        source: 'return',
-        eventId: `return:${payment.id}:${payment.status}`,
-        type: `payment_${payment.status}`,
-        invoiceId: invoice.id,
-        paymentId: payment.id,
-        payload: { data: redactPayment(payment as Record<string, unknown>) },
-      })
-      if (recorded.status === 'duplicate' && recorded.processing_status !== 'received' && recorded.processing_status !== 'failed') {
-        continue
-      }
-      await applyVerifiedPayment(deps, recorded.event_id, { ...payment, invoice_id: payment.invoice_id ?? invoice.id })
-    }
+    await applyInvoicePayments(deps, await moyasar.fetchInvoice(attempt.provider_invoice_id), 'return')
   } catch (error) {
     console.error('fabric-store: return-page verification failed:', (error as Error).message)
     return { ...view, verified: false }

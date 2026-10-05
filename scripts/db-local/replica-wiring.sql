@@ -27,10 +27,49 @@ create trigger trigger_set_income_invoice_number
   before insert on public.income
   for each row execute function set_income_invoice_number();
 
+-- live definition (verbatim, read 29 Sep 2026)
+create or replace function private.prevent_fabric_manager_sent_sale_changes()
+returns trigger language plpgsql security definer set search_path to '' as $function$
+BEGIN
+  IF OLD.branch = 'fabrics'
+     AND OLD.payment_method = 'network'
+     AND (
+       OLD.alostaz_invoice_id IS NOT NULL
+       OR NULLIF(BTRIM(COALESCE(OLD.alostaz_invoice_code, '')), '') IS NOT NULL
+       OR OLD.alostaz_sync_status = 'sent'
+     )
+     AND EXISTS (
+       SELECT 1
+       FROM public.users AS u
+       JOIN public.workers AS w ON w.user_id = u.id
+       WHERE u.id = (SELECT auth.uid())
+         AND u.is_active = TRUE
+         AND u.role = 'worker'
+         AND w.worker_type = 'fabric_store_manager'
+     )
+  THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '42501',
+      MESSAGE = 'Fabric-store managers cannot update or delete a network sale sent to accounting.';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+revoke all on function private.prevent_fabric_manager_sent_sale_changes() from public, anon, authenticated;
+create trigger protect_sent_fabric_sales_from_fabric_managers
+  before delete or update on public.income
+  for each row execute function private.prevent_fabric_manager_sent_sale_changes();
+
 alter table public.fabric_inventory enable row level security;
 alter table public.fabric_inventory_colors enable row level security;
 alter table public.fabric_inventory_movements enable row level security;
 alter table public.income enable row level security;
+alter table public.expenses enable row level security;
 
 create policy "fabric inventory select" on public.fabric_inventory for select to authenticated using ((select private.can_manage_fabric_operations()));
 create policy "fabric inventory insert" on public.fabric_inventory for insert to authenticated with check ((select private.can_manage_fabric_operations()));
@@ -44,9 +83,17 @@ create policy "fabric movements select" on public.fabric_inventory_movements for
 create policy "fabric movements insert" on public.fabric_inventory_movements for insert to authenticated with check ((select private.can_manage_fabric_operations()));
 create policy "fabric movements update" on public.fabric_inventory_movements for update to authenticated using ((select private.can_manage_fabric_operations())) with check ((select private.can_manage_fabric_operations()));
 create policy "fabric movements delete" on public.fabric_inventory_movements for delete to authenticated using ((select private.can_manage_fabric_operations()));
--- income policies are not replicated exactly; fabric operators may write sales (as they can on production).
-create policy "income fabric operators" on public.income for all to authenticated
-  using ((select private.can_manage_fabric_operations())) with check ((select private.can_manage_fabric_operations()));
+-- income / expenses policies exactly as on production before fix batch A (read 1 Oct 2026):
+-- four `to public using (true)` policies each, and every privilege for anon (default ACL above).
+-- Migration 20261001120000 replaces them; tests that need the pre-fix state run without it.
+create policy income_select_policy on public.income for select to public using (true);
+create policy income_insert_policy on public.income for insert to public with check (true);
+create policy income_update_policy on public.income for update to public using (true);
+create policy income_delete_policy on public.income for delete to public using (true);
+create policy expenses_select_policy on public.expenses for select to public using (true);
+create policy expenses_insert_policy on public.expenses for insert to public with check (true);
+create policy expenses_update_policy on public.expenses for update to public using (true);
+create policy expenses_delete_policy on public.expenses for delete to public using (true);
 
 -- مزامنة مبسّطة لبطاقة المتجر (تقريب لدوال الإنتاج: يكفي لفحوص السعر والظهور والمخزون)
 create or replace function public.replica_sync_fabric_listing()
@@ -77,9 +124,21 @@ insert into public.users (id, email, full_name, role, is_active) values
   ('aaaaaaaa-0000-4000-8000-000000000001', 'admin@test.invalid', 'مدير', 'admin', true),
   ('aaaaaaaa-0000-4000-8000-000000000002', 'fabrics@test.invalid', 'مدير الأقمشة', 'worker', true),
   ('aaaaaaaa-0000-4000-8000-000000000003', 'tailor@test.invalid', 'خياط', 'worker', true);
+-- fix batch A: the other staff identities the finance policies distinguish (created later so the
+-- "first operator by created_at" pick in older tests stays the same)
+insert into public.users (id, email, full_name, role, is_active, created_at) values
+  ('aaaaaaaa-0000-4000-8000-000000000004', 'accountant@test.invalid', 'محاسب', 'worker', true, now() + interval '1 second'),
+  ('aaaaaaaa-0000-4000-8000-000000000005', 'gm@test.invalid', 'مدير عام', 'worker', true, now() + interval '1 second'),
+  ('aaaaaaaa-0000-4000-8000-000000000006', 'workshop@test.invalid', 'مدير ورشة', 'worker', true, now() + interval '1 second'),
+  ('aaaaaaaa-0000-4000-8000-000000000007', 'old-admin@test.invalid', 'مدير موقوف', 'admin', false, now() + interval '1 second'),
+  ('aaaaaaaa-0000-4000-8000-000000000008', 'old-fabrics@test.invalid', 'مدير أقمشة موقوف', 'worker', false, now() + interval '1 second');
 insert into public.workers (user_id, worker_type) values
   ('aaaaaaaa-0000-4000-8000-000000000002', 'fabric_store_manager'),
-  ('aaaaaaaa-0000-4000-8000-000000000003', 'tailor');
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'tailor'),
+  ('aaaaaaaa-0000-4000-8000-000000000004', 'accountant'),
+  ('aaaaaaaa-0000-4000-8000-000000000005', 'general_manager'),
+  ('aaaaaaaa-0000-4000-8000-000000000006', 'workshop_manager'),
+  ('aaaaaaaa-0000-4000-8000-000000000008', 'fabric_store_manager');
 
 -- one real colour for the stage 2 test to reference
 insert into public.fabric_inventory (id, name, fabric_type) values ('11111111-1111-4111-8111-111111111111', 'SEED', 'seed');

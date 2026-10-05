@@ -155,6 +155,11 @@ export interface MoyasarClient {
   createInvoice(input: CreateInvoiceInput): Promise<MoyasarInvoice>
   fetchInvoice(id: string): Promise<MoyasarInvoice>
   fetchPayment(id: string): Promise<MoyasarPayment>
+  /**
+   * المرحلة 8: `POST /payments/:id/refund` بالمبلغ (بالهللة). الرد هو الدفعة وحقل `refunded`
+   * فيها بعد الاسترداد. **لا مفتاح عدم تكرار**: لا يُستدعى إلا عبر `refunds.ts`.
+   */
+  refundPayment(id: string, amountHalalas: number): Promise<MoyasarPayment>
 }
 
 export function createMoyasarClient(config: MoyasarConfig, fetchImpl: typeof fetch = fetch): MoyasarClient {
@@ -215,6 +220,8 @@ export function createMoyasarClient(config: MoyasarConfig, fetchImpl: typeof fet
       }),
     fetchInvoice: id => request('GET', `/invoices/${idPath(id)}`, invoiceSchema),
     fetchPayment: id => request('GET', `/payments/${idPath(id)}`, paymentSchema),
+    refundPayment: (id, amountHalalas) =>
+      request('POST', `/payments/${idPath(id)}/refund`, paymentSchema, { amount: amountHalalas }),
   }
 }
 
@@ -241,6 +248,8 @@ export function paymentForDatabase(payment: MoyasarPayment) {
     currency: payment.currency,
     invoice_id: payment.invoice_id ?? null,
     message: payment.source?.message ?? null,
+    // المرحلة 8: دفعة «refunded» لا تُحجر إن كان المسترد مسجّلاً عندنا.
+    refunded: payment.refunded ?? null,
   }
 }
 

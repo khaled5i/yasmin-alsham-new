@@ -90,12 +90,6 @@ export default function PayrollLedger({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-stone-500">
-          {t(
-            'كل عملية وسببها وأثرها على رصيد العامل.',
-            'Each entry explains its purpose and effect on the worker’s balance.'
-          )}
-        </p>
         <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-stone-700">
           <input
             type="checkbox"
@@ -149,45 +143,6 @@ export default function PayrollLedger({
                         : op && isDebtSettlement(op)
                           ? t('تسوية دين من الراتب', 'Debt settled from salary')
                           : t('دفعة راتب', 'Salary payment')
-            const description = pricing
-              ? t(
-                  'أُعيد حساب مبلغ القطع والمكافآت من تسعير الأعمال المكتملة تلقائيًا. الدفعات المسجلة محفوظة.',
-                  'Completed-work prices and bonuses automatically recalculated piecework pay. Recorded payments are preserved.'
-                )
-              : debt
-                ? entry.kind === 'debt' && entry.settlement
-                  ? t(
-                      `خُفّض الدين، واحتُسب ${payrollMoney(entry.settlement.amount, true)} ضمن سداد راتب ${entry.settlement.payroll_year}-${String(entry.settlement.payroll_month).padStart(2, '0')}، دون صرف نقد جديد.`,
-                      `${payrollMoney(entry.settlement.amount, false)} was settled from salary for ${entry.settlement.payroll_year}-${String(entry.settlement.payroll_month).padStart(2, '0')}, reducing debt without new cash outflow.`
-                    )
-                  : t(
-                      'سداد مسجل في حساب الدين. أثره المؤكد أدناه هو انخفاض الدين؛ قد لا يتضمن السجل القديم رابطًا بدفعة راتب.',
-                      'Recorded debt repayment. The confirmed effect below is the debt reduction; older entries may have no linked salary payment.'
-                    )
-                : op?.operation_type === 'salary'
-                  ? t(
-                      'حُفظت مكونات راتب الشهر. هذه عملية احتساب استحقاق، وليست دفعة نقدية للعامل.',
-                      'Monthly salary components were saved. This records entitlement, not a cash payment.'
-                    )
-                  : op?.operation_type === 'salary_deduction'
-                    ? t(
-                        'خُفّض مستحق الشهر بمبلغ الخصم المبين. لم تُسجّل دفعة نقدية أو زيادة في الدين؛ سبب الخصم موضح أدناه.',
-                        'Monthly entitlement was reduced by this deduction. No cash payment or debt was created; the reason is shown below.'
-                      )
-                    : op?.operation_type === 'deduction'
-                      ? t(
-                          'مبلغ صُرف للعامل وسُجّل دينًا مستقلًا. لا يُخصم من الراتب تلقائيًا؛ يُسوّى عند تسجيل سداد الدين.',
-                          'Money issued to the worker and recorded as a separate debt. It is not automatically deducted from salary.'
-                        )
-                      : op?.operation_type === 'advance'
-                        ? t(
-                            'قيد من النظام السابق خُصم من مستحق الراتب. حُفظ أثره المالي كما سُجّل، ولا تُنشأ قيود جديدة من هذا النوع.',
-                            'An adjustment from the previous system reduced salary entitlement. Its recorded financial effect is preserved; no new entries of this type are created.'
-                          )
-                        : t(
-                            'دفعة تخفّض المتبقي من راتب الشهر. الديون المستقلة لا تتغير بهذه العملية.',
-                            'This payment reduces the remaining monthly salary. Separate debts are unchanged.'
-                          )
             const before = pricing?.before_amount ?? debt?.before_amount ?? op?.before_amount ?? 0
             const after = pricing?.after_amount ?? debt?.after_amount ?? op?.after_amount ?? 0
             const amount = pricing
@@ -211,16 +166,6 @@ export default function PayrollLedger({
                     {payrollMoney(amount, arabic)}
                   </p>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-stone-600">{description}</p>
-                {op?.operation_type === 'salary' &&
-                  Number(op.metadata.future_months_updated) > 0 && (
-                    <p className="mt-2 text-sm leading-6 text-stone-600">
-                      {t(
-                        `طُبّق نوع الراتب وقيمته أيضًا على ${op.metadata.future_months_updated} من الشهور اللاحقة المسجلة، مع الحفاظ على دفعاتها وديونها وعملها الإضافي.`,
-                        `Salary type and amount were also applied to ${op.metadata.future_months_updated} existing later months, preserving their payments, debts and overtime.`
-                      )}
-                    </p>
-                  )}
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-stone-600">
                   <span className="flex items-center gap-1">
                     <ArrowUpRight className="h-3.5 w-3.5" />

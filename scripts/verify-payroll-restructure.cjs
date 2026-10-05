@@ -104,6 +104,7 @@ async function main() {
     CREATE TRIGGER fixture_immutable_operations BEFORE UPDATE OR DELETE ON worker_payroll_operations FOR EACH ROW EXECUTE FUNCTION fixture_immutable_operations();`)
   await db.exec(read('supabase/migrations/20260906120650_payroll_payments_suspensions_and_delivery.sql'))
   await db.exec(read('supabase/migrations/20260906134400_preserve_payroll_debt_settlement_deduplication.sql'))
+  await db.exec(read('supabase/migrations/20260929094811_fix_tailoring_payroll_suspension_worker_id_type.sql'))
   assert.equal(Number((await month('00000000-0000-4000-8000-000000000004',9)).piece_total),500,'Backfill preserves higher legacy snapshots rather than reducing their entitlement')
   assert.equal(Number((await month(b,9)).piece_total),160,'Migration backfills delivered work with no worker completion date')
   await db.exec(`UPDATE orders SET delivery_date='2026-10-02' WHERE id='${order}'`)
@@ -144,10 +145,33 @@ async function main() {
   await db.exec(`SELECT set_tailoring_payroll_suspension('${a}',2026,7,true,true); SELECT set_tailoring_payroll_suspension('${a}',2026,9,false)`)
   const past=(await db.query(`SELECT payroll_month FROM worker_payroll_suspensions WHERE worker_id='${a}' ORDER BY payroll_month`)).rows
   assert.deepEqual(past.map(x=>x.payroll_month),[7,8],'Resuming preserves every earlier vacation month')
+  assert.equal((await db.query(`SELECT count(*) FROM worker_payroll_persistent_suspensions WHERE worker_id='${a}'`)).rows[0].count,0,'Resuming clears the ongoing suspension')
   await db.exec(`SELECT set_tailoring_payroll_suspension('${a}',2026,10,true,false)`)
   assert.equal((await db.query(`SELECT count(*) FROM worker_payroll_persistent_suspensions WHERE worker_id='${a}'`)).rows[0].count,0)
   await db.exec(`SELECT set_tailoring_payroll_suspension('${a}',2026,10,false)`)
   assert.equal((await db.query(`SELECT count(*) FROM worker_payroll_suspensions WHERE worker_id='${a}'`)).rows[0].count,2)
+  const beyondEntitlement = read('supabase/migrations/20260921150000_payroll_payment_beyond_entitlement.sql')
+  const paymentFunctionsStart = beyondEntitlement.indexOf('CREATE OR REPLACE FUNCTION private.ensure_tailoring_payroll_month(')
+  const paymentFunctionsEnd = beyondEntitlement.indexOf('CREATE OR REPLACE FUNCTION public.withdraw_cash_box_worker_advance(', paymentFunctionsStart)
+  assert(paymentFunctionsStart >= 0 && paymentFunctionsEnd > paymentFunctionsStart)
+  await db.exec(beyondEntitlement.slice(paymentFunctionsStart, paymentFunctionsEnd))
+  const firstNegativePayment = `SELECT record_tailoring_payroll_disbursement('${b}',2026,11,'2026-11-05','00000000-0000-4000-8000-000000000021',10)`
+  const secondNegativePayment = `SELECT record_tailoring_payroll_disbursement('${b}',2026,11,'2026-11-05','00000000-0000-4000-8000-000000000022',7)`
+  await db.exec(firstNegativePayment)
+  assert.equal(Number((await month(b,11)).remaining_due),-10,'A cash payment can create a negative salary balance')
+  await assert.rejects(db.exec(secondNegativePayment), /The deduction exceeds the remaining salary/)
+  await db.exec(read('supabase/migrations/20260929101016_allow_repeat_payroll_payment_with_negative_balance.sql'))
+  await db.exec(secondNegativePayment)
+  assert.equal(Number((await month(b,11)).remaining_due),-17,'Another cash payment is allowed when the balance is negative')
+  await db.exec(secondNegativePayment)
+  assert.equal(Number((await month(b,11)).remaining_due),-17,'Retrying the same payment does not duplicate it')
+  const positiveRemaining = Number((await month(b,9)).remaining_due)
+  await db.exec(`SELECT record_tailoring_payroll_disbursement('${b}',2026,9,'2026-09-07','00000000-0000-4000-8000-000000000024',0,10,NULL,'Fixture deduction')`)
+  assert.equal(Number((await month(b,9)).remaining_due),positiveRemaining-10,'A supported salary deduction still reduces a positive balance')
+  await assert.rejects(
+    db.exec(`SELECT record_tailoring_payroll_disbursement('${b}',2026,11,'2026-11-05','00000000-0000-4000-8000-000000000023',0,1,NULL,'Fixture deduction')`),
+    /The deduction exceeds the remaining salary/
+  )
   await db.exec(`UPDATE users SET role='worker' WHERE id='${a}'`)
   await assert.rejects(pay('00000000-0000-4000-8000-000000000099'),/Only administrators/)
   await assert.rejects(db.exec(`SELECT set_tailoring_payroll_suspension('${b}',2026,9,true)`),/Only administrators/)

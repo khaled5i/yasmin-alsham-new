@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw } from 'lucide-react'
 import FabricPayNowButton from '@/components/fabrics/FabricPayNowButton'
 import { IS_FABRIC_STORE_PAYMENTS_ENABLED } from '@/lib/fabric-store/checkout-contract'
+import { IS_FABRIC_STORE_ORDERS_ENABLED } from '@/lib/fabric-store/order-status'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { useFabricCartStore } from '@/store/fabricCartStore'
 
@@ -100,6 +101,12 @@ function ReturnView() {
             ? 'وصلنا الدفع، وسنتواصل معكِ لتأكيد تفاصيل الطلب.'
             : 'سنبدأ تجهيز طلبك ونبلغك حين يكون جاهزاً.'}
         </p>
+        {IS_FABRIC_STORE_ORDERS_ENABLED && (
+          <Link href="/fabrics/order/" className="mt-5 inline-block rounded-xl border-2 border-[#6b1726] px-5 py-2 font-semibold text-[#6b1726] hover:bg-[#6b1726] hover:text-[#f6f0e8]">
+            تتبّعي طلبك
+          </Link>
+        )}
+        <br />
         <Link href="/fabrics/" className="mt-6 inline-block text-sm font-semibold text-[#6b1726] hover:text-[#2f0c14]">
           العودة إلى متجر الأقمشة
         </Link>

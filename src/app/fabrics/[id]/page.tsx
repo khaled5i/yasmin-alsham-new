@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, MessageCircle, Shirt } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, X, Loader2, Palette, Ruler, Shirt } from 'lucide-react'
 import { useFabricStore, formatFabricPrice, Fabric, getFinalPrice } from '@/store/fabricStore'
 import { getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
 import { isVideoFile } from '@/lib/utils/media'
@@ -127,7 +127,7 @@ export default function FabricDetailPage() {
     fabric.stock_quantity
   )
 
-  // رابط واتساب للاستفسار
+  // رابط واتساب: يبقى فقط للأقمشة التي سعرها «عند الطلب» (لا تُشترى إلكترونياً)
   const fabricLabel = fabric.name || fabric.fabric_code || 'قماش'
   const whatsappMessage = `مرحباً، أود الاستفسار عن القماش: ${fabricLabel}`
   const whatsappLink = `https://wa.me/${FABRIC_STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`
@@ -254,89 +254,91 @@ export default function FabricDetailPage() {
             )}
           </motion.div>
 
-          <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="space-y-6">
+          <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="space-y-5">
+            {/* الهوية: الفئات والرمز في سطر، ثم الاسم والوصف */}
             <div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {(fabric.categories?.length ? fabric.categories : [fabric.category]).map(category => (
                   <span
                     key={category}
-                    className="bg-[#f6f0e8] text-[#6b1726] border border-[#d8c5ae]/70 px-3 py-1 rounded-full text-sm font-medium"
+                    className="rounded-full border border-[#d8c5ae]/70 bg-[#f6f0e8] px-3 py-1 text-sm font-medium text-[#6b1726]"
                   >
                     {category}
                   </span>
                 ))}
+                {fabric.fabric_code && (
+                  <span dir="ltr" className="ms-auto font-mono text-base font-bold tracking-wider text-[#6b1726]/80">
+                    {fabric.fabric_code}
+                  </span>
+                )}
               </div>
               {fabric.name && (
-                <h1 className="text-3xl lg:text-4xl font-bold text-[#211b19] mt-4 mb-4">{fabric.name}</h1>
-              )}
-              {fabric.fabric_code && (
-                <p dir="ltr" className="mt-4 text-right font-mono text-lg font-bold tracking-wider text-[#6b1726]">
-                  {fabric.fabric_code}
-                </p>
+                <h1 className="mt-4 text-3xl font-bold text-[#211b19] lg:text-4xl">{fabric.name}</h1>
               )}
               {fabric.description && (
-                <p className="mt-3 text-lg text-[#211b19]/70 leading-relaxed whitespace-pre-wrap">{fabric.description}</p>
-              )}
-              {fabric.show_stock_quantity && (
-                <p className="mt-3 inline-flex rounded-full bg-[#f6f0e8] border border-[#d8c5ae]/70 px-4 py-2 text-sm font-bold text-[#6b1726]">
-                  الكمية المتوفرة: {formatFabricNumber(fabric.stock_quantity)} متر
-                </p>
+                <p className="mt-3 whitespace-pre-wrap text-lg leading-relaxed text-[#211b19]/70">{fabric.description}</p>
               )}
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              {fabric.price_per_meter && fabric.price_per_meter > 0 && (
-                <div className="text-3xl font-bold text-[#6b1726]">
-                  {fabric.is_on_sale ? (
-                    <div className="flex items-center gap-3">
+            {/* بطاقة الشراء: السعر والمفضلة في سطر واحد، ثم التفاصيل، ثم أزرار الشراء */}
+            <div className="space-y-4 rounded-2xl border border-[#d8c5ae]/70 bg-[#f6f0e8] p-4 shadow-sm sm:p-5">
+              <div className="flex items-center justify-between gap-4">
+                {fabric.price_per_meter && fabric.price_per_meter > 0 ? (
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold text-[#6b1726] sm:text-3xl">
                       <span>{formatFabricPrice(displayedFinalPrice.amount, displayedFinalPrice.unit)}</span>
-                      <span className="text-xl text-[#211b19]/40 line-through">{formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}</span>
-                      <span className="bg-[#6b1726] text-[#f6f0e8] text-sm px-2 py-1 rounded-full">خصم {fabric.discount_percentage}%</span>
+                      {fabric.is_on_sale && (
+                        <>
+                          <span className="text-lg text-[#211b19]/40 line-through sm:text-xl">{formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}</span>
+                          <span className="rounded-full bg-[#6b1726] px-2 py-1 text-sm text-[#f6f0e8]">خصم {fabric.discount_percentage}%</span>
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <span>{formatFabricPrice(displayedOriginalPrice.amount, displayedOriginalPrice.unit)}</span>
+                    <p className="mt-1 text-sm font-normal text-[#211b19]/55">شامل ضريبة القيمة المضافة 15%</p>
+                  </div>
+                ) : (
+                  <p className="text-xl font-bold text-[#6b1726]">السعر عند الطلب</p>
+                )}
+
+                <FabricFavoriteButton fabric={fabric} size="lg" />
+              </div>
+
+              {(fabric.show_stock_quantity || (fabric.available_colors && fabric.available_colors.length > 0)) && (
+                <div className="space-y-3 border-t border-[#d8c5ae]/70 pt-4">
+                  {fabric.show_stock_quantity && (
+                    <p className="flex items-center gap-2 text-sm text-[#211b19]/75">
+                      <Ruler className="h-4 w-4 text-[#6b1726]" aria-hidden="true" />
+                      <span>الكمية المتوفرة:</span>
+                      <span className="font-bold text-[#6b1726]">{formatFabricNumber(fabric.stock_quantity)} متر</span>
+                    </p>
                   )}
-                  <p className="mt-1 text-sm font-normal text-[#211b19]/55">شامل ضريبة القيمة المضافة 15%</p>
+
+                  {fabric.available_colors && fabric.available_colors.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex items-center gap-2 text-sm text-[#211b19]/75">
+                        <Palette className="h-4 w-4 text-[#6b1726]" aria-hidden="true" />
+                        اللون:
+                      </span>
+                      {fabric.available_colors.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setSelectedColor(color)}
+                          className={`rounded-lg border-2 px-3 py-1 text-sm transition-all duration-300 ${selectedColor === color ? 'border-[#6b1726] bg-[#fbf8f3] font-bold text-[#6b1726]' : 'border-[#d8c5ae] text-[#211b19]/80 hover:border-[#6b1726]'
+                            }`}
+                        >
+                          {color}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
-              <FabricFavoriteButton fabric={fabric} size="lg" className="self-start sm:self-auto" />
-            </div>
-
-            {fabric.available_colors && fabric.available_colors.length > 0 && (
-              <div>
-                <h3 className="text-lg font-medium text-[#211b19] mb-3 flex items-center gap-2">
-                  <Palette className="w-5 h-5" />
-                  الألوان المتاحة
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {fabric.available_colors.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setSelectedColor(color)}
-                      className={`px-4 py-2 rounded-lg border-2 transition-all duration-300 ${selectedColor === color ? 'border-[#6b1726] bg-[#f6f0e8] text-[#6b1726] font-bold' : 'border-[#d8c5ae] hover:border-[#6b1726] text-[#211b19]/80'
-                        }`}
-                    >
-                      {color}
-                    </button>
-                  ))}
-                </div>
+              <div className="border-t border-[#d8c5ae]/70 pt-4">
+                <FabricAddToCartButton fabric={fabric} whatsappLink={whatsappLink} />
               </div>
-            )}
-
-
-            <FabricAddToCartButton fabric={fabric} whatsappLink={whatsappLink} />
-
-            {/* زر الاستفسار عبر الواتساب */}
-            <a
-              href={whatsappLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-3 w-full border-2 border-[#6b1726] text-[#6b1726] bg-transparent text-center px-8 py-4 rounded-full font-bold hover:bg-[#f6f0e8] hover:shadow-xl transition-all duration-300 transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
-            >
-              <MessageCircle className="w-6 h-6" />
-              <span>استفسار عبر الواتساب</span>
-            </a>
+            </div>
           </motion.div>
         </div>
       </div>

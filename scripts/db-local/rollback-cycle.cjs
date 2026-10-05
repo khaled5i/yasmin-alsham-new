@@ -1,4 +1,4 @@
-// Rollback cycle for stages 2 → 5 on a real local Postgres (see README.md). Order: 5 → 4 → 3 → 2.
+// Rollback cycle for stages 2 → 6 on a real local Postgres (see README.md). Order: 6 → 5 → 4 → 3 → 2.
 // The rollback SQL is read from the stage reports themselves, so what is tested
 // is exactly what the owner would run.
 //   node scripts/db-local/rollback-cycle.cjs
@@ -8,6 +8,11 @@ const ROLLBACK2 = sqlBlockAfter(FILES.report2, '## 9. التراجع')
 const ROLLBACK3 = sqlBlockAfter(FILES.report3, '## 7. التراجع')
 const ROLLBACK4 = sqlBlockAfter(FILES.report4, '## 8. التراجع')
 const ROLLBACK5 = sqlBlockAfter(FILES.report5, '## 8. التراجع')
+const ROLLBACK6 = sqlBlockAfter(FILES.report6, '## 8. التراجع')
+const ROLLBACK7 = sqlBlockAfter(FILES.report7, '## 8. التراجع')
+const ROLLBACK8 = read(FILES.rollback8)
+const ROLLBACK9 = read(FILES.rollback9)
+const ROLLBACK8FIX = read(FILES.rollback8fix)
 const ORIGINAL_GUARD = md5(functionBody('20260823161026_sync_fabric_sales_with_inventory.sql', 'private.validate_fabric_inventory_availability'))
 
 // One fabric with a storefront card, and one consistent pickup order on it.
@@ -146,6 +151,142 @@ async function main() {
     const t4 = await runSqlTest(db, FILES.test4)
     const t5 = await runSqlTest(db, FILES.test5)
     check([t2, t3, t4, t5].every(t => t === 'PASS'), `re-applied: stage 2 ${t2} · stage 3 ${t3} · stage 4 ${t4} · stage 5 ${t5}`)
+
+    // --- stage 7 on top of 6: rollback 6 refuses while 7 is applied; rollback 7 keeps the shipping data ---
+    await db.query(read(FILES.migration6))
+    await db.query(read(FILES.migration7))
+    await db.query(read(FILES.migration7r))
+    const t6 = await runSqlTest(db, FILES.test6)
+    const t7 = await runSqlTest(db, FILES.test7)
+    check(t6 === 'PASS' && t7 === 'PASS', `stages 6 and 7 applied, their live-safe tests ${t6} · ${t7}`)
+
+    // --- stage 8 on top of 7: refuses while a refund is pending; restores the two replaced
+    //     functions byte for byte; keeps the refund history and the refund-row lock ---
+    // --- stage 9 on top of 8 (applied, tested, rolled back, re-applied, rolled back) ---
+    const stage9 = async () => {
+      await db.query(read(FILES.migration9))
+      const t9 = await runSqlTest(db, FILES.test9)
+      check(t9 === 'PASS', `stage 9 applied, its live-safe test ${t9}`)
+      check((await attempt(ROLLBACK9)) === 'OK', 'rollback 9 runs')
+      const { rows: [left9] } = await db.query(`select
+        (select count(*) from pg_proc where proname in ('fabric_store_due_reconciliation', 'fabric_store_complete_reconciliation', 'fabric_store_staff_alerts'))::int as fn,
+        (select count(*) from information_schema.columns where table_name = 'fabric_store_payment_attempts' and column_name = 'reconciled_at')::int as col`)
+      check(left9.fn === 0 && left9.col === 1, `rollback 9 removes its 3 functions and keeps the column (${JSON.stringify(left9)})`)
+    }
+
+    // (fix batch A) `order by 1` inside an aggregate sorts by the constant 1, so the two rows came
+    // out in heap order and an identical restore could compare unequal. Sort by the signature.
+    const replaced = async () => (await db.query(`select string_agg(p.oid::regprocedure::text || '=' || md5(p.prosrc), ';' order by p.oid::regprocedure::text) as s
+      from pg_proc p where p.proname in ('fabric_store_apply_payment', 'fabric_store_staff_set_fulfillment')`)).rows[0].s
+    const before8 = await replaced()
+    await db.query(read(FILES.migration8))
+    const applyPaymentStage8 = await replaced()
+    await db.query(read(FILES.migration8fix))
+    const t8 = await runSqlTest(db, FILES.test8)
+    check(t8 === 'PASS', `stage 8 applied, its live-safe test ${t8}`)
+    await stage9()
+    await stage9() // re-applied over the kept column, then rolled back again
+    // --- the stage 8 correction: refuses under stage 9 and with a sent pending refund; restores stage 8 byte for byte ---
+    await db.query(read(FILES.migration9))
+    check(/ROLLBACK REFUSED: stage 9 is applied/.test(await attempt(ROLLBACK8FIX)), 'rollback of the stage 8 correction refuses while stage 9 is applied')
+    check((await attempt(ROLLBACK9)) === 'OK', 'rollback 9 runs (before the correction rollback)')
+    check(/ROLLBACK REFUSED: the stage 8 correction is applied/.test(await attempt(ROLLBACK8)), 'rollback 8 refuses while its correction is applied')
+    await db.query(`set session_replication_role = replica`)
+    await db.query(`insert into public.fabric_store_refunds (order_id, attempt_id, idempotency_key, amount_halalas, reason, requested_by, provider_called_at)
+                    values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 100, 'مُرسل', gen_random_uuid(), now())`)
+    await db.query(`set session_replication_role = default`)
+    check(/ROLLBACK REFUSED: a refund sent to Moyasar is still pending/.test(await attempt(ROLLBACK8FIX)), 'the correction rollback refuses while a sent refund is pending')
+    await db.query(`set session_replication_role = replica`)
+    await db.query(`delete from public.fabric_store_refunds where reason = 'مُرسل'`)
+    await db.query(`set session_replication_role = default`)
+    check((await attempt(ROLLBACK8FIX)) === 'OK', 'the correction rollback runs')
+    check((await replaced()) === applyPaymentStage8, 'the correction rollback restores the stage 8 apply_payment byte for byte')
+    const { rows: [leftFix] } = await db.query(`select to_regprocedure('public.fabric_store_refund_close_unconfirmed(uuid, uuid, text, text, bigint)') is null as gone`)
+    check(leftFix.gone, 'the correction rollback removes the close function')
+    await db.query(read(FILES.migration8fix)) // re-applied, then rolled back before stage 8
+    check((await attempt(ROLLBACK8FIX)) === 'OK', 'the correction rollback runs again')
+    check(/ROLLBACK REFUSED: stage 8 is applied/.test(await attempt(ROLLBACK7)), 'rollback 7 refuses while stage 8 is applied')
+    // a pending refund (FK/guards bypassed on purpose: only its presence matters here)
+    await db.query(`set session_replication_role = replica`)
+    await db.query(`insert into public.fabric_store_refunds (order_id, attempt_id, idempotency_key, amount_halalas, reason, requested_by)
+                    values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 100, 'معلّق', gen_random_uuid())`)
+    await db.query(`set session_replication_role = default`)
+    check(/ROLLBACK REFUSED: a refund is pending/.test(await attempt(ROLLBACK8)), 'rollback 8 refuses while a refund is pending')
+    await db.query(`set session_replication_role = replica`)
+    await db.query(`delete from public.fabric_store_refunds where reason = 'معلّق'`)
+    await db.query(`set session_replication_role = default`)
+    check((await attempt(ROLLBACK8)) === 'OK', 'rollback 8 runs')
+    check((await replaced()) === before8, 'rollback 8 restores apply_payment and set_fulfillment byte for byte')
+    const { rows: [left8] } = await db.query(`select
+      (select count(*) from pg_proc where proname in ('fabric_store_refund_begin', 'fabric_store_refund_finish', 'fabric_store_due_refunds',
+         'fabric_store_refund_mark_called', 'fabric_store_restock_return', 'fabric_store_record_credit_note', 'fabric_store_restock_line',
+         'fabric_store_mark_cut'))::int as fn,
+      (select count(*) from information_schema.tables where table_name = 'fabric_store_restocks')::int as tbl,
+      (select count(*) from information_schema.columns where table_name = 'fabric_store_refunds' and column_name = 'income_id')::int as col,
+      (select position('fabric_store_refund' in prosrc) > 0 from pg_proc where proname = 'fabric_store_protect_online_sale') as lock_kept`)
+    check(left8.fn === 0 && left8.tbl === 1 && left8.col === 1 && left8.lock_kept,
+      `rollback 8 removes its functions, keeps the refund history and the refund-row lock (${JSON.stringify(left8)})`)
+    const t7again = await runSqlTest(db, FILES.test7)
+    check(t7again === 'PASS', `after rollback 8 the stage 7 test still passes (${t7again})`)
+    // redo over what the rollback kept, then undo again
+    const redo8 = await attempt(read(FILES.migration8))
+    if (redo8 === 'OK') await db.query(read(FILES.migration8fix))
+    const t8again = redo8 === 'OK' ? await runSqlTest(db, FILES.test8) : redo8
+    check(t8again === 'PASS', `stage 8 re-applied over the kept columns and table, its test ${t8again}`)
+    check((await attempt(ROLLBACK8FIX)) === 'OK', 'the correction rolled back before stage 8 again')
+    check((await attempt(ROLLBACK8)) === 'OK' && (await replaced()) === before8, 'rollback 8 runs again')
+
+    check(/ROLLBACK REFUSED: stage 7 is applied/.test(await attempt(ROLLBACK6)), 'rollback 6 refuses while stage 7 is applied')
+    check((await attempt(ROLLBACK7)) === 'OK', 'rollback 7 runs')
+    const { rows: [left7] } = await db.query(`select
+      (select count(*) from pg_proc where proname like 'fabric_store_staff_%')::int as fn,
+      (select count(*) from information_schema.columns where table_name = 'fabric_store_orders'
+         and column_name in ('shipping_carrier', 'tracking_number', 'shipped_at'))::int as cols`)
+    check(left7.fn === 0 && left7.cols === 3, `rollback 7 removes its 3 functions and keeps the shipping columns (${left7.fn} functions, ${left7.cols} columns)`)
+
+    // --- stage 6: refuses while a paid order waits for its sale; goes cleanly and keeps the sale ---
+    const six = await seed(db, 'cycle-six')
+    await db.query(`delete from public.fabric_store_orders where id = $1`, [six.order])
+    const { rows: [sixListing] } = await db.query(`select id from public.fabrics where inventory_color_id = $1`, [six.color])
+    await db.query('set role service_role')
+    const { rows: [sixOrder] } = await db.query(`select public.fabric_store_create_checkout($1::jsonb) as r`, [JSON.stringify({
+      checkout_key: '00000000-0000-4000-8000-00000000c6c6',
+      request_fingerprint: 'a6'.repeat(32), access_token_hash: 'b6'.repeat(32), client_hash: 'c6'.repeat(32),
+      customer: { name: 'عميلة', phone: '+966550000006' },
+      delivery: { method: 'pickup', shipping_net_halalas: 0, shipping_vat_halalas: 0 },
+      totals: { items_net_halalas: 35000, vat_halalas: 5250, total_halalas: 40250 },
+      policies: { terms: 't', returns: 'r', privacy: 'p' },
+      items: [{ fabric_id: sixListing.id, purchase_mode: 'piece', piece_length_cm: 350, price_per_meter_halalas: 10000,
+        discount_basis_points: 0, unit_price_halalas: 35000, net_halalas: 35000, vat_halalas: 5250 }],
+    })])
+    const { rows: [sixBegun] } = await db.query(
+      `select public.fabric_store_begin_payment(decode($1, 'hex'), 'live', decode($2, 'hex')) as r`, ['b6'.repeat(32), 'd6'.repeat(32)])
+    await db.query(`select public.fabric_store_attach_invoice($1, 'inv-cycle6', 'https://checkout.moyasar.com/cycle6')`, [sixBegun.r.attempt_id])
+    const { rows: [sixPaid] } = await db.query(`select public.fabric_store_apply_payment(null, 'live',
+      '{"id":"pay-cycle6","status":"paid","amount":40250,"currency":"SAR","invoice_id":"inv-cycle6"}'::jsonb, null) as r`)
+    await db.query('reset role')
+    check(sixOrder.r.status === 'created' && sixPaid.r.status === 'paid', `a live order is paid (${sixOrder.r.status}/${sixPaid.r.status})`)
+    check(/ROLLBACK REFUSED: stage 6 is applied/.test(await attempt(ROLLBACK5)), 'rollback 5 refuses while stage 6 is applied')
+    check(/ROLLBACK REFUSED: paid orders are waiting/.test(await attempt(ROLLBACK6)), 'rollback 6 refuses while a paid order waits for its sale')
+    await db.query('set role service_role')
+    const { rows: [sixSale] } = await db.query(`select public.fabric_store_confirm_order($1) as r`, [sixOrder.r.order_id])
+    await db.query('reset role')
+    check(sixSale.r.status === 'confirmed', `the sale is recorded (${sixSale.r.status})`)
+    check((await attempt(ROLLBACK6)) === 'OK', 'rollback 6 runs once no sale is pending')
+    const { rows: [left6] } = await db.query(`select
+      (select count(*) from pg_proc where proname in ('fabric_store_confirm_order', 'fabric_store_due_outbox',
+        'fabric_store_finish_outbox', 'fabric_store_close_confirm_task', 'fabric_store_protect_online_sale'))::int as fn,
+      (select count(*) from pg_trigger where tgname = 'fabric_store_protect_online_sale')::int as trg,
+      (select count(*) from public.income i join public.fabric_store_orders o on o.income_id = i.id where o.id = $1)::int as kept`,
+      [sixOrder.r.order_id])
+    check(left6.fn === 0 && left6.trg === 0 && left6.kept === 1,
+      `rollback 6 removes its 5 functions and the income trigger, and keeps the sale (${left6.fn} functions, ${left6.trg} triggers, ${left6.kept} sale)`)
+    await db.query(`select set_config('request.jwt.claims', $1, false)`, [JSON.stringify({ sub: 'aaaaaaaa-0000-4000-8000-000000000002', role: 'authenticated' })])
+    await db.query('set role authenticated')
+    const shopEdit = await attempt(`update public.income set notes = 'بعد التراجع' where id = '${sixSale.r.income_id}'`)
+    await db.query('reset role')
+    check(shopEdit === 'OK', `income is written normally after rollback 6 (${shopEdit})`)
+
     // the NOWAIT races below exercise rollback 3 on its own
     check((await attempt(ROLLBACK5)) === 'OK', 'rollback 5 again, before the rollback 3 races')
     check((await attempt(ROLLBACK4)) === 'OK', 'rollback 4 again, before the rollback 3 races')

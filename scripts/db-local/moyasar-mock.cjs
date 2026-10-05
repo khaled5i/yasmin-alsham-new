@@ -1,6 +1,8 @@
-// A local stand-in for the three Moyasar endpoints stage 5 uses, shaped after the
+// A local stand-in for the Moyasar endpoints stages 5 and 8 use, shaped after the
 // official docs (24 Sep 2026): POST /v1/invoices, GET /v1/invoices/:id,
 // GET /v1/payments/:id, HTTP Basic auth with the secret key as the username.
+// Stage 8: POST /v1/payments/:id/refund {amount?} (docs: no amount = the rest; the answer
+// is the payment with `refunded` raised; NO idempotency key).
 // It is NOT Moyasar: real test keys must still confirm the shapes (stage 5 report §7).
 //
 // Test hooks (plain functions, not HTTP):
@@ -8,6 +10,7 @@
 //   webhook(payment, options)   → the raw webhook body Moyasar would POST
 //   failNext(mode)              → the next invoice creation: '500' | '422' | 'timeout' | 'bad-url' | 'wrong-amount'
 //   down(true|false)            → every GET answers 503
+//   failRefundNext(mode)        → the next refund: '400' | '500' | 'timeout' | 'lost' (applied, then 500) | 'late' (500, applied 1.5 s later)
 const http = require('node:http')
 const crypto = require('node:crypto')
 
@@ -17,6 +20,8 @@ function startMoyasarMock({ secretKey = 'sk_test_mockkey123' } = {}) {
   const log = []
   let failMode = null
   let isDown = false
+  let refundFailMode = null
+  const refundLog = []
   const expectedAuth = `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`
   const safeParse = text => { try { return JSON.parse(text) } catch { return {} } }
   function createInvoice(input, mode) {
@@ -52,6 +57,43 @@ function startMoyasarMock({ secretKey = 'sk_test_mockkey123' } = {}) {
       }
       const invoiceMatch = /^\/v1\/invoices\/([^/?]+)$/.exec(req.url)
       const paymentMatch = /^\/v1\/payments\/([^/?]+)$/.exec(req.url)
+      const refundMatch = /^\/v1\/payments\/([^/?]+)\/refund$/.exec(req.url)
+
+      if (req.method === 'POST' && refundMatch) {
+        const mode = refundFailMode
+        refundFailMode = null
+        const payment = payments.get(decodeURIComponent(refundMatch[1]))
+        if (!payment) return send(404, { message: 'Object not found' })
+        // every call that reaches Moyasar is counted, whatever it answers
+        refundLog.push({ paymentId: payment.id, amount: safeParse(body).amount, mode })
+        if (mode === '400') return send(400, { type: 'invalid_request_error', message: 'refund refused' })
+        if (mode === '500') return send(500, { type: 'api_error', message: 'boom' })
+        const input = safeParse(body)
+        const amount = input.amount === undefined ? payment.amount - payment.refunded : input.amount
+        if (!Number.isInteger(amount) || amount <= 0 || payment.refunded + amount > payment.amount || payment.status === 'failed') {
+          return send(400, { type: 'invalid_request_error', message: 'amount is invalid' })
+        }
+        const apply = () => {
+          payment.refunded += amount
+          payment.refunded_at = new Date().toISOString()
+          if (payment.refunded === payment.amount) payment.status = 'refunded'
+        }
+        // 'timeout': applied, but only answered after the client's 7 s limit.
+        if (mode === 'timeout') {
+          apply()
+          const timer = setTimeout(() => { if (!res.destroyed) send(200, payment) }, 12_000)
+          res.on('close', () => clearTimeout(timer))
+          return
+        }
+        // 'late': answers 500 now, and the refund lands 1.5 s later (a request still in flight).
+        if (mode === 'late') {
+          setTimeout(apply, 1_500)
+          return send(500, { type: 'api_error', message: 'still processing' })
+        }
+        apply()
+        if (mode === 'lost') return send(500, { type: 'api_error', message: 'answer lost' })
+        return send(200, payment)
+      }
 
       if (req.method === 'POST' && req.url === '/v1/invoices') {
         const mode = failMode
@@ -94,6 +136,8 @@ function startMoyasarMock({ secretKey = 'sk_test_mockkey123' } = {}) {
         payments,
         log,
         failNext(mode) { failMode = mode },
+        failRefundNext(mode) { refundFailMode = mode },
+        refundLog,
         down(value) { isDown = value },
         pay(invoiceId, status = 'paid', overrides = {}) {
           const invoice = invoices.get(invoiceId)

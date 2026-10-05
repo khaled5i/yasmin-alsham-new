@@ -9,6 +9,7 @@ import {
   HelpCircle,
   Menu,
   MessageCircle,
+  PackageSearch,
   Search,
   Share2,
   Sparkles,
@@ -28,7 +29,8 @@ const routeNavItems = [
 ]
 
 const serviceItems = [
-  { label: 'تتبع الطلب', href: '/track-order', icon: Search },
+  { label: 'تتبع طلب تفصيل فستان', href: '/track-order', icon: Search },
+  { label: 'تتبع طلب الأقمشة', href: '/fabrics/order', icon: PackageSearch },
   { label: 'خدماتنا', href: '/services', icon: Sparkles },
   { label: 'الأسئلة الشائعة', href: '/faq', icon: HelpCircle },
   { label: 'تواصل معنا', href: '/social', icon: Share2 },

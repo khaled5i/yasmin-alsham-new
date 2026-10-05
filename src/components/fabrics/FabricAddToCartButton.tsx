@@ -1,20 +1,34 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { Check, MessageCircle, ShoppingBag } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { MessageCircle, ShoppingBag, Trash2, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   IS_FABRIC_CART_ENABLED,
+  formatQuantityLabel,
+  getCartLineKey,
   getFabricLabel,
+  getFabricPrimaryImage,
   getFabricPurchaseMode,
   getFabricQuantityBounds,
   getFabricUnitPrice,
   isFabricPubliclyVisible,
+  type FabricQuantityBounds,
 } from '@/lib/fabric-commerce'
 import { useFabricCartStore } from '@/store/fabricCartStore'
+import { IS_FABRIC_STORE_CHECKOUT_ENABLED } from '@/lib/fabric-store/checkout-contract'
+import { buildBuyNowHref } from '@/lib/fabric-store/buy-now'
 import type { Fabric } from '@/store/fabricStore'
 import FabricQuantitySelector from './FabricQuantitySelector'
+import { showFabricCommerceToast } from './fabricCommerceToast'
+
+/** الكمية المقترحة للبيع بالمتر: 3 أمتار (طول فستان شائع) متى توفّرت. */
+const DEFAULT_METERS = 3
+
+function getDefaultQuantity(bounds: FabricQuantityBounds): number {
+  return bounds.max >= DEFAULT_METERS && bounds.min <= DEFAULT_METERS ? DEFAULT_METERS : bounds.min
+}
 
 interface FabricAddToCartButtonProps {
   fabric: Fabric
@@ -24,11 +38,13 @@ interface FabricAddToCartButtonProps {
 }
 
 /**
- * زر الإضافة للسلة.
+ * لوحة الشراء: «إضافة إلى السلة» و«شراء الآن».
  *
- * كل صف قماش هو لون واحد محدد، فلا يوجد اختيار لون. يبقى غموض واحد محتمل
- * هو الكمية: البيع بالقطعة الكاملة كميته محسومة (قطعة واحدة) فيُضاف مباشرة،
- * أما البيع بالمتر فيفتح منتقي الكمية أولاً.
+ * كل صف قماش هو لون واحد محدد، فلا يوجد اختيار لون. البيع بالقطعة الكاملة
+ * كميته محسومة (قطعة واحدة)، أما البيع بالمتر فمنتقي الأمتار ظاهر دائماً
+ * وقيمته المبدئية 3 أمتار متى توفّرت. «شراء الآن» يفتح إتمام الطلب لهذا
+ * القماش وحده دون أن يلمس السلة. بعد الإضافة يصبح الزر «إزالة من السلة»،
+ * وتغيير الأمتار حينها يعدّل السطر الموجود في السلة مباشرة.
  */
 export default function FabricAddToCartButton({
   fabric,
@@ -36,19 +52,27 @@ export default function FabricAddToCartButton({
   className = '',
 }: FabricAddToCartButtonProps) {
   const addLine = useFabricCartStore(state => state.addLine)
-  const shouldReduceMotion = useReducedMotion()
+  const removeLine = useFabricCartStore(state => state.removeLine)
+  const setCartQuantity = useFabricCartStore(state => state.setQuantity)
+  // قبل الـhydration نعامله كأنه خارج السلة حتى لا يختلف عن HTML الخادم.
+  const cartLine = useFabricCartStore(state =>
+    state.hasHydrated ? state.lines.find(line => line.fabricId === fabric.id) : undefined
+  )
+  const router = useRouter()
 
   const bounds = getFabricQuantityBounds(fabric)
-  const [quantity, setQuantity] = useState(bounds.min)
-  const [isPicking, setIsPicking] = useState(false)
-  const [justAdded, setJustAdded] = useState(false)
+  const [draftQuantity, setDraftQuantity] = useState(() => getDefaultQuantity(bounds))
+  const quantity = cartLine ? cartLine.quantity : draftQuantity
 
   // المعاينة السريعة تعيد استعمال نفس المكوّن لقماش آخر، فتُصفَّر الحالة معه.
   useEffect(() => {
-    setQuantity(getFabricQuantityBounds(fabric).min)
-    setIsPicking(false)
-    setJustAdded(false)
+    setDraftQuantity(getDefaultQuantity(getFabricQuantityBounds(fabric)))
   }, [fabric])
+
+  const changeQuantity = (next: number) => {
+    if (cartLine) setCartQuantity(getCartLineKey(cartLine.fabricId, cartLine.purchaseMode), next, fabric)
+    else setDraftQuantity(next)
+  }
 
   if (!IS_FABRIC_CART_ENABLED) return null
 
@@ -97,93 +121,86 @@ export default function FabricAddToCartButton({
       return
     }
 
-    setIsPicking(false)
-    setJustAdded(true)
-    setTimeout(() => setJustAdded(false), 2000)
-
-    toast.success(
-      result.merged ? `حُدِّثت كمية «${label}» في السلة` : `أُضيف «${label}» إلى السلة`,
-      { icon: '🛍️' }
-    )
+    showFabricCommerceToast({
+      kind: 'cart',
+      title: result.merged ? 'حُدِّثت الكمية في السلة' : 'أُضيف إلى السلة',
+      label,
+      detail: mode === 'meter' ? formatQuantityLabel(amount, mode) : 'قطعة كاملة',
+      image: getFabricPrimaryImage(fabric),
+    })
 
     if (useFabricCartStore.getState().isStorageBlocked) {
       toast('المتصفح يمنع الحفظ، لذلك لن تبقى السلة بعد إغلاق الصفحة', { icon: '⚠️' })
     }
   }
 
-  const baseButtonClasses =
-    'flex w-full items-center justify-center gap-2 rounded-xl bg-[#6b1726] px-6 py-3 font-semibold text-[#f6f0e8] shadow-lg transition-all duration-300 hover:bg-[#2f0c14] hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]'
-
-  // القطعة الكاملة: الكمية محسومة ⇒ إضافة مباشرة بلا خطوة وسيطة.
-  if (mode === 'piece') {
-    return (
-      <button type="button" onClick={() => commitAdd(1)} className={`${baseButtonClasses} ${className}`}>
-        {justAdded ? (
-          <Check className="h-5 w-5" aria-hidden="true" />
-        ) : (
-          <ShoppingBag className="h-5 w-5" aria-hidden="true" />
-        )}
-        <span>{justAdded ? 'أُضيف إلى السلة' : 'إضافة القطعة إلى السلة'}</span>
-      </button>
-    )
+  const removeFromCart = () => {
+    if (!cartLine) return
+    removeLine(getCartLineKey(cartLine.fabricId, cartLine.purchaseMode))
+    setDraftQuantity(cartLine.quantity)
+    showFabricCommerceToast({ kind: 'cart', title: 'أُزيل من السلة', label, image: getFabricPrimaryImage(fabric), removed: true })
   }
 
+  const buyNow = () => {
+    const amount = mode === 'piece' ? 1 : quantity
+    router.push(buildBuyNowHref({ fabricId: fabric.id, purchaseMode: mode, quantity: amount }))
+  }
+
+  const buttonBase =
+    'flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 font-bold transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]'
+
   return (
-    <div className={className}>
-      <AnimatePresence initial={false} mode="wait">
-        {isPicking ? (
-          <motion.div
-            key="picker"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
-            transition={{ duration: 0.2 }}
-            className="rounded-xl border-2 border-[#d8c5ae] bg-[#fbf8f3] p-3"
-          >
-            <p className="mb-2 text-sm font-semibold text-[#211b19]">كم متراً تحتاجين؟</p>
-            <div className="flex flex-wrap items-end gap-3">
-              <FabricQuantitySelector
-                value={quantity}
-                bounds={bounds}
-                mode={mode}
-                onChange={setQuantity}
-                label={label}
-              />
-              <div className="flex flex-1 gap-2">
-                <button
-                  type="button"
-                  onClick={() => commitAdd(quantity)}
-                  className="flex-1 rounded-xl bg-[#6b1726] px-4 py-2.5 font-semibold text-[#f6f0e8] transition-colors duration-300 hover:bg-[#2f0c14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
-                >
-                  إضافة للسلة
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsPicking(false)}
-                  className="rounded-xl border-2 border-[#d8c5ae] px-4 py-2.5 font-semibold text-[#211b19]/70 transition-colors duration-300 hover:border-[#6b1726] hover:text-[#6b1726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
-                >
-                  إلغاء
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.button
-            key="trigger"
+    <div className={`space-y-3 ${className}`}>
+      {mode === 'meter' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#d8c5ae]/70 bg-[#fbf8f3] px-3 py-2.5">
+          <span className="text-sm font-semibold text-[#211b19]">الكمية بالمتر</span>
+          <FabricQuantitySelector
+            value={quantity}
+            bounds={bounds}
+            mode={mode}
+            onChange={changeQuantity}
+            label={label}
+            size="sm"
+          />
+        </div>
+      ) : (
+        <p className="rounded-xl border border-[#d8c5ae]/70 bg-[#fbf8f3] px-3 py-2.5 text-sm font-semibold text-[#211b19]/75">
+          تُباع قطعة كاملة ({formatQuantityLabel(stock, 'meter')})
+        </p>
+      )}
+
+      <div className={`grid gap-2 ${IS_FABRIC_STORE_CHECKOUT_ENABLED ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {cartLine ? (
+          <button
             type="button"
-            initial={false}
-            onClick={() => setIsPicking(true)}
-            className={baseButtonClasses}
+            onClick={removeFromCart}
+            className={`${buttonBase} border-2 border-[#d8c5ae] bg-[#fbf8f3] text-[#211b19]/75 hover:border-[#6b1726] hover:text-[#6b1726]`}
           >
-            {justAdded ? (
-              <Check className="h-5 w-5" aria-hidden="true" />
-            ) : (
-              <ShoppingBag className="h-5 w-5" aria-hidden="true" />
-            )}
-            <span>{justAdded ? 'أُضيف إلى السلة' : 'إضافة إلى السلة'}</span>
-          </motion.button>
+            <Trash2 className="h-5 w-5" aria-hidden="true" />
+            <span>إزالة من السلة</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => commitAdd(mode === 'piece' ? 1 : quantity)}
+            className={`${buttonBase} border-2 border-[#6b1726] bg-[#f6f0e8] text-[#6b1726] hover:bg-[#6b1726] hover:text-[#f6f0e8]`}
+          >
+            <ShoppingBag className="h-5 w-5" aria-hidden="true" />
+            <span>إضافة للسلة</span>
+          </button>
         )}
-      </AnimatePresence>
+
+        {IS_FABRIC_STORE_CHECKOUT_ENABLED && (
+          <button
+            type="button"
+            onClick={buyNow}
+            className={`${buttonBase} border-2 border-[#6b1726] bg-[#6b1726] text-[#f6f0e8] shadow-lg hover:bg-[#2f0c14] hover:shadow-xl`}
+          >
+            <Zap className="h-5 w-5" aria-hidden="true" />
+            <span>شراء الآن</span>
+          </button>
+        )}
+      </div>
     </div>
   )
 }

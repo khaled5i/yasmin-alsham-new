@@ -227,7 +227,7 @@ export default function PayrollWorkerPanel({
     }
     // الدفعة النقدية مسموحة فوق المستحق (عامل القطعة مستحقه صفر أول الشهر)؛
     // الخصم والتسوية وحدهما لا يتجاوزان المتاح.
-    if (form === 'payment' && deductionAmount > available + 0.009) {
+    if (form === 'payment' && deductionAmount > 0 && deductionAmount > available + 0.009) {
       setError(
         t(
           'الخصم أكبر من المستحق المتاح لهذا الشهر.',

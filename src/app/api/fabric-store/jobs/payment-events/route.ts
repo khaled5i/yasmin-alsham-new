@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic'
 
 /**
  * إعادة معالجة أحداث ميسر المحفوظة التي تعذّرت معالجتها (ميسر أو القاعدة لم يردا).
- * محمي بـ`Authorization: Bearer <CRON_SECRET>`. الجدولة (Vercel Cron) في المرحلة 6؛
- * حتى ذلك يُستدعى يدوياً عند الحاجة. آمن للتكرار: تطبيق الدفعة لا يتكرر أثره.
+ * محمي بـ`Authorization: Bearer <CRON_SECRET>`. المجدول هو `/api/fabric-store/jobs/run/`
+ * (المرحلة 6) ويشمل هذه الخطوة؛ هذا المسار للتشغيل اليدوي. آمن للتكرار.
  */
 export async function GET(request: NextRequest) {
   if (!isAuthorizedCron(request)) return NextResponse.json({ ok: false }, { status: 401 })

@@ -41,7 +41,7 @@ export const STORE_RETURN_RULES = {
 
 export const STORE_PAYMENT_METHODS = ['مدى', 'Visa', 'Mastercard'] as const
 
-export const STORE_POLICIES_UPDATED_AT = '28 سبتمبر 2026'
+export const STORE_POLICIES_UPDATED_AT = '3 أكتوبر 2026'
 
 export const STORE_POLICY_LINKS = [
   { href: '/sales-terms', label: 'شروط البيع' },

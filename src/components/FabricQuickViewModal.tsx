@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronLeft, ChevronRight, MessageCircle, Shirt } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Shirt } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Fabric, formatFabricPrice, getFinalPrice } from '@/store/fabricStore'
@@ -429,32 +429,18 @@ export default function FabricQuickViewModal({ fabric, isOpen, onClose, onViewDe
 
                   {/* الأزرار */}
                   <div className="mt-8 space-y-3">
-                    <div className="flex items-stretch gap-2">
-                      <FabricAddToCartButton
-                        fabric={fabric}
-                        whatsappLink={whatsappLink}
-                        className="flex-1"
-                      />
-                      <FabricFavoriteButton fabric={fabric} size="lg" className="self-center" />
+                    <FabricAddToCartButton fabric={fabric} whatsappLink={whatsappLink} />
+
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/fabrics/${fabric.id}`}
+                        onNavigate={() => onViewDetails?.(fabric.id)}
+                        className="block flex-1 rounded-xl border-2 border-[#d8c5ae] bg-transparent px-6 py-3 text-center font-semibold text-[#211b19] transition-all duration-300 hover:border-[#6b1726] hover:text-[#6b1726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
+                      >
+                        عرض التفاصيل الكاملة
+                      </Link>
+                      <FabricFavoriteButton fabric={fabric} size="lg" />
                     </div>
-
-                    <Link
-                      href={`/fabrics/${fabric.id}`}
-                      onNavigate={() => onViewDetails?.(fabric.id)}
-                      className="block w-full bg-[#6b1726] hover:bg-[#2f0c14] text-[#f6f0e8] py-3 px-6 rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
-                    >
-                      عرض التفاصيل الكاملة
-                    </Link>
-
-                    <a
-                      href={whatsappLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 w-full border-2 border-[#6b1726] text-[#6b1726] bg-transparent py-3 px-6 rounded-xl font-semibold hover:bg-[#f6f0e8] transition-all duration-300 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                      <span>استفسار عبر الواتساب</span>
-                    </a>
                   </div>
                 </div>
               </div>

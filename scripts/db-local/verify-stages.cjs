@@ -11,9 +11,9 @@ const {
 const STAFF = 'aaaaaaaa-0000-4000-8000-000000000002' // an active fabric_store_manager in replica-wiring.sql
 
 const args = process.argv.slice(2)
-const edits = { 2: [], 3: [], 4: [], 5: [] }
+const edits = { 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], '7r': [], 8: [], 9: [], A: [], B: [] }
 for (let i = 0; i < args.length; i++) {
-  const stage = { '--mutate2': 2, '--mutate3': 3, '--mutate4': 4, '--mutate5': 5 }[args[i]]
+  const stage = { '--mutate2': 2, '--mutate3': 3, '--mutate4': 4, '--mutate5': 5, '--mutate6': 6, '--mutate7': 7, '--mutate7r': '7r', '--mutate8': 8, '--mutate9': 9, '--mutateA': 'A', '--mutateB': 'B' }[args[i]]
   if (stage) { edits[stage].push([args[i + 1], args[i + 2]]); i += 2 }
 }
 const withConcurrency = !args.includes('--no-concurrency')
@@ -101,6 +101,32 @@ function checkoutRequest({ key = crypto.randomUUID(), listing, mode, cm, client,
   })
 }
 async function asServer(client) { await client.query('set role service_role'); return client }
+
+// Stage 6 fixture: an order paid in LIVE mode through the stage 4 + 5 entry points.
+// lapse: the hold is released while the customer is on the payment page.
+let paidCounter = 0
+async function paidLiveOrder(admin, fabric, cm, { lapse = false } = {}) {
+  paidCounter += 1
+  const token = `s6-token-${paidCounter}-${crypto.randomUUID()}`
+  const request = JSON.parse(checkoutRequest({ listing: fabric.listing, mode: 'meter', cm, client: `s6-${paidCounter}`,
+    phone: `+96657${String(paidCounter).padStart(7, '0')}` }))
+  request.access_token_hash = sha256hex(token)
+  const svc = await asServer(await connect())
+  const created = (await svc.query(CHECKOUT, [JSON.stringify(request)])).rows[0].r
+  assert.equal(created.status, 'created', JSON.stringify(created))
+  const begun = (await svc.query(`select public.fabric_store_begin_payment(decode($1, 'hex'), 'live', decode($2, 'hex')) as r`,
+    [sha256hex(token), sha256hex(`s6-payer-${paidCounter}`)])).rows[0].r
+  assert.equal(begun.status, 'created', JSON.stringify(begun))
+  await svc.query(`select public.fabric_store_attach_invoice($1, $2, 'https://checkout.moyasar.com/x')`, [begun.attempt_id, `inv-s6-${paidCounter}`])
+  if (lapse) await admin.query(`select private.fabric_store_release_order_reservations($1, 'انتهت المهلة')`, [created.order_id])
+  const total = request.totals.total_halalas
+  const applied = (await svc.query(`select public.fabric_store_apply_payment(null, 'live', $1::jsonb, null) as r`,
+    [JSON.stringify({ id: `pay-s6-${paidCounter}`, status: 'paid', amount: total, currency: 'SAR', invoice_id: `inv-s6-${paidCounter}` })])).rows[0].r
+  assert.equal(applied.status, 'paid', JSON.stringify(applied))
+  await svc.end()
+  return created.order_id
+}
+const CONFIRM = 'select public.fabric_store_confirm_order($1) as r'
 
 async function shopSale(client, lines) {
   await client.query(
@@ -480,6 +506,67 @@ const scenarios = {
     assert.deepEqual(n, { confirms: 1, payment: 'paid' })
     return 'the second waited on the order, then saw it paid: one confirmation task'
   },
+  // --- stage 6: confirming the sale next to the shop screen ---
+  async 'stage 6: a shop sale holds the stock row while the sale is confirmed'(admin) {
+    const fabric = await makeFabric(admin, 's6-busy', 10)
+    const order = await paidLiveOrder(admin, fabric, 100)
+    const shop = await connect(); await asStaff(shop)
+    const web = await asServer(await connect())
+    // a confirmation that waited for the shop instead of backing off would hang this test
+    await web.query(`set statement_timeout = '5s'`)
+    await shop.query('begin')
+    await shopSale(shop, [{ ...fabric, meters: 2 }])
+    let first
+    try { first = (await web.query(CONFIRM, [order])).rows[0].r.status } catch (error) { first = error.code }
+    const { rows: [mid] } = await admin.query(`select income_id,
+      (select string_agg(status, ',') from public.fabric_store_stock_reservations where order_id = $1) as holds
+      from public.fabric_store_orders where id = $1`, [order])
+    await shop.query('commit')
+    const second = (await web.query(CONFIRM, [order])).rows[0].r.status
+    await shop.end(); await web.end()
+    const { rows: [f] } = await admin.query(`select current_quantity::numeric as q from public.fabric_inventory_colors where id = $1`, [fabric.color])
+    assert.equal(first, '55P03', `the confirmation must back off (lock timeout), got: ${first}`)
+    assert.deepEqual(mid, { income_id: null, holds: 'active' }, 'a backed-off confirmation must leave nothing behind')
+    assert.equal(second, 'confirmed')
+    assert.equal(Number(f.q), 7, `10 − 2 (shop) − 1 (web) = 7, got ${f.q}`)
+    return 'the confirmation backed off (55P03, nothing changed), the shop sale went through; the retry sold it (10 → 7 m)'
+  },
+  async 'stage 6: the same order confirmed twice at once'(admin) {
+    const fabric = await makeFabric(admin, 's6-double', 10)
+    const order = await paidLiveOrder(admin, fabric, 150)
+    const a = await asServer(await connect()); const b = await asServer(await connect())
+    await a.query('begin')
+    const first = (await a.query(CONFIRM, [order])).rows[0].r.status
+    const second = inTx(b, () => b.query(CONFIRM, [order]).then(r => { second.status = r.rows[0].r.status }))
+    await sleep(400); const waited = !second.done
+    await a.query('commit'); await second.promise; await a.end(); await b.end()
+    const { rows: [n] } = await admin.query(`select
+      (select count(*) from public.income i join public.fabric_store_orders o on o.income_id = i.id where o.id = $1)::int as sales,
+      (select count(*) from public.fabric_inventory_movements m join public.fabric_store_orders o on o.income_id = m.sale_income_id where o.id = $1)::int as movements,
+      (select current_quantity::numeric from public.fabric_inventory_colors where id = $2) as stock`, [order, fabric.color])
+    assert.equal(first, 'confirmed')
+    assert.ok(waited, 'the second confirmation must wait on the order lock')
+    assert.equal(second.status, 'already_confirmed', `got: ${second.result}/${second.status}`)
+    assert.deepEqual({ ...n, stock: Number(n.stock) }, { sales: 1, movements: 1, stock: 8.5 })
+    return 'the second waited, then saw the sale: one sale, one movement (10 → 8.5 m)'
+  },
+  async 'stage 6: late payment and a shop sale race for the last metre'(admin) {
+    const fabric = await makeFabric(admin, 's6-last', 1)
+    const order = await paidLiveOrder(admin, fabric, 100, { lapse: true })
+    const shop = await connect(); await asStaff(shop)
+    const web = await asServer(await connect())
+    await web.query('begin')
+    const confirmed = (await web.query(CONFIRM, [order])).rows[0].r.status
+    const sale = inTx(shop, () => shopSale(shop, [{ ...fabric, meters: 1 }]))
+    await sleep(400); const waited = !sale.done
+    await web.query('commit'); await sale.promise; await shop.end(); await web.end()
+    const { rows: [f] } = await admin.query(`select current_quantity::numeric as q from public.fabric_inventory_colors where id = $1`, [fabric.color])
+    assert.equal(confirmed, 'confirmed')
+    assert.ok(waited, 'the shop sale must wait for the confirmation')
+    assert.match(sale.result, /FABRIC_STOCK_INSUFFICIENT/, `the shop must be refused, got: ${sale.result}`)
+    assert.equal(Number(f.q), 0, 'stock must end at 0, never below')
+    return 'the web sale took the last metre; the shop sale waited, then was refused (stock 0, never negative)'
+  },
   async 'service_role writes stock directly'(admin) {
     const fabric = await makeFabric(admin, 'service', 5)
     const client = await connect()
@@ -491,6 +578,128 @@ const scenarios = {
     await client.end()
     assert.match(result, /permission denied for schema private/, `expected the documented refusal, got: ${result}`)
     return 'refused (permission denied for schema private) — server stock writes must go through a SECURITY DEFINER function'
+  },
+}
+
+// Fix batch B (AUD-02): the hold starts at «ادفعي». Run after the migration is applied.
+const BEGIN = `select public.fabric_store_begin_payment(decode($1, 'hex'), 'live', decode($2, 'hex')) as r`
+let bCounter = 0
+/** An order (no hold) whose access token is returned, ready for «ادفعي». */
+async function orderB(fabric, mode, cm, phone) {
+  bCounter += 1
+  const token = `b-token-${bCounter}-${crypto.randomUUID()}`
+  const request = JSON.parse(checkoutRequest({ listing: fabric.listing, mode, cm, client: `b-${bCounter}`, phone }))
+  request.access_token_hash = sha256hex(token)
+  const svc = await asServer(await connect())
+  const created = (await svc.query(CHECKOUT, [JSON.stringify(request)])).rows[0].r
+  await svc.end()
+  assert.equal(created.status, 'created', JSON.stringify(created))
+  return { token, orderId: created.order_id }
+}
+const payArgs = (order, payer) => [sha256hex(order.token), sha256hex(payer)]
+
+const scenariosB = {
+  async 'fix B: two customers press «ادفعي» for the last piece at once'(admin) {
+    const fabric = await makeFabric(admin, 'b-last-piece', 3.5)
+    // both orders are accepted: creating an order holds nothing
+    const one = await orderB(fabric, 'piece', 350, '+966541000001')
+    const two = await orderB(fabric, 'piece', 350, '+966541000002')
+    const a = await asServer(await connect()); const b = await asServer(await connect())
+    await a.query('begin')
+    const first = (await a.query(BEGIN, payArgs(one, 'b-lp-a'))).rows[0].r
+    const second = inTx(b, () => b.query(BEGIN, payArgs(two, 'b-lp-b')).then(r => { second.body = r.rows[0].r }))
+    await sleep(400); const waited = !second.done
+    await a.query('commit'); await second.promise; await a.end(); await b.end()
+    assert.equal(first.status, 'created', JSON.stringify(first))
+    assert.ok(waited, 'the second «ادفعي» must wait (cap lock / stock row)')
+    assert.equal(second.body && `${second.body.status}/${second.body.code}`, 'rejected/FABRIC_STORE_STOCK_UNAVAILABLE',
+      `got: ${second.result} ${JSON.stringify(second.body)}`)
+    const { rows: [n] } = await admin.query(`select
+      (select count(*) from public.fabric_store_stock_reservations where inventory_color_id = $1 and status = 'active')::int as holds,
+      (select count(*) from public.fabric_store_payment_attempts where order_id = $2)::int as second_attempts`, [fabric.color, two.orderId])
+    assert.deepEqual(n, { holds: 1, second_attempts: 0 })
+    return 'both orders were accepted; one hold; the second customer waited, then was told the piece is gone (no attempt)'
+  },
+
+  async 'fix B: two «ادفعي» at once with the store one piece below its cap'(admin) {
+    // fill the store to 19 whole pieces held (orders of ≤ 5 pieces, each its own phone and sender)
+    const held = (await admin.query(`select count(*) filter (where i.purchase_mode = 'piece')::int as n
+      from public.fabric_store_stock_reservations r join public.fabric_store_order_items i on i.id = r.order_item_id
+      where r.status = 'active' and r.expires_at > clock_timestamp()`)).rows[0].n
+    let toHold = 19 - held
+    assert.ok(toHold >= 0, `the replica already holds ${held} pieces`)
+    let k = 0
+    while (toHold > 0) {
+      k += 1
+      const f = await makeFabric(admin, `b-cap-fill-${k}`, 3.5)
+      const o = await orderB(f, 'piece', 350, `+9665420000${String(k).padStart(2, '0')}`)
+      const svc = await asServer(await connect())
+      const r = (await svc.query(BEGIN, payArgs(o, `b-cap-fill-sender-${k}`))).rows[0].r
+      await svc.end()
+      assert.equal(r.status, 'created', JSON.stringify(r))
+      toHold -= 1
+    }
+    const fa = await makeFabric(admin, 'b-cap-a', 3.5)
+    const fb = await makeFabric(admin, 'b-cap-b', 3.5)
+    const oa = await orderB(fa, 'piece', 350, '+966543000001')
+    const ob = await orderB(fb, 'piece', 350, '+966543000002')
+    const a = await asServer(await connect()); const b = await asServer(await connect())
+    await a.query('begin')
+    const first = (await a.query(BEGIN, payArgs(oa, 'b-cap-sender-a'))).rows[0].r
+    const second = inTx(b, () => b.query(BEGIN, payArgs(ob, 'b-cap-sender-b')).then(r => { second.body = r.rows[0].r }))
+    await sleep(400); const waited = !second.done
+    await a.query('commit'); await second.promise; await a.end(); await b.end()
+    assert.equal(first.status, 'created', JSON.stringify(first))
+    assert.ok(waited, 'the second «ادفعي» must wait for the first to count')
+    assert.equal(second.body && `${second.body.status}/${second.body.scope}`, 'hold_limit/store',
+      `got: ${second.result} ${JSON.stringify(second.body)}`)
+    const now = (await admin.query(`select count(*) filter (where i.purchase_mode = 'piece')::int as n
+      from public.fabric_store_stock_reservations r join public.fabric_store_order_items i on i.id = r.order_item_id
+      where r.status = 'active' and r.expires_at > clock_timestamp()`)).rows[0].n
+    assert.equal(now, 20)
+    // free the store for the scenarios after this one
+    // (unpaid orders only: the stage 2 guard refuses to release a paid order's hold, rightly)
+    await admin.query(`update public.fabric_store_stock_reservations set status = 'released', end_reason = 'scenario cleanup'
+      where status = 'active' and order_id in (select id from public.fabric_store_orders where payment_status = 'pending')`)
+    return 'the second waited on the cap lock, then was refused (store); exactly 20 pieces held, never 21'
+  },
+
+  async 'fix B: a shop sale and «ادفعي» on the same metre'(admin) {
+    const fabric = await makeFabric(admin, 'b-busy-shop', 10)
+    const o = await orderB(fabric, 'meter', 100, '+966544000001')
+    const shop = await connect(); await asStaff(shop)
+    const web = await asServer(await connect())
+    await shop.query('begin')
+    await shopSale(shop, [{ ...fabric, meters: 1 }])
+    let webResult
+    try {
+      await web.query(BEGIN, payArgs(o, 'b-busy-sender'))
+      webResult = 'returned'
+    } catch (error) { webResult = error.code }
+    await shop.query('commit'); await shop.end(); await web.end()
+    const { rows: [n] } = await admin.query(`select
+      (select count(*) from public.fabric_store_stock_reservations where order_id = $1)::int as holds,
+      (select count(*) from public.fabric_store_payment_attempts where order_id = $1)::int as attempts`, [o.orderId])
+    assert.equal(webResult, '55P03', `«ادفعي» must back off with a retryable lock timeout, got: ${webResult}`)
+    assert.deepEqual(n, { holds: 0, attempts: 0 })
+    return '«ادفعي» backed off (55P03, retryable, no hold, no attempt); the shop sale went through'
+  },
+
+  async 'fix B: «ادفعي» after the 30-minute order deadline'(admin) {
+    const fabric = await makeFabric(admin, 'b-late', 10)
+    const o = await orderB(fabric, 'meter', 100, '+966545000001')
+    // the order guard forbids moving payment_due_at; only this test bypasses triggers to age the order
+    await admin.query(`set session_replication_role = replica`)
+    await admin.query(`update public.fabric_store_orders set created_at = now() - interval '40 minutes',
+      payment_due_at = now() - interval '10 minutes' where id = $1`, [o.orderId])
+    await admin.query(`set session_replication_role = origin`)
+    const svc = await asServer(await connect())
+    const r = (await svc.query(BEGIN, payArgs(o, 'b-late-sender'))).rows[0].r
+    await svc.end()
+    const { rows: [n] } = await admin.query(`select count(*)::int as holds from public.fabric_store_stock_reservations where order_id = $1`, [o.orderId])
+    assert.equal(r.status, 'order_expired', JSON.stringify(r))
+    assert.equal(n.holds, 0)
+    return 'refused (order_expired), nothing held'
   },
 }
 
@@ -545,10 +754,104 @@ async function main() {
       if (left.fn) fail('garbled stage 5 left a trace'); else console.log('✔ garbled stage 5 migration refused, nothing left')
     }
     await admin.query(migration5)
-    console.log('✔ replica built; stage 2 → 5 migrations applied')
+    const migration6 = mutate(read(FILES.migration6), edits[6])
+    try {
+      await admin.query(garble(migration6)); fail('garbled stage 6 migration was APPLIED')
+    } catch {
+      await admin.query('rollback').catch(() => {})
+      const { rows: [left] } = await admin.query(`select
+        (select count(*) from pg_proc where proname in ('fabric_store_confirm_order', 'fabric_store_due_outbox',
+          'fabric_store_finish_outbox', 'fabric_store_protect_online_sale', 'fabric_store_close_confirm_task'))::int as fn,
+        (select count(*) from pg_trigger where tgname = 'fabric_store_protect_online_sale')::int as trg`)
+      if (left.fn || left.trg) fail('garbled stage 6 left a trace'); else console.log('✔ garbled stage 6 migration refused, nothing left (income untouched)')
+    }
+    await admin.query(migration6)
+    const migration7 = mutate(read(FILES.migration7), edits[7])
+    try {
+      await admin.query(garble(migration7)); fail('garbled stage 7 migration was APPLIED')
+    } catch {
+      await admin.query('rollback').catch(() => {})
+      const { rows: [left] } = await admin.query(`select
+        (select count(*) from pg_proc where proname like 'fabric_store_staff_%')::int as fn,
+        (select count(*) from information_schema.columns where table_name = 'fabric_store_orders' and column_name = 'tracking_number')::int as col`)
+      if (left.fn || left.col) fail('garbled stage 7 left a trace'); else console.log('✔ garbled stage 7 migration refused, nothing left')
+    }
+    await admin.query(migration7)
+    const migration7r = mutate(read(FILES.migration7r), edits['7r'])
+    try {
+      await admin.query(garble(migration7r)); fail('garbled stage 7 review migration was APPLIED')
+    } catch {
+      await admin.query('rollback').catch(() => {})
+      const { rows: [left] } = await admin.query(`select array_agg(p.oid::regprocedure::text) as sigs from pg_proc p
+        where p.proname = 'fabric_store_staff_resolve_review'`)
+      if (String(left.sigs) !== 'fabric_store_staff_resolve_review(uuid,uuid,text)') fail(`garbled stage 7 review migration left a trace: ${left.sigs}`)
+      else console.log('✔ garbled stage 7 review migration refused, the applied 3-argument version untouched')
+    }
+    await admin.query(migration7r)
+    {
+      const { rows: [after] } = await admin.query(`select array_agg(p.oid::regprocedure::text) as sigs from pg_proc p
+        where p.proname = 'fabric_store_staff_resolve_review'`)
+      if (String(after.sigs) !== 'fabric_store_staff_resolve_review(uuid,uuid,text,jsonb)') fail(`after the review migration: ${after.sigs}`)
+      else console.log('✔ review migration: only the 4-argument resolve_review remains')
+    }
+    // The live correction replaces apply_payment after stage 8. Mutations in that function
+    // must hit the final definition, otherwise the correction would hide the mutant.
+    const fix8 = read(FILES.migration8fix)
+    const edits8Fix = edits[8].filter(([find]) => fix8.includes(find))
+    const edits8Base = edits[8].filter(([find]) => !fix8.includes(find))
+    const migration8 = mutate(read(FILES.migration8), edits8Base)
+    try {
+      await admin.query(garble(migration8)); fail('garbled stage 8 migration was APPLIED')
+    } catch {
+      await admin.query('rollback').catch(() => {})
+      const { rows: [left] } = await admin.query(`select
+        (select count(*) from pg_proc where proname in ('fabric_store_refund_begin', 'fabric_store_refund_finish',
+          'fabric_store_due_refunds', 'fabric_store_restock_return', 'fabric_store_record_credit_note'))::int as fn,
+        (select count(*) from information_schema.tables where table_name = 'fabric_store_restocks')::int as tbl,
+        (select count(*) from information_schema.columns where table_name = 'fabric_store_refunds' and column_name = 'cancels_order')::int as col`)
+      if (left.fn || left.tbl || left.col) fail('garbled stage 8 left a trace'); else console.log('✔ garbled stage 8 migration refused, nothing left')
+    }
+    await admin.query(migration8)
+    const migration9 = mutate(read(FILES.migration9), edits[9])
+    try {
+      await admin.query(migration9)
+      fail('stage 9 was applied without the refunded-first correction')
+    } catch (error) {
+      if (!String(error.message).includes('FABRIC_STORE_REFUNDED_FIRST_FIX_MISSING')) fail(`stage 9 dependency check: ${error.message}`)
+      else console.log('✔ stage 9 refuses to run before the refunded-first correction')
+    }
+    const migration8fix = mutate(fix8, edits8Fix)
+    try {
+      await admin.query(garble(migration8fix)); fail('garbled stage 8 correction was APPLIED')
+    } catch {
+      await admin.query('rollback').catch(() => {})
+      const { rows: [left] } = await admin.query(`select
+        (select count(*) from pg_proc where proname = 'fabric_store_refund_close_unconfirmed')::int as fn,
+        (select count(*) from information_schema.columns where table_name = 'fabric_store_refunds' and column_name = 'review_reference')::int as col,
+        (select position('v_status = ''refunded'' and v_attempt.status <> ''paid''' in prosrc) from pg_proc
+          where oid = 'public.fabric_store_apply_payment(uuid,text,jsonb,uuid)'::regprocedure)::int as branch`)
+      if (left.fn || left.col || left.branch) fail('garbled stage 8 correction left a trace'); else console.log('✔ garbled stage 8 correction refused, nothing left')
+    }
+    await admin.query(migration8fix)
+    try {
+      await admin.query(garble(migration9)); fail('garbled stage 9 migration was APPLIED')
+    } catch {
+      await admin.query('rollback').catch(() => {})
+      const { rows: [left] } = await admin.query(`select
+        (select count(*) from pg_proc where proname in ('fabric_store_due_reconciliation', 'fabric_store_complete_reconciliation', 'fabric_store_staff_alerts'))::int as fn,
+        (select count(*) from information_schema.columns where table_name = 'fabric_store_payment_attempts' and column_name = 'reconciled_at')::int as col`)
+      if (left.fn || left.col) fail('garbled stage 9 left a trace'); else console.log('✔ garbled stage 9 migration refused, nothing left')
+    }
+    await admin.query(migration9)
+    // fix batch A (AUD-01): every stage test below runs with the income/expenses policies of the fix
+    await admin.query(mutate(read(FILES.migrationA), edits.A))
+    console.log('✔ replica built; stage 2 → 9 migrations + fix A applied')
 
     for (const [label, file] of [['stage 2 SQL test', FILES.test2], ['stage 3 SQL test', FILES.test3],
-      ['stage 4 SQL test', FILES.test4], ['stage 5 SQL test', FILES.test5]]) {
+      ['stage 4 SQL test', FILES.test4], ['stage 5 SQL test', FILES.test5], ['stage 6 SQL test (live-safe)', FILES.test6],
+      ['stage 6 local sale test (replica only)', FILES.test6local], ['stage 7 SQL test (live-safe)', FILES.test7],
+      ['stage 8 SQL test (live-safe)', FILES.test8], ['stage 8 local refund test (replica only)', FILES.test8local],
+      ['stage 9 SQL test (live-safe)', FILES.test9], ['fix A finance RLS SQL test (live-safe)', FILES.testA]]) {
       const result = await runSqlTest(admin, file)
       if (result === 'PASS') console.log(`✔ ${label}: PASS`); else fail(`${label}: ${result}`)
     }
@@ -557,6 +860,116 @@ async function main() {
       for (const [label, scenario] of Object.entries(scenarios)) {
         try { console.log(`✔ ${label}: ${await scenario(admin)}`) } catch (error) { fail(`${label}: ${error.message}`) }
       }
+    }
+
+    // ── fix batch B (AUD-02): everything above ran on the stages as written (holds at checkout).
+    // B moves the hold to «ادفعي»: the stage 4 / 6-local / 7 tests and the two stage 4 races
+    // assert the old behaviour on purpose and are not re-run; the rest must still pass on top of B.
+    {
+      // the live-safe B test must FAIL on the stages as written (the order holds its stock at checkout)
+      const before = await runSqlTest(admin, FILES.testB)
+      if (before.startsWith('FAILED') && /creating the order reserves nothing/.test(before)) console.log(`✔ fix B SQL test fails before the fix: ${before.slice(0, 120)}`)
+      else fail(`fix B SQL test before the fix should fail at case 1, got: ${before}`)
+    }
+    // A mutant inside either replaced function changes its fingerprint; the re-apply and the rollback
+    // would then stop at their own DRIFT checks before any behaviour check runs (a mutant "caught" for
+    // the wrong reason). Point the self-fingerprints at the mutated bodies — only when a body changed.
+    const bodyOf = (sql, head) => {
+      const s = sql.replace(/\r\n/g, '\n')
+      const open = s.indexOf('as $$', s.indexOf(head)) + 5
+      return s.slice(open, s.indexOf('$$;', open))
+    }
+    const md5Text = text => crypto.createHash('md5').update(text, 'utf8').digest('hex')
+    const originalB = read(FILES.migrationB)
+    let migrationB = mutate(originalB, edits.B)
+    let rollbackBText = read(FILES.rollbackB)
+    for (const [head, own] of [['create or replace function public.fabric_store_create_checkout(p_request jsonb)', 'a50962d6f5a166c8ea8a7361c2827551'],
+                               ['create or replace function public.fabric_store_begin_payment(', '5c4a23f068e34f5671498446c82891f2']]) {
+      const mutated = bodyOf(migrationB, head)
+      if (mutated !== bodyOf(originalB, head)) {
+        migrationB = migrationB.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+        rollbackBText = rollbackBText.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+      }
+    }
+    {
+      const md5Of = async signature => (await admin.query(
+        `select md5(replace(prosrc, E'\\r\\n', E'\\n')) as m from pg_proc where oid = '${signature}'::regprocedure`)).rows[0].m
+      // read with the wrong encoding: refused, nothing changed
+      try {
+        await admin.query(garble(migrationB)); fail('garbled fix B migration was APPLIED')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        const left = (await admin.query(`select to_regclass('private.fabric_store_hold_clients') is not null as t`)).rows[0].t
+        if (/ENCODING/.test(error.message) && !left && (await md5Of('public.fabric_store_create_checkout(jsonb)')) === 'b5b222ed320f83ea5c20730244f5b2f1')
+          console.log('✔ garbled fix B migration refused (encoding), nothing changed')
+        else fail(`garbled fix B: ${error.message} / table left: ${left}`)
+      }
+      // a deployed begin_payment that is not the one we read: refused
+      const original = (await admin.query(`select pg_get_functiondef('public.fabric_store_begin_payment(bytea, text, bytea)'::regprocedure) as d`)).rows[0].d
+      await admin.query(`create or replace function public.fabric_store_begin_payment(p_access_hash bytea, p_environment text, p_client_hash bytea)
+        returns jsonb language sql security definer set search_path = '' as $$ select '{"status":"changed by someone"}'::jsonb $$`)
+      try {
+        await admin.query(migrationB); fail('fix B replaced a begin_payment it did not read')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        if (/FABRIC_STORE_BEGIN_PAYMENT_DRIFT/.test(error.message)) console.log('✔ fix B refuses a begin_payment with another fingerprint')
+        else fail(`fix B drift check: ${error.message}`)
+      }
+      await admin.query(original)
+    }
+    await admin.query(migrationB)
+    await admin.query(migrationB) // re-applying is safe
+    console.log('✔ fix B applied (and re-applied)')
+    for (const [label, file] of [['stage 5 SQL test after B', FILES.test5], ['stage 6 SQL test after B (live-safe)', FILES.test6],
+      ['stage 8 SQL test after B (live-safe)', FILES.test8], ['stage 8 local refund test after B', FILES.test8local],
+      ['stage 9 SQL test after B (live-safe)', FILES.test9], ['fix A SQL test after B (live-safe)', FILES.testA],
+      ['fix B SQL test (live-safe)', FILES.testB]]) {
+      const result = await runSqlTest(admin, file)
+      if (result === 'PASS') console.log(`✔ ${label}: PASS`); else fail(`${label}: ${result}`)
+    }
+    if (withConcurrency) {
+      for (const [label, scenario] of Object.entries(scenariosB)) {
+        try { console.log(`✔ ${label}: ${await scenario(admin)}`) } catch (error) { fail(`${label}: ${error.message}`) }
+      }
+    }
+
+    // ── fix B rollback: refuses without the store-closed acknowledgement and with an open page;
+    //    restores stages 4 and 5 byte for byte; B re-applies after it.
+    {
+      const rollbackB = rollbackBText
+      const tryRollback = async ack => {
+        try {
+          await admin.query('begin')
+          if (ack) await admin.query("set local fabric_store.rollback_b_ack = 'checkout-disabled'")
+          await admin.query(rollbackB)
+          await admin.query('commit')
+          return 'OK'
+        } catch (error) { await admin.query('rollback').catch(() => {}); return error.message }
+      }
+      const noAck = await tryRollback(false)
+      if (/FIX_B_ROLLBACK_REFUSED: this re-opens AUD-02/.test(noAck)) console.log('✔ fix B rollback refuses without the checkout-disabled acknowledgement')
+      else fail(`fix B rollback without acknowledgement: ${noAck}`)
+      // an open payment page (a fresh order paid to «created»)
+      const f = await makeFabric(admin, 'b-rollback-open', 5)
+      const o = await orderB(f, 'meter', 100, '+966546000001')
+      const svc = await asServer(await connect())
+      const begun = (await svc.query(BEGIN, payArgs(o, 'b-rollback-sender'))).rows[0].r
+      await svc.end()
+      const openPage = await tryRollback(true)
+      if (begun.status === 'created' && /a payment page is open now/.test(openPage)) console.log('✔ fix B rollback refuses while a payment page is open')
+      else fail(`fix B rollback with an open page: ${begun.status} / ${openPage}`)
+      await admin.query("update public.fabric_store_payment_attempts set status = 'cancelled', failure_code = 'test' where status in ('created', 'initiated', 'authorized')")
+      const done = await tryRollback(true)
+      const { rows: [after] } = await admin.query(`select
+        (select md5(replace(prosrc, E'\\r\\n', E'\\n')) from pg_proc where oid = 'public.fabric_store_create_checkout(jsonb)'::regprocedure) as cc,
+        (select md5(replace(prosrc, E'\\r\\n', E'\\n')) from pg_proc where oid = 'public.fabric_store_begin_payment(bytea, text, bytea)'::regprocedure) as bp,
+        to_regclass('private.fabric_store_hold_clients') is null as table_gone`)
+      if (done === 'OK' && after.cc === 'b5b222ed320f83ea5c20730244f5b2f1' && after.bp === '69e5b1bc11acc9d8a0be3a385bc5552b' && after.table_gone)
+        console.log('✔ fix B rollback restores stages 4 and 5 byte for byte and drops hold_clients')
+      else fail(`fix B rollback: ${done} ${JSON.stringify(after)}`)
+      await admin.query(migrationB)
+      const again = await runSqlTest(admin, FILES.testB)
+      if (again === 'PASS') console.log('✔ fix B re-applied after its rollback: SQL test PASS'); else fail(`fix B after rollback: ${again}`)
     }
     await admin.end()
   } catch (error) {

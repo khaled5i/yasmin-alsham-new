@@ -1,7 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import StorePolicyPage, { PolicyList, PolicySection } from '@/components/fabrics/StorePolicyPage'
-import { FABRIC_STORE_HOLD_MINUTES } from '@/lib/fabric-store/checkout-contract'
+import {
+  FABRIC_STORE_HOLD_MINUTES,
+  FABRIC_STORE_MAX_ORDER_LINES,
+  FABRIC_STORE_PAYMENT_HOLD_MINUTES,
+} from '@/lib/fabric-store/checkout-contract'
 import {
   STORE_ENTITY,
   STORE_PAYMENT_METHODS,
@@ -57,7 +61,8 @@ export default function SalesTermsPage() {
 
       <PolicySection title="4. الطلب والحجز والدفع">
         <PolicyList items={[
-          <>عند تأكيد الطلب يُحجز القماش لكِ لمدة {FABRIC_STORE_HOLD_MINUTES} دقيقة لإتمام الدفع، فإن لم يكتمل الدفع يُلغى الطلب ويعود القماش للبيع.</>,
+          <>بعد تأكيد الطلب لديكِ {FABRIC_STORE_HOLD_MINUTES} دقيقة للضغط على «ادفعي»، وعندها يُحجز القماش لكِ {FABRIC_STORE_PAYMENT_HOLD_MINUTES} دقيقة لإتمام الدفع؛ فإن لم يكتمل الدفع يعود القماش للبيع. لا يُحجز القماش قبل الضغط على «ادفعي»، فقد يُباع في المحل إن تأخرتِ.</>,
+          <>يصل الطلب الإلكتروني الواحد إلى {FABRIC_STORE_MAX_ORDER_LINES} أقمشة؛ للكميات الأكبر تواصلي مع المحل.</>,
           <>الدفع إلكترونياً عبر بوابة ميسر المرخّصة من البنك المركزي السعودي بوسائل: {STORE_PAYMENT_METHODS.join('، ')}.</>,
           'لا تمرّ بيانات بطاقتك على خوادمنا ولا نحتفظ بها؛ تُدخَل مباشرة في صفحة الدفع الآمنة لدى ميسر.',
           'يُعدّ الطلب مؤكداً بعد نجاح الدفع، ونرسل لكِ تأكيداً برقم الطلب.',

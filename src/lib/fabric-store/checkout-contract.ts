@@ -37,8 +37,17 @@ export const IS_FABRIC_STORE_PAYMENTS_ENABLED =
 // ثوابت العمل
 // ============================================
 
-/** مدة حجز القماش بعد إنشاء الطلب (قرار المالك 24 سبتمبر 2026). تفرضها القاعدة؛ هنا للعرض فقط. */
+/**
+ * مهلة الضغط على «ادفعي» بعد إنشاء الطلب (payment_due_at). منذ الدفعة B (AUD-02، قرار المالكة
+ * 1 أكتوبر 2026) **لا يُحجز شيء عند إنشاء الطلب**؛ تفرضها القاعدة، وهنا للعرض فقط.
+ */
 export const FABRIC_STORE_HOLD_MINUTES = 30
+
+/** مدة حجز القماش من لحظة الضغط على «ادفعي» (صفحة ميسر 20 دقيقة تنتهي قبله). للعرض فقط. */
+export const FABRIC_STORE_PAYMENT_HOLD_MINUTES = 25
+
+/** أسطر الطلب الإلكتروني الواحد (الدفعة B، قرار المالكة). السلة وعرض السعر يبقيان حتى FABRIC_STORE_MAX_LINES. */
+export const FABRIC_STORE_MAX_ORDER_LINES = 5
 
 /**
  * سقف مبلغ الطلب الإلكتروني الواحد: 20,000 ريال شاملة الضريبة. متوسط مبيعة المحل
@@ -46,7 +55,7 @@ export const FABRIC_STORE_HOLD_MINUTES = 30
  */
 export const FABRIC_STORE_MAX_ORDER_TOTAL_HALALAS = 2_000_000
 
-/** عدد أسطر الطلب الأقصى (= سقف السلة وقيد القاعدة). */
+/** عدد أسطر السلة وعرض السعر الأقصى (= سقف السلة). الطلب نفسه حتى FABRIC_STORE_MAX_ORDER_LINES. */
 export const FABRIC_STORE_MAX_LINES = 40
 
 /**
@@ -54,7 +63,7 @@ export const FABRIC_STORE_MAX_LINES = 40
  * (مضمونها في `src/lib/store-legal.ts`). أي تغيير في مضمون سياسة يرفع إصدارها.
  */
 export const FABRIC_STORE_POLICY_VERSIONS = {
-  terms: '2026-09-28',
+  terms: '2026-10-03', // الدفعة B: الحجز عند «ادفعي» لا عند تأكيد الطلب (البند 4)
   returns: '2026-09-28',
   privacy: '2026-09-28',
 } as const
@@ -196,27 +205,34 @@ export const fabricAddressSchema = z
       .transform(value => value || null),
     notes: optionalText(300),
   })
-  // نفس قيد القاعدة: العنوان المختصر، أو الحي والشارع معاً.
-  .refine(address => address.shortAddress || (address.district && address.street), 'address-incomplete')
+  // نفس قيد القاعدة: العنوان المختصر، أو الحي والشارع معاً. المسار يشير إلى
+  // الحقل الناقص فعلاً حتى تعرف الزبونة ماذا تكتب (لا رسالة عامة).
+  .superRefine((address, ctx) => {
+    if (address.shortAddress || (address.district && address.street)) return
+    const path = address.district ? ['street'] : address.street ? ['district'] : []
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'address-incomplete', path })
+  })
 
 export type FabricAddressInput = z.infer<typeof fabricAddressSchema>
+
+export const fabricCustomerSchema = z.object({
+  name: cleanText(2, 120),
+  phone: saudiMobile,
+  email: z
+    .string()
+    .max(254)
+    .optional()
+    .transform(value => (value ?? '').trim().toLowerCase())
+    .pipe(z.union([z.literal(''), z.string().regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)]))
+    .transform(value => value || null),
+})
 
 export const fabricCheckoutRequestSchema = z
   .object({
     checkoutKey: z.string().uuid(),
     lines: linesSchema,
     deliveryMethod: z.enum(['pickup', 'shipping']),
-    customer: z.object({
-      name: cleanText(2, 120),
-      phone: saudiMobile,
-      email: z
-        .string()
-        .max(254)
-        .optional()
-        .transform(value => (value ?? '').trim().toLowerCase())
-        .pipe(z.union([z.literal(''), z.string().regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)]))
-        .transform(value => value || null),
-    }),
+    customer: fabricCustomerSchema,
     address: fabricAddressSchema.optional().nullable(),
     acceptPolicies: z.literal(true),
     marketingOptIn: z.boolean().default(false),
@@ -229,6 +245,51 @@ export const fabricCheckoutRequestSchema = z
   )
 
 export type FabricCheckoutRequest = z.infer<typeof fabricCheckoutRequestSchema>
+
+/** حقول العميلة والعنوان وحدها — تتحقق منها صفحة الإتمام قبل الإرسال بنفس قواعد الخادم. */
+export const fabricCheckoutFormSchema = z.object({
+  customer: fabricCustomerSchema,
+  address: fabricAddressSchema.nullable(),
+})
+
+const ADDRESS_FIELD_MESSAGES: Record<string, string> = {
+  recipientName: 'اكتبي الاسم (حرفان على الأقل)',
+  recipientPhone: 'رقم الجوال غير صحيح — اكتبيه مثل 05xxxxxxxx',
+  city: 'اكتبي اسم المدينة',
+  district: 'اسم الحي أطول من المسموح (80 حرفاً)',
+  street: 'اسم الشارع أطول من المسموح (120 حرفاً)',
+  buildingNumber: 'رقم المبنى يجب أن يكون 4 أرقام بالضبط، مثل 2929',
+  postalCode: 'الرمز البريدي يجب أن يكون 5 أرقام بالضبط، مثل 12345',
+  additionalNumber: 'الرقم الإضافي يجب أن يكون 4 أرقام بالضبط',
+  shortAddress: 'العنوان المختصر غير صحيح — 4 حروف إنجليزية ثم 4 أرقام، مثل RRRD2929',
+  notes: 'ملاحظات التوصيل أطول من 300 حرف',
+}
+
+/**
+ * يحوّل أول خطأ تحقق إلى رسالة تسمّي الحقل والمشكلة بدقة.
+ * مشترك بين صفحة الإتمام (قبل الإرسال) ومسار الخادم (بعده).
+ */
+export function describeFabricCheckoutIssue(issues: { path: (string | number)[]; message: string }[]): string {
+  const first = issues[0]
+  const path = first?.path ?? []
+  const field = path.join('.')
+  if (first?.message === 'invalid-phone') return 'رقم الجوال غير صحيح — اكتبيه مثل 05xxxxxxxx'
+  if (first?.message === 'address-incomplete') {
+    if (path[path.length - 1] === 'street') return 'اكتبي اسم الشارع — أو اكتبي العنوان المختصر بدلاً من الحي والشارع'
+    if (path[path.length - 1] === 'district') return 'اكتبي اسم الحي — أو اكتبي العنوان المختصر بدلاً من الحي والشارع'
+    return 'العنوان ناقص: اكتبي العنوان المختصر (مثل RRRD2929)، أو الحي والشارع معاً'
+  }
+  if (first?.message === 'address-mismatch') return 'الشحن يحتاج عنواناً، والاستلام من المحل لا يحتاجه'
+  if (field.startsWith('customer.name')) return 'اكتبي الاسم (حرفان على الأقل)'
+  if (field.startsWith('customer.email')) return 'البريد الإلكتروني غير صحيح — مثل name@example.com'
+  if (path[0] === 'address') {
+    const message = ADDRESS_FIELD_MESSAGES[String(path[1] ?? '')]
+    if (message) return message
+    return 'بيانات العنوان غير مكتملة أو غير صحيحة'
+  }
+  if (field.startsWith('acceptPolicies')) return 'يجب الموافقة على الشروط وسياسة الاسترجاع'
+  return 'بيانات الطلب غير صالحة'
+}
 
 // ============================================
 // الاستجابات
@@ -267,6 +328,7 @@ export interface FabricQuoteResponse {
 export interface FabricOrderSummary {
   orderNumber: string
   totalHalalas: number
+  /** payment_due_at: آخر وقت للضغط على «ادفعي» (منذ الدفعة B لا حجز قبله). الاسم باقٍ للتوافق. */
   holdExpiresAt: string
   paymentStatus: string
   fulfillmentStatus: string

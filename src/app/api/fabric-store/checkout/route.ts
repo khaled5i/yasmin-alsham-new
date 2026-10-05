@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server'
 import {
   FABRIC_DELIVERY_OPTIONS,
+  FABRIC_STORE_MAX_ORDER_LINES,
   FABRIC_STORE_POLICY_VERSIONS,
+  describeFabricCheckoutIssue,
   fabricCheckoutRequestSchema,
   type FabricCheckoutRequest,
   type FabricCheckoutSuccess,
@@ -23,11 +25,12 @@ import { loadQuoteSnapshot, priceCart } from '@/lib/server/fabric-store/quote-se
 export const dynamic = 'force-dynamic'
 
 /**
- * إنشاء طلب المتجر وحجز قماشه 30 دقيقة — **بلا دفع** (الدفع في المرحلة 5).
+ * إنشاء طلب المتجر — **بلا دفع ولا حجز** (الدفعة B، AUD-02): القماش يُحجز عند «ادفعي»
+ * (payment/start)، وللزبونة 30 دقيقة لتضغطه. الطلب حتى FABRIC_STORE_MAX_ORDER_LINES سطراً.
  *
  * الخادم يعيد التسعير بنفسه ولا يقبل مبلغ المتصفح إلا للمقارنة: إن اختلف عمّا
- * رأته الزبونة يُعاد عرض السعر ولا يُنشأ طلب. القاعدة تتحقق من الأرقام وتحجز
- * ذرياً تحت القفل (public.fabric_store_create_checkout).
+ * رأته الزبونة يُعاد عرض السعر ولا يُنشأ طلب. القاعدة تتحقق من الأرقام والسعر والمتاح
+ * تحت القفل دون أن تحجز (public.fabric_store_create_checkout).
  *
  * عدم التكرار: checkoutKey من المتصفح + بصمة المدخلات. نفس المفتاح بنفس المدخلات
  * يعيد الطلب نفسه (انقطاع الشبكة، نقرتان)؛ بمدخلات أخرى يُرفض.
@@ -39,8 +42,13 @@ export async function POST(request: NextRequest) {
   if (!input.ok) return input.response
 
   const parsed = fabricCheckoutRequestSchema.safeParse(input.body)
-  if (!parsed.success) return errorResponse(400, 'bad-request', describeInvalidInput(parsed.error.issues))
+  if (!parsed.success) return errorResponse(400, 'bad-request', describeFabricCheckoutIssue(parsed.error.issues))
   const checkout = parsed.data
+  // القاعدة تفرضه أيضاً (FABRIC_STORE_TOO_MANY_LINES)؛ هنا قبل إعادة التسعير وبرسالة واضحة.
+  if (checkout.lines.length > FABRIC_STORE_MAX_ORDER_LINES) {
+    return errorResponse(400, 'too-many-lines',
+      `الطلب الإلكتروني يصل إلى ${FABRIC_STORE_MAX_ORDER_LINES} أقمشة؛ للكميات الأكبر تواصلي مع المحل`)
+  }
 
   const { client, secret, clientHash } = server.context
   const token = deriveAccessToken(secret, checkout.checkoutKey)
@@ -211,17 +219,4 @@ function canonicalCheckout(checkout: FabricCheckoutRequest): string {
     checkout.marketingOptIn,
     checkout.expectedTotalHalalas,
   ])
-}
-
-function describeInvalidInput(issues: { path: (string | number)[]; message: string }[]): string {
-  const first = issues[0]
-  const field = first?.path.join('.') || ''
-  if (first?.message === 'invalid-phone') return 'رقم الجوال غير صحيح — اكتبيه مثل 05xxxxxxxx'
-  if (first?.message === 'address-incomplete') return 'اكتبي العنوان المختصر، أو الحي والشارع'
-  if (first?.message === 'address-mismatch') return 'الشحن يحتاج عنواناً، والاستلام من المحل لا يحتاجه'
-  if (field.startsWith('customer.name')) return 'اكتبي الاسم (حرفان على الأقل)'
-  if (field.startsWith('customer.email')) return 'البريد الإلكتروني غير صحيح'
-  if (field.startsWith('address')) return 'بيانات العنوان غير مكتملة أو غير صحيحة'
-  if (field.startsWith('acceptPolicies')) return 'يجب الموافقة على الشروط وسياسة الاسترجاع'
-  return 'بيانات الطلب غير صالحة'
 }

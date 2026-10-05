@@ -18,8 +18,10 @@ import {
   Pencil,
   X,
   Calendar,
-  Megaphone
+  Megaphone,
+  ClipboardList
 } from 'lucide-react'
+import { IS_FABRIC_STORE_ORDERS_ENABLED } from '@/lib/fabric-store/order-status'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
@@ -90,6 +92,16 @@ const sections = [
     href: '/dashboard/accounting/fabrics/influencers',
     color: 'from-fuchsia-500 to-pink-600',
     adminOnly: true
+  },
+  {
+    id: 'online-orders',
+    name: 'طلبات المتجر الإلكتروني',
+    description: 'تجهيز الطلبات المدفوعة واستلامها وشحنها',
+    icon: ClipboardList,
+    href: '/dashboard/accounting/fabrics/online-orders',
+    color: 'from-rose-600 to-rose-800',
+    // قرار المالك (المرحلة 7): المدير ومدير متجر الأقمشة فقط، وخلف مفتاح القسم
+    onlineOrders: true
   }
 ]
 
@@ -319,7 +331,11 @@ function FabricsAccountingContent() {
         >
           <h2 className="text-lg font-bold text-gray-900 mb-4">الأقسام</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {sections.filter((section) => !section.adminOnly || isAdmin).map((section, index) => (
+            {sections.filter((section) =>
+              (!section.adminOnly || isAdmin) &&
+              (!section.onlineOrders || (IS_FABRIC_STORE_ORDERS_ENABLED &&
+                (isAdmin || (user?.role === 'worker' && workerType === 'fabric_store_manager'))))
+            ).map((section, index) => (
               <Link key={section.id} href={section.href}>
                 <motion.div
                   initial={{ opacity: 0, x: -20 }}

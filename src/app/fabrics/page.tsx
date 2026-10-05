@@ -187,12 +187,13 @@ export default function FabricsPage() {
             </div>
 
             {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
-            <div className="flex flex-wrap items-center justify-between gap-4" dir="rtl">
+            {/* صف واحد على كل المقاسات: على الجوال تُختصر التسميات بدل أن ينكسر الصف */}
+            <div className="flex flex-nowrap items-center justify-between gap-2 sm:gap-4" dir="rtl">
               {/* زر فتح الفلاتر (لجميع الأحجام) */}
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <button
                   onClick={() => setIsFilterOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl hover:border-[#6b1726] hover:shadow-md transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
+                  className="flex shrink-0 items-center gap-1.5 px-3 py-2.5 bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl hover:border-[#6b1726] hover:shadow-md transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] sm:gap-2 sm:px-4"
                   aria-label="فتح الفلاتر"
                 >
                   <SlidersHorizontal className="w-5 h-5 text-[#6b1726]" />
@@ -204,13 +205,17 @@ export default function FabricsPage() {
                   <button
                     onClick={toggleDesignsView}
                     aria-pressed={showDesigns}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] ${showDesigns
+                    aria-label={showDesigns ? 'عرض جميع الأقمشة' : `عرض التصاميم النهائية للأقمشة (${designsCount})`}
+                    className={`flex min-w-0 items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 transition-all duration-300 sm:gap-2 sm:px-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] ${showDesigns
                       ? 'bg-[#6b1726] border-[#6b1726] text-[#f6f0e8] shadow-md'
                       : 'bg-[#f6f0e8] border-[#d8c5ae] text-[#211b19] hover:border-[#6b1726] hover:shadow-md'
                       }`}
                   >
-                    <Shirt className={`w-5 h-5 ${showDesigns ? 'text-[#f6f0e8]' : 'text-[#6b1726]'}`} />
-                    <span className="text-sm font-medium">
+                    <Shirt className={`w-5 h-5 shrink-0 ${showDesigns ? 'text-[#f6f0e8]' : 'text-[#6b1726]'}`} />
+                    <span className="truncate text-sm font-medium sm:hidden">
+                      {showDesigns ? 'كل الأقمشة' : `التصاميم (${designsCount})`}
+                    </span>
+                    <span className="hidden text-sm font-medium sm:inline">
                       {showDesigns ? 'عرض جميع الأقمشة' : `عرض التصاميم النهائية للأقمشة (${designsCount})`}
                     </span>
                   </button>
@@ -218,13 +223,13 @@ export default function FabricsPage() {
               </div>
 
               {/* الترتيب + تبديل العرض */}
-              <div className="flex items-center gap-3">
+              <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                 <FabricSortOptions />
 
                 {/* زر تبديل العرض */}
                 <button
                   onClick={toggleViewMode}
-                  className="sm:hidden bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl p-2.5 hover:border-[#6b1726] hover:shadow-md transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
+                  className="sm:hidden shrink-0 bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl p-2.5 hover:border-[#6b1726] hover:shadow-md transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
                   aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
                 >
                   {isSingleColumn ? (
@@ -336,7 +341,7 @@ export default function FabricsPage() {
                   const finalPrice = getFinalPrice(fabric)
                   const displayedPricing = getFabricStorefrontPricing(finalPrice, fabric.stock_quantity)
                   const priceLabel = displayedPricing.amount != null && displayedPricing.amount > 0
-                    ? `السعر : ${formatFabricNumber(displayedPricing.amount)} ريال / ${displayedPricing.unit === 'piece' ? 'القطعة' : 'متر'}`
+                    ? `${formatFabricNumber(displayedPricing.amount)} ريال / ${displayedPricing.unit === 'piece' ? 'القطعة' : 'متر'}`
                     : 'السعر عند الطلب'
                   return (
                     <motion.div
@@ -428,11 +433,6 @@ export default function FabricsPage() {
                               </div>
                             )}
 
-                            {/* القلب: يوقف الحدث فلا يفتح القماش ولا يحرّك المعرض */}
-                            <div className="absolute bottom-[22%] left-2 z-20 sm:left-3">
-                              <FabricFavoriteButton fabric={fabric} variant="floating" size="sm" />
-                            </div>
-
                             {/* زر نظرة سريعة - مخفي على الجوال */}
                             <button
                               onClick={(e) => openQuickView(fabric, e)}
@@ -444,15 +444,22 @@ export default function FabricsPage() {
                             </button>
 
                             <div
-                              className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex h-[20%] items-end justify-center bg-gradient-to-b from-transparent via-[#f6f0e8]/75 to-[#f6f0e8] px-3 pb-3 sm:px-5 sm:pb-4"
+                              className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex h-[20%] items-end justify-center bg-gradient-to-b from-transparent via-[#f6f0e8]/75 to-[#f6f0e8] px-2 pb-2 sm:px-4 sm:pb-3"
                               dir="rtl"
                             >
-                              <div className="flex w-full items-center justify-center gap-2 text-[#6b1726] sm:gap-3">
-                                <span className="h-px min-w-2 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
-                                <p className="whitespace-nowrap text-xs font-semibold leading-none sm:text-base lg:text-lg">
-                                  {priceLabel}
-                                </p>
-                                <span className="h-px min-w-2 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
+                              {/* السعر والقلب في سطر واحد: السعر في المساحة المتبقية والقلب في الطرف الأيسر */}
+                              <div className="flex w-full items-center gap-1.5 sm:gap-2">
+                                <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-[#6b1726] sm:gap-3">
+                                  <span className="h-px min-w-1 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
+                                  <p className="whitespace-nowrap text-xs font-semibold leading-none sm:text-base lg:text-lg">
+                                    {priceLabel}
+                                  </p>
+                                  <span className="h-px min-w-1 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
+                                </div>
+                                {/* القلب: يوقف الحدث فلا يفتح القماش ولا يحرّك المعرض */}
+                                <div className="pointer-events-auto shrink-0">
+                                  <FabricFavoriteButton fabric={fabric} variant="floating" size="sm" />
+                                </div>
                               </div>
                             </div>
                           </div>

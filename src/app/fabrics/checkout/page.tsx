@@ -8,8 +8,12 @@ import {
   FABRIC_DELIVERY_OPTIONS,
   FABRIC_LINE_STATUS_MESSAGES,
   FABRIC_STORE_HOLD_MINUTES,
+  FABRIC_STORE_MAX_ORDER_LINES,
+  FABRIC_STORE_PAYMENT_HOLD_MINUTES,
   IS_FABRIC_STORE_CHECKOUT_ENABLED,
   IS_FABRIC_STORE_PAYMENTS_ENABLED,
+  describeFabricCheckoutIssue,
+  fabricCheckoutFormSchema,
   type FabricCheckoutFailure,
   type FabricCheckoutSuccess,
   type FabricDeliveryMethod,
@@ -17,12 +21,16 @@ import {
   type FabricQuoteResponse,
 } from '@/lib/fabric-store/checkout-contract'
 import FabricPayNowButton from '@/components/fabrics/FabricPayNowButton'
+import { parseBuyNowLine, type FabricBuyNowLine } from '@/lib/fabric-store/buy-now'
 import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { useFabricCartStore } from '@/store/fabricCartStore'
 
 /**
- * صفحة إتمام الطلب — المرحلة 4 من خطة الدفع: إنشاء الطلب وحجز القماش **بلا دفع**.
+ * صفحة إتمام الطلب: إنشاء الطلب ثم الانتقال لصفحة دفع ميسر بضغطة واحدة («ادفعي الآن»).
+ *
+ * مصدر الأسطر إما السلة، أو سطر واحد من «شراء الآن» في عنوان الصفحة
+ * (`?buy=…&mode=…&qty=…`) — وفي الحالة الثانية لا تُلمس السلة.
  *
  * كل رقم معروض هنا من عرض سعر الخادم، لا من حساب المتصفح. عند الإرسال يعيد الخادم
  * التسعير ويقارنه بما رأته الزبونة؛ إن اختلف يعرض الملخّص الجديد ولا يُنشئ طلباً.
@@ -38,24 +46,62 @@ interface FormState {
   name: string
   phone: string
   email: string
-  recipientName: string
-  recipientPhone: string
   city: string
   shortAddress: string
   district: string
   street: string
   buildingNumber: string
   postalCode: string
-  additionalNumber: string
   notes: string
   acceptPolicies: boolean
   marketingOptIn: boolean
 }
 
 const EMPTY_FORM: FormState = {
-  name: '', phone: '', email: '', recipientName: '', recipientPhone: '', city: '', shortAddress: '',
-  district: '', street: '', buildingNumber: '', postalCode: '', additionalNumber: '', notes: '',
+  name: '', phone: '', email: '', city: '', shortAddress: '',
+  district: '', street: '', buildingNumber: '', postalCode: '', notes: '',
   acceptPolicies: false, marketingOptIn: false,
+}
+
+/**
+ * مسودة النموذج في هذا المتصفح فقط، حتى لا تضيع البيانات إن أُغلقت الصفحة بالخطأ.
+ * الموافقة على الشروط لا تُحفظ (تُعطى صراحةً في كل طلب)، وتُمسح المسودة بعد إنشاء الطلب.
+ */
+const DRAFT_STORAGE_KEY = 'yasmin-fabric-checkout-draft-v1'
+const DRAFT_TEXT_FIELDS = ['name', 'phone', 'email', 'city', 'shortAddress', 'district', 'street', 'buildingNumber', 'postalCode', 'notes'] as const
+
+interface CheckoutDraft {
+  form: Partial<FormState>
+  deliveryMethod: FabricDeliveryMethod
+}
+
+function readDraft(): CheckoutDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { form?: Record<string, unknown>; deliveryMethod?: unknown }
+    const form: Partial<FormState> = {}
+    for (const key of DRAFT_TEXT_FIELDS) {
+      const value = parsed.form?.[key]
+      if (typeof value === 'string') form[key] = value.slice(0, 300)
+    }
+    if (typeof parsed.form?.marketingOptIn === 'boolean') form.marketingOptIn = parsed.form.marketingOptIn
+    return { form, deliveryMethod: parsed.deliveryMethod === 'shipping' ? 'shipping' : 'pickup' }
+  } catch {
+    return null
+  }
+}
+
+function writeDraft(form: FormState, deliveryMethod: FabricDeliveryMethod) {
+  try {
+    const saved: Partial<FormState> = { marketingOptIn: form.marketingOptIn }
+    for (const key of DRAFT_TEXT_FIELDS) saved[key] = form[key]
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ form: saved, deliveryMethod }))
+  } catch { /* التخزين محجوب: النموذج يعمل بلا مسودة. */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch { /* لا شيء نمسحه. */ }
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<{ status: number; data: T | null }> {
@@ -71,7 +117,11 @@ async function postJson<T>(url: string, body: unknown): Promise<{ status: number
 
 export default function FabricCheckoutPage() {
   const hasHydrated = useFabricCartStore(state => state.hasHydrated)
-  const cartLines = useFabricCartStore(state => state.lines)
+  const storedCartLines = useFabricCartStore(state => state.lines)
+  // undefined = لم يُقرأ العنوان بعد؛ null = الشراء من السلة.
+  const [buyNowLine, setBuyNowLine] = useState<FabricBuyNowLine | null | undefined>(undefined)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const [payError, setPayError] = useState<string | null>(null)
   const [deliveryMethod, setDeliveryMethod] = useState<FabricDeliveryMethod>('pickup')
   const [quote, setQuote] = useState<FabricQuoteResponse | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
@@ -84,11 +134,34 @@ export default function FabricCheckoutPage() {
   const retryKey = useRef<string | null>(null)
   const quoteRequest = useRef(0)
 
+  const isBuyNow = Boolean(buyNowLine)
+  const isSourceReady = buyNowLine !== undefined && (isBuyNow || hasHydrated)
+
   const requestLines = useMemo(
-    () => cartLines.map(line => ({ fabricId: line.fabricId, purchaseMode: line.purchaseMode, quantity: line.quantity })),
-    [cartLines]
+    () => buyNowLine
+      ? [buyNowLine]
+      : storedCartLines.map(line => ({ fabricId: line.fabricId, purchaseMode: line.purchaseMode, quantity: line.quantity })),
+    [buyNowLine, storedCartLines]
   )
-  const labels = useMemo(() => new Map(cartLines.map(line => [line.fabricId, line])), [cartLines])
+  const labels = useMemo(
+    () => new Map(storedCartLines.map(line => [line.fabricId, line.snapshot?.label ?? null])),
+    [storedCartLines]
+  )
+
+  // مصدر الأسطر + مسودة النموذج: تُقرأ بعد التركيب فقط (لا وجود لـwindow على الخادم).
+  useEffect(() => {
+    setBuyNowLine(parseBuyNowLine(window.location.search))
+    const draft = readDraft()
+    if (draft) {
+      setForm(previous => ({ ...previous, ...draft.form }))
+      setDeliveryMethod(draft.deliveryMethod)
+    }
+    setDraftLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    if (draftLoaded && !order) writeDraft(form, deliveryMethod)
+  }, [draftLoaded, form, deliveryMethod, order])
 
   const loadQuote = useCallback(async () => {
     if (requestLines.length === 0) { setQuote(null); return }
@@ -109,52 +182,92 @@ export default function FabricCheckoutPage() {
   }, [requestLines, deliveryMethod])
 
   useEffect(() => {
-    if (!hasHydrated || order) return
+    if (!isSourceReady || order) return
     retryKey.current = null
     void loadQuote()
-  }, [hasHydrated, loadQuote, order])
+  }, [isSourceReady, loadQuote, order])
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     retryKey.current = null
+    setSubmitError(null)
     setForm(previous => ({ ...previous, [key]: value }))
   }
 
-  const canSubmit = Boolean(quote?.canCheckout && quote.totals && form.acceptPolicies && !isSubmitting && !isQuoting)
+  // اسم المستلمة وجوالها هما بيانات الطلب نفسها — لا تُطلب مرتين.
+  const buildAddress = () => deliveryMethod === 'shipping'
+    ? {
+        recipientName: form.name,
+        recipientPhone: form.phone,
+        city: form.city,
+        shortAddress: form.shortAddress,
+        district: form.district,
+        street: form.street,
+        buildingNumber: form.buildingNumber,
+        postalCode: form.postalCode,
+        notes: form.notes,
+      }
+    : null
+
+  /** بعد إنشاء الطلب (والكوكي معه) نفتح صفحة ميسر مباشرة — لا خطوة «ادفعي» منفصلة. */
+  const startPayment = async (): Promise<boolean> => {
+    try {
+      const { data } = await postJson<{ ok?: boolean; checkoutUrl?: string; error?: string }>('/api/fabric-store/payment/start/', {})
+      if (data?.ok && data.checkoutUrl) {
+        window.location.assign(data.checkoutUrl)
+        return true
+      }
+      setPayError(data?.error || 'تعذّر فتح صفحة الدفع الآن، أعيدي المحاولة')
+    } catch {
+      setPayError('انقطع الاتصال قبل فتح صفحة الدفع — أعيدي المحاولة')
+    }
+    return false
+  }
+
+  // الدفعة B: الطلب الإلكتروني حتى FABRIC_STORE_MAX_ORDER_LINES سطراً (السلة نفسها أكبر).
+  const tooManyLines = requestLines.length > FABRIC_STORE_MAX_ORDER_LINES
+  const canSubmit = Boolean(quote?.canCheckout && quote.totals && !tooManyLines && !isSubmitting && !isQuoting)
+  const submitLabel = IS_FABRIC_STORE_PAYMENTS_ENABLED ? 'ادفعي الآن' : 'تأكيد الطلب'
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!canSubmit || !quote?.totals) return
+
+    // نفس قواعد الخادم قبل الإرسال، برسالة تسمّي الحقل الناقص بالضبط.
+    const address = buildAddress()
+    const checked = fabricCheckoutFormSchema.safeParse({
+      customer: { name: form.name, phone: form.phone, email: form.email },
+      address,
+    })
+    if (!checked.success) {
+      setSubmitError(describeFabricCheckoutIssue(checked.error.issues))
+      return
+    }
+    if (!form.acceptPolicies) {
+      setSubmitError('ضعي علامة الموافقة على شروط البيع وسياسة الاسترجاع والخصوصية')
+      return
+    }
+
     setIsSubmitting(true)
     setSubmitError(null)
+    setPayError(null)
     const checkoutKey = retryKey.current ?? crypto.randomUUID()
     retryKey.current = checkoutKey
-    const shipping = deliveryMethod === 'shipping'
     try {
       const { status, data } = await postJson<FabricCheckoutSuccess | FabricCheckoutFailure>('/api/fabric-store/checkout/', {
         checkoutKey,
         lines: requestLines,
         deliveryMethod,
         customer: { name: form.name, phone: form.phone, email: form.email },
-        address: shipping
-          ? {
-              recipientName: form.recipientName || form.name,
-              recipientPhone: form.recipientPhone || form.phone,
-              city: form.city,
-              shortAddress: form.shortAddress,
-              district: form.district,
-              street: form.street,
-              buildingNumber: form.buildingNumber,
-              postalCode: form.postalCode,
-              additionalNumber: form.additionalNumber,
-              notes: form.notes,
-            }
-          : null,
+        address,
         acceptPolicies: form.acceptPolicies,
         marketingOptIn: form.marketingOptIn,
         expectedTotalHalalas: quote.totals.totalHalalas,
       })
       if (data?.ok) {
+        clearDraft()
+        if (IS_FABRIC_STORE_PAYMENTS_ENABLED && await startPayment()) return // تبقى حالة التحميل حتى تنتقل الصفحة
         setOrder(data.order)
+        setIsSubmitting(false)
         return
       }
       // 5xx وانتظار القفل: المفتاح نفسه لإعادة المحاولة. غير ذلك: طلب جديد بمفتاح جديد.
@@ -162,10 +275,9 @@ export default function FabricCheckoutPage() {
       setSubmitError(data?.error || 'تعذّر إنشاء الطلب الآن، أعيدي المحاولة')
       if (data && 'quote' in data && data.quote) setQuote(data.quote)
     } catch {
-      setSubmitError('انقطع الاتصال — اضغطي «تأكيد الطلب» مرة أخرى؛ لن يُكرَّر الطلب')
-    } finally {
-      setIsSubmitting(false)
+      setSubmitError(`انقطع الاتصال — اضغطي «${submitLabel}» مرة أخرى؛ لن يُكرَّر الطلب`)
     }
+    setIsSubmitting(false)
   }
 
   if (!IS_FABRIC_CART_ENABLED || !IS_FABRIC_STORE_CHECKOUT_ENABLED) {
@@ -194,12 +306,19 @@ export default function FabricCheckoutPage() {
           <p className="mb-2 text-lg font-bold">{sar(order.totalHalalas)}</p>
           <p className="mb-5 flex items-center justify-center gap-1.5 text-sm text-[#211b19]/75">
             <Clock className="h-4 w-4" aria-hidden="true" />
-            <span>القماش محجوز لكِ حتى الساعة {riyadhTime(order.holdExpiresAt)}</span>
+            <span>أكملي الدفع قبل الساعة {riyadhTime(order.holdExpiresAt)}</span>
           </p>
           {IS_FABRIC_STORE_PAYMENTS_ENABLED ? (
             <div className="text-start">
-              <FabricPayNowButton />
-              <p className="mt-2 text-xs text-[#211b19]/60">إن لم يكتمل الدفع قبل انتهاء الحجز يعود القماش للبيع تلقائياً.</p>
+              {payError && (
+                <p role="alert" className="mb-3 rounded-lg bg-[#6b1726]/10 px-3 py-2 text-sm font-semibold text-[#6b1726]">
+                  {payError}
+                </p>
+              )}
+              <FabricPayNowButton label="إعادة محاولة الدفع" />
+              <p className="mt-2 text-xs text-[#211b19]/60">
+                يُحجز القماش لكِ {FABRIC_STORE_PAYMENT_HOLD_MINUTES} دقيقة من لحظة الضغط على «ادفعي». قبل ذلك قد يُباع في المحل.
+              </p>
             </div>
           ) : (
             // قبل اعتماد ميسر: مسار الشراء كاملاً ظاهر، والدفع نفسه «قريباً» ويُكمَل الطلب عبر واتساب.
@@ -213,7 +332,7 @@ export default function FabricCheckoutPage() {
                 <span>الدفع الإلكتروني — قريباً</span>
               </button>
               <p className="rounded-xl bg-[#b99a68]/20 px-4 py-3 text-sm font-semibold text-[#2f0c14]">
-                الدفع بالبطاقة (مدى، Visa، Mastercard) يُفعَّل قريباً. لإتمام طلبك الآن أرسلي رقم الطلب عبر واتساب قبل انتهاء الحجز، ولم يُحصَّل منكِ أي مبلغ.
+                الدفع بالبطاقة (مدى، Visa، Mastercard) يُفعَّل قريباً. لإتمام طلبك الآن أرسلي رقم الطلب عبر واتساب، ولم يُحصَّل منكِ أي مبلغ. القماش لا يُحجز قبل الدفع.
               </p>
               <a
                 href={`https://wa.me/${FABRIC_STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(`مرحباً، أود إتمام طلبي من متجر الأقمشة رقم ${order.orderNumber}`)}`}
@@ -242,11 +361,11 @@ export default function FabricCheckoutPage() {
     <main className="min-h-screen bg-[#fbf8f3] pt-4 text-[#211b19] lg:pt-8">
       <div className="container mx-auto px-4 py-4 pb-16 sm:px-6 lg:px-8">
         <Link
-          href="/fabrics/cart/"
+          href={buyNowLine ? `/fabrics/${buyNowLine.fabricId}` : '/fabrics/cart/'}
           className="inline-flex items-center gap-1 text-sm font-medium text-[#6b1726] hover:text-[#2f0c14] focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
         >
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          <span>العودة إلى السلة</span>
+          <span>{buyNowLine ? 'العودة إلى القماش' : 'العودة إلى السلة'}</span>
         </Link>
         <h1 className="mb-6 mt-4 text-2xl font-bold text-[#6b1726] sm:text-3xl">إتمام الطلب</h1>
         {!IS_FABRIC_STORE_PAYMENTS_ENABLED && (
@@ -256,13 +375,13 @@ export default function FabricCheckoutPage() {
           </p>
         )}
 
-        {hasHydrated && cartLines.length === 0 && (
+        {isSourceReady && requestLines.length === 0 && (
           <p className="rounded-xl bg-[#f6f0e8] px-4 py-6 text-center">
             سلتك فارغة. <Link href="/fabrics/" className="font-semibold text-[#6b1726]">تصفّحي الأقمشة</Link>
           </p>
         )}
 
-        {cartLines.length > 0 && (
+        {requestLines.length > 0 && (
           <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_24rem] lg:items-start" noValidate>
             <div className="space-y-6">
               <fieldset className="rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-4 sm:p-5">
@@ -280,7 +399,7 @@ export default function FabricCheckoutPage() {
                         name="delivery"
                         value={option.method}
                         checked={deliveryMethod === option.method}
-                        onChange={() => { retryKey.current = null; setDeliveryMethod(option.method) }}
+                        onChange={() => { retryKey.current = null; setSubmitError(null); setDeliveryMethod(option.method) }}
                         className="mt-1 accent-[#6b1726]"
                       />
                       <span>
@@ -326,18 +445,9 @@ export default function FabricCheckoutPage() {
                   <legend className="px-1 text-lg font-bold">عنوان الشحن</legend>
                   <p className="mb-3 text-xs text-[#211b19]/65">
                     اكتبي العنوان المختصر من «العنوان الوطني» (مثل RRRD2929)، أو الحي والشارع.
+                    يُسلَّم الطلب باسمك ورقم جوالك المكتوبين أعلاه.
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="text-sm font-semibold">
-                      اسم المستلمة <span className="font-normal text-[#211b19]/55">(إن اختلف)</span>
-                      <input className={`${inputClass} mt-1`} value={form.recipientName} maxLength={120}
-                        onChange={event => update('recipientName', event.target.value)} />
-                    </label>
-                    <label className="text-sm font-semibold">
-                      جوال المستلمة <span className="font-normal text-[#211b19]/55">(إن اختلف)</span>
-                      <input className={`${inputClass} mt-1`} value={form.recipientPhone} dir="ltr" inputMode="tel" maxLength={20}
-                        onChange={event => update('recipientPhone', event.target.value)} />
-                    </label>
                     <label className="text-sm font-semibold">
                       المدينة
                       <input className={`${inputClass} mt-1`} value={form.city} autoComplete="address-level2" maxLength={60}
@@ -367,11 +477,6 @@ export default function FabricCheckoutPage() {
                       الرمز البريدي <span className="font-normal text-[#211b19]/55">(5 أرقام)</span>
                       <input className={`${inputClass} mt-1`} value={form.postalCode} dir="ltr" inputMode="numeric" maxLength={5}
                         onChange={event => update('postalCode', event.target.value)} />
-                    </label>
-                    <label className="text-sm font-semibold">
-                      الرقم الإضافي <span className="font-normal text-[#211b19]/55">(4 أرقام)</span>
-                      <input className={`${inputClass} mt-1`} value={form.additionalNumber} dir="ltr" inputMode="numeric" maxLength={4}
-                        onChange={event => update('additionalNumber', event.target.value)} />
                     </label>
                     <label className="text-sm font-semibold sm:col-span-2">
                       ملاحظات للتوصيل <span className="font-normal text-[#211b19]/55">(اختياري)</span>
@@ -403,14 +508,14 @@ export default function FabricCheckoutPage() {
                 <>
                   <ul className="mb-3 space-y-2 text-sm">
                     {quote.lines.map(line => {
-                      const cartLine = labels.get(line.fabricId)
+                      const requested = requestLines.find(item => item.fabricId === line.fabricId)
                       return (
                         <li key={line.fabricId} className="flex items-start justify-between gap-3">
                           <span>
-                            <span className="font-semibold">{line.label ?? cartLine?.snapshot?.label ?? 'قماش'}</span>
-                            {cartLine && (
+                            <span className="font-semibold">{line.label ?? labels.get(line.fabricId) ?? 'قماش'}</span>
+                            {requested && (
                               <span className="block text-xs text-[#211b19]/60">
-                                {formatQuantityLabel(cartLine.quantity, cartLine.purchaseMode)}
+                                {formatQuantityLabel(requested.quantity, requested.purchaseMode)}
                               </span>
                             )}
                             {line.status !== 'ok' && (
@@ -444,7 +549,9 @@ export default function FabricCheckoutPage() {
                       <span>
                         {quote.overOrderCap
                           ? 'مبلغ الطلب أكبر من الحد المسموح للطلب الإلكتروني الواحد — تواصلي معنا.'
-                          : 'بعض عناصر السلة تحتاج مراجعة قبل إتمام الطلب. عدّليها من السلة.'}
+                          : isBuyNow
+                            ? 'هذا القماش أو كميته غير متاحة الآن — عودي لصفحة القماش وعدّلي الكمية.'
+                            : 'بعض عناصر السلة تحتاج مراجعة قبل إتمام الطلب. عدّليها من السلة.'}
                       </span>
                     </p>
                   )}
@@ -469,6 +576,11 @@ export default function FabricCheckoutPage() {
                 <span>أرغب في تلقي عروض ياسمين الشام (اختياري)</span>
               </label>
 
+              {tooManyLines && (
+                <p role="alert" className="mt-3 rounded-lg bg-[#6b1726]/10 px-3 py-2 text-sm font-semibold text-[#6b1726]">
+                  الطلب الإلكتروني يصل إلى {FABRIC_STORE_MAX_ORDER_LINES} أقمشة — احذفي من السلة ما يزيد، أو تواصلي مع المحل للكميات الأكبر.
+                </p>
+              )}
               {submitError && (
                 <p role="alert" className="mt-3 rounded-lg bg-[#6b1726]/10 px-3 py-2 text-sm font-semibold text-[#6b1726]">
                   {submitError}
@@ -482,11 +594,17 @@ export default function FabricCheckoutPage() {
                   canSubmit ? 'bg-[#6b1726] text-[#f6f0e8] shadow-lg hover:bg-[#2f0c14]' : 'cursor-not-allowed bg-[#d8c5ae]/60 text-[#211b19]/40'
                 }`}
               >
-                {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <ShieldCheck className="h-5 w-5" aria-hidden="true" />}
-                <span>{isSubmitting ? 'جاري تسجيل الطلب...' : 'تأكيد الطلب وحجز القماش'}</span>
+                {isSubmitting
+                  ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  : IS_FABRIC_STORE_PAYMENTS_ENABLED
+                    ? <CreditCard className="h-5 w-5" aria-hidden="true" />
+                    : <ShieldCheck className="h-5 w-5" aria-hidden="true" />}
+                <span>{isSubmitting ? (IS_FABRIC_STORE_PAYMENTS_ENABLED ? 'جاري فتح صفحة الدفع...' : 'جاري تسجيل الطلب...') : submitLabel}</span>
               </button>
               <p className="mt-3 text-xs leading-relaxed text-[#211b19]/65">
-                يُحجز القماش لكِ {FABRIC_STORE_HOLD_MINUTES} دقيقة لإتمام الدفع، ثم يعود للبيع إن لم يكتمل.
+                {IS_FABRIC_STORE_PAYMENTS_ENABLED
+                  ? `تنتقلين مباشرة لصفحة ميسر الآمنة، ويُحجز القماش لكِ ${FABRIC_STORE_PAYMENT_HOLD_MINUTES} دقيقة لإتمام الدفع. بيانات بطاقتك لا تمر بموقعنا.`
+                  : `بعد التأكيد لديكِ ${FABRIC_STORE_HOLD_MINUTES} دقيقة لإتمام الطلب معنا.`}
               </p>
             </aside>
           </form>

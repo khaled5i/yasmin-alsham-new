@@ -56,6 +56,8 @@ async function main() {
     await buildReplica(admin)
     for (const file of [FILES.migration2, FILES.migration3, FILES.migration4]) await admin.query(read(file))
     await admin.query(mutate(read(FILES.migration5), edits5))
+    // fix batch B (AUD-02): the hold starts at «ادفعي» — what the app now runs against (needs only stages 3 and 5)
+    await admin.query(read(FILES.migrationB))
 
     const svc = await connect()
     await svc.query('set role service_role')
@@ -79,7 +81,7 @@ async function main() {
     const ORIGIN = 'https://www.example-shop.test'
 
     let fabricNo = 0
-    async function newOrder(label) {
+    async function newOrder(label, { cm = 100 } = {}) {
       fabricNo += 1
       const { rows: [item] } = await admin.query(
         `insert into public.fabric_inventory (name, fabric_type, unit, sale_price_per_unit, images)
@@ -87,7 +89,9 @@ async function main() {
       const { rows: [color] } = await admin.query(
         `insert into public.fabric_inventory_colors (inventory_item_id, color_name) values ($1, $2) returning id`, [item.id, label])
       await admin.query(`insert into public.fabric_inventory_movements (inventory_item_id, color_id, movement_type, quantity)
-                         values ($1, $2, 'in', 10)`, [item.id, color.id])
+                         values ($1, $2, 'in', 12)`, [item.id, color.id])
+      const net = 100 * cm // 100.00 SAR/m in halalas per cm
+      const vat = net * 15 / 100
       const { rows: [listing] } = await admin.query(`select id from public.fabrics where inventory_color_id = $1`, [color.id])
       const token = crypto.randomBytes(32).toString('hex')
       const key = crypto.randomUUID()
@@ -95,14 +99,15 @@ async function main() {
         checkout_key: key, request_fingerprint: sha(`${key}:fp`), access_token_hash: sha(token),
         client_hash: sha(`client-${label}`), customer: { name: 'عميلة', phone: `+96657${String(fabricNo).padStart(7, '0')}` },
         delivery: { method: 'pickup', shipping_net_halalas: 0, shipping_vat_halalas: 0 },
-        totals: { items_net_halalas: 10000, vat_halalas: 1500, total_halalas: 11500 },
+        totals: { items_net_halalas: net, vat_halalas: vat, total_halalas: net + vat },
         policies: { terms: 't', returns: 'r', privacy: 'p' },
-        items: [{ fabric_id: listing.id, purchase_mode: 'meter', quantity_cm: 100, price_per_meter_halalas: 10000,
-          discount_basis_points: 0, unit_price_halalas: 10000, net_halalas: 10000, vat_halalas: 1500 }],
+        items: [{ fabric_id: listing.id, purchase_mode: 'meter', quantity_cm: cm, price_per_meter_halalas: 10000,
+          discount_basis_points: 0, unit_price_halalas: 10000, net_halalas: net, vat_halalas: vat }],
       } })
       assert.equal(error, null, error && error.message)
       assert.equal(data.status, 'created', JSON.stringify(data))
-      return { orderId: data.order_id, accessHash: sha(token), clientHash: sha(`payer-${label}`) }
+      return { orderId: data.order_id, accessHash: sha(token), clientHash: sha(`payer-${label}`),
+               listing: listing.id, color: color.id }
     }
     const start = (order, clientHash = order.clientHash) =>
       payments.startPayment(deps, { accessHash: order.accessHash, clientHash, origin: ORIGIN })
@@ -310,6 +315,76 @@ async function main() {
         const s = await state(order.orderId)
         assert.equal(s.payment_status, 'pending'); assert.equal(s.needs_review, true)
         return 'a 1.00 payment on 115.00: order flagged for review, not paid'
+      },
+
+      // ── fix batch B (AUD-02): the hold starts at «ادفعي» ──────────────────────────────
+      async 'fix B: creating the order holds nothing; «ادفعي» holds it'() {
+        const order = await newOrder('b-hold')
+        const holds = async () => (await admin.query(
+          `select count(*)::int as n from public.fabric_store_stock_reservations where order_id = $1 and status = 'active'`, [order.orderId])).rows[0].n
+        const before = await holds()
+        const started = await start(order)
+        assert.equal(before, 0, 'no hold after creating the order')
+        assert.equal(started.ok, true, JSON.stringify(started))
+        assert.equal(await holds(), 1, 'one hold after «ادفعي»')
+        return 'no hold at creation, one hold after «ادفعي»'
+      },
+
+      async 'fix B: one sender over 20 m held is told why, and no invoice is made'() {
+        const a = await newOrder('b-cap-a', { cm: 1000 })
+        const b = await newOrder('b-cap-b', { cm: 1000 })
+        const c = await newOrder('b-cap-c', { cm: 100 })
+        const sender = sha('b-one-sender')
+        const invoicesBefore = mock.invoices.size
+        const first = await start(a, sender)
+        const second = await start(b, sender)
+        const third = await start(c, sender)
+        assert.equal(first.ok && second.ok, true, JSON.stringify([first, second]))
+        assert.deepEqual([third.ok, third.httpStatus, third.code], [false, 429, 'hold-limit-client'], JSON.stringify(third))
+        assert.match(third.error, /قيد الدفع بالفعل من هذا الجهاز/)
+        assert.equal(mock.invoices.size, invoicesBefore + 2, 'no Moyasar invoice for the refused start')
+        const other = await start(c, sha('b-another-sender'))
+        assert.equal(other.ok, true, 'another sender is not affected')
+        return '10 m + 10 m held; the third start (1 m) refused with 429 hold-limit-client and its own message; no invoice; another sender fine'
+      },
+
+      async 'fix B: the price changed after the order: the database message reaches the customer'() {
+        const order = await newOrder('b-price')
+        await admin.query('update public.fabrics set price_per_meter = 130.00 where id = $1', [order.listing])
+        const invoicesBefore = mock.invoices.size
+        const result = await start(order)
+        assert.deepEqual([result.ok, result.httpStatus, result.code], [false, 409, 'FABRIC_STORE_PRICE_CHANGED'], JSON.stringify(result))
+        assert.match(result.error, /تغيّر سعر القماش/)
+        assert.equal(mock.invoices.size, invoicesBefore)
+        assert.equal((await state(order.orderId)).attempts, null)
+        return 'refused 409 FABRIC_STORE_PRICE_CHANGED with the Arabic message from the database; no attempt, no invoice'
+      },
+
+      async 'fix B: a shop sale holds the stock row: «ادفعي» answers busy, no invoice'() {
+        const order = await newOrder('b-busy')
+        const shop = await connect()
+        await shop.query('begin')
+        await shop.query('select 1 from public.fabric_inventory_colors where id = $1 for update', [order.color])
+        const invoicesBefore = mock.invoices.size
+        let result
+        try { result = await start(order) } finally { await shop.query('rollback'); await shop.end() }
+        assert.deepEqual([result.ok, result.httpStatus, result.code], [false, 503, 'busy'], JSON.stringify(result))
+        assert.equal(mock.invoices.size, invoicesBefore)
+        const again = await start(order)
+        assert.equal(again.ok, true, 'the next press works once the shop is done')
+        return '503 busy (retryable) while the shop holds the row; no invoice; the next press works'
+      },
+
+      async 'fix B: «ادفعي» after the 30-minute order deadline'() {
+        const order = await newOrder('b-late')
+        await admin.query('set session_replication_role = replica')
+        await admin.query(`update public.fabric_store_orders set created_at = now() - interval '40 minutes',
+          payment_due_at = now() - interval '10 minutes' where id = $1`, [order.orderId])
+        await admin.query('set session_replication_role = origin')
+        const result = await start(order)
+        assert.deepEqual([result.ok, result.code], [false, 'order_expired'], JSON.stringify(result))
+        assert.match(result.error, /أعيدي إنشاء الطلب/)
+        return 'refused (order_expired) with a message telling the customer to send the cart again'
       },
     }
 

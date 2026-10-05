@@ -2,7 +2,8 @@
 
 import { Heart } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { IS_FABRIC_CART_ENABLED, getFabricLabel } from '@/lib/fabric-commerce'
+import { IS_FABRIC_CART_ENABLED, getFabricLabel, getFabricPrimaryImage } from '@/lib/fabric-commerce'
+import { showFabricCommerceToast } from './fabricCommerceToast'
 import { useFabricFavoritesStore } from '@/store/fabricFavoritesStore'
 import type { Fabric } from '@/store/fabricStore'
 
@@ -50,8 +51,12 @@ export default function FabricFavoriteButton({
     const blocked = useFabricFavoritesStore.getState().isStorageBlocked
 
     // النجاح لا يعتمد على اللون وحده: نص صريح مع أيقونة.
-    toast.success(nowFavorite ? `أُضيف «${label}» إلى المفضلة` : `أُزيل «${label}» من المفضلة`, {
-      icon: nowFavorite ? '❤️' : '🤍',
+    showFabricCommerceToast({
+      kind: 'favorite',
+      title: nowFavorite ? 'أُضيف إلى المفضلة' : 'أُزيل من المفضلة',
+      label,
+      image: getFabricPrimaryImage(fabric),
+      removed: !nowFavorite,
     })
 
     if (blocked) {

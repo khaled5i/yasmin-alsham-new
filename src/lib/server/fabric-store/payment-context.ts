@@ -12,7 +12,16 @@ import { timingSafeEqual, createHash } from 'node:crypto'
 import type { NextRequest, NextResponse } from 'next/server'
 import { errorResponse, getFabricStoreServiceClient } from './http'
 import { createMoyasarClient, getMoyasarConfig } from './moyasar'
+import { afterVerifiedPayment } from './outbox-context'
 import type { PaymentDeps } from './payments'
+
+/**
+ * المرحلة 9: المطابقة الدورية مع ميسر وتنبيهات الموظفين — مفتاح مستقل، مطفأ افتراضياً.
+ * لا يمس بدء الدفع ولا الـwebhook ولا الاسترداد.
+ */
+export function isReconcileEnabled(): boolean {
+  return (process.env.FABRIC_STORE_RECONCILE_ENABLED ?? '').trim().toLowerCase() === 'true'
+}
 
 export function isNewPaymentsEnabled(): boolean {
   return (process.env.FABRIC_STORE_PAYMENTS_ENABLED ?? '').trim().toLowerCase() === 'true'
@@ -33,6 +42,7 @@ export function getPaymentDeps(): { ok: true; deps: PaymentDeps } | { ok: false;
       rpc: (fn, args) => client.rpc(fn, args),
       moyasar: createMoyasarClient(moyasar.config),
       config: moyasar.config,
+      onPaid: afterVerifiedPayment,
     },
   }
 }

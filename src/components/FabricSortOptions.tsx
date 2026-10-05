@@ -46,14 +46,15 @@ export default function FabricSortOptions() {
       {/* Sort Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-4 py-2.5 bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl hover:border-[#6b1726] hover:shadow-md transition-all duration-300 text-[#211b19] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
+        className="flex items-center gap-2 px-2.5 py-2.5 sm:px-4 bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl hover:border-[#6b1726] hover:shadow-md transition-all duration-300 text-[#211b19] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
         aria-label="خيارات الترتيب"
         aria-expanded={isOpen}
       >
         <ArrowUpDown className="w-5 h-5 text-[#6b1726]" />
-        <span className="text-sm">{currentLabel}</span>
+        {/* على الجوال أيقونة فقط حتى يتسع صف الأدوات كله في سطر واحد */}
+        <span className="hidden text-sm sm:inline">{currentLabel}</span>
         <svg
-          className={`w-4 h-4 text-[#6b1726] transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`hidden sm:block w-4 h-4 text-[#6b1726] transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -70,7 +71,7 @@ export default function FabricSortOptions() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="absolute top-full mt-2 right-0 w-56 bg-[#fbf8f3] border-2 border-[#d8c5ae] rounded-xl shadow-2xl overflow-hidden z-50"
+            className="absolute top-full mt-2 left-0 w-56 bg-[#fbf8f3] border-2 border-[#d8c5ae] rounded-xl shadow-2xl overflow-hidden z-50"
           >
             <div className="p-2">
               <div className="text-xs text-[#211b19]/60 px-3 py-2 font-medium border-b border-[#d8c5ae]/60 mb-1">
