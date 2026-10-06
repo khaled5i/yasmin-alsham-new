@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Cairo, Noto_Kufi_Arabic } from "next/font/google";
 import { Toaster } from 'react-hot-toast';
 import Providers from "@/components/Providers";
+import AnalyticsPrivacyGuard from "@/components/AnalyticsPrivacyGuard";
+import { GA_MEASUREMENT_ID, analyticsBootstrapScript } from "@/lib/analytics-privacy";
 import "./globals.css";
 
 const cairo = Cairo({
@@ -115,19 +117,12 @@ export default function RootLayout({
             })
           }}
         />
-        {/* Google tag (gtag.js) */}
-        <script async src="https://www.googletagmanager.com/gtag/js?id=G-8KCD0TSPCJ"></script>
+        {/* Google tag (gtag.js) — معطّل في صفحات الطلب والدفع والتتبّع، وبلا استعلام في page_location (الدفعة D).
+            سكربت الحماية أولاً: يضبط العلم ويلفّ history قبل أن يُحمَّل gtag.js (R-CD-07). */}
         <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              window.dataLayer = window.dataLayer || [];
-              function gtag(){dataLayer.push(arguments);}
-              gtag('js', new Date());
-
-              gtag('config', 'G-8KCD0TSPCJ');
-            `,
-          }}
+          dangerouslySetInnerHTML={{ __html: analyticsBootstrapScript() }}
         />
+        <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}></script>
       </head>
       <body
         className={`${cairo.variable} ${notoKufi.variable} font-sans antialiased bg-gradient-to-br from-rose-50 to-pink-50 min-h-screen`}
@@ -161,6 +156,7 @@ export default function RootLayout({
             },
           }}
         />
+        <AnalyticsPrivacyGuard />
         <Providers>
           {children}
         </Providers>

@@ -41,7 +41,7 @@ async function main() {
     for (const file of [FILES.migration2, FILES.migration3, FILES.migration4, FILES.migration5, FILES.migration6,
                         FILES.migration7, FILES.migration7r, FILES.migration8, FILES.migration8fix, FILES.migration9,
                         // fixes written after the audit: a scenario whose weakness they close now FAILS
-                        FILES.migrationA, FILES.migrationB]) {
+                        FILES.migrationA, FILES.migrationB, FILES.migrationC]) {
       await admin.query(read(file))
     }
 

@@ -811,6 +811,10 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
             })
           }
 
+          if (receiptResult.missingQr) {
+            toast('تعذّر جلب رمز QR من الأستاذ الآن؛ طُبعت فاتورة الشبكة بدونه.', { icon: '⚠️', duration: 7000 })
+          }
+
           if (pendingPayment.method === 'card' && !receiptResult.accountingAlreadySent) {
             toast.success(`تم إرسال دفعة الشبكة للمحاسبة — ${receiptResult.invoiceCode}`)
           }

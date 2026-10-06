@@ -115,7 +115,7 @@ async function finish(rpc: Rpc, taskId: string, outcome: 'done' | 'retry' | 'dea
  */
 export async function processFabricStoreOutbox(
   deps: OutboxDeps,
-  options: { orderId?: string; limit?: number } = {}
+  options: { orderId?: string; limit?: number; deadline?: number } = {}
 ): Promise<Record<string, number>> {
   const topics = deps.sendAlostazInvoice ? ['confirm_order', 'alostaz_invoice'] : ['confirm_order']
   const { data, error } = await deps.rpc('fabric_store_due_outbox', {
@@ -131,6 +131,8 @@ export async function processFabricStoreOutbox(
   tasks.sort((a, b) => (a.topic === b.topic ? 0 : a.topic === 'confirm_order' ? -1 : 1))
 
   for (const task of tasks) {
+    // (R-CD-05) لا تبدأ مهمة بعد المهلة؛ قفلها المؤقت ينتهي فيأخذها التشغيل التالي
+    if (options.deadline !== undefined && Date.now() >= options.deadline) { count('deferred'); continue }
     if (task.topic === 'confirm_order') {
       if (!task.order_id) {
         await finish(deps.rpc, task.id, 'dead', 'confirm_order task without an order', 0)

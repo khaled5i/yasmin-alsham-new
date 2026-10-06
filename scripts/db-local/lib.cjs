@@ -52,6 +52,18 @@ const FILES = {
   migrationB: repoPath('supabase/migrations/20261003120000_fabric_store_hold_at_payment.sql'),
   testB: repoPath('supabase/tests/fabric_store_hold_at_payment.sql'),
   rollbackB: repoPath('docs/store-launch-plans/implementation/payments/fixes/FIX-B-rollback.sql'),
+  // fix batch C (AUD-06, 05, 04, 03, 08, 12): money and refunds
+  migrationC: repoPath('supabase/migrations/20261005120000_fabric_store_money_guards.sql'),
+  testC: repoPath('supabase/tests/fabric_store_money_guards.sql'),
+  rollbackC: repoPath('docs/store-launch-plans/implementation/payments/fixes/FIX-C-rollback.sql'),
+  // fix batch D (AUD-14, AUD-10 addresses, AUD-09 window)
+  migrationD: repoPath('supabase/migrations/20261005150000_fabric_store_privacy_ops.sql'),
+  testD: repoPath('supabase/tests/fabric_store_privacy_ops.sql'),
+  rollbackD: repoPath('docs/store-launch-plans/implementation/payments/fixes/FIX-D-rollback.sql'),
+  // batch E (review REVIEW-CD.md, R-CD-06): purge retention floor
+  migrationE: repoPath('supabase/migrations/20261006120000_fabric_store_purge_retention_floor.sql'),
+  testE: repoPath('supabase/tests/fabric_store_purge_retention_floor.sql'),
+  rollbackE: repoPath('docs/store-launch-plans/implementation/payments/fixes/FIX-E-rollback.sql'),
   report7: repoPath('docs/store-launch-plans/implementation/payments/stage-07-order-admin.md'),
   report2: repoPath('docs/store-launch-plans/implementation/payments/stage-02-orders-and-payments-schema.md'),
   report3: repoPath('docs/store-launch-plans/implementation/payments/stage-03-stock-reservations.md'),

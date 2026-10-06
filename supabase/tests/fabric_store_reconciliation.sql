@@ -14,6 +14,17 @@ select set_config('fabric_store_test.income_before',
   (select count(*) from public.income)::text || '#'
   || (select last_value || '/' || is_called from public.fabrics_invoice_number_seq), false);
 
+-- Fix batch C (20261005120000) changed two signatures and made the money functions check that the
+-- actor is an active admin (AUD-12). The actor is therefore a real active admin from public.users
+-- (read only), and the calls whose meaning changed with C branch on pg_temp.fix_c().
+create function pg_temp.fix_c() returns boolean language sql stable as $fn$
+  select to_regprocedure('public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid)') is not null
+$fn$;
+create function pg_temp.actor() returns uuid language sql stable as $fn$
+  select coalesce((select u.id from public.users u where u.role = 'admin' and u.is_active order by u.created_at, u.id limit 1),
+                  'aaaaaaaa-0000-4000-8000-00000000abcd'::uuid)
+$fn$;
+
 create function pg_temp.expect_status(p_case text, p_result jsonb, p_status text)
 returns void language plpgsql as $$
 begin
@@ -289,7 +300,11 @@ begin
   v_res := public.fabric_store_apply_payment(null, 'test', jsonb_build_object(
     'id', 'pay-rec-alerts', 'status', 'paid', 'amount', 11500, 'currency', 'SAR', 'invoice_id', 'inv-rec-alerts'), null);
   v_res := public.fabric_store_confirm_order(v_order);
-  v_res := public.fabric_store_staff_set_fulfillment(v_order, 'preparing', 'aaaaaaaa-0000-4000-8000-00000000abcd', null, null, null);
+  if pg_temp.fix_c() then  -- a TEST payment: the admin's explicit «تجربة اللوحة» (fix C, AUD-06)
+    v_res := public.fabric_store_staff_set_fulfillment(v_order, 'preparing', pg_temp.actor(), null, null, null, true);
+  else
+    v_res := public.fabric_store_staff_set_fulfillment(v_order, 'preparing', pg_temp.actor(), null, null, null);
+  end if;
   reset role;
   if pg_temp.alert_for('needs_review', v_order) or pg_temp.alert_for('refund_unconfirmed', v_order) then
     raise exception 'TEST FAILED: a healthy order raises no alert';
@@ -297,7 +312,7 @@ begin
 
   -- a refund sent to Moyasar that does not show after 15 minutes
   set local role service_role;
-  v_res := public.fabric_store_refund_begin(v_order, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'مديرة', 1000, 'تعويض', false, gen_random_uuid());
+  v_res := public.fabric_store_refund_begin(v_order, pg_temp.actor(), 'مديرة', 1000, 'تعويض', false, gen_random_uuid());
   reset role;
   v_refund := (v_res ->> 'refund_id')::uuid;
   update public.fabric_store_refunds set provider_called_at = now() - interval '20 minutes' where id = v_refund;

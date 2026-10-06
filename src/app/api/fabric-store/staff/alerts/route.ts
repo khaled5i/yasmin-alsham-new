@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server'
 import { errorResponse, jsonResponse } from '@/lib/server/fabric-store/http'
-import { isReconcileEnabled } from '@/lib/server/fabric-store/payment-context'
 import { requireFabricStoreStaff } from '@/lib/server/fabric-store/staff-auth'
 
 export const dynamic = 'force-dynamic'
@@ -8,12 +7,12 @@ export const dynamic = 'force-dynamic'
 /**
  * تنبيهات المتجر التي تحتاج تصرفاً (المرحلة 9) — للمدير ومدير متجر الأقمشة.
  * تُحسب في القاعدة لحظة الطلب (`fabric_store_staff_alerts`)، فتزول وحدها حين يُصلح سببها.
- * خلف `FABRIC_STORE_RECONCILE_ENABLED` (مطفأ ⇒ 404 والقسم لا يظهر).
+ * الدفعة D (AUD-09): خلف مفتاح الطلبات وحده (requireFabricStoreStaff) — لا مفتاح المطابقة: سداد بلا مبيعة
+ * أو مهمة متوقفة أو استرداد لم يظهر لا تعتمد على المطابقة، وكانت تختفي كلها بإطفائها.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireFabricStoreStaff(request)
   if (!auth.ok) return auth.response
-  if (!isReconcileEnabled()) return errorResponse(404, 'not-found', 'غير موجود')
 
   const { data, error } = await auth.staff.client.rpc('fabric_store_staff_alerts')
   if (error) {

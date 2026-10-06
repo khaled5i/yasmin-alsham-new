@@ -11,9 +11,9 @@ const {
 const STAFF = 'aaaaaaaa-0000-4000-8000-000000000002' // an active fabric_store_manager in replica-wiring.sql
 
 const args = process.argv.slice(2)
-const edits = { 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], '7r': [], 8: [], 9: [], A: [], B: [] }
+const edits = { 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], '7r': [], 8: [], 9: [], A: [], B: [], C: [], D: [], E: [] }
 for (let i = 0; i < args.length; i++) {
-  const stage = { '--mutate2': 2, '--mutate3': 3, '--mutate4': 4, '--mutate5': 5, '--mutate6': 6, '--mutate7': 7, '--mutate7r': '7r', '--mutate8': 8, '--mutate9': 9, '--mutateA': 'A', '--mutateB': 'B' }[args[i]]
+  const stage = { '--mutate2': 2, '--mutate3': 3, '--mutate4': 4, '--mutate5': 5, '--mutate6': 6, '--mutate7': 7, '--mutate7r': '7r', '--mutate8': 8, '--mutate9': 9, '--mutateA': 'A', '--mutateB': 'B', '--mutateC': 'C', '--mutateD': 'D', '--mutateE': 'E' }[args[i]]
   if (stage) { edits[stage].push([args[i + 1], args[i + 2]]); i += 2 }
 }
 const withConcurrency = !args.includes('--no-concurrency')
@@ -970,6 +970,360 @@ async function main() {
       await admin.query(migrationB)
       const again = await runSqlTest(admin, FILES.testB)
       if (again === 'PASS') console.log('✔ fix B re-applied after its rollback: SQL test PASS'); else fail(`fix B after rollback: ${again}`)
+    }
+
+    // ── fix batch C (AUD-06, 05, 04, 03, 08, 12): money and refunds, on top of B.
+    {
+      const before = await runSqlTest(admin, FILES.testC)
+      if (before.startsWith('FAILED') && /old signatures must be gone/.test(before)) console.log(`✔ fix C SQL test fails before the fix: ${before.slice(0, 120)}`)
+      else fail(`fix C SQL test before the fix should fail at case 0, got: ${before}`)
+    }
+    const originalC = read(FILES.migrationC)
+    let migrationC = mutate(originalC, edits.C)
+    let rollbackCText = read(FILES.rollbackC)
+    // same rule as B: a mutant inside a self-fingerprinted function moves its fingerprint to the mutated body
+    for (const [head, own] of [['create or replace function public.fabric_store_begin_payment(', '473981a63b6bad888d09387cd3007512'],
+                               ['create or replace function public.fabric_store_apply_payment(', '409ccff40230a97c87746ac94d849a43'],
+                               ['create or replace function public.fabric_store_refund_finish(', '0e6d1c21e280876e68ae2af8bcc0ec61'],
+                               ['create or replace function public.fabric_store_refund_close_unconfirmed(', 'c9f8fa22045b74f78d348999da316fad'],
+                               ['create or replace function public.fabric_store_staff_alerts(', 'e2b2ab019bc598894c0cc9fd3b042c77']]) {
+      const mutated = bodyOf(migrationC, head)
+      if (mutated !== bodyOf(originalC, head)) {
+        migrationC = migrationC.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+        rollbackCText = rollbackCText.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+      }
+    }
+    // the two re-signatured functions are only fingerprinted by the rollback
+    for (const head of ['create or replace function public.fabric_store_staff_set_fulfillment(',
+                        'create or replace function public.fabric_store_refund_begin(']) {
+      const mutated = bodyOf(migrationC, head)
+      const own = md5Text(bodyOf(originalC, head))
+      if (mutated !== bodyOf(originalC, head)) rollbackCText = rollbackCText.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+    }
+    {
+      const md5Of = async signature => (await admin.query(
+        `select md5(replace(prosrc, E'\\r\\n', E'\\n')) as m from pg_proc where oid = '${signature}'::regprocedure`)).rows[0].m
+      try {
+        await admin.query(garble(migrationC)); fail('garbled fix C migration was APPLIED')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        const left = (await admin.query(`select to_regprocedure('public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid)') is not null as t`)).rows[0].t
+        if (/ENCODING/.test(error.message) && !left && (await md5Of('public.fabric_store_apply_payment(uuid, text, jsonb, uuid)')) === '1765947e6672185ceddae676da4b37e0')
+          console.log('✔ garbled fix C migration refused (encoding), nothing changed')
+        else fail(`garbled fix C: ${error.message} / function left: ${left}`)
+      }
+      const original = (await admin.query(`select pg_get_functiondef('public.fabric_store_refund_finish(uuid, uuid, text, bigint, text)'::regprocedure) as d`)).rows[0].d
+      await admin.query(`create or replace function public.fabric_store_refund_finish(p_refund_id uuid, p_claim_token uuid, p_outcome text, p_provider_refunded bigint, p_message text)
+        returns jsonb language sql security definer set search_path = '' as $$ select '{"status":"changed by someone"}'::jsonb $$`)
+      try {
+        await admin.query(migrationC); fail('fix C replaced a refund_finish it did not read')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        if (/FABRIC_STORE_FIX_C_DRIFT/.test(error.message)) console.log('✔ fix C refuses a refund_finish with another fingerprint')
+        else fail(`fix C drift check: ${error.message}`)
+      }
+      await admin.query(original)
+    }
+    await admin.query(migrationC)
+    await admin.query(migrationC) // re-applying is safe
+    console.log('✔ fix C applied (and re-applied)')
+    for (const [label, file] of [['stage 5 SQL test after C', FILES.test5], ['stage 6 SQL test after C (live-safe)', FILES.test6],
+      ['stage 8 SQL test after C (live-safe)', FILES.test8], ['stage 8 local refund test after C', FILES.test8local],
+      ['stage 9 SQL test after C (live-safe)', FILES.test9], ['fix A SQL test after C (live-safe)', FILES.testA],
+      ['fix B SQL test after C (live-safe)', FILES.testB], ['fix C SQL test (live-safe)', FILES.testC]]) {
+      const result = await runSqlTest(admin, file)
+      if (result === 'PASS') console.log(`✔ ${label}: PASS`); else fail(`${label}: ${result}`)
+    }
+
+    // ── fix C rollback: refuses without the acknowledgement, with a pending refund and with a payable page;
+    //    restores seven functions byte for byte (checked inside the script); the stage 9 and B rollbacks
+    //    refuse while C is applied; C re-applies after it.
+    {
+      const tryScript = async (sql, ack) => {
+        try {
+          await admin.query('begin')
+          if (ack) await admin.query("set local fabric_store.rollback_c_ack = 'payments-and-refunds-disabled'")
+          await admin.query(sql)
+          await admin.query('rollback')  // probes only: nothing kept
+          return 'OK'
+        } catch (error) { await admin.query('rollback').catch(() => {}); return error.message }
+      }
+      const r9 = await tryScript(read(FILES.rollback9).replace(/^\s*begin;\s*$/m, '').replace(/^\s*commit;\s*$/m, ''), false)
+      if (/fix batch C is applied/.test(r9)) console.log('✔ stage 9 rollback refuses while fix C is applied'); else fail(`stage 9 rollback with C: ${r9}`)
+      const rB = await (async () => {
+        try {
+          await admin.query('begin'); await admin.query("set local fabric_store.rollback_b_ack = 'checkout-disabled'")
+          await admin.query(read(FILES.rollbackB)); await admin.query('rollback'); return 'OK'
+        } catch (error) { await admin.query('rollback').catch(() => {}); return error.message }
+      })()
+      if (/fix batch C is applied/.test(rB)) console.log('✔ fix B rollback refuses while fix C is applied'); else fail(`fix B rollback with C: ${rB}`)
+
+      const noAck = await tryScript(rollbackCText, false)
+      if (/FIX_C_ROLLBACK_REFUSED: this re-opens/.test(noAck)) console.log('✔ fix C rollback refuses without the acknowledgement')
+      else fail(`fix C rollback without acknowledgement: ${noAck}`)
+      // a pending refund (money maybe on its way)
+      await admin.query("update public.fabric_store_payment_attempts set status = 'cancelled', failure_code = 'test' where status in ('created', 'initiated', 'authorized')")
+      await admin.query("update public.fabric_store_payment_attempts set expires_at = created_at + interval '1 millisecond' where status = 'failed' and expires_at > now()")
+      // any paid attempt with at least 1 SAR not yet refunded or pending (the concurrency scenarios leave several;
+      // under --no-concurrency, as in mutation runs, there may be none — then one is made here)
+      const paidQuery = () => admin.query(`select a.order_id, a.id from public.fabric_store_payment_attempts a
+        where a.status = 'paid' and a.amount_halalas - coalesce((select sum(r.amount_halalas) from public.fabric_store_refunds r
+          where r.attempt_id = a.id and r.status in ('pending', 'succeeded')), 0) >= 100
+        order by a.created_at limit 1`)
+      if (!(await paidQuery()).rows.length) await paidLiveOrder(admin, await makeFabric(admin, 'c-rollback-paid', 5), 100)
+      const { rows: [paid] } = await admin.query(`select a.order_id, a.id from public.fabric_store_payment_attempts a
+        where a.status = 'paid' and a.amount_halalas - coalesce((select sum(r.amount_halalas) from public.fabric_store_refunds r
+          where r.attempt_id = a.id and r.status in ('pending', 'succeeded')), 0) >= 100
+        order by a.created_at limit 1`)
+      let pendingRefund = null
+      if (paid) {
+        pendingRefund = (await admin.query(`insert into public.fabric_store_refunds (order_id, attempt_id, idempotency_key, amount_halalas, reason, requested_by)
+          values ($1, $2, gen_random_uuid(), 100, 'اختبار التراجع', 'aaaaaaaa-0000-4000-8000-000000000001') returning id`,
+          [paid.order_id, paid.id])).rows[0].id
+      }
+      const withPending = await tryScript(rollbackCText, true)
+      if (pendingRefund && /a refund is pending/.test(withPending)) console.log('✔ fix C rollback refuses while a refund is pending')
+      else fail(`fix C rollback with a pending refund: ${withPending} (fixture ${pendingRefund})`)
+      // earlier scenarios leave refunds pending too: close them all (the rollback is right to refuse otherwise)
+      await admin.query(`update public.fabric_store_refunds set status = 'failed', failure_message = 'test' where status = 'pending'`)
+      const done = await (async () => {
+        try {
+          await admin.query('begin'); await admin.query("set local fabric_store.rollback_c_ack = 'payments-and-refunds-disabled'")
+          await admin.query(rollbackCText); await admin.query('commit'); return 'OK'
+        } catch (error) { await admin.query('rollback').catch(() => {}); return error.message }
+      })()
+      const { rows: [after] } = await admin.query(`select
+        to_regprocedure('public.fabric_store_staff_set_fulfillment(uuid, text, uuid, text, text, text)') is not null as old_setf,
+        to_regprocedure('public.fabric_store_refund_begin(uuid, uuid, text, bigint, text, boolean, uuid)') is not null as old_begin,
+        to_regprocedure('public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid)') is null as external_gone,
+        to_regprocedure('private.fabric_store_actor_is_admin(uuid)') is null as admin_check_gone`)
+      if (done === 'OK' && after.old_setf && after.old_begin && after.external_gone && after.admin_check_gone)
+        console.log('✔ fix C rollback restores the seven functions byte for byte and removes the new ones')
+      else fail(`fix C rollback: ${done} ${JSON.stringify(after)}`)
+      for (const [label, file] of [['stage 8 SQL test after the C rollback', FILES.test8], ['stage 9 SQL test after the C rollback', FILES.test9]]) {
+        const result = await runSqlTest(admin, file)
+        if (result === 'PASS') console.log(`✔ ${label}: PASS`); else fail(`${label}: ${result}`)
+      }
+      await admin.query(migrationC)
+      const again = await runSqlTest(admin, FILES.testC)
+      if (again === 'PASS') console.log('✔ fix C re-applied after its rollback: SQL test PASS'); else fail(`fix C after rollback: ${again}`)
+    }
+
+    // ── fix batch D (AUD-14, AUD-10 addresses, AUD-09 window), on top of C.
+    {
+      const before = await runSqlTest(admin, FILES.testD)
+      if (before.startsWith('FAILED') && /anon can read fabrics\.cost_per_meter/.test(before)) console.log(`✔ fix D SQL test fails before the fix: ${before.slice(0, 100)}`)
+      else fail(`fix D SQL test before the fix should fail at case 1, got: ${before}`)
+    }
+    const originalD = read(FILES.migrationD)
+    let migrationD = mutate(originalD, edits.D)
+    let rollbackDText = read(FILES.rollbackD)
+    for (const [head, own] of [['create or replace function private.fabric_store_guard_address()', '68f6ef6edfbd526af49fa36d92194618'],
+                               ['create or replace function public.fabric_store_due_reconciliation(', 'beab268fdfdd468c4e702aaf92299b51']]) {
+      const mutated = bodyOf(migrationD, head)
+      if (mutated !== bodyOf(originalD, head)) {
+        migrationD = migrationD.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+        rollbackDText = rollbackDText.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+      }
+    }
+    {
+      try {
+        await admin.query(garble(migrationD)); fail('garbled fix D migration was APPLIED')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        const { rows: [s] } = await admin.query(`select to_regprocedure('public.fabric_store_purge_addresses(integer, interval)') is null as no_fn,
+          has_column_privilege('anon', 'public.fabrics', 'cost_per_meter', 'SELECT') as anon_cost`)
+        if (/ENCODING/.test(error.message) && s.no_fn && s.anon_cost) console.log('✔ garbled fix D migration refused (encoding), nothing changed')
+        else fail(`garbled fix D: ${error.message} / ${JSON.stringify(s)}`)
+      }
+      // a listed column renamed or dropped since the list was read: refused before anything changes
+      await admin.query('alter table public.fabrics rename column tags to tags_renamed')
+      try {
+        await admin.query(migrationD); fail('fix D applied though a listed fabrics column is gone')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        const anonCost = (await admin.query(`select has_column_privilege('anon', 'public.fabrics', 'cost_per_meter', 'SELECT') as t`)).rows[0].t
+        if (/FABRIC_STORE_FIX_D_DRIFT/.test(error.message) && anonCost) console.log('✔ fix D refuses when a listed fabrics column is gone, nothing changed')
+        else fail(`fix D column drift: ${error.message}`)
+      }
+      await admin.query('alter table public.fabrics rename column tags_renamed to tags')
+      // a deployed due_reconciliation that is not the one we read: refused
+      const originalDue = (await admin.query(`select pg_get_functiondef('public.fabric_store_due_reconciliation(text, integer)'::regprocedure) as d`)).rows[0].d
+      await admin.query(`create or replace function public.fabric_store_due_reconciliation(p_environment text, p_limit integer)
+        returns jsonb language sql security definer set search_path = '' as $$ select '[]'::jsonb $$`)
+      try {
+        await admin.query(migrationD); fail('fix D replaced a due_reconciliation it did not read')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        if (/FABRIC_STORE_FIX_D_DRIFT: a deployed function/.test(error.message)) console.log('✔ fix D refuses a due_reconciliation with another fingerprint')
+        else fail(`fix D function drift: ${error.message}`)
+      }
+      await admin.query(originalDue)
+    }
+    await admin.query(migrationD)
+    await admin.query(migrationD) // re-applying is safe
+    console.log('✔ fix D applied (and re-applied)')
+    for (const [label, file] of [['stage 5 SQL test after D', FILES.test5], ['stage 8 SQL test after D (live-safe)', FILES.test8],
+      ['stage 9 SQL test after D (live-safe)', FILES.test9], ['fix C SQL test after D (live-safe)', FILES.testC],
+      ['fix D SQL test (live-safe)', FILES.testD]]) {
+      const result = await runSqlTest(admin, file)
+      if (result === 'PASS') console.log(`✔ ${label}: PASS`); else fail(`${label}: ${result}`)
+    }
+    // local only (needs the dates the stage 2 guard protects): an abandoned unpaid shipping order's address
+    // goes 90 days after its payment deadline, not before; a paid attempt 60 days old is due monthly.
+    {
+      const f = await makeFabric(admin, 'd-abandoned', 5)
+      const svc = await asServer(await connect())
+      const req = JSON.parse(checkoutRequest({ listing: f.listing, mode: 'meter', cm: 100, client: 'd-abandoned', phone: '+966547000001' }))
+      req.delivery = { method: 'shipping', option_code: 'ksa_flat', option_label: 'شحن', shipping_net_halalas: 5000, shipping_vat_halalas: 750 }
+      req.address = { recipient_name: 'عميلة', recipient_phone: '+966547000001', city: 'جدة', short_address: 'RRRD2929' }
+      req.totals = { items_net_halalas: 10000, vat_halalas: 2250, total_halalas: 17250 }
+      const created = (await svc.query('select public.fabric_store_create_checkout($1::jsonb) as r', [JSON.stringify(req)])).rows[0].r
+      const age = async days => {
+        await admin.query('begin'); await admin.query("set local session_replication_role = 'replica'")
+        await admin.query(`update public.fabric_store_orders set created_at = now() - make_interval(days => $2 + 1),
+          payment_due_at = now() - make_interval(days => $2) where id = $1`, [created.order_id, days])
+        await admin.query('commit')
+      }
+      await age(89)
+      await svc.query('select public.fabric_store_purge_addresses(500)')
+      const at89 = (await admin.query('select anonymized_at from public.fabric_store_order_addresses where order_id = $1', [created.order_id])).rows[0].anonymized_at
+      // the guard itself refuses at 89 days (not only the purge's own filter)
+      let guard89 = 'erased'
+      try {
+        await admin.query(`update public.fabric_store_order_addresses set recipient_name = null, recipient_phone = null,
+          short_address = null, anonymized_at = now() where order_id = $1`, [created.order_id])
+      } catch (error) { guard89 = /FABRIC_STORE_ADDRESS_IN_USE/.test(error.message) ? 'refused' : error.message }
+      if (guard89 !== 'refused') fail(`fix D: the guard must refuse erasing an unpaid order's address at 89 days: ${guard89}`)
+      await age(91)
+      await svc.query('select public.fabric_store_purge_addresses(500)')
+      const at91 = (await admin.query('select anonymized_at, city from public.fabric_store_order_addresses where order_id = $1', [created.order_id])).rows[0]
+      if (created.status === 'created' && at89 === null && at91.anonymized_at && at91.city === 'جدة')
+        console.log('✔ fix D: an abandoned unpaid order keeps its address 89 days after its deadline, loses it at 91 (city kept)')
+      else fail(`fix D abandoned address: ${created.status} / 89: ${at89} / 91: ${JSON.stringify(at91)}`)
+
+      const paidAttempt = () => admin.query(`select a.id, a.order_id, a.environment from public.fabric_store_payment_attempts a
+        where a.status = 'paid' and a.provider_invoice_id is not null order by a.created_at limit 1`)
+      if (!(await paidAttempt()).rows.length) await paidLiveOrder(admin, await makeFabric(admin, 'd-window-paid', 5), 100)
+      const { rows: [paid] } = await paidAttempt()
+      const due = async () => ((await svc.query(`select public.fabric_store_due_reconciliation($1, 50) as r`, [paid.environment])).rows[0].r || [])
+        .some(r => r.attempt_id === paid.id)
+      const set = async (paidDays, reconciledDays) => {
+        await admin.query('begin'); await admin.query("set local session_replication_role = 'replica'")
+        await admin.query(`update public.fabric_store_orders set paid_at = now() - make_interval(days => $2) where id = $1`, [paid.order_id, paidDays])
+        await admin.query(`update public.fabric_store_payment_attempts set reconciled_at = now() - make_interval(days => $2),
+          reconcile_claimed_at = null, reconcile_claim_token = null where id = $1`, [paid.id, reconciledDays])
+        await admin.query('commit')
+      }
+      await set(60, 5); const d60r5 = await due()
+      await set(60, 31); const d60r31 = await due()
+      await set(130, 31); const d130 = await due()
+      await svc.end()
+      if (paid && !d60r5 && d60r31 && !d130) console.log('✔ fix D: paid 60 days ago is reconciled monthly (not after 5 days, yes after 31); not after 120 days')
+      else fail(`fix D window: ${JSON.stringify({ paid: !!paid, d60r5, d60r31, d130 })}`)
+    }
+    // ── fix D rollback
+    {
+      const tryRollback = async ack => {
+        try {
+          await admin.query('begin')
+          if (ack) await admin.query("set local fabric_store.rollback_d_ack = 'cost-columns-exposed'")
+          await admin.query(rollbackDText); await admin.query('commit'); return 'OK'
+        } catch (error) { await admin.query('rollback').catch(() => {}); return error.message }
+      }
+      const noAck = await tryRollback(false)
+      if (/FIX_D_ROLLBACK_REFUSED/.test(noAck)) console.log('✔ fix D rollback refuses without the acknowledgement'); else fail(`fix D rollback without ack: ${noAck}`)
+      const done = await tryRollback(true)
+      const { rows: [s] } = await admin.query(`select to_regprocedure('public.fabric_store_purge_addresses(integer, interval)') is null as no_fn,
+        has_table_privilege('anon', 'public.fabrics', 'SELECT') as anon_table`)
+      if (done === 'OK' && s.no_fn && s.anon_table) console.log('✔ fix D rollback restores both functions byte for byte (checked inside) and the visitor table grant')
+      else fail(`fix D rollback: ${done} ${JSON.stringify(s)}`)
+      await admin.query(migrationD)
+      const again = await runSqlTest(admin, FILES.testD)
+      if (again === 'PASS') console.log('✔ fix D re-applied after its rollback: SQL test PASS'); else fail(`fix D after rollback: ${again}`)
+    }
+
+    // ── batch E (review REVIEW-CD.md, R-CD-06): the purge refuses any retention below 90 days
+    {
+      const before = await runSqlTest(admin, FILES.testE)
+      if (before.startsWith('FAILED') && /retention/.test(before)) console.log(`✔ batch E SQL test fails before the fix: ${before.slice(0, 110)}`)
+      else fail(`batch E SQL test before the fix should fail, got: ${before}`)
+    }
+    const originalE = read(FILES.migrationE)
+    let migrationE = mutate(originalE, edits.E)
+    let rollbackEText = read(FILES.rollbackE)
+    {
+      const head = 'create or replace function public.fabric_store_purge_addresses('
+      const own = md5Text(bodyOf(originalE, head))
+      const mutated = bodyOf(migrationE, head)
+      if (mutated !== bodyOf(originalE, head)) {
+        migrationE = migrationE.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+        rollbackEText = rollbackEText.split(`'${own}'`).join(`'${md5Text(mutated)}'`)
+      }
+      try {
+        await admin.query(garble(migrationE)); fail('garbled batch E migration was APPLIED')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        if (/ENCODING/.test(error.message)) console.log('✔ garbled batch E migration refused (encoding)')
+        else fail(`garbled batch E: ${error.message}`)
+      }
+      // a deployed purge that is not the batch D one we read: refused
+      const originalPurge = (await admin.query(`select pg_get_functiondef('public.fabric_store_purge_addresses(integer, interval)'::regprocedure) as d`)).rows[0].d
+      await admin.query(`create or replace function public.fabric_store_purge_addresses(p_limit integer, p_retention interval default interval '90 days')
+        returns jsonb language sql security definer set search_path = '' as $$ select '{"status":"changed by someone"}'::jsonb $$`)
+      try {
+        await admin.query(migrationE); fail('batch E replaced a purge it did not read')
+      } catch (error) {
+        await admin.query('rollback').catch(() => {})
+        if (/FABRIC_STORE_FIX_E_DRIFT/.test(error.message)) console.log('✔ batch E refuses a purge with another fingerprint')
+        else fail(`batch E drift: ${error.message}`)
+      }
+      await admin.query(originalPurge)
+    }
+    await admin.query(migrationE)
+    await admin.query(migrationE) // re-applying is safe
+    console.log('✔ batch E applied (and re-applied)')
+    for (const [label, file] of [['fix D SQL test after E (live-safe)', FILES.testD], ['batch E SQL test (live-safe)', FILES.testE]]) {
+      const result = await runSqlTest(admin, file)
+      if (result === 'PASS') console.log(`✔ ${label}: PASS`); else fail(`${label}: ${result}`)
+    }
+    // local only: a finished (cancelled, unpaid) shipping order keeps its address 89 days after it ended and loses it at 91, by the default purge
+    {
+      const f = await makeFabric(admin, 'e-delivered', 5)
+      const svc = await asServer(await connect())
+      const req = JSON.parse(checkoutRequest({ listing: f.listing, mode: 'meter', cm: 100, client: 'e-delivered', phone: '+966548000001' }))
+      req.delivery = { method: 'shipping', option_code: 'ksa_flat', option_label: 'شحن', shipping_net_halalas: 5000, shipping_vat_halalas: 750 }
+      req.address = { recipient_name: 'عميلة', recipient_phone: '+966548000001', city: 'الدمام', short_address: 'RRRD2929' }
+      req.totals = { items_net_halalas: 10000, vat_halalas: 2250, total_halalas: 17250 }
+      const created = (await svc.query('select public.fabric_store_create_checkout($1::jsonb) as r', [JSON.stringify(req)])).rows[0].r
+      const deliveredDaysAgo = async days => {
+        await admin.query('begin'); await admin.query("set local session_replication_role = 'replica'")
+        await admin.query(`update public.fabric_store_orders set fulfillment_status = 'cancelled', cancelled_at = now() - make_interval(days => $2)
+          where id = $1`, [created.order_id, days])
+        await admin.query('commit')
+      }
+      await deliveredDaysAgo(89)
+      await svc.query('select public.fabric_store_purge_addresses(500)')
+      const at89 = (await admin.query('select anonymized_at from public.fabric_store_order_addresses where order_id = $1', [created.order_id])).rows[0].anonymized_at
+      await deliveredDaysAgo(91)
+      await svc.query('select public.fabric_store_purge_addresses(500)')
+      const at91 = (await admin.query('select anonymized_at, city from public.fabric_store_order_addresses where order_id = $1', [created.order_id])).rows[0]
+      await svc.end()
+      if (at89 === null && at91.anonymized_at && at91.city === 'الدمام') console.log('✔ batch E: a finished order keeps its address at 89 days, loses it at 91 by the default purge (city kept)')
+      else fail(`batch E delivered retention: 89: ${at89} / 91: ${JSON.stringify(at91)}`)
+    }
+    {
+      const tryRollback = async () => {
+        try { await admin.query('begin'); await admin.query(rollbackEText); await admin.query('commit'); return 'OK' }
+        catch (error) { await admin.query('rollback').catch(() => {}); return error.message }
+      }
+      const done = await tryRollback()
+      const reverted = await runSqlTest(admin, FILES.testE)
+      if (done === 'OK' && reverted.startsWith('FAILED')) console.log('✔ batch E rollback restores the batch D purge byte for byte (checked inside); its test fails again')
+      else fail(`batch E rollback: ${done} / test after: ${reverted.slice(0, 100)}`)
+      await admin.query(migrationE)
+      const again = await runSqlTest(admin, FILES.testE)
+      if (again === 'PASS') console.log('✔ batch E re-applied after its rollback: SQL test PASS'); else fail(`batch E after rollback: ${again}`)
     }
     await admin.end()
   } catch (error) {

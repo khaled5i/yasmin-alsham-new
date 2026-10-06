@@ -54,6 +54,10 @@ const BEGIN_MESSAGES: Record<string, [number, string]> = {
   sale_pending: [409, 'مبيعة هذا الطلب لم تُسجَّل بعد — الاسترداد الجزئي بعدها؛ الإلغاء الكامل متاح الآن'],
   key_conflict: [409, 'تعارض في الطلب — حدّثي الصفحة وأعيدي المحاولة'],
   bad_request: [400, 'اكتبي سبب الاسترداد ومبلغاً صحيحاً'],
+  // الدفعة C
+  forbidden: [403, 'الاسترداد للمدير فقط'],
+  extra_full_only: [400, 'الدفعة الإضافية تُرد كاملة (لا مبيعة لها) — بلا «إلغاء»'],
+  support_reference_required: [409, 'أُغلق على هذه الدفعة استرداد أُرسل لميسر ولم يظهر — اكتبي مرجع دعم ميسر الذي يؤكد أنه لن يُنفَّذ، وإلا قد يُرد المبلغ مرتين'],
 }
 
 async function finish(rpc: Rpc, refund: PendingRefund, outcome: 'succeeded' | 'failed' | 'mismatch' | 'unconfirmed',
@@ -149,6 +153,10 @@ export async function startRefund(
     reason: string
     cancel: boolean
     key: string
+    /** الدفعة C (AUD-04): دفعة ناجحة غير معتمدة للطلب (دفعة ثانية) — رد كامل. */
+    attemptId?: string | null
+    /** الدفعة C (AUD-08): مرجع دعم ميسر بعد إغلاق استرداد أُرسل ولم يظهر. */
+    supportReference?: string | null
   }
 ): Promise<StartRefundResult> {
   if (!Number.isSafeInteger(input.amountHalalas) || input.amountHalalas <= 0) {
@@ -157,6 +165,9 @@ export async function startRefund(
   const { data, error } = await deps.rpc('fabric_store_refund_begin', {
     p_order_id: input.orderId, p_actor_id: input.actorId, p_actor_label: input.actorLabel,
     p_amount_halalas: input.amountHalalas, p_reason: input.reason, p_cancel: input.cancel, p_key: input.key,
+    // يُرسلان فقط حين يُستعملان: الاسترداد العادي يعمل قبل هجرة الدفعة C وبعدها وبعد تراجعها
+    ...(input.attemptId ? { p_attempt_id: input.attemptId } : {}),
+    ...(input.supportReference?.trim() ? { p_support_reference: input.supportReference.trim() } : {}),
   })
   if (error) {
     return { ok: false, httpStatus: error.code === '55P03' ? 409 : 503, code: 'unavailable',
@@ -200,6 +211,60 @@ const CLOSE_MESSAGES: Record<string, [number, string]> = {
   note_required: [400, 'اكتبي مرجع التسوية (أو مراسلة ميسر) وملاحظة القرار'],
   not_found: [404, 'الاسترداد غير موجود'],
   bad_request: [400, 'طلب غير صالح'],
+  forbidden: [403, 'للمدير فقط'],
+}
+
+const EXTERNAL_MESSAGES: Record<string, [number, string]> = {
+  forbidden: [403, 'للمدير فقط'],
+  bad_request: [400, 'اكتبي مرجع الاسترداد في لوحة ميسر وسببه'],
+  not_found: [404, 'الطلب غير موجود'],
+  not_refundable: [409, 'لا توجد دفعة ناجحة بهذا المعرّف في هذا الطلب'],
+  refund_in_progress: [409, 'يوجد استرداد قيد التنفيذ لهذا الطلب — انتظري نتيجته'],
+  sale_pending: [409, 'مبيعة هذا الطلب لم تُسجَّل بعد — سجّلي الاسترداد الخارجي بعدها'],
+  key_conflict: [409, 'تعارض في الطلب — حدّثي الصفحة وأعيدي المحاولة'],
+}
+
+/**
+ * الدفعة C (AUD-03): تسجيل استرداد تم من لوحة ميسر خارج النظام. **لا نداء لميسر** — نسأله فقط
+ * عن المسترد الآن بمفتاحنا، والقاعدة تشترط أن المبلغ = الفرق بينه وبين سجلنا، ثم تسجّله ناجحاً
+ * (حالة الدفع + صف المرتجع للمبيعة المعتمدة) كأي استرداد.
+ */
+export async function recordExternalRefund(
+  deps: RefundDeps,
+  input: { orderId: string; attemptId: string; paymentId: string; environment: string; actorId: string
+           actorLabel: string | null; amountHalalas: number; reference: string; reason: string; key: string }
+): Promise<{ ok: true; paymentStatus: string | null } | { ok: false; httpStatus: number; code: string; error: string }> {
+  if (!Number.isSafeInteger(input.amountHalalas) || input.amountHalalas <= 0) {
+    return { ok: false, httpStatus: 400, code: 'bad_request', error: 'مبلغ غير صالح' }
+  }
+  if (input.environment !== deps.config.environment) {
+    return { ok: false, httpStatus: 409, code: 'environment', error: 'مفتاح ميسر المضبوط لا يخص بيئة هذه الدفعة' }
+  }
+  let current: number
+  try {
+    current = (await deps.moyasar.fetchPayment(input.paymentId)).refunded ?? 0
+  } catch {
+    return { ok: false, httpStatus: 503, code: 'unavailable', error: 'تعذّر سؤال ميسر عن الدفعة الآن — أعيدي المحاولة' }
+  }
+  const { data, error } = await deps.rpc('fabric_store_refund_record_external', {
+    p_order_id: input.orderId, p_attempt_id: input.attemptId, p_actor_id: input.actorId, p_actor_label: input.actorLabel,
+    p_amount_halalas: input.amountHalalas, p_reference: input.reference, p_reason: input.reason,
+    p_provider_refunded: current, p_key: input.key,
+  })
+  if (error) {
+    return { ok: false, httpStatus: error.code === '55P03' ? 409 : 503, code: 'unavailable',
+             error: error.code === '55P03' ? 'الطلب مشغول الآن — أعيدي المحاولة بعد لحظات' : 'تعذّر تسجيل الاسترداد' }
+  }
+  const result = (data ?? {}) as { status?: string; payment_status?: string; unrecorded_halalas?: number | string }
+  if (result.status === 'ok' || result.status === 'existing') return { ok: true, paymentStatus: result.payment_status ?? null }
+  if (result.status === 'amount_mismatch') {
+    const unrecorded = Number(result.unrecorded_halalas ?? 0)
+    return { ok: false, httpStatus: 409, code: 'amount_mismatch', error: unrecorded > 0
+      ? `ميسر يُظهر الآن ${(unrecorded / 100).toFixed(2)} ريال مسترداً خارج سجلنا — سجّلي هذا المبلغ بالضبط`
+      : 'ميسر لا يُظهر الآن أي استرداد خارج سجلنا لهذه الدفعة' }
+  }
+  const [httpStatus, message] = EXTERNAL_MESSAGES[result.status ?? ''] ?? [400, 'تعذّر تسجيل الاسترداد']
+  return { ok: false, httpStatus, code: result.status ?? 'error', error: message }
 }
 
 /**
@@ -237,12 +302,14 @@ export async function closeUnconfirmedRefund(
 
 /** المهمة المجدولة: الاستردادات المعلّقة التي انتهى حجزها (رد ضائع، أو خادم توقف). */
 export async function processPendingRefunds(
-  deps: RefundDeps, limit = 10, allowNewCalls = true
+  deps: RefundDeps, limit = 10, allowNewCalls = true, deadline?: number
 ): Promise<Record<string, number>> {
   const { data, error } = await deps.rpc('fabric_store_due_refunds', { p_limit: limit })
   if (error) throw new Error(`fabric_store_due_refunds: ${error.message}`)
   const counts: Record<string, number> = {}
   for (const row of (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>) {
+    // (R-CD-05) لا يبدأ استرداد بعد المهلة — ولا يُقطع نداء بدأ. حجزه دقيقتان فيعيده التشغيل التالي
+    if (deadline !== undefined && Date.now() >= deadline) { counts.deferred = (counts.deferred ?? 0) + 1; continue }
     const refund: PendingRefund = {
       refundId: String(row.refund_id),
       paymentId: String(row.payment_id ?? ''),

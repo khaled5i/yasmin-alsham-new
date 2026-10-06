@@ -65,7 +65,7 @@ export const FABRIC_STORE_MAX_LINES = 40
 export const FABRIC_STORE_POLICY_VERSIONS = {
   terms: '2026-10-03', // الدفعة B: الحجز عند «ادفعي» لا عند تأكيد الطلب (البند 4)
   returns: '2026-09-28',
-  privacy: '2026-09-28',
+  privacy: '2026-10-05', // الدفعة D (AUD-10/07): الاستضافة خارج المملكة، Google Analytics، محو العنوان بعد 90 يوماً
 } as const
 
 // ============================================

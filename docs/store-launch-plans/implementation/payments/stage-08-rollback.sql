@@ -1,5 +1,5 @@
 -- ============================================================================
--- تراجع المرحلة 8 (20260930120000_fabric_store_refunds.sql) — من SQL Editor
+-- تراجع المرحلة 8 (20260930091944_fabric_store_refunds.sql) — من SQL Editor
 -- ============================================================================
 -- أطفئي FABRIC_STORE_REFUNDS_ENABLED و NEXT_PUBLIC_FABRIC_STORE_REFUNDS_ENABLED أولاً.
 --

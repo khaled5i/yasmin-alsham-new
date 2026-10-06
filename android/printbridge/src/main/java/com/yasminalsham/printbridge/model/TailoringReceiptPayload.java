@@ -4,6 +4,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public final class TailoringReceiptPayload {
+    public static final String KIND_TAX_INVOICE = "tax_invoice";
+    public static final String KIND_CASH_RECEIPT = "cash_receipt";
+    public static final String KIND_ORDER_SUMMARY = "order_summary";
+
     public final String orderId;
     public final String orderNumber;
     public final String invoiceCode;
@@ -17,6 +21,23 @@ public final class TailoringReceiptPayload {
     public final double networkAmount;
     public final String deliveredAt;
 
+    /**
+     * Paper kind decided by the website. Empty means the legacy layout
+     * (jobs queued before invoices were split per payment).
+     */
+    public final String documentKind;
+    public final String documentTitle;
+    /** Amount of this paper alone; NaN when the job predates per-payment papers. */
+    public final double invoiceTotal;
+    /** Alostaz totals for a tax invoice; NaN when absent. */
+    public final double totalWithoutVat;
+    public final double vatAmount;
+    public final String vatNumber;
+    /** Signed ZATCA QR text exactly as Alostaz issued it; never generated locally. */
+    public final String zatcaQr;
+    public final String receivedPaymentMethod;
+    public final boolean showOrderSummary;
+
     private TailoringReceiptPayload(
             String orderId,
             String orderNumber,
@@ -29,7 +50,16 @@ public final class TailoringReceiptPayload {
             double paidAmount,
             double cashAmount,
             double networkAmount,
-            String deliveredAt
+            String deliveredAt,
+            String documentKind,
+            String documentTitle,
+            double invoiceTotal,
+            double totalWithoutVat,
+            double vatAmount,
+            String vatNumber,
+            String zatcaQr,
+            String receivedPaymentMethod,
+            boolean showOrderSummary
     ) {
         this.orderId = orderId;
         this.orderNumber = orderNumber;
@@ -43,6 +73,27 @@ public final class TailoringReceiptPayload {
         this.cashAmount = cashAmount;
         this.networkAmount = networkAmount;
         this.deliveredAt = deliveredAt;
+        this.documentKind = documentKind;
+        this.documentTitle = documentTitle;
+        this.invoiceTotal = invoiceTotal;
+        this.totalWithoutVat = totalWithoutVat;
+        this.vatAmount = vatAmount;
+        this.vatNumber = vatNumber;
+        this.zatcaQr = zatcaQr;
+        this.receivedPaymentMethod = receivedPaymentMethod;
+        this.showOrderSummary = showOrderSummary;
+    }
+
+    public boolean isNewFormat() {
+        return !documentKind.isEmpty();
+    }
+
+    public boolean isTaxInvoice() {
+        return KIND_TAX_INVOICE.equals(documentKind);
+    }
+
+    public boolean isOrderSummaryOnly() {
+        return KIND_ORDER_SUMMARY.equals(documentKind);
     }
 
     public static TailoringReceiptPayload fromJson(JSONObject json) throws JSONException {
@@ -52,6 +103,14 @@ public final class TailoringReceiptPayload {
         String invoiceCode = clean(json.optString("invoice_code", ""), 120);
         if (orderNumber.isEmpty()) throw new JSONException("Missing order_number");
         if (invoiceCode.isEmpty()) throw new JSONException("Missing invoice_code");
+
+        String documentKind = clean(json.optString("document_kind", ""), 30);
+        if (!documentKind.isEmpty()
+                && !KIND_TAX_INVOICE.equals(documentKind)
+                && !KIND_CASH_RECEIPT.equals(documentKind)
+                && !KIND_ORDER_SUMMARY.equals(documentKind)) {
+            throw new JSONException("Unsupported document_kind: " + documentKind);
+        }
 
         return new TailoringReceiptPayload(
                 clean(json.optString("order_id", ""), 80),
@@ -65,8 +124,23 @@ public final class TailoringReceiptPayload {
                 finiteNonNegative(json.optDouble("paid_amount", 0)),
                 finiteNonNegative(json.optDouble("cash_amount", 0)),
                 finiteNonNegative(json.optDouble("network_amount", 0)),
-                clean(json.optString("delivered_at", ""), 80)
+                clean(json.optString("delivered_at", ""), 80),
+                documentKind,
+                clean(json.optString("document_title", ""), 60),
+                optionalAmount(json, "invoice_total"),
+                optionalAmount(json, "total_without_vat"),
+                optionalAmount(json, "vat_amount"),
+                clean(json.optString("vat_number", ""), 20),
+                json.isNull("zatca_qr") ? "" : clean(json.optString("zatca_qr", ""), 2000),
+                clean(json.optString("received_payment_method", ""), 10),
+                json.optBoolean("show_order_summary", true)
         );
+    }
+
+    private static double optionalAmount(JSONObject json, String key) {
+        if (!json.has(key) || json.isNull(key)) return Double.NaN;
+        double value = json.optDouble(key, Double.NaN);
+        return Double.isFinite(value) ? Math.max(0, value) : Double.NaN;
     }
 
     private static double finiteNonNegative(double value) {

@@ -28,9 +28,9 @@
 | 1 | منع ضياع التسجيل الصوتي عند فشل تفويض Soniox + مسار احتياطي WAV بلا 308 في `InteractiveImageAnnotation` | **مُودعة `03a2672`** · اختبارات المتصفح لم تُؤكَّد |
 | 2 | إزالة باب admin الخلفي في localStorage (`admin123`) من `authStore` و`DashboardSessionBoundary` و`login` و`DeleteOrderModal` | **مُودعة `b3d0bb7`** · اختبارات المتصفح لم تُؤكَّد |
 | 3 | بوابة التفويض في 9 مسارات API: قراءة الدور **بعميل الخدمة** + فحص `is_active` صريح | **مُودعة `f350375`** · اجتاز 67 حالة محاكاة لدى المراجع |
-| 3 | SQL: `20260920120000_harden_users_rls.sql` و`20260920120100_harden_workers_rls.sql` | **لم يُطبَّق** — ينتظر المالك |
+| 3 | SQL: `20260920120000_harden_users_rls.sql` و`20260920120100_harden_workers_rls.sql` | **مطبّق على الحي** (تصحيح 5 أكتوبر، AUD-11: تدقيق 30 سبتمبر أثبت وجود سياساتها وtriggerاتها على الحي؛ غير مسجّلة في سجل الترحيلات — لا تُعد تطبيقها) |
 | 4 | Soniox: مفتاح مؤقت (60ث، مرة واحدة، مربوط بالمستخدم) بدل المفتاح الدائم · تفويض `soniox-async-transcribe` + حدود حجم/نوع · `src/lib/server/api-auth.ts` (`requireActiveStaff`) · `src/lib/client-auth.ts` (`getAuthHeader`) · ترويسة في 7 مواضع عميل · إكمال إصلاح المرحلة 1 في `UnifiedNotesInput` و`VoiceNotes` + مسار تفريغ احتياطي فيهما | **مُودعة `f350375`** · المراجع اجتاز المحاكاة · `scripts/test-voice-note-transcription.cjs` 19/19 · اختبارات المتصفح لم تُنفَّذ |
-| 4 | SQL: `20260920120200_prevent_user_self_reactivation.sql` | **لم يُطبَّق** — ينتظر المالك |
+| 4 | SQL: `20260920120200_prevent_user_self_reactivation.sql` | **مطبّق على الحي** (تصحيح 5 أكتوبر، AUD-11: تدقيق 30 سبتمبر أثبت وجود سياساتها وtriggerاتها على الحي؛ غير مسجّلة في سجل الترحيلات — لا تُعد تطبيقها) |
 
 ### ✅ التعديلات «المجهولة» — حُسمت (21 سبتمبر)
 

@@ -221,16 +221,21 @@ export async function listAlterationAttentionJobs(limit = 12): Promise<Alteratio
   return (data ?? []).flatMap((row) => {
     if (row.status !== 'unknown' && row.status !== 'error') return []
     const payload = asRecord(row.payload)
+    // فواتير المشغل النسائي تشارك طابور الورشة؛ تُعرض برقم فاتورتها.
+    const isWomenInvoice = row.job_type === 'women_workshop_receipt'
 
     return [{
       id: String(row.id),
       jobType: String(row.job_type || ''),
       status: row.status,
-      alterationNumber:
-        typeof payload.alteration_number === 'string' && payload.alteration_number
+      alterationNumber: isWomenInvoice
+        ? `فاتورة ${typeof payload.invoice_code === 'string' ? payload.invoice_code : ''}`.trim()
+        : typeof payload.alteration_number === 'string' && payload.alteration_number
           ? payload.alteration_number
           : 'ورقة تعديل',
-      title: typeof payload.title_ar === 'string' ? payload.title_ar : null,
+      title: isWomenInvoice
+        ? typeof payload.item_description === 'string' ? payload.item_description : null
+        : typeof payload.title_ar === 'string' ? payload.title_ar : null,
       errorMessage: typeof row.error_message === 'string' ? row.error_message : null,
       createdAt: String(row.created_at || ''),
     }]

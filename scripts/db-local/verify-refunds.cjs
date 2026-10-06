@@ -17,9 +17,11 @@ const { startMoyasarMock } = require('./moyasar-mock.cjs')
 
 const args = process.argv.slice(2)
 const edits8 = []
+const editsC = [] // fix batch C mutants (--mutateC)
 const tsEdits = { 'moyasar.ts': [], 'payments.ts': [], 'confirm.ts': [], 'invoice-lines.ts': [], 'refunds.ts': [] }
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--mutate8') { edits8.push([args[i + 1], args[i + 2]]); i += 2 }
+  else if (args[i] === '--mutateC') { editsC.push([args[i + 1], args[i + 2]]); i += 2 }
   else if (args[i] === '--mutate-ts') { tsEdits[args[i + 1]].push([args[i + 2], args[i + 3]]); i += 3 }
 }
 
@@ -66,6 +68,13 @@ async function main() {
     await admin.query(mutate(fix8, edits8.filter(([find]) => fix8.includes(find))))
     // fix batch B (AUD-02): the hold starts at «ادفعي» — the chain production runs
     await admin.query(read(FILES.migrationB))
+    // fix batch C (what the app runs on now). Not under a mutant of an earlier stage: C's drift check
+    // would refuse it, and the mutant would be "caught" for the wrong reason.
+    // C needs the later stages (it replaces their functions): applied here, as on the live database.
+    if (!edits8.length) {
+      for (const file of [FILES.migration9]) await admin.query(read(file))
+      await admin.query(mutate(read(FILES.migrationC), editsC))
+    }
 
     const svc = await connect()
     await svc.query('set role service_role')
@@ -143,7 +152,139 @@ async function main() {
     const expireLocks = () => admin.query(`update public.fabric_store_refunds set locked_until = now() - interval '1 second' where status = 'pending'`)
     const callsFor = payment => mock.refundLog.filter(r => r.paymentId === payment.id)
 
+    // ── fix batch C ────────────────────────────────────────────────────────────────────────
+    const FABRICS_MANAGER = 'aaaaaaaa-0000-4000-8000-000000000002'
+    const STOPPED_ADMIN = 'aaaaaaaa-0000-4000-8000-000000000007'
+    const alertKinds = async orderId => ((await rpc('fabric_store_staff_alerts', {})).data || [])
+      .filter(a => a.order_id === orderId).map(a => a.kind)
+    const reconcileOrder = async orderId => {
+      await admin.query(`update public.fabric_store_payment_attempts set reconciled_at = now() - interval '25 hours'
+                         where order_id = $1`, [orderId])
+      return payments.reconcilePayments({ ...live, onPaid: id => confirm.processFabricStoreOutbox({ rpc }, { orderId: id }).then(() => {}) })
+    }
+    const scenariosC = {
+      async '(fix C, AUD-12) only an active admin refunds, whatever the route passes'() {
+        const o = await soldOrder('c-actor')
+        await prepare(o.orderId)
+        for (const actorId of [FABRICS_MANAGER, STOPPED_ADMIN, crypto.randomUUID()]) {
+          const r = await refunds.startRefund(live, { orderId: o.orderId, actorId, actorLabel: 'x', amountHalalas: 1000,
+            reason: 'عيب في القماش', cancel: false, key: crypto.randomUUID() })
+          assert.equal(r.ok, false); assert.equal(r.code, 'forbidden', JSON.stringify(r))
+        }
+        assert.equal(callsFor(o.payment).length, 0)
+        return 'the fabrics manager, a stopped admin and an unknown id: forbidden by the database itself; no call to Moyasar'
+      },
+
+      async '(fix C, AUD-03) a partial refund in the Moyasar dashboard: flagged, recorded without a call, then refunds work'() {
+        const o = await soldOrder('c-external')
+        await prepare(o.orderId)
+        o.payment.refunded = 5000   // 50 SAR refunded from the dashboard: Moyasar keeps status paid
+        const counts = await reconcileOrder(o.orderId)
+        const flagged = await state(o.orderId)
+        assert.equal(flagged.needs_review, true, JSON.stringify(counts))
+        assert.ok((await alertKinds(o.orderId)).includes('external_refund'))
+        const { rows: [attempt] } = await admin.query(`select paid_attempt_id as id from public.fabric_store_orders where id = $1`, [o.orderId])
+        const input = { orderId: o.orderId, attemptId: attempt.id, paymentId: o.payment.id, environment: 'live',
+                        actorLabel: 'مديرة', reference: 'MOY-DASH-1', reason: 'رد من لوحة ميسر' }
+        const wrong = await refunds.recordExternalRefund(live, { ...input, actorId: ADMIN, amountHalalas: 4000, key: crypto.randomUUID() })
+        assert.equal(wrong.ok, false); assert.equal(wrong.code, 'amount_mismatch')
+        const notAdmin = await refunds.recordExternalRefund(live, { ...input, actorId: FABRICS_MANAGER, amountHalalas: 5000, key: crypto.randomUUID() })
+        assert.equal(notAdmin.ok, false); assert.equal(notAdmin.code, 'forbidden')
+        const recorded = await refunds.recordExternalRefund(live, { ...input, actorId: ADMIN, amountHalalas: 5000, key: crypto.randomUUID() })
+        assert.equal(recorded.ok, true, JSON.stringify(recorded))
+        let s = await state(o.orderId)
+        assert.deepEqual([s.payment_status, s.refunds, s.refund_rows], ['partially_refunded', 'succeeded', 1])
+        assert.equal(callsFor(o.payment).length, 0, 'recording never calls Moyasar')
+        assert.ok(!(await alertKinds(o.orderId)).includes('external_refund'), 'the alert ends once recorded')
+        const next = await refund(o.orderId, 1000, false)
+        assert.equal(next.ok && next.status, 'succeeded', JSON.stringify(next))
+        assert.equal(callsFor(o.payment).length, 1)
+        s = await state(o.orderId)
+        assert.deepEqual([s.refunds, s.refund_rows], ['succeeded,succeeded', 2])
+        return `reconciliation ${JSON.stringify(counts)} → review + external_refund alert; wrong amount and the fabrics manager refused; ` +
+               'recorded: partially refunded, one return row, no call; the next in-system refund: one call, succeeded'
+      },
+
+      async '(fix C, AUD-04) a second payment on another invoice: refunded in full with one call; the sale untouched'() {
+        n += 1
+        const label = 'c-extra'
+        const { rows: [item] } = await admin.query(
+          `insert into public.fabric_inventory (name, fabric_type, unit, sale_price_per_unit, images)
+           values ($1, $1, 'meter', 100.00, array['https://x.invalid/a.jpg']) returning id`, [`قماش ${label}`])
+        const { rows: [color] } = await admin.query(
+          `insert into public.fabric_inventory_colors (inventory_item_id, color_name) values ($1, $2) returning id`, [item.id, label])
+        await admin.query(`insert into public.fabric_inventory_movements (inventory_item_id, color_id, movement_type, quantity)
+                           values ($1, $2, 'in', 10)`, [item.id, color.id])
+        const { rows: [listing] } = await admin.query(`select id from public.fabrics where inventory_color_id = $1`, [color.id])
+        const token = crypto.randomBytes(32).toString('hex')
+        const key = crypto.randomUUID()
+        const { data } = await rpc('fabric_store_create_checkout', { p_request: {
+          checkout_key: key, request_fingerprint: sha(`${key}:fp`), access_token_hash: sha(token),
+          client_hash: sha(`client-${label}`), customer: { name: 'عميلة', phone: `+96557${String(n).padStart(7, '0')}` },
+          delivery: { method: 'pickup', shipping_net_halalas: 0, shipping_vat_halalas: 0 },
+          totals: { items_net_halalas: 10000, vat_halalas: 1500, total_halalas: 11500 },
+          policies: { terms: 't', returns: 'r', privacy: 'p' },
+          items: [{ fabric_id: listing.id, purchase_mode: 'meter', quantity_cm: 100, price_per_meter_halalas: 10000,
+            discount_basis_points: 0, unit_price_halalas: 10000, net_halalas: 10000, vat_halalas: 1500 }],
+        } })
+        const deps = { ...live, onPaid: id => confirm.processFabricStoreOutbox({ rpc }, { orderId: id }).then(() => {}) }
+        const pay = { accessHash: sha(token), clientHash: sha(`payer-${label}`), origin: ORIGIN }
+        const a = await payments.startPayment(deps, pay)
+        const invoiceA = [...mock.invoices.values()].find(i => i.metadata && i.metadata.attempt_id === a.attemptId)
+        await payments.handleMoyasarWebhook(deps, mock.webhook(mock.pay(invoiceA.id, 'failed'), { secret: WEBHOOK_SECRET, live: true }))
+        await admin.query(`update public.fabric_store_payment_attempts set expires_at = created_at + interval '1 millisecond' where id = $1`, [a.attemptId])
+        const b = await payments.startPayment(deps, pay)
+        assert.notEqual(b.attemptId, a.attemptId)
+        const invoiceB = [...mock.invoices.values()].find(i => i.metadata && i.metadata.attempt_id === b.attemptId)
+        const paymentB = mock.pay(invoiceB.id, 'paid')
+        assert.equal((await payments.handleMoyasarWebhook(deps, mock.webhook(paymentB, { secret: WEBHOOK_SECRET, live: true }))).outcome, 'paid')
+        const paymentA = mock.pay(invoiceA.id, 'paid')  // the ended page's late success
+        assert.equal((await payments.handleMoyasarWebhook(deps, mock.webhook(paymentA, { secret: WEBHOOK_SECRET, live: true }))).outcome, 'overpaid')
+        assert.ok((await alertKinds(data.order_id)).includes('extra_payment_unrefunded'))
+        const before = await state(data.order_id)
+        const part = await refunds.startRefund(live, { orderId: data.order_id, actorId: ADMIN, actorLabel: 'مديرة', amountHalalas: 5000,
+          reason: 'دفعت مرتين', cancel: false, key: crypto.randomUUID(), attemptId: a.attemptId })
+        assert.equal(part.ok, false); assert.equal(part.code, 'extra_full_only')
+        const full = await refunds.startRefund(live, { orderId: data.order_id, actorId: ADMIN, actorLabel: 'مديرة', amountHalalas: 11500,
+          reason: 'دفعت مرتين', cancel: false, key: crypto.randomUUID(), attemptId: a.attemptId })
+        assert.equal(full.ok && full.status, 'succeeded', JSON.stringify(full))
+        assert.equal(callsFor(paymentA).length, 1); assert.equal(callsFor(paymentB).length, 0)
+        const after = await state(data.order_id)
+        assert.deepEqual([after.payment_status, after.refund_rows, after.stock], ['paid', 0, before.stock])
+        assert.ok(!(await alertKinds(data.order_id)).includes('extra_payment_unrefunded'))
+        return `230 SAR collected for 115: part refused (extra_full_only); the extra 115 refunded with ONE call on its own payment; ` +
+               `order still paid by the other, no return row, stock ${after.stock}; the alert ended`
+      },
+
+      async '(fix C, AUD-08) after a sent refund was closed, a new one needs Moyasar support\'s reference; a late execution is flagged'() {
+        const o = await soldOrder('c-late')
+        await prepare(o.orderId)
+        mock.failRefundNext('500')  // sent, not executed, answer 500: stays pending (never re-called)
+        const first = await refund(o.orderId, 1000, false)
+        assert.equal(first.ok && first.status, 'pending', JSON.stringify(first))
+        await admin.query(`update public.fabric_store_refunds set provider_called_at = now() - interval '25 hours'
+                           where order_id = $1 and status = 'pending'`, [o.orderId])
+        const { rows: [pending] } = await admin.query(`select id from public.fabric_store_refunds where order_id = $1 and status = 'pending'`, [o.orderId])
+        const closed = await refunds.closeUnconfirmedRefund(live, { refundId: pending.id, paymentId: o.payment.id, environment: 'live',
+          called: true, actorId: ADMIN, reference: 'STL-1', note: 'لم يظهر في التسوية' })
+        assert.equal(closed.ok, true, JSON.stringify(closed))
+        const blocked = await refund(o.orderId, 1000, false)
+        assert.equal(blocked.ok, false); assert.equal(blocked.code, 'support_reference_required')
+        assert.equal(callsFor(o.payment).length, 1, 'no second call without the reference')
+        const second = await refunds.startRefund(live, { orderId: o.orderId, actorId: ADMIN, actorLabel: 'مديرة', amountHalalas: 1000,
+          reason: 'عيب في القماش', cancel: false, key: crypto.randomUUID(), supportReference: 'MOY-TICKET-77' })
+        assert.equal(second.ok && second.status, 'succeeded', JSON.stringify(second))
+        // the first one is executed late after all: Moyasar shows 20 SAR, we recorded 10
+        o.payment.refunded += 1000
+        await reconcileOrder(o.orderId)
+        assert.ok((await alertKinds(o.orderId)).includes('external_refund'))
+        return 'closed after 24 h; a new refund refused without a reference (one call so far); with Moyasar support\'s reference: ' +
+               'succeeded; the closed one executing late afterwards: external_refund alert'
+      },
+    }
+
     const scenarios = {
+      ...(edits8.length ? {} : scenariosC),  // C is applied only on unmutated runs
       async 'disabling refunds pauses unsent money while still allowing later reconciliation'() {
         const o = await soldOrder('disabled-unsent')
         await prepare(o.orderId)

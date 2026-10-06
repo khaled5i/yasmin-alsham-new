@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '../supabase'
+import type { AlostazPrintableInvoice } from '../zatca-invoice'
 
 const TAILORING_INVOICE_TIMEOUT_MS = 15_000
 
@@ -222,5 +223,53 @@ export async function setFabricsAutoSendEnabled(enabled: boolean): Promise<{ err
     return { error: error ? error.message : null }
   } catch (err: any) {
     return { error: err?.message || 'خطأ غير متوقع' }
+  }
+}
+
+export type AlostazInvoiceSource =
+  | 'income'
+  | 'order_deposit'
+  | 'order_delivery'
+  | 'order_measurement'
+  | 'women_workshop'
+
+/**
+ * جلب بيانات نسخة فاتورة الأستاذ للطباعة (الرقم والإجماليات ورمز QR الموقّع).
+ * يُرجع null عند أي فشل؛ المتصل يقرّر كيف يطبع دون رمز (لا يُخترع رمز بديل أبداً).
+ */
+export async function fetchAlostazPrintableInvoice(
+  source: AlostazInvoiceSource,
+  id: string
+): Promise<AlostazPrintableInvoice | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session || !id) return null
+
+    const controller = new AbortController()
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), 12_000)
+    const res = await fetch('/api/alostaz/invoice-qr', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ source, id }),
+      signal: controller.signal,
+    }).finally(() => globalThis.clearTimeout(timeoutId))
+
+    const result = await res.json().catch(() => ({}))
+    const data = result?.data
+    if (!res.ok || !data?.qr) return null
+
+    return {
+      invoice_code: String(data.invoice_code || ''),
+      qr: String(data.qr),
+      total: Number(data.total) || 0,
+      total_without_vat: Number(data.total_without_vat) || 0,
+      vat: Number(data.vat) || 0,
+      issue_date: data.issue_date ? String(data.issue_date) : null,
+    }
+  } catch {
+    return null
   }
 }

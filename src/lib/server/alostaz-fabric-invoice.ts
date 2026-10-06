@@ -260,6 +260,9 @@ export type FabricInvoiceSendResult =
   | { kind: 'sent_unsaved'; invoice_id: number; invoice_code: string; warning: string }
   | { kind: 'sent'; invoice_id: number; invoice_code: string; customer_id: number; is_draft: boolean }
 
+/** الدفعة D (AUD-13): «sending» أقدم من هذا = إرسال قُطع في منتصفه. */
+const STUCK_SENDING_MS = 10 * 60 * 1000
+
 /** يرسل مبيعة الأقمشة للأستاذ مرة واحدة فقط (انظر رأس الملف). */
 export async function sendFabricIncomeToAlostaz(
   admin: SupabaseClient,
@@ -328,7 +331,7 @@ export async function sendFabricIncomeToAlostaz(
   if (claimedIncomeCount !== 1) {
     const { data: latestIncome, error: latestError } = await admin
       .from('income')
-      .select('alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status')
+      .select('alostaz_invoice_id, alostaz_invoice_code, alostaz_sync_status, alostaz_synced_at')
       .eq('id', incomeId)
       .single()
 
@@ -337,6 +340,23 @@ export async function sendFabricIncomeToAlostaz(
       return { kind: 'already_sent', invoice_id: latestIncome.alostaz_invoice_id, invoice_code: latestIncome.alostaz_invoice_code }
     }
     if (latestIncome.alostaz_sync_status === 'review_required') return { kind: 'review_required' }
+    // الدفعة D (AUD-13): إرسال قُطع بعد الحجز (مهلة الخادم) يترك «sending» للأبد، فتموت المهمة.
+    // بعد 10 دقائق يصير «مراجعة» — لا «فشل»: الفاتورة ربما أُنشئت، وإعادة الإرسال قد تكررها.
+    const stuckSince = Date.parse(String(latestIncome.alostaz_synced_at ?? ''))
+    if (latestIncome.alostaz_sync_status === 'sending' && Number.isFinite(stuckSince)
+        && Date.now() - stuckSince > STUCK_SENDING_MS) {
+      const { count: markedCount, error: markError } = await admin
+        .from('income')
+        .update({
+          alostaz_sync_status: 'review_required',
+          alostaz_sync_error: 'توقف الإرسال في منتصفه (انقطاع أو مهلة) — تحقّقي في الأستاذ هل أُنشئت الفاتورة قبل أي إعادة',
+        }, { count: 'exact' })
+        .eq('id', incomeId)
+        .eq('alostaz_sync_status', 'sending')
+        .lt('alostaz_synced_at', new Date(Date.now() - STUCK_SENDING_MS).toISOString())
+      // (المراجعة) لا يُعلن «مراجعة» إلا إن كُتبت فعلاً؛ وإلا تغيّر الصف بين القراءة والكتابة (أنهاه الإرسال نفسه)
+      return markError || markedCount !== 1 ? { kind: 'in_progress' } : { kind: 'review_required' }
+    }
     return { kind: 'in_progress' }
   }
 

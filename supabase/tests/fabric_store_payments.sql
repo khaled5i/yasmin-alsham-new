@@ -408,6 +408,11 @@ begin
     raise exception 'TEST FAILED: a declined card fails the attempt and leaves the order payable';
   end if;
 
+  if to_regprocedure('public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid)') is not null then
+    -- fix C (AUD-05): while the declined invoice can still take a payment its own link comes back
+    -- (fabric_store_money_guards.sql). This case is about the late success after it ended.
+    update public.fabric_store_payment_attempts set expires_at = created_at + interval '1 millisecond' where id = v_a;
+  end if;
   v_b := (pg_temp.begin_pay('pay-retry', 'payer-2') ->> 'attempt_id')::uuid;
   if v_b is null or v_b = v_a then
     raise exception 'TEST FAILED: after a declined card a new attempt must open';

@@ -48,6 +48,8 @@ import {
   UserRound
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
+import { fetchStoreAlerts } from '@/components/fabric-store/StoreAlertsPanel'
+import { loadSeenAlerts, newAlertsCount } from '@/lib/fabric-store/store-alerts'
 
 function DashboardContent() {
   const { user, signOut } = useAuthStore()
@@ -94,7 +96,13 @@ function DashboardContent() {
       const secondProofNew = (secondProof.data || []).filter(o => o.second_proof_whatsapp_sent !== true).length
       const completionNew = (completion.data || []).length
       const deliveryNew = (delivery.data || []).filter(o => o.delivery_whatsapp_sent !== true).length
-      setNotificationsCount(secondProofNew + completionNew + deliveryNew)
+      // الدفعة D (AUD-09): تنبيهات متجر الأقمشة التي لم تُطّلع عليها في هذا المتصفح
+      const storeAlerts = await fetchStoreAlerts()
+      let storeNew = 0
+      if (storeAlerts) {
+        try { storeNew = newAlertsCount(storeAlerts, loadSeenAlerts(window.localStorage)) } catch { storeNew = storeAlerts.length }
+      }
+      setNotificationsCount(secondProofNew + completionNew + deliveryNew + storeNew)
     } catch {
       // تجاهل أخطاء جلب العدّاد
     }

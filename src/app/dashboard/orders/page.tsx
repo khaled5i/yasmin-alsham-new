@@ -63,6 +63,7 @@ import {
   buildSilentOutstandingDeliveryUpdates,
 } from '@/lib/services/delivery-service'
 import { sendInvoiceToAlostaz } from '@/lib/services/alostaz-client'
+import { printOrderMeasurementInvoice } from '@/lib/services/women-workshop-print'
 import type { MeasurementSaveMetadata } from '@/types/measurements'
 import type { OrderQualityReview, OrderQualityReviewStage, OrderQualityReviewStatus } from '@/types/order-quality-review'
 
@@ -761,6 +762,12 @@ function OrdersPageInner() {
           toast.success(
             `تم حفظ المقاسات وإرسال فاتورة شبكة بقيمة 85 ر.س${invoiceResult.invoice_code ? ` — ${invoiceResult.invoice_code}` : ''}`
           )
+        }
+
+        // فاتورة أجرة المقاس تُطبع على طابعة الورشة (فرع ياسمين الشام 2 في الأستاذ).
+        // المفتاح ثابت لكل عملية، فإعادة الحفظ لا تطبع نسخة ثانية.
+        if (!invoiceResult.inProgress) {
+          await printOrderMeasurementInvoice(measurementsOrder.id)
         }
       }
 

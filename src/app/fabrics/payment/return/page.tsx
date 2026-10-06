@@ -24,6 +24,8 @@ interface StatusResponse {
   paymentStatus?: string
   needsReview?: boolean
   attemptStatus?: string
+  /** الدفعة C (AUD-06): دفعة ببطاقة ميسر التجريبية */
+  isTest?: boolean
 }
 
 const POLL_MS = 3_000
@@ -90,6 +92,11 @@ function ReturnView() {
       <div className={card}>
         <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-[#6b1726]" aria-hidden="true" />
         <h1 className="mb-2 text-2xl font-bold text-[#6b1726]">تم الدفع بنجاح</h1>
+        {status?.isTest && (
+          <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-2 text-sm font-semibold text-amber-900">
+            دفعة تجريبية (بطاقة اختبار) — لم يُخصم مال، ولن يُجهَّز أو يُسلَّم شيء.
+          </p>
+        )}
         <p className="mb-1 text-sm text-[#211b19]/70">
           رقم الطلب <span dir="ltr" className="font-bold text-[#211b19]">{status?.orderNumber}</span>
         </p>
@@ -97,9 +104,11 @@ function ReturnView() {
           <p className="mb-4 text-lg font-bold">{formatFabricNumber(status.totalHalalas / 100)} ريال</p>
         )}
         <p className="text-sm text-[#211b19]/75">
-          {status?.needsReview
-            ? 'وصلنا الدفع، وسنتواصل معكِ لتأكيد تفاصيل الطلب.'
-            : 'سنبدأ تجهيز طلبك ونبلغك حين يكون جاهزاً.'}
+          {status?.isTest
+            ? 'هذا طلب تجربة للمتجر.'
+            : status?.needsReview
+              ? 'وصلنا الدفع، وسنتواصل معكِ لتأكيد تفاصيل الطلب.'
+              : 'سنبدأ تجهيز طلبك ونبلغك حين يكون جاهزاً.'}
         </p>
         {IS_FABRIC_STORE_ORDERS_ENABLED && (
           <Link href="/fabrics/order/" className="mt-5 inline-block rounded-xl border-2 border-[#6b1726] px-5 py-2 font-semibold text-[#6b1726] hover:bg-[#6b1726] hover:text-[#f6f0e8]">

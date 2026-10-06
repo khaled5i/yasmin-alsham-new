@@ -24,7 +24,12 @@ import {
 import toast from 'react-hot-toast'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { supabase } from '@/lib/supabase'
-import { buildFabricSaleReceiptHtml, getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
+import {
+  buildFabricSaleReceiptHtml,
+  getFabricReceiptNumber,
+  isFabricTaxInvoice,
+  type FabricReceiptPayload,
+} from '@/lib/print-fabric-receipt'
 import {
   FABRIC_INVENTORY_LABEL_JOB_TYPE,
   FABRIC_LABEL_SIZES,
@@ -129,7 +134,7 @@ function printJobViaIframe(
       }
       iframe.srcdoc = buildFabricInventoryLabelHtml(job.payload, { size: labelSize })
     } else {
-      iframe.srcdoc = buildFabricSaleReceiptHtml(job.payload as Income)
+      iframe.srcdoc = buildFabricSaleReceiptHtml(job.payload as FabricReceiptPayload)
     }
     document.body.appendChild(iframe)
   })
@@ -143,7 +148,7 @@ function jobLabel(job: PrintJob<FabricStationPayload>): string {
     return `ملصق ${job.payload.product_code} — ${job.payload.color_name}`
   }
   try {
-    return `فاتورة ${getFabricReceiptNumber(job.payload as Income)}`
+    return `${isFabricTaxInvoice(job.payload as FabricReceiptPayload) ? 'فاتورة' : 'إيصال'} ${getFabricReceiptNumber(job.payload as FabricReceiptPayload)}`
   } catch {
     // طلب قديم أُرسل للطابور قبل وصول رقم الأستاذ.
   }

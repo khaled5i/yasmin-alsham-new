@@ -12,6 +12,8 @@ import {
   ALTERATION_TEST_SLIP_JOB_TYPE,
   type AlterationSlipPayload,
 } from '@/lib/print-alteration-slip'
+import type { TailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
+import { WOMEN_WORKSHOP_RECEIPT_JOB_TYPE } from '@/lib/print-women-workshop-receipt'
 
 export type AlterationPrintJobType =
   | typeof ALTERATION_SLIP_JOB_TYPE
@@ -74,6 +76,29 @@ function normalizeEnqueueResult(data: unknown): EnqueueAlterationPrintJobResult 
       result.deduplicated === true ||
       (typeof result.created === 'boolean' && result.created === false),
   }
+}
+
+/**
+ * إرسال نسخة فاتورة شبكة من المشغل النسائي إلى طابعة الورشة.
+ * المفتاح ثابت لكل عملية، فلا تُطبع الفاتورة التلقائية مرتين؛ forceNewJob لإعادة الطباعة.
+ */
+export async function enqueueWomenWorkshopReceiptPrint(
+  payload: TailoringReceiptPayload,
+  options: { forceNewJob?: boolean } = {}
+): Promise<EnqueueAlterationPrintJobResult> {
+  const stableKey = `alterations:${WOMEN_WORKSHOP_RECEIPT_JOB_TYPE}:${payload.order_id}:v1`
+  const { data, error } = await supabase.rpc('enqueue_alterations_print_job', {
+    p_job_type: WOMEN_WORKSHOP_RECEIPT_JOB_TYPE,
+    p_alteration_id: payload.order_id,
+    p_payload: payload,
+    p_idempotency_key: options.forceNewJob
+      ? `${stableKey}:request:${createRequestId()}`
+      : stableKey,
+    p_reprint_of: null,
+  })
+
+  if (error) throw error
+  return normalizeEnqueueResult(data)
 }
 
 /** إرسال ورقة تعديل إلى طابور محطة الورشة. */

@@ -73,6 +73,8 @@ const START_MESSAGES: Record<string, [number, string]> = {
   bad_request: [400, 'طلب غير صالح'],
   // الدفعة B (AUD-02): الحجز يبدأ عند «ادفعي»
   order_expired: [409, 'مضت مهلة الطلب قبل الدفع — أعيدي إنشاء الطلب من السلة'],
+  // الدفعة C (AUD-05): صفحة الدفع السابقة (بعد رفض البطاقة) تنتهي خلال لحظات — لا صفحة ثانية بجانبها
+  invoice_closing: [409, 'صفحة الدفع السابقة تنتهي خلال لحظات — أعيدي الضغط على «ادفعي» بعد دقيقة'],
 }
 
 /** سقوف المحجوز في وقت واحد (الدفعة B): الرسالة حسب ما بلغ سقفه. */
@@ -362,12 +364,14 @@ async function applyInvoicePayments(
  * webhook والزبونة أغلقت الصفحة تُعتمد هنا؛ واسترداد أو إلغاء لدى ميسر خارج النظام يُحجر
  * للمراجعة (قاعدة `fabric_store_apply_payment`).
  */
-export async function reconcilePayments(deps: PaymentDeps, limit = 20): Promise<Record<string, number>> {
+export async function reconcilePayments(deps: PaymentDeps, limit = 20, deadline?: number): Promise<Record<string, number>> {
   const due = await call<Array<{ attempt_id: string; invoice_id: string; status: string; claim_token: string }>>(
     deps.rpc, 'fabric_store_due_reconciliation', { p_environment: deps.config.environment, p_limit: limit })
   const counts: Record<string, number> = {}
   const add = (key: string, n = 1) => { counts[key] = (counts[key] ?? 0) + n }
   for (const attempt of Array.isArray(due) ? due : []) {
+    // (R-CD-05) لا يبدأ عنصر بعد المهلة؛ حجزه ينتهي بعد 5 دقائق فيأخذه التشغيل التالي
+    if (deadline !== undefined && Date.now() >= deadline) { add('deferred'); continue }
     let invoice: MoyasarInvoice
     try {
       invoice = await deps.moyasar.fetchInvoice(attempt.invoice_id)
@@ -441,11 +445,13 @@ export async function viewPaymentForReturn(
 // إعادة معالجة الأحداث المعلّقة (مسار مجدول؛ يُربط بـVercel Cron في المرحلة 6)
 // ============================================
 
-export async function processPendingPaymentEvents(deps: PaymentDeps, limit = 20) {
+export async function processPendingPaymentEvents(deps: PaymentDeps, limit = 20, deadline?: number) {
   const events = await call<Array<{ event_id: string; environment: string; provider_payment_id: string | null }>>(
     deps.rpc, 'fabric_store_pending_payment_events', { p_limit: limit })
   const outcomes: Record<string, number> = {}
   for (const event of Array.isArray(events) ? events : []) {
+    // (R-CD-05) الحدث محفوظ؛ ما لم يُبدأ قبل المهلة يُعالَج في التشغيل التالي
+    if (deadline !== undefined && Date.now() >= deadline) { outcomes.deferred = (outcomes.deferred ?? 0) + 1; continue }
     let outcome: string
     if (event.environment !== deps.config.environment) {
       await noteFailure(deps.rpc, event.event_id, 'environment does not match the server', true)

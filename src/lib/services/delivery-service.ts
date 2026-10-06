@@ -9,9 +9,13 @@
  */
 
 import toast from 'react-hot-toast'
-import { getAutoSendEnabled, sendInvoiceToAlostaz } from './alostaz-client'
 import {
-  createTailoringReceiptPayload,
+  fetchAlostazPrintableInvoice,
+  getAutoSendEnabled,
+  sendInvoiceToAlostaz,
+} from './alostaz-client'
+import {
+  createDeliveryReceiptPayloads,
   isFullyNetworkPaid,
   type TailoringReceiptOrder,
 } from '@/lib/print-tailoring-receipt'
@@ -157,35 +161,60 @@ export function buildDeliveryUpdates(order: DeliveryOrder | null | undefined, op
   return updates
 }
 
-async function printDeliveredOrderReceipt(
+/**
+ * أوراق التسليم: كل وسيلة دفع للمتبقي في ورقة مستقلة بقيمتها كاملة.
+ * - local: إيصال الكاش (أو «إيصال تسليم» حين لا يوجد متبقٍ) — يُطبع فوراً ويفتح الدرج.
+ * - network: نسخة فاتورة الأستاذ لشبكة المتبقي — تُطبع فقط بعد وصول رقمها.
+ */
+async function printDeliveredOrderPapers(
   order: DeliveryOrder,
-  accountingInvoiceCode: string
+  part: 'local' | 'network',
+  deliveryInvoiceCode: string
 ): Promise<void> {
   try {
-    const receipt = createTailoringReceiptPayload(order, accountingInvoiceCode)
-    // فتح الدرج محصور في الطباعة التلقائية لحظة تسليم طلب التفصيل.
-    // إعادة الطباعة اليدوية وبقية الأقسام لا تمرر هذا الخيار.
-    await dispatchTailoringReceiptPrint(receipt, {
-      openCashDrawer: receipt.cash_amount >= 0.005,
-    })
-    toast.success(`أُضيف إيصال الطلب ${receipt.order_number} إلى طابور الطباعة`, {
-      icon: '🧾',
-    })
+    const isLegacy = Number(order.alostaz_billing_version) < 2
+    const needsNetworkInvoice = isLegacy
+      ? isFullyNetworkPaid(order)
+      : computePaymentBreakdown(order).remainingNetwork >= 0.005
+    const code = deliveryInvoiceCode.trim()
+    if (part === 'network' && (!needsNetworkInvoice || !code)) {
+      if (needsNetworkInvoice) {
+        toast('فاتورة شبكة المتبقي لم تُطبع لأن رقمها لم يصل من الأستاذ — اطبعيها بعد إرسالها من صفحة الطلبات المسلّمة.', {
+          icon: '🧾',
+          duration: 8000,
+        })
+      }
+      return
+    }
 
-    const breakdown = computePaymentBreakdown(order)
-    const intentionallyLocal =
-      Number(order.alostaz_billing_version) >= 2 &&
-      breakdown.preDeliveryNetwork >= 0.005 &&
-      breakdown.remainingNetwork >= 0.005
+    const printable = part === 'network'
+      ? await fetchAlostazPrintableInvoice('order_delivery', String(order.id || ''))
+      : null
+    const matchingPrintable = printable && printable.invoice_code === code ? printable : null
+    const papers = createDeliveryReceiptPayloads(
+      order,
+      code ? { code, printable: matchingPrintable } : null
+    ).filter((paper) =>
+      part === 'network'
+        ? paper.document_kind === 'tax_invoice'
+        : paper.document_kind !== 'tax_invoice'
+    )
 
-    if (
-      isFullyNetworkPaid(order) &&
-      receipt.invoice_code_source !== 'alostaz' &&
-      !intentionallyLocal
-    ) {
-      toast('تعذّر جلب رقم فاتورة الأستاذ؛ أُرسل رقم محلي مرتبط بالطلب إلى الطباعة.', {
+    for (const paper of papers) {
+      // فتح الدرج محصور في الطباعة التلقائية لحظة تسليم طلب التفصيل.
+      await dispatchTailoringReceiptPrint(paper, {
+        openCashDrawer: paper.cash_amount >= 0.005,
+      })
+    }
+    if (papers.length > 0) {
+      toast.success(`أُضيفت أوراق تسليم الطلب ${papers[0].order_number} إلى طابور الطباعة`, {
+        icon: '🧾',
+      })
+    }
+    if (part === 'network' && papers.length > 0 && !matchingPrintable) {
+      toast('تعذّر جلب رمز QR من الأستاذ الآن؛ طُبعت فاتورة الشبكة بدونه.', {
         icon: '⚠️',
-        duration: 5000,
+        duration: 7000,
       })
     }
   } catch (error: unknown) {
@@ -206,19 +235,13 @@ async function printDeliveredOrderReceipt(
 export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined, userRole?: string): Promise<void> {
   if (!order?.id) return
 
-  let accountingInvoiceCode = String(
-    order.alostaz_invoice_code || order.alostaz_deposit_invoice_code || ''
-  ).trim()
-  const fullyNetworkPaid = isFullyNetworkPaid(order)
+  // رقم فاتورة التسليم وحدها؛ فاتورة العربون مستقلة ولا تُنسب لورقة المتبقي.
+  let accountingInvoiceCode = String(order.alostaz_invoice_code || '').trim()
   const deliverySyncEligible = isAlostazDeliverySyncEligible(order)
   const remainingNetwork = computePaymentBreakdown(order).remainingNetwork
 
-  // وجود أي كاش يعني أن رقم الإيصال محلي، لذلك لا نؤخر الطباعة وفتح الدرج
-  // بانتظار اتصال المحاسبة. هذا يحافظ أيضاً على اتصال جسر أندرويد الذي جرى
-  // تحضيره فور ضغطة زر التسليم.
-  if (!fullyNetworkPaid) {
-    await printDeliveredOrderReceipt(order, accountingInvoiceCode)
-  }
+  // ورقة الكاش لا تنتظر المحاسبة، فتُطبع ويُفتح الدرج فوراً.
+  await printDeliveredOrderPapers(order, 'local', accountingInvoiceCode)
 
   // للتسليمات المؤهلة: نرسل شبكة المتبقي فقط دون إعادة أي عربون تاريخي.
   // عند الدفع شبكة بالكامل ننتظر النتيجة هنا كي يحمل الإيصال رقم فاتورة الأستاذ المناسب.
@@ -254,8 +277,6 @@ export async function autoSendOnDelivery(order: DeliveryOrder | null | undefined
     }
   }
 
-  // الدفع شبكة بالكامل يحتاج رقم فاتورة الأستاذ، لذا يُطبع بعد محاولة المحاسبة.
-  if (fullyNetworkPaid) {
-    await printDeliveredOrderReceipt(order, accountingInvoiceCode)
-  }
+  // فاتورة شبكة المتبقي تحتاج رقم الأستاذ، لذا تُطبع بعد محاولة المحاسبة.
+  await printDeliveredOrderPapers(order, 'network', accountingInvoiceCode)
 }

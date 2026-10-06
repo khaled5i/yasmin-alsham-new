@@ -32,10 +32,15 @@ import { useAppResume } from '@/hooks/useAppResume'
 import OrderModal from '@/components/OrderModal'
 import DeleteOrderModal from '@/components/DeleteOrderModal'
 import DirectPrinterSetup from '@/components/DirectPrinterSetup'
-import { sendInvoiceToAlostaz, getAutoSendEnabled, setAutoSendEnabled } from '@/lib/services/alostaz-client'
+import {
+  fetchAlostazPrintableInvoice,
+  sendInvoiceToAlostaz,
+  getAutoSendEnabled,
+  setAutoSendEnabled,
+} from '@/lib/services/alostaz-client'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import {
-  createTailoringReceiptPayload,
+  createDeliveryReceiptPayloads,
   isFullyNetworkPaid,
 } from '@/lib/print-tailoring-receipt'
 import { dispatchTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
@@ -229,19 +234,47 @@ export default function DeliveredOrdersPage() {
 
     setPrintingId(order.id)
     try {
-      const receipt = createTailoringReceiptPayload(order, getSentCode(order))
-      await dispatchTailoringReceiptPrint(receipt, {
-        // كل ضغطة هنا إعادة طباعة مقصودة، لذلك تحصل على مهمة جديدة بمفتاح UUID.
-        forceNewJob: true,
-      })
-      toast.success(`أُضيفت إعادة طباعة الطلب ${receipt.order_number} إلى طابور الطباعة`, {
-        icon: '🧾',
-      })
+      // أوراق التسليم وحدها (المتبقي)؛ فاتورة الشبكة تأخذ رقم فاتورة التسليم في الأستاذ.
+      const deliveryCode = String(order.alostaz_invoice_code || sentMap[order.id]?.code || '').trim()
+      const isLegacy = Number(order.alostaz_billing_version) < 2
+      const needsNetworkInvoice = isLegacy
+        ? isFullyNetworkPaid(order)
+        : computePaymentBreakdown(order).remainingNetwork >= 0.005
+      const printable = needsNetworkInvoice && deliveryCode
+        ? await fetchAlostazPrintableInvoice('order_delivery', order.id)
+        : null
+      const matchingPrintable = printable && printable.invoice_code === deliveryCode
+        ? printable
+        : null
+      const papers = createDeliveryReceiptPayloads(
+        order,
+        deliveryCode ? { code: deliveryCode, printable: matchingPrintable } : null
+      )
+      // بلا رقم أستاذ لا نطبع ورقة شبكة (ولا نضع رقماً محلياً على فاتورة ضريبية).
+      const printablePapers = needsNetworkInvoice && !deliveryCode
+        ? papers.filter((paper) => paper.document_kind !== 'tax_invoice')
+        : papers
+      for (const paper of printablePapers) {
+        await dispatchTailoringReceiptPrint(paper, {
+          // كل ضغطة هنا إعادة طباعة مقصودة، لذلك تحصل على مهمة جديدة بمفتاح UUID.
+          forceNewJob: true,
+        })
+      }
+      if (printablePapers.length > 0) {
+        toast.success(`أُضيفت إعادة طباعة الطلب ${printablePapers[0].order_number} إلى طابور الطباعة`, {
+          icon: '🧾',
+        })
+      }
 
-      if (isFullyNetworkPaid(order) && receipt.invoice_code_source !== 'alostaz') {
-        toast('رقم فاتورة الأستاذ غير محفوظ لهذا الطلب؛ سيُستخدم الرقم المحلي في الإيصال.', {
+      if (needsNetworkInvoice && !deliveryCode) {
+        toast('فاتورة شبكة المتبقي لم تُرسل للأستاذ بعد، فلم تُطبع — أرسليها للمحاسبة أولاً.', {
           icon: '⚠️',
-          duration: 5000,
+          duration: 6000,
+        })
+      } else if (needsNetworkInvoice && !matchingPrintable) {
+        toast('تعذّر جلب رمز QR من الأستاذ الآن؛ طُبعت فاتورة الشبكة بدونه.', {
+          icon: '⚠️',
+          duration: 6000,
         })
       }
     } catch (error: unknown) {

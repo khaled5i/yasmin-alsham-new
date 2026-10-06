@@ -146,3 +146,25 @@ insert into public.fabric_inventory_colors (id, inventory_item_id, color_name)
 values ('22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111', 'seed');
 insert into public.fabric_inventory_movements (inventory_item_id, color_id, movement_type, quantity)
 values ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', 'in', 50);
+
+-- fix batch D (AUD-14): the rest of the live public.fabrics columns (read 5 Oct 2026), so the column
+-- grant for anon and its drift check run as on the live database. Types are close enough for privileges.
+alter table public.fabrics
+  add column if not exists name_en text, add column if not exists description text,
+  add column if not exists description_en text, add column if not exists type text,
+  add column if not exists original_price_per_meter numeric, add column if not exists width_cm numeric,
+  add column if not exists is_featured boolean default false, add column if not exists fabric_weight text,
+  add column if not exists fabric_texture text, add column if not exists transparency_level text,
+  add column if not exists elasticity text, add column if not exists care_instructions text,
+  add column if not exists washing_instructions text, add column if not exists ironing_temperature text,
+  add column if not exists suitable_for text[], add column if not exists occasions text[],
+  add column if not exists features text[], add column if not exists tags text[],
+  add column if not exists views_count integer default 0, add column if not exists orders_count integer default 0,
+  add column if not exists rating numeric, add column if not exists reviews_count integer default 0,
+  add column if not exists country_of_origin text, add column if not exists created_at timestamptz default now(),
+  add column if not exists updated_at timestamptz default now(), add column if not exists discounted_price_per_meter numeric,
+  add column if not exists cost_per_meter numeric default 0, add column if not exists supplier_id uuid,
+  add column if not exists last_purchase_date date, add column if not exists last_purchase_price numeric default 0,
+  add column if not exists average_cost numeric default 0, add column if not exists reorder_level numeric,
+  add column if not exists show_stock_quantity boolean default false, add column if not exists categories text[],
+  add column if not exists design_images text[];

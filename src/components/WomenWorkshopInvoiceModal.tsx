@@ -24,6 +24,7 @@ import {
   type WomenWorkshopPaymentMethod,
 } from '@/lib/services/women-workshop-service'
 import { useTranslation } from '@/hooks/useTranslation'
+import { printWomenWorkshopInvoice } from '@/lib/services/women-workshop-print'
 
 interface WomenWorkshopInvoiceModalProps {
   isOpen: boolean
@@ -147,6 +148,15 @@ export default function WomenWorkshopInvoiceModal({
         toast.success(
           `تم حفظ العملية وإرسال فاتورة الشبكة للمحاسبة${invoiceCode ? ` — ${invoiceCode}` : ''}`
         )
+      }
+
+      // فاتورة الشبكة تُطبع على طابعة الورشة بعد وصول رقمها من الأستاذ؛ الكاش لا يُطبع.
+      if (
+        entryMode === 'sale' &&
+        paymentMethod === 'card' &&
+        result.transaction?.alostaz_invoice_code
+      ) {
+        await printWomenWorkshopInvoice(result.transaction)
       }
 
       transactionIdRef.current = ''

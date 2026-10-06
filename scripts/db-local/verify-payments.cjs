@@ -16,9 +16,11 @@ const os = require('node:os')
 
 const args = process.argv.slice(2)
 const edits5 = []
+const editsC = [] // fix batch C mutants (--mutateC)
 const tsEdits = { 'moyasar.ts': [], 'payments.ts': [] }
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--mutate5') { edits5.push([args[i + 1], args[i + 2]]); i += 2 }
+  else if (args[i] === '--mutateC') { editsC.push([args[i + 1], args[i + 2]]); i += 2 }
   else if (args[i] === '--mutate-ts') { tsEdits[args[i + 1]].push([args[i + 2], args[i + 3]]); i += 3 }
 }
 
@@ -58,6 +60,13 @@ async function main() {
     await admin.query(mutate(read(FILES.migration5), edits5))
     // fix batch B (AUD-02): the hold starts at «ادفعي» — what the app now runs against (needs only stages 3 and 5)
     await admin.query(read(FILES.migrationB))
+    // fix batch C (what the app runs on now). Not under a mutant of an earlier stage: C's drift check
+    // would refuse it, and the mutant would be "caught" for the wrong reason.
+    // C needs the later stages (it replaces their functions): applied here, as on the live database.
+    if (!edits5.length) {
+      for (const file of [FILES.migration6, FILES.migration7, FILES.migration7r, FILES.migration8, FILES.migration8fix, FILES.migration9]) await admin.query(read(file))
+      await admin.query(mutate(read(FILES.migrationC), editsC))
+    }
 
     const svc = await connect()
     await svc.query('set role service_role')
@@ -128,7 +137,12 @@ async function main() {
         assert.equal(cfg({ MOYASAR_SECRET_KEY: 'sk_test_abc', MOYASAR_API_BASE: 'https://evil.example/v1' }).reason, 'bad-api-base')
         assert.equal(cfg({ MOYASAR_SECRET_KEY: 'sk_test_abc', MOYASAR_API_BASE: 'http://127.0.0.1:9/v1', NODE_ENV: 'production' }).reason, 'bad-api-base')
         assert.equal(cfg({ MOYASAR_SECRET_KEY: 'sk_test_abc', MOYASAR_WEBHOOK_SECRET: 'short' }).config.webhookSecret, null)
-        return 'no key / publishable key / live without the launch flag / foreign API base → refused'
+        // fix C (AUD-06): Moyasar's test cards are public — a test key on the production deployment needs an explicit flag
+        assert.equal(cfg({ MOYASAR_SECRET_KEY: 'sk_test_abc', VERCEL_ENV: 'production' }).reason, 'test-on-production')
+        assert.equal(cfg({ MOYASAR_SECRET_KEY: 'sk_test_abc', VERCEL_ENV: 'production', FABRIC_STORE_ALLOW_TEST_ON_PRODUCTION: 'true' }).config.environment, 'test')
+        assert.equal(cfg({ MOYASAR_SECRET_KEY: 'sk_test_abc', VERCEL_ENV: 'preview' }).config.environment, 'test')
+        assert.equal(cfg({ MOYASAR_SECRET_KEY: 'sk_live_abc', VERCEL_ENV: 'production', FABRIC_STORE_ALLOW_LIVE_PAYMENTS: 'true' }).config.environment, 'live')
+        return 'no key / publishable key / live without the launch flag / foreign API base / test key on production without its flag → refused'
       },
 
       async 'start: invoice created once, pressing pay again returns the same link'() {
@@ -211,19 +225,40 @@ async function main() {
         return 'stored, quarantined, order untouched'
       },
 
-      async 'declined card, then pay again with a new invoice'() {
+      // fix C (AUD-05): a declined card leaves the hosted invoice payable — «ادفعي» again returns ITS link, so the
+      // customer never holds two payable pages (two tabs = two charges). A new invoice only after the old one ended.
+      async '(fix C) declined card, «ادفعي» again: the same invoice, paid there'() {
         const order = await newOrder('declined')
         const first = await start(order)
         const declined = mock.pay(invoiceFor(first.attemptId).id, 'failed')
         const r1 = await payments.handleMoyasarWebhook(deps, mock.webhook(declined, { secret: WEBHOOK_SECRET }))
         assert.equal(r1.outcome, 'failed')
-        const second = await start(order)
-        assert.equal(second.ok, true); assert.notEqual(second.attemptId, first.attemptId)
-        const paid = mock.pay(invoiceFor(second.attemptId).id, 'paid')
+        const again = await start(order)
+        assert.equal(again.ok, true, JSON.stringify(again))
+        assert.equal(again.attemptId, first.attemptId); assert.equal(again.checkoutUrl, first.checkoutUrl); assert.equal(again.reused, true)
+        assert.equal([...mock.invoices.values()].filter(i => i.metadata.order_number === invoiceFor(first.attemptId).metadata.order_number).length, 1,
+          'no second invoice beside the payable one')
+        const paid = mock.pay(invoiceFor(first.attemptId).id, 'paid')
         assert.equal((await payments.handleMoyasarWebhook(deps, mock.webhook(paid, { secret: WEBHOOK_SECRET }))).outcome, 'paid')
         const s = await state(order.orderId)
-        assert.equal(s.payment_status, 'paid'); assert.equal(s.attempts, 'failed,paid')
-        return 'the declined attempt failed (type payment_faild); a new invoice paid the order'
+        assert.equal(s.payment_status, 'paid'); assert.equal(s.attempts, 'paid')
+        return 'the declined attempt failed (type payment_faild); «ادفعي» returned the same invoice, which then paid the order'
+      },
+
+      async '(fix C) declined, the old page about to end, then ended: wait, then a new invoice'() {
+        const order = await newOrder('declined-ended')
+        const first = await start(order)
+        await payments.handleMoyasarWebhook(deps, mock.webhook(mock.pay(invoiceFor(first.attemptId).id, 'failed'), { secret: WEBHOOK_SECRET }))
+        await admin.query(`update public.fabric_store_payment_attempts set expires_at = clock_timestamp() + interval '30 seconds' where id = $1`, [first.attemptId])
+        const closing = await start(order)
+        assert.equal(closing.ok, false); assert.equal(closing.code, 'invoice_closing'); assert.match(closing.error, /تنتهي خلال لحظات/)
+        await admin.query(`update public.fabric_store_payment_attempts set expires_at = created_at + interval '1 millisecond' where id = $1`, [first.attemptId])
+        const second = await start(order)
+        assert.equal(second.ok, true, JSON.stringify(second)); assert.notEqual(second.attemptId, first.attemptId)
+        const paid = mock.pay(invoiceFor(second.attemptId).id, 'paid')
+        assert.equal((await payments.handleMoyasarWebhook(deps, mock.webhook(paid, { secret: WEBHOOK_SECRET }))).outcome, 'paid')
+        assert.equal((await state(order.orderId)).attempts, 'failed,paid')
+        return `near its end: ${closing.code} ("${closing.error}"); after it ended a new invoice paid the order`
       },
 
       async 'no webhook at all: the return page confirms from Moyasar'() {

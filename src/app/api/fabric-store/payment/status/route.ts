@@ -42,6 +42,8 @@ export async function GET(request: NextRequest) {
       holdExpiresAt: view.hold_expires_at,
       attemptStatus: view.attempt.status,
       attemptExpiresAt: view.attempt.expires_at,
+      // الدفعة C (AUD-06): دفعة ببطاقة ميسر التجريبية — لافتة للزبونة «لن يُسلَّم شيء»
+      isTest: view.attempt.environment === 'test',
     })
   } catch (error) {
     console.error('fabric-store payment status failed:', (error as Error).message)

@@ -19,6 +19,7 @@ import {
   type CashDrawerWithdrawalVoucher,
 } from '@/lib/services/cash-drawer-service'
 import { createManualTailoringInvoiceReceiptPayload } from '@/lib/print-tailoring-receipt'
+import { fetchAlostazPrintableInvoice } from '@/lib/services/alostaz-client'
 import { dispatchTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
 import type { Income, PaymentMethod } from '@/types/simple-accounting'
 import { useAuthStore } from '@/store/authStore'
@@ -119,7 +120,18 @@ export default function TailoringInvoiceModal({
     }
 
     try {
+      // فاتورة الشبكة تُطبع نسخةً من فاتورة الأستاذ مع رمز QR الموقّع.
+      const printable = savedMethod === 'network'
+        ? await fetchAlostazPrintableInvoice('income', saved.id)
+        : null
+      if (savedMethod === 'network' && !printable) {
+        toast('تعذّر جلب رمز QR من الأستاذ الآن؛ ستُطبع الفاتورة بدونه.', {
+          icon: '⚠️',
+          duration: 7000,
+        })
+      }
       const receipt = createManualTailoringInvoiceReceiptPayload({
+        alostazPrintable: printable && printable.invoice_code === accountingCode ? printable : null,
         id: saved.id,
         amount: amountToPrint,
         paymentMethod: savedMethod,

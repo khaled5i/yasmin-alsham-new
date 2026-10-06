@@ -37,11 +37,13 @@ import {
   ALOSTAZ_FABRICS_INVOICE_STATUS,
   ALOSTAZ_FABRICS_VAT_TAX_ID,
   ALOSTAZ_QUANTITY_SCALE,
+  ALOSTAZ_PRICE_SCALE,
   toHalalas,
   toExactAlostazLinePricing,
   normalizePhone,
 } from '../alostaz-config'
 import { resolveAlostazInvoiceDates } from '../alostaz-invoice-dates'
+import { normalizeAlostazFabricName } from '../alostaz-fabric-names'
 
 // ── الحقول التي نحتاجها من الطلب لإنشاء الفاتورة ──────────────
 export interface AlostazOrderInput {
@@ -572,6 +574,59 @@ export async function createInvoiceForTailoringManualSale(
   }
 }
 
+// ── نسخة الفاتورة المطبوعة (رمز QR من الهيئة) ──────────────────
+
+export interface AlostazInvoiceZatcaSnapshot {
+  invoice_code: string
+  /** رمز QR الموقّع كما أصدره الأستاذ، أو null إن لم يجهز بعد. */
+  qr: string | null
+  zatca_status: string | null
+  /** المبالغ بالريال كما حسبها الأستاذ. */
+  total: number
+  total_without_vat: number
+  vat: number
+  issue_date: string | null
+}
+
+/**
+ * قراءة فاتورة موجودة من الأستاذ لطباعة نسخة مطابقة لها: الرقم والإجماليات
+ * ورمز QR الموقّع (zatca_invoice_entry.qr_code). قراءة فقط — لا تعدّل شيئاً.
+ */
+export async function getInvoiceZatcaSnapshot(
+  invoiceId: number,
+  branchId: number
+): Promise<AlostazInvoiceZatcaSnapshot> {
+  const body = await alostazFetch(`/invoices/${encodeURIComponent(String(invoiceId))}`, {
+    headers: { 'X-Branch-Id': String(branchId) },
+  })
+  const invoice = body?.data && typeof body.data === 'object' && !Array.isArray(body.data)
+    ? body.data
+    : body
+  if (!invoice?.id) {
+    throw new AlostazRequestError('لم يُرجع الأستاذ بيانات الفاتورة المطلوبة.')
+  }
+
+  const computations = invoice.computations || {}
+  const fromHalalas = (value: unknown) =>
+    Math.round(Number(value) || 0) / ALOSTAZ_PRICE_SCALE
+  const total = fromHalalas(computations.total)
+  const totalWithoutVat = fromHalalas(computations.total_without_taxes)
+  const zatca = invoice.zatca_invoice_entry || null
+  const qr = typeof zatca?.qr_code === 'string' && zatca.qr_code.trim()
+    ? zatca.qr_code.trim()
+    : null
+
+  return {
+    invoice_code: String(invoice.code || ''),
+    qr,
+    zatca_status: zatca?.status ? String(zatca.status) : null,
+    total,
+    total_without_vat: totalWithoutVat,
+    vat: Math.round((total - totalWithoutVat) * 100) / 100,
+    issue_date: invoice.issue_date ? String(invoice.issue_date) : null,
+  }
+}
+
 // ── سياق الأقمشة في فرع «بروكار الشرقية» في الأستاذ ────────────
 
 export interface AlostazBranchContext {
@@ -601,6 +656,34 @@ export async function getFabricsBranchContext(): Promise<AlostazBranchContext> {
 // ── منتجات الأقمشة ───────────────────────────────────────────
 
 /**
+ * الأستاذ يأخذ BT-153 من اسم المنتج، لا من وصف البند. نصحح بطاقة المنتج
+ * عند إرسال فاتورة جديدة، مع إبقاء المعرّف والوحدات والأسعار والمخزون كما هي.
+ * لا يستدعي هذا المسار تعديل فاتورة موجودة أو إعادة إرسالها للهيئة.
+ */
+async function ensureFabricProductName(productId: number, branchId: number): Promise<void> {
+  const path = `/products/${encodeURIComponent(String(productId))}`
+  const headers = { 'X-Branch-Id': String(branchId) }
+  const body = await alostazFetch(path, { headers })
+  const product = body?.data ?? body
+  if (Number(product?.id) !== productId || typeof product?.name !== 'string') {
+    throw new AlostazRequestError('تعذّر التحقق من اسم منتج القماش في الأستاذ.')
+  }
+  const name = normalizeAlostazFabricName(product.name)
+  if (name === product.name.trim()) return
+
+  await alostazFetch(path, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ name }),
+  })
+  const verifiedBody = await alostazFetch(path, { headers })
+  const verified = verifiedBody?.data ?? verifiedBody
+  if (Number(verified?.id) !== productId || verified?.name !== name) {
+    throw new AlostazRequestError('لم يُؤكَّد تصحيح اسم منتج القماش في الأستاذ؛ أُوقف إرسال الفاتورة.')
+  }
+}
+
+/**
  * إنشاء منتج قماش في الأستاذ وإرجاع معرّفه.
  * منتجات الأقمشة تُنشأ «مع تتبّع المخزون» (supports_inventory=1) لتُخزَّن في
  * المستودع الرئيسي، ولذلك يشترط الأستاذ سعر الشراء وسعر البيع للوحدة.
@@ -615,6 +698,7 @@ export async function createProduct(
     salePrice?: number | null
   }
 ): Promise<number> {
+  const productName = normalizeAlostazFabricName(name)
   const headers = opts?.branchId ? { 'X-Branch-Id': String(opts.branchId) } : undefined
   // الأستاذ يرفض إنشاء أي وحدة منتج إذا كان سعر الشراء أو البيع أقل من هللة واحدة.
   // بعض أصناف المخزون القديمة لا تحتوي سعراً، لذلك نرسل 1 هللة كحد تقني أدنى.
@@ -627,7 +711,7 @@ export async function createProduct(
     method: 'POST',
     ...(headers ? { headers } : {}),
     body: JSON.stringify({
-      name: String(name || 'قماش').trim() || 'قماش',
+      name: productName,
       supports_inventory: opts?.supportsInventory ? 1 : 0,
       units: [
         {
@@ -688,6 +772,18 @@ export async function createInvoiceForFabricSale(
   const ctx = await getFabricsBranchContext()
   const branchHeaders = { 'X-Branch-Id': String(ctx.branchId) }
 
+  // تحقق قبل إنشاء العميل أو الفاتورة. تشمل الحماية المنتجات المرتبطة قديماً
+  // ومنتجات المتجر والشحن، دون تعديل أسماء المخزون أو أي فاتورة سابقة.
+  const lines = (input.lines || [])
+    .filter((l) => l && Number(l.amount) >= 0)
+    .map((line) => ({
+      ...line,
+      description: normalizeAlostazFabricName(line.description || 'بيع قماش'),
+    }))
+  for (const productId of new Set(lines.map((line) => line.product_id))) {
+    await ensureFabricProductName(productId, ctx.branchId)
+  }
+
   const customerId = await findOrCreateCustomer(
     {
       name: input.customer_name?.trim() || 'عميل جديد',
@@ -699,7 +795,6 @@ export async function createInvoiceForFabricSale(
   const issueIso = input.date ? new Date(input.date).toISOString() : new Date().toISOString()
 
   const isDraft = ALOSTAZ_FABRICS_INVOICE_STATUS === 'draft'
-  const lines = (input.lines || []).filter((l) => l && Number(l.amount) >= 0)
   // نجمع بالهللات لتفادي أي فرق إضافي ناتج من الفاصلة العائمة في JavaScript.
   const amountHalalas = lines.reduce((sum, line) => sum + toHalalas(line.amount), 0)
   // الخزنة حسب طريقة الدفع ضمن خزائن هذا الفرع

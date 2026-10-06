@@ -23,6 +23,7 @@ import {
   type FabricStorePaymentStatus,
 } from '@/lib/fabric-store/order-status'
 import { STORE_ENTITY } from '@/lib/store-legal'
+import { STORE_ALERT_LABELS, type StoreAlert } from '@/lib/fabric-store/store-alerts'
 import {
   clearPending, isSettled, loadPending, savePending, type ActionOutcome, type PendingAction,
 } from '@/lib/fabric-store/pending-action'
@@ -73,7 +74,10 @@ interface OrderDetail {
   address: null | { recipient_name: string | null; recipient_phone: string | null; city: string | null; district: string | null;
                     street: string | null; building_number: string | null; postal_code: string | null;
                     additional_number: string | null; short_address: string | null; notes: string | null; anonymized_at: string | null }
-  attempts: Array<{ id: string; environment: string; status: string; amountHalalas: number; paymentId: string | null; createdAt: string }>
+  attempts: Array<{ id: string; environment: string; status: string; amountHalalas: number; paymentId: string | null; createdAt: string
+                    // الدفعة C: دفعة ناجحة غير معتمدة (AUD-04)، واسترداد تم خارج النظام (AUD-03)
+                    isExtra?: boolean; extraUnrefundedHalalas?: number; externalUnrecordedHalalas?: number
+                    supportReferenceRequired?: boolean }>
   sale: null | { invoiceNumber: number | null; date: string; amount: number; alostazStatus: string | null; alostazCode: string | null }
   tasks: Array<{ id: string; topic: string; status: string; attempts: number; maxAttempts: number; lastError: string | null; reason: unknown }>
   events: Array<{ id: number; type: string; from: string | null; to: string | null; actorType: string; actorName: string | null;
@@ -86,7 +90,9 @@ interface OrderDetail {
                     failureMessage: string | null; requestedBy: string | null; createdAt: string; completedAt: string | null;
                     hasIncomeRow: boolean; creditNoteCode: string | null; creditNoteNeeded: boolean
                     providerCalledAt?: string | null; reviewReference?: string | null; reviewNote?: string | null
-                    reviewedAt?: string | null }>
+                    reviewedAt?: string | null; supportReference?: string | null; externalReference?: string | null }>
+  /** الدفعة C (AUD-08): استرداد جديد يحتاج مرجع دعم ميسر */
+  supportReferenceRequired?: boolean
   restocks?: Array<{ lineNumber: number; quantityCm: number; reason: string; note: string | null; createdAt: string }>
 }
 
@@ -100,29 +106,8 @@ function toHundredths(text: string): number | null {
 
 const newKey = () => crypto.randomUUID()
 
-interface StoreAlert {
-  kind: string
-  orderId: string | null
-  orderNumber: string | null
-  since: string | null
-  environment: string | null
-  detail: string
-}
-
-/** المرحلة 9: أنواع التنبيهات كما تراها الموظفة. */
-const ALERT_LABELS: Record<string, string> = {
-  sale_missing: 'مدفوع بلا مبيعة',
-  task_dead: 'مهمة متوقفة',
-  sale_amount_mismatch: 'مبلغ المبيعة لا يطابق',
-  refund_ledger_mismatch: 'سجل الاسترداد لا يطابق',
-  refund_unconfirmed: 'استرداد لم يظهر لدى ميسر',
-  refund_review_due: 'موعد قرار المدير في استرداد',
-  refund_stuck: 'استرداد معلّق',
-  credit_note_missing: 'إشعار دائن مطلوب',
-  payment_quarantined: 'دفعة محجورة',
-  alostaz_review: 'فاتورة الأستاذ',
-  needs_review: 'تحت المراجعة',
-}
+// المرحلة 9 + الدفعة D: تعريف التنبيهات وتسمياتها مشترك مع مركز الإشعارات
+const ALERT_LABELS = STORE_ALERT_LABELS
 
 const VIEWS: Array<{ id: View; label: string }> = [
   { id: 'active', label: 'قيد التنفيذ' },
@@ -369,8 +354,14 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
     }
   }
 
-  const setStatus = (to: FabricStoreFulfillmentStatus, extra: Record<string, unknown> = {}) =>
-    act({ action: 'fulfillment', to, ...extra }, `الحالة الآن: ${FULFILLMENT_STATUS_LABELS[to]}`)
+  const setStatus = (to: FabricStoreFulfillmentStatus, extra: Record<string, unknown> = {}) => {
+    // الدفعة C (AUD-06): التقدّم في طلب دُفع ببطاقة ميسر التجريبية «تجربة لوحة» للمدير فقط، بتأكيد صريح.
+    if (detail?.order.isTest && ['preparing', 'ready_for_pickup', 'shipped', 'delivered'].includes(to)) {
+      if (!confirm('تجربة اللوحة: هذا الطلب دُفع ببطاقة ميسر التجريبية — لا مال ولا مبيعة. لا يُسلَّم أي قماش. متابعة التجربة؟')) return
+      extra = { ...extra, allowTest: true }
+    }
+    return act({ action: 'fulfillment', to, ...extra }, `الحالة الآن: ${FULFILLMENT_STATUS_LABELS[to]}`)
+  }
 
   if (!detail) {
     return (
@@ -382,7 +373,8 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
 
   const { order, items, address, attempts, sale, tasks, events } = detail
   const paid = order.paymentStatus === 'paid' || order.paymentStatus === 'partially_refunded'
-  const canProgress = paid && !order.needsReview && (order.saleRecorded || order.isTest)
+  // الدفعة C (AUD-06): طلب الدفعة التجريبية لا يتقدّم إلا «تجربة لوحة» للمدير (والقاعدة تفرضه)
+  const canProgress = paid && !order.needsReview && (order.saleRecorded || (order.isTest && detail.viewerRole === 'admin'))
   const openAlerts = tasks.filter(t => (t.topic === 'notify_staff' && t.status !== 'done') || t.status === 'dead')
   const whatsapp = customerWhatsAppLink(order.customerPhone, {
     customerName: order.customerName,
@@ -410,7 +402,8 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
 
         {order.isTest && (
           <p className="mb-4 flex items-center gap-2 rounded-xl bg-purple-50 p-3 text-sm text-purple-800">
-            <FlaskConical className="h-4 w-4" /> دفعة اختبار: لا مبيعة ولا خصم من المخزون.
+            <FlaskConical className="h-4 w-4" /> دفعة اختبار: لا مبيعة ولا خصم من المخزون — لا يُجهَّز ولا يُسلَّم قماش.
+            {detail.viewerRole === 'admin' ? ' أزرار التجهيز هنا تجربة للوحة فقط.' : ''}
           </p>
         )}
 
@@ -581,7 +574,11 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
             <ul className="space-y-1">
               {attempts.map(a => (
                 <li key={a.id} className="flex justify-between gap-2">
-                  <span>{when(a.createdAt)} · {a.environment === 'test' ? 'اختبار' : 'حقيقي'} · {a.status}</span>
+                  <span>
+                    {when(a.createdAt)} · {a.environment === 'test' ? 'اختبار' : 'حقيقي'} · {a.status}
+                    {a.isExtra && <span className="mr-1 font-semibold text-red-700"> · دفعة إضافية{(a.extraUnrefundedHalalas ?? 0) > 0 ? ` لم تُرد (${money(a.extraUnrefundedHalalas ?? 0)})` : ' (رُدّت)'}</span>}
+                    {(a.externalUnrecordedHalalas ?? 0) > 0 && <span className="mr-1 font-semibold text-red-700"> · ميسر يُظهر استرداداً خارج النظام {money(a.externalUnrecordedHalalas ?? 0)}</span>}
+                  </span>
                   <span dir="ltr" className="text-xs text-gray-500">{a.paymentId ?? ''}</span>
                 </li>
               ))}
@@ -658,6 +655,14 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
   const [restockMeters, setRestockMeters] = useState<Record<number, string>>({})
   const [creditCodes, setCreditCodes] = useState<Record<string, string>>({})
   const [closeRefs, setCloseRefs] = useState<Record<string, { reference: string; note: string }>>({})
+  // الدفعة C: مرجع دعم ميسر (AUD-08)، ورد دفعة إضافية (AUD-04)، وتسجيل استرداد خارجي (AUD-03)
+  const [supportRef, setSupportRef] = useState('')
+  const [extraReasons, setExtraReasons] = useState<Record<string, string>>({})
+  const [extraSupportRefs, setExtraSupportRefs] = useState<Record<string, string>>({})
+  const [externalForms, setExternalForms] = useState<Record<string, { reference: string; reason: string }>>({})
+  const extraAttempts = detail.attempts.filter(a => a.isExtra && (a.extraUnrefundedHalalas ?? 0) > 0)
+  const externalAttempts = detail.attempts.filter(a => (a.externalUnrecordedHalalas ?? 0) > 0)
+  const needsSupportRef = !!detail.supportReferenceRequired
   // عملية أُرسلت ولم تُعرف نتيجتها: مفتاحها وبياناتها محفوظة (وتبقى بعد إعادة التحميل)،
   // وتُعاد كما هي. لا عملية جديدة من النوع نفسه قبل حسمها.
   const storage = (): Storage | null => { try { return window.localStorage } catch { return null } }
@@ -715,12 +720,43 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
     const halalas = cancel ? refundable : toHundredths(amount)
     if (!halalas || halalas > refundable) { toast.error('اكتبي مبلغاً لا يتجاوز المتبقي'); return }
     if (reason.trim().length < 3) { toast.error('اكتبي سبب الاسترداد'); return }
+    if (needsSupportRef && supportRef.trim().length < 3) { toast.error('اكتبي مرجع دعم ميسر'); return }
     const question = cancel
       ? `إلغاء الطلب واسترداد ${money(halalas)} كاملاً للزبونة؟ يعود القماش للمخزون، ولا تراجع عن ذلك.`
       : `استرداد ${money(halalas)} للزبونة؟ لا تراجع عن الاسترداد.`
     if (!confirm(question)) return
-    if (await send({ kind: 'refund', key: newKey(), body: { action: 'refund', amountHalalas: halalas, reason, cancel } }, 'تم')) {
-      setReason(''); setAmount('')
+    const body = { action: 'refund', amountHalalas: halalas, reason, cancel, ...(needsSupportRef ? { supportReference: supportRef } : {}) }
+    if (await send({ kind: 'refund', key: newKey(), body }, 'تم')) {
+      setReason(''); setAmount(''); setSupportRef('')
+    }
+  }
+
+  // الدفعة C (AUD-04): دفعة ناجحة ثانية — تُرد كاملة، بلا مرتجع ولا مساس بالمبيعة
+  const refundExtra = async (attempt: OrderDetail['attempts'][number]) => {
+    const halalas = attempt.extraUnrefundedHalalas ?? 0
+    const why = (extraReasons[attempt.id] ?? '').trim()
+    if (why.length < 3) { toast.error('اكتبي سبب الرد'); return }
+    const support = (extraSupportRefs[attempt.id] ?? '').trim()
+    if (attempt.supportReferenceRequired && support.length < 3) { toast.error('اكتبي مرجع دعم ميسر'); return }
+    if (!confirm(`رد الدفعة الإضافية ${money(halalas)} كاملة للزبونة؟ لا تراجع عن الاسترداد.`)) return
+    if (await send({ kind: 'refund', key: newKey(), body: {
+      action: 'refund', amountHalalas: halalas, reason: why, cancel: false, attemptId: attempt.id,
+      ...(attempt.supportReferenceRequired ? { supportReference: support } : {}) } }, 'تم')) {
+      setExtraReasons(r => ({ ...r, [attempt.id]: '' }))
+      setExtraSupportRefs(r => ({ ...r, [attempt.id]: '' }))
+    }
+  }
+
+  // الدفعة C (AUD-03): استرداد تم من لوحة ميسر — يُسجَّل بمرجعه، بلا أي نداء لميسر
+  const recordExternal = async (attempt: OrderDetail['attempts'][number]) => {
+    const halalas = attempt.externalUnrecordedHalalas ?? 0
+    const form = externalForms[attempt.id] ?? { reference: '', reason: '' }
+    if (form.reference.trim().length < 3 || form.reason.trim().length < 3) { toast.error('اكتبي مرجع الاسترداد في لوحة ميسر وسببه'); return }
+    if (!confirm(`تسجيل استرداد ${money(halalas)} تم من لوحة ميسر؟ لا يُرسل شيء لميسر؛ يُسجَّل في الطلب والواردات.`)) return
+    if (await send({ kind: 'refund', key: newKey(), body: {
+      action: 'refund_external', attemptId: attempt.id, amountHalalas: halalas, reference: form.reference, reason: form.reason } },
+      'سُجّل الاسترداد الخارجي')) {
+      setExternalForms(f => ({ ...f, [attempt.id]: { reference: '', reason: '' } }))
     }
   }
 
@@ -741,7 +777,8 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
   const button = 'inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50'
   const refundStatus: Record<string, string> = { pending: 'بانتظار تأكيد ميسر', succeeded: 'تم', failed: 'لم يتم' }
 
-  if (!refunds.length && !canRestock && !unsettled && !(isAdmin && refundable > 0)) return null
+  if (!refunds.length && !canRestock && !unsettled && !(isAdmin && refundable > 0)
+      && !extraAttempts.length && !externalAttempts.length) return null
 
   return (
     <section className="mb-4 rounded-2xl border border-rose-100 p-4 text-sm">
@@ -799,6 +836,10 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
                   </div>
                 )
               })()}
+              {r.externalReference && (
+                <p className="text-xs text-gray-600">تم من لوحة ميسر خارج النظام وسُجّل بمرجع <span dir="ltr">{r.externalReference}</span> (لم يُرسل نداء)</p>
+              )}
+              {r.supportReference && <p className="text-xs text-gray-600">مرجع دعم ميسر: <span dir="ltr">{r.supportReference}</span></p>}
               {r.creditNoteCode && <p className="text-xs text-gray-600">الإشعار الدائن في الأستاذ: <span dir="ltr">{r.creditNoteCode}</span></p>}
               {r.status === 'succeeded' && r.hasIncomeRow && !r.creditNoteCode && (
                 <div className="mt-2">
@@ -831,6 +872,16 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
           <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} maxLength={500}
             placeholder={beforeCut ? 'سبب الإلغاء (مثال: طلبت الزبونة الإلغاء قبل القص)' : cancelled ? 'سبب الاسترداد (مثال: سداد وصل بعد إلغاء الطلب)' : 'سبب الاسترداد (مثال: عيب في القماش، نقص في الطول، رسوم الشحن)'}
             className="w-full rounded-xl border border-gray-200 p-2 text-sm" />
+          {needsSupportRef && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+              <p className="text-xs text-amber-900">
+                أُغلق على هذه الدفعة استرداد أُرسل لميسر ولم يظهر. قد يُنفَّذ متأخراً فيُرد المبلغ مرتين — لا استرداد جديد إلا بمرجع من دعم ميسر يؤكد أنه لن يُنفَّذ.
+              </p>
+              <input value={supportRef} onChange={e => setSupportRef(e.target.value)} dir="ltr" maxLength={120}
+                placeholder="مرجع دعم ميسر (رقم التذكرة أو الرد)"
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-sm" />
+            </div>
+          )}
           {beforeCut ? (
             <button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void refund(true)}
               className={`${button} mt-2 bg-red-600 text-white hover:bg-red-700`}>
@@ -856,6 +907,61 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
         </div>
       )}
       {!isAdmin && refundable > 0 && <p className="text-xs text-gray-500">الاسترداد للمدير فقط.</p>}
+
+      {/* الدفعة C (AUD-04): دفعة ناجحة ثانية لا تقابلها مبيعة */}
+      {extraAttempts.map(a => (
+        <div key={`extra-${a.id}`} className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+          <p className="font-semibold text-red-800">
+            دفعة إضافية {money(a.extraUnrefundedHalalas ?? 0)} لم تُرد <span dir="ltr" className="text-xs font-normal">{a.paymentId}</span>
+          </p>
+          <p className="text-xs text-red-800">لا تقابلها مبيعة ولا قماش. تُرد كاملة، ولا تمس المبيعة ولا حالة الطلب. التنبيه يبقى حتى تُرد.</p>
+          {isAdmin && !pending && !unsettled && a.supportReferenceRequired && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+              <p className="text-xs text-amber-900">أُغلق على هذه الدفعة استرداد أُرسل لميسر ولم يظهر — لا رد جديد إلا بمرجع من دعم ميسر يؤكد أنه لن يُنفَّذ.</p>
+              <input value={extraSupportRefs[a.id] ?? ''} onChange={e => setExtraSupportRefs(r => ({ ...r, [a.id]: e.target.value }))}
+                dir="ltr" maxLength={120} placeholder="مرجع دعم ميسر"
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-sm" />
+            </div>
+          )}
+          {isAdmin && !pending && !unsettled ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input value={extraReasons[a.id] ?? ''} onChange={e => setExtraReasons(r => ({ ...r, [a.id]: e.target.value }))}
+                maxLength={500} placeholder="السبب (مثال: دفعت الزبونة مرتين)"
+                className="flex-1 rounded-xl border border-gray-200 px-3 py-1.5 text-sm" />
+              <button type="button" disabled={busy || (extraReasons[a.id] ?? '').trim().length < 3
+                  || (!!a.supportReferenceRequired && (extraSupportRefs[a.id] ?? '').trim().length < 3)} onClick={() => void refundExtra(a)}
+                className={`${button} bg-red-600 text-white hover:bg-red-700`}>رد الدفعة الإضافية</button>
+            </div>
+          ) : !isAdmin && <p className="mt-1 text-xs text-gray-600">الرد للمدير فقط.</p>}
+        </div>
+      ))}
+
+      {/* الدفعة C (AUD-03): ميسر يُظهر استرداداً لم يُسجَّل في النظام */}
+      {externalAttempts.map(a => {
+        const form = externalForms[a.id] ?? { reference: '', reason: '' }
+        return (
+          <div key={`external-${a.id}`} className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+            <p className="font-semibold text-red-800">ميسر يُظهر استرداد {money(a.externalUnrecordedHalalas ?? 0)} لم يُسجَّل في النظام</p>
+            <p className="text-xs text-red-800">
+              استرداد تم من لوحة ميسر (أو نُفّذ متأخراً). سجّليه هنا بمرجعه ليُضاف للسجل والواردات — لا يُرسل شيء لميسر.
+              إن عاد قماش فأعيديه للمخزون بعد فحصه.
+            </p>
+            {isAdmin && !pending && !unsettled ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <input value={form.reference} dir="ltr" maxLength={120} placeholder="مرجع الاسترداد في لوحة ميسر"
+                  onChange={e => setExternalForms(f => ({ ...f, [a.id]: { ...form, reference: e.target.value } }))}
+                  className="flex-1 rounded-xl border border-gray-200 px-3 py-1.5 text-sm" />
+                <input value={form.reason} maxLength={500} placeholder="السبب"
+                  onChange={e => setExternalForms(f => ({ ...f, [a.id]: { ...form, reason: e.target.value } }))}
+                  className="flex-1 rounded-xl border border-gray-200 px-3 py-1.5 text-sm" />
+                <button type="button" disabled={busy || form.reference.trim().length < 3 || form.reason.trim().length < 3}
+                  onClick={() => void recordExternal(a)}
+                  className={`${button} border border-red-300 text-red-800 hover:bg-red-100`}>تسجيل الاسترداد الخارجي</button>
+              </div>
+            ) : !isAdmin && <p className="mt-1 text-xs text-gray-600">التسجيل للمدير فقط.</p>}
+          </div>
+        )
+      })}
 
       {canRestock && (
         <div className="mt-3 rounded-xl border border-gray-100 p-3">

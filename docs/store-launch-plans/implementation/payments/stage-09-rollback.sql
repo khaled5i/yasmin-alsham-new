@@ -14,6 +14,14 @@ begin;
 
 set local lock_timeout = '5s';
 
+-- (الدفعة C، 5 أكتوبر) الدفعة C تستبدل fabric_store_staff_alerts بنسختها؛ حذفها هنا يمحو تنبيهاتها المالية.
+do $$
+begin
+  if to_regprocedure('public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid)') is not null then
+    raise exception 'ROLLBACK REFUSED: fix batch C is applied — run fixes/FIX-C-rollback.sql first';
+  end if;
+end $$;
+
 drop function public.fabric_store_due_reconciliation(text, integer);
 drop function public.fabric_store_complete_reconciliation(uuid, uuid);
 drop function public.fabric_store_staff_alerts();

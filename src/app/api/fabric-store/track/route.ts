@@ -2,12 +2,14 @@ import { NextRequest } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   errorResponse,
+  getFabricStoreAccessSecret,
   getFabricStoreServiceClient,
   jsonResponse,
   readOrderToken,
   readSameOriginJson,
   sha256Hex,
   toByteaHex,
+  trackTokenMatches,
 } from '@/lib/server/fabric-store/http'
 import { normalizeSaudiMobile, toLatinDigits } from '@/lib/fabric-store/checkout-contract'
 import { isOrdersServerEnabled } from '@/lib/server/fabric-store/staff-auth'
@@ -15,9 +17,10 @@ import { isOrdersServerEnabled } from '@/lib/server/fabric-store/staff-auth'
 export const dynamic = 'force-dynamic'
 
 /**
- * تتبّع الزبونة لطلبها (المرحلة 7). الرمز من كوكي المتصفح الذي أنشأ الطلب، أو من رابط
- * واتساب (`/fabrics/order/?t=…`) تمرّره الصفحة في ترويسة `x-order-token` — لا في عنوان
- * هذا المسار، فلا يظهر في سجلات الطلبات. الرمز 256-bit ولا تُخزَّن إلا بصمته.
+ * تتبّع الزبونة لطلبها (المرحلة 7). من كوكي المتصفح الذي أنشأ الطلب، أو من رابط واتساب
+ * `/fabrics/order/#n=<رقم>&k=<رمز تتبّع>` (الدفعة D) تمرّره الصفحة في ترويستين — لا في عنوان المسار.
+ * (تصحيح المراجعة R-CD-02: رمز الوصول لم يعد يُقبل في ترويسة — كان رابط `?t=` القديم يحمله،
+ * والرمز نفسه يخوّل «ادفعي». المتجر لم يُطلق، فلا روابط قديمة لدى زبونات.)
  *
  * أو (POST) بالبحث برقم الطلب أو رقم الجوال — مثل تتبّع طلبات التفصيل (/track-order).
  *
@@ -26,7 +29,7 @@ export const dynamic = 'force-dynamic'
  */
 const ORDER_COLUMNS = `id, order_number, created_at, paid_at, delivery_method, delivery_option_label, items_net_halalas,
   shipping_net_halalas, shipping_vat_halalas, vat_halalas, total_halalas, payment_status, fulfillment_status,
-  shipping_carrier, tracking_number, shipped_at, delivered_at, cancelled_at,
+  shipping_carrier, tracking_number, shipped_at, delivered_at, cancelled_at, paid_attempt_id,
   fabric_store_order_items (line_number, fabric_name, fabric_code, color_name, purchase_mode, piece_length_cm,
     quantity_cm, gross_halalas)`
 
@@ -38,7 +41,7 @@ type OrderRow = any
 
 /** يبني عرض الزبونة للطلب: المدينة فقط من العنوان، وسجل الحالات. */
 async function buildOrderView(client: SupabaseClient, order: OrderRow) {
-  const [{ data: city }, { data: events }] = await Promise.all([
+  const [{ data: city }, { data: events }, { data: paidAttempt }] = await Promise.all([
     order.delivery_method === 'shipping'
       ? client.from('fabric_store_order_addresses').select('city').eq('order_id', order.id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -47,6 +50,10 @@ async function buildOrderView(client: SupabaseClient, order: OrderRow) {
       .eq('order_id', order.id)
       .in('event_type', ['payment_status', 'fulfillment_status'])
       .order('id'),
+    // الدفعة C (AUD-06): بيئة الدفعة المعتمدة — لافتة «دفعة تجريبية» للزبونة
+    order.paid_attempt_id
+      ? client.from('fabric_store_payment_attempts').select('environment').eq('id', order.paid_attempt_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
 
   const items = [...(order.fabric_store_order_items ?? [])].sort(
@@ -70,6 +77,7 @@ async function buildOrderView(client: SupabaseClient, order: OrderRow) {
     shippedAt: order.shipped_at,
     deliveredAt: order.delivered_at,
     cancelledAt: order.cancelled_at,
+    isTest: (paidAttempt as { environment?: string } | null)?.environment === 'test',
     items: items.map((item: OrderRow) => ({
       name: item.fabric_name,
       code: item.fabric_code,
@@ -88,8 +96,33 @@ export async function GET(request: NextRequest) {
   const client = getFabricStoreServiceClient()
   if (!client) return errorResponse(503, 'not-configured', 'غير متاح حالياً')
 
-  const headerToken = (request.headers.get('x-order-token') ?? '').trim().toLowerCase()
-  const token = /^[0-9a-f]{64}$/.test(headerToken) ? headerToken : readOrderToken(request)
+  // الدفعة D (AUD-07): رابط التتبّع الجديد — رقم الطلب + رمز تتبّع للقراءة فقط (بعد # في الرابط،
+  // فيصل هنا في ترويسة لا في العنوان). لا يخوّل أي فعل غير القراءة.
+  const trackToken = (request.headers.get('x-track-token') ?? '').trim().toLowerCase()
+  const trackNumber = (request.headers.get('x-order-number') ?? '').trim().toUpperCase()
+  if (trackToken || trackNumber) {
+    const secret = getFabricStoreAccessSecret()
+    if (!secret || !/^FS-\d{6,8}$/.test(trackNumber) || !/^[0-9a-f]{64}$/.test(trackToken)) {
+      return errorResponse(404, 'no-order', 'لم نجد الطلب أو انتهت صلاحية الرابط')
+    }
+    const { data: tracked, error: trackError } = await client
+      .from('fabric_store_orders')
+      .select(`checkout_key, ${ORDER_COLUMNS}`)
+      .eq('order_number', trackNumber)
+      .gt('access_expires_at', new Date().toISOString())
+      .maybeSingle()
+    if (trackError) {
+      console.error('fabric-store track failed:', trackError.message)
+      return errorResponse(503, 'unavailable', 'تعذّر تحميل الطلب الآن')
+    }
+    if (!tracked || !trackTokenMatches(secret, String((tracked as OrderRow).checkout_key), trackToken)) {
+      return errorResponse(404, 'no-order', 'لم نجد الطلب أو انتهت صلاحية الرابط')
+    }
+    return jsonResponse({ ok: true, order: await buildOrderView(client, tracked) })
+  }
+
+  // كوكي المتصفح الذي أنشأ الطلب وحده (لا ترويسة برمز الوصول — R-CD-02).
+  const token = readOrderToken(request)
   // لا رمز ⇒ ليست مشكلة: الصفحة تعرض نموذج البحث برقم الطلب أو الجوال.
   if (!token) return errorResponse(404, 'no-token', 'ابحثي برقم الطلب أو رقم الجوال')
 

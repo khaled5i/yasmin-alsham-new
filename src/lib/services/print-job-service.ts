@@ -8,6 +8,7 @@
 import { supabase } from '@/lib/supabase'
 import type { Income } from '@/types/simple-accounting'
 import type { TailoringReceiptPayload } from '@/lib/print-tailoring-receipt'
+import type { FabricReceiptPayload } from '@/lib/print-fabric-receipt'
 import {
   FABRIC_INVENTORY_LABEL_JOB_TYPE,
   type FabricInventoryLabelPayload,
@@ -54,7 +55,7 @@ const TAILORING_BRANCH = 'tailoring'
  * إرسال طلب طباعة فاتورة بيع قماش إلى الطابور (يُستدعى من صفحة المبيعات على أي جهاز).
  * نخزّن نسخة كاملة من بيانات البيع (payload) حتى تُطبع كما أُرسلت حتى لو تغيّر السجل لاحقاً.
  */
-export async function queueFabricReceiptPrint(item: Income): Promise<void> {
+export async function queueFabricReceiptPrint(item: FabricReceiptPayload): Promise<void> {
   const { error } = await supabase.from('print_jobs').insert({
     branch: FABRICS_BRANCH,
     job_type: 'fabric_sale_receipt',
@@ -103,7 +104,11 @@ function buildTailoringIdempotencyKey(
   const jobType = options.jobType ?? 'tailoring_order_receipt'
   const receiptType = payload.receipt_type ?? 'delivery'
   const entityId = options.incomeId ?? payload.order_id
-  const stableKey = `${TAILORING_BRANCH}:${jobType}:${entityId}:${receiptType}:v1`
+  // الدفعة الواحدة قد تُطبع ورقتين (فاتورة شبكة + إيصال كاش)؛ نوع الورقة يميّز
+  // مفتاحيهما كي لا تُسقط إحداهما بوصفها تكراراً للأخرى.
+  const stableKey = payload.document_kind
+    ? `${TAILORING_BRANCH}:${jobType}:${entityId}:${receiptType}:${payload.document_kind}:v2`
+    : `${TAILORING_BRANCH}:${jobType}:${entityId}:${receiptType}:v1`
 
   return options.forceNewJob
     ? `${stableKey}:request:${createRequestId()}`

@@ -1,5 +1,153 @@
 // Mutation check: each deliberate break of a migration must make verify-stages.cjs fail,
 // and for the right reason (the failing line is printed).
+// Fix batch C (AUD-06, 05, 04, 03, 08, 12): SQL mutants run verify-stages (fix C SQL test); TS mutants
+// run verify-payments (moyasar.ts) and verify-refunds (refunds.ts, end to end with the mock).
+const FIXC_MUTANTS = [
+  ['C', 'a test order moves without the flag (AUD-06)',
+    "    if not coalesce(p_allow_test, false) then\n      return jsonb_build_object('status', 'test_order');",
+    "    if false then\n      return jsonb_build_object('status', 'test_order');", false],
+  ['C', 'the test-order flag works for any actor (AUD-06)',
+    "    if not private.fabric_store_actor_is_admin(p_actor_id) then\n      return jsonb_build_object('status', 'forbidden');\n    end if;\n  end if;",
+    "    if false then\n      return jsonb_build_object('status', 'forbidden');\n    end if;\n  end if;", false],
+  ['C', 'the dashboard trial on a test order is not logged (AUD-06)',
+    "  if p_to in ('preparing', 'ready_for_pickup', 'shipped', 'delivered') and v_environment = 'test' then\n    insert",
+    "  if false then\n    insert", false],
+  ['C', 'cancelling while the payment page is open (AUD-05)', '    if v_open_until is not null then', '    if false then', false],
+  ['C', 'a payable declined page does not block cancelling (AUD-05)',
+    "      and a.status in ('created', 'initiated', 'authorized', 'failed')\n      and a.expires_at > clock_timestamp();",
+    "      and a.status in ('created', 'initiated', 'authorized')\n      and a.expires_at > clock_timestamp();", false],
+  ['C', 'a declined invoice gets a second invoice beside it (AUD-05)',
+    "    and a.status = 'failed'\n    and a.checkout_url is not null", "    and a.status = 'none'\n    and a.checkout_url is not null", false],
+  ['C', 'a declined invoice about to end is still handed out (AUD-05)',
+    '    if v_failed.expires_at > clock_timestamp() + c_reuse_min then', '    if true then', false],
+  ['C', 'an external refund is not detected (AUD-03)', '          v_external := v_refunded > v_ledger;', '          v_external := false;', false],
+  ['C', 'our own refund in flight counts as external (AUD-03)',
+    "          where r.attempt_id = v_attempt_id and r.status in ('pending', 'succeeded');\n          v_external",
+    "          where r.attempt_id = v_attempt_id and r.status in ('succeeded');\n          v_external", false],
+  ['C', "Moyasar's refunded amount is not kept (AUD-03)",
+    '          set provider_refunded_halalas = greatest(coalesce(provider_refunded_halalas, 0), v_refunded)\n          where id = v_attempt_id;\n          select',
+    '          set provider_refunded_halalas = provider_refunded_halalas\n          where id = v_attempt_id;\n          select', false],
+  ['C', 'refund_begin trusts the actor id (AUD-12)',
+    "  -- الدفعة C (AUD-12): الاسترداد للمدير الفعّال — تفرضه القاعدة نفسها، لا مسار الخادم وحده.\n  if not private.fabric_store_actor_is_admin(p_actor_id) then",
+    "  -- الدفعة C (AUD-12): الاسترداد للمدير الفعّال — تفرضه القاعدة نفسها، لا مسار الخادم وحده.\n  if false then", false],
+  ['C', 'refund_close_unconfirmed trusts the actor id (AUD-12)',
+    "  -- الدفعة C (AUD-12): قرار مالي للمدير الفعّال — تفرضه القاعدة نفسها.\n  if not private.fabric_store_actor_is_admin(p_actor_id) then",
+    "  -- الدفعة C (AUD-12): قرار مالي للمدير الفعّال — تفرضه القاعدة نفسها.\n  if false then", false],
+  ['C', 'record_external trusts the actor id (AUD-03/12)',
+    "'bad_request');\n  end if;\n  if not private.fabric_store_actor_is_admin(p_actor_id) then",
+    "'bad_request');\n  end if;\n  if false then", false],
+  ['C', 'record_external accepts any amount (AUD-03)',
+    '  if p_provider_refunded - v_ledger <= 0 or p_amount_halalas <> p_provider_refunded - v_ledger then',
+    '  if p_provider_refunded - v_ledger <= 0 then', false],
+  ['C', 'an extra payment may be refunded in part (AUD-04)',
+    "    if p_cancel or p_amount_halalas <> v_remaining then\n      return jsonb_build_object('status', 'extra_full_only'",
+    "    if p_cancel then\n      return jsonb_build_object('status', 'extra_full_only'", false],
+  ['C', "refunding an extra payment changes the order's payment status (AUD-04)",
+    '  if not v_extra then\n    perform set_config', '  if true then\n    perform set_config', false],
+  ['C', 'a new refund after a closed sent one needs no reference (AUD-08)',
+    '  if v_support is null and exists (', '  if false and exists (', false],
+  ['C', 'an extra payment is not alerted (AUD-04)',
+    "    where a.status = 'paid' and a.id is distinct from o.paid_attempt_id\n      and coalesce(rt.refunded, 0) < a.amount_halalas",
+    "    where false\n      and coalesce(rt.refunded, 0) < a.amount_halalas", false],
+  ['C', 'a payment on a cancelled order is not alerted (AUD-04)',
+    "    where o.fulfillment_status = 'cancelled' and o.payment_status in ('paid', 'partially_refunded')",
+    '    where false', false],
+  ['C', 'an unrecorded external refund is not alerted (AUD-03)',
+    "    where a.status = 'paid' and a.provider_refunded_halalas > coalesce(rt.recorded, 0)", '    where false', false],
+  ['C', 'the old set_fulfillment is kept beside the new one',
+    'drop function if exists public.fabric_store_staff_set_fulfillment(uuid, text, uuid, text, text, text);', 'select 1;', false],
+  ['C', 'the old refund_begin is kept beside the new one',
+    'drop function if exists public.fabric_store_refund_begin(uuid, uuid, text, bigint, text, boolean, uuid);', 'select 1;', false],
+  ['C', 'a browser role may record an external refund',
+    'grant execute on function public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid) to service_role;',
+    'grant execute on function public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid) to service_role, authenticated;', false],
+  ['C', 'the external reference can be rewritten',
+    '  if new.support_reference is distinct from old.support_reference\n     or new.external_reference is distinct from old.external_reference then',
+    '  if new.support_reference is distinct from old.support_reference then', false],
+  ['C', 'functions we did not read are replaced (no fingerprint check, fix C)', '  if not v_ok then', '  if false then', false],
+  ['C', 'encoding self-check removed (fix C)',
+    "  if position(chr(1575) || chr(1604) || chr(1591) || chr(1604) || chr(1576) in v_body) = 0\n     or position(chr(1591) || chr(167) in v_body) > 0 then\n    raise exception 'FABRIC_STORE_ENCODING",
+    "  if false then\n    raise exception 'FABRIC_STORE_ENCODING", false],
+
+  ['ts:moyasar.ts', '(fix C) a test key is accepted on the production deployment',
+    "  if (environment === 'test' && (env.VERCEL_ENV ?? '').trim() === 'production'", '  if (false'],
+  ['ts:payments.ts', '(fix C) the closing-invoice answer is generic',
+    "  invoice_closing: [409, 'صفحة الدفع السابقة تنتهي خلال لحظات — أعيدي الضغط على «ادفعي» بعد دقيقة'],\n", ''],
+  ['ts8:refunds.ts', '(fix C) the extra payment is not passed to the database',
+    '    ...(input.attemptId ? { p_attempt_id: input.attemptId } : {}),\n', ''],
+  ['ts8:refunds.ts', "(fix C) Moyasar support's reference is not passed",
+    '    ...(input.supportReference?.trim() ? { p_support_reference: input.supportReference.trim() } : {}),\n', ''],
+  ['ts8:refunds.ts', "(fix C) recording trusts the typed amount instead of asking Moyasar",
+    '    current = (await deps.moyasar.fetchPayment(input.paymentId)).refunded ?? 0\n  } catch {\n    return { ok: false, httpStatus: 503, code: \'unavailable\', error: \'تعذّر سؤال ميسر عن الدفعة الآن — أعيدي المحاولة\' }\n  }\n  const { data, error } = await deps.rpc(\'fabric_store_refund_record_external\'',
+    '    current = input.amountHalalas\n  } catch {\n    return { ok: false, httpStatus: 503, code: \'unavailable\', error: \'تعذّر سؤال ميسر عن الدفعة الآن — أعيدي المحاولة\' }\n  }\n  const { data, error } = await deps.rpc(\'fabric_store_refund_record_external\''],
+]
+
+// Fix batch D (AUD-14, AUD-10, AUD-09, AUD-07, AUD-13): SQL mutants run verify-stages (fix D SQL test + local
+// checks); 'tsD:<path under src>' mutants break a COPY of src/ and run verify-privacy-ts.
+const FIXD_MUTANTS = [
+  ['D', 'visitors still read the whole fabrics table (AUD-14)', 'revoke select on table public.fabrics from anon;', 'select 1;', false],
+  ['D', 'a cost column is granted to visitors (AUD-14)', 'grant select (\n  id,', 'grant select (\n  cost_per_meter, id,', false],
+  ['D', 'the column drift check is gone (AUD-14)', '  if exists (\n    select 1 from unnest(array[', '  if false and exists (\n    select 1 from unnest(array[', false],
+  ['D', 'an unpaid order\'s address may go at once (AUD-10)',
+    "or (v_payment_status = 'pending' and v_payment_due_at < now() - interval '90 days')) then",
+    "or (v_payment_status = 'pending' and v_payment_due_at < now())) then", false],
+  ['D', 'the purge ignores the retention (AUD-10)', 'o.delivered_at < clock_timestamp() - p_retention', 'o.delivered_at < clock_timestamp()', false],
+  ['D', 'the purge erases the city too (AUD-10)', '  set recipient_name = null, recipient_phone = null,', '  set city = null, recipient_name = null, recipient_phone = null,', false],
+  ['D', 'a browser role may run the purge (AUD-10)',
+    'grant execute on function public.fabric_store_purge_addresses(integer, interval) to service_role;',
+    'grant execute on function public.fabric_store_purge_addresses(integer, interval) to service_role, authenticated;', false],
+  ['D', 'paid attempts reconciled only 30 days (AUD-09)', "and o.paid_at > now() - interval '120 days'", "and o.paid_at > now() - interval '30 days'", false],
+  ['D', 'after 30 days paid attempts are still asked daily (AUD-09)',
+    "then interval '24 hours' else interval '30 days' end", "then interval '24 hours' else interval '24 hours' end", false],
+  ['D', 'functions we did not read are replaced (no fingerprint check, fix D)',
+    "    raise exception 'FABRIC_STORE_FIX_D_DRIFT: a deployed function", "    raise notice 'FABRIC_STORE_FIX_D_DRIFT: a deployed function", false],
+  ['D', 'encoding self-check removed (fix D)',
+    "  if position(chr(1575) || chr(1604) || chr(1591) || chr(1604) || chr(1576) in v_body) = 0\n     or position(chr(1591) || chr(167) in v_body) > 0 then\n    raise exception 'FABRIC_STORE_ENCODING",
+    "  if false then\n    raise exception 'FABRIC_STORE_ENCODING", false],
+
+  ['tsD:lib/server/fabric-store/http.ts', '(fix D) the track token is the access token (AUD-07)',
+    "update(`track:${checkoutKey}`, 'utf8')", "update(`access:${checkoutKey}`, 'utf8')"],
+  ['tsD:lib/server/fabric-store/http.ts', '(fix D) any 64-hex token matches (AUD-07)',
+    'return expected.length === given.length && timingSafeEqual(expected, given)', 'return expected.length === given.length'],
+  ['tsD:lib/server/fabric-store/http.ts', '(fix D) the token travels in the query string (AUD-07)', '/fabrics/order/#n=', '/fabrics/order/?n='],
+  ['tsD:lib/analytics-privacy.ts', '(fix D) analytics runs on order tracking (AUD-07)', ", '/fabrics/order/'] as const", '] as const'],
+  ['tsD:lib/analytics-privacy.ts', '(fix D) page_location keeps the query (AUD-07)',
+    "page_location: location.origin + location.pathname,", 'page_location: location.href,'],
+  ['tsD:lib/server/alostaz-fabric-invoice.ts', '(fix D) a cut send stays «sending» (AUD-13)',
+    "if (latestIncome.alostaz_sync_status === 'sending' && Number.isFinite(stuckSince)", 'if (false && Number.isFinite(stuckSince)'],
+  ['tsD:lib/server/alostaz-fabric-invoice.ts', '(fix D) a send in progress is taken for cut (AUD-13)',
+    'const STUCK_SENDING_MS = 10 * 60 * 1000', 'const STUCK_SENDING_MS = 60 * 1000'],
+]
+
+// Batch E (review REVIEW-CD.md): SQL via verify-stages; 'tsD:' (src copy) via verify-privacy-ts.
+const FIXE_MUTANTS = [
+  ['E', 'the purge accepts any retention again (R-CD-06)', "p_retention < interval '90 days' then", "p_retention < interval '0' then", false],
+  ['E', 'a purge we did not read is replaced (no fingerprint check, batch E)',
+    "    raise exception 'FABRIC_STORE_FIX_E_DRIFT", "    raise notice 'FABRIC_STORE_FIX_E_DRIFT", false],
+  ['E', 'encoding self-check removed (batch E)',
+    "  if position(chr(1575) || chr(1604) || chr(1605) || chr(1575) || chr(1604) || chr(1603) || chr(1577) in v_body) = 0\n     or position(chr(1591) || chr(167) in v_body) > 0 then", "  if false then", false],
+
+  ['tsD:lib/analytics-privacy.ts', '(batch E) pushState/replaceState are not guarded (R-CD-07)',
+    '          if (url !== undefined && url !== null) guard(String(url));\n', ''],
+  ['tsD:lib/analytics-privacy.ts', '(batch E) the back button is not guarded (R-CD-07)',
+    "      window.addEventListener('popstate', function () { guard(location.href); }, true);\n", ''],
+  ['tsD:lib/analytics-privacy.ts', '(batch E) a sensitive page gets a page_view (R-CD-07)', "  if (excluded) return 'excluded'\n", ''],
+  ['tsD:lib/analytics-privacy.ts', '(batch E) a sensitive first load sends a page_view (R-CD-07)',
+    "send_page_view: !window['${GA_DISABLE_FLAG}']", 'send_page_view: true'],
+  ['tsD:lib/fabric-store/store-alerts.ts', '(batch E) the seen key follows the reconciliation time',
+    "`${alert.kind}|${alert.orderId ?? alert.detail}`", "`${alert.kind}|${alert.orderId ?? ''}|${alert.since ?? ''}`"],
+  ['tsD:lib/server/fabric-store/payments.ts', '(batch E) events ignore the deadline (R-CD-05)',
+    '    if (deadline !== undefined && Date.now() >= deadline) { outcomes.deferred = (outcomes.deferred ?? 0) + 1; continue }\n', ''],
+  ['tsD:lib/server/fabric-store/payments.ts', '(batch E) reconciliation ignores the deadline (R-CD-05)',
+    "    if (deadline !== undefined && Date.now() >= deadline) { add('deferred'); continue }\n", ''],
+  ['tsD:lib/server/fabric-store/refunds.ts', '(batch E) refunds ignore the deadline (R-CD-05)',
+    '    if (deadline !== undefined && Date.now() >= deadline) { counts.deferred = (counts.deferred ?? 0) + 1; continue }\n', ''],
+  ['tsD:lib/server/fabric-store/confirm.ts', '(batch E) the outbox ignores the deadline (R-CD-05)',
+    "    if (options.deadline !== undefined && Date.now() >= options.deadline) { count('deferred'); continue }\n", ''],
+  ['tsD:lib/server/alostaz-fabric-invoice.ts', '(batch E) «review» announced though not written',
+    "      return markError || markedCount !== 1 ? { kind: 'in_progress' } : { kind: 'review_required' }", "      return { kind: 'review_required' }"],
+]
+
 //   node scripts/db-local/mutate.cjs [2|3]
 const { spawnSync } = require('node:child_process')
 const path = require('node:path')
@@ -744,7 +892,7 @@ const FIXB_MUTANTS = [
     "  order_expired: [409, 'مضت مهلة الطلب قبل الدفع — أعيدي إنشاء الطلب من السلة'],\n", ''],
 ]
 
-//   node scripts/db-local/mutate.cjs [2|3|4|5|6|7|8|9|ts|ts6|ts8|ts9|rf|rc9|A|P|B] [name substring]
+//   node scripts/db-local/mutate.cjs [2|3|4|5|6|7|8|9|ts|ts6|ts8|ts9|rf|rc9|A|P|B|C|D|E|tsD] [name substring]
 // Stage 5/6 SQL mutants run verify-stages.cjs; 'ts:<file>' mutants break a COPY of
 // src/lib/server/fabric-store/<file> and run verify-payments.cjs (end to end with the mock);
 // 'ts6:<file>' mutants do the same with verify-confirm.cjs (stage 6).
@@ -752,7 +900,8 @@ const only = process.argv[2] || null
 const nameFilter = process.argv[3] || null
 let total = 0
 let caught = 0
-for (const [stage, name, find, replace, concurrency, extra] of [...MUTANTS, ...STAGE5_MUTANTS, ...STAGE6_MUTANTS, ...STAGE7_MUTANTS, ...STAGE8_MUTANTS, ...STAGE9_MUTANTS, ...FIXA_MUTANTS, ...FIXB_MUTANTS]) {
+let inconclusive = 0
+for (const [stage, name, find, replace, concurrency, extra] of [...MUTANTS, ...STAGE5_MUTANTS, ...STAGE6_MUTANTS, ...STAGE7_MUTANTS, ...STAGE8_MUTANTS, ...STAGE9_MUTANTS, ...FIXA_MUTANTS, ...FIXB_MUTANTS, ...FIXC_MUTANTS, ...FIXD_MUTANTS, ...FIXE_MUTANTS]) {
   if (only && !String(stage).startsWith(only)) continue
   if (nameFilter && !name.includes(nameFilter)) continue
   total += 1
@@ -769,6 +918,8 @@ for (const [stage, name, find, replace, concurrency, extra] of [...MUTANTS, ...S
     args = [path.join(__dirname, 'verify-reconcile.cjs'), '--mutate9', find, replace]
   } else if (String(stage).startsWith('ts9:')) {
     args = [path.join(__dirname, 'verify-reconcile.cjs'), '--mutate-ts', String(stage).slice(4), find, replace]
+  } else if (String(stage).startsWith('tsD:')) {
+    args = [path.join(__dirname, 'verify-privacy-ts.cjs'), '--mutate-ts', String(stage).slice(4), find, replace]
   } else if (String(stage).startsWith('ts8:')) {
     args = [path.join(__dirname, 'verify-refunds.cjs'), '--mutate-ts', String(stage).slice(4), find, replace]
     if (extra) args.push('--mutate-ts', String(stage).slice(4), extra[0], extra[1])
@@ -784,8 +935,25 @@ for (const [stage, name, find, replace, concurrency, extra] of [...MUTANTS, ...S
   const out = `${run.stdout || ''}${run.stderr || ''}`
   if (run.status === 3) { console.log(`PATTERN MISSING: [${stage}] ${name}`); continue }
   if (run.status === 0) { console.log(`SURVIVED (bad): [${stage}] ${name}`); continue }
+  // (المراجعة R-CD-04) لا يُحسب الفشل كشفاً إلا إن فشل فحص مسمّى (سطر ✘). انهيار الإعداد، أو مهلة،
+  // أو منفذ مشغول، أو خطأ تشغيل بلا ✘ = غير حاسم: لا يثبت أن اختباراً كشف الطفرة.
+  const failedCheck = out.match(/✘[^\n]*/)
+  if (!failedCheck || run.status === null || run.error) {
+    inconclusive += 1
+    const reason = run.error ? run.error.message
+      : run.status === null ? `killed (${run.signal})`
+        : (out.trim().split('\n').pop() || '(no output)')
+    console.log(`INCONCLUSIVE (rerun alone): [${stage}] ${name} → exit ${run.status}: ${reason.slice(0, 160)}`)
+    continue
+  }
+  // تشغيل انهار في إعداده يطبع غالباً «run aborted» — ليس فحصاً سلوكياً
+  if (/✘ run aborted|✘ setup:/.test(failedCheck[0])) {
+    inconclusive += 1
+    console.log(`INCONCLUSIVE (setup failed): [${stage}] ${name} → ${failedCheck[0].slice(0, 160)}`)
+    continue
+  }
   caught += 1
-  console.log(`caught: [${stage}] ${name} → ${(out.match(/✘[^\n]*/) || ['(no ✘ line)'])[0].slice(0, 140)}`)
+  console.log(`caught: [${stage}] ${name} → ${failedCheck[0].slice(0, 140)}`)
 }
-console.log(`mutants: ${total}, caught: ${caught}`)
+console.log(`mutants: ${total}, caught: ${caught}${inconclusive ? `, INCONCLUSIVE: ${inconclusive}` : ''}`)
 process.exit(caught === total ? 0 : 1)

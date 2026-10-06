@@ -45,6 +45,12 @@ export function getMoyasarConfig(
   if (environment === 'live' && (env.FABRIC_STORE_ALLOW_LIVE_PAYMENTS ?? '').trim().toLowerCase() !== 'true') {
     return { ok: false, reason: 'live-disabled' }
   }
+  // الدفعة C (AUD-06): بطاقات ميسر التجريبية منشورة للعموم — مفتاح test على نشر الإنتاج يعني
+  // «شراء» بلا مال. مرفوض إلا بإذن صريح لفترة اختبار القبول على الإنتاج.
+  if (environment === 'test' && (env.VERCEL_ENV ?? '').trim() === 'production'
+      && (env.FABRIC_STORE_ALLOW_TEST_ON_PRODUCTION ?? '').trim().toLowerCase() !== 'true') {
+    return { ok: false, reason: 'test-on-production' }
+  }
 
   let apiBase = OFFICIAL_API_BASE
   const override = (env.MOYASAR_API_BASE ?? '').trim().replace(/\/+$/, '')

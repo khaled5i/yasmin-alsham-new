@@ -11,6 +11,12 @@ import android.text.StaticLayout;
 import android.text.TextDirectionHeuristics;
 import android.text.TextPaint;
 
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.WriterException;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
 import com.yasminalsham.printbridge.model.TailoringReceiptPayload;
 
 import java.text.DecimalFormat;
@@ -18,7 +24,9 @@ import java.text.DecimalFormatSymbols;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.EnumMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.TimeZone;
 
 public final class TailoringReceiptRenderer {
@@ -30,6 +38,9 @@ public final class TailoringReceiptRenderer {
 
     private static final String COMPANY_NAME = "ياسمين الشام";
     private static final String LEGAL_NAME = "مؤسسة محمد عوض الدوسري";
+    private static final int QR_TARGET_DOTS = 264;
+    /** VAT number shared by every Alostaz branch (embedded in the signed QR too). */
+    private static final String SELLER_VAT_NUMBER = "310937466300003";
     private static final String COMPANY_ADDRESS =
             "الخبر الشمالية شارع الملك مشعل تقاطع 6 الخبر";
 
@@ -57,9 +68,11 @@ public final class TailoringReceiptRenderer {
         cursor.paragraph(LEGAL_NAME, 29, true, Layout.Alignment.ALIGN_CENTER, true, 4);
         cursor.paragraph(COMPANY_ADDRESS, 21, false, Layout.Alignment.ALIGN_CENTER, true, 22);
 
-        String title = "preliminary".equals(payload.receiptType)
-                ? "فاتورة مبدئية"
-                : "فاتورة ضريبية مبسطة";
+        String title = !payload.documentTitle.isEmpty()
+                ? payload.documentTitle
+                : "preliminary".equals(payload.receiptType)
+                        ? "فاتورة مبدئية"
+                        : "فاتورة ضريبية مبسطة";
         cursor.paragraph(title, 36, true, Layout.Alignment.ALIGN_CENTER, true, 3);
         cursor.paragraph(
                 payload.invoiceCode,
@@ -69,6 +82,20 @@ public final class TailoringReceiptRenderer {
                 false,
                 7
         );
+        // Cash papers share the network invoice wording (owner's choice) but never get a QR.
+        if (!payload.vatNumber.isEmpty()) {
+            String vatNumber = payload.vatNumber.isEmpty()
+                    ? SELLER_VAT_NUMBER
+                    : payload.vatNumber;
+            cursor.paragraph(
+                    "الرقم الضريبي: " + vatNumber,
+                    21,
+                    true,
+                    Layout.Alignment.ALIGN_CENTER,
+                    true,
+                    3
+            );
+        }
         cursor.paragraph(
                 "تاريخ الفاتورة: " + formatReceiptDate(payload.deliveredAt),
                 21,
@@ -86,23 +113,125 @@ public final class TailoringReceiptRenderer {
                 20
         );
 
+        boolean showOrderNumber = !payload.isNewFormat() || payload.showOrderSummary;
         cursor.paragraph(
                 "العميل: " + payload.customerName,
                 22,
                 true,
                 Layout.Alignment.ALIGN_OPPOSITE,
                 true,
-                3
+                showOrderNumber ? 3 : 14
         );
-        cursor.paragraph(
-                "رقم الطلب: " + payload.orderNumber,
-                22,
-                true,
-                Layout.Alignment.ALIGN_OPPOSITE,
-                true,
-                14
-        );
+        if (showOrderNumber) {
+            cursor.paragraph(
+                    "رقم الطلب: " + payload.orderNumber,
+                    22,
+                    true,
+                    Layout.Alignment.ALIGN_OPPOSITE,
+                    true,
+                    14
+            );
+        }
 
+        if (payload.isNewFormat()) {
+            renderPerPaymentBody(cursor, payload);
+        } else {
+            renderLegacyBody(cursor, payload);
+        }
+
+        cursor.y += 22;
+        cursor.rule(false, 3);
+        cursor.y += 10;
+        cursor.paragraph("سياسات المتجر", 27, true, Layout.Alignment.ALIGN_CENTER, true, 10);
+        cursor.paragraph(POLICY_ONE, 20, true, Layout.Alignment.ALIGN_OPPOSITE, true, 11);
+        cursor.paragraph(POLICY_TWO, 20, true, Layout.Alignment.ALIGN_OPPOSITE, true, 11);
+        cursor.paragraph(POLICY_THREE, 20, true, Layout.Alignment.ALIGN_OPPOSITE, true, 28);
+
+        int finalHeight = Math.min(MAX_HEIGHT_DOTS, Math.max(1, cursor.y));
+        if (cursor.overflowed || finalHeight >= MAX_HEIGHT_DOTS) {
+            full.recycle();
+            throw new PrinterException(
+                    "receipt_too_long",
+                    "الإيصال أطول من الحد الذي تدعمه الطابعة",
+                    0
+            );
+        }
+
+        Bitmap cropped = Bitmap.createBitmap(full, 0, 0, WIDTH_DOTS, finalHeight);
+        full.recycle();
+        return cropped;
+    }
+
+    /**
+     * Each paper carries exactly one payment at its full value, matching its
+     * Alostaz invoice (network) or a local cash receipt. The order balance is
+     * shown separately so it is never confused with the invoice totals.
+     */
+    private void renderPerPaymentBody(Cursor cursor, TailoringReceiptPayload payload)
+            throws PrinterException {
+        double amount = Double.isNaN(payload.invoiceTotal) ? payload.total : payload.invoiceTotal;
+        boolean hasAccountingTotals = !Double.isNaN(payload.totalWithoutVat)
+                && !Double.isNaN(payload.vatAmount);
+        double beforeTax = hasAccountingTotals ? payload.totalWithoutVat : amount / 1.15d;
+        double vat = hasAccountingTotals ? payload.vatAmount : amount - beforeTax;
+
+        if (!payload.isOrderSummaryOnly()) {
+            cursor.rule(false, 3);
+            cursor.y += 10;
+            cursor.drawTableHeader();
+            cursor.rule(false, 2);
+            cursor.drawItem(payload.itemDescription, amount);
+            cursor.rule(false, 3);
+            cursor.y += 5;
+
+            String method = "cash".equals(payload.receivedPaymentMethod) ? "كاش" : "شبكة";
+            cursor.summary("السعر (غير شامل الضريبة)", formatMoney(beforeTax), false);
+            cursor.rule(true, 2);
+            cursor.summary("الضريبة", formatMoney(vat), false);
+            cursor.rule(true, 2);
+            cursor.summary(
+                    "إجمالي الفاتورة (ر.س)",
+                    formatMoney(amount),
+                    true
+            );
+            cursor.rule(true, 2);
+            cursor.summary("المدفوع " + method + " (ر.س)", formatMoney(amount), true);
+            cursor.rule(true, 2);
+        }
+
+        if (payload.showOrderSummary) {
+            double paid = Math.max(0, payload.paidAmount);
+            double remaining = Math.max(0, payload.total - paid);
+            cursor.y += 14;
+            cursor.paragraph("ملخص الطلب", 25, true, Layout.Alignment.ALIGN_CENTER, true, 4);
+            cursor.rule(false, 2);
+            cursor.summary("قيمة الطلب (ر.س)", formatMoney(payload.total), false);
+            cursor.rule(true, 2);
+            cursor.summary("إجمالي المدفوع للطلب (ر.س)", formatMoney(paid), false);
+            cursor.rule(true, 2);
+            cursor.summary("المتبقي على الطلب (ر.س)", formatMoney(remaining), false);
+            cursor.rule(true, 2);
+        }
+
+        if (payload.isTaxInvoice()) {
+            cursor.y += 18;
+            if (!payload.zatcaQr.isEmpty()) {
+                cursor.qrCode(payload.zatcaQr);
+            } else {
+                cursor.paragraph(
+                        "رمز الفاتورة الإلكترونية لم يصل من برنامج المحاسبة بعد — "
+                                + "أعيدي طباعة الفاتورة للحصول عليه.",
+                        20,
+                        true,
+                        Layout.Alignment.ALIGN_CENTER,
+                        true,
+                        6
+                );
+            }
+        }
+    }
+
+    private void renderLegacyBody(Cursor cursor, TailoringReceiptPayload payload) {
         cursor.rule(false, 3);
         cursor.y += 10;
         cursor.drawTableHeader();
@@ -129,28 +258,6 @@ public final class TailoringReceiptRenderer {
         cursor.rule(true, 2);
         cursor.summary("الباقي (ر.س)", formatMoney(remaining), true);
         cursor.rule(true, 2);
-
-        cursor.y += 22;
-        cursor.rule(false, 3);
-        cursor.y += 10;
-        cursor.paragraph("سياسات المتجر", 27, true, Layout.Alignment.ALIGN_CENTER, true, 10);
-        cursor.paragraph(POLICY_ONE, 20, true, Layout.Alignment.ALIGN_OPPOSITE, true, 11);
-        cursor.paragraph(POLICY_TWO, 20, true, Layout.Alignment.ALIGN_OPPOSITE, true, 11);
-        cursor.paragraph(POLICY_THREE, 20, true, Layout.Alignment.ALIGN_OPPOSITE, true, 28);
-
-        int finalHeight = Math.min(MAX_HEIGHT_DOTS, Math.max(1, cursor.y));
-        if (cursor.overflowed || finalHeight >= MAX_HEIGHT_DOTS) {
-            full.recycle();
-            throw new PrinterException(
-                    "receipt_too_long",
-                    "الإيصال أطول من الحد الذي تدعمه الطابعة",
-                    0
-            );
-        }
-
-        Bitmap cropped = Bitmap.createBitmap(full, 0, 0, WIDTH_DOTS, finalHeight);
-        full.recycle();
-        return cropped;
     }
 
     private static String formatMoney(double value) {
@@ -298,6 +405,48 @@ public final class TailoringReceiptRenderer {
             if (dashed) paint.setPathEffect(new DashPathEffect(new float[]{10, 7}, 0));
             canvas.drawLine(SIDE_MARGIN, y + 2, WIDTH_DOTS - SIDE_MARGIN, y + 2, paint);
             y += 5;
+        }
+
+        /**
+         * Draws the ZATCA QR exactly as Alostaz encoded it. Modules are solid,
+         * integer-sized squares (no anti-aliasing) so the thermal raster stays
+         * scannable; ~264 dots is about 33mm on a 203dpi head.
+         */
+        void qrCode(String text) throws PrinterException {
+            BitMatrix matrix;
+            try {
+                Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
+                hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
+                hints.put(EncodeHintType.MARGIN, 0);
+                hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+                matrix = new QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, hints);
+            } catch (WriterException | IllegalArgumentException error) {
+                throw new PrinterException(
+                        "qr_encode_failed",
+                        "تعذّر رسم رمز الفاتورة الإلكترونية",
+                        0,
+                        error
+                );
+            }
+
+            int modules = matrix.getWidth();
+            int moduleSize = Math.max(3, QR_TARGET_DOTS / modules);
+            int size = modules * moduleSize;
+            ensure(size + 12);
+            int left = (WIDTH_DOTS - size) / 2;
+            Paint paint = new Paint();
+            paint.setAntiAlias(false);
+            paint.setColor(Color.BLACK);
+            paint.setStyle(Paint.Style.FILL);
+            for (int row = 0; row < modules; row++) {
+                for (int col = 0; col < modules; col++) {
+                    if (!matrix.get(col, row)) continue;
+                    int x = left + col * moduleSize;
+                    int top = y + row * moduleSize;
+                    canvas.drawRect(x, top, x + moduleSize, top + moduleSize, paint);
+                }
+            }
+            y += size + 12;
         }
 
         void ensure(int additionalHeight) {

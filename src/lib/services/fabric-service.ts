@@ -7,6 +7,14 @@
 
 import { supabase, isSupabaseConfigured, ensureValidSession } from '@/lib/supabase'
 
+/**
+ * الدفعة D (AUD-14): أعمدة بطاقة القماش التي يقرؤها الموقع — **بلا أعمدة التكلفة والشراء**
+ * (cost_per_meter، supplier_id، last_purchase_date، last_purchase_price، average_cost). الزائر (anon) لا يملك قراءتها في القاعدة بعد هجرة الدفعة D، و`select('*')`
+ * كان سيفشل كله. عمود جديد في `fabrics` يُضاف هنا (وإلى منح anon في القاعدة إن كان للعموم).
+ */
+export const FABRIC_PUBLIC_COLUMNS = 'id,name,name_en,description,description_en,category,type,price_per_meter,original_price_per_meter,is_on_sale,discount_percentage,image_url,thumbnail_image,images,available_colors,width_cm,is_available,is_active,is_featured,stock_quantity,min_order_meters,fabric_weight,fabric_texture,transparency_level,elasticity,care_instructions,washing_instructions,ironing_temperature,suitable_for,occasions,features,tags,views_count,orders_count,rating,reviews_count,country_of_origin,created_at,updated_at,discounted_price_per_meter,reorder_level,fabric_code,inventory_item_id,inventory_color_id,is_manually_hidden,show_stock_quantity,deleted_at,categories,design_images'
+
+
 // ============================================================================
 // أنواع البيانات (Types)
 // ============================================================================
@@ -184,7 +192,7 @@ export const fabricService = {
 
       let query = supabase
         .from('fabrics')
-        .select('*')
+        .select(FABRIC_PUBLIC_COLUMNS)
         .order('created_at', { ascending: false })
 
       if (!filters?.include_inactive) {
@@ -254,7 +262,7 @@ export const fabricService = {
 
       const { data, error } = await supabase
         .from('fabrics')
-        .select('*')
+        .select(FABRIC_PUBLIC_COLUMNS)
         .eq('id', id)
         .single()
 
@@ -301,7 +309,7 @@ export const fabricService = {
 
       const { data, error } = await supabase
         .from('fabrics')
-        .select('*')
+        .select(FABRIC_PUBLIC_COLUMNS)
         .in('id', uniqueIds)
 
       if (error) {
@@ -334,7 +342,7 @@ export const fabricService = {
       let { data, error } = await supabase
         .from('fabrics')
         .insert([payload])
-        .select()
+        .select(FABRIC_PUBLIC_COLUMNS)
         .single()
 
       // توافق تدريجي: إذا لم يُطبَّق عمود design_images بعد، أعد المحاولة بدونه
@@ -346,7 +354,7 @@ export const fabricService = {
         ;({ data, error } = await supabase
           .from('fabrics')
           .insert([payload])
-          .select()
+          .select(FABRIC_PUBLIC_COLUMNS)
           .single())
       }
 
@@ -395,7 +403,7 @@ export const fabricService = {
         // جلب البيانات الحالية وإرجاعها
         const { data: currentData, error: fetchError } = await supabase
           .from('fabrics')
-          .select('*')
+          .select(FABRIC_PUBLIC_COLUMNS)
           .eq('id', id)
           .single()
 
@@ -437,7 +445,7 @@ export const fabricService = {
       // جلب البيانات المحدثة
       const { data, error: fetchError } = await supabase
         .from('fabrics')
-        .select('*')
+        .select(FABRIC_PUBLIC_COLUMNS)
         .eq('id', id)
         .single()
 
@@ -552,7 +560,7 @@ export const fabricService = {
 
       const { data, error } = await supabase
         .from('fabrics')
-        .select('*')
+        .select(FABRIC_PUBLIC_COLUMNS)
         .or(`name.ilike.%${query}%,description.ilike.%${query}%,tags.cs.{${query}}`)
         .eq('is_available', true)
         .eq('is_active', true)
@@ -585,7 +593,7 @@ export const fabricService = {
 
       const { data, error } = await supabase
         .from('fabrics')
-        .select('*')
+        .select(FABRIC_PUBLIC_COLUMNS)
         .eq('is_featured', true)
         .eq('is_available', true)
         .eq('is_active', true)

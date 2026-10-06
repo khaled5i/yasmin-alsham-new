@@ -12,7 +12,7 @@
  * وليس NEXT_PUBLIC. بدونه تردّ المسارات 503 ولا يُنشأ شيء.
  */
 
-import { createHash, createHmac } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 
@@ -38,6 +38,10 @@ export function getFabricStoreServiceClient(): SupabaseClient | null {
     )
   }
   return serviceClient
+}
+
+export function getFabricStoreAccessSecret(): string | null {
+  return getAccessSecret()
 }
 
 function getAccessSecret(): string | null {
@@ -95,6 +99,28 @@ export function getServerContext(
 /** رمز الوصول للطلب مشتق من مفتاحه: نفس المفتاح ⇒ نفس الرمز، ولا يُعرف بلا السر. */
 export function deriveAccessToken(secret: string, checkoutKey: string): string {
   return createHmac('sha256', secret).update(`access:${checkoutKey}`, 'utf8').digest('hex')
+}
+
+/**
+ * الدفعة D (AUD-07): رمز **تتبّع للقراءة فقط**، منفصل عن رمز الوصول (الكوكي الذي يخوّل «ادفعي»
+ * واستبدال طلب غير مدفوع). يُشتق من مفتاح الطلب بغرض آخر (`track:`)، فلا يُستنتج أحدهما من الآخر،
+ * ولا تساوي بصمته `access_token_hash` لأي طلب — فلا يصلح كوكي وصول. يُتحقق منه برقم الطلب.
+ */
+export function deriveTrackToken(secret: string, checkoutKey: string): string {
+  return createHmac('sha256', secret).update(`track:${checkoutKey}`, 'utf8').digest('hex')
+}
+
+/** مقارنة ثابتة الزمن لرمز التتبّع مع ما يُشتق لهذا الطلب. */
+export function trackTokenMatches(secret: string, checkoutKey: string, token: string): boolean {
+  if (!/^[0-9a-f]{64}$/.test(token)) return false
+  const expected = Buffer.from(deriveTrackToken(secret, checkoutKey), 'hex')
+  const given = Buffer.from(token, 'hex')
+  return expected.length === given.length && timingSafeEqual(expected, given)
+}
+
+/** رابط التتبّع للزبونة: الرمز بعد `#` فلا يُرسل للخادم ولا يظهر في سجلاته، والصفحة تمحوه بعد قراءته. */
+export function trackingLink(origin: string, orderNumber: string, trackToken: string): string {
+  return `${origin}/fabrics/order/#n=${encodeURIComponent(orderNumber)}&k=${trackToken}`
 }
 
 export function readOrderToken(request: NextRequest): string | null {

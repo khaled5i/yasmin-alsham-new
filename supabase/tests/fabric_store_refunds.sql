@@ -17,6 +17,17 @@ select set_config('fabric_store_test.income_before',
   (select count(*) from public.income)::text || '#'
   || (select last_value || '/' || is_called from public.fabrics_invoice_number_seq), false);
 
+-- Fix batch C (20261005120000) changed two signatures and made the money functions check that the
+-- actor is an active admin (AUD-12). The actor is therefore a real active admin from public.users
+-- (read only), and the calls whose meaning changed with C branch on pg_temp.fix_c().
+create function pg_temp.fix_c() returns boolean language sql stable as $fn$
+  select to_regprocedure('public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid)') is not null
+$fn$;
+create function pg_temp.actor() returns uuid language sql stable as $fn$
+  select coalesce((select u.id from public.users u where u.role = 'admin' and u.is_active order by u.created_at, u.id limit 1),
+                  'aaaaaaaa-0000-4000-8000-00000000abcd'::uuid)
+$fn$;
+
 create function pg_temp.expect_status(p_case text, p_result jsonb, p_status text)
 returns void language plpgsql as $$
 begin
@@ -136,12 +147,18 @@ end;
 $$;
 
 create function pg_temp.begin_refund(p_order uuid, p_amount bigint, p_cancel boolean, p_key uuid default gen_random_uuid(),
-                                     p_reason text default 'طلبت الزبونة الإلغاء') returns jsonb language plpgsql as $$
-declare v jsonb;
+                                     p_reason text default 'طلبت الزبونة الإلغاء', p_support text default null)
+returns jsonb language plpgsql as $$
+declare v jsonb; v_actor uuid := pg_temp.actor();
 begin
   set local role service_role;
-  v := public.fabric_store_refund_begin(p_order, 'aaaaaaaa-0000-4000-8000-00000000abcd'::uuid, 'مدير الاختبار',
-                                        p_amount, p_reason, p_cancel, p_key);
+  if p_support is null then
+    v := public.fabric_store_refund_begin(p_order, v_actor, 'مدير الاختبار',
+                                          p_amount, p_reason, p_cancel, p_key);
+  else
+    v := public.fabric_store_refund_begin(p_order, v_actor, 'مدير الاختبار',
+                                          p_amount, p_reason, p_cancel, p_key, null, p_support);
+  end if;
   reset role; return v;
 exception when others then reset role; raise;
 end;
@@ -161,11 +178,16 @@ end;
 $$;
 
 create function pg_temp.set_to(p_order uuid, p_to text) returns jsonb language plpgsql as $$
-declare v jsonb;
+declare v jsonb; v_actor uuid := pg_temp.actor(); v_c boolean := pg_temp.fix_c();
 begin
   set local role service_role;
-  v := public.fabric_store_staff_set_fulfillment(p_order, p_to, 'aaaaaaaa-0000-4000-8000-00000000abcd'::uuid,
-                                                 null, null, null);
+  if v_c then
+    -- these are TEST payments: after fix C only an admin's explicit «تجربة اللوحة» moves them (AUD-06)
+    v := public.fabric_store_staff_set_fulfillment(p_order, p_to, v_actor, null, null, null, true);
+  else
+    v := public.fabric_store_staff_set_fulfillment(p_order, p_to, v_actor,
+                                                   null, null, null);
+  end if;
   reset role; return v;
 exception when others then reset role; raise;
 end;
@@ -180,7 +202,8 @@ declare
   v_role text;
 begin
   foreach v_fn in array array[
-    'public.fabric_store_refund_begin(uuid, uuid, text, bigint, text, boolean, uuid)',
+    case when pg_temp.fix_c() then 'public.fabric_store_refund_begin(uuid, uuid, text, bigint, text, boolean, uuid, uuid, text)'
+         else 'public.fabric_store_refund_begin(uuid, uuid, text, bigint, text, boolean, uuid)' end,
     'public.fabric_store_refund_finish(uuid, uuid, text, bigint, text)',
     'public.fabric_store_due_refunds(integer)',
     'public.fabric_store_refund_mark_called(uuid, uuid)',
@@ -272,7 +295,7 @@ begin
   end if;
   if (select count(*) from public.fabric_store_order_events
       where order_id = v_order and event_type = 'fulfillment_status' and to_value = 'cancelled'
-        and actor_type = 'staff' and actor_id = 'aaaaaaaa-0000-4000-8000-00000000abcd') is distinct from 1 then
+        and actor_type = 'staff' and actor_id = pg_temp.actor()) is distinct from 1 then
     raise exception 'TEST FAILED: the cancellation must be logged in the name of the admin who started it';
   end if;
   perform pg_temp.expect_status('refund a refunded order', pg_temp.begin_refund(v_order, 100, false), 'not_refundable');
@@ -483,12 +506,12 @@ declare
   v_res jsonb;
 begin
   set local role service_role;
-  v_res := public.fabric_store_restock_return(v_order, 'aaaaaaaa-0000-4000-8000-00000000abcd',
+  v_res := public.fabric_store_restock_return(v_order, pg_temp.actor(),
     '[{"line_number": 1, "quantity_cm": 100}]'::jsonb, 'رجعت القطعة سليمة', gen_random_uuid());
   reset role;
   perform pg_temp.expect_status('restock a test order', v_res, 'nothing_to_restock');
   set local role service_role;
-  v_res := public.fabric_store_restock_return(v_order, 'aaaaaaaa-0000-4000-8000-00000000abcd',
+  v_res := public.fabric_store_restock_return(v_order, pg_temp.actor(),
     '[{"line_number": 1, "quantity_cm": 100}]'::jsonb, ' ', gen_random_uuid());
   reset role;
   perform pg_temp.expect_status('restock without a note', v_res, 'note_required');
@@ -497,12 +520,12 @@ begin
   v_res := pg_temp.begin_refund(v_order, 1000, false, p_reason => 'تعويض');
   v_refund := (v_res ->> 'refund_id')::uuid;
   set local role service_role;
-  v_res := public.fabric_store_record_credit_note(v_refund, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'CN-1');
+  v_res := public.fabric_store_record_credit_note(v_refund, pg_temp.actor(), 'CN-1');
   reset role;
   perform pg_temp.expect_status('credit note for a pending refund', v_res, 'not_required');
   perform pg_temp.finish_refund(v_refund, 'succeeded', 1000);
   set local role service_role;
-  v_res := public.fabric_store_record_credit_note(v_refund, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'CN-1');
+  v_res := public.fabric_store_record_credit_note(v_refund, pg_temp.actor(), 'CN-1');
   reset role;
   perform pg_temp.expect_status('credit note where no sale exists', v_res, 'not_required');
 end $$;
@@ -575,6 +598,12 @@ begin
   perform public.fabric_store_attach_invoice((v_begin ->> 'attempt_id')::uuid, 'inv-refund-late-cancelled',
                                              'https://checkout.moyasar.com/invoices/inv-refund-late-cancelled');
   reset role;
+  if pg_temp.fix_c() then
+    -- fix C (AUD-05, owner decision): no cancelling while the page can take a payment
+    perform pg_temp.expect_status('cancel with the page open', pg_temp.set_to(v_order, 'cancelled'), 'payment_in_progress');
+    update public.fabric_store_payment_attempts set expires_at = created_at + interval '1 millisecond'
+    where id = (v_begin ->> 'attempt_id')::uuid;
+  end if;
   perform pg_temp.expect_status('cancel unpaid', pg_temp.set_to(v_order, 'cancelled'), 'ok');
   select c.current_quantity into v_stock from public.fabric_inventory_colors c
     join public.fabric_store_order_items i on i.inventory_color_id = c.id where i.order_id = v_order;
@@ -647,23 +676,23 @@ begin
   perform pg_temp.expect_status('the call is recorded', public.fabric_store_refund_mark_called(v_refund,
     (select claim_token from public.fabric_store_refunds where id = v_refund)), 'ok');
   perform pg_temp.expect_status('closed right after the call', public.fabric_store_refund_close_unconfirmed(
-    v_refund, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'STL-2026-09-30', 'لم يظهر في التسوية', 0), 'too_early');
+    v_refund, pg_temp.actor(), 'STL-2026-09-30', 'لم يظهر في التسوية', 0), 'too_early');
   reset role;
   update public.fabric_store_refunds set provider_called_at = now() - interval '25 hours' where id = v_refund;
   set local role service_role;
   perform pg_temp.expect_status('without a reference', public.fabric_store_refund_close_unconfirmed(
-    v_refund, 'aaaaaaaa-0000-4000-8000-00000000abcd', ' ', 'لم يظهر', 0), 'note_required');
+    v_refund, pg_temp.actor(), ' ', 'لم يظهر', 0), 'note_required');
   perform pg_temp.expect_status('Moyasar shows a movement', public.fabric_store_refund_close_unconfirmed(
-    v_refund, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'STL-2026-09-30', 'لم يظهر في التسوية', 1000), 'provider_changed');
+    v_refund, pg_temp.actor(), 'STL-2026-09-30', 'لم يظهر في التسوية', 1000), 'provider_changed');
   perform pg_temp.expect_status('another refund meanwhile', pg_temp.begin_refund(v_order, 500, false, p_reason => 'تعويض آخر'), 'refund_in_progress');
   perform pg_temp.expect_status('closed after 24 hours, nothing at Moyasar', public.fabric_store_refund_close_unconfirmed(
-    v_refund, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'STL-2026-09-30', 'لم يظهر في التسوية', 0), 'ok');
+    v_refund, pg_temp.actor(), 'STL-2026-09-30', 'لم يظهر في التسوية', 0), 'ok');
   reset role;
   select status, review_reference, review_note, reviewed_by, reviewed_at into v_row from public.fabric_store_refunds where id = v_refund;
   if v_row.status is distinct from 'failed' or v_row.review_reference is distinct from 'STL-2026-09-30'
-     or v_row.reviewed_by is distinct from 'aaaaaaaa-0000-4000-8000-00000000abcd' or v_row.reviewed_at is null
+     or v_row.reviewed_by is distinct from pg_temp.actor() or v_row.reviewed_at is null
      or not exists (select 1 from public.fabric_store_order_events where order_id = v_order and event_type = 'note'
-                    and actor_id = 'aaaaaaaa-0000-4000-8000-00000000abcd' and note like '%STL-2026-09-30%') then
+                    and actor_id = pg_temp.actor() and note like '%STL-2026-09-30%') then
     raise exception 'TEST FAILED: the decision, its reference and who took it are kept: %', row_to_json(v_row);
   end if;
   begin
@@ -672,15 +701,23 @@ begin
   exception when sqlstate 'P0001' then
     if sqlerrm not like 'FABRIC_STORE_REFUND_IMMUTABLE%' then raise; end if;
   end;
-  perform pg_temp.expect_status('a new refund after the decision', pg_temp.begin_refund(v_order, 500, false, p_reason => 'تعويض آخر'), 'started');
+  if pg_temp.fix_c() then
+    -- fix C (AUD-08): the closed refund had been sent to Moyasar — a new one needs Moyasar support's reference
+    perform pg_temp.expect_status('a new refund after the decision, no support reference',
+      pg_temp.begin_refund(v_order, 500, false, p_reason => 'تعويض آخر'), 'support_reference_required');
+    perform pg_temp.expect_status('a new refund after the decision', pg_temp.begin_refund(v_order, 500, false,
+      p_reason => 'تعويض آخر', p_support => 'MOY-SUPPORT-1'), 'started');
+  else
+    perform pg_temp.expect_status('a new refund after the decision', pg_temp.begin_refund(v_order, 500, false, p_reason => 'تعويض آخر'), 'started');
+  end if;
 
   -- a refund never sent to Moyasar (e.g. sending switched off) can be closed at once
   v_quiet := (select id from public.fabric_store_refunds where order_id = v_order and status = 'pending');
   set local role service_role;
   perform pg_temp.expect_status('closing a refund never sent', public.fabric_store_refund_close_unconfirmed(
-    v_quiet, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'لم يُرسل', 'أُطفئ الإرسال', null), 'ok');
+    v_quiet, pg_temp.actor(), 'لم يُرسل', 'أُطفئ الإرسال', null), 'ok');
   perform pg_temp.expect_status('closing twice', public.fabric_store_refund_close_unconfirmed(
-    v_quiet, 'aaaaaaaa-0000-4000-8000-00000000abcd', 'لم يُرسل', 'أُطفئ الإرسال', null), 'already_failed');
+    v_quiet, pg_temp.actor(), 'لم يُرسل', 'أُطفئ الإرسال', null), 'already_failed');
   reset role;
 end $$;
 

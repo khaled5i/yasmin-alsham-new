@@ -15,6 +15,7 @@ import { shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import { sendDeliveredWhatsApp, sendSecondProofReadyWhatsApp, sendReadyForPickupWhatsApp } from '@/utils/whatsapp'
 import OrderModal from '@/components/OrderModal'
+import StoreAlertsPanel from '@/components/fabric-store/StoreAlertsPanel'
 import EditOrderModal from '@/components/EditOrderModal'
 import MeasurementsModal from '@/components/MeasurementsModal'
 import PrintOrderModal from '@/components/PrintOrderModal'
@@ -535,6 +536,9 @@ export default function NotificationsPage() {
             </p>
           </div>
         </motion.div>
+
+        {/* الدفعة D (AUD-09): تنبيهات متجر الأقمشة المالية */}
+        <StoreAlertsPanel />
 
         {/* الفلاتر */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }} className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6">

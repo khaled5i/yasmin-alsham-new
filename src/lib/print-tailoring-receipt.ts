@@ -2,10 +2,27 @@ import {
   computePaymentBreakdown,
   type OrderPaymentInput,
 } from '@/lib/payment-breakdown'
+import {
+  SELLER_VAT_NUMBER,
+  TAX_INVOICE_TITLE,
+  buildQrSvg,
+  roundMoney,
+  splitInclusiveVat,
+  type AlostazPrintableInvoice,
+} from '@/lib/zatca-invoice'
 
 const COMPANY_NAME = 'ياسمين الشام'
 const LEGAL_NAME = 'مؤسسة محمد عوض الدوسري'
 const COMPANY_ADDRESS = 'الخبر الشمالية شارع الملك مشعل تقاطع 6 الخبر'
+
+/**
+ * نوع الورقة المطبوعة:
+ * - tax_invoice: نسخة فاتورة الأستاذ (شبكة) — الرقم الضريبي ورمز QR الموقّع.
+ * - cash_receipt: إيصال استلام لدفعة كاش؛ لا يصل للأستاذ فلا رمز ولا عبارة «ضريبية».
+ * - order_summary: ورقة بلا مبلغ مستلم (طلب بلا عربون، أو تسليم بلا متبقٍ).
+ * غياب الحقل يعني صيغة الإيصال القديمة (مهام أُرسلت للطابور قبل هذا التحديث).
+ */
+export type TailoringDocumentKind = 'tax_invoice' | 'cash_receipt' | 'order_summary'
 
 export interface TailoringReceiptPayload {
   order_id: string
@@ -13,17 +30,30 @@ export interface TailoringReceiptPayload {
   invoice_code: string
   invoice_code_source: 'alostaz' | 'local'
   receipt_type?: 'delivery' | 'preliminary' | 'payment'
+  document_kind?: TailoringDocumentKind
+  /** عنوان الورقة كما يُطبع؛ الموقع يقرّره كي لا تختلف محطات الطباعة في الصياغة. */
+  document_title?: string
   customer_name: string
   item_description: string
-  /** قيمة الطلب كاملة، وتُستخدم لحساب الرصيد المتبقي. */
+  /** قيمة الطلب كاملة، وتُستخدم لملخص الطلب. */
   total: number
-  /** قيمة هذه الفاتورة فقط؛ تُستخدم لفواتير الدفعات الإضافية. */
+  /** قيمة هذه الورقة وحدها (فاتورة كاملة مستقلة لكل دفعة). */
   invoice_total?: number
+  /** إجماليات الأستاذ للفاتورة الضريبية، تُطبع حرفياً لتطابق الفاتورة المسجلة. */
+  total_without_vat?: number
+  vat_amount?: number
+  vat_number?: string
+  /** رمز QR كما أصدره الأستاذ؛ لا يُولَّد في الموقع أبداً. */
+  zatca_qr?: string | null
+  /** إجمالي المدفوع على الطلب حتى هذه الورقة (لملخص الطلب). */
   paid_amount: number
+  /** كاش/شبكة هذه الورقة؛ الكاش يقرر فتح الدرج. */
   cash_amount: number
   network_amount: number
   received_payment_method?: 'cash' | 'card'
   delivered_at: string
+  /** ملخص الطلب (قيمته والمدفوع والمتبقي) — يُخفى للفواتير غير المرتبطة بطلب. */
+  show_order_summary?: boolean
 }
 
 export interface TailoringReceiptOrder extends OrderPaymentInput {
@@ -37,6 +67,14 @@ export interface TailoringReceiptOrder extends OrderPaymentInput {
   delivery_date?: string | null
   created_at?: string | null
 }
+
+/** فاتورة الأستاذ المقابلة لدفعة شبكة: رقمها، ونسختها للطباعة إن أمكن جلبها. */
+export interface TailoringAccountingInvoice {
+  code: string
+  printable: AlostazPrintableInvoice | null
+}
+
+const SERVICE_ITEM = 'أجرة تفصيل فستان'
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -85,8 +123,7 @@ function formatPrintTimestamp(value: Date = new Date()): string {
 
 /**
  * الرقم المحلي يطابق بنية أرقام الأستاذ، لكن تسلسله مأخوذ من رقم الطلب.
- * لذلك يبقى قابلاً للتتبّع حتى عندما لا تمثل فاتورة الأستاذ إجمالي الطلب
- * (كاش بالكامل أو كاش + شبكة).
+ * يبقى مستعملاً لإيصالات الطلبات القديمة (الإصدار 1) غير المرسلة للأستاذ.
  */
 export function buildLocalTailoringInvoiceCode(
   orderNumber: string,
@@ -112,75 +149,197 @@ export function isFullyNetworkPaid(order: TailoringReceiptOrder): boolean {
   return breakdown.cashTotal <= tolerance && breakdown.networkTotal >= total - tolerance
 }
 
-export function createTailoringReceiptPayload(
-  order: TailoringReceiptOrder,
-  alostazInvoiceCode?: string | null
-): TailoringReceiptPayload {
-  const deliveredAt = String(order?.delivery_date || new Date().toISOString())
-  const fullyNetwork = isFullyNetworkPaid(order)
-  const accountingCode = String(alostazInvoiceCode || order?.alostaz_invoice_code || '').trim()
-  const breakdown = computePaymentBreakdown(order)
-  // عند تقسيم الدفع الكامل بالشبكة بين العربون والمتبقي توجد فاتورتان
-  // محاسبيتان؛ لذلك لا ننسب إيصال إجمالي الطلب إلى رقم إحداهما وحدها.
-  const hasMultipleAccountingInvoices =
-    Number(order?.alostaz_billing_version) >= 2 &&
-    breakdown.preDeliveryNetwork >= 0.005 &&
-    breakdown.remainingNetwork >= 0.005
-  const useAccountingCode =
-    fullyNetwork && accountingCode.length > 0 && !hasMultipleAccountingInvoices
+function orderNumberOf(order: TailoringReceiptOrder): string {
+  return String(order?.order_number || order?.id || '')
+}
+
+interface PaperInput {
+  order: TailoringReceiptOrder
+  kind: TailoringDocumentKind
+  receiptType: 'preliminary' | 'delivery' | 'payment'
+  amount: number
+  method: 'cash' | 'card' | null
+  issuedAt: string
+  itemDescription: string
+  /** رقم الورقة المحلي للكاش وملخص الطلب. */
+  localCode: string
+  accounting?: TailoringAccountingInvoice | null
+  summaryTitle?: string
+  showOrderSummary?: boolean
+  orderTotal?: number
+  paidAmount?: number
+}
+
+/**
+ * ورقة واحدة بقيمة دفعة واحدة. الفاتورة الضريبية تأخذ أرقام الأستاذ حرفياً
+ * عند توفرها حتى تطابق الفاتورة المسجلة في المحاسبة وفي هيئة الزكاة.
+ */
+function buildPaper(input: PaperInput): TailoringReceiptPayload {
+  const isTax = input.kind === 'tax_invoice'
+  const accountingCode = String(input.accounting?.code || '').trim()
+  if (isTax && !accountingCode) {
+    throw new Error('لا يمكن طباعة فاتورة شبكة قبل استلام رقمها من برنامج الأستاذ')
+  }
+
+  const printable = isTax ? input.accounting?.printable || null : null
+  const fallback = splitInclusiveVat(input.amount)
+  const amount = printable && printable.total > 0 ? printable.total : fallback.total
+  const beforeVat = printable && printable.total > 0 ? printable.total_without_vat : fallback.beforeVat
+  const vat = printable && printable.total > 0 ? printable.vat : fallback.vat
+  const isSummary = input.kind === 'order_summary'
 
   return {
-    order_id: String(order?.id || ''),
-    order_number: String(order?.order_number || order?.id || ''),
-    invoice_code: useAccountingCode
-      ? accountingCode
-      : buildLocalTailoringInvoiceCode(String(order?.order_number || order?.id || ''), deliveredAt),
-    invoice_code_source: useAccountingCode ? 'alostaz' : 'local',
-    receipt_type: 'delivery',
-    customer_name: String(order?.client_name || 'عميل'),
-    // بند واضح وثابت كما في نموذج الإيصال؛ ملاحظات التصميم الداخلية لا تُطبع.
-    item_description: 'أجرة تفصيل فستان',
-    total: Number(order?.price) || 0,
-    paid_amount: Number(order?.paid_amount) || 0,
-    cash_amount: breakdown.cashTotal,
-    network_amount: breakdown.networkTotal,
-    delivered_at: deliveredAt,
+    order_id: String(input.order?.id || ''),
+    order_number: orderNumberOf(input.order),
+    invoice_code: isTax ? accountingCode : input.localCode,
+    invoice_code_source: isTax ? 'alostaz' : 'local',
+    receipt_type: input.receiptType,
+    document_kind: input.kind,
+    // الكاش بنفس عنوان فاتورة الشبكة وصياغتها (بطلب المالك)، برقمه المحلي وبلا رمز QR.
+    document_title: isSummary ? input.summaryTitle || 'إيصال طلب' : TAX_INVOICE_TITLE,
+    customer_name: String(input.order?.client_name || 'عميل'),
+    item_description: input.itemDescription,
+    total: roundMoney(input.orderTotal ?? (Number(input.order?.price) || 0)),
+    invoice_total: isSummary ? 0 : amount,
+    total_without_vat: isSummary ? 0 : beforeVat,
+    vat_amount: isSummary ? 0 : vat,
+    ...(isSummary ? {} : { vat_number: SELLER_VAT_NUMBER }),
+    // الرمز لا يوجد إلا لفاتورة مسجلة في الأستاذ، فلا يُطبع على الكاش أبداً.
+    ...(isTax ? { zatca_qr: printable?.qr || null } : {}),
+    paid_amount: roundMoney(input.paidAmount ?? (Number(input.order?.paid_amount) || 0)),
+    cash_amount: input.method === 'cash' && !isSummary ? amount : 0,
+    network_amount: input.method === 'card' && !isSummary ? amount : 0,
+    ...(input.method && !isSummary ? { received_payment_method: input.method } : {}),
+    delivered_at: input.issuedAt,
+    show_order_summary: input.showOrderSummary ?? true,
   }
 }
 
 /**
- * يبني فاتورة الطلب المبدئية عند التسجيل.
- * عند دفع العربون بالشبكة يُستخدم رقم فاتورة الأستاذ؛ أما الكاش فيبقى برقم الطلب المحلي.
+ * أوراق دفعة العربون عند تسجيل الطلب — كل وسيلة دفع في ورقة مستقلة بقيمتها كاملة:
+ * عربون الشبكة فاتورة ضريبية (فاتورة الأستاذ)، وعربون الكاش إيصال استلام.
+ * طلب بلا عربون يأخذ «إيصال طلب» بملخصه فقط.
  */
-export function createPreliminaryTailoringReceiptPayload(
+export function createDepositReceiptPayloads(
   order: TailoringReceiptOrder,
-  alostazInvoiceCode?: string | null
-): TailoringReceiptPayload {
-  const orderNumber = String(order?.order_number || order?.id || '')
+  networkInvoice?: TailoringAccountingInvoice | null
+): TailoringReceiptPayload[] {
+  const orderNumber = orderNumberOf(order)
   const breakdown = computePaymentBreakdown(order)
-  const accountingCode = String(
-    alostazInvoiceCode || order?.alostaz_deposit_invoice_code || ''
-  ).trim()
-  const hasNetworkDeposit = breakdown.preDeliveryNetwork >= 0.005
+  const issuedAt = String(order?.created_at || new Date().toISOString())
+  const papers: TailoringReceiptPayload[] = []
 
-  if (hasNetworkDeposit && !accountingCode) {
-    throw new Error('لا يمكن طباعة فاتورة عربون شبكة قبل استلام رقمها من برنامج الأستاذ')
+  if (breakdown.preDeliveryNetwork >= 0.005) {
+    papers.push(buildPaper({
+      order,
+      kind: 'tax_invoice',
+      receiptType: 'preliminary',
+      amount: breakdown.preDeliveryNetwork,
+      method: 'card',
+      issuedAt,
+      itemDescription: `عربون ${SERVICE_ITEM}`,
+      localCode: orderNumber,
+      accounting: networkInvoice,
+    }))
+  }
+  if (breakdown.preDeliveryCash >= 0.005) {
+    papers.push(buildPaper({
+      order,
+      kind: 'cash_receipt',
+      receiptType: 'preliminary',
+      amount: breakdown.preDeliveryCash,
+      method: 'cash',
+      issuedAt,
+      itemDescription: `عربون ${SERVICE_ITEM}`,
+      localCode: `CASH-${orderNumber}-D`,
+    }))
+  }
+  if (papers.length === 0) {
+    papers.push(buildPaper({
+      order,
+      kind: 'order_summary',
+      receiptType: 'preliminary',
+      amount: 0,
+      method: null,
+      issuedAt,
+      itemDescription: SERVICE_ITEM,
+      localCode: orderNumber,
+      summaryTitle: 'إيصال طلب',
+    }))
+  }
+  return papers
+}
+
+/**
+ * أوراق التسليم — المتبقي وحده، كل وسيلة في ورقة مستقلة بقيمتها كاملة.
+ * الطلبات القديمة (الإصدار 1) كانت تُرسل فاتورة واحدة بقيمة الطلب كاملة،
+ * فتبقى ورقتها واحدة بنفس القيمة كي تطابق فاتورة الأستاذ.
+ */
+export function createDeliveryReceiptPayloads(
+  order: TailoringReceiptOrder,
+  networkInvoice?: TailoringAccountingInvoice | null
+): TailoringReceiptPayload[] {
+  const orderNumber = orderNumberOf(order)
+  const breakdown = computePaymentBreakdown(order)
+  const issuedAt = String(order?.delivery_date || new Date().toISOString())
+  const price = Math.max(0, Number(order?.price) || 0)
+
+  if (Number(order?.alostaz_billing_version) < 2) {
+    const legacyCode = String(networkInvoice?.code || order?.alostaz_invoice_code || '').trim()
+    const legacyTax = isFullyNetworkPaid(order) && !!legacyCode
+    return [buildPaper({
+      order,
+      kind: legacyTax ? 'tax_invoice' : 'cash_receipt',
+      receiptType: 'delivery',
+      amount: price,
+      method: legacyTax ? 'card' : 'cash',
+      issuedAt,
+      itemDescription: SERVICE_ITEM,
+      localCode: buildLocalTailoringInvoiceCode(orderNumber, issuedAt),
+      accounting: legacyTax ? { code: legacyCode, printable: networkInvoice?.printable || null } : null,
+    })]
   }
 
-  return {
-    order_id: String(order?.id || ''),
-    order_number: orderNumber,
-    invoice_code: hasNetworkDeposit ? accountingCode : orderNumber,
-    invoice_code_source: hasNetworkDeposit ? 'alostaz' : 'local',
-    receipt_type: 'preliminary',
-    customer_name: String(order?.client_name || 'عميل'),
-    item_description: 'أجرة تفصيل فستان',
-    total: Number(order?.price) || 0,
-    paid_amount: Number(order?.paid_amount) || 0,
-    cash_amount: breakdown.cashTotal,
-    network_amount: breakdown.networkTotal,
-    delivered_at: String(order?.created_at || new Date().toISOString()),
+  const papers: TailoringReceiptPayload[] = []
+  if (breakdown.remainingNetwork >= 0.005) {
+    papers.push(buildPaper({
+      order,
+      kind: 'tax_invoice',
+      receiptType: 'delivery',
+      amount: breakdown.remainingNetwork,
+      method: 'card',
+      issuedAt,
+      itemDescription: `باقي ${SERVICE_ITEM}`,
+      localCode: orderNumber,
+      accounting: networkInvoice,
+    }))
   }
+  if (breakdown.remainingCash >= 0.005) {
+    papers.push(buildPaper({
+      order,
+      kind: 'cash_receipt',
+      receiptType: 'delivery',
+      amount: breakdown.remainingCash,
+      method: 'cash',
+      issuedAt,
+      itemDescription: `باقي ${SERVICE_ITEM}`,
+      localCode: `CASH-${orderNumber}-R`,
+    }))
+  }
+  if (papers.length === 0) {
+    papers.push(buildPaper({
+      order,
+      kind: 'order_summary',
+      receiptType: 'delivery',
+      amount: 0,
+      method: null,
+      issuedAt,
+      itemDescription: SERVICE_ITEM,
+      localCode: orderNumber,
+      summaryTitle: 'إيصال تسليم',
+    }))
+  }
+  return papers
 }
 
 export interface AdditionalOrderPaymentReceipt {
@@ -191,46 +350,31 @@ export interface AdditionalOrderPaymentReceipt {
 }
 
 /**
- * يبني فاتورة مستقلة للدفعة المضافة من صفحة تعديل الطلب.
- * إجمالي الفاتورة هو مبلغ الدفعة الجديدة، بينما يبقى paid_amount هو الإجمالي
- * التراكمي كي يظهر الرصيد الصحيح بعد استلامها.
+ * ورقة مستقلة للدفعة المضافة من صفحة تعديل الطلب، بقيمة الدفعة كاملة.
+ * paid_amount يبقى الإجمالي التراكمي ليظهر المتبقي الصحيح في ملخص الطلب.
  */
 export function createAdditionalPaymentReceiptPayload(
   order: TailoringReceiptOrder,
   payment: AdditionalOrderPaymentReceipt,
-  alostazInvoiceCode?: string | null
+  networkInvoice?: TailoringAccountingInvoice | null
 ): TailoringReceiptPayload {
-  const orderNumber = String(order?.order_number || order?.id || '')
+  const orderNumber = orderNumberOf(order)
   const amount = Math.max(0, Number(payment.amount) || 0)
-  const accountingCode = String(alostazInvoiceCode || '').trim()
-
-  if (payment.method === 'card' && !accountingCode) {
-    throw new Error('لا يمكن طباعة فاتورة دفعة شبكة قبل استلام رقمها من برنامج الأستاذ')
-  }
-
   const localReference = String(payment.id || Date.now())
     .replace(/[^a-zA-Z0-9]/g, '')
     .slice(-8)
 
-  return {
-    order_id: String(order?.id || ''),
-    order_number: orderNumber,
-    invoice_code:
-      payment.method === 'card'
-        ? accountingCode
-        : `${orderNumber}-P-${localReference || Date.now()}`,
-    invoice_code_source: payment.method === 'card' ? 'alostaz' : 'local',
-    receipt_type: 'payment',
-    customer_name: String(order?.client_name || 'عميل'),
-    item_description: 'دفعة على أجرة تفصيل فستان',
-    total: Number(order?.price) || 0,
-    invoice_total: amount,
-    paid_amount: Number(order?.paid_amount) || 0,
-    cash_amount: payment.method === 'cash' ? amount : 0,
-    network_amount: payment.method === 'card' ? amount : 0,
-    received_payment_method: payment.method,
-    delivered_at: String(payment.receivedAt || new Date().toISOString()),
-  }
+  return buildPaper({
+    order,
+    kind: payment.method === 'card' ? 'tax_invoice' : 'cash_receipt',
+    receiptType: 'payment',
+    amount,
+    method: payment.method,
+    issuedAt: String(payment.receivedAt || new Date().toISOString()),
+    itemDescription: `دفعة على ${SERVICE_ITEM}`,
+    localCode: `CASH-${orderNumber}-P-${localReference || Date.now()}`,
+    accounting: payment.method === 'card' ? networkInvoice : null,
+  })
 }
 
 /** مستند الإيصال الحراري بعرض 80mm؛ ويدعم فاتورة طلب كاملة أو فاتورة دفعة مستقلة. */
@@ -242,8 +386,13 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
       ? orderTotal
       : Number(payload.invoice_total) || 0
   )
-  const priceBeforeTax = invoiceTotal / 1.15
-  const vatAmount = invoiceTotal - priceBeforeTax
+  const hasAccountingTotals = payload.total_without_vat != null && payload.vat_amount != null
+  const priceBeforeTax = hasAccountingTotals
+    ? Number(payload.total_without_vat) || 0
+    : invoiceTotal / 1.15
+  const vatAmount = hasAccountingTotals
+    ? Number(payload.vat_amount) || 0
+    : invoiceTotal - priceBeforeTax
   const paidAmount = Math.max(
     0,
     Number(payload.paid_amount) ||
@@ -255,11 +404,69 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
   const orderNumber = escapeHtml(payload.order_number)
   const customerName = escapeHtml(payload.customer_name)
   const itemDescription = escapeHtml(payload.item_description)
-  const documentTitle = payload.receipt_type === 'preliminary'
-    ? 'فاتورة مبدئية'
-    : payload.receipt_type === 'payment'
-      ? 'فاتورة دفعة'
-      : 'فاتورة ضريبية مبسطة'
+  // الصيغة الجديدة: كل ورقة بقيمة دفعتها كاملة، والعنوان يحدده الموقع.
+  const kind = payload.document_kind
+  const isNewFormat = !!kind
+  const isTaxInvoice = kind === 'tax_invoice'
+  const isSummaryOnly = kind === 'order_summary'
+  const showOrderSummary = isNewFormat && payload.show_order_summary !== false
+  const documentTitle = escapeHtml(
+    payload.document_title ||
+      (payload.receipt_type === 'preliminary'
+        ? 'فاتورة مبدئية'
+        : payload.receipt_type === 'payment'
+          ? 'فاتورة دفعة'
+          : 'فاتورة ضريبية مبسطة')
+  )
+  const methodLabel = payload.received_payment_method === 'cash' ? 'كاش' : 'شبكة'
+  const qrSvg = isTaxInvoice && payload.zatca_qr ? buildQrSvg(payload.zatca_qr) : ''
+  const zatcaBlock = isTaxInvoice
+    ? qrSvg
+      ? `<div class="qr">${qrSvg}</div>`
+      : '<p class="qr-missing">رمز الفاتورة الإلكترونية لم يصل من برنامج المحاسبة بعد — أعيدي طباعة الفاتورة للحصول عليه.</p>'
+    : ''
+  const newFormatRows = isSummaryOnly
+    ? ''
+    : `
+  <div class="summary-row">
+    <span class="label">السعر (غير شامل الضريبة)</span>
+    <span class="value">${formatMoney(priceBeforeTax)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row">
+    <span class="label">الضريبة</span>
+    <span class="value">${formatMoney(vatAmount)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row total">
+    <span class="label">إجمالي الفاتورة <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(invoiceTotal)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row total">
+    <span class="label">المدفوع ${methodLabel} <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(invoiceTotal)}</span>
+  </div>
+  <hr class="dash">`
+  const orderSummaryRows = showOrderSummary
+    ? `
+  <h2 class="order-summary-title">ملخص الطلب</h2>
+  <div class="summary-row">
+    <span class="label">قيمة الطلب <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(orderTotal)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row">
+    <span class="label">إجمالي المدفوع للطلب <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(paidAmount)}</span>
+  </div>
+  <hr class="dash">
+  <div class="summary-row">
+    <span class="label">المتبقي على الطلب <span class="currency">(ر.س)</span></span>
+    <span class="value">${formatMoney(remainingAmount)}</span>
+  </div>
+  <hr class="dash">`
+    : ''
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -316,6 +523,10 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
   .policies { margin-top: 3mm; padding: 2.5mm 0.6mm 0; border-top: 0.45mm solid #000; }
   .policies h2 { margin: 0 0 1.5mm; text-align: center; font-size: 14px; font-weight: 900; }
   .policies p { margin: 0 0 1.5mm; font-size: 10.5px; font-weight: 700; line-height: 1.55; }
+  .order-summary-title { margin: 3mm 0 0.5mm; text-align: center; font-size: 13px; font-weight: 900; }
+  .qr { display: flex; justify-content: center; margin: 3mm 0 1mm; }
+  .qr svg { display: block; }
+  .qr-missing { margin: 3mm 0 1mm; text-align: center; font-size: 10.5px; font-weight: 700; line-height: 1.45; }
   .feed { height: 15mm; }
 </style>
 </head>
@@ -326,16 +537,17 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <p class="address">${COMPANY_ADDRESS}</p>
     <h1 class="title">${documentTitle}</h1>
     <p class="invoice-code">${invoiceCode}</p>
+    ${payload.vat_number ? `<p class="date">الرقم الضريبي: <span class="date-value">${escapeHtml(payload.vat_number)}</span></p>` : ''}
     <p class="date">تاريخ الفاتورة: <span class="date-value">${formatReceiptDate(payload.delivered_at)}</span></p>
     <p class="date">تاريخ ووقت الطباعة: <span class="date-value">${printedAt}</span></p>
   </header>
 
   <div class="meta">
     <span>العميل: ${customerName}</span>
-    <span class="order">رقم الطلب: ${orderNumber}</span>
+    ${!isNewFormat || showOrderSummary ? `<span class="order">رقم الطلب: ${orderNumber}</span>` : ''}
   </div>
 
-  <hr class="rule">
+  ${isSummaryOnly ? '' : `<hr class="rule">
   <table class="items" aria-label="بنود الفاتورة">
     <thead>
       <tr>
@@ -354,8 +566,9 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
       </tr>
     </tbody>
   </table>
-  <hr class="rule" style="margin-top: 0">
-
+  <hr class="rule" style="margin-top: 0">`}
+${isNewFormat ? `${newFormatRows}${orderSummaryRows}
+  ${zatcaBlock}` : `
   <div class="summary-row">
     <span class="label">السعر (غير شامل الضريبة)</span>
     <span class="value">${formatMoney(priceBeforeTax)}</span>
@@ -371,17 +584,6 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <span class="value">${formatMoney(invoiceTotal)}</span>
   </div>
   <hr class="dash">
-  ${payload.receipt_type === 'payment' ? `
-  <div class="summary-row">
-    <span class="label">طريقة الدفعة</span>
-    <span class="value">${payload.received_payment_method === 'cash' ? 'كاش' : 'شبكة'}</span>
-  </div>
-  <hr class="dash">
-  <div class="summary-row">
-    <span class="label">قيمة الطلب <span class="currency">(ر.س)</span></span>
-    <span class="value">${formatMoney(orderTotal)}</span>
-  </div>
-  <hr class="dash">` : ''}
   <div class="summary-row total">
     <span class="label">إجمالي المدفوع <span class="currency">(ر.س)</span></span>
     <span class="value">${formatMoney(paidAmount)}</span>
@@ -391,7 +593,7 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <span class="label">الباقي <span class="currency">(ر.س)</span></span>
     <span class="value">${formatMoney(remainingAmount)}</span>
   </div>
-  <hr class="dash">
+  <hr class="dash">`}
 
   <section class="policies" aria-label="سياسات المتجر">
     <h2>سياسات المتجر</h2>
@@ -414,6 +616,8 @@ export interface ManualTailoringInvoice {
   customerName?: string | null
   itemDescription?: string | null
   alostazInvoiceCode?: string | null
+  /** نسخة فاتورة الأستاذ للطباعة (الإجماليات ورمز QR) — للشبكة فقط. */
+  alostazPrintable?: AlostazPrintableInvoice | null
 }
 
 /**
@@ -448,20 +652,25 @@ export function createManualTailoringInvoiceReceiptPayload(
   const issuedYear = new Date(`${issuedAt.slice(0, 10)}T00:00:00`).getFullYear()
   const reference = buildManualInvoiceReference(String(invoice?.id || ''))
 
-  return {
-    order_id: String(invoice?.id || ''),
-    order_number: `M-${reference}`,
-    invoice_code: isNetwork
-      ? accountingCode
-      : `CASH-${String(issuedYear).slice(-2)}-${reference}`,
-    invoice_code_source: isNetwork ? 'alostaz' : 'local',
-    receipt_type: 'delivery',
-    customer_name: String(invoice?.customerName || 'عميل'),
-    item_description: String(invoice?.itemDescription || 'أجرة تفصيل فستان'),
-    total: amount,
-    paid_amount: amount,
-    cash_amount: isNetwork ? 0 : amount,
-    network_amount: isNetwork ? amount : 0,
-    delivered_at: issuedAt,
-  }
+  return buildPaper({
+    order: {
+      id: String(invoice?.id || ''),
+      order_number: `M-${reference}`,
+      client_name: String(invoice?.customerName || 'عميل'),
+      price: amount,
+      paid_amount: amount,
+    },
+    kind: isNetwork ? 'tax_invoice' : 'cash_receipt',
+    receiptType: 'delivery',
+    amount,
+    method: isNetwork ? 'card' : 'cash',
+    issuedAt,
+    itemDescription: String(invoice?.itemDescription || SERVICE_ITEM),
+    localCode: `CASH-${String(issuedYear).slice(-2)}-${reference}`,
+    accounting: isNetwork
+      ? { code: accountingCode, printable: invoice?.alostazPrintable || null }
+      : null,
+    // فاتورة مستقلة غير مرتبطة بطلب، فلا ملخص طلب تحتها.
+    showOrderSummary: false,
+  })
 }

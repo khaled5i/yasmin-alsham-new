@@ -90,7 +90,13 @@ async function printNewOrderPreliminaryReceipt(
       toast.success(`تم إرسال عربون الشبكة للمحاسبة — ${result.invoiceCode}`)
     }
     if (result.accountingWarning) toast(result.accountingWarning, { icon: '⚠️' })
-    toast.success(`أُضيفت الفاتورة المبدئية للطلب ${result.orderNumber} إلى طابور الطباعة`, {
+    if (result.missingQr) {
+      toast('تعذّر جلب رمز QR من الأستاذ الآن؛ طُبعت فاتورة الشبكة بدونه.', {
+        icon: '⚠️',
+        duration: 7000,
+      })
+    }
+    toast.success(`أُضيفت أوراق العربون للطلب ${result.orderNumber} إلى طابور الطباعة`, {
       icon: '🧾',
     })
   } catch (error) {

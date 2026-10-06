@@ -25,6 +25,10 @@ begin
   if to_regclass('private.fabric_store_hold_clients') is null then
     raise exception 'FIX_B_ROLLBACK_NOT_NEEDED: migration 20261003120000 is not applied';
   end if;
+  -- (الدفعة C) الدفعة C تستبدل begin_payment بنسختها؛ إعادة نسخة المرحلة 5 هنا تمحو إصلاح AUD-05.
+  if to_regprocedure('public.fabric_store_refund_record_external(uuid, uuid, uuid, text, bigint, text, text, bigint, uuid)') is not null then
+    raise exception 'FIX_B_ROLLBACK_REFUSED: fix batch C is applied — run fixes/FIX-C-rollback.sql first';
+  end if;
   if not exists (
     select 1 from pg_proc p
     where p.oid = 'public.fabric_store_begin_payment(bytea, text, bytea)'::regprocedure

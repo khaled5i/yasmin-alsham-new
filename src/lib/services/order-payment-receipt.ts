@@ -1,11 +1,15 @@
 import {
   createAdditionalPaymentReceiptPayload,
-  createPreliminaryTailoringReceiptPayload,
+  createDepositReceiptPayloads,
   type AdditionalOrderPaymentReceipt,
+  type TailoringReceiptPayload,
 } from '@/lib/print-tailoring-receipt'
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import type { Order } from '@/lib/services/order-service'
-import { sendInvoiceToAlostaz } from '@/lib/services/alostaz-client'
+import {
+  fetchAlostazPrintableInvoice,
+  sendInvoiceToAlostaz,
+} from '@/lib/services/alostaz-client'
 import { dispatchTailoringReceiptPrint } from '@/lib/services/tailoring-receipt-printer'
 
 export interface IssueOrderPaymentReceiptResult {
@@ -14,14 +18,16 @@ export interface IssueOrderPaymentReceiptResult {
   accountingSynced: boolean
   accountingAlreadySent: boolean
   accountingWarning?: string
+  /** فاتورة شبكة طُبعت دون رمز QR لأن الأستاذ لم يُرجعه في الوقت المتاح. */
+  missingQr?: boolean
 }
 
 /**
- * المسار المشترك لفاتورة العربون عند إنشاء الطلب ولفواتير الدفعات المضافة
+ * المسار المشترك لأوراق العربون عند إنشاء الطلب ولأوراق الدفعات المضافة
  * لاحقاً من صفحة التعديل.
  *
- * الكاش يُطبع محلياً فقط. الشبكة تُرسل أولاً إلى الأستاذ، ولا تُطبع الفاتورة
- * قبل استلام رقم الأستاذ حتى يتطابق المستندان.
+ * كل دفعة تُطبع ورقة مستقلة بقيمتها كاملة: الشبكة تُرسل أولاً إلى الأستاذ
+ * وتُطبع نسخة فاتورته (الرقم ورمز QR)، والكاش يُطبع إيصال استلام محلي.
  */
 export async function issueOrderPaymentReceipt(
   order: Order,
@@ -62,23 +68,39 @@ export async function issueOrderPaymentReceipt(
     accountingWarning = result.warning
   }
 
-  const receipt = payment
-    ? createAdditionalPaymentReceiptPayload(order, payment, accountingInvoiceCode)
-    : createPreliminaryTailoringReceiptPayload(order, accountingInvoiceCode)
+  // آخر فاتورة عربون محفوظة على الطلب هي فاتورة هذه الدفعة (المسار الخادمي يحدّثها).
+  const printable = networkAmount >= 0.005
+    ? await fetchAlostazPrintableInvoice('order_deposit', order.id)
+    : null
+  // نتحقق أن النسخة المجلوبة هي نفس الفاتورة قبل طباعة رمزها.
+  const matchingPrintable = printable && printable.invoice_code === accountingInvoiceCode
+    ? printable
+    : null
+  const networkInvoice = accountingInvoiceCode
+    ? { code: accountingInvoiceCode, printable: matchingPrintable }
+    : null
 
-  await dispatchTailoringReceiptPrint(receipt, {
-    openCashDrawer: payment ? payment.method === 'cash' : receipt.cash_amount >= 0.005,
-    // لكل دفعة إضافية مفتاح مستقل؛ إعادة نفس الطلب لا تطبع نسخة ثانية.
-    idempotencyKey: payment
-      ? `tailoring:order-payment:${order.id}:${payment.id}:v1`
-      : undefined,
-  })
+  const papers: TailoringReceiptPayload[] = payment
+    ? [createAdditionalPaymentReceiptPayload(order, payment, networkInvoice)]
+    : createDepositReceiptPayloads(order, networkInvoice)
 
+  for (const paper of papers) {
+    await dispatchTailoringReceiptPrint(paper, {
+      openCashDrawer: paper.cash_amount >= 0.005,
+      // لكل دفعة إضافية مفتاح مستقل؛ إعادة نفس الطلب لا تطبع نسخة ثانية.
+      idempotencyKey: payment
+        ? `tailoring:order-payment:${order.id}:${payment.id}:v1`
+        : undefined,
+    })
+  }
+
+  const primary = papers.find((paper) => paper.document_kind === 'tax_invoice') || papers[0]
   return {
-    orderNumber: receipt.order_number,
-    invoiceCode: receipt.invoice_code,
+    orderNumber: primary.order_number,
+    invoiceCode: primary.invoice_code,
     accountingSynced,
     accountingAlreadySent,
     accountingWarning,
+    missingQr: networkAmount >= 0.005 && !matchingPrintable,
   }
 }

@@ -86,6 +86,33 @@ node scripts/db-local/mutate.cjs ts "(fix B)"   # طفرات payments.ts للد�
 - `verify-payments` و`verify-confirm` و`verify-refunds` و`verify-reconcile` و`audit-proofs` تطبّق B في سلسلتها (ما يعمل عليه التطبيق الآن).
 - طفرة داخل دالة تحمي الهجرة بصمتها تُفشل إعادة التطبيق قبل أي اختبار سلوكي؛ `verify-stages` يوجّه البصمة الذاتية (والتي في سكربت التراجع) إلى الجسم المطفَّر حين يتغير فقط.
 
+## إصلاحات تقرير التدقيق — الدفعة C (5 أكتوبر 2026): المال والاسترداد
+
+```bash
+node scripts/db-local/verify-stages.cjs         # … ثم C: اختبارها يفشل قبلها، الترميز، البصمة، التطبيق مرتين، كل اختبارات الحي بعدها، والتراجع
+node scripts/db-local/verify-payments.cjs       # (fix C) رفض بطاقة ⇒ الرابط نفسه؛ قرب الانتهاء ⇒ انتظار؛ مفتاح test على الإنتاج
+node scripts/db-local/verify-refunds.cjs        # (fix C) AUD-12 الفاعل، AUD-03 الاسترداد الخارجي، AUD-04 الدفعة الإضافية، AUD-08 مرجع الدعم
+node scripts/db-local/mutate.cjs C              # طفرات SQL للهجرة (تشغّل verify-stages)
+node scripts/db-local/mutate.cjs ts "(fix C)"   # طفرات moyasar.ts/payments.ts/refunds.ts للدفعة C
+```
+
+- C تستبدل دوالاً من المراحل 8 و9 والدفعة B، فـ`verify-payments` و`verify-confirm` و`verify-refunds` تطبّق الآن المراحل الناقصة (6 → 9) ثم C **في التشغيل العادي فقط**؛ تحت طفرة لمرحلة سابقة لا تُطبَّق C (فحص البصمة فيها كان سيرفض، فتُحسب الطفرة مكشوفة لسبب خاطئ).
+- اختبارا المرحلتين 8 و9 الآمنان (`fabric_store_refunds.sql`، `fabric_store_reconciliation.sql`) واختبار المرحلة 5 صارت **تعرف C** (`pg_temp.fix_c()`): الفاعل مدير فعّال من `public.users` (قراءة فقط)، وما تغيّر معناه بـC يُفحص بالسلوك الجديد. تنجح قبل C وبعدها.
+- `audit/audit-proofs.cjs` يطبّق C؛ سيناريوهات AUD-03/04/05/06 **تفشل** الآن (المتوقع بعد الإصلاح).
+
+## إصلاحات تقرير التدقيق — الدفعة D (5 أكتوبر 2026): الخصوصية والتشغيل
+
+```bash
+node scripts/db-local/verify-stages.cjs         # … ثم D: اختبارها يفشل قبلها، الترميز، انحراف الأعمدة والدوال، التطبيق مرتين، فحصان محليان، والتراجع
+node scripts/db-local/verify-privacy-ts.cjs     # بلا قاعدة: رمز التتبّع ورابطه (#)، استثناء GA، الترويسات الأمنية، إرسال أستاذ مقطوع ⇒ مراجعة
+node scripts/db-local/mutate.cjs D              # طفرات SQL للهجرة (تشغّل verify-stages)
+node scripts/db-local/mutate.cjs tsD            # طفرات TS (تشغّل verify-privacy-ts على نسخة من src/)
+```
+
+- `replica-wiring.sql` يحمل الآن **كل أعمدة `public.fabrics` الحية** (قُرئت 5 أكتوبر)، فيعمل منح الأعمدة للزائر وفحص انحرافها كما على الحي.
+- فحصان محليان فقط (يحتاجان تواريخ يحميها حارس المرحلة 2، فيُعطَّل بـ`session_replication_role` كمستخدم خارق محلي): عنوان طلب لم يُدفع يبقى 89 يوماً بعد مهلته ويُمحى عند 91 (والحارس نفسه يرفض قبلها)، ومحاولة مدفوعة قبل 60 يوماً تُطابق شهرياً حتى 120 يوماً.
+- `fixes/FIX-D-register-migrations.sql` (اقتراح لم يُنفَّذ على الحي) جُرّب محلياً بجدول سجل بديل: يسجّل ما وُجد كائنه فقط، وإعادته لا تكرر شيئاً.
+
 ## إصلاحات المراجعة (المرحلتان 6 و7)
 
 ```bash

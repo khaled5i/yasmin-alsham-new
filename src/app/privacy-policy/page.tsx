@@ -119,9 +119,26 @@ export default function PrivacyPolicyPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-pink-600 mt-1">•</span>
+                <span>مزودي الاستضافة الذين يعمل عليهم الموقع: <strong>Vercel</strong> (خوادم في الولايات المتحدة) و<strong>Supabase</strong> (قاعدة البيانات في سنغافورة). تُعالَج بياناتك لديهم لتشغيل الموقع فقط، أي خارج المملكة العربية السعودية</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600 mt-1">•</span>
+                <span><strong>Google Analytics</strong> لإحصاءات زيارات مجمّعة (الصفحات المزارة، نوع الجهاز، الدولة). <strong>لا يعمل في صفحات إتمام الطلب والدفع وتتبّع الطلب</strong>، ولا نرسل إليه اسمك أو جوالك أو عنوانك</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600 mt-1">•</span>
                 <span>الجهات القانونية عند الضرورة القانونية</span>
               </li>
             </ul>
+          </section>
+
+          {/* مدة الاحتفاظ */}
+          <section className="mb-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">مدة الاحتفاظ بالبيانات</h2>
+            <div className="bg-pink-50 rounded-lg p-6 space-y-2">
+              <p className="text-gray-700">• <strong>عنوان الشحن</strong> (اسم المستلم وجواله والحي والشارع وبقية العنوان): يُمحى تلقائياً بعد <strong>90 يوماً</strong> من تسليم الطلب أو إلغائه، أو من انتهاء مهلة دفع طلب لم يُدفع. تبقى المدينة وحدها لأغراض الإحصاء.</p>
+              <p className="text-gray-700">• <strong>بيانات الطلب والفاتورة</strong> (الأصناف والمبالغ والاسم والجوال في الفاتورة): تُحفظ المدة التي يفرضها النظام للسجلات المحاسبية والضريبية.</p>
+            </div>
           </section>
 
           {/* حقوقك */}
@@ -139,7 +156,7 @@ export default function PrivacyPolicyPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">ملفات تعريف الارتباط (Cookies)</h2>
             <p className="text-gray-700 leading-relaxed">
-              نستخدم ملفات تعريف الارتباط لتحسين تجربتك على الموقع، وتذكر تفضيلاتك، وتحليل حركة المرور. يمكنك تعطيل ملفات تعريف الارتباط من إعدادات المتصفح.
+              نستخدم ملفات تعريف الارتباط لتحسين تجربتك على الموقع، وتذكر تفضيلاتك، وتحليل حركة المرور (Google Analytics). ويستخدم متجر الأقمشة ملف ارتباط ضرورياً لربط متصفحك بطلبك مدة 90 يوماً. يمكنك تعطيل ملفات تعريف الارتباط من إعدادات المتصفح.
             </p>
           </section>
 

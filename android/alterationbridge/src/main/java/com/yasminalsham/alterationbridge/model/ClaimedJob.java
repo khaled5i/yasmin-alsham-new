@@ -6,6 +6,8 @@ import org.json.JSONObject;
 public final class ClaimedJob {
     public static final String TYPE_SLIP = "alteration_slip";
     public static final String TYPE_TEST_SLIP = "alteration_test_slip";
+    /** Women's-section invoice (network sale) printed on the workshop printer. */
+    public static final String TYPE_WOMEN_WORKSHOP_RECEIPT = "women_workshop_receipt";
 
     public final String id;
     public final String jobToken;
@@ -40,7 +42,9 @@ public final class ClaimedJob {
         String type = json.optString("job_type", "").trim();
         if (id.isEmpty()) throw new JSONException("Missing job id");
         if (token.isEmpty()) throw new JSONException("Missing job token");
-        if (!TYPE_SLIP.equals(type) && !TYPE_TEST_SLIP.equals(type)) {
+        if (!TYPE_SLIP.equals(type)
+                && !TYPE_TEST_SLIP.equals(type)
+                && !TYPE_WOMEN_WORKSHOP_RECEIPT.equals(type)) {
             throw new JSONException("Unsupported job type: " + type);
         }
 

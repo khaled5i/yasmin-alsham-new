@@ -16,9 +16,11 @@ const { startMoyasarMock } = require('./moyasar-mock.cjs')
 
 const args = process.argv.slice(2)
 const edits9 = []
+const editsC = [] // fix batch C mutants (--mutateC)
 const tsEdits = { 'moyasar.ts': [], 'payments.ts': [], 'confirm.ts': [], 'invoice-lines.ts': [] }
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--mutate9') { edits9.push([args[i + 1], args[i + 2]]); i += 2 }
+  else if (args[i] === '--mutateC') { editsC.push([args[i + 1], args[i + 2]]); i += 2 }
   else if (args[i] === '--mutate-ts') { tsEdits[args[i + 1]].push([args[i + 2], args[i + 3]]); i += 3 }
 }
 
@@ -58,6 +60,9 @@ async function main() {
     await admin.query(mutate(read(FILES.migration9), edits9))
     // fix batch B (AUD-02): the hold starts at «ادفعي» — the chain production runs
     await admin.query(read(FILES.migrationB))
+    // fix batch C (what the app runs on now). Not under a mutant of an earlier stage: C's drift check
+    // would refuse it, and the mutant would be "caught" for the wrong reason.
+    if (!edits9.length) await admin.query(mutate(read(FILES.migrationC), editsC))
 
     const svc = await connect()
     await svc.query('set role service_role')

@@ -54,11 +54,12 @@ import {
   getInventoryItemsWithColors,
   type FabricInventoryItem,
 } from '@/lib/services/fabric-inventory-service'
-import { getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
+import { buildFabricReceiptPayloads, getFabricReceiptNumber } from '@/lib/print-fabric-receipt'
 import { queueFabricReceiptPrint } from '@/lib/services/print-job-service'
 import {
   sendFabricInvoiceToAlostaz,
-  getFabricsAutoSendEnabled
+  getFabricsAutoSendEnabled,
+  fetchAlostazPrintableInvoice,
 } from '@/lib/services/alostaz-client'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -587,7 +588,23 @@ function FabricsIncomeContent() {
       const printableRecord = await maybeAutoSendFabricInvoice(recordWithKnownCode)
       getFabricReceiptNumber(printableRecord)
 
-      await queueFabricReceiptPrint(printableRecord)
+      // الفاتورة الضريبية تحمل رمز QR الذي وقّعه الأستاذ؛ الكاش يُطبع إيصال استلام بلا رمز.
+      const hasAccountingInvoice =
+        hasNetworkPortion(printableRecord) &&
+        !!String(printableRecord.alostaz_invoice_code || '').trim()
+      const zatcaInvoice = hasAccountingInvoice
+        ? await fetchAlostazPrintableInvoice('income', printableRecord.id)
+        : null
+      if (hasAccountingInvoice && !zatcaInvoice) {
+        toast('تعذّر جلب رمز QR من الأستاذ الآن؛ ستُطبع الفاتورة بدونه — أعيدي طباعتها لاحقاً.', {
+          icon: '⚠️',
+          duration: 7000,
+        })
+      }
+
+      for (const payload of buildFabricReceiptPayloads(printableRecord, zatcaInvoice)) {
+        await queueFabricReceiptPrint(payload)
+      }
       alert(afterSave
         ? '✅ تم الحفظ وأُرسلت الفاتورة للطباعة على الكاشير'
         : '✅ أُرسلت الفاتورة إلى محطة الطباعة على الكاشير')

@@ -1,8 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Suspense, useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Loader2, MapPin, Search, Truck } from 'lucide-react'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import {
@@ -16,7 +15,7 @@ import {
 import { STORE_ENTITY, STORE_SUPPORT_PHONE } from '@/lib/store-legal'
 
 /**
- * تتبّع طلب المتجر الإلكتروني (المرحلة 7). يعمل برابط واتساب (`?t=…`) أو من المتصفح الذي
+ * تتبّع طلب المتجر الإلكتروني (المرحلة 7). يعمل برابط واتساب (`#n=…&k=…`، والقديم `?t=…`) أو من المتصفح الذي
  * أنشأ الطلب (كوكي)، أو بالبحث برقم الطلب أو رقم الجوال. الرمز يُرسل للخادم في ترويسة، لا في عنوان المسار.
  * مستقل عن تتبّع طلبات التفصيل (/track-order) — لا يمسّه.
  */
@@ -39,6 +38,8 @@ interface TrackedOrder {
   shippedAt: string | null
   deliveredAt: string | null
   cancelledAt: string | null
+  /** الدفعة C (AUD-06): دُفع ببطاقة ميسر التجريبية */
+  isTest?: boolean
   items: Array<{ name: string; code: string | null; color: string | null; purchaseMode: string;
                  pieceLengthCm: number | null; quantityCm: number | null; grossHalalas: number }>
   timeline: Array<{ status: string; at: string }>
@@ -50,9 +51,25 @@ const when = (iso: string | null | undefined) =>
 
 const card = 'mx-auto max-w-lg rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-6'
 
+/**
+ * الدفعة D (AUD-07): الرابط الجديد `#n=<رقم الطلب>&k=<رمز تتبّع>` — ما بعد # لا يُرسل للخادم.
+ * يُقرأ الرمز مرة ثم يُمحى من العنوان (وسجل المتصفح) فوراً، قبل أي طلب. الرابط القديم `?t=`
+ * لم يعد يُقبل (R-CD-02: كان يحمل رمز الوصول نفسه)؛ يُمحى ويُعرض البحث.
+ */
+function readLinkCredentials(): Record<string, string> | undefined {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const number = (hash.get('n') ?? '').trim().toUpperCase()
+  const key = (hash.get('k') ?? '').trim().toLowerCase()
+  if (window.location.hash || window.location.search) {
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+  }
+  if (/^FS-\d{6,8}$/.test(number) && /^[0-9a-f]{64}$/.test(key)) return { 'x-order-number': number, 'x-track-token': key }
+  return undefined
+}
+
 function OrderView() {
-  const params = useSearchParams()
-  const token = (params.get('t') ?? '').trim()
+  // يُقرأ مرة واحدة: محو العنوان يغيّر الاستعلام، فلا يُعاد التحميل بلا الرمز
+  const credentials = useRef<Record<string, string> | undefined | null>(null)
   // null = لم يُحمَّل بعد؛ [] = لا طلب محفوظ ⇒ نموذج البحث.
   const [orders, setOrders] = useState<TrackedOrder[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -61,10 +78,11 @@ function OrderView() {
 
   useEffect(() => {
     let active = true
+    if (credentials.current === null) credentials.current = readLinkCredentials()
     fetch('/api/fabric-store/track/', {
       credentials: 'same-origin',
       cache: 'no-store',
-      headers: /^[0-9a-f]{64}$/i.test(token) ? { 'x-order-token': token } : undefined,
+      headers: credentials.current,
     })
       .then(async response => {
         const data = await response.json().catch(() => null)
@@ -76,7 +94,7 @@ function OrderView() {
       })
       .catch(() => { if (active) { setOrders([]); setError('انقطع الاتصال — حدّثي الصفحة') } })
     return () => { active = false }
-  }, [token])
+  }, [])
 
   const search = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -159,6 +177,12 @@ function OrderCard({ order }: { order: TrackedOrder }) {
           رقم الطلب <span dir="ltr" className="font-bold text-[#211b19]">{order.orderNumber}</span> · {when(order.createdAt)}
         </p>
       </div>
+
+      {order.isTest && (
+        <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-center text-sm font-semibold text-amber-900">
+          دفعة تجريبية (بطاقة اختبار) — لم يُخصم مال، ولن يُجهَّز أو يُسلَّم شيء.
+        </p>
+      )}
 
       {cancelled ? (
         <p className="rounded-xl bg-white/70 p-4 text-center font-semibold">

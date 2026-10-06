@@ -13,11 +13,13 @@ import com.yasminalsham.alterationbridge.data.StationDatabase;
 import com.yasminalsham.alterationbridge.model.ClaimedJob;
 import com.yasminalsham.alterationbridge.model.StationStatus;
 import com.yasminalsham.alterationbridge.model.AlterationSlipPayload;
+import com.yasminalsham.alterationbridge.model.InvoiceReceiptPayload;
 import com.yasminalsham.alterationbridge.network.NetworkMonitor;
 import com.yasminalsham.alterationbridge.print.EscPosEncoder;
 import com.yasminalsham.alterationbridge.print.PrinterException;
 import com.yasminalsham.alterationbridge.print.PrinterTransport;
 import com.yasminalsham.alterationbridge.print.AlterationSlipRenderer;
+import com.yasminalsham.alterationbridge.print.InvoiceReceiptRenderer;
 
 import org.json.JSONException;
 
@@ -41,6 +43,7 @@ public final class StationCoordinator implements AutoCloseable {
     private final StationApiClient api;
     private final PrinterTransport printerTransport;
     private final AlterationSlipRenderer renderer;
+    private final InvoiceReceiptRenderer invoiceRenderer;
     private final NetworkMonitor networkMonitor;
     private final Listener listener;
     private final ScheduledExecutorService scheduler;
@@ -66,6 +69,7 @@ public final class StationCoordinator implements AutoCloseable {
         this.api = new StationApiClient();
         this.printerTransport = new PrinterTransport();
         this.renderer = new AlterationSlipRenderer();
+        this.invoiceRenderer = new InvoiceReceiptRenderer();
         this.listener = listener;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(
                 namedThreadFactory("station-heartbeat")
@@ -367,6 +371,17 @@ public final class StationCoordinator implements AutoCloseable {
 
     private byte[] buildPrintBytes(ClaimedJob job)
             throws JSONException, PrinterException {
+        if (ClaimedJob.TYPE_WOMEN_WORKSHOP_RECEIPT.equals(job.jobType)) {
+            InvoiceReceiptPayload invoice = InvoiceReceiptPayload.fromJson(job.payload);
+            Bitmap paper = invoiceRenderer.render(invoice);
+            List<Bitmap> papers = java.util.Collections.singletonList(paper);
+            try {
+                return EscPosEncoder.encodeSlips(papers);
+            } finally {
+                paper.recycle();
+            }
+        }
+
         AlterationSlipPayload payload = AlterationSlipPayload.fromJson(job.payload);
         List<Bitmap> slips = renderer.render(payload);
         try {

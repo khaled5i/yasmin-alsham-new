@@ -16,7 +16,8 @@ import {
   ChevronLeft,
   Settings,
   WalletCards,
-  UserRound
+  UserRound,
+  Building2
 } from 'lucide-react'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
 import { usePayrollRefresh } from '@/hooks/usePayrollRefresh'
@@ -76,6 +77,14 @@ const sections = [
     icon: UserRound,
     href: '/dashboard/accounting/tailoring/personal-expenses',
     color: 'from-violet-500 to-indigo-600'
+  },
+  {
+    id: 'organization-reports',
+    name: 'تقارير كامل المؤسسة',
+    description: 'واردات التفصيل والأقمشة والمشغل النسائي — شبكة وكاش',
+    icon: Building2,
+    href: '/dashboard/accounting/tailoring/organization-reports',
+    color: 'from-indigo-600 to-slate-800'
   },
   {
     id: 'categories',

@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { deriveAccessToken, errorResponse, jsonResponse } from '@/lib/server/fabric-store/http'
+import { deriveTrackToken, errorResponse, jsonResponse, trackingLink } from '@/lib/server/fabric-store/http'
 import { isRefundsServerEnabled, requireFabricStoreStaff } from '@/lib/server/fabric-store/staff-auth'
 import { getPaymentDeps } from '@/lib/server/fabric-store/payment-context'
-import { closeUnconfirmedRefund, startRefund } from '@/lib/server/fabric-store/refunds'
+import { closeUnconfirmedRefund, recordExternalRefund, startRefund } from '@/lib/server/fabric-store/refunds'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         .eq('order_id', id).maybeSingle()
       : Promise.resolve({ data: null }),
     client.from('fabric_store_payment_attempts')
-      .select('id, environment, status, amount_halalas, provider_invoice_id, provider_payment_id, failure_code, created_at')
+      .select('id, environment, status, amount_halalas, provider_invoice_id, provider_payment_id, failure_code, created_at, provider_refunded_halalas')
       .eq('order_id', id).order('created_at'),
     client.from('fabric_store_outbox')
       .select('id, topic, status, attempts, max_attempts, last_error, payload, created_at, completed_at')
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // المرحلة 8 (قبل تطبيق هجرتها لا توجد هذه الأعمدة ولا الجدول: يُعرض الطلب بدونها)
     isRefundsServerEnabled()
       ? client.from('fabric_store_refunds')
-        .select('id, amount_halalas, reason, status, cancels_order, failure_message, requested_by_label, created_at, completed_at, income_id, credit_note_code, credit_note_at, provider_called_at, review_reference, review_note, reviewed_at')
+        .select('id, attempt_id, amount_halalas, reason, status, cancels_order, failure_message, requested_by_label, created_at, completed_at, income_id, credit_note_code, credit_note_at, provider_called_at, review_reference, review_note, reviewed_at, support_reference, external_reference')
         .eq('order_id', id).order('created_at')
       : Promise.resolve({ data: null, error: null }),
     isRefundsServerEnabled()
@@ -87,12 +87,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const paidAttempt = (attempts.data ?? []).find(a => a.id === order.paid_attempt_id)
   const refundRows = (refunds.data ?? []) as Array<Record<string, unknown>>
-  const refundedHalalas = refundRows.filter(r => r.status === 'succeeded').reduce((s, r) => s + Number(r.amount_halalas), 0)
+  // الدفعة C: المسترد لكل محاولة — الناجح (لما بقي قابلاً للرد)، والمسجّل (المعلّق + الناجح) لمقارنته بما يُظهره ميسر
+  const refundedOn = (attemptId: unknown, statuses: string[]) => refundRows
+    .filter(r => r.attempt_id === attemptId && statuses.includes(String(r.status)))
+    .reduce((s, r) => s + Number(r.amount_halalas), 0)
+  const refundedHalalas = refundedOn(order.paid_attempt_id, ['succeeded'])
+  const closedAfterCall = (attemptId: unknown) => refundRows.some(r => r.attempt_id === attemptId && r.status === 'failed'
+    && r.provider_called_at != null && r.review_reference != null)
   const saleInvoiceSent = !!(sale.data && (sale.data.alostaz_invoice_code || sale.data.alostaz_sync_status === 'sent'))
   const secret = process.env.FABRIC_STORE_ACCESS_SECRET ?? ''
   const accessOpen = Date.parse(order.access_expires_at) > Date.now()
+  // الدفعة D (AUD-07): رمز تتبّع للقراءة فقط بعد # — لا رمز الوصول، ولا في عنوان يصل للخادم أو GA
   const trackingUrl = secret.length >= 32 && accessOpen
-    ? `${request.nextUrl.origin}/fabrics/order/?t=${deriveAccessToken(secret, order.checkout_key)}`
+    ? trackingLink(request.nextUrl.origin, order.order_number, deriveTrackToken(secret, order.checkout_key))
     : null
 
   return jsonResponse({
@@ -148,10 +155,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       grossHalalas: Number(item.gross_halalas),
     })),
     address: address.data ?? null,
-    attempts: (attempts.data ?? []).map(a => ({
-      id: a.id, environment: a.environment, status: a.status, amountHalalas: Number(a.amount_halalas),
-      invoiceId: a.provider_invoice_id, paymentId: a.provider_payment_id, failureCode: a.failure_code, createdAt: a.created_at,
-    })),
+    attempts: (attempts.data ?? []).map(a => {
+      const extra = a.status === 'paid' && a.id !== order.paid_attempt_id
+      return {
+        id: a.id, environment: a.environment, status: a.status, amountHalalas: Number(a.amount_halalas),
+        invoiceId: a.provider_invoice_id, paymentId: a.provider_payment_id, failureCode: a.failure_code, createdAt: a.created_at,
+        // الدفعة C (AUD-04): دفعة ناجحة غير معتمدة (دفعة ثانية) — ما بقي منها بلا رد
+        isExtra: extra,
+        extraUnrefundedHalalas: extra ? Math.max(0, Number(a.amount_halalas) - refundedOn(a.id, ['succeeded'])) : 0,
+        // الدفعة C (AUD-03): ما يُظهره ميسر مسترداً فوق سجلنا = استرداد تم خارج النظام
+        externalUnrecordedHalalas: a.status === 'paid' && a.provider_refunded_halalas != null
+          ? Math.max(0, Number(a.provider_refunded_halalas) - refundedOn(a.id, ['pending', 'succeeded'])) : 0,
+        // (R-CD-03) القاعدة تشترط مرجع دعم ميسر **لكل دفعة** أُغلق عليها استرداد أُرسل — لا للمعتمدة وحدها
+        supportReferenceRequired: closedAfterCall(a.id),
+      }
+    }),
     sale: sale.data
       ? {
           invoiceNumber: sale.data.invoice_number,
@@ -194,9 +212,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       reviewReference: (r.review_reference as string | null) ?? null,
       reviewNote: (r.review_note as string | null) ?? null,
       reviewedAt: (r.reviewed_at as string | null) ?? null,
+      supportReference: (r.support_reference as string | null) ?? null,
+      externalReference: (r.external_reference as string | null) ?? null,
       // إشعار دائن مطلوب: مرتجع مسجّل في الواردات وفاتورة البيع وصلت الأستاذ، ولم يُسجَّل رقمه.
       creditNoteNeeded: r.status === 'succeeded' && r.income_id != null && !r.credit_note_code && saleInvoiceSent,
     })),
+    // الدفعة C (AUD-08): أُغلق على الدفعة المعتمدة استرداد أُرسل لميسر ⇒ استرداد جديد يحتاج مرجع دعم ميسر
+    supportReferenceRequired: closedAfterCall(order.paid_attempt_id),
     restocks: ((restocks.data ?? []) as Array<Record<string, unknown>>).map(r => ({
       lineNumber: Number(r.line_number), quantityCm: Number(r.quantity_cm), reason: r.reason as string,
       note: (r.note as string | null) ?? null, createdAt: r.created_at as string,
@@ -211,6 +233,8 @@ const actionSchema = z.discriminatedUnion('action', [
     carrier: z.string().max(80).optional().nullable(),
     tracking: z.string().max(80).optional().nullable(),
     note: z.string().max(500).optional().nullable(),
+    // الدفعة C (AUD-06): «تجربة اللوحة» على طلب دُفع ببطاقة ميسر التجريبية — للمدير وحده
+    allowTest: z.boolean().optional(),
   }),
   z.object({ action: z.literal('resolve_review'), note: z.string().max(500), reviewSnapshot: z.object({
     reason: z.string().nullable(), eventId: z.string().regex(/^\d+$/).nullable(),
@@ -223,6 +247,18 @@ const actionSchema = z.discriminatedUnion('action', [
     amountHalalas: z.number().int().positive().max(100_000_000),
     reason: z.string().max(500),
     cancel: z.boolean(),
+    key: z.string().uuid(),
+    // الدفعة C: دفعة إضافية بعينها (AUD-04)، ومرجع دعم ميسر (AUD-08)
+    attemptId: z.string().uuid().optional().nullable(),
+    supportReference: z.string().max(120).optional().nullable(),
+  }),
+  // الدفعة C (AUD-03): استرداد تم من لوحة ميسر خارج النظام — يُسجَّل بلا نداء
+  z.object({
+    action: z.literal('refund_external'),
+    attemptId: z.string().uuid(),
+    amountHalalas: z.number().int().positive().max(100_000_000),
+    reference: z.string().max(120),
+    reason: z.string().max(500),
     key: z.string().uuid(),
   }),
   z.object({
@@ -264,6 +300,10 @@ const MESSAGES: Record<string, [number, string]> = {
   not_flagged: [409, 'الطلب ليس عليه علامة مراجعة'],
   review_changed: [409, 'وصل تحديث جديد للطلب — راجعي التنبيهات المحدّثة قبل حسم المراجعة'],
   refund_pending: [409, 'إلغاء الطلب واسترداده قيد التنفيذ — لا يبدأ التجهيز'],
+  // الدفعة C
+  test_order: [409, 'هذا الطلب دُفع ببطاقة ميسر التجريبية: لا مبيعة ولا خصم، فلا يُجهَّز ولا يُسلَّم قماش. للمدير «تجربة اللوحة» فقط'],
+  forbidden: [403, 'للمدير فقط'],
+  payment_in_progress: [409, 'صفحة الدفع ما زالت مفتوحة عند الزبونة وقد تدفع الآن — لا يُلغى الطلب قبل انتهائها'],
 }
 
 const REFUSALS: Record<string, string> = {
@@ -284,8 +324,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!parsed.success) return errorResponse(400, 'bad-request', 'طلب غير صالح')
   const body = parsed.data
 
-  if (body.action === 'refund' || body.action === 'restock' || body.action === 'credit_note' || body.action === 'refund_close') {
+  if (body.action === 'refund' || body.action === 'restock' || body.action === 'credit_note' || body.action === 'refund_close'
+      || body.action === 'refund_external') {
     if (!isRefundsServerEnabled()) return errorResponse(404, 'not-found', 'غير موجود')
+    if (body.action === 'refund_external') {
+      // قرار مالي: للمدير فقط (والقاعدة تتحقق بنفسها)
+      if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'للمدير فقط')
+      const payment = getPaymentDeps()
+      if (!payment.ok) return payment.response
+      const { data: attemptRow } = await client.from('fabric_store_payment_attempts')
+        .select('id, provider_payment_id, environment').eq('id', body.attemptId).eq('order_id', id).maybeSingle()
+      if (!attemptRow?.provider_payment_id) return errorResponse(404, 'not-found', 'الدفعة غير موجودة في هذا الطلب')
+      const { data: account } = await client.from('users').select('full_name').eq('id', userId).maybeSingle()
+      const recorded = await recordExternalRefund(payment.deps, {
+        orderId: id, attemptId: attemptRow.id, paymentId: attemptRow.provider_payment_id, environment: attemptRow.environment,
+        actorId: userId, actorLabel: account?.full_name ?? null, amountHalalas: body.amountHalalas,
+        reference: body.reference, reason: body.reason, key: body.key,
+      })
+      if (!recorded.ok) return errorResponse(recorded.httpStatus, recorded.code, recorded.error)
+      return jsonResponse({ ok: true, result: { status: 'ok', message: 'سُجّل الاسترداد الخارجي في سجل الطلب والواردات (لم يُرسل شيء لميسر)' } })
+    }
     if (body.action === 'refund_close') {
       // قرار مالي: للمدير فقط، كالاسترداد نفسه
       if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'للمدير فقط')
@@ -313,6 +371,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const result = await startRefund(payment.deps, {
         orderId: id, actorId: userId, actorLabel: account?.full_name ?? null,
         amountHalalas: body.amountHalalas, reason: body.reason, cancel: body.cancel, key: body.key,
+        attemptId: body.attemptId ?? null, supportReference: body.supportReference ?? null,
       })
       if (!result.ok) return errorResponse(result.httpStatus, result.code, result.error)
       if (result.status === 'failed' || result.status === 'mismatch') {
@@ -340,10 +399,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return errorResponse(httpStatus, result.status ?? 'error', result.status === 'exceeds' && result.message ? result.message : message)
   }
 
+  // الدفعة C (AUD-06): «تجربة اللوحة» للمدير وحده (والقاعدة تتحقق بنفسها)
+  if (body.action === 'fulfillment' && body.allowTest && auth.staff.role !== 'admin') {
+    return errorResponse(403, 'forbidden', 'تجربة اللوحة على طلب تجريبي للمدير فقط')
+  }
   const { data, error } = body.action === 'fulfillment'
     ? await client.rpc('fabric_store_staff_set_fulfillment', {
         p_order_id: id, p_to: body.to, p_actor_id: userId,
         p_carrier: body.carrier ?? null, p_tracking: body.tracking ?? null, p_note: body.note ?? null,
+        // يُرسل فقط حين يُطلب: الإجراء العادي يعمل قبل الهجرة وبعدها وبعد تراجعها
+        ...(body.allowTest === true ? { p_allow_test: true } : {}),
       })
     : body.action === 'resolve_review'
       ? await client.rpc('fabric_store_staff_resolve_review', {
@@ -356,8 +421,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return errorResponse(error.code === '55P03' ? 409 : 503, 'unavailable',
       error.code === '55P03' ? 'الطلب مشغول الآن — أعيدي المحاولة بعد لحظات' : 'تعذّر تنفيذ الإجراء')
   }
-  const result = (data ?? {}) as { status?: string; code?: string; message?: string }
+  const result = (data ?? {}) as { status?: string; code?: string; message?: string; retry_after?: string }
   if (result.status === 'ok') return jsonResponse({ ok: true, result })
+  if (result.status === 'payment_in_progress' && result.retry_after) {
+    const until = new Date(result.retry_after).toLocaleTimeString('ar-SA', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit' })
+    return errorResponse(409, 'payment_in_progress', `${MESSAGES.payment_in_progress[1]} (تنتهي الساعة ${until})`)
+  }
   if (result.status === 'refused') {
     return errorResponse(409, result.code ?? 'refused', REFUSALS[result.code ?? ''] ?? 'تعذّر تغيير الحالة')
   }

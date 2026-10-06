@@ -1,4 +1,50 @@
 import type { FabricSaleItem, Income } from '@/types/simple-accounting'
+import {
+  SELLER_VAT_NUMBER,
+  TAX_INVOICE_TITLE,
+  buildQrSvg,
+  roundMoney,
+  splitInclusiveVat,
+  type AlostazPrintableInvoice,
+} from '@/lib/zatca-invoice'
+
+/**
+ * لقطة المبيعة التي تُرسل لطابور الطباعة.
+ * - zatca_invoice: نسخة فاتورة الأستاذ (الرقم والإجماليات ورمز QR الموقّع).
+ * - receipt_variant = 'network_tax_invoice': الورقة الثانية في المبيعة المختلطة،
+ *   وهي الفاتورة الضريبية لجزء الشبكة وحده كما سُجِّلت في الأستاذ.
+ */
+export type FabricReceiptPayload = Income & {
+  zatca_invoice?: AlostazPrintableInvoice | null
+  receipt_variant?: 'network_tax_invoice' | null
+}
+
+/** هل هذه الورقة نسخة فاتورة ضريبية من الأستاذ (وليست إيصال استلام)؟ */
+export function isFabricTaxInvoice(item: FabricReceiptPayload): boolean {
+  return item.payment_method === 'network' || item.receipt_variant === 'network_tax_invoice'
+}
+
+/**
+ * أوراق الطباعة لمبيعة واحدة:
+ * - شبكة: فاتورة ضريبية واحدة.
+ * - كاش: إيصال استلام واحد (الكاش لا يصل للأستاذ فلا رمز له).
+ * - مختلط: إيصال استلام بالمبيعة كاملة + فاتورة ضريبية لجزء الشبكة إن كانت أُرسلت.
+ */
+export function buildFabricReceiptPayloads(
+  item: Income,
+  zatcaInvoice: AlostazPrintableInvoice | null
+): FabricReceiptPayload[] {
+  if (item.payment_method === 'network') {
+    return [{ ...item, zatca_invoice: zatcaInvoice }]
+  }
+  if (item.payment_method === 'mixed' && String(item.alostaz_invoice_code || '').trim()) {
+    return [
+      { ...item, zatca_invoice: null, receipt_variant: null },
+      { ...item, zatca_invoice: zatcaInvoice, receipt_variant: 'network_tax_invoice' },
+    ]
+  }
+  return [{ ...item, zatca_invoice: null, receipt_variant: null }]
+}
 
 const SHOP_NAME = 'بروكار الشرقية'
 const LEGAL_NAME = 'مؤسسة محمد عوض الدوسري'
@@ -57,8 +103,8 @@ function getLocalCashNumber(item: Income): string {
  * المبيعة المختلطة تأخذ الرقم المحلي: فاتورة الأستاذ تغطي جزء الشبكة وحده، فهي
  * أصلاً ليست مطابقة لهذا الإيصال الذي يشمل الكاش والشبكة معاً.
  */
-export function getFabricReceiptNumber(item: Income): string {
-  if (item.payment_method === 'network') {
+export function getFabricReceiptNumber(item: FabricReceiptPayload): string {
+  if (isFabricTaxInvoice(item)) {
     const accountingCode = String(item.alostaz_invoice_code || '').trim()
     if (!accountingCode) {
       throw new Error('لا يمكن طباعة فاتورة شبكة قبل استلام رقمها من برنامج الأستاذ')
@@ -108,11 +154,13 @@ function getSubtotalAmount(item: Income): number {
  * توزيع الإجمالي على الأصناف بنسبة الأمتار، بنفس منطق فاتورة الأستاذ.
  * عند وجود خصم تُعرض أسعار الأصناف قبل الخصم، ويظهر الخصم كسطر مستقل في الملخّص.
  */
-function buildReceiptLines(item: Income): FabricReceiptLine[] {
+function buildReceiptLines(
+  item: Income,
+  invoiceTotal: number = getSubtotalAmount(item)
+): FabricReceiptLine[] {
   const fabrics = getFabricItems(item)
   const quantities = fabrics.map((fabric) => Math.max(0, Number(fabric.quantity_meters) || 0))
   const totalQuantity = quantities.reduce((sum, quantity) => sum + quantity, 0)
-  const invoiceTotal = getSubtotalAmount(item)
   const round2 = (value: number) => Math.round(value * 100) / 100
   let allocated = 0
 
@@ -143,28 +191,52 @@ function buildReceiptLines(item: Income): FabricReceiptLine[] {
 // يبني مستند HTML كامل للإيصال. محطة الطباعة تستدعي print() بنفسها،
 // بينما الطباعة المحلية تضيف سكربت الطباعة والإغلاق عبر autoPrint.
 export function buildFabricSaleReceiptHtml(
-  item: Income,
+  item: FabricReceiptPayload,
   opts: { autoPrint?: boolean } = {}
 ): string {
   const receiptNumber = getFabricReceiptNumber(item)
-  const lines = buildReceiptLines(item)
-  const total = Math.max(0, Number(item.amount) || 0)
-  const discountAmount = getDiscountAmount(item)
+  const isTaxInvoice = isFabricTaxInvoice(item)
+  // الورقة الضريبية للمختلط تطابق فاتورة الأستاذ: قيمة الشبكة وحدها، بلا خصم وبلا كاش.
+  const isNetworkPortion = item.receipt_variant === 'network_tax_invoice'
+  const saleTotal = isNetworkPortion
+    ? roundMoney(Math.max(0, Number(item.network_amount) || 0))
+    : Math.max(0, Number(item.amount) || 0)
+  const lines = isNetworkPortion ? buildReceiptLines(item, saleTotal) : buildReceiptLines(item)
+  const discountAmount = isNetworkPortion ? 0 : getDiscountAmount(item)
   const subtotalAmount = getSubtotalAmount(item)
-  const priceBeforeTax = total / 1.15
-  const vatAmount = total - priceBeforeTax
+  const zatca = isTaxInvoice && item.zatca_invoice?.total ? item.zatca_invoice : null
+  // عند توفر نسخة الأستاذ نطبع أرقامه هو حرفياً حتى تتطابق الورقة مع الفاتورة المسجلة.
+  const fallbackSplit = splitInclusiveVat(saleTotal)
+  const total = zatca ? zatca.total : fallbackSplit.total
+  const priceBeforeTax = zatca ? zatca.total_without_vat : fallbackSplit.beforeVat
+  const vatAmount = zatca ? zatca.vat : fallbackSplit.vat
   const paidAmount = total
   const remainingAmount = 0
   const printedAt = formatPrintTimestamp()
   const customerName = item.buyer_name?.trim() || 'عميل'
-  const isMixedPayment = item.payment_method === 'mixed'
+  const isMixedPayment = item.payment_method === 'mixed' && !isNetworkPortion
   const mixedNetworkAmount = Math.max(0, Number(item.network_amount) || 0)
   const mixedCashAmount = Math.max(0, Number(item.cash_amount) || 0)
   const paymentLabel = isMixedPayment
     ? 'كاش + شبكة'
-    : item.payment_method === 'network'
+    : isTaxInvoice
       ? 'شبكة'
       : 'كاش'
+  // الكاش بنفس تصميم فاتورة الشبكة وصياغتها (بطلب المالك)، لكن برقمه المحلي وبلا رمز QR:
+  // الرمز ورقم الأستاذ لا يوجدان إلا لفاتورة مسجلة فعلاً في الأستاذ.
+  const documentTitle = TAX_INVOICE_TITLE
+  const vatNumberLine =
+    `<p class="vat-number">الرقم الضريبي: <span class="date-value">${SELLER_VAT_NUMBER}</span></p>`
+  const qrSvg = isTaxInvoice && item.zatca_invoice?.qr ? buildQrSvg(item.zatca_invoice.qr) : ''
+  const linkedTaxInvoiceCode = isMixedPayment ? String(item.alostaz_invoice_code || '').trim() : ''
+  // الرمز يُنقل من الأستاذ كما هو؛ إن لم يصل لا نضع بديلاً بل نطلب إعادة الطباعة.
+  const zatcaBlock = isTaxInvoice
+    ? qrSvg
+      ? `<div class="qr">${qrSvg}</div>`
+      : '<p class="qr-missing">رمز الفاتورة الإلكترونية لم يصل من برنامج المحاسبة بعد — أعيدي طباعة الفاتورة للحصول عليه.</p>'
+    : linkedTaxInvoiceCode
+      ? `<p class="receipt-note">جزء الشبكة له فاتورة ضريبية مستقلة برقم <span class="date-value">${escapeHtml(linkedTaxInvoiceCode)}</span></p>`
+      : ''
   // تفصيل الدفعتين يُطبع للعميل حتى يعرف ما دفعه بكل وسيلة
   const mixedBreakdownRows = isMixedPayment
     ? `
@@ -268,6 +340,10 @@ export function buildFabricSaleReceiptHtml(
   .policies .intro { margin: 0 0 1mm; font-size: 10.5px; font-weight: 700; line-height: 1.5; }
   .policies ol { margin: 0; padding-inline-start: 5mm; }
   .policies li { margin: 0 0 0.8mm; padding-inline-start: 0.5mm; font-size: 10px; font-weight: 700; line-height: 1.45; }
+  .vat-number { margin: 1.2mm 0 0; font-size: 12px; font-weight: 700; }
+  .qr { display: flex; justify-content: center; margin: 3mm 0 1mm; }
+  .qr svg { display: block; }
+  .qr-missing, .receipt-note { margin: 3mm 0 1mm; text-align: center; font-size: 10.5px; font-weight: 700; line-height: 1.45; }
   .feed { height: 15mm; }
 </style>
 </head>
@@ -276,8 +352,9 @@ export function buildFabricSaleReceiptHtml(
     <p class="brand">${SHOP_NAME}</p>
     <p class="legal-name">${LEGAL_NAME}</p>
     <p class="address">${SHOP_ADDRESS}</p>
-    <h1 class="title">فاتورة ضريبية مبسطة</h1>
+    <h1 class="title">${documentTitle}</h1>
     <p class="invoice-code">${escapeHtml(receiptNumber)}</p>
+    ${vatNumberLine}
     <p class="date">تاريخ الفاتورة: <span class="date-value">${formatDate(item.date)}</span></p>
     <p class="date">تاريخ ووقت الطباعة: <span class="date-value">${printedAt}</span></p>
   </header>
@@ -326,6 +403,7 @@ ${discountRows}
     <span class="value">${formatMoney(remainingAmount)}</span>
   </div>
   <hr class="dash">
+  ${zatcaBlock}
 
   <section class="policies" aria-label="سياسة الاسترجاع والاستبدال">
     <h2>سياسة الاسترجاع والاستبدال</h2>
