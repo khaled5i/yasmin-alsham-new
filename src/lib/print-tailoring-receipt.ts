@@ -525,7 +525,8 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
   .policies p { margin: 0 0 1.5mm; font-size: 10.5px; font-weight: 700; line-height: 1.55; }
   .order-summary-title { margin: 3mm 0 0.5mm; text-align: center; font-size: 13px; font-weight: 900; }
   .qr { display: flex; justify-content: center; margin: 3mm 0 1mm; }
-  .qr svg { display: block; }
+  /* الرمز بحجمه الدقيق بالملّيمتر: لا تصغير ولا تحجيم حتى يبقى كل مربع 4 نقاط */
+  .qr svg { display: block; flex: none; max-width: none; }
   .qr-missing { margin: 3mm 0 1mm; text-align: center; font-size: 10.5px; font-weight: 700; line-height: 1.45; }
   .feed { height: 15mm; }
 </style>
@@ -536,7 +537,7 @@ export function buildTailoringReceiptHtml(payload: TailoringReceiptPayload): str
     <p class="legal-name">${LEGAL_NAME}</p>
     <p class="address">${COMPANY_ADDRESS}</p>
     <h1 class="title">${documentTitle}</h1>
-    <p class="invoice-code">${invoiceCode}</p>
+    ${invoiceCode ? `<p class="invoice-code">${invoiceCode}</p>` : ''}
     ${payload.vat_number ? `<p class="date">الرقم الضريبي: <span class="date-value">${escapeHtml(payload.vat_number)}</span></p>` : ''}
     <p class="date">تاريخ الفاتورة: <span class="date-value">${formatReceiptDate(payload.delivered_at)}</span></p>
     <p class="date">تاريخ ووقت الطباعة: <span class="date-value">${printedAt}</span></p>

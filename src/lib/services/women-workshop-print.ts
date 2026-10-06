@@ -6,17 +6,25 @@ import { createWomenWorkshopReceiptPayload } from '@/lib/print-women-workshop-re
 import type { WomenWorkshopTransaction } from '@/lib/services/women-workshop-service'
 
 /**
- * يطبع نسخة فاتورة الأستاذ لعملية شبكة من المشغل النسائي على طابعة الورشة.
+ * يطبع فاتورة عملية من المشغل النسائي على طابعة الورشة (الشبكة بنسخة فاتورة الأستاذ،
+ * والكاش بنفس الشكل بلا رقم فاتورة وبلا رمز).
  * المفتاح ثابت لكل عملية، فاستدعاؤه مرتين لا يطبع نسختين.
  * فشل الطباعة لا يلغي العملية المحفوظة ولا فاتورة المحاسبة.
  */
 export async function printWomenWorkshopInvoice(transaction: WomenWorkshopTransaction): Promise<void> {
   try {
-    const printable = await fetchAlostazPrintableInvoice('women_workshop', transaction.id)
+    // الكاش لا يُرسل للأستاذ: لا رقم فاتورة ولا رمز، فلا داعي لسؤال المحاسبة.
+    const isNetwork = transaction.payment_method === 'card'
+    const printable = isNetwork
+      ? await fetchAlostazPrintableInvoice('women_workshop', transaction.id)
+      : null
     const payload = createWomenWorkshopReceiptPayload(transaction, printable)
     await enqueueWomenWorkshopReceiptPrint(payload)
-    toast.success(`أُضيفت الفاتورة ${payload.invoice_code} إلى طابعة الورشة`, { icon: '🧾' })
-    if (!payload.zatca_qr) {
+    toast.success(
+      `أُضيفت ${payload.invoice_code ? 'الفاتورة ' + payload.invoice_code : 'فاتورة الكاش'} إلى طابعة الورشة`,
+      { icon: '🧾' }
+    )
+    if (isNetwork && !payload.zatca_qr) {
       toast('تعذّر جلب رمز QR من الأستاذ الآن؛ طُبعت الفاتورة بدونه.', {
         icon: '⚠️',
         duration: 7000,

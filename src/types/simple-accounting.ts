@@ -2,6 +2,8 @@
 // أنواع النظام المحاسبي البسيط
 // ============================================================================
 
+import type { AlostazInvoicePdfRef } from '@/lib/services/alostaz-client'
+
 // نوع الفرع
 export type BranchType = 'tailoring' | 'fabrics' | 'ready_designs'
 
@@ -138,6 +140,11 @@ export interface Income {
    */
   alostaz_invoice_scope?: 'phase' | 'full' | null
   alostaz_billing_version?: number | null  // 1 = طلب قديم يدوي، 2 = فوترة مرحلية
+  /**
+   * مرجع ملف PDF فاتورة الأستاذ للحركات المشتقّة من الطلبات (عربون/تسليم/دفعة إضافية).
+   * غير معرَّف لسجلات جدول income نفسها، و null لحركة بلا فاتورة شبكة مرسلة.
+   */
+  alostaz_pdf_ref?: AlostazInvoicePdfRef | null
 }
 
 export interface CreateIncomeInput {

@@ -21,6 +21,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import {
   getWomenWorkshopTransactions,
@@ -250,8 +251,20 @@ function TransactionsTable({
                     {formatAmount(transaction.amount)}
                   </td>
                   <td className="px-5 py-4"><SyncBadge transaction={transaction} /></td>
-                  <td className="px-5 py-4 font-mono text-xs font-bold text-slate-500">
-                    {transaction.alostaz_invoice_code || '—'}
+                  <td className="px-5 py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-500">
+                        {transaction.alostaz_invoice_code || '—'}
+                      </span>
+                      {/* ملف PDF الرسمي — لعمليات الشبكة المرسلة للأستاذ فقط */}
+                      <AlostazInvoicePdfButton
+                        invoiceRef={
+                          transaction.payment_method === 'card' && Number(transaction.alostaz_invoice_id) > 0
+                            ? { source: 'women_workshop', id: transaction.id }
+                            : null
+                        }
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}

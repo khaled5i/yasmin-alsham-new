@@ -1,17 +1,19 @@
 -- ============================================================================
--- Women's-section (المشغل النسائي) network invoices on the workshop printer
+-- Women's-section (المشغل النسائي) invoices on the workshop printer
 -- ============================================================================
--- Every network sale recorded in the women's section creates an invoice in
--- Alostaz (branch «ياسمين الشام 2»). This migration lets the website queue a
--- printed copy of that invoice — with the signed ZATCA QR Alostaz issued — on
--- the alterations print station (the workshop printer).
+-- Every sale recorded in the women's section prints an invoice on the
+-- alterations print station (the workshop printer):
+--   * network: a copy of its Alostaz invoice (branch «ياسمين الشام 2») with the
+--     signed ZATCA QR Alostaz issued;
+--   * cash: the same layout without an invoice number and without a QR (cash is
+--     never sent to Alostaz).
 --
 -- Only private.enqueue_alterations_print_job_impl changes, and only to admit
 -- one new job type, 'women_workshop_receipt':
 --   * admin only (the women's-section invoice route itself is admin only);
 --   * p_alteration_id carries the women_workshop_transactions id, and that row
---     must be a network sale that already has an Alostaz invoice. Cash sales
---     are never sent to accounting, so they never reach this printer.
+--     must be an income row: cash, or network that already has its Alostaz
+--     invoice (so the paper always carries the right QR).
 -- Everything else in the function is copied verbatim from
 -- 20260902120000_alteration_print_stations.sql. Claim/complete/fail RPCs are
 -- job-type agnostic and need no change. The station app must be v1.1.0+ to
@@ -78,17 +80,21 @@ BEGIN
         MESSAGE = 'active_admin_required_for_women_workshop_receipt';
     END IF;
 
+    -- Cash sales print too (no invoice number, no QR); a network sale prints
+    -- only once Alostaz has issued its invoice so the paper carries its QR.
     IF p_alteration_id IS NULL OR NOT EXISTS (
       SELECT 1
       FROM public.women_workshop_transactions AS t
       WHERE t.id = p_alteration_id
         AND t.transaction_kind = 'income'
-        AND t.payment_method = 'card'
-        AND t.alostaz_invoice_id IS NOT NULL
+        AND (
+          t.payment_method = 'cash'
+          OR (t.payment_method = 'card' AND t.alostaz_invoice_id IS NOT NULL)
+        )
     ) THEN
       RAISE EXCEPTION USING
         ERRCODE = '22023',
-        MESSAGE = 'women_workshop_receipt_requires_a_network_sale_with_an_alostaz_invoice';
+        MESSAGE = 'women_workshop_receipt_requires_a_sale_cash_or_invoiced_network';
     END IF;
   END IF;
 

@@ -24,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
 import ReportPeriodPicker, {
   computePresetRange,
   type DateFilter,
@@ -35,6 +36,7 @@ import {
   getUnrecordedDeliveredOrders,
   type UnrecordedDeliveredOrder,
 } from '@/lib/services/simple-accounting-service'
+import { getIncomeInvoicePdfRef } from '@/lib/services/alostaz-client'
 import type { Income, IncomeEntryKind, IncomePaymentMethod, PaymentMethod } from '@/types/simple-accounting'
 
 // ============================================================================
@@ -211,6 +213,7 @@ function IncomeEntryRow({ item, index }: { item: Income; index: number }) {
   const Icon = appearance?.icon || Banknote
   const method = paymentAppearance[item.payment_method || 'cash']
   const invoice = getInvoiceState(item)
+  const pdfRef = getIncomeInvoicePdfRef(item)
 
   return (
     <motion.article
@@ -241,8 +244,8 @@ function IncomeEntryRow({ item, index }: { item: Income; index: number }) {
         </div>
         <p className="mt-1 truncate text-sm text-gray-600">{item.customer_name}</p>
 
-        {/* رقم فاتورة الأستاذ وحالتها — لحركات الشبكة فقط */}
-        {invoice && (
+        {/* رقم فاتورة الأستاذ وحالتها وملفها — لحركات الشبكة فقط */}
+        {(invoice || pdfRef) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {item.alostaz_invoice_code ? (
               <span
@@ -253,12 +256,15 @@ function IncomeEntryRow({ item, index }: { item: Income; index: number }) {
                 {item.alostaz_invoice_code}
               </span>
             ) : null}
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${invoice.className}`}
-            >
-              <invoice.icon className="h-3 w-3" />
-              {invoice.label}
-            </span>
+            <AlostazInvoicePdfButton invoiceRef={pdfRef} />
+            {invoice && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${invoice.className}`}
+              >
+                <invoice.icon className="h-3 w-3" />
+                {invoice.label}
+              </span>
+            )}
             {item.alostaz_invoice_code && item.alostaz_invoice_scope === 'full' ? (
               <span className="text-[10px] font-bold text-gray-400">
                 فاتورة تغطي كامل الطلب

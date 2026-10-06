@@ -150,13 +150,17 @@ export default function WomenWorkshopInvoiceModal({
         )
       }
 
-      // فاتورة الشبكة تُطبع على طابعة الورشة بعد وصول رقمها من الأستاذ؛ الكاش لا يُطبع.
-      if (
-        entryMode === 'sale' &&
-        paymentMethod === 'card' &&
-        result.transaction?.alostaz_invoice_code
-      ) {
-        await printWomenWorkshopInvoice(result.transaction)
+      // كل مبيعة تُطبع على طابعة الورشة: الكاش فوراً (بلا رقم وبلا رمز)، والشبكة
+      // بعد وصول رقمها من الأستاذ كي تحمل رمز QR الصحيح.
+      if (entryMode === 'sale' && result.transaction) {
+        if (paymentMethod === 'cash' || result.transaction.alostaz_invoice_code) {
+          await printWomenWorkshopInvoice(result.transaction)
+        } else {
+          toast('فاتورة الشبكة لم تُطبع لأن رقمها لم يصل من الأستاذ.', {
+            icon: '🧾',
+            duration: 7000,
+          })
+        }
       }
 
       transactionIdRef.current = ''

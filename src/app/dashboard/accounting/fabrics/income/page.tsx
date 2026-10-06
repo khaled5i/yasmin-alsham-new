@@ -36,6 +36,7 @@ import {
   BadgeCheck
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import ImageUpload from '@/components/ImageUpload'
 import ReportPeriodPicker, {
@@ -60,6 +61,7 @@ import {
   sendFabricInvoiceToAlostaz,
   getFabricsAutoSendEnabled,
   fetchAlostazPrintableInvoice,
+  getIncomeInvoicePdfRef,
 } from '@/lib/services/alostaz-client'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -1642,6 +1644,10 @@ function FabricsIncomeContent() {
                       >
                         <Send className="w-4 h-4" />
                       </button>
+                      )}
+                      {/* ملف PDF الرسمي من الأستاذ — لمبيعات الشبكة (أو جزء الشبكة) المرسلة فقط */}
+                      {!isStoreRefund && (
+                        <AlostazInvoicePdfButton invoiceRef={getIncomeInvoicePdfRef(item)} variant="icon" />
                       )}
                       {!item.is_automatic && (
                         mutationPermissionPending ? (

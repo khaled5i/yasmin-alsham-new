@@ -54,6 +54,12 @@ export const ALOSTAZ_WOMEN_WORKSHOP_OTHER_PRODUCT_NAME = 'أخرى'
  */
 export const ALOSTAZ_VAT_TAX_ID: number | null = 2
 
+/**
+ * قالب «فاتورة ضريبية عربي» في الأستاذ (document_template_design_id).
+ * مربوط بالفروع الثلاثة، ويُستعمل لرابط ملف PDF الرسمي الذي يولّده الأستاذ.
+ */
+export const ALOSTAZ_TAX_INVOICE_DESIGN_ID = 2
+
 // ── الترويسات ────────────────────────────────────────────────
 export const ALOSTAZ_API_VERSION = '1'
 export const ALOSTAZ_LOCALE = 'ar'

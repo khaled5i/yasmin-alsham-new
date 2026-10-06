@@ -38,7 +38,15 @@ public final class TailoringReceiptRenderer {
 
     private static final String COMPANY_NAME = "ياسمين الشام";
     private static final String LEGAL_NAME = "مؤسسة محمد عوض الدوسري";
-    private static final int QR_TARGET_DOTS = 264;
+    /**
+     * Alostaz's phase-2 QR (~516 chars) is a dense 89x89 grid. Each module must be a
+     * whole number of print dots and at least 4 dots (0.5mm on a 203dpi head);
+     * at 3 dots thermal bleed closes the gaps and phones fail to read it.
+     */
+    private static final int QR_MIN_MODULE_DOTS = 4;
+    private static final int QR_TARGET_DOTS = 360;
+    /** White quiet zone the QR standard requires around the code, in modules. */
+    private static final int QR_QUIET_MODULES = 4;
     /** VAT number shared by every Alostaz branch (embedded in the signed QR too). */
     private static final String SELLER_VAT_NUMBER = "310937466300003";
     private static final String COMPANY_ADDRESS =
@@ -74,14 +82,17 @@ public final class TailoringReceiptRenderer {
                         ? "فاتورة مبدئية"
                         : "فاتورة ضريبية مبسطة";
         cursor.paragraph(title, 36, true, Layout.Alignment.ALIGN_CENTER, true, 3);
-        cursor.paragraph(
-                payload.invoiceCode,
-                31,
-                true,
-                Layout.Alignment.ALIGN_CENTER,
-                false,
-                7
-        );
+        // Cash papers may have no invoice number (not sent to Alostaz).
+        if (!payload.invoiceCode.isEmpty()) {
+            cursor.paragraph(
+                    payload.invoiceCode,
+                    31,
+                    true,
+                    Layout.Alignment.ALIGN_CENTER,
+                    false,
+                    7
+            );
+        }
         // Cash papers share the network invoice wording (owner's choice) but never get a QR.
         if (!payload.vatNumber.isEmpty()) {
             String vatNumber = payload.vatNumber.isEmpty()
@@ -410,7 +421,7 @@ public final class TailoringReceiptRenderer {
         /**
          * Draws the ZATCA QR exactly as Alostaz encoded it. Modules are solid,
          * integer-sized squares (no anti-aliasing) so the thermal raster stays
-         * scannable; ~264 dots is about 33mm on a 203dpi head.
+         * scannable; Alostaz codes print at 4 dots/module (~45mm) plus a 4-module quiet zone.
          */
         void qrCode(String text) throws PrinterException {
             BitMatrix matrix;
@@ -430,9 +441,14 @@ public final class TailoringReceiptRenderer {
             }
 
             int modules = matrix.getWidth();
-            int moduleSize = Math.max(3, QR_TARGET_DOTS / modules);
+            // Largest whole-dot module that still fits the paper with its quiet zone.
+            int maxModule = Math.max(1, CONTENT_WIDTH / (modules + QR_QUIET_MODULES * 2));
+            int moduleSize = Math.min(maxModule,
+                    Math.max(QR_MIN_MODULE_DOTS, QR_TARGET_DOTS / modules));
             int size = modules * moduleSize;
-            ensure(size + 12);
+            int quiet = QR_QUIET_MODULES * moduleSize;
+            ensure(size + quiet * 2);
+            y += quiet;
             int left = (WIDTH_DOTS - size) / 2;
             Paint paint = new Paint();
             paint.setAntiAlias(false);
@@ -446,7 +462,7 @@ public final class TailoringReceiptRenderer {
                     canvas.drawRect(x, top, x + moduleSize, top + moduleSize, paint);
                 }
             }
-            y += size + 12;
+            y += size + quiet;
         }
 
         void ensure(int additionalHeight) {

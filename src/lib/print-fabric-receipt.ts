@@ -342,7 +342,8 @@ export function buildFabricSaleReceiptHtml(
   .policies li { margin: 0 0 0.8mm; padding-inline-start: 0.5mm; font-size: 10px; font-weight: 700; line-height: 1.45; }
   .vat-number { margin: 1.2mm 0 0; font-size: 12px; font-weight: 700; }
   .qr { display: flex; justify-content: center; margin: 3mm 0 1mm; }
-  .qr svg { display: block; }
+  /* الرمز بحجمه الدقيق بالملّيمتر: لا تصغير ولا تحجيم حتى يبقى كل مربع 4 نقاط */
+  .qr svg { display: block; flex: none; max-width: none; }
   .qr-missing, .receipt-note { margin: 3mm 0 1mm; text-align: center; font-size: 10.5px; font-weight: 700; line-height: 1.45; }
   .feed { height: 15mm; }
 </style>

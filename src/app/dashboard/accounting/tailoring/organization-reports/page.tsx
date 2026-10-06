@@ -21,6 +21,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
 import ReportPeriodPicker, {
   computePresetRange,
   type DateFilter,
@@ -29,6 +30,10 @@ import ReportPeriodPicker, {
 import { toLocalDateKey } from '@/lib/date-utils'
 import { getDeliveredOrdersIncome, getIncome } from '@/lib/services/simple-accounting-service'
 import { getWomenWorkshopTransactions } from '@/lib/services/women-workshop-service'
+import {
+  getIncomeInvoicePdfRef,
+  type AlostazInvoicePdfRef,
+} from '@/lib/services/alostaz-client'
 import type { Income } from '@/types/simple-accounting'
 
 // ============================================================================
@@ -49,6 +54,8 @@ interface ReportRow {
   title: string
   customer: string | null
   invoiceCode: string | null
+  /** مرجع ملف PDF فاتورة الأستاذ — لصفوف الشبكة المرسلة فقط */
+  pdfRef: AlostazInvoicePdfRef | null
   moment: Date
   /** الأقمشة تُسجَّل بتاريخ يوم البيع فقط، فتُفلتر باليوم لا بالساعة (كما في صفحة المبيعات) */
   dateKey: string | null
@@ -176,6 +183,7 @@ async function loadTailoringRows(): Promise<ReportRow[]> {
       title: entry.order_number ? `${kindLabel} — طلب ${entry.order_number}` : entry.description || kindLabel,
       customer: entry.customer_name?.trim() || null,
       invoiceCode: entry.alostaz_invoice_code || null,
+      pdfRef: entry.payment_method === 'network' ? getIncomeInvoicePdfRef(entry) : null,
       moment: tailoringMoment(entry),
       dateKey: null,
       isRefund: false,
@@ -200,6 +208,7 @@ async function loadFabricRows(): Promise<ReportRow[]> {
           ? entry.customer_name
           : entry.description || 'مبيعة قماش'
     const dateKey = String(entry.date || '').slice(0, 10)
+    const pdfRef = isRefund ? null : getIncomeInvoicePdfRef(entry)
     const base = {
       operationId: `fabrics-${entry.id}`,
       department: 'fabrics' as const,
@@ -217,10 +226,10 @@ async function loadFabricRows(): Promise<ReportRow[]> {
       const networkPortion = Math.max(0, Number(entry.network_amount) || 0)
       const cashPortion = Math.max(0, Number(entry.cash_amount) || 0)
       if (networkPortion > 0) {
-        rows.push({ ...base, key: `fabrics-${entry.id}-network`, method: 'network', amount: networkPortion, isMixedPart: true })
+        rows.push({ ...base, key: `fabrics-${entry.id}-network`, method: 'network', amount: networkPortion, isMixedPart: true, pdfRef })
       }
       if (cashPortion > 0) {
-        rows.push({ ...base, key: `fabrics-${entry.id}-cash`, method: 'cash', amount: cashPortion, isMixedPart: true })
+        rows.push({ ...base, key: `fabrics-${entry.id}-cash`, method: 'cash', amount: cashPortion, isMixedPart: true, pdfRef: null })
       }
       continue
     }
@@ -231,6 +240,7 @@ async function loadFabricRows(): Promise<ReportRow[]> {
       method: entry.payment_method === 'network' ? 'network' : 'cash',
       amount,
       isMixedPart: false,
+      pdfRef: entry.payment_method === 'network' ? pdfRef : null,
     })
   }
 
@@ -252,6 +262,10 @@ async function loadWomenRows(): Promise<ReportRow[]> {
       title: transaction.operation_name,
       customer: transaction.customer_name?.trim() || null,
       invoiceCode: transaction.alostaz_invoice_code || null,
+      pdfRef:
+        transaction.payment_method === 'card' && Number(transaction.alostaz_invoice_id) > 0
+          ? { source: 'women_workshop' as const, id: transaction.id }
+          : null,
       moment: parseMoment(transaction.occurred_at),
       dateKey: null,
       isRefund: false,
@@ -369,7 +383,12 @@ function MethodTable({ method, rows }: { method: Method; rows: ReportRow[] }) {
                   <td className={`whitespace-nowrap px-4 py-3 font-black ${row.isRefund ? 'text-red-700' : 'text-slate-900'}`}>
                     {formatAmount(row.amount)}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs font-bold text-slate-500">{row.invoiceCode || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-500">{row.invoiceCode || '—'}</span>
+                      {row.method === 'network' && <AlostazInvoicePdfButton invoiceRef={row.pdfRef} />}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -7,6 +7,7 @@
 
 import { supabase } from '../supabase'
 import type { AlostazPrintableInvoice } from '../zatca-invoice'
+import type { Income } from '@/types/simple-accounting'
 
 const TAILORING_INVOICE_TIMEOUT_MS = 15_000
 
@@ -272,4 +273,68 @@ export async function fetchAlostazPrintableInvoice(
   } catch {
     return null
   }
+}
+
+// ── ملف PDF الرسمي لفاتورة الشبكة (رابط الأستاذ) ─────────────────
+
+export type AlostazInvoicePdfSource =
+  | 'income'
+  | 'order_deposit'
+  | 'order_delivery'
+  | 'order_payment'
+  | 'women_workshop'
+
+/** مرجع سجل في الموقع تُقرأ منه فاتورة الأستاذ على الخادم (لا معرّف فاتورة مباشر). */
+export interface AlostazInvoicePdfRef {
+  source: AlostazInvoicePdfSource
+  id: string
+}
+
+/** رابط ملف PDF الذي يولّده الأستاذ للفاتورة. يرمي خطأ برسالة السبب عند التعذّر. */
+export async function fetchAlostazInvoicePdfUrl(
+  ref: AlostazInvoicePdfRef
+): Promise<{ url: string; invoice_code: string }> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('انتهت الجلسة؛ سجّل الدخول من جديد')
+
+  const controller = new AbortController()
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), 20_000)
+  let res: Response
+  try {
+    res = await fetch('/api/alostaz/invoice-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(ref),
+      signal: controller.signal,
+    })
+  } catch {
+    throw new Error('تعذّر الاتصال بالخادم لجلب ملف الفاتورة')
+  } finally {
+    globalThis.clearTimeout(timeoutId)
+  }
+
+  const result = await res.json().catch(() => ({}))
+  const url = String(result?.data?.url || '')
+  if (!res.ok || !url) {
+    throw new Error(result?.error || 'تعذّر جلب ملف الفاتورة من الأستاذ')
+  }
+  return { url, invoice_code: String(result.data.invoice_code || '') }
+}
+
+/**
+ * مرجع ملف الفاتورة لحركة وارد: الحركات المشتقّة من الطلبات تحمل مرجعها جاهزاً،
+ * وسجلات income (الأقمشة والواردات اليدوية) تُفتح بمعرّفها إن كان لها جزء شبكة مرسل.
+ * الكاش لا مرجع له.
+ */
+export function getIncomeInvoicePdfRef(entry: Income): AlostazInvoicePdfRef | null {
+  if (entry.alostaz_pdf_ref !== undefined) return entry.alostaz_pdf_ref
+  const hasNetwork =
+    entry.payment_method === 'network' ||
+    (entry.payment_method === 'mixed' && Number(entry.network_amount) > 0)
+  return hasNetwork && Number(entry.alostaz_invoice_id) > 0
+    ? { source: 'income', id: entry.id }
+    : null
 }

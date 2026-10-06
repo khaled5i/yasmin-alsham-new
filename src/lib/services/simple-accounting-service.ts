@@ -973,6 +973,11 @@ export async function getDeliveredOrdersIncome(
       const receivedAt = order.order_received_date || order.created_at || ''
       const deliveredAt = order.delivery_date || order.updated_at || order.created_at || ''
       const breakdown = computePaymentBreakdown(order)
+      const payments = additionalPayments.get(order.id) || []
+      // كل دفعة شبكة إضافية تكتب رقم فاتورتها فوق أعمدة العربون في الطلب
+      const paymentInvoiceCodes = new Set(
+        payments.map(payment => String(payment.alostaz_invoice_code || '').trim()).filter(Boolean)
+      )
 
       const push = (
         suffix: string,
@@ -985,7 +990,17 @@ export async function getDeliveredOrdersIncome(
       ) => {
         if (amount < 0.005) return
         // فواتير الأستاذ تخص الشبكة فقط؛ الكاش يبقى إيصالاً محلياً
-        const alostaz = method === 'network' && phase ? buildAlostazLink(order, phase) : null
+        let alostaz = method === 'network' && phase ? buildAlostazLink(order, phase) : null
+        // رقم العربون المحفوظ يخص دفعة إضافية: لا نعرضه على العربون الأصلي، ويُحلّ
+        // رقم الفاتورة الأصلية من الأستاذ عند فتح ملفها.
+        if (
+          alostaz &&
+          phase === 'deposit' &&
+          paymentInvoiceCodes.has(String(alostaz.alostaz_invoice_code || '').trim())
+        ) {
+          alostaz = { ...alostaz, alostaz_invoice_id: null, alostaz_invoice_code: null, alostaz_sync_status: 'sent' }
+        }
+        const invoiceSent = !!alostaz && (Boolean(alostaz.alostaz_invoice_id) || alostaz.alostaz_sync_status === 'sent')
         entries.push({
           id: `${order.id}-${suffix}`,
           branch,
@@ -1001,12 +1016,14 @@ export async function getDeliveredOrdersIncome(
           is_automatic: true,
           created_at: order.created_at || occurredAt,
           ...(alostaz ?? {}),
-          alostaz_billing_version: Number(order.alostaz_billing_version) || 1
+          alostaz_billing_version: Number(order.alostaz_billing_version) || 1,
+          alostaz_pdf_ref: invoiceSent
+            ? { source: phase === 'deposit' ? 'order_deposit' : 'order_delivery', id: order.id }
+            : null
         })
       }
 
       // الدفعات المضافة لاحقاً تظهر كلٌّ بتاريخها، وتُطرح من العربون حتى لا تُحتسب مرتين
-      const payments = additionalPayments.get(order.id) || []
       let extraCash = 0
       let extraNetwork = 0
       for (const payment of payments) {
@@ -1047,7 +1064,10 @@ export async function getDeliveredOrdersIncome(
                 alostaz_synced_at: invoiceCode ? payment.occurred_at : null,
                 alostaz_invoice_scope: 'phase' as const,
               }),
-          alostaz_billing_version: Number(order.alostaz_billing_version) || 1
+          alostaz_billing_version: Number(order.alostaz_billing_version) || 1,
+          alostaz_pdf_ref: !isCash && invoiceCode
+            ? { source: 'order_payment', id: payment.id }
+            : null
         })
       }
 

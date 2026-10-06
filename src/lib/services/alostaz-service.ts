@@ -38,6 +38,7 @@ import {
   ALOSTAZ_FABRICS_VAT_TAX_ID,
   ALOSTAZ_QUANTITY_SCALE,
   ALOSTAZ_PRICE_SCALE,
+  ALOSTAZ_TAX_INVOICE_DESIGN_ID,
   toHalalas,
   toExactAlostazLinePricing,
   normalizePhone,
@@ -625,6 +626,130 @@ export async function getInvoiceZatcaSnapshot(
     vat: Math.round((total - totalWithoutVat) * 100) / 100,
     issue_date: invoice.issue_date ? String(invoice.issue_date) : null,
   }
+}
+
+// ── ملف PDF الرسمي للفاتورة (رابط مشاركة الأستاذ) ──────────────
+
+export interface AlostazInvoiceSummary {
+  id: number
+  code: string
+  branch_id: number | null
+  partner_id: number | null
+  partner_order_code: string | null
+  /** فاتورة بيع صادرة (لا مسودة ولا إشعار دائن). */
+  is_issued_sale: boolean
+  /** الإجمالي بالريال كما حسبه الأستاذ. */
+  total: number
+}
+
+interface RawInvoiceRow {
+  id?: unknown
+  code?: unknown
+  branch_id?: unknown
+  partner_id?: unknown
+  partner_order_code?: unknown
+  type?: unknown
+  nature?: unknown
+  status?: unknown
+  computations?: { total?: unknown } | null
+}
+
+function toInvoiceSummary(raw: RawInvoiceRow | null | undefined): AlostazInvoiceSummary | null {
+  const id = Number(raw?.id)
+  if (!(id > 0)) return null
+  if (!raw) return null
+  return {
+    id,
+    code: String(raw.code || ''),
+    branch_id: Number(raw.branch_id) || null,
+    partner_id: Number(raw.partner_id) || null,
+    partner_order_code: raw.partner_order_code == null ? null : String(raw.partner_order_code),
+    is_issued_sale:
+      raw.type === 'invoice' && raw.nature === 'sale' && raw.status === 'issued',
+    total: Math.round(Number(raw?.computations?.total) || 0) / ALOSTAZ_PRICE_SCALE,
+  }
+}
+
+/**
+ * فاتورة واحدة برقمها النصّي داخل فرع. الفلتر `code` يطابق تماماً في الأستاذ،
+ * ومع ذلك نطابق محلياً حتى لا تُعاد فاتورة أخرى لو تغيّر سلوكه.
+ */
+export async function findInvoiceByCode(
+  code: string,
+  branchId: number
+): Promise<AlostazInvoiceSummary | null> {
+  const wanted = code.trim()
+  if (!wanted) return null
+  const body = await alostazFetch(
+    `/invoices?code=${encodeURIComponent(wanted)}&per_page=5`,
+    { headers: { 'X-Branch-Id': String(branchId) } }
+  )
+  const matches = (Array.isArray(body?.data) ? body.data : [])
+    .map(toInvoiceSummary)
+    .filter((invoice: AlostazInvoiceSummary | null): invoice is AlostazInvoiceSummary =>
+      !!invoice && invoice.code === wanted && invoice.branch_id === branchId
+    )
+  return matches.length === 1 ? matches[0] : null
+}
+
+/** فواتير عميل واحد في فرع (فلتر partner_id مدعوم في الأستاذ). */
+export async function listPartnerInvoices(
+  partnerId: number,
+  branchId: number
+): Promise<AlostazInvoiceSummary[]> {
+  const invoices: AlostazInvoiceSummary[] = []
+  for (let page = 1; page <= 5; page++) {
+    const body = await alostazFetch(
+      `/invoices?partner_id=${encodeURIComponent(String(partnerId))}&per_page=100&page=${page}`,
+      { headers: { 'X-Branch-Id': String(branchId) } }
+    )
+    const rows = Array.isArray(body?.data) ? body.data : []
+    for (const row of rows) {
+      const invoice = toInvoiceSummary(row)
+      if (invoice && invoice.partner_id === partnerId && invoice.branch_id === branchId) {
+        invoices.push(invoice)
+      }
+    }
+    const lastPage = Number(body?.last_page) || 1
+    if (rows.length === 0 || page >= lastPage) break
+  }
+  return invoices
+}
+
+/**
+ * رابط ملف PDF الرسمي الذي يولّده الأستاذ للفاتورة — نفس رابط زر «مشاركة» في الأستاذ.
+ * الرابط يحمل رمزاً عشوائياً (64 بت) ولا يُفتح برقم فاتورة مخمَّن.
+ */
+export async function createInvoiceShareLink(
+  invoiceId: number,
+  branchId: number
+): Promise<string> {
+  const body = await alostazFetch('/helpers/share/invoice', {
+    method: 'POST',
+    headers: { 'X-Branch-Id': String(branchId) },
+    body: JSON.stringify({
+      invoice_id: invoiceId,
+      document_template_design_id: ALOSTAZ_TAX_INVOICE_DESIGN_ID,
+      method: 'link',
+    }),
+  })
+
+  const raw = String(body?.url || body?.data?.url || '').trim()
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new AlostazRequestError('لم يُرجع الأستاذ رابط ملف الفاتورة.')
+  }
+  // لا نعيد للمتصفح إلا رابط مشاركة لنفس الفاتورة على نطاق الأستاذ نفسه.
+  const expectedOrigin = new URL(ALOSTAZ_BASE_URL).origin
+  if (
+    url.origin !== expectedOrigin ||
+    !url.pathname.includes(`/share/invoice/${invoiceId}/`)
+  ) {
+    throw new AlostazRequestError('رابط ملف الفاتورة من الأستاذ غير متوقع.')
+  }
+  return url.toString()
 }
 
 // ── سياق الأقمشة في فرع «بروكار الشرقية» في الأستاذ ────────────

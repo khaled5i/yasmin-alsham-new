@@ -229,7 +229,9 @@ export async function listAlterationAttentionJobs(limit = 12): Promise<Alteratio
       jobType: String(row.job_type || ''),
       status: row.status,
       alterationNumber: isWomenInvoice
-        ? `فاتورة ${typeof payload.invoice_code === 'string' ? payload.invoice_code : ''}`.trim()
+        ? typeof payload.invoice_code === 'string' && payload.invoice_code
+          ? `فاتورة ${payload.invoice_code}`
+          : 'فاتورة كاش'
         : typeof payload.alteration_number === 'string' && payload.alteration_number
           ? payload.alteration_number
           : 'ورقة تعديل',

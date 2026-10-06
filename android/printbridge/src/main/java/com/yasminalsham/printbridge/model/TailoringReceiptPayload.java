@@ -102,7 +102,6 @@ public final class TailoringReceiptPayload {
         String orderNumber = clean(json.optString("order_number", ""), 80);
         String invoiceCode = clean(json.optString("invoice_code", ""), 120);
         if (orderNumber.isEmpty()) throw new JSONException("Missing order_number");
-        if (invoiceCode.isEmpty()) throw new JSONException("Missing invoice_code");
 
         String documentKind = clean(json.optString("document_kind", ""), 30);
         if (!documentKind.isEmpty()
@@ -110,6 +109,11 @@ public final class TailoringReceiptPayload {
                 && !KIND_CASH_RECEIPT.equals(documentKind)
                 && !KIND_ORDER_SUMMARY.equals(documentKind)) {
             throw new JSONException("Unsupported document_kind: " + documentKind);
+        }
+        // A cash paper is never sent to Alostaz, so it may legitimately carry no
+        // invoice number; every other paper must have one.
+        if (invoiceCode.isEmpty() && !KIND_CASH_RECEIPT.equals(documentKind)) {
+            throw new JSONException("Missing invoice_code");
         }
 
         return new TailoringReceiptPayload(
