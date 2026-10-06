@@ -411,7 +411,7 @@ export default function FabricCheckoutPage() {
                         </span>
                         <span className="mt-1 block text-xs text-[#211b19]/65">{option.description}</span>
                         <span className="mt-1 block text-xs font-semibold text-[#6b1726]">
-                          {option.shippingNetHalalas ? `${sar(option.shippingNetHalalas)} + الضريبة` : 'بلا رسوم'}
+                          {option.shippingGrossHalalas ? `${sar(option.shippingGrossHalalas)} شامل الضريبة` : 'بلا رسوم'}
                         </span>
                       </span>
                     </label>
@@ -524,7 +524,9 @@ export default function FabricCheckoutPage() {
                               </span>
                             )}
                           </span>
-                          <span className="shrink-0 font-semibold">{line.netHalalas != null ? sar(line.netHalalas) : '—'}</span>
+                          <span className="shrink-0 text-left font-semibold">
+                            {line.netHalalas != null ? <>{sar(line.netHalalas)}<span className="block text-xs font-normal text-[#211b19]/60">قبل الضريبة</span></> : '—'}
+                          </span>
                         </li>
                       )
                     })}
@@ -532,11 +534,11 @@ export default function FabricCheckoutPage() {
 
                   {quote.totals && (
                     <dl className="space-y-1.5 border-t-2 border-[#d8c5ae] pt-3 text-sm">
-                      <div className="flex justify-between"><dt className="text-[#211b19]/70">الأقمشة قبل الضريبة</dt><dd>{sar(quote.totals.itemsNetHalalas)}</dd></div>
+                      <div className="flex justify-between"><dt className="text-[#211b19]/70">الأقمشة شاملة الضريبة</dt><dd>{sar(quote.totals.totalHalalas - quote.totals.shippingGrossHalalas)}</dd></div>
                       {shipping && (
-                        <div className="flex justify-between"><dt className="text-[#211b19]/70">الشحن قبل الضريبة</dt><dd>{sar(quote.totals.shippingNetHalalas)}</dd></div>
+                        <div className="flex justify-between"><dt className="text-[#211b19]/70">الشحن شامل الضريبة</dt><dd>{sar(quote.totals.shippingGrossHalalas)}</dd></div>
                       )}
-                      <div className="flex justify-between"><dt className="text-[#211b19]/70">ضريبة القيمة المضافة (15%)</dt><dd>{sar(quote.totals.vatHalalas)}</dd></div>
+                      <div className="flex justify-between"><dt className="text-[#211b19]/70">الضريبة المضمّنة في الإجمالي (15%)</dt><dd>{sar(quote.totals.vatHalalas)}</dd></div>
                       <div className="flex justify-between border-t-2 border-[#d8c5ae] pt-2 text-base font-bold">
                         <dt>الإجمالي</dt><dd className="text-[#6b1726]">{sar(quote.totals.totalHalalas)}</dd>
                       </div>

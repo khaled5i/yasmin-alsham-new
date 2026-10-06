@@ -294,6 +294,33 @@ export interface AlostazInvoicePdfRef {
 export async function fetchAlostazInvoicePdfUrl(
   ref: AlostazInvoicePdfRef
 ): Promise<{ url: string; invoice_code: string }> {
+  const data = await postInvoicePdfRoute(ref)
+  const url = String(data?.url || '')
+  if (!url) throw new Error('تعذّر جلب ملف الفاتورة من الأستاذ')
+  return { url, invoice_code: String(data.invoice_code || '') }
+}
+
+/**
+ * نسخة فاتورة الأستاذ للطباعة (الرقم والإجماليات ورمز QR) بنفس مرجع زر «تنزيل الفاتورة»،
+ * فتُحلّ فاتورة كل دفعة كما يحلّها الملف تماماً. يرمي خطأ برسالة السبب عند التعذّر.
+ */
+export async function fetchAlostazInvoicePrintableByRef(
+  ref: AlostazInvoicePdfRef
+): Promise<AlostazPrintableInvoice> {
+  const data = await postInvoicePdfRoute(ref, 'print')
+  if (!data?.qr) throw new Error('لم يصل رمز QR للفاتورة من الأستاذ')
+  return {
+    invoice_code: String(data.invoice_code || ''),
+    qr: String(data.qr),
+    total: Number(data.total) || 0,
+    total_without_vat: Number(data.total_without_vat) || 0,
+    vat: Number(data.vat) || 0,
+    issue_date: data.issue_date ? String(data.issue_date) : null,
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function postInvoicePdfRoute(ref: AlostazInvoicePdfRef, purpose?: 'print'): Promise<any> {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('انتهت الجلسة؛ سجّل الدخول من جديد')
 
@@ -307,21 +334,20 @@ export async function fetchAlostazInvoicePdfUrl(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify(ref),
+      body: JSON.stringify(purpose ? { ...ref, purpose } : ref),
       signal: controller.signal,
     })
   } catch {
-    throw new Error('تعذّر الاتصال بالخادم لجلب ملف الفاتورة')
+    throw new Error('تعذّر الاتصال بالخادم لجلب الفاتورة')
   } finally {
     globalThis.clearTimeout(timeoutId)
   }
 
   const result = await res.json().catch(() => ({}))
-  const url = String(result?.data?.url || '')
-  if (!res.ok || !url) {
-    throw new Error(result?.error || 'تعذّر جلب ملف الفاتورة من الأستاذ')
+  if (!res.ok || !result?.data) {
+    throw new Error(result?.error || 'تعذّر جلب الفاتورة من الأستاذ')
   }
-  return { url, invoice_code: String(result.data.invoice_code || '') }
+  return result.data
 }
 
 /**

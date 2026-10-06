@@ -22,6 +22,10 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
+import LocalInvoicePrintButton from '@/components/LocalInvoicePrintButton'
+import { fetchAlostazInvoicePrintableByRef } from '@/lib/services/alostaz-client'
+import { createWomenWorkshopReceiptPayload } from '@/lib/print-women-workshop-receipt'
+import type { AlostazPrintableInvoice } from '@/lib/zatca-invoice'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import {
   getWomenWorkshopTransactions,
@@ -50,6 +54,25 @@ function formatDate(date: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(date))
+}
+
+/** الشبكة المرسلة للأستاذ فقط لها ملف ونسخة برمز QR. */
+function hasAlostazInvoice(transaction: WomenWorkshopTransaction): boolean {
+  return transaction.payment_method === 'card' && Number(transaction.alostaz_invoice_id) > 0
+}
+
+/** ورقة الطباعة المحلية: الشبكة بنسخة فاتورة الأستاذ، والكاش بنفس الشكل بلا رقم ولا رمز. */
+async function loadTransactionPrintPayload(transaction: WomenWorkshopTransaction) {
+  let printable: AlostazPrintableInvoice | null = null
+  let warning: string | null = null
+  if (hasAlostazInvoice(transaction)) {
+    try {
+      printable = await fetchAlostazInvoicePrintableByRef({ source: 'women_workshop', id: transaction.id })
+    } catch {
+      warning = 'تعذّر جلب رمز QR من الأستاذ الآن؛ طُبعت الفاتورة بدونه.'
+    }
+  }
+  return { payload: createWomenWorkshopReceiptPayload(transaction, printable), warning }
 }
 
 function SyncBadge({ transaction }: { transaction: WomenWorkshopTransaction }) {
@@ -259,12 +282,18 @@ function TransactionsTable({
                       {/* ملف PDF الرسمي — لعمليات الشبكة المرسلة للأستاذ فقط */}
                       <AlostazInvoicePdfButton
                         invoiceRef={
-                          transaction.payment_method === 'card' && Number(transaction.alostaz_invoice_id) > 0
+                          hasAlostazInvoice(transaction)
                             ? { source: 'women_workshop', id: transaction.id }
                             : null
                         }
                       />
                     </div>
+                    {/* الكاش دائماً، والشبكة بعد وصول رقم فاتورتها من الأستاذ */}
+                    {(transaction.payment_method === 'cash' || transaction.alostaz_invoice_code) && (
+                      <div className="mt-1.5">
+                        <LocalInvoicePrintButton loadPayload={() => loadTransactionPrintPayload(transaction)} />
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

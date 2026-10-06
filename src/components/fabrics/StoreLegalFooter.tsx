@@ -49,7 +49,7 @@ export default function StoreLegalFooter() {
             <li key={method} className="rounded-md bg-[#f6f0e8] px-2.5 py-1 text-xs font-bold text-[#2f0c14]">{method}</li>
           ))}
         </ul>
-        <p className="text-xs text-[#f6f0e8]/60">الأسعار بالريال السعودي، وتُضاف ضريبة القيمة المضافة 15% ويظهر الإجمالي قبل الدفع. © 2026 {STORE_ENTITY.legalName}</p>
+        <p className="text-xs text-[#f6f0e8]/60">الأسعار بالريال السعودي؛ تُضاف ضريبة القيمة المضافة 15% على الأقمشة، ورسوم الشحن شاملة الضريبة. يظهر الإجمالي قبل الدفع. © 2026 {STORE_ENTITY.legalName}</p>
       </div>
     </footer>
   )

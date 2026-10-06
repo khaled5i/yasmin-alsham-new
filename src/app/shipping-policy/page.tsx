@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: 'طرق استلام طلبات متجر أقمشة ياسمين الشام ومدد التوصيل ورسوم الشحن.',
 }
 
-const shippingFeeSar = FABRIC_DELIVERY_OPTIONS.shipping.shippingNetHalalas / 100
+const shippingFeeSar = FABRIC_DELIVERY_OPTIONS.shipping.shippingGrossHalalas / 100
 
 export default function ShippingPolicyPage() {
   return (
@@ -27,7 +27,7 @@ export default function ShippingPolicyPage() {
 
       <PolicySection title="2. الشحن داخل المملكة العربية السعودية">
         <PolicyList items={[
-          <>رسوم شحن موحّدة لجميع المدن: {shippingFeeSar} ريالاً + ضريبة القيمة المضافة 15%.</>,
+          <>رسوم شحن موحّدة لجميع المدن: {shippingFeeSar} ريالاً شاملة ضريبة القيمة المضافة 15%.</>,
           <>مدة التوصيل: {STORE_DELIVERY_TIMES.shipping}.</>,
           'أيام العمل لا تشمل الجمعة والعطل الرسمية، وقد تطول المدة في المواسم والظروف الخارجة عن إرادتنا، وسنبلغك حينها.',
           'يجب إدخال العنوان ورقم جوال المستلم بدقة؛ تأخر التوصيل بسبب عنوان خاطئ لا نتحمّله.',

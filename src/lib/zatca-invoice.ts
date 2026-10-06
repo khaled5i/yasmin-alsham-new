@@ -31,23 +31,24 @@ export interface AlostazPrintableInvoice {
 
 // رأس الطابعة الحرارية 203dpi = 8 نقاط لكل ملّيمتر. حجم المربع يجب أن يكون عدداً
 // صحيحاً من النقاط، وإلا رسمت الطابعة بعض المربعات بنقطتين وبعضها بثلاث فيتشوّه الرمز.
-// رمز الأستاذ (المرحلة الثانية، ~516 حرفاً) شبكة 89×89، فنحتاج 4 نقاط للمربع.
-const QR_MODULE_MM = 0.5 // 4 نقاط
-const QR_MODULE_MM_COMPACT = 0.375 // 3 نقاط — فقط إن لم يتّسع الرمز في عرض الورقة
-const QR_MAX_WIDTH_MM = 64
+// رمز الأستاذ (المرحلة الثانية، ~516 حرفاً) بتصحيح L شبكة 77×77. بخمس نقاط للمربع ظلّ
+// تسرّب الحرارة يسدّ الفراغات على الورق، فنرسمه بأكبر ما يتّسع مع هامشه: 6 نقاط.
+const QR_MODULE_MM = 0.75 // 6 نقاط
+const QR_MODULE_MM_COMPACT = 0.625 // 5 نقاط — فقط إن لم يتّسع الرمز في عرض الورقة
+const QR_MAX_WIDTH_MM = 64 // الطباعة الفعلية 72mm
 // الهامش الأبيض الذي يشترطه معيار QR حول الرمز (4 مربعات)
 const QR_QUIET_MODULES = 4
 
 /**
  * يرسم رمز QR كـ SVG متزامن (يُستعمل داخل HTML الإيصال الذي يُبنى بشكل متزامن).
- * لا يغيّر المحتوى: النص يُرمَّز كما هو، بتصحيح أخطاء M كما توصي الهيئة.
+ * لا يغيّر المحتوى: النص يُرمَّز كما هو، بتصحيح أخطاء L كما يرسمه الأستاذ نفسه في فواتيره.
  * يُحسب العرض من عدد المربعات حتى يساوي كل مربع عدداً صحيحاً من نقاط الطابعة.
  */
 export function buildQrSvg(text: string): string {
   const value = String(text || '').trim()
   if (!value) return ''
 
-  const qr = QRCode.create(value, { errorCorrectionLevel: 'M' })
+  const qr = QRCode.create(value, { errorCorrectionLevel: 'L' })
   const size = qr.modules.size
   const quiet = QR_QUIET_MODULES
   const total = size + quiet * 2

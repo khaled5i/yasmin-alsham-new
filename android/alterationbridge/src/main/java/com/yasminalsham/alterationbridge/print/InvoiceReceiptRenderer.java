@@ -39,12 +39,13 @@ public final class InvoiceReceiptRenderer {
     private static final String COMPANY_NAME = "ياسمين الشام";
     private static final String LEGAL_NAME = "مؤسسة محمد عوض الدوسري";
     /**
-     * Alostaz's phase-2 QR (~516 chars) is a dense 89x89 grid. Each module must be a
-     * whole number of print dots and at least 4 dots (0.5mm on a 203dpi head);
-     * at 3 dots thermal bleed closes the gaps and phones fail to read it.
+     * Alostaz's phase-2 QR (~516 chars) at error correction L (what Alostaz itself
+     * uses) is a 77x77 grid. Each module must be a whole number of print dots. At
+     * 5 dots thermal bleed still closed the gaps on paper, so we draw it as large as
+     * the paper allows with its quiet zone: 6 dots (0.75mm), ~58mm wide.
      */
-    private static final int QR_MIN_MODULE_DOTS = 4;
-    private static final int QR_TARGET_DOTS = 360;
+    private static final int QR_MIN_MODULE_DOTS = 6;
+    private static final int QR_TARGET_DOTS = 470;
     /** White quiet zone the QR standard requires around the code, in modules. */
     private static final int QR_QUIET_MODULES = 4;
     /** VAT number shared by every Alostaz branch (embedded in the signed QR too). */
@@ -417,15 +418,18 @@ public final class InvoiceReceiptRenderer {
         /**
          * Draws the ZATCA QR exactly as Alostaz encoded it. Modules are solid,
          * integer-sized squares (no anti-aliasing) so the thermal raster stays
-         * scannable; Alostaz codes print at 4 dots/module (~45mm) plus a 4-module quiet zone.
+         * scannable; Alostaz codes print at 6 dots/module (~58mm) plus a 4-module quiet zone.
          */
         void qrCode(String text) throws PrinterException {
             BitMatrix matrix;
             try {
                 Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
-                hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
+                hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.L);
                 hints.put(EncodeHintType.MARGIN, 0);
-                hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+                // No CHARACTER_SET hint: it makes ZXing prepend a UTF-8 ECI header, which
+                // many phone scanners pass through as a "\000026" prefix and the ZATCA
+                // Base64 no longer decodes. Alostaz's QR text is pure ASCII Base64, so
+                // plain byte mode carries it verbatim.
                 matrix = new QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, hints);
             } catch (WriterException | IllegalArgumentException error) {
                 throw new PrinterException(

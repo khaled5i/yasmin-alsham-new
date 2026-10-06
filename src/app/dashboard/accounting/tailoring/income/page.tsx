@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
+import LocalInvoicePrintButton from '@/components/LocalInvoicePrintButton'
 import ReportPeriodPicker, {
   computePresetRange,
   type DateFilter,
@@ -36,7 +37,13 @@ import {
   getUnrecordedDeliveredOrders,
   type UnrecordedDeliveredOrder,
 } from '@/lib/services/simple-accounting-service'
-import { getIncomeInvoicePdfRef } from '@/lib/services/alostaz-client'
+import {
+  fetchAlostazInvoicePrintableByRef,
+  getIncomeInvoicePdfRef,
+  type AlostazInvoicePdfRef,
+} from '@/lib/services/alostaz-client'
+import { createIncomeEntryReceiptPayload } from '@/lib/print-tailoring-receipt'
+import type { AlostazPrintableInvoice } from '@/lib/zatca-invoice'
 import type { Income, IncomeEntryKind, IncomePaymentMethod, PaymentMethod } from '@/types/simple-accounting'
 
 // ============================================================================
@@ -198,6 +205,25 @@ function getEntryMoment(entry: Income): Date {
   return new Date(`${entry.date}T00:00:00`)
 }
 
+/**
+ * ورقة الطباعة المحلية لحركة واحدة. الشبكة تُطبع بنسخة فاتورة الأستاذ (رمز QR)،
+ * وإن تعذّر جلب الرمز تُطبع برقمها المحفوظ بدونه مع تنبيه.
+ */
+async function loadEntryPrintPayload(entry: Income, pdfRef: AlostazInvoicePdfRef | null) {
+  let printable: AlostazPrintableInvoice | null = null
+  let warning: string | null = null
+  if (entry.payment_method === 'network' && pdfRef) {
+    try {
+      printable = await fetchAlostazInvoicePrintableByRef(pdfRef)
+    } catch (error) {
+      // بلا رقم محفوظ (عربون كُتب فوقه رقم دفعة إضافية) لا يمكن طباعة الفاتورة أصلاً
+      if (!entry.alostaz_invoice_code) throw error
+      warning = 'تعذّر جلب رمز QR من الأستاذ الآن؛ طُبعت الفاتورة بدونه.'
+    }
+  }
+  return { payload: createIncomeEntryReceiptPayload(entry, printable), warning }
+}
+
 function formatEntryMoment(entry: Income): string {
   const date = getEntryMoment(entry)
   if (Number.isNaN(date.getTime())) return '—'
@@ -270,6 +296,13 @@ function IncomeEntryRow({ item, index }: { item: Income; index: number }) {
                 فاتورة تغطي كامل الطلب
               </span>
             ) : null}
+          </div>
+        )}
+
+        {/* الكاش دائماً، والشبكة بعد إرسال فاتورتها للأستاذ */}
+        {(item.payment_method === 'cash' || pdfRef) && (
+          <div className="mt-1.5">
+            <LocalInvoicePrintButton loadPayload={() => loadEntryPrintPayload(item, pdfRef)} />
           </div>
         )}
 

@@ -311,6 +311,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // الطباعة المحلية تحتاج بيانات النسخة (الرقم والإجماليات والرمز) لا رابط الملف
+    if (payload?.purpose === 'print') {
+      return NextResponse.json({
+        data: {
+          invoice_code: snapshot.invoice_code,
+          qr: snapshot.qr,
+          total: snapshot.total,
+          total_without_vat: snapshot.total_without_vat,
+          vat: snapshot.vat,
+          issue_date: snapshot.issue_date,
+        },
+        error: null,
+      })
+    }
+
     const url = await createInvoiceShareLink(invoiceId, target.branchId)
     return NextResponse.json({
       data: { url, invoice_code: snapshot.invoice_code },

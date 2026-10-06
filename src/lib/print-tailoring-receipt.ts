@@ -10,6 +10,7 @@ import {
   splitInclusiveVat,
   type AlostazPrintableInvoice,
 } from '@/lib/zatca-invoice'
+import type { Income } from '@/types/simple-accounting'
 
 const COMPANY_NAME = 'ياسمين الشام'
 const LEGAL_NAME = 'مؤسسة محمد عوض الدوسري'
@@ -672,6 +673,65 @@ export function createManualTailoringInvoiceReceiptPayload(
       ? { code: accountingCode, printable: invoice?.alostazPrintable || null }
       : null,
     // فاتورة مستقلة غير مرتبطة بطلب، فلا ملخص طلب تحتها.
+    showOrderSummary: false,
+  })
+}
+
+/**
+ * إعادة طباعة حركة واحدة من صفحة واردات التفصيل: ورقة بقيمة الحركة نفسها وبنفس
+ * أرقام أوراقها الأصلية (رقم الأستاذ للشبكة، و CASH-… المحلي للكاش).
+ * قيمة الطلب الكاملة ليست في الحركة، فلا يُطبع ملخص الطلب تحتها.
+ */
+export function createIncomeEntryReceiptPayload(
+  entry: Income,
+  printable: AlostazPrintableInvoice | null
+): TailoringReceiptPayload {
+  const isNetwork = entry.payment_method === 'network'
+  const accountingCode = String(entry.alostaz_invoice_code || printable?.invoice_code || '').trim()
+
+  if (entry.entry_kind !== 'order_deposit' &&
+      entry.entry_kind !== 'order_delivery' &&
+      entry.entry_kind !== 'order_payment') {
+    return createManualTailoringInvoiceReceiptPayload({
+      id: entry.id,
+      amount: entry.amount,
+      paymentMethod: isNetwork ? 'network' : 'cash',
+      date: entry.date,
+      customerName: entry.customer_name,
+      itemDescription: entry.description,
+      alostazInvoiceCode: accountingCode,
+      alostazPrintable: printable,
+    })
+  }
+
+  const orderNumber = String(entry.order_number || entry.order_id || '')
+  const paymentReference = entry.id.split('-payment-')[1] || entry.id
+  const kind = entry.entry_kind
+  const itemDescription = kind === 'order_deposit'
+    ? `عربون ${SERVICE_ITEM}`
+    : kind === 'order_delivery'
+      ? `باقي ${SERVICE_ITEM}`
+      : `دفعة على ${SERVICE_ITEM}`
+  const localCode = kind === 'order_deposit'
+    ? `CASH-${orderNumber}-D`
+    : kind === 'order_delivery'
+      ? `CASH-${orderNumber}-R`
+      : `CASH-${orderNumber}-P-${paymentReference.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`
+
+  return buildPaper({
+    order: {
+      id: entry.order_id || entry.id,
+      order_number: orderNumber,
+      client_name: entry.customer_name,
+    },
+    kind: isNetwork ? 'tax_invoice' : 'cash_receipt',
+    receiptType: kind === 'order_deposit' ? 'preliminary' : kind === 'order_delivery' ? 'delivery' : 'payment',
+    amount: Math.max(0, Number(entry.amount) || 0),
+    method: isNetwork ? 'card' : 'cash',
+    issuedAt: String(entry.occurred_at || entry.created_at || entry.date),
+    itemDescription,
+    localCode,
+    accounting: isNetwork ? { code: accountingCode, printable } : null,
     showOrderSummary: false,
   })
 }

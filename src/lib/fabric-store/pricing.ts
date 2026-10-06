@@ -19,7 +19,8 @@
  * 3. إجمالي السطر = سعر الوحدة × الكمية ⇒ أقرب هللة (القطعة عدد صحيح أصلاً).
  * 4. الضريبة على مجموع الطلب (البنود + الشحن) لا على كل سطر، وتُقرَّب مرة واحدة.
  * 5. الإجمالي = المجموع + الضريبة. وتوزَّع الضريبة على الأسطر بالباقي الأكبر
- *    (`computeFabricOrderBreakdown`)، فمجموع الأسطر شاملةً الضريبة يساوي الإجمالي
+ *    (`computeFabricOrderBreakdown`). للشحن بسعر شامل ثابت تُثبّت حصته أولاً
+ *    ثم يُوزّع باقي الضريبة على الأقمشة؛ فمجموع الأسطر شاملةً الضريبة يساوي الإجمالي
  *    بالضبط (بنود فاتورة الأستاذ والاسترداد الجزئي تُبنى عليه).
  * هي نفسها قواعد السلة السابقة بالأرقام العشرية، لكن بأعداد صحيحة: فلا تنحرف عند
  * أنصاف الهللات، ولا يُعرض سعر قُرِّب إلى صفر كأنه قابل للشراء.
@@ -365,22 +366,37 @@ export interface FabricOrderBreakdown extends FabricOrderTotals {
  */
 export function computeFabricOrderBreakdown(
   lineNetHalalas: readonly number[],
-  options: { shippingNetHalalas?: number } = {}
+  options: { shippingNetHalalas?: number; shippingGrossHalalas?: number } = {}
 ): FabricOrderBreakdown {
   const totals = computeFabricOrderTotals(lineNetHalalas, options)
   if (totals.totalHalalas > FABRIC_MAX_ORDER_TOTAL_HALALAS) {
     throw new RangeError('إجمالي الطلب يتجاوز السقف التقني للطلب الواحد')
   }
 
-  const vatShares = allocateByWeights(totals.vatHalalas, [
-    ...lineNetHalalas,
-    totals.shippingNetHalalas,
-  ])
-  const shippingVat = vatShares[vatShares.length - 1]
+  let lineVatShares: number[]
+  let shippingVat: number
+  if (options.shippingGrossHalalas !== undefined) {
+    // المرحلة 10 B: يبقى الشحن 50.00 في العرض والفاتورة حتى عند بواقي التقريب.
+    // ضريبة الطلب لم تتغير؛ أي هللة متبقية تُوزّع على الأقمشة بالباقي الأكبر.
+    const gross = options.shippingGrossHalalas
+    const expectedGross = totals.shippingNetHalalas + divideRoundHalfUp(
+      multiplyExact(totals.shippingNetHalalas, FABRIC_VAT_BASIS_POINTS), BASIS_POINTS_SCALE
+    )
+    if (!Number.isSafeInteger(gross) || gross < 0 || gross !== expectedGross) {
+      throw new RangeError('رسم الشحن الشامل لا يطابق صافي الشحن وضريبته')
+    }
+    shippingVat = gross - totals.shippingNetHalalas
+    lineVatShares = allocateByWeights(totals.vatHalalas - shippingVat, lineNetHalalas)
+  } else {
+    // الطلبات/المستهلكون السابقون الذين يمررون صافي الشحن فقط يحتفظون بعقدهم.
+    const vatShares = allocateByWeights(totals.vatHalalas, [...lineNetHalalas, totals.shippingNetHalalas])
+    shippingVat = vatShares[vatShares.length - 1]
+    lineVatShares = vatShares.slice(0, -1)
+  }
 
   return {
     ...totals,
-    lineGrossHalalas: lineNetHalalas.map((amount, index) => amount + vatShares[index]),
+    lineGrossHalalas: lineNetHalalas.map((amount, index) => amount + lineVatShares[index]),
     shippingGrossHalalas: totals.shippingNetHalalas + shippingVat,
   }
 }

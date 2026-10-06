@@ -11,7 +11,8 @@
  */
 
 import { z } from 'zod'
-import { FABRIC_MAX_CM_PER_LINE, type FabricLineRejection, type FabricPurchaseMode } from './pricing'
+import { FABRIC_MAX_CM_PER_LINE, FABRIC_VAT_BASIS_POINTS, type FabricLineRejection, type FabricPurchaseMode } from './pricing'
+import { divideRoundHalfUp } from './money'
 
 // ============================================
 // مفتاح الواجهة
@@ -63,7 +64,7 @@ export const FABRIC_STORE_MAX_LINES = 40
  * (مضمونها في `src/lib/store-legal.ts`). أي تغيير في مضمون سياسة يرفع إصدارها.
  */
 export const FABRIC_STORE_POLICY_VERSIONS = {
-  terms: '2026-10-03', // الدفعة B: الحجز عند «ادفعي» لا عند تأكيد الطلب (البند 4)
+  terms: '2026-10-06', // المرحلة 10 B: الشحن شامل الضريبة ووسائل الدفع المعتمدة
   returns: '2026-09-28',
   privacy: '2026-10-05', // الدفعة D (AUD-10/07): الاستضافة خارج المملكة، Google Analytics، محو العنوان بعد 90 يوماً
 } as const
@@ -81,12 +82,18 @@ export interface FabricDeliveryOption {
   description: string
   /** رسوم الشحن قبل الضريبة (الضريبة 15% تُحسب على البنود + الشحن معاً). */
   shippingNetHalalas: number
+  /** رسم ثابت شامل الضريبة: ما يظهر للزبونة وفي بند فاتورة الشحن. */
+  shippingGrossHalalas: number
 }
 
+/** قرار المالكة 6 أكتوبر 2026: الشحن 50 ريالاً شاملة الضريبة، لا 50 + الضريبة. */
+export const FABRIC_STORE_SHIPPING_GROSS_HALALAS = 5_000
+
 /**
- * قرار المالك (24 سبتمبر 2026): استلام من المحل، أو شحن مؤقت بسعر ثابت 50 ريالاً
- * + الضريبة لكل مدن السعودية حتى تُحدَّد المدن وشركة الشحن. تغيير السعر هنا وحده
- * يكفي (القاعدة تتحقق من اتساق المبالغ لا من قيمة الشحن).
+ * استلام من المحل أو شحن لكل مدن السعودية. قرار 6 أكتوبر 2026: رسم الشحن
+ * ثابت شامل الضريبة؛ تختار المالكة الناقل عند أول طلب، والمدد الحالية باقية.
+ * الصافي بالهللة مقرّب نصفاً للأعلى، وحصة ضريبة الشحن تثبّت المبلغ الشامل
+ * في pricing.ts مع إبقاء ضريبة الطلب محسوبة مرة واحدة على مجموع الصافي.
  */
 export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliveryOption> = {
   pickup: {
@@ -95,13 +102,18 @@ export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliver
     label: 'استلام من المحل',
     description: 'جاهز في نفس يوم العمل، ونبلغك حين يكون جاهزاً للاستلام.',
     shippingNetHalalas: 0,
+    shippingGrossHalalas: 0,
   },
   shipping: {
     method: 'shipping',
     code: 'ksa_flat',
     label: 'شحن داخل السعودية',
     description: 'سعر موحّد لكل مدن المملكة — التوصيل من 3 إلى 5 أيام عمل.',
-    shippingNetHalalas: 5_000,
+    shippingNetHalalas: divideRoundHalfUp(
+      FABRIC_STORE_SHIPPING_GROSS_HALALAS * 10_000,
+      10_000 + FABRIC_VAT_BASIS_POINTS
+    ),
+    shippingGrossHalalas: FABRIC_STORE_SHIPPING_GROSS_HALALAS,
   },
 }
 
@@ -310,6 +322,7 @@ export interface QuotedFabricLine {
 export interface FabricQuoteTotals {
   itemsNetHalalas: number
   shippingNetHalalas: number
+  shippingGrossHalalas: number
   vatHalalas: number
   totalHalalas: number
 }

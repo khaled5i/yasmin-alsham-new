@@ -160,11 +160,12 @@ export function priceCart(
   if (priced.length > 0) {
     const breakdown = computeFabricOrderBreakdown(
       priced.map(entry => entry.line.netHalalas),
-      { shippingNetHalalas: delivery.shippingNetHalalas }
+      { shippingNetHalalas: delivery.shippingNetHalalas, shippingGrossHalalas: delivery.shippingGrossHalalas }
     )
     totals = {
       itemsNetHalalas: breakdown.itemsNetHalalas,
       shippingNetHalalas: breakdown.shippingNetHalalas,
+      shippingGrossHalalas: breakdown.shippingGrossHalalas,
       vatHalalas: breakdown.vatHalalas,
       totalHalalas: breakdown.totalHalalas,
     }
