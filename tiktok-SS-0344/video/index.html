@@ -34,16 +34,17 @@
       #root { direction: rtl; position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: "Tajawal", sans-serif; color: #fff; }
       .clip { position: absolute; inset: 0; overflow: hidden; }
       .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 40%; }
-      .shade-top { position: absolute; left: 0; right: 0; top: 0; height: 720px;
-        background: linear-gradient(to bottom, rgba(18,8,16,0.82) 0%, rgba(18,8,16,0.45) 55%, rgba(18,8,16,0) 100%); }
+      .shade-top { position: absolute; left: 0; right: 0; top: 0; height: 760px;
+        background: linear-gradient(to bottom, rgba(18,8,16,0.85) 0%, rgba(18,8,16,0.5) 55%, rgba(18,8,16,0) 100%); }
       .shade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 900px;
         background: linear-gradient(to top, rgba(18,8,16,0.9) 0%, rgba(18,8,16,0.55) 50%, rgba(18,8,16,0) 100%); }
       .shadow { text-shadow: 0 4px 24px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.5); }
 
       /* Hook */
-      #hook-1 { position: absolute; top: 250px; left: 60px; right: 60px; text-align: center; font-size: 104px; font-weight: 800; line-height: 1.15; }
-      #hook-2 { position: absolute; top: 400px; left: 60px; right: 60px; text-align: center; font-size: 132px; font-weight: 800; line-height: 1.15; color: #f3d9a4; }
-      #hook-code { position: absolute; bottom: 470px; left: 0; right: 0; text-align: center; font-size: 44px; font-weight: 500; letter-spacing: 0.04em; direction: ltr; color: #f6ead2; }
+      .hook { position: absolute; left: 50px; right: 50px; text-align: center; font-weight: 800; line-height: 1.15; }
+      #hook-1 { top: 220px; font-size: 96px; }
+      #hook-2 { top: 350px; font-size: 150px; color: #f3d9a4; }
+      #hook-3 { top: 540px; font-size: 96px; }
 
       /* Dress label */
       .label { position: absolute; top: 230px; left: 60px; right: 60px; display: flex; align-items: center; justify-content: center; gap: 34px; }
@@ -52,113 +53,140 @@
         font-size: 108px; font-weight: 800; color: #f3d9a4; padding-top: 14px; direction: ltr; }
       .name { font-size: 84px; font-weight: 800; line-height: 1.1; }
 
-      /* End card */
-      #end { background: #120a10; }
-      .panel { position: absolute; top: 560px; width: 340px; height: 640px; border-radius: 22px; overflow: hidden; border: 3px solid rgba(231,194,125,0.75); }
-      .panel img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
-      .pnum { position: absolute; top: 14px; left: 50%; width: 84px; height: 84px; margin-left: -42px; border-radius: 50%;
+      /* Choice card */
+      #choice { background: #120a10; }
+      .panel { position: absolute; top: 560px; width: 340px; height: 960px; border-radius: 22px; overflow: hidden; border: 3px solid rgba(231,194,125,0.75); }
+      .panel img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; }
+      .pnum { position: absolute; top: 16px; left: 50%; width: 96px; height: 96px; margin-left: -48px; border-radius: 50%;
         background: #120a10; border: 3px solid #e7c27d; display: flex; align-items: center; justify-content: center;
-        font-size: 54px; font-weight: 800; color: #f3d9a4; padding-top: 8px; direction: ltr; }
+        font-size: 62px; font-weight: 800; color: #f3d9a4; padding-top: 8px; direction: ltr; }
       #p1 { right: 30px; } #p2 { right: 370px; } #p3 { right: 710px; }
-      #q1 { position: absolute; top: 190px; left: 40px; right: 40px; text-align: center; font-size: 100px; font-weight: 800; }
-      #q2 { position: absolute; top: 330px; left: 40px; right: 40px; text-align: center; font-size: 60px; font-weight: 500; color: #f3d9a4; }
-      #code-box { position: absolute; top: 1250px; left: 140px; right: 140px; padding: 26px 30px 20px; border-radius: 20px;
-        border: 3px solid #e7c27d; text-align: center; background: rgba(231,194,125,0.08); }
-      #code-1 { font-size: 46px; font-weight: 500; }
-      #code-2 { font-size: 78px; font-weight: 800; color: #f3d9a4; direction: ltr; letter-spacing: 0.04em; margin-top: 6px; }
-      #code-3 { font-size: 40px; font-weight: 500; direction: ltr; color: #f6ead2; margin-top: 4px; }
-      #logo { position: absolute; top: 1555px; left: 50%; width: 330px; margin-left: -165px; }
-      #tag { position: absolute; top: 1750px; left: 40px; right: 40px; text-align: center; font-size: 38px; font-weight: 500; color: #e9dcc6; }
+      #q1 { position: absolute; top: 200px; left: 40px; right: 40px; text-align: center; font-size: 104px; font-weight: 800; }
+      #q2 { position: absolute; top: 345px; left: 40px; right: 40px; text-align: center; font-size: 62px; font-weight: 500; color: #f3d9a4; }
+
+      /* Logo finale */
+      #finale { background: radial-gradient(ellipse at 50% 42%, #2a1322 0%, #120a10 70%); }
+      #logo-mark { position: absolute; top: 560px; left: 40px; width: 1000px; transform-origin: 50% 100%; }
+      #sub { position: absolute; top: 1050px; left: 0; right: 0; height: 130px; display: flex; align-items: center; justify-content: center; gap: 36px; }
+      .rule { width: 190px; height: 4px; background: #fff; }
+      #flip { position: relative; width: 300px; height: 130px; perspective: 700px; }
+      .word { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-size: 92px; font-weight: 500; line-height: 1; backface-visibility: hidden; }
+      #w-khiata { color: #f3d9a4; }
+      #code { position: absolute; top: 1330px; left: 60px; right: 60px; text-align: center; }
+      #code-1 { font-size: 50px; font-weight: 500; color: #e9dcc6; }
+      #code-2 { font-size: 96px; font-weight: 800; color: #f3d9a4; direction: ltr; letter-spacing: 0.04em; margin-top: 10px; }
+      #code-3 { font-size: 42px; font-weight: 500; direction: ltr; color: #e9dcc6; margin-top: 6px; }
 
       #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 50; }
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="12" data-width="1080" data-height="1920">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="14" data-width="1080" data-height="1920">
 
       <!-- 0: Hook — the real fabric -->
-      <section id="s0" class="clip" data-start="0" data-duration="2.2" data-track-index="0">
+      <section id="s0" class="clip" data-start="0" data-duration="2.4" data-track-index="0">
         <img class="bg" id="s0-img" src="assets/fabric.jpg" alt="" />
         <div class="shade-top"></div>
-        <div class="shade-bottom"></div>
-        <div id="hook-1" class="shadow">قماشة وحدة…</div>
-        <div id="hook-2" class="shadow">3 فساتين</div>
-        <div id="hook-code" class="shadow">SS-0344</div>
+        <div id="hook-1" class="hook shadow">تعالي أوريكِ</div>
+        <div id="hook-2" class="hook shadow">3 فساتين</div>
+        <div id="hook-3" class="hook shadow">بقماش واحد بس</div>
       </section>
 
       <!-- 1: Dress 1 -->
-      <section id="s1" class="clip" data-start="2.2" data-duration="2" data-track-index="0">
+      <section id="s1" class="clip" data-start="2.4" data-duration="2" data-track-index="0">
         <img class="bg" id="s1-img" src="assets/dress1.jpg" alt="" />
         <div class="shade-top"></div>
         <div class="label" id="s1-label"><div class="badge">1</div><div class="name shadow">كورسيه بذيل ساتان</div></div>
       </section>
 
       <!-- 2: Dress 2 -->
-      <section id="s2" class="clip" data-start="4.2" data-duration="2" data-track-index="0">
+      <section id="s2" class="clip" data-start="4.4" data-duration="2" data-track-index="0">
         <img class="bg" id="s2-img" src="assets/dress2.jpg" alt="" />
         <div class="shade-top"></div>
         <div class="label" id="s2-label"><div class="badge">2</div><div class="name shadow">أوف شولدر ببيبلوم</div></div>
       </section>
 
       <!-- 3: Dress 3 -->
-      <section id="s3" class="clip" data-start="6.2" data-duration="2" data-track-index="0">
+      <section id="s3" class="clip" data-start="6.4" data-duration="2" data-track-index="0">
         <img class="bg" id="s3-img" src="assets/dress3.jpg" alt="" />
         <div class="shade-top"></div>
         <div class="label" id="s3-label"><div class="badge">3</div><div class="name shadow">فستان أميرات</div></div>
       </section>
 
-      <!-- 4: End card -->
-      <section id="end" class="clip" data-start="8.2" data-duration="3.8" data-track-index="0">
+      <!-- 4: Which one? -->
+      <section id="choice" class="clip" data-start="8.4" data-duration="2.6" data-track-index="0">
         <div id="q1">أي واحد تختارين؟</div>
         <div id="q2">اكتبي رقمه بالتعليقات</div>
         <div class="panel" id="p1"><img src="assets/dress1.jpg" alt="" /><div class="pnum">1</div></div>
         <div class="panel" id="p2"><img src="assets/dress2.jpg" alt="" /><div class="pnum">2</div></div>
         <div class="panel" id="p3"><img src="assets/dress3.jpg" alt="" /><div class="pnum">3</div></div>
-        <div id="code-box">
-          <div id="code-1">رقم القماش في متجرنا</div>
+      </section>
+
+      <!-- 5: Logo finale (3s) -->
+      <section id="finale" class="clip" data-start="11" data-duration="3" data-track-index="0">
+        <img id="logo-mark" src="assets/logo-mark.png" alt="" />
+        <div id="sub">
+          <div class="rule"></div>
+          <div id="flip">
+            <div class="word" id="w-aqmisha">للأقمشة</div>
+            <div class="word" id="w-khiata">للخياطة</div>
+          </div>
+          <div class="rule"></div>
+        </div>
+        <div id="code">
+          <div id="code-1">رقم القماش في متجرنا الإلكتروني</div>
           <div id="code-2">SS-0344</div>
           <div id="code-3">yasminalsham.fashion</div>
         </div>
-        <img id="logo" src="assets/logo.png" alt="" />
-        <div id="tag">نفصّله على مقاسك · توصيل لكل السعودية</div>
       </section>
 
-      <div id="flash" class="clip" data-start="0" data-duration="12" data-track-index="1"></div>
+      <div id="flash" class="clip" data-start="0" data-duration="14" data-track-index="1"></div>
     </div>
 
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
 
-      // Hook: fast push-in on the fabric, then the two lines punch in
-      tl.fromTo("#s0-img", { scale: 1.0 }, { scale: 1.18, duration: 2.2, ease: "none" }, 0);
+      // Hook: push-in on the fabric, three lines punch in
+      tl.fromTo("#s0-img", { scale: 1.0 }, { scale: 1.18, duration: 2.4, ease: "none" }, 0);
       tl.fromTo("#hook-1", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, 0.1);
-      tl.fromTo("#hook-2", { opacity: 0, scale: 1.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 0.75);
-      tl.fromTo("#hook-code", { opacity: 0 }, { opacity: 0.9, duration: 0.3 }, 1.1);
+      tl.fromTo("#hook-2", { opacity: 0, scale: 1.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 0.6);
+      tl.fromTo("#hook-3", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, 1.1);
 
-      // Dress scenes: slow pull-back on the photo + badge pop + name slide
-      [["#s1", 2.2], ["#s2", 4.2], ["#s3", 6.2]].forEach(([s, t]) => {
+      // Dress scenes: pull-back on the photo + badge pop + name slide
+      [["#s1", 2.4], ["#s2", 4.4], ["#s3", 6.4]].forEach(([s, t]) => {
         tl.fromTo(s + "-img", { scale: 1.12 }, { scale: 1.0, duration: 2, ease: "power2.out" }, t);
         tl.fromTo(s + "-label .badge", { opacity: 0, scale: 0.3, rotation: -90 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.4, ease: "back.out(2.2)" }, t + 0.1);
         tl.fromTo(s + "-label .name", { opacity: 0, x: -60 }, { opacity: 1, x: 0, duration: 0.4, ease: "power3.out" }, t + 0.2);
       });
 
       // White flash on every cut
-      [2.2, 4.2, 6.2, 8.2].forEach((t) => {
+      [2.4, 4.4, 6.4, 8.4, 11].forEach((t) => {
         tl.fromTo("#flash", { opacity: 0.85 }, { opacity: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, t);
       });
 
-      // End card
-      tl.fromTo("#q1", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, 8.3);
-      tl.fromTo("#q2", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 8.55);
-      tl.fromTo("#p1", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.35);
-      tl.fromTo("#p2", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.45);
-      tl.fromTo("#p3", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.55);
-      tl.fromTo("#code-box", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 9.2);
-      tl.fromTo("#logo", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 9.6);
-      tl.fromTo("#tag", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 9.9);
-      // Gentle pulse on the panels to keep the last seconds alive
-      tl.to(".panel", { scale: 1.03, duration: 0.6, yoyo: true, repeat: 2, ease: "sine.inOut" }, 10.2);
+      // Which one?
+      tl.fromTo("#q1", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, 8.5);
+      tl.fromTo("#q2", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 8.75);
+      tl.fromTo("#p1", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.55);
+      tl.fromTo("#p2", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.65);
+      tl.fromTo("#p3", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.75);
+      tl.to(".panel", { scale: 1.03, duration: 0.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 9.6);
+
+      // Finale: logo rises from the bottom and grows to fill the width
+      tl.fromTo("#logo-mark", { y: 1100, scale: 0.25, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.75, ease: "power3.out" }, 11.0);
+      tl.fromTo("#sub", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }, 11.6);
+      tl.set("#w-khiata", { rotationX: -90, opacity: 0 }, 11.0);
+      // Flip: أقمشة → خياطة → أقمشة → خياطة
+      const flip = (out, inn, t) => {
+        tl.to(out, { rotationX: 90, opacity: 0, duration: 0.18, ease: "power2.in" }, t);
+        tl.fromTo(inn, { rotationX: -90, opacity: 0 }, { rotationX: 0, opacity: 1, duration: 0.18, ease: "power2.out", immediateRender: false }, t + 0.18);
+      };
+      flip("#w-aqmisha", "#w-khiata", 12.0);
+      flip("#w-khiata", "#w-aqmisha", 12.4);
+      flip("#w-aqmisha", "#w-khiata", 12.8);
+      tl.fromTo("#code", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 12.3);
 
       window.__timelines["main"] = tl;
       tl.seek(0);
