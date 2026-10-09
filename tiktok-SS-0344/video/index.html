@@ -82,7 +82,7 @@
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="14" data-width="1080" data-height="1920">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="17" data-width="1080" data-height="1920">
 
       <!-- 0: Hook — the real fabric -->
       <section id="s0" class="clip" data-start="0" data-duration="2.4" data-track-index="0">
@@ -115,7 +115,7 @@
       </section>
 
       <!-- 4: Which one? -->
-      <section id="choice" class="clip" data-start="8.4" data-duration="2.6" data-track-index="0">
+      <section id="choice" class="clip" data-start="8.4" data-duration="3.6" data-track-index="0">
         <div id="q1">أي واحد تختارين؟</div>
         <div id="q2">اكتبي رقمه بالتعليقات</div>
         <div class="panel" id="p1"><img src="assets/dress1.jpg" alt="" /><div class="pnum">1</div></div>
@@ -123,8 +123,8 @@
         <div class="panel" id="p3"><img src="assets/dress3.jpg" alt="" /><div class="pnum">3</div></div>
       </section>
 
-      <!-- 5: Logo finale (3s) -->
-      <section id="finale" class="clip" data-start="11" data-duration="3" data-track-index="0">
+      <!-- 5: Logo finale (5s) -->
+      <section id="finale" class="clip" data-start="12" data-duration="5" data-track-index="0">
         <img id="logo-mark" src="assets/logo-mark.png" alt="" />
         <div id="sub">
           <div class="rule"></div>
@@ -141,7 +141,7 @@
         </div>
       </section>
 
-      <div id="flash" class="clip" data-start="0" data-duration="14" data-track-index="1"></div>
+      <div id="flash" class="clip" data-start="0" data-duration="17" data-track-index="1"></div>
     </div>
 
     <script>
@@ -162,7 +162,7 @@
       });
 
       // White flash on every cut
-      [2.4, 4.4, 6.4, 8.4, 11].forEach((t) => {
+      [2.4, 4.4, 6.4, 8.4, 12].forEach((t) => {
         tl.fromTo("#flash", { opacity: 0.85 }, { opacity: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, t);
       });
 
@@ -172,21 +172,21 @@
       tl.fromTo("#p1", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.55);
       tl.fromTo("#p2", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.65);
       tl.fromTo("#p3", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 8.75);
-      tl.to(".panel", { scale: 1.03, duration: 0.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 9.6);
+      tl.to(".panel", { scale: 1.03, duration: 0.6, yoyo: true, repeat: 3, ease: "sine.inOut" }, 9.6);
 
       // Finale: logo rises from the bottom and grows to fill the width
-      tl.fromTo("#logo-mark", { y: 1100, scale: 0.25, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.75, ease: "power3.out" }, 11.0);
-      tl.fromTo("#sub", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }, 11.6);
-      tl.set("#w-khiata", { rotationX: -90, opacity: 0 }, 11.0);
+      tl.fromTo("#logo-mark", { y: 1100, scale: 0.25, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.9, ease: "power3.out" }, 12.0);
+      tl.fromTo("#sub", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }, 12.8);
+      tl.set("#w-khiata", { rotationX: -90, opacity: 0 }, 12.0);
       // Flip: أقمشة → خياطة → أقمشة → خياطة
       const flip = (out, inn, t) => {
         tl.to(out, { rotationX: 90, opacity: 0, duration: 0.18, ease: "power2.in" }, t);
         tl.fromTo(inn, { rotationX: -90, opacity: 0 }, { rotationX: 0, opacity: 1, duration: 0.18, ease: "power2.out", immediateRender: false }, t + 0.18);
       };
-      flip("#w-aqmisha", "#w-khiata", 12.0);
-      flip("#w-khiata", "#w-aqmisha", 12.4);
-      flip("#w-aqmisha", "#w-khiata", 12.8);
-      tl.fromTo("#code", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 12.3);
+      flip("#w-aqmisha", "#w-khiata", 13.4);
+      flip("#w-khiata", "#w-aqmisha", 14.0);
+      flip("#w-aqmisha", "#w-khiata", 14.6);
+      tl.fromTo("#code", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 14.2);
 
       window.__timelines["main"] = tl;
       tl.seek(0);
