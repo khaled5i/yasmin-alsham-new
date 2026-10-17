@@ -1,3 +1,4 @@
+import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
@@ -6,6 +7,8 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const IMAGE_MODEL = 'google/gemini-3.1-flash-image-preview'
 
 export async function POST(request: NextRequest) {
+  const access = await requirePaidStaff(request, 'convert-to-cartoon')
+  if (!access.ok) return access.response
   try {
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {

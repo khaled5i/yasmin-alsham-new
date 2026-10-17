@@ -25,6 +25,7 @@ import { parseBuyNowLine, type FabricBuyNowLine } from '@/lib/fabric-store/buy-n
 import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { useFabricCartStore } from '@/store/fabricCartStore'
+import { getAuthHeader } from '@/lib/client-auth'
 
 /**
  * صفحة إتمام الطلب: إنشاء الطلب ثم الانتقال لصفحة دفع ميسر بضغطة واحدة («ادفعي الآن»).
@@ -104,10 +105,10 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch { /* لا شيء نمسحه. */ }
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<{ status: number; data: T | null }> {
+async function postJson<T>(url: string, body: unknown, authHeaders: Record<string, string> = {}): Promise<{ status: number; data: T | null }> {
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     credentials: 'same-origin',
     body: JSON.stringify(body),
   })
@@ -211,7 +212,7 @@ export default function FabricCheckoutPage() {
   /** بعد إنشاء الطلب (والكوكي معه) نفتح صفحة ميسر مباشرة — لا خطوة «ادفعي» منفصلة. */
   const startPayment = async (): Promise<boolean> => {
     try {
-      const { data } = await postJson<{ ok?: boolean; checkoutUrl?: string; error?: string }>('/api/fabric-store/payment/start/', {})
+      const { data } = await postJson<{ ok?: boolean; checkoutUrl?: string; error?: string }>('/api/fabric-store/payment/start/', {}, await getAuthHeader())
       if (data?.ok && data.checkoutUrl) {
         window.location.assign(data.checkoutUrl)
         return true

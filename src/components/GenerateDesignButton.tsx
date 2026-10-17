@@ -1,5 +1,6 @@
 'use client'
 
+import { getAuthHeader } from '@/lib/client-auth'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Sparkles, X, Check, Loader2, ChevronDown, ChevronUp, Download, Plus, MapPin, SkipForward, ChevronLeft, ChevronRight } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -258,7 +259,7 @@ export default function GenerateDesignButton({
     try {
       const promptRes = await fetch('/api/generate-design-prompt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({
           frontDesignImage,
           backDesignImage,
@@ -281,7 +282,7 @@ export default function GenerateDesignButton({
 
       const imageRes = await fetch('/api/generate-design-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({
           enhancedPrompt,
           frontDesignImage,

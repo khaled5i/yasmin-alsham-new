@@ -530,7 +530,7 @@ export default function VoiceNotes({
 
       const response = await fetch('/api/translate-text', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({
           text: note.transcription,
           targetLanguage: targetLanguage

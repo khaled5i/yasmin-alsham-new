@@ -1,5 +1,6 @@
 'use client'
 
+import { getAuthHeader } from '@/lib/client-auth'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createPortal } from 'react-dom'
@@ -390,7 +391,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
       try {
         const response = await fetch('/api/convert-to-cartoon', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
           body: JSON.stringify({
             completedImage: imageToConvert,
             ...(cartoonNotes.trim() ? { notes: cartoonNotes.trim() } : {})
@@ -734,7 +735,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     try {
       const response = await fetch('/api/translate-text', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({
           text: annotation.transcription,
           targetLanguage: targetLang

@@ -1,3 +1,4 @@
+import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -176,6 +177,8 @@ wearing the same complete dress.`
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requirePaidStaff(request, 'generate-design-image')
+  if (!access.ok) return access.response
   try {
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {

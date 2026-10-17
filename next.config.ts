@@ -30,6 +30,8 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
+  // Keep verification builds separate from the owner's running development server.
+  distDir: process.env.NEXT_VALIDATION_BUILD === 'true' ? '.next-validation' : '.next',
   // التصدير الثابت (Capacitor) لا يدعم الترويسات
   ...(!isCapacitorBuild && {
     async headers() {

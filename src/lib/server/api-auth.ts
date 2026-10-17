@@ -28,6 +28,11 @@ function getAdminClient(): SupabaseClient | null {
   return adminClient
 }
 
+/** Shared server client for staff-only guards; never imported by browser code. */
+export function getStaffServiceClient(): SupabaseClient | null {
+  return getAdminClient()
+}
+
 export interface StaffIdentity {
   userId: string
   role: string

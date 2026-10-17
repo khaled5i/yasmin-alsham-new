@@ -1,3 +1,4 @@
+import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
@@ -24,6 +25,8 @@ interface WordWithMetadata {
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requirePaidStaff(request, 'spatial-ocr')
+  if (!access.ok) return access.response
     try {
         const { imageData } = await request.json()
 

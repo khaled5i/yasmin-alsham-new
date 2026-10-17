@@ -335,12 +335,13 @@ async function main() {
         let counts = await refunds.processPendingRefunds(live)
         assert.deepEqual(counts, {}, 'the route still holds the refund: the job leaves it')
         await expireLocks()
-        counts = await refunds.processPendingRefunds(live)
+        // Stage 10 C: stopping new refunds must still settle money already sent.
+        counts = await refunds.processPendingRefunds(live, 10, false)
         assert.equal(counts.succeeded, 1, JSON.stringify(counts))
         assert.equal(callsFor(o.payment).length, 1, 'no second refund call')
         const s = await state(o.orderId)
         assert.deepEqual([s.payment_status, s.refunds, s.refund_rows, s.stock], ['partially_refunded', 'succeeded', 1, 9])
-        return 'pending, then the job saw refunded=5000 at Moyasar and recorded it: 1 call, 50.00 back once, stock untouched (partial)'
+        return 'pending, then with new refunds OFF the job saw refunded=5000 and recorded it: 1 call, 50.00 back once, stock untouched (partial)'
       },
 
       async 'Moyasar times out after refunding: same, no second refund'() {

@@ -7,6 +7,7 @@
  * في مهمة واحدة لا تنقسم.
  */
 
+import { getAuthHeader } from '@/lib/client-auth'
 import { alterationService } from './alteration-service'
 import { getAlterationText } from '@/lib/alteration-text'
 import { buildAlterationSlipPayload } from '@/lib/print-alteration-slip'
@@ -24,7 +25,7 @@ export interface AlterationSlipPrintResult {
 async function translateToHindi(sourceText: string): Promise<string> {
   const response = await fetch('/api/translate-text', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
     body: JSON.stringify({ text: sourceText, targetLanguage: 'hi' }),
   })
 

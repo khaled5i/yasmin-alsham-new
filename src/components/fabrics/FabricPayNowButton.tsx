@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { CreditCard, Loader2 } from 'lucide-react'
+import { getAuthHeader } from '@/lib/client-auth'
 
 /**
  * «ادفعي الآن»: يطلب من خادمنا صفحة دفع ميسر لطلب هذا المتصفح (كوكي الوصول)
@@ -18,7 +19,7 @@ export default function FabricPayNowButton({ label = 'ادفعي الآن' }: { 
     try {
       const response = await fetch('/api/fabric-store/payment/start/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         credentials: 'same-origin',
         body: '{}',
       })

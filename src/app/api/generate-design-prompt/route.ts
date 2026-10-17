@@ -1,3 +1,4 @@
+import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -75,6 +76,8 @@ Write in the tone of a world-class fashion designer describing a luxury couture 
 Now transform all the information above into one refined, elegant paragraph that describes only the dress design with expert-level precision and a coherent structure.`
 
 export async function POST(request: NextRequest) {
+  const access = await requirePaidStaff(request, 'generate-design-prompt')
+  if (!access.ok) return access.response
   try {
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {

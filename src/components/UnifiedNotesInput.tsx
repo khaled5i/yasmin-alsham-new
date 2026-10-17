@@ -508,7 +508,7 @@ export default function UnifiedNotesInput({
 
       const response = await fetch('/api/translate-text', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({ text: note.transcription, targetLanguage: lang })
       })
 
@@ -539,7 +539,7 @@ export default function UnifiedNotesInput({
         setTranslatingId('main-notes')
         const response = await fetch('/api/translate-text', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
           body: JSON.stringify({ text: notes, targetLanguage })
         })
         if (response.ok) {

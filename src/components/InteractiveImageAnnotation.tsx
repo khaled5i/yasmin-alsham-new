@@ -2692,7 +2692,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     try {
       const response = await fetch('/api/remove-model', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({ imageBase64 })
       })
 
@@ -3585,7 +3585,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
 
       const response = await fetch('/api/translate-text', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({
           text: annotation.transcription,
           targetLanguage: targetLang
@@ -3652,7 +3652,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
         try {
           const response = await fetch('/api/translate-text', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
             body: JSON.stringify({
               text: annotation.transcription,
               targetLanguage: targetLang
@@ -3834,9 +3834,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
       // استدعاء API للتعرف المكاني على النصوص
       const response = await fetch('/api/spatial-ocr', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({ imageData: dataUrl })
       })
 

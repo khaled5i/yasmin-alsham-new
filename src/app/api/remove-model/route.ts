@@ -1,3 +1,4 @@
+import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -48,6 +49,8 @@ CRITICAL REQUIREMENTS - MUST FOLLOW EXACTLY:
 Generate a single, high-quality photorealistic image with the mannequin replacement.`
 
 export async function POST(request: NextRequest) {
+  const access = await requirePaidStaff(request, 'remove-model')
+  if (!access.ok) return access.response
   try {
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {

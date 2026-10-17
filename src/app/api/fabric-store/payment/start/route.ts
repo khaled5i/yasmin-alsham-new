@@ -9,6 +9,7 @@ import {
 } from '@/lib/server/fabric-store/http'
 import { getPaymentDeps, isNewPaymentsEnabled } from '@/lib/server/fabric-store/payment-context'
 import { startPayment } from '@/lib/server/fabric-store/payments'
+import { requireActiveStaff } from '@/lib/server/api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,17 @@ export async function POST(request: NextRequest) {
   const server = getServerContext(request)
   if (!server.ok) return server.response
   if (!isNewPaymentsEnabled()) return errorResponse(404, 'not-found', 'غير موجود')
+
+  // Optional private launch: gate only new payment URLs, never existing-payment processing.
+  if ((process.env.FABRIC_STORE_LAUNCH_ADMIN_ONLY ?? '').trim().toLowerCase() === 'true') {
+    try {
+      const auth = await requireActiveStaff(request)
+      if (!auth.ok) return auth.response
+      if (auth.staff.role !== 'admin') return errorResponse(403, 'unavailable', 'الدفع غير متاح حالياً')
+    } catch {
+      return errorResponse(503, 'unavailable', 'الدفع غير متاح حالياً')
+    }
+  }
 
   const input = await readSameOriginJson(request)
   if (!input.ok) return input.response

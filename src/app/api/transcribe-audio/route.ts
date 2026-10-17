@@ -1,10 +1,8 @@
+import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
 // استخدام مفتاح OpenAI من متغيرات البيئة
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || ''
-})
 
 /**
  * 🎙️ نموذج تحويل الصوت إلى نص المستخدم
@@ -28,6 +26,8 @@ const openai = new OpenAI({
 const WHISPER_MODEL = 'gpt-4o-transcribe'
 
 export async function POST(request: NextRequest) {
+  const access = await requirePaidStaff(request, 'transcribe-audio')
+  if (!access.ok) return access.response
   try {
     const formData = await request.formData()
     const audioFile = formData.get('audio') as File
@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
 
     // استخدام OpenAI Audio Transcription API لتحويل الصوت إلى نص
     // النموذج المستخدم: gpt-4o-transcribe (أحدث نموذج متاح)
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     const transcription = await openai.audio.transcriptions.create({
       file: file,
       model: WHISPER_MODEL,

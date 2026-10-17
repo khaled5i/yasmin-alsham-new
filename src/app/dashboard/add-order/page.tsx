@@ -1,5 +1,6 @@
 'use client'
 
+import { getAuthHeader } from '@/lib/client-auth'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -980,7 +981,7 @@ function AddOrderContent() {
               try {
                 const resp = await fetch('/api/translate-text', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
                   body: JSON.stringify({ text: ann.transcription, targetLanguage: 'hi' })
                 })
                 if (resp.ok) {

@@ -1,9 +1,7 @@
+import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-})
 
 // تعريف أسماء اللغات
 const languageNames: Record<string, string> = {
@@ -15,6 +13,8 @@ const languageNames: Record<string, string> = {
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requirePaidStaff(request, 'translate-text')
+  if (!access.ok) return access.response
   try {
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     const { text, targetLanguage } = await request.json()
 
     if (!text || !targetLanguage) {

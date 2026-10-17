@@ -1,5 +1,6 @@
 'use client'
 
+import { getAuthHeader } from '@/lib/client-auth'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, ChevronDown, ImageIcon, Languages, Loader2, RefreshCw, Wrench } from 'lucide-react'
 import { alterationService, type OrderAlterationSummary } from '@/lib/services/alteration-service'
@@ -148,7 +149,7 @@ export default function OrderAlterationsSection({
       if (!translatedText) {
         const response = await fetch('/api/translate-text', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
           body: JSON.stringify({ text: sourceText, targetLanguage: 'hi' }),
         })
         if (!response.ok) throw new Error('Translation request failed')
