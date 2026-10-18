@@ -187,6 +187,28 @@
   letter-spacing: 0.28em;
 }
 
+/* الشعار كقناع يأخذ لون الترويسة: أبيض فوق الصورة، ونبيذي حين تصبح الترويسة صلبة */
+.headerLogo {
+  display: block;
+  width: 110px;
+  aspect-ratio: 900 / 379;
+  background-color: currentColor;
+  -webkit-mask: url('/media/home/hero-logo-v2.webp') center / contain no-repeat;
+  mask: url('/media/home/hero-logo-v2.webp') center / contain no-repeat;
+}
+
+@media (min-width: 768px) {
+  .headerLogo {
+    width: 128px;
+  }
+}
+
+@media (max-width: 380px) {
+  .headerLogo {
+    width: 96px;
+  }
+}
+
 .headerContact {
   display: flex;
   grid-column: 3;
@@ -357,6 +379,10 @@
   padding: 112px 0 92px;
 }
 
+.heroLogo {
+  display: none;
+}
+
 .heroEyebrow {
   display: flex;
   align-items: center;
@@ -376,7 +402,7 @@
 .heroContent h1 {
   max-width: 760px;
   font-family: var(--font-home-display), serif;
-  font-size: clamp(3rem, 13vw, 7rem);
+  font-size: clamp(2.6rem, 11vw, 6rem);
   font-weight: 600;
   line-height: 0.98;
   letter-spacing: -0.055em;
@@ -425,6 +451,21 @@
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.42);
   backdrop-filter: blur(8px);
+}
+
+.heroActions .primaryButton,
+.heroActions .secondaryButton {
+  min-height: 58px;
+  padding-inline: 26px;
+  font-size: 1.02rem;
+}
+
+@media (min-width: 640px) {
+  .heroActions .primaryButton,
+  .heroActions .secondaryButton {
+    min-height: 62px;
+    padding-inline: 30px;
+  }
 }
 
 .primaryButton svg,
@@ -1064,6 +1105,10 @@
   gap: 8px;
 }
 
+.footerLegal span {
+  display: block;
+}
+
 .socialLinks a {
   display: grid;
   width: 40px;
@@ -1223,31 +1268,42 @@
   }
 
   .footerBottom {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 16px;
     margin-top: 34px;
-    padding-top: 16px;
-    font-size: 0.58rem;
+    padding-top: 20px;
+    font-size: 0.7rem;
+    text-align: center;
   }
 
   .footerBottom > div:not(.socialLinks) {
     justify-content: center;
-    gap: 8px;
+    gap: 8px 16px;
+    max-width: 320px;
+  }
+
+  .footerBottom > div:not(.socialLinks) a {
+    white-space: nowrap;
+  }
+
+  .footerLegal {
+    font-size: 0.62rem;
+    line-height: 1.9;
   }
 
   .socialLinks {
-    gap: 5px;
+    gap: 10px;
   }
 
   .socialLinks a {
-    width: 32px;
-    height: 32px;
-    font-size: 0.58rem;
+    width: 36px;
+    height: 36px;
+    font-size: 0.62rem;
   }
 
   .socialLinks svg {
-    width: 14px;
+    width: 15px;
   }
 }
 
@@ -2187,5 +2243,54 @@
     top: 23px;
     right: 24px;
     left: 24px;
+  }
+}
+
+/* نسخة الجوال: الشعار ثم العبارة الصغيرة ثم الزرّان، كلها في المنتصف أسفل الشاشة */
+@media (max-width: 767px) {
+  .heroContent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding-bottom: calc(44px + env(safe-area-inset-bottom));
+  }
+
+  .heroLogo {
+    display: block;
+    width: min(78vw, 340px);
+    height: auto;
+    filter: drop-shadow(0 4px 22px rgba(20, 4, 8, 0.45));
+  }
+
+  .heroContent .heroEyebrow {
+    display: none;
+  }
+
+  .heroContent h1 {
+    margin-top: 14px;
+    font-family: inherit;
+    font-size: 1.02rem;
+    font-weight: 500;
+    line-height: 1.6;
+    letter-spacing: 0;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .heroContent h1 br {
+    display: none;
+  }
+
+  .heroActions {
+    justify-content: center;
+    width: 100%;
+    margin-top: 22px;
+  }
+
+  .heroActions .primaryButton,
+  .heroActions .secondaryButton {
+    flex: 1 1 0;
+    max-width: 180px;
+    padding-inline: 12px;
   }
 }

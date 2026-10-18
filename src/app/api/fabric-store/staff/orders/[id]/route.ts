@@ -13,7 +13,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * تفاصيل طلب واحد وإجراءات الموظف عليه (المرحلة 7) — للمدير ومدير متجر الأقمشة.
  * GET: الطلب وأسطره وعنوانه ومحاولات الدفع والمبيعة ومهام الطابور وسجل التدقيق،
  *      ورابط تتبّع الزبونة (يُشتق من مفتاح الطلب والسر، ولا يُخزَّن).
- * POST: { action: 'fulfillment' | 'resolve_review' | 'note', ... } ⇒ دوال القاعدة باسم الموظف.
+ * POST: { action: 'fulfillment' | 'resolve_review' | 'note' | 'delete', ... } ⇒ دوال القاعدة باسم الموظف.
+ * قرار المالك (18 أكتوبر): إلغاء الطلب وحذفه للمدير فقط.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireFabricStoreStaff(request)
@@ -241,6 +242,8 @@ const actionSchema = z.discriminatedUnion('action', [
     alertIds: z.array(z.string().uuid()).max(1000),
   }) }),
   z.object({ action: z.literal('note'), note: z.string().max(500) }),
+  // 18 أكتوبر: حذف (إخفاء) طلب لا مال عليه — للمدير فقط
+  z.object({ action: z.literal('delete'), note: z.string().max(300).optional().nullable() }),
   // المرحلة 8
   z.object({
     action: z.literal('refund'),
@@ -304,6 +307,9 @@ const MESSAGES: Record<string, [number, string]> = {
   test_order: [409, 'هذا الطلب دُفع ببطاقة ميسر التجريبية: لا مبيعة ولا خصم، فلا يُجهَّز ولا يُسلَّم قماش. للمدير «تجربة اللوحة» فقط'],
   forbidden: [403, 'للمدير فقط'],
   payment_in_progress: [409, 'صفحة الدفع ما زالت مفتوحة عند الزبونة وقد تدفع الآن — لا يُلغى الطلب قبل انتهائها'],
+  // حذف الطلب
+  already_deleted: [409, 'الطلب محذوف من قبل'],
+  not_deletable: [409, 'لا يُحذف إلا طلب ملغى لم يُدفع أو رُدّ كامل مبلغه، بلا مراجعة مفتوحة ولا استرداد معلّق — ألغيه أو استرديه أولاً'],
 }
 
 const REFUSALS: Record<string, string> = {
@@ -397,6 +403,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (result.status === 'already_done') return jsonResponse({ ok: true, result })
     const [httpStatus, message] = STAGE8_MESSAGES[result.status ?? ''] ?? MESSAGES[result.status ?? ''] ?? [400, 'تعذّر تنفيذ الإجراء']
     return errorResponse(httpStatus, result.status ?? 'error', result.status === 'exceeds' && result.message ? result.message : message)
+  }
+
+  // قرار المالك (18 أكتوبر): الإلغاء والحذف للمدير فقط
+  if (((body.action === 'fulfillment' && body.to === 'cancelled') || body.action === 'delete') && auth.staff.role !== 'admin') {
+    return errorResponse(403, 'forbidden', 'إلغاء الطلب وحذفه للمدير فقط')
+  }
+  if (body.action === 'delete') {
+    const { data, error } = await client.rpc('fabric_store_staff_delete_order', {
+      p_order_id: id, p_actor_id: userId, p_note: body.note ?? null,
+    })
+    if (error) {
+      console.error('fabric-store staff delete failed:', error.message)
+      return errorResponse(error.code === 'PGRST202' ? 503 : error.code === '55P03' ? 409 : 503, 'unavailable',
+        error.code === 'PGRST202' ? 'الحذف غير مهيّأ بعد — طبّقي هجرة 20261018120000'
+          : error.code === '55P03' ? 'الطلب مشغول الآن — أعيدي المحاولة بعد لحظات' : 'تعذّر حذف الطلب')
+    }
+    const result = (data ?? {}) as { status?: string }
+    if (result.status === 'ok') return jsonResponse({ ok: true, result })
+    const [httpStatus, message] = MESSAGES[result.status ?? ''] ?? [400, 'تعذّر حذف الطلب']
+    return errorResponse(httpStatus, result.status ?? 'error', message)
   }
 
   // الدفعة C (AUD-06): «تجربة اللوحة» للمدير وحده (والقاعدة تتحقق بنفسها)

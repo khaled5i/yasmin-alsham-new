@@ -22,13 +22,30 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
       <div className={styles.heroGrain} />
 
       <div className={styles.heroContent}>
-        <p className={styles.heroEyebrow}>دار تفصيل وأقمشة <span aria-hidden="true" /> الخبر</p>
-        <h1 id="home-hero-title">من القماش…<br />نصنع حكايتك</h1>
-        <p className={styles.heroLead}>تفصيل يليق بك، وأقمشة اختيرت لتبدأ منها كل التفاصيل.</p>
+        {/* الشعار يظهر في نسخة الجوال فقط (يُخفى بالـ CSS على الشاشات الأكبر) */}
+        <Image
+          src="/media/home/hero-logo-v2.webp"
+          alt="ياسمين الشام"
+          width={900}
+          height={379}
+          priority
+          sizes="80vw"
+          className={styles.heroLogo}
+        />
+        <p className={styles.heroEyebrow}>ياسمين الشام <span aria-hidden="true" /> الخبر</p>
+        <h1 id="home-hero-title">القماش والخياطة{' '}<br />في مكان واحد...</h1>
         <div className={styles.heroActions}>
+          <TrackedRouteLink
+            href="/fabrics"
+            className={styles.primaryButton}
+            eventName="hero_cta_click"
+            eventProperties={{ destination: 'fabrics' }}
+          >
+            متجر الأقمشة
+          </TrackedRouteLink>
           <TrackedLink
             href="#tailoring"
-            className={styles.primaryButton}
+            className={styles.secondaryButton}
             eventName="hero_cta_click"
             eventProperties={{ destination: 'tailoring' }}
             onClick={(event) => {
@@ -36,16 +53,8 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
               onSelectSection('tailoring')
             }}
           >
-            تفصيل فستان سهرة
+            قسم الخياطة
           </TrackedLink>
-          <TrackedRouteLink
-            href="/fabrics"
-            className={styles.secondaryButton}
-            eventName="hero_cta_click"
-            eventProperties={{ destination: 'fabrics' }}
-          >
-            متجر الأقمشة
-          </TrackedRouteLink>
         </div>
       </div>
 

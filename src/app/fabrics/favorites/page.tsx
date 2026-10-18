@@ -11,6 +11,7 @@ import {
   IS_FABRIC_CART_ENABLED,
   formatPurchaseModeLabel,
   formatUnitPriceLabel,
+  getFabricPieceMeters,
   getFabricPurchaseMode,
   getFabricUnitPrice,
   isFabricPubliclyVisible,
@@ -207,7 +208,7 @@ export default function FabricFavoritesPage() {
                     </div>
 
                     <p className="mt-2 text-sm font-bold text-[#6b1726]">
-                      {formatUnitPriceLabel(withFabricVat(unitPrice), mode)}
+                      {formatUnitPriceLabel(withFabricVat(unitPrice), mode, fabric && mode === 'piece' ? getFabricPieceMeters(fabric) : null)}
                       {unitPrice != null && <span className="font-normal text-[#211b19]/55"> شامل الضريبة</span>}
                     </p>
 

@@ -134,7 +134,7 @@ export default function FabricDetailPage() {
 
   return (
     <div className="min-h-screen bg-[#fbf8f3] text-[#211b19] pt-16 lg:pt-20">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-8">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-[calc(3rem+env(safe-area-inset-bottom))] lg:pt-8 lg:pb-16">
         {/* التنقل */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}

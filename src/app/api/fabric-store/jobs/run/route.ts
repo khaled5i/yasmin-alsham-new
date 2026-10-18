@@ -6,6 +6,7 @@ import { processPendingRefunds } from '@/lib/server/fabric-store/refunds'
 import { getOutboxDeps, isAlostazSendEnabled } from '@/lib/server/fabric-store/outbox-context'
 import { isOrdersServerEnabled, isRefundsServerEnabled } from '@/lib/server/fabric-store/staff-auth'
 import { getFabricStoreServiceClient } from '@/lib/server/fabric-store/http'
+import { notifyNewPaidOrders } from '@/lib/server/fabric-store/staff-push'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -102,6 +103,10 @@ export async function GET(request: NextRequest) {
     } else {
       result.addresses = data
     }
+  }
+  // 4) شبكة أمان إشعارات «طلب جديد» (آخر 24 ساعة، مرة واحدة لكل طلب)
+  if (client && isOrdersServerEnabled() && hasTime('push')) {
+    result.push = await notifyNewPaidOrders(client)
   }
   if (skipped.length) result.skipped = skipped
 

@@ -62,16 +62,18 @@ function ReturnView() {
   }, [attemptId])
 
   const paid = status?.paymentStatus === 'paid' || status?.paymentStatus === 'partially_refunded'
-  const attemptEnded = ['failed', 'cancelled', 'expired'].includes(status?.attemptStatus ?? '')
-  const notCompleted = !paid && (attemptEnded || (cameBack && polls >= 2))
-  const stillWaiting = !paid && !notCompleted && polls >= MAX_POLLS
+  // «لم يكتمل» فقط حين يسجّل خادمنا انتهاء المحاولة. الرجوع من ميسر (back=1) أو تعذّر
+  // التحقق ليس دليلاً على عدم الخصم: يعرض الانتظار المحايد مبكراً ويستمر التحقق في الخلفية.
+  const notCompleted = !paid && ['failed', 'cancelled', 'expired'].includes(status?.attemptStatus ?? '')
+  const pollingDone = paid || notCompleted || polls >= MAX_POLLS
+  const stillWaiting = !paid && !notCompleted && (polls >= MAX_POLLS || (cameBack && polls >= 2))
 
   useEffect(() => {
     if (!attemptId) return
-    if (paid || notCompleted || stillWaiting) return
+    if (pollingDone) return
     const timer = setTimeout(() => void check(), polls === 0 ? 0 : POLL_MS)
     return () => clearTimeout(timer)
-  }, [attemptId, check, paid, notCompleted, stillWaiting, polls])
+  }, [attemptId, check, pollingDone, polls])
 
   // السلة تُفرَّغ بعد السداد الموثّق فقط، لا عند الضغط على «ادفعي».
   useEffect(() => {
@@ -141,9 +143,13 @@ function ReturnView() {
         <Clock className="mx-auto mb-3 h-10 w-10 text-[#6b1726]" aria-hidden="true" />
         <h1 className="mb-2 text-xl font-bold">لم يصلنا تأكيد الدفع بعد</h1>
         <p className="mb-5 text-sm text-[#211b19]/75">
-          إن كنتِ أتممتِ الدفع فسيُعتمد تلقائياً خلال دقائق، ولا حاجة للدفع مرة أخرى. رقم طلبك
-          <span dir="ltr" className="mx-1 font-bold">{status?.orderNumber}</span>.
+          إن كنتِ أتممتِ الدفع فسيُعتمد تلقائياً خلال دقائق، ولا حاجة للدفع مرة أخرى.
+          {status?.orderNumber && (
+            <> رقم طلبك<span dir="ltr" className="mx-1 font-bold">{status.orderNumber}</span>.</>
+          )}
         </p>
+        {!pollingDone && <p className="mb-4 text-xs text-[#211b19]/60">نواصل التحقق تلقائياً...</p>}
+        {error && <p className="mb-4 text-sm font-semibold text-[#6b1726]">{error}</p>}
         <button
           type="button"
           onClick={() => { setPolls(0) }}
@@ -151,6 +157,14 @@ function ReturnView() {
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" /> تحقّقي مرة أخرى
         </button>
+        {IS_FABRIC_STORE_ORDERS_ENABLED && (
+          <>
+            <br />
+            <Link href="/fabrics/order/" className="mt-4 inline-block text-sm font-semibold text-[#6b1726]">
+              تتبّعي طلبك
+            </Link>
+          </>
+        )}
       </div>
     )
   }

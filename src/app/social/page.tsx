@@ -1,9 +1,29 @@
 'use client'
 
-import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
+import { ArrowRight, X } from 'lucide-react'
 
-const socialLinks = [
+type ContactMode = 'whatsapp' | 'call'
+
+// أرقام الأقسام: زرّا «واتساب» و«اتصل بنا» يفتحان نافذة يختار منها العميل القسم
+const departments = [
+  { name: 'قسم الأقمشة', e164: '966539686805', display: '+966 53 968 6805' },
+  { name: 'قسم الخياطة', e164: '966598862609', display: '+966 59 886 2609' },
+  { name: 'المشغل النسائي للمقاسات', e164: '966544233281', display: '+966 54 423 3281' },
+]
+
+const socialLinks: Array<{
+  name: string
+  handle: string
+  href: string
+  external: boolean
+  contact?: ContactMode
+  iconColor: string
+  iconBg: string
+  icon: React.ReactNode
+}> = [
   {
     name: 'الموقع الرسمي',
     handle: 'yasmin-alsham.fashion',
@@ -19,8 +39,8 @@ const socialLinks = [
   },
   {
     name: 'إنستغرام',
-    handle: 'yasminalsham.fashion',
-    href: 'https://www.instagram.com/yasminalsham.fashion/',
+    handle: '@yasminalshamtextile',
+    href: 'https://www.instagram.com/yasminalshamtextile',
     external: true,
     iconColor: '#be185d',
     iconBg: '#fdf2f8',
@@ -32,8 +52,8 @@ const socialLinks = [
   },
   {
     name: 'تيك توك',
-    handle: '@yasminalsham.fashion',
-    href: 'https://www.tiktok.com/@yasminalsham.fashion',
+    handle: '@yasminalshamtextile',
+    href: 'https://www.tiktok.com/@yasminalshamtextile',
     external: true,
     iconColor: '#9d174d',
     iconBg: '#fce7f3',
@@ -45,9 +65,10 @@ const socialLinks = [
   },
   {
     name: 'واتساب',
-    handle: '‎+966 598 862 609',
-    href: 'https://wa.me/+966598862609',
-    external: true,
+    handle: 'الأقمشة · الخياطة · المشغل النسائي',
+    href: '#whatsapp',
+    external: false,
+    contact: 'whatsapp',
     iconColor: '#15803d',
     iconBg: '#dcfce7',
     icon: (
@@ -58,9 +79,10 @@ const socialLinks = [
   },
   {
     name: 'اتصل بنا',
-    handle: '+966 598 862 609',
-    href: 'tel:+966598862609',
+    handle: 'الأقمشة · الخياطة · المشغل النسائي',
+    href: '#call',
     external: false,
+    contact: 'call',
     iconColor: '#7c3aed',
     iconBg: '#f5f3ff',
     icon: (
@@ -86,6 +108,19 @@ const socialLinks = [
 ]
 
 export default function SocialPage() {
+  const [contactMode, setContactMode] = useState<ContactMode | null>(null)
+
+  useEffect(() => {
+    if (!contactMode) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setContactMode(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [contactMode])
+
+  const isWhatsApp = contactMode === 'whatsapp'
+
   return (
     <div
       className="relative min-h-screen flex flex-col items-center px-4 py-14 overflow-hidden"
@@ -116,6 +151,22 @@ export default function SocialPage() {
           backgroundSize: '28px 28px',
         }}
       />
+
+      {/* ===== Back to home ===== */}
+      <div className="relative z-10 w-full max-w-[400px] mb-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-pink-700 transition-colors hover:text-pink-900"
+          style={{
+            background: 'rgba(255,255,255,0.75)',
+            border: '1px solid rgba(251,207,232,0.8)',
+            boxShadow: '0 2px 10px rgba(236,72,153,0.08)',
+          }}
+        >
+          <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          الصفحة الرئيسية
+        </Link>
+      </div>
 
       {/* ===== Profile ===== */}
       <motion.div
@@ -155,8 +206,8 @@ export default function SocialPage() {
           ياسمين الشام
         </h1>
 
-        <p className="text-sm font-medium text-pink-400 mt-1">
-          تفصيل فساتين حسب الطلب · المملكة العربية السعودية
+        <p className="mt-2 text-lg font-bold text-pink-800">
+          القماش والخياطة في مكان واحد
         </p>
 
         {/* Divider */}
@@ -180,6 +231,10 @@ export default function SocialPage() {
           >
             <Link
               href={link.href}
+              onClick={link.contact ? (event) => {
+                event.preventDefault()
+                setContactMode(link.contact!)
+              } : undefined}
               target={link.external ? '_blank' : undefined}
               rel={link.external ? 'noopener noreferrer' : undefined}
               className="flex items-center gap-4 w-full px-4 py-3.5 rounded-2xl transition-all duration-300 group"
@@ -232,6 +287,76 @@ export default function SocialPage() {
       >
         © 2026 ياسمين الشام · جميع الحقوق محفوظة
       </motion.p>
+
+      {/* ===== Department picker (WhatsApp / call) ===== */}
+      <AnimatePresence>
+        {contactMode && (
+          <motion.div
+            key="contact-sheet"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+            onClick={() => setContactMode(null)}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="contact-sheet-title"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="w-full max-w-[400px] rounded-t-3xl bg-white px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:pb-6"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-1 flex items-center justify-between">
+                <h2 id="contact-sheet-title" className="text-lg font-bold text-gray-800">
+                  {isWhatsApp ? 'راسلينا على واتساب' : 'اتصلي بنا'}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setContactMode(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-pink-50 text-pink-700 hover:bg-pink-100"
+                  aria-label="إغلاق"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+              <p className="mb-4 text-sm text-gray-500">اختاري القسم الذي تريدين التواصل معه</p>
+
+              <div className="flex flex-col gap-3">
+                {departments.map((department) => (
+                  <a
+                    key={department.e164}
+                    href={isWhatsApp ? `https://wa.me/${department.e164}` : `tel:+${department.e164}`}
+                    target={isWhatsApp ? '_blank' : undefined}
+                    rel={isWhatsApp ? 'noopener noreferrer' : undefined}
+                    className="flex items-center gap-3 rounded-2xl border px-4 py-3.5 transition-transform active:scale-[0.98]"
+                    style={{
+                      borderColor: isWhatsApp ? '#bbf7d0' : '#ddd6fe',
+                      background: isWhatsApp ? '#f0fdf4' : '#f5f3ff',
+                    }}
+                  >
+                    <div className="flex-1 text-right">
+                      <div className="font-bold text-gray-800">{department.name}</div>
+                      <div className="mt-0.5 text-sm text-gray-500" dir="ltr" style={{ textAlign: 'right' }}>
+                        {department.display}
+                      </div>
+                    </div>
+                    <span
+                      className="flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-bold text-white"
+                      style={{ background: isWhatsApp ? '#16a34a' : '#7c3aed' }}
+                    >
+                      {isWhatsApp ? 'واتساب' : 'اتصال'}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

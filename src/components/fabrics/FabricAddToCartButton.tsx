@@ -9,6 +9,7 @@ import {
   formatQuantityLabel,
   getCartLineKey,
   getFabricLabel,
+  getFabricPieceMeters,
   getFabricPrimaryImage,
   getFabricPurchaseMode,
   getFabricQuantityBounds,
@@ -40,8 +41,9 @@ interface FabricAddToCartButtonProps {
 /**
  * لوحة الشراء: «إضافة إلى السلة» و«شراء الآن».
  *
- * كل صف قماش هو لون واحد محدد، فلا يوجد اختيار لون. البيع بالقطعة الكاملة
- * كميته محسومة (قطعة واحدة)، أما البيع بالمتر فمنتقي الأمتار ظاهر دائماً
+ * كل صف قماش هو لون واحد محدد، فلا يوجد اختيار لون. القطعة 3 أو 3.5م كميتها
+ * محسومة (قطعة واحدة داخلياً) وتُعرض بعدّاد أمتار ثابت على طولها مع ملاحظة
+ * «أقل كمية طلب»، أما البيع بالمتر فمنتقي الأمتار ظاهر دائماً
  * وقيمته المبدئية 3 أمتار متى توفّرت. «شراء الآن» يفتح إتمام الطلب لهذا
  * القماش وحده دون أن يلمس السلة. بعد الإضافة يصبح الزر «إزالة من السلة»،
  * وتغيير الأمتار حينها يعدّل السطر الموجود في السلة مباشرة.
@@ -81,6 +83,7 @@ export default function FabricAddToCartButton({
   const unitPrice = getFabricUnitPrice(fabric)
   const isVisible = isFabricPubliclyVisible(fabric)
   const stock = Number(fabric.stock_quantity) || 0
+  const pieceMeters = mode === 'piece' ? getFabricPieceMeters(fabric) : null
 
   // السعر عند الطلب: لا يمكن شراؤه تلقائياً، والبديل الصريح هو الاستفسار.
   if (unitPrice == null) {
@@ -125,7 +128,7 @@ export default function FabricAddToCartButton({
       kind: 'cart',
       title: result.merged ? 'حُدِّثت الكمية في السلة' : 'أُضيف إلى السلة',
       label,
-      detail: mode === 'meter' ? formatQuantityLabel(amount, mode) : 'قطعة كاملة',
+      detail: formatQuantityLabel(amount, mode, pieceMeters),
       image: getFabricPrimaryImage(fabric),
     })
 
@@ -151,23 +154,18 @@ export default function FabricAddToCartButton({
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {mode === 'meter' ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#d8c5ae]/70 bg-[#fbf8f3] px-3 py-2.5">
-          <span className="text-sm font-semibold text-[#211b19]">الكمية بالمتر</span>
-          <FabricQuantitySelector
-            value={quantity}
-            bounds={bounds}
-            mode={mode}
-            onChange={changeQuantity}
-            label={label}
-            size="sm"
-          />
-        </div>
-      ) : (
-        <p className="rounded-xl border border-[#d8c5ae]/70 bg-[#fbf8f3] px-3 py-2.5 text-sm font-semibold text-[#211b19]/75">
-          تُباع قطعة كاملة ({formatQuantityLabel(stock, 'meter')})
-        </p>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#d8c5ae]/70 bg-[#fbf8f3] px-3 py-2.5">
+        <span className="text-sm font-semibold text-[#211b19]">الكمية بالمتر</span>
+        <FabricQuantitySelector
+          value={mode === 'piece' ? 1 : quantity}
+          bounds={bounds}
+          mode={mode}
+          onChange={changeQuantity}
+          label={label}
+          size="sm"
+          pieceMeters={pieceMeters}
+        />
+      </div>
 
       <div className={`grid gap-2 ${IS_FABRIC_STORE_CHECKOUT_ENABLED ? 'grid-cols-2' : 'grid-cols-1'}`}>
         {cartLine ? (

@@ -10,10 +10,11 @@
 import {
   FABRIC_VAT_RATE,
   formatQuantityLabel,
+  getFabricPieceMeters,
   type FabricCartTotals,
   type ResolvedFabricCartLine,
 } from './fabric-commerce'
-import { formatFabricNumber } from './fabric-number-format'
+import { formatFabricNumber, roundFabricNumber } from './fabric-number-format'
 import { STORE_SUPPORT_PHONE } from './store-legal'
 
 /** نفس رقم الاستفسار المستخدم في صفحة القماش والمعاينة السريعة. */
@@ -34,10 +35,13 @@ export function buildCartInquiryMessage(
     parts.push(`${index + 1}) ${identity}`)
 
     if (line.isPurchasable && line.unitPrice != null && line.lineTotal != null) {
-      const quantityLabel = formatQuantityLabel(line.quantity, line.purchaseMode)
-      const unitLabel = line.purchaseMode === 'piece' ? 'القطعة' : 'المتر'
+      // القطعة 3 أو 3.5م تُكتب بالمتر وسعر المتر، كما تعرضها السلة.
+      const pieceMeters = line.purchaseMode === 'piece' && line.fabric ? getFabricPieceMeters(line.fabric) : null
+      const quantityLabel = formatQuantityLabel(line.quantity, line.purchaseMode, pieceMeters)
+      const unitPrice = pieceMeters ? roundFabricNumber(line.unitPrice / pieceMeters) : line.unitPrice
+      const unitLabel = line.purchaseMode === 'piece' && !pieceMeters ? 'القطعة' : 'المتر'
       parts.push(
-        `   ${quantityLabel} × ${formatFabricNumber(line.unitPrice)} ريال/${unitLabel} = ${formatFabricNumber(line.lineTotal)} ريال`
+        `   ${quantityLabel} × ${formatFabricNumber(unitPrice)} ريال/${unitLabel} = ${formatFabricNumber(line.lineTotal)} ريال`
       )
     } else if (line.status === 'price-on-request') {
       parts.push('   السعر عند الطلب')

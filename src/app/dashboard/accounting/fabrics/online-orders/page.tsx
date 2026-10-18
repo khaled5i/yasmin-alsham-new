@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, Copy, FlaskConical, Loader2, MessageCircle,
-  PackageCheck, RefreshCw, Search, Store, Truck, X,
+  AlertTriangle, ArrowLeft, Bell, BellOff, CheckCircle2, ClipboardList, Copy, FlaskConical, Loader2, MessageCircle,
+  PackageCheck, RefreshCw, Search, Store, Trash2, Truck, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
@@ -27,11 +27,15 @@ import { STORE_ALERT_LABELS, type StoreAlert } from '@/lib/fabric-store/store-al
 import {
   clearPending, isSettled, loadPending, savePending, type ActionOutcome, type PendingAction,
 } from '@/lib/fabric-store/pending-action'
+import {
+  disableStaffPush, enableStaffPush, getStaffPushState, registerStaffPushWorker, sendStaffPushTest, type StaffPushState,
+} from '@/lib/fabric-store/staff-push-client'
 
 /**
  * طلبات المتجر الإلكتروني (المرحلة 7) — للمدير ومدير متجر الأقمشة (قرار المالك).
  * كل تغيير يمر بالخادم فالقاعدة، ويُسجَّل باسم الموظف في سجل الطلب. الإلغاء هنا للطلب
  * غير المدفوع فقط؛ المدفوع يُلغى مع استرداده (المرحلة 8، للمدير).
+ * قرار المالك (18 أكتوبر): الإلغاء والحذف للمدير فقط، وإشعارات المتصفح للطلبات الجديدة.
  */
 
 type View = 'active' | 'review' | 'unpaid' | 'done' | 'all'
@@ -158,6 +162,68 @@ function StatusBadges({ order }: { order: OrderRow }) {
   )
 }
 
+/** زر إشعارات المتصفح لهذا الجهاز (طلب جديد ⇒ إشعار على الهاتف). */
+function PushToggle() {
+  const [state, setState] = useState<StaffPushState | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    void (async () => {
+      const current = await getStaffPushState()
+      // مشترك من قبل: يُسجَّل العامل من جديد (تحديث الملف) ليصل الإشعار والرسالة للوحة
+      if (current === 'on') await registerStaffPushWorker()
+      setState(current)
+    })()
+  }, [])
+
+  if (!state || state === 'not-configured') return null
+  const base = 'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50'
+
+  const run = async (task: () => Promise<void>, success: string) => {
+    setBusy(true)
+    try {
+      await task()
+      toast.success(success)
+    } catch (error) {
+      toast.error((error as Error).message, { duration: 7000 })
+    } finally {
+      setState(await getStaffPushState())
+      setBusy(false)
+    }
+  }
+
+  if (state === 'unsupported') {
+    return <span className="text-xs text-gray-400" title="افتحي اللوحة من Chrome على الهاتف (التطبيق لا يدعم إشعارات المتصفح)">الإشعارات غير مدعومة هنا</span>
+  }
+  if (state === 'ios-needs-install') {
+    return <span className="max-w-[14rem] text-xs text-gray-500">للإشعارات على الآيفون: مشاركة ← «إضافة إلى الشاشة الرئيسية» ثم افتحي اللوحة منها</span>
+  }
+  if (state === 'denied') {
+    return <span className="max-w-[14rem] text-xs text-red-600">الإشعارات محظورة لهذا الموقع — اسمحي بها من إعدادات المتصفح</span>
+  }
+  if (state === 'off') {
+    return (
+      <button type="button" disabled={busy} onClick={() => void run(enableStaffPush, 'فُعّلت إشعارات الطلبات الجديدة على هذا الجهاز')}
+        className={`${base} bg-rose-700 text-white hover:bg-rose-800`}>
+        <Bell className="h-4 w-4" /> تفعيل الإشعارات
+      </button>
+    )
+  }
+  return (
+    <div className="flex gap-1.5">
+      <button type="button" disabled={busy} onClick={() => void run(sendStaffPushTest, 'أُرسل إشعار تجريبي')}
+        className={`${base} border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100`}>
+        <Bell className="h-4 w-4" /> الإشعارات مفعّلة · تجربة
+      </button>
+      <button type="button" disabled={busy} title="إيقاف الإشعارات على هذا الجهاز"
+        onClick={() => { if (confirm('إيقاف إشعارات الطلبات الجديدة على هذا الجهاز؟')) void run(disableStaffPush, 'أُوقفت الإشعارات على هذا الجهاز') }}
+        className={`${base} border border-gray-200 text-gray-600 hover:bg-gray-50`}>
+        <BellOff className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
 function OnlineOrdersContent() {
   const { user } = useAuthStore()
   const { workerType } = useWorkerPermissions()
@@ -198,6 +264,13 @@ function OnlineOrdersContent() {
 
   useEffect(() => { if (allowed && IS_FABRIC_STORE_ORDERS_ENABLED) void load() }, [allowed, load])
 
+  // رابط الإشعار أو النافذة المنبثقة: ?order=<id> يفتح الطلب مباشرة
+  useEffect(() => {
+    if (!allowed) return
+    const orderId = new URLSearchParams(window.location.search).get('order')
+    if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) setOpenId(orderId)
+  }, [allowed])
+
   if (!IS_FABRIC_STORE_ORDERS_ENABLED) {
     return <div className="p-10 text-center text-gray-500" dir="rtl">قسم طلبات المتجر غير مفعّل.</div>
   }
@@ -221,9 +294,12 @@ function OnlineOrdersContent() {
               <p className="text-sm text-gray-500">التجهيز والاستلام والشحن والمراجعة</p>
             </div>
           </div>
-          <button type="button" onClick={() => void load()} className="mr-auto rounded-xl p-2 text-gray-600 hover:bg-gray-100" title="تحديث">
-            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="mr-auto flex items-center gap-2">
+            <PushToggle />
+            <button type="button" onClick={() => void load()} className="rounded-xl p-2 text-gray-600 hover:bg-gray-100" title="تحديث">
+              <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {alerts && alerts.length > 0 && (
@@ -354,6 +430,21 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
     }
   }
 
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await api(`/api/fabric-store/staff/orders/${id}/`, { method: 'POST', body: JSON.stringify({ action: 'delete' }) })
+      toast.success('حُذف الطلب من القائمة')
+      onChanged()
+      onClose()
+    } catch (error) {
+      toast.error((error as Error).message)
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const setStatus = (to: FabricStoreFulfillmentStatus, extra: Record<string, unknown> = {}) => {
     // الدفعة C (AUD-06): التقدّم في طلب دُفع ببطاقة ميسر التجريبية «تجربة لوحة» للمدير فقط، بتأكيد صريح.
     if (detail?.order.isTest && ['preparing', 'ready_for_pickup', 'shipped', 'delivered'].includes(to)) {
@@ -376,6 +467,11 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
   // الدفعة C (AUD-06): طلب الدفعة التجريبية لا يتقدّم إلا «تجربة لوحة» للمدير (والقاعدة تفرضه)
   const canProgress = paid && !order.needsReview && (order.saleRecorded || (order.isTest && detail.viewerRole === 'admin'))
   const openAlerts = tasks.filter(t => (t.topic === 'notify_staff' && t.status !== 'done') || t.status === 'dead')
+  // قرار المالك (18 أكتوبر): الإلغاء والحذف للمدير فقط. يُحذف (يُخفى) طلب لا مال عليه فقط — والقاعدة تتحقق بنفسها.
+  const isAdmin = detail.viewerRole === 'admin'
+  const deletable = !order.needsReview && (
+    (order.fulfillmentStatus === 'cancelled' && ['pending', 'failed'].includes(order.paymentStatus))
+    || order.paymentStatus === 'refunded')
   const whatsapp = customerWhatsAppLink(order.customerPhone, {
     customerName: order.customerName,
     orderNumber: order.orderNumber,
@@ -474,7 +570,7 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
             </div>
           )}
 
-          {!paid && order.fulfillmentStatus !== 'cancelled' && (
+          {!paid && order.fulfillmentStatus !== 'cancelled' && isAdmin && (
             <div className="mt-3 flex flex-wrap gap-2">
               <input value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="سبب الإلغاء (اختياري)" maxLength={300}
                 className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm" />
@@ -485,8 +581,31 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
               </button>
             </div>
           )}
+          {!paid && order.fulfillmentStatus !== 'cancelled' && !isAdmin && (
+            <p className="mt-3 text-xs text-gray-500">إلغاء الطلب وحذفه للمدير فقط.</p>
+          )}
           {paid && order.fulfillmentStatus === 'unfulfilled' && (
-            <p className="mt-3 text-xs text-gray-500">إلغاء طلب مدفوع يكون مع استرداد مبلغه — من المدير.</p>
+            <p className="mt-3 text-xs text-gray-500">
+              إلغاء طلب مدفوع يكون مع استرداد مبلغه — من المدير{isAdmin ? ' (قسم «الاسترداد والمرتجع» أدناه)' : ''}.
+            </p>
+          )}
+
+          {isAdmin && deletable && (
+            <div className="mt-3 rounded-xl border border-red-100 bg-red-50/50 p-3">
+              <p className="mb-2 text-xs text-gray-600">
+                الحذف يخفي الطلب من قوائم اللوحة؛ سجله المالي (محاولات الدفع والاسترداد) يبقى محفوظاً ولا يُمحى.
+              </p>
+              <button type="button" disabled={busy}
+                onClick={() => { if (confirm(`حذف الطلب ${order.orderNumber} من قائمة طلبات المتجر؟ لا تراجع من اللوحة.`)) void remove() }}
+                className={`${button} bg-red-600 text-white hover:bg-red-700`}>
+                <Trash2 className="h-4 w-4" /> حذف الطلب
+              </button>
+            </div>
+          )}
+          {isAdmin && !deletable && (
+            <p className="mt-3 text-xs text-gray-400">
+              {order.needsReview ? 'الحذف متاح بعد حسم المراجعة.' : paid ? 'الحذف متاح بعد إلغاء الطلب واسترداد كامل مبلغه.' : 'الحذف متاح بعد إلغاء الطلب.'}
+            </p>
           )}
 
           <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-3">

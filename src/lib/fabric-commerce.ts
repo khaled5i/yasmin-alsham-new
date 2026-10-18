@@ -11,6 +11,9 @@
  * القواعد المعتمدة من المالك (19 سبتمبر 2026):
  * - طريقة البيع مشتقة من المخزون: مخزون 3 أو 3.5 متر بالضبط ⇒ «قطعة كاملة»،
  *   وأي مخزون آخر ⇒ بيع بالمتر. (نفس قاعدة العرض الحالية في المتجر.)
+ * - تعديل 18 أكتوبر 2026: التسعير يُعرض بالمتر لكل الأقمشة. القطعة 3 أو 3.5م
+ *   تبقى «piece» داخلياً (والقاعدة تعتمد ذلك)، لكنها تُعرض بسعر المتر وعدّاد
+ *   أمتار ثابت على طولها مع ملاحظة «أقل كمية طلب» — الدفع والحجز بلا تغيير.
  * - البيع بالمتر: حد أدنى 1 متر وخطوة 0.5 متر.
  * - الأسعار المخزّنة غير شاملة الضريبة ⇒ تُضاف 15% في السلة.
  * - `price_per_meter = null` يعني «السعر عند الطلب» ⇒ لا يُشترى تلقائياً.
@@ -420,19 +423,49 @@ export function buildCartSnapshot(fabric: Fabric): FabricCartSnapshot {
   }
 }
 
-export function formatPurchaseModeLabel(mode: FabricPurchaseMode): string {
-  return mode === 'piece' ? 'قطعة كاملة' : 'بيع بالمتر'
+/**
+ * طول القطعة بالمتر للقماش الذي يُباع بكامل كميته (3 أو 3.5م). داخلياً تبقى
+ * طريقة البيع «piece» (قطعة واحدة) كما تعتمدها القاعدة، لكن الزبونة تراها
+ * بالمتر: عدّاد ثابت على هذه القيمة مع ملاحظة «أقل كمية طلب».
+ */
+export function getFabricPieceMeters(fabric: Pick<Fabric, 'stock_quantity'>): number {
+  return centimetersToMeters(getFabricStockCentimeters(fabric))
 }
 
-export function formatQuantityLabel(quantity: number, mode: FabricPurchaseMode): string {
+export function formatMinimumOrderNote(meters: number): string {
+  return `أقل كمية طلب لهذا القماش ${formatFabricNumber(meters)} متر`
+}
+
+export function formatPurchaseModeLabel(mode: FabricPurchaseMode): string {
+  return mode === 'piece' ? 'بالمتر — كمية ثابتة' : 'بيع بالمتر'
+}
+
+/** `pieceMeters` = طول القطعة لطريقة «piece»، فتُعرض الكمية بالمتر لا «قطعة». */
+export function formatQuantityLabel(
+  quantity: number,
+  mode: FabricPurchaseMode,
+  pieceMeters?: number | null
+): string {
   if (mode === 'piece') {
+    if (pieceMeters != null && pieceMeters > 0) return `${formatFabricNumber(pieceMeters)} متر`
     return quantity === 1 ? 'قطعة واحدة' : `${formatFabricNumber(quantity)} قطع`
   }
   return `${formatFabricNumber(quantity)} متر`
 }
 
-export function formatUnitPriceLabel(unitPrice: number | null, mode: FabricPurchaseMode): string {
+/**
+ * سعر الوحدة للعرض. لطريقة «piece» مع `pieceMeters` يُعرض سعر المتر
+ * (سعر القطعة ÷ أمتارها) حتى يبقى التسعير بالمتر في كل المتجر.
+ */
+export function formatUnitPriceLabel(
+  unitPrice: number | null,
+  mode: FabricPurchaseMode,
+  pieceMeters?: number | null
+): string {
   if (unitPrice == null) return 'السعر عند الطلب'
+  if (mode === 'piece' && pieceMeters != null && pieceMeters > 0) {
+    return `${formatFabricNumber(roundFabricNumber(unitPrice / pieceMeters))} ريال / متر`
+  }
   return `${formatFabricNumber(unitPrice)} ريال / ${mode === 'piece' ? 'القطعة' : 'متر'}`
 }
 

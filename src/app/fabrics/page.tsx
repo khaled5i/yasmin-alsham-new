@@ -12,7 +12,6 @@ import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
 import { FABRICS_PER_PAGE, useFabricBrowsePosition } from '@/hooks/useFabricBrowsePosition'
-import FabricFavoriteButton from '@/components/fabrics/FabricFavoriteButton'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
@@ -447,7 +446,7 @@ export default function FabricsPage() {
                               className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex h-[20%] items-end justify-center bg-gradient-to-b from-transparent via-[#f6f0e8]/75 to-[#f6f0e8] px-2 pb-2 sm:px-4 sm:pb-3"
                               dir="rtl"
                             >
-                              {/* السعر والقلب في سطر واحد: السعر في المساحة المتبقية والقلب في الطرف الأيسر */}
+                              {/* السعر في المنتصف؛ زر المفضلة يظهر في صفحة القماش والنظرة السريعة فقط */}
                               <div className="flex w-full items-center gap-1.5 sm:gap-2">
                                 <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-[#6b1726] sm:gap-3">
                                   <span className="h-px min-w-1 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
@@ -455,10 +454,6 @@ export default function FabricsPage() {
                                     {priceLabel}
                                   </p>
                                   <span className="h-px min-w-1 max-w-6 flex-1 bg-[#6b1726]/60 sm:max-w-10" aria-hidden="true" />
-                                </div>
-                                {/* القلب: يوقف الحدث فلا يفتح القماش ولا يحرّك المعرض */}
-                                <div className="pointer-events-auto shrink-0">
-                                  <FabricFavoriteButton fabric={fabric} variant="floating" size="sm" />
                                 </div>
                               </div>
                             </div>

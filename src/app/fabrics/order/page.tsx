@@ -246,7 +246,7 @@ function OrderCard({ order }: { order: TrackedOrder }) {
                 {item.name}{item.color ? ` · ${item.color}` : ''}
                 <span className="block text-xs text-[#211b19]/60">
                   {item.purchaseMode === 'piece'
-                    ? `قطعة كاملة ${formatFabricNumber((item.pieceLengthCm ?? 0) / 100)} م`
+                    ? `${formatFabricNumber((item.pieceLengthCm ?? 0) / 100)} م`
                     : `${formatFabricNumber((item.quantityCm ?? 0) / 100)} م`}
                 </span>
               </span>

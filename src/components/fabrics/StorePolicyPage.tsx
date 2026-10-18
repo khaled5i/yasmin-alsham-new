@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { STORE_POLICIES_UPDATED_AT } from '@/lib/store-legal'
-import StoreLegalFooter from './StoreLegalFooter'
 
 /** هيكل مشترك لصفحات سياسات متجر الأقمشة (شروط البيع، الاسترجاع، الشحن). */
 export default function StorePolicyPage({ title, intro, children }: {
@@ -22,7 +21,6 @@ export default function StorePolicyPage({ title, intro, children }: {
           <div className="mt-6 space-y-7 leading-relaxed text-[#211b19]/85">{children}</div>
         </article>
       </main>
-      <StoreLegalFooter />
     </>
   )
 }

@@ -213,8 +213,7 @@ export default function HomeHeader({
           aria-label="ياسمين الشام — الرئيسية"
           onClick={handleBrandClick}
         >
-          <span>ياسمين الشام</span>
-          <small>YASMIN AL-SHAM</small>
+          <span className={styles.headerLogo} aria-hidden="true" />
         </a>
 
         {isSectionExperience ? (

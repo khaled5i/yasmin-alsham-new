@@ -12,6 +12,7 @@ import { after } from 'next/server'
 import { sendFabricIncomeToAlostaz } from '@/lib/server/alostaz-fabric-invoice'
 import { getFabricStoreServiceClient } from './http'
 import { alostazTaskOutcome, processFabricStoreOutbox, type OutboxDeps } from './confirm'
+import { notifyNewPaidOrders } from './staff-push'
 
 export function isAlostazSendEnabled(): boolean {
   return (process.env.FABRIC_STORE_ALOSTAZ_ENABLED ?? '').trim().toLowerCase() === 'true'
@@ -41,6 +42,11 @@ export async function afterVerifiedPayment(orderId: string): Promise<void> {
   } catch (error) {
     console.error('fabric-store: confirming the sale failed (the job will retry):', (error as Error).message)
   }
+  // إشعار المتصفح «طلب جديد» للمدير ومدير المتجر — بعد الرد، مرة واحدة لكل طلب
+  after(async () => {
+    const client = getFabricStoreServiceClient()
+    if (client) await notifyNewPaidOrders(client, { orderId })
+  })
   if (isAlostazSendEnabled()) {
     after(async () => {
       const withAlostaz = getOutboxDeps({ withAlostaz: true })

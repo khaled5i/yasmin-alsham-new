@@ -56,6 +56,7 @@
     "react-hot-toast": "^2.6.0",
     "tesseract.js": "^7.0.0",
     "uuid": "^13.0.0",
+    "web-push": "^3.6.7",
     "zod": "^3.25.67",
     "zustand": "^5.0.5"
   },
@@ -67,6 +68,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "15.5.27",
     "tailwindcss": "^4",

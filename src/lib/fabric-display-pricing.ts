@@ -93,14 +93,23 @@ export function withFabricVat(amount: number | null): number | null {
   return roundFabricNumber(amount * (1 + FABRIC_VAT_BASIS_POINTS / 10_000))
 }
 
-/** `getFabricDisplayPricing` للواجهة العامة: نفس الوحدة، والمبلغ شامل الضريبة. */
+/**
+ * سعر الواجهة العامة شاملاً الضريبة — بالمتر دائماً (قرار المالك 18 أكتوبر 2026).
+ * القطعة 3 أو 3.5م لا يُعرض لها سعر قطعة كاملة، بل سعر المتر مع ملاحظة «أقل كمية
+ * طلب»؛ و`isWholePiecePrice` يبقى ليعرف المتجر متى يُظهر تلك الملاحظة.
+ * ما يُدفع لم يتغيّر: يُحسب بالهللة في `fabric-store/pricing.ts`.
+ */
 export function getFabricStorefrontPricing(
   pricePerInventoryUnit: number | null | undefined,
   availableQuantity: number | null | undefined,
   inventoryUnit: FabricPricingUnit = 'meter'
 ): FabricDisplayPricing {
-  const pricing = getFabricDisplayPricing(pricePerInventoryUnit, availableQuantity, inventoryUnit)
-  return { ...pricing, amount: withFabricVat(pricing.amount) }
+  const isWholePiecePrice = isWholeFabricPiece(availableQuantity, inventoryUnit)
+  const unit: FabricPricingUnit = inventoryUnit === 'piece' ? 'piece' : 'meter'
+  const amount = pricePerInventoryUnit == null || !Number.isFinite(Number(pricePerInventoryUnit))
+    ? null
+    : roundFabricNumber(Number(pricePerInventoryUnit))
+  return { amount: withFabricVat(amount), unit, isWholePiecePrice }
 }
 
 export function getFabricPricingUnitLabel(unit: FabricPricingUnit): string {

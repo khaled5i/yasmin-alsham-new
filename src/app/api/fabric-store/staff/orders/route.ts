@@ -22,38 +22,45 @@ export async function GET(request: NextRequest) {
   // حروف وأرقام ومسافات وشرطة و+ فقط: يمنع كسر صيغة فلتر PostgREST (الفواصل والأقواس).
   const q = (request.nextUrl.searchParams.get('q') ?? '').replace(/[^\p{L}\p{N}\s+\-]/gu, '').trim().slice(0, 40)
 
-  let query = client
-    .from('fabric_store_orders')
-    .select(`id, order_number, created_at, paid_at, customer_name, customer_phone, delivery_method, total_halalas,
-      payment_status, fulfillment_status, needs_review, income_id, tracking_number,
-      paid_attempt:fabric_store_payment_attempts!fabric_store_orders_paid_attempt_id_fkey (environment)`)
-    .order('created_at', { ascending: false })
-    .limit(200)
+  // حذف الطلب (18 أكتوبر): المحذوف لا يظهر في القوائم ولا العدّادات. قبل تطبيق هجرته لا يوجد
+  // العمود (42703) فتعمل القائمة بدونه.
+  const build = (hideDeleted: boolean) => {
+    let query = client
+      .from('fabric_store_orders')
+      .select(`id, order_number, created_at, paid_at, customer_name, customer_phone, delivery_method, total_halalas,
+        payment_status, fulfillment_status, needs_review, income_id, tracking_number,
+        paid_attempt:fabric_store_payment_attempts!fabric_store_orders_paid_attempt_id_fkey (environment)`)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (hideDeleted) query = query.is('deleted_at', null)
 
-  let doneFilter: string | null = null
-  let searchFilter: string | null = null
-  if (view === 'active') {
-    query = query.in('payment_status', ['paid', 'partially_refunded']).not('fulfillment_status', 'in', '(delivered,cancelled)')
-  } else if (view === 'review') {
-    query = query.eq('needs_review', true)
-  } else if (view === 'unpaid') {
-    query = query.in('payment_status', ['pending', 'authorized', 'failed']).neq('fulfillment_status', 'cancelled')
-  } else if (view === 'done') {
-    // المرحلة 8: المسترد كاملاً بعد القص (لا يُسلَّم) منتهٍ أيضاً، وإلا اختفى إلا من «الكل».
-    doneFilter = 'fulfillment_status.in.(delivered,cancelled),payment_status.eq.refunded'
-  }
-  if (q) {
-    const digits = q.replace(/\D/g, '')
-    // القيمة بين علامتي تنصيص: الاسم قد يحوي مسافة (والتنصيص نفسه محذوف من q أعلاه).
-    const parts = [`order_number.ilike."*${q}*"`, `customer_name.ilike."*${q}*"`]
-    if (digits.length >= 4) parts.push(`customer_phone.like.*${digits.replace(/^0+/, '')}*`)
-    searchFilter = parts.join(',')
-  }
-  // عند اجتماعهما: شرط `or` واحد بصيغة and(or(..),or(..)) — لا نعتمد على دمج معاملَي or.
-  if (doneFilter && searchFilter) query = query.or(`and(or(${doneFilter}),or(${searchFilter}))`)
-  else if (doneFilter || searchFilter) query = query.or((doneFilter || searchFilter)!)
+    let doneFilter: string | null = null
+    let searchFilter: string | null = null
+    if (view === 'active') {
+      query = query.in('payment_status', ['paid', 'partially_refunded']).not('fulfillment_status', 'in', '(delivered,cancelled)')
+    } else if (view === 'review') {
+      query = query.eq('needs_review', true)
+    } else if (view === 'unpaid') {
+      query = query.in('payment_status', ['pending', 'authorized', 'failed']).neq('fulfillment_status', 'cancelled')
+    } else if (view === 'done') {
+      // المرحلة 8: المسترد كاملاً بعد القص (لا يُسلَّم) منتهٍ أيضاً، وإلا اختفى إلا من «الكل».
+      doneFilter = 'fulfillment_status.in.(delivered,cancelled),payment_status.eq.refunded'
+    }
+    if (q) {
+      const digits = q.replace(/\D/g, '')
+      // القيمة بين علامتي تنصيص: الاسم قد يحوي مسافة (والتنصيص نفسه محذوف من q أعلاه).
+      const parts = [`order_number.ilike."*${q}*"`, `customer_name.ilike."*${q}*"`]
+      if (digits.length >= 4) parts.push(`customer_phone.like.*${digits.replace(/^0+/, '')}*`)
+      searchFilter = parts.join(',')
+    }
+    // عند اجتماعهما: شرط `or` واحد بصيغة and(or(..),or(..)) — لا نعتمد على دمج معاملَي or.
+    if (doneFilter && searchFilter) query = query.or(`and(or(${doneFilter}),or(${searchFilter}))`)
+    else if (doneFilter || searchFilter) query = query.or((doneFilter || searchFilter)!)
 
-  const { data, error } = await query
+    return query
+  }
+  let { data, error } = await build(true)
+  if (error?.code === '42703') ({ data, error } = await build(false))
   if (error) {
     console.error('fabric-store staff list failed:', error.message)
     return errorResponse(503, 'unavailable', 'تعذّر تحميل الطلبات')

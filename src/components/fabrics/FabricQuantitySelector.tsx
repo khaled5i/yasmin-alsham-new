@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
-import { clampFabricQuantity, type FabricPurchaseMode, type FabricQuantityBounds } from '@/lib/fabric-commerce'
+import {
+  clampFabricQuantity,
+  formatMinimumOrderNote,
+  type FabricPurchaseMode,
+  type FabricQuantityBounds,
+} from '@/lib/fabric-commerce'
 import { formatFabricNumber, roundFabricNumber } from '@/lib/fabric-number-format'
 
 interface FabricQuantitySelectorProps {
@@ -14,6 +19,11 @@ interface FabricQuantitySelectorProps {
   label: string
   disabled?: boolean
   size?: 'sm' | 'md'
+  /**
+   * طول القطعة بالمتر لطريقة «piece» (3 أو 3.5م): يُعرض العدّاد بالمتر ثابتاً على
+   * هذه القيمة مع ملاحظة «أقل كمية طلب»، والقيمة الداخلية تبقى قطعة واحدة.
+   */
+  pieceMeters?: number | null
 }
 
 /**
@@ -29,6 +39,7 @@ export default function FabricQuantitySelector({
   label,
   disabled = false,
   size = 'md',
+  pieceMeters = null,
 }: FabricQuantitySelectorProps) {
   const [draft, setDraft] = useState(String(value))
 
@@ -36,9 +47,10 @@ export default function FabricQuantitySelector({
     setDraft(String(roundFabricNumber(value)))
   }, [value])
 
-  const unitLabel = mode === 'piece' ? 'قطعة' : 'متر'
-  const canDecrease = !disabled && roundFabricNumber(value - bounds.step) >= bounds.min
-  const canIncrease = !disabled && roundFabricNumber(value + bounds.step) <= bounds.max
+  const isFixedMeters = mode === 'piece' && pieceMeters != null && pieceMeters > 0
+  const unitLabel = mode === 'piece' && !isFixedMeters ? 'قطعة' : 'متر'
+  const canDecrease = !disabled && !isFixedMeters && roundFabricNumber(value - bounds.step) >= bounds.min
+  const canIncrease = !disabled && !isFixedMeters && roundFabricNumber(value + bounds.step) <= bounds.max
 
   const applyQuantity = (next: number) => {
     const clamped = clampFabricQuantity(next, bounds)
@@ -81,9 +93,10 @@ export default function FabricQuantitySelector({
         <input
           type="text"
           inputMode="decimal"
-          value={draft}
+          value={isFixedMeters ? String(roundFabricNumber(pieceMeters)) : draft}
+          readOnly={isFixedMeters}
           onChange={event => setDraft(event.target.value)}
-          onBlur={commitDraft}
+          onBlur={isFixedMeters ? undefined : commitDraft}
           onKeyDown={event => {
             if (event.key === 'Enter') {
               event.preventDefault()
@@ -106,8 +119,14 @@ export default function FabricQuantitySelector({
         </button>
       </div>
 
-      <p className="text-center text-[11px] leading-tight text-[#211b19]/60">
-        {mode === 'piece'
+      <p
+        className={`text-center text-[11px] leading-tight ${
+          isFixedMeters ? 'font-semibold text-[#6b1726]' : 'text-[#211b19]/60'
+        }`}
+      >
+        {isFixedMeters
+          ? formatMinimumOrderNote(pieceMeters)
+          : mode === 'piece'
           ? 'تُباع قطعة كاملة'
           : `بالمتر — الأدنى ${formatFabricNumber(bounds.min)} وخطوة ${formatFabricNumber(bounds.step)}`}
       </p>

@@ -516,7 +516,11 @@ export default function FabricCheckoutPage() {
                             <span className="font-semibold">{line.label ?? labels.get(line.fabricId) ?? 'قماش'}</span>
                             {requested && (
                               <span className="block text-xs text-[#211b19]/60">
-                                {formatQuantityLabel(requested.quantity, requested.purchaseMode)}
+                                {formatQuantityLabel(
+                                  requested.quantity,
+                                  requested.purchaseMode,
+                                  line.availableCm != null ? line.availableCm / 100 : null
+                                )}
                               </span>
                             )}
                             {line.status !== 'ok' && (

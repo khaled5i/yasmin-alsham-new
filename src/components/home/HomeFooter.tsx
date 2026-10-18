@@ -16,7 +16,7 @@ export default function HomeFooter({ onSelectSection }: HomeFooterProps) {
         <div className={styles.footerBrand}>
           <p>ياسمين الشام</p>
           <small>YASMIN AL-SHAM</small>
-          <span>من القماش… نصنع حكايتك.</span>
+          <span>القماش والخياطة في مكان واحد.</span>
         </div>
 
         <nav className={styles.footerNav} aria-label="روابط الموقع">
@@ -60,8 +60,9 @@ export default function HomeFooter({ onSelectSection }: HomeFooterProps) {
           <Link href="/return-policy">الاسترجاع والاستبدال</Link>
           <Link href="/shipping-policy">الشحن والتوصيل</Link>
         </div>
-        <p>
-          © 2026 ياسمين الشام — {STORE_ENTITY.legalName} · السجل التجاري <bdi dir="ltr">{STORE_ENTITY.commercialRegistration}</bdi> · الرقم الضريبي <bdi dir="ltr">{STORE_ENTITY.vatNumber}</bdi>
+        <p className={styles.footerLegal}>
+          <span>© 2026 ياسمين الشام — {STORE_ENTITY.legalName}</span>
+          <span>السجل التجاري <bdi dir="ltr">{STORE_ENTITY.commercialRegistration}</bdi> · الرقم الضريبي <bdi dir="ltr">{STORE_ENTITY.vatNumber}</bdi></span>
         </p>
       </div>
     </footer>

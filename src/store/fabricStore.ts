@@ -5,7 +5,6 @@ import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-s
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { matchesFabricSearch } from '@/lib/fabric-search'
 import {
-  getFabricDisplayPricing,
   getFabricStorefrontPricing,
   getFabricNetPricePerMeter,
   hasFabricDisplayPrice,
@@ -262,15 +261,15 @@ export const useFabricStore = create<FabricStoreState>()(
               return b.created_at.localeCompare(a.created_at)
             case 'price-high':
               return (
-                getFabricDisplayPricing(b.price_per_meter, b.stock_quantity).amount ?? 0
+                getFabricStorefrontPricing(b.price_per_meter, b.stock_quantity).amount ?? 0
               ) - (
-                getFabricDisplayPricing(a.price_per_meter, a.stock_quantity).amount ?? 0
+                getFabricStorefrontPricing(a.price_per_meter, a.stock_quantity).amount ?? 0
               )
             case 'price-low':
               return (
-                getFabricDisplayPricing(a.price_per_meter, a.stock_quantity).amount ?? 0
+                getFabricStorefrontPricing(a.price_per_meter, a.stock_quantity).amount ?? 0
               ) - (
-                getFabricDisplayPricing(b.price_per_meter, b.stock_quantity).amount ?? 0
+                getFabricStorefrontPricing(b.price_per_meter, b.stock_quantity).amount ?? 0
               )
             case 'popular':
               return b.orders_count - a.orders_count

@@ -10,6 +10,7 @@ import {
   formatPurchaseModeLabel,
   formatQuantityLabel,
   formatUnitPriceLabel,
+  getFabricPieceMeters,
   type ResolvedFabricCartLine,
 } from '@/lib/fabric-commerce'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
@@ -48,6 +49,8 @@ export default function FabricCartLineRow({ line, compact = false, onNavigate }:
   const image = fabric?.images?.[0] || fabric?.thumbnail_image || fabric?.image_url || stored.snapshot.image
   const code = fabric?.fabric_code || stored.snapshot.fabricCode
   const color = fabric?.available_colors?.[0] || stored.snapshot.color
+  // القطعة 3 أو 3.5م تُعرض بالمتر: عدّاد ثابت على طولها وسعر المتر.
+  const pieceMeters = line.purchaseMode === 'piece' && fabric ? getFabricPieceMeters(fabric) : null
 
   const handleRemove = () => {
     removeLine(line.key)
@@ -184,6 +187,7 @@ export default function FabricCartLineRow({ line, compact = false, onNavigate }:
                   onChange={setDraftQuantity}
                   label={label}
                   size="sm"
+                  pieceMeters={pieceMeters}
                 />
                 <button
                   type="button"
@@ -202,16 +206,17 @@ export default function FabricCartLineRow({ line, compact = false, onNavigate }:
                 onChange={next => setQuantity(line.key, next, fabric)}
                 label={label}
                 size="sm"
+                pieceMeters={pieceMeters}
               />
             ) : (
               <p className="text-xs text-[#211b19]/60">
-                {formatQuantityLabel(line.quantity, line.purchaseMode)}
+                {formatQuantityLabel(line.quantity, line.purchaseMode, pieceMeters)}
               </p>
             )}
 
             <div className="text-left" dir="rtl">
               <p className="text-xs text-[#211b19]/60">
-                {formatUnitPriceLabel(withFabricVat(line.unitPrice), line.purchaseMode)}
+                {formatUnitPriceLabel(withFabricVat(line.unitPrice), line.purchaseMode, pieceMeters)}
               </p>
               <p className="text-base font-bold text-[#6b1726] sm:text-lg">
                 {line.lineTotal != null ? `${formatFabricNumber(withFabricVat(line.lineTotal))} ريال` : '—'}

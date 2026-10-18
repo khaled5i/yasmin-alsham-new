@@ -155,7 +155,16 @@ async function alostazFetch(path: string, init?: RequestInit): Promise<any> {
     )
   }
 
-  const text = await res.text()
+  // انقطاع الجسم بعد وصول الترويسات لا يثبت عدم إنشاء الفاتورة؛ وحده رفض 4xx صريح يثبته.
+  let text: string
+  try {
+    text = await res.text()
+  } catch (err: any) {
+    throw new AlostazRequestError(
+      `انقطع رد خادم الأستاذ (${res.status}) قبل قراءته: ${err?.message || err}`,
+      isInvoiceCreation && !(res.status >= 400 && res.status < 500)
+    )
+  }
   let body: any = null
   try {
     body = text ? JSON.parse(text) : null
