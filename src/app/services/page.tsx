@@ -1,9 +1,10 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Calendar, Search, Scissors, Palette, Heart, Sparkles, Home } from 'lucide-react'
+import { Calendar, Search, Scissors, Heart, Sparkles, Home } from 'lucide-react'
 import Link from 'next/link'
 import SiteHeader from '@/components/SiteHeader'
+import { SERVICE_PAGES } from './service-pages'
 
 export default function ServicesPage() {
   const services = [
@@ -39,14 +40,6 @@ export default function ServicesPage() {
       link: '/fabrics',
       color: 'from-indigo-400 to-purple-400',
       bgColor: 'from-indigo-50 to-purple-50'
-    },
-    {
-      icon: Palette,
-      title: 'فساتين جاهزة',
-      description: 'مجموعة متنوعة من الفساتين الجاهزة للشراء المباشر بتصاميم عصرية وأنيقة.',
-      link: '/designs',
-      color: 'from-emerald-400 to-teal-400',
-      bgColor: 'from-emerald-50 to-teal-50'
     },
     {
       icon: Heart,
@@ -121,6 +114,19 @@ export default function ServicesPage() {
                 </motion.div>
               ))}
             </div>
+
+            {/* صفحات الخدمات التفصيلية */}
+            <nav className="mt-12 flex flex-wrap justify-center gap-3">
+              {SERVICE_PAGES.map(page => (
+                <Link
+                  key={page.slug}
+                  href={`/services/${page.slug}/`}
+                  className="rounded-full border border-pink-200 bg-white px-4 py-2 text-sm font-bold text-pink-700 transition-colors hover:bg-pink-50"
+                >
+                  {page.heading}
+                </Link>
+              ))}
+            </nav>
 
             {/* دعوة للعمل */}
             <motion.div

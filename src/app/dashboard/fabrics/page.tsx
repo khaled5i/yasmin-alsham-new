@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { motion } from 'framer-motion'
-import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2, Eye, EyeOff, Database, Hash, Boxes, Shirt, Search } from 'lucide-react'
+import { Palette, Edit2, Save, X, ArrowRight, Loader2, Plus, Trash2, Eye, EyeOff, Database, Hash, Boxes, Shirt, Search, ArrowUpToLine } from 'lucide-react'
 import ImageUpload from '@/components/ImageUpload'
 import Link from 'next/link'
-import { fabricService, Fabric, UpdateFabricData, CreateFabricData } from '@/lib/services/fabric-service'
+import { fabricService, Fabric, UpdateFabricData, CreateFabricData, getFabricListingTime } from '@/lib/services/fabric-service'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
@@ -25,6 +25,8 @@ function FabricsAdminContent() {
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [boostingId, setBoostingId] = useState<string | null>(null)
+  const [boostedId, setBoostedId] = useState<string | null>(null)
 
   // البحث بالاسم أو الرقم أو النوع أو اللون
   const filteredFabrics = useMemo(
@@ -60,7 +62,9 @@ function FabricsAdminContent() {
         setError(error)
       } else if (data) {
         console.log(`✅ تم تحميل ${data.length} قماش`)
-        setFabrics(data)
+        // بنفس ترتيب «الأحدث أولاً» في المتجر (المرفوع أولاً) — يُرتَّب عند التحميل فقط
+        // حتى لا تقفز البطاقة إلى أعلى الصفحة (ومعها الشاشة) عند الضغط على «رفع»
+        setFabrics([...data].sort((a, b) => getFabricListingTime(b) - getFabricListingTime(a)))
       }
     } catch (err: any) {
       console.error('❌ خطأ غير متوقع:', err)
@@ -338,6 +342,23 @@ function FabricsAdminContent() {
     setIsLoading(false)
   }
 
+  // «رفع»: يجعل القماش النتيجة الأولى في المتجر (ترتيب «الأحدث أولاً»)
+  const handleBoost = async (fabric: Fabric) => {
+    setBoostingId(fabric.id)
+    setError(null)
+    const { data, error } = await fabricService.update(fabric.id, {
+      boosted_at: new Date().toISOString()
+    })
+    if (error) {
+      setError(error)
+    } else if (data) {
+      setFabrics(previous => previous.map(current => current.id === data.id ? data : current))
+      setBoostedId(data.id)
+      setTimeout(() => setBoostedId(current => current === data.id ? null : current), 2500)
+    }
+    setBoostingId(null)
+  }
+
   const fabricCategories = ['حرير', 'شيفون', 'ساتان', 'دانتيل', 'تول', 'قطن', 'كريب', 'أورجانزا', 'مخمل', 'جاكار', 'تفتا', 'جورجيت']
 
   // تحديد مسار العودة حسب نوع المستخدم
@@ -386,14 +407,7 @@ function FabricsAdminContent() {
             <h1 className="text-2xl font-bold">إدارة الأقمشة</h1>
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                href="/dashboard/ready-designs"
-                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-white px-3 py-2 text-[11px] font-bold leading-4 text-purple-800 shadow-sm transition-colors hover:bg-purple-50 sm:text-xs"
-              >
-                <Palette className="h-4 w-4 shrink-0" />
-                التصاميم الجاهزة
-              </Link>
+            <div className="grid grid-cols-1 gap-2">
               <Link
                 href="/dashboard/accounting/fabrics/inventory"
                 className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-teal-200 bg-white px-3 py-2 text-[11px] font-bold leading-4 text-teal-800 shadow-sm transition-colors hover:bg-teal-50 sm:text-xs"
@@ -1011,9 +1025,18 @@ function FabricsAdminContent() {
                       <span>{fabric.is_manually_hidden ? 'إظهار' : 'إخفاء'}</span>
                     </button>
                     <button
+                      onClick={() => handleBoost(fabric)}
+                      disabled={editingId !== null || isAddingNew || boostingId !== null}
+                      title="رفع القماش ليصبح النتيجة الأولى في المتجر"
+                      className="flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {boostingId === fabric.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpToLine className="w-4 h-4" />}
+                      <span>{boostedId === fabric.id ? 'تم الرفع' : 'رفع'}</span>
+                    </button>
+                    <button
                       onClick={() => setDeleteConfirmId(fabric.id)}
                       disabled={editingId !== null || isAddingNew}
-                      className="col-span-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="w-4 h-4" />
                       <span>حذف</span>

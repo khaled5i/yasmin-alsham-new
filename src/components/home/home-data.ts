@@ -11,7 +11,7 @@ export type TailoringShowcaseItem = {
 }
 
 export const HOME_WHATSAPP_NUMBER = '966598862609'
-export const HOME_TIKTOK_URL = 'https://www.tiktok.com/@yasminalsham.fashion'
+export const HOME_TIKTOK_URL = 'https://www.tiktok.com/@yasminalshamtextile'
 
 const tailoringMessage =
   'مرحبًا، أرغب في الاستفسار عن تفصيل فستان لدى ياسمين الشام.'

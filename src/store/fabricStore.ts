@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import { fabricService, Fabric as SupabaseFabric } from '@/lib/services/fabric-service'
+import { fabricService, Fabric as SupabaseFabric, getFabricListingTime } from '@/lib/services/fabric-service'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { matchesFabricSearch } from '@/lib/fabric-search'
 import {
@@ -63,6 +63,7 @@ export interface Fabric {
   is_manually_hidden?: boolean
   show_stock_quantity?: boolean
   deleted_at?: string | null
+  boosted_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -258,7 +259,8 @@ export const useFabricStore = create<FabricStoreState>()(
 
           switch (sortBy) {
             case 'newest':
-              return b.created_at.localeCompare(a.created_at)
+              // القماش المرفوع بزر «رفع» في الإدارة يتصدّر حسب وقت رفعه
+              return getFabricListingTime(b) - getFabricListingTime(a)
             case 'price-high':
               return (
                 getFabricStorefrontPricing(b.price_per_meter, b.stock_quantity).amount ?? 0

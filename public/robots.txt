@@ -1,22 +1,23 @@
 # robots.txt - ياسمين الشام
-# الصفحات المسموح بفهرستها في جوجل
+# لا تُمنع هنا الصفحات المحذوفة (مثل /designs) عمداً: جوجل يحتاج أن يزورها ويرى 404 حتى يزيلها من النتائج.
 
 User-agent: *
+Allow: /
 
-# الصفحات المسموحة (تظهر في جوجل)
-Allow: /$
-Allow: /designs
-Allow: /designs/$
-Allow: /fabrics
-Allow: /services
-
-# الصفحات الممنوعة (لا تظهر في جوجل)
-Disallow: /testimonials
+# الصفحات الخاصة أو التي لا فائدة من ظهورها في جوجل
 Disallow: /dashboard/
 Disallow: /api/
-Disallow: /designs/*/
-
-# لإظهار صفحات تصاميم محددة فقط عبر الـ sitemap
-# Disallow: /designs/
+Disallow: /login
+Disallow: /debug
+Disallow: /test-supabase
+Disallow: /testimonials
+Disallow: /partners
+Disallow: /my-appointments
+Disallow: /queue
+Disallow: /fabrics/cart
+Disallow: /fabrics/checkout
+Disallow: /fabrics/payment
+Disallow: /fabrics/order
+Disallow: /fabrics/favorites
 
 Sitemap: https://www.yasmin-alsham.fashion/sitemap.xml

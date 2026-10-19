@@ -12,7 +12,7 @@ import { supabase, isSupabaseConfigured, ensureValidSession } from '@/lib/supaba
  * (cost_per_meter، supplier_id، last_purchase_date، last_purchase_price، average_cost). الزائر (anon) لا يملك قراءتها في القاعدة بعد هجرة الدفعة D، و`select('*')`
  * كان سيفشل كله. عمود جديد في `fabrics` يُضاف هنا (وإلى منح anon في القاعدة إن كان للعموم).
  */
-export const FABRIC_PUBLIC_COLUMNS = 'id,name,name_en,description,description_en,category,type,price_per_meter,original_price_per_meter,is_on_sale,discount_percentage,image_url,thumbnail_image,images,available_colors,width_cm,is_available,is_active,is_featured,stock_quantity,min_order_meters,fabric_weight,fabric_texture,transparency_level,elasticity,care_instructions,washing_instructions,ironing_temperature,suitable_for,occasions,features,tags,views_count,orders_count,rating,reviews_count,country_of_origin,created_at,updated_at,discounted_price_per_meter,reorder_level,fabric_code,inventory_item_id,inventory_color_id,is_manually_hidden,show_stock_quantity,deleted_at,categories,design_images'
+export const FABRIC_PUBLIC_COLUMNS = 'id,name,name_en,description,description_en,category,type,price_per_meter,original_price_per_meter,is_on_sale,discount_percentage,image_url,thumbnail_image,images,available_colors,width_cm,is_available,is_active,is_featured,stock_quantity,min_order_meters,fabric_weight,fabric_texture,transparency_level,elasticity,care_instructions,washing_instructions,ironing_temperature,suitable_for,occasions,features,tags,views_count,orders_count,rating,reviews_count,country_of_origin,created_at,updated_at,discounted_price_per_meter,reorder_level,fabric_code,inventory_item_id,inventory_color_id,is_manually_hidden,show_stock_quantity,deleted_at,categories,design_images,boosted_at'
 
 
 // ============================================================================
@@ -66,6 +66,8 @@ export interface Fabric {
   is_manually_hidden?: boolean
   show_stock_quantity?: boolean
   deleted_at?: string | null
+  /** آخر ضغطة على زر «رفع» في إدارة المتجر — تُقدِّم القماش في «الأحدث أولاً» */
+  boosted_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -144,7 +146,12 @@ export interface UpdateFabricData {
   country_of_origin?: string
   is_manually_hidden?: boolean
   deleted_at?: string | null
+  boosted_at?: string | null
 }
+
+/** وقت الترتيب في «الأحدث أولاً»: الأحدث من تاريخ الإضافة وآخر «رفع» */
+export const getFabricListingTime = (fabric: Pick<Fabric, 'created_at' | 'boosted_at'>): number =>
+  Math.max(Date.parse(fabric.created_at) || 0, fabric.boosted_at ? Date.parse(fabric.boosted_at) || 0 : 0)
 
 export interface FabricTypeCode {
   id: string

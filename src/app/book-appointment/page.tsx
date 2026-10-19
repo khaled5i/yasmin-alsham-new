@@ -246,7 +246,7 @@ export default function BookAppointmentPage() {
       // الانتقال إلى الصفحة الرئيسية بعد 2.5 ثانية
       setTimeout(() => {
         setShowSuccessModal(false)
-        router.push('/#ready-designs')
+        router.push('/')
       }, 2500)
 
     } catch (error) {

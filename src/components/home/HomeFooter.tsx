@@ -49,7 +49,7 @@ export default function HomeFooter({ onSelectSection }: HomeFooterProps) {
           <a href="https://www.instagram.com/yasmin_alsham_fashion" target="_blank" rel="noopener noreferrer" aria-label="إنستغرام">
             <Instagram aria-hidden="true" />
           </a>
-          <a href="https://www.tiktok.com/@yasminalsham.fashion" target="_blank" rel="noopener noreferrer" aria-label="تيك توك">
+          <a href="https://www.tiktok.com/@yasminalshamtextile" target="_blank" rel="noopener noreferrer" aria-label="تيك توك">
             TK
           </a>
         </div>

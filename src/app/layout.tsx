@@ -84,15 +84,25 @@ export default function RootLayout({
               "description": "أفضل محل خياطة وتفصيل فساتين نسائية في الخبر والمنطقة الشرقية. تفصيل فساتين زفاف وسهرة وخطوبة بأناقة دمشقية.",
               "address": {
                 "@type": "PostalAddress",
+                "streetAddress": "شارع الأمير مشعل، التقاطع 6، الخبر الشمالية",
                 "addressLocality": "الخبر",
                 "addressRegion": "المنطقة الشرقية",
                 "addressCountry": "SA"
               },
               "geo": {
                 "@type": "GeoCoordinates",
-                "addressCountry": "SA",
-                "addressLocality": "الخبر"
+                "latitude": 26.2868966,
+                "longitude": 50.2104386
               },
+              "hasMap": "https://maps.app.goo.gl/86Jz8hzDm42EjuAG9",
+              "telephone": "+966598862609",
+              "areaServed": ["الخبر", "الدمام", "الظهران", "المنطقة الشرقية"],
+              "openingHoursSpecification": [{
+                "@type": "OpeningHoursSpecification",
+                "dayOfWeek": ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"],
+                "opens": "16:00",
+                "closes": "22:00"
+              }],
               "contactPoint": {
                 "@type": "ContactPoint",
                 "telephone": "+966598862609",
@@ -100,7 +110,6 @@ export default function RootLayout({
                 "availableLanguage": "Arabic"
               },
               "priceRange": "$$",
-              "servesCuisine": null,
               "hasOfferCatalog": {
                 "@type": "OfferCatalog",
                 "name": "خدمات التفصيل والخياطة",
@@ -108,11 +117,14 @@ export default function RootLayout({
                   { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تفصيل فساتين الزفاف" } },
                   { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تفصيل فساتين السهرة" } },
                   { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تفصيل فساتين الخطوبة" } },
-                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "خياطة فساتين يومية" } }
+                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "خياطة فساتين يومية" } },
+                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تعديل وتضييق الفساتين" } },
+                  { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "أقمشة نسائية للتفصيل" } }
                 ]
               },
               "sameAs": [
-                "https://wa.me/966598862609"
+                "https://www.instagram.com/yasminalshamtextile",
+                "https://www.tiktok.com/@yasminalshamtextile"
               ]
             })
           }}

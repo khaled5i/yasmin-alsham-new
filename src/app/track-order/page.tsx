@@ -34,6 +34,9 @@ interface OrderInfo {
   measurements?: Record<string, unknown>
 }
 
+// قسم «مراحل جاهزية الطلب» مخفي حالياً عن الزبونة — غيّره إلى true لإظهاره.
+const SHOW_READINESS_STAGES = false
+
 export default function TrackOrderPage() {
   const { isArabic } = useTranslation()
   const [searchTerm, setSearchTerm] = useState('')
@@ -333,6 +336,7 @@ export default function TrackOrderPage() {
             </div>
 
             {/* مراحل فحص الجاهزية الجديدة؛ حالة الطلب الأصلية أعلاه تبقى كما هي. */}
+            {SHOW_READINESS_STAGES && (
             <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -370,6 +374,7 @@ export default function TrackOrderPage() {
                 })}
               </div>
             </div>
+            )}
           </div>
         </div>
 
@@ -422,7 +427,7 @@ export default function TrackOrderPage() {
           </p>
           <div className="flex justify-center">
             <a
-              href="https://www.tiktok.com/@yasminalsham.fashion"
+              href="https://www.tiktok.com/@yasminalshamtextile"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-black transition-colors duration-300"
