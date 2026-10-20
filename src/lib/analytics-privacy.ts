@@ -20,6 +20,27 @@ export const GA_EXCLUDED_PATH_PREFIXES = ['/fabrics/checkout/', '/fabrics/paymen
 export const GA_DISABLE_FLAG = `ga-disable-${GA_MEASUREMENT_ID}`
 
 /**
+ * مَعلمات الحملات الوحيدة التي تبقى في page_location (أول تحميل فقط): معرّف نقرة Google Ads
+ * ومعلمات utm. بدونها تظهر زيارات الإعلان في GA «مباشرة» ولا يُنسب شراء إلى إعلان. كل ما عداها
+ * (رموز الطلب، معرّف المحاولة، أي استعلام آخر) يُحذف كما كان، والصفحات المستثناة لا تُرسل شيئاً أصلاً.
+ */
+export const GA_CAMPAIGN_QUERY_KEYS = [
+  'gclid', 'gbraid', 'wbraid', 'gad_source', 'gad_campaignid',
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id',
+] as const
+
+/** العنوان المرسل لـ GA: المسار + مَعلمات الحملات المسموحة فقط (بلا # ولا أي استعلام آخر). */
+export function buildAnalyticsPageLocation(origin: string, pathname: string, search: string): string {
+  const params = new URLSearchParams(search)
+  const kept: string[] = []
+  for (const key of GA_CAMPAIGN_QUERY_KEYS) {
+    const value = params.get(key)
+    if (value) kept.push(`${key}=${encodeURIComponent(value.slice(0, 200))}`)
+  }
+  return origin + pathname + (kept.length ? `?${kept.join('&')}` : '')
+}
+
+/**
  * جهاز موظف/عامل: يُعلَّم عند فتح لوحة التحكم بحساب (أو برابط `?staff-device=1` لمن لا حساب له،
  * و`?staff-device=0` يزيل العلامة). زياراته تحمل traffic_type=internal فيستبعدها فلتر
  * «الزيارات الداخلية» في GA أياً كانت الشبكة (واي فاي المحل أو بيانات الجوال)، ولا يُحمَّل له Clarity.
@@ -94,9 +115,21 @@ export function analyticsBootstrapScript(): string {
       staff = localStorage.getItem('${STAFF_DEVICE_KEY}') === '1';
     } catch (e) {}
     if (staff) gtag('set', { traffic_type: '${INTERNAL_TRAFFIC_TYPE}' });
+    var campaignKeys = ${JSON.stringify(GA_CAMPAIGN_QUERY_KEYS)};
+    function pageLocation() {
+      var kept = [];
+      try {
+        var params = new URLSearchParams(location.search);
+        campaignKeys.forEach(function (key) {
+          var value = params.get(key);
+          if (value) kept.push(key + '=' + encodeURIComponent(value.slice(0, 200)));
+        });
+      } catch (e) {}
+      return location.origin + location.pathname + (kept.length ? '?' + kept.join('&') : '');
+    }
     gtag('js', new Date());
     gtag('config', '${GA_MEASUREMENT_ID}', {
-      page_location: location.origin + location.pathname,
+      page_location: pageLocation(),
       send_page_view: !window['${GA_DISABLE_FLAG}']
     });
   `

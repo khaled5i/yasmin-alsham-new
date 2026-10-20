@@ -79,11 +79,15 @@ async function check(name, fn) {
       assert.equal(analytics.isAnalyticsExcludedPath(p), false, p)
     const script = analytics.analyticsBootstrapScript()
     assert.match(script, /ga-disable-G-8KCD0TSPCJ/)
-    assert.match(script, /page_location: location\.origin \+ location\.pathname/)
+    assert.match(script, /page_location: pageLocation\(\)/)
+    // only campaign keys survive (Google Ads click id, utm); tokens and anything else are dropped
+    assert.equal(analytics.buildAnalyticsPageLocation('https://s.x', '/fabrics/', '?gclid=abc&token=SECRET&utm_source=google&attempt=9'),
+      'https://s.x/fabrics/?gclid=abc&utm_source=google')
+    assert.equal(analytics.buildAnalyticsPageLocation('https://s.x', '/fabrics/', '?token=SECRET'), 'https://s.x/fabrics/')
     // the bootstrap disables before config, and the exclusion list is the same one
     assert.ok(script.indexOf('ga-disable') < script.indexOf("gtag('config'"))
     for (const p of analytics.GA_EXCLUDED_PATH_PREFIXES) assert.ok(script.includes(p))
-    return 'excluded: checkout, payment, order; page_location without query or #'
+    return 'excluded: checkout, payment, order; page_location keeps only gclid/utm, no other query or #'
   })
 
   await check('AUD-10 security headers on every page; CSP report-only; payment form to Moyasar allowed', async () => {
