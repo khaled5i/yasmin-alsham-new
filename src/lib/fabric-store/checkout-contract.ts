@@ -64,7 +64,7 @@ export const FABRIC_STORE_MAX_LINES = 40
  * (مضمونها في `src/lib/store-legal.ts`). أي تغيير في مضمون سياسة يرفع إصدارها.
  */
 export const FABRIC_STORE_POLICY_VERSIONS = {
-  terms: '2026-10-06', // المرحلة 10 B: الشحن شامل الضريبة ووسائل الدفع المعتمدة
+  terms: '2026-10-20', // الشحن مجاني فوق 1000 ريال (قبله 2026-10-06: الشحن شامل الضريبة ووسائل الدفع المعتمدة)
   returns: '2026-09-28',
   privacy: '2026-10-20', // أحداث المتجر في Google Analytics وإشعار نجاح الدفع، وMicrosoft Clarity (قبله 2026-10-05: الاستضافة خارج المملكة، GA، محو العنوان بعد 90 يوماً)
 } as const
@@ -115,6 +115,32 @@ export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliver
     ),
     shippingGrossHalalas: FABRIC_STORE_SHIPPING_GROSS_HALALAS,
   },
+}
+
+/**
+ * قرار المالكة 20 أكتوبر 2026: الشحن مجاني متى بلغت الأقمشة 1000 ريال شاملة
+ * الضريبة (قبل الشحن). القاعدة تقبل شحناً بصفر، فالعتبة تُطبَّق في التسعير وحده.
+ */
+export const FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS = 100_000
+
+const FREE_SHIPPING_OPTION: FabricDeliveryOption = {
+  method: 'shipping',
+  code: 'ksa_free',
+  label: 'شحن داخل السعودية',
+  description: 'مجاني لطلبك — التوصيل من 3 إلى 5 أيام عمل.',
+  shippingNetHalalas: 0,
+  shippingGrossHalalas: 0,
+}
+
+/** طريقة الاستلام الفعلية لسلة بهذا المجموع (الأقمشة شاملة الضريبة، بلا شحن). */
+export function resolveFabricDeliveryOption(
+  method: FabricDeliveryMethod,
+  itemsGrossHalalas: number
+): FabricDeliveryOption {
+  if (method === 'shipping' && itemsGrossHalalas >= FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS) {
+    return FREE_SHIPPING_OPTION
+  }
+  return FABRIC_DELIVERY_OPTIONS[method]
 }
 
 // ============================================
@@ -335,6 +361,7 @@ export interface FabricQuoteResponse {
   /** كل الأسطر سليمة، والإجمالي ضمن السقف. */
   canCheckout: boolean
   overOrderCap: boolean
+  /** رسومها محسوبة لهذه السلة (الشحن مجاني فوق العتبة). */
   deliveryOptions: FabricDeliveryOption[]
 }
 

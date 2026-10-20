@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2, Shirt } from 'lucide-react'
@@ -13,6 +13,8 @@ import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
 import { FABRICS_PER_PAGE, useFabricBrowsePosition } from '@/hooks/useFabricBrowsePosition'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
+import { StoreTrustStrip } from '@/components/fabrics/StoreTrust'
+import { matchesFabricSearch } from '@/lib/fabric-search'
 import { toAnalyticsItem, trackFabricFilter, trackFabricListView, trackFabricSearch, trackFabricSelect } from '@/lib/fabric-analytics'
 
 const STORE_LIST_NAME = 'متجر الأقمشة'
@@ -27,6 +29,26 @@ const FabricQuickViewModal = dynamic(() => import('@/components/FabricQuickViewM
 const FabricColorFilterBar = dynamic(() => import('@/components/FabricColorFilterBar'), { ssr: false })
 
 const DESIGNS_VIEW_STORAGE_KEY = 'yasmin-fabrics-show-designs'
+/** أنواع الأقمشة كما تُكتب في الأسماء والأوصاف؛ «مخمل» يطابق «مخمل محروق». */
+const FABRIC_KIND_CHIPS = [
+  { label: 'دانتيل', query: 'دانتيل' },
+  { label: 'تول مطرز', query: 'تول' },
+  { label: 'ترتر', query: 'ترتر' },
+  { label: 'خرز', query: 'خرز' },
+  { label: 'كريستال', query: 'كريستال' },
+  { label: 'ورود بارزة', query: 'ورود بارزة' },
+  { label: 'أبليك', query: 'أبليك' },
+  { label: 'مخمل', query: 'مخمل' },
+  { label: 'جاكار', query: 'جاكار' },
+]
+
+/** ما يظهر تحت صورة البطاقة: الاسم إن وُجد، وإلا الفئة واللون. */
+function fabricCardTitle(fabric: Fabric): string {
+  const name = fabric.name?.trim()
+  if (name) return name.split(' – ')[0]
+  const color = fabric.available_colors?.[0]
+  return [fabric.category || 'قماش', color].filter(Boolean).join(' · ')
+}
 
 function FabricSkeleton() {
   return (
@@ -51,6 +73,8 @@ export default function FabricsPage() {
   // وضع «التصاميم النهائية»: يعرض الأقمشة التي تملك تصاميم فقط، وبصورة التصميم بدل صورة القماش
   const [showDesigns, setShowDesigns] = useState(false)
   const designsCount = fabrics.filter(hasFabricDesignImages).length
+  const kindChips = useMemo(() => FABRIC_KIND_CHIPS.filter(({ query }) =>
+    fabrics.some(fabric => matchesFabricSearch(fabric, query, { includeDescription: true }))), [fabrics])
   const matchingFabrics = getFilteredFabrics()
   const filteredFabrics = showDesigns ? matchingFabrics.filter(hasFabricDesignImages) : matchingFabrics
   const {
@@ -198,7 +222,7 @@ export default function FabricsPage() {
               <div className="relative w-full" dir="rtl">
                 <input
                   type="text"
-                  placeholder="ابحث عن نوع القماش..."
+                  placeholder="ابحثي عن نوع القماش أو لونه أو رقمه..."
                   value={filters.searchQuery}
                   onChange={(e) => setFilters({ searchQuery: e.target.value })}
                   className="w-full px-6 py-3 pr-12 pl-12 border-2 border-[#d8c5ae] rounded-xl bg-[#f6f0e8]/80 text-[#211b19] placeholder:text-[#211b19]/45 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-[#b99a68] focus:border-[#6b1726] transition-all duration-300 shadow-sm hover:shadow-md"
@@ -222,6 +246,35 @@ export default function FabricsPage() {
                 )}
               </div>
             </div>
+
+            {/* تسوّقي حسب نوع القماش: كل شريحة بحثٌ بكلمة تظهر في أسماء الأقمشة وأوصافها،
+                ولا تظهر إلا إن طابقت قماشاً واحداً على الأقل */}
+            {kindChips.length > 0 && (
+              <div
+                className="-mx-4 mb-4 overflow-x-auto px-4 [mask-image:linear-gradient(to_left,black_88%,transparent)] [scrollbar-width:none] sm:mx-0 sm:overflow-visible sm:px-0 sm:[mask-image:none] [&::-webkit-scrollbar]:hidden"
+                dir="rtl"
+              >
+                <div className="flex w-max gap-2 sm:w-auto sm:flex-wrap" role="group" aria-label="تسوّقي حسب نوع القماش">
+                  {[{ label: 'الكل', query: '' }, ...kindChips].map(({ label, query }) => {
+                    const active = filters.searchQuery.trim() === query
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setFilters({ searchQuery: query })}
+                        aria-pressed={active}
+                        className={`shrink-0 rounded-full border px-3.5 py-1 text-[13px] font-medium leading-6 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] ${active
+                          ? 'border-[#6b1726] bg-[#6b1726] text-[#f6f0e8]'
+                          : 'border-[#d8c5ae] bg-[#f6f0e8] text-[#211b19] hover:border-[#6b1726]'
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* شريط الأدوات: الفلاتر، الترتيب، تبديل العرض */}
             {/* صف واحد على كل المقاسات: على الجوال تُختصر التسميات بدل أن ينكسر الصف */}
@@ -381,8 +434,8 @@ export default function FabricsPage() {
                     ? `${formatFabricNumber(displayedPricing.amount)} ريال / ${displayedPricing.unit === 'piece' ? 'القطعة' : 'متر'}`
                     : 'السعر عند الطلب'
                   return (
+                    <Fragment key={fabric.id}>
                     <motion.div
-                      key={fabric.id}
                       id={`fabric-card-${fabric.id}`}
                       initial={index < restoredCount ? false : { opacity: 0, y: 30 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -499,9 +552,18 @@ export default function FabricsPage() {
                               </div>
                             </div>
                           </div>
+                          {/* الاسم تحت الصورة: البطاقة كانت تعرض السعر وحده */}
+                          <p className="truncate px-2.5 py-2 text-center text-xs font-semibold text-[#211b19] sm:px-3 sm:text-sm" dir="rtl">
+                            {fabricCardTitle(fabric)}
+                          </p>
                         </Link>
                       </div>
                     </motion.div>
+                    {index === 7 && !showDesigns && (
+                      <div className="col-span-full">
+                        <StoreTrustStrip />
+                      </div>
+                    )}                    </Fragment>
                   )
                 })}
               </section>
@@ -527,8 +589,7 @@ export default function FabricsPage() {
               <div className="text-center py-8" role="status" aria-live="polite">
                 <p className="text-[#211b19]/70 font-medium">تم عرض جميع الأقمشة</p>
               </div>
-            )}
-          </div>
+            )}          </div>
         </div>
 
         {/* شريط عائم للتسوق حسب اللون */}

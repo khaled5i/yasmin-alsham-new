@@ -1,6 +1,7 @@
 import { MetadataRoute } from 'next'
 import { supabase } from '@/lib/supabase'
 import { SERVICE_PAGES } from './services/service-pages'
+import { FABRIC_COLLECTIONS, fabricCollectionPath } from '@/lib/fabric-collections'
 
 const SITE_URL = 'https://www.yasmin-alsham.fashion'
 
@@ -27,6 +28,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: new Date(),
       changeFrequency: page.changeFrequency,
       priority: page.priority,
+    })),
+    ...FABRIC_COLLECTIONS.map(collection => ({
+      url: `${SITE_URL}${fabricCollectionPath(collection.slug)}`,
+      lastModified: new Date(),
+      changeFrequency: 'daily' as const,
+      priority: 0.8,
     })),
     ...SERVICE_PAGES.map(page => ({
       url: `${SITE_URL}/services/${page.slug}/`,

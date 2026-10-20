@@ -10,6 +10,7 @@ import {
   FABRIC_STORE_HOLD_MINUTES,
   FABRIC_STORE_MAX_ORDER_LINES,
   FABRIC_STORE_PAYMENT_HOLD_MINUTES,
+  FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS,
   IS_FABRIC_STORE_CHECKOUT_ENABLED,
   IS_FABRIC_STORE_PAYMENTS_ENABLED,
   describeFabricCheckoutIssue,
@@ -388,7 +389,7 @@ export default function FabricCheckoutPage() {
               <fieldset className="rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-4 sm:p-5">
                 <legend className="px-1 text-lg font-bold">طريقة الاستلام</legend>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                  {Object.values(FABRIC_DELIVERY_OPTIONS).map(option => (
+                  {(quote?.deliveryOptions ?? Object.values(FABRIC_DELIVERY_OPTIONS)).map(option => (
                     <label
                       key={option.method}
                       className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 ${
@@ -412,12 +413,19 @@ export default function FabricCheckoutPage() {
                         </span>
                         <span className="mt-1 block text-xs text-[#211b19]/65">{option.description}</span>
                         <span className="mt-1 block text-xs font-semibold text-[#6b1726]">
-                          {option.shippingGrossHalalas ? `${sar(option.shippingGrossHalalas)} شامل الضريبة` : 'بلا رسوم'}
+                          {option.shippingGrossHalalas
+                            ? `${sar(option.shippingGrossHalalas)} شامل الضريبة`
+                            : option.method === 'shipping' ? 'شحن مجاني' : 'بلا رسوم'}
                         </span>
                       </span>
                     </label>
                   ))}
                 </div>
+                {quote?.totals && quote.totals.totalHalalas - quote.totals.shippingGrossHalalas < FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS && (
+                  <p className="mt-3 text-xs text-[#211b19]/70">
+                    أضيفي أقمشة بـ {sar(FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS - (quote.totals.totalHalalas - quote.totals.shippingGrossHalalas))} ليصبح الشحن مجانياً.
+                  </p>
+                )}
               </fieldset>
 
               <fieldset className="rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-4 sm:p-5">

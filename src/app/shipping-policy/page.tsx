@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import StorePolicyPage, { PolicyList, PolicySection } from '@/components/fabrics/StorePolicyPage'
-import { FABRIC_DELIVERY_OPTIONS } from '@/lib/fabric-store/checkout-contract'
+import { FABRIC_DELIVERY_OPTIONS, FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS } from '@/lib/fabric-store/checkout-contract'
 import { STORE_DELIVERY_TIMES, STORE_ENTITY, STORE_RETURN_RULES, STORE_SUPPORT_PHONE } from '@/lib/store-legal'
 
 export const metadata: Metadata = {
@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 }
 
 const shippingFeeSar = FABRIC_DELIVERY_OPTIONS.shipping.shippingGrossHalalas / 100
+const freeShippingMinSar = FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS / 100
 
 export default function ShippingPolicyPage() {
   return (
@@ -28,6 +29,7 @@ export default function ShippingPolicyPage() {
       <PolicySection title="2. الشحن داخل المملكة العربية السعودية">
         <PolicyList items={[
           <>رسوم شحن موحّدة لجميع المدن: {shippingFeeSar} ريالاً شاملة ضريبة القيمة المضافة 15%.</>,
+          <>الشحن مجاني متى بلغت قيمة الأقمشة في الطلب {freeShippingMinSar} ريال فأكثر شاملة الضريبة.</>,
           <>مدة التوصيل: {STORE_DELIVERY_TIMES.shipping}.</>,
           'أيام العمل لا تشمل الجمعة والعطل الرسمية، وقد تطول المدة في المواسم والظروف الخارجة عن إرادتنا، وسنبلغك حينها.',
           'يجب إدخال العنوان ورقم جوال المستلم بدقة؛ تأخر التوصيل بسبب عنوان خاطئ لا نتحمّله.',

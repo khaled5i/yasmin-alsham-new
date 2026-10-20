@@ -11,6 +11,9 @@ export type HomeEventName =
   | 'tailoring_tiktok_reveal'
   | 'tailoring_tiktok_click'
   | 'tailoring_whatsapp_click'
+  | 'home_new_arrival_click'
+  | 'home_collection_click'
+  | 'home_design_click'
 
 declare global {
   interface Window {

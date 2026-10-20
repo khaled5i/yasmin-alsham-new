@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server'
 import {
-  FABRIC_DELIVERY_OPTIONS,
   FABRIC_STORE_MAX_ORDER_LINES,
   FABRIC_STORE_POLICY_VERSIONS,
   describeFabricCheckoutIssue,
@@ -107,7 +106,7 @@ export async function POST(request: NextRequest) {
 
   // طلب سابق من هذا المتصفح لم يُدفع: تستبدله القاعدة (تلغيه وتحرر حجزه) في المعاملة نفسها.
   const previousToken = readOrderToken(request)
-  const delivery = FABRIC_DELIVERY_OPTIONS[checkout.deliveryMethod]
+  const delivery = priced.order.delivery
   const address = checkout.address
 
   const { data, error } = await client.rpc('fabric_store_create_checkout', {

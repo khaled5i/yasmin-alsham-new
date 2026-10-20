@@ -1,6 +1,5 @@
 import Image from 'next/image'
-import Link from 'next/link'
-import { ArrowLeft, MessageCircle } from 'lucide-react'
+import { ArrowLeft, ChevronDown, MessageCircle } from 'lucide-react'
 import ResponsiveHeroMedia from './ResponsiveHeroMedia'
 import TailoringShowcase from './TailoringShowcase'
 import TrackedLink from './TrackedLink'
@@ -56,71 +55,10 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
             قسم الخياطة
           </TrackedLink>
         </div>
-      </div>
 
-      <a className={styles.heroScrollCue} href="#business-gateway" aria-label="الانتقال إلى مسارات الموقع">
-        <span>اكتشفي</span>
-        <i aria-hidden="true" />
-      </a>
-    </section>
-  )
-}
-
-export function BusinessGateway({ onSelectSection }: SectionSelectionProps) {
-  return (
-    <section id="business-gateway" className={styles.gatewaySection} aria-labelledby="gateway-title">
-      <div className={styles.gatewayIntro}>
-        <p className={styles.sectionEyebrow}>مساران، حكاية واحدة</p>
-        <h2 id="gateway-title" className={styles.visuallyHidden}>اختاري بين التفصيل ومتجر الأقمشة</h2>
-        <p>ابدئي من الفكرة، أو من الخامة.</p>
-      </div>
-
-      <div className={styles.gatewayGrid}>
-        <a
-          href="#tailoring"
-          className={`${styles.gatewayCard} ${styles.gatewayTailoring}`}
-          onClick={(event) => {
-            event.preventDefault()
-            onSelectSection('tailoring')
-          }}
-        >
-          <Image
-            src={homeMedia.craftPoster}
-            alt="فستان سهرة منفذ بعناية داخل المشغل"
-            fill
-            sizes="(max-width: 767px) 54vw, 54vw"
-            className={styles.gatewayImage}
-          />
-          <span className={styles.gatewayOverlay} />
-          <span className={styles.gatewayNumber}>01</span>
-          <span className={styles.gatewayContent}>
-            <small>حرفة تصنع لك</small>
-            <strong>تفصيل ياسمين الشام</strong>
-            <span>فستان يبدأ من تفاصيلك وينفذ بعناية في مشغلنا.</span>
-            <em>اكتشفي الحرفة <ArrowLeft aria-hidden="true" /></em>
-          </span>
+        <a className={styles.heroScrollCue} href="#new-arrivals" aria-label="الانتقال إلى وصل حديثاً">
+          <ChevronDown aria-hidden="true" />
         </a>
-
-        <Link
-          href="/fabrics"
-          className={`${styles.gatewayCard} ${styles.gatewayFabrics}`}
-        >
-          <Image
-            src={homeMedia.transitionPoster}
-            alt="تفاصيل قماش فاخر وتطريز ناعم"
-            fill
-            sizes="(max-width: 767px) 46vw, 42vw"
-            className={styles.gatewayImage}
-          />
-          <span className={styles.gatewayOverlay} />
-          <span className={styles.gatewayNumber}>02</span>
-          <span className={styles.gatewayContent}>
-            <small>البداية من القماش</small>
-            <strong>متجر الأقمشة</strong>
-            <span>تشكيلة مختارة للمناسبات والتصاميم المميزة.</span>
-            <em>تصفحي المتجر <ArrowLeft aria-hidden="true" /></em>
-          </span>
-        </Link>
       </div>
     </section>
   )

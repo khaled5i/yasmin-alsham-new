@@ -15,6 +15,9 @@ import { requestFabricBrowseReturn } from '@/lib/fabric-browse-position'
 import FabricAddToCartButton from '@/components/fabrics/FabricAddToCartButton'
 import FabricFavoriteButton from '@/components/fabrics/FabricFavoriteButton'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
+import FabricTailoringCta from '@/components/fabrics/FabricTailoringCta'
+import SimilarFabrics from '@/components/fabrics/SimilarFabrics'
+import { StoreTrustStrip } from '@/components/fabrics/StoreTrust'
 import { toAnalyticsItem, trackFabricView } from '@/lib/fabric-analytics'
 
 export default function FabricDetailClient() {
@@ -348,8 +351,13 @@ export default function FabricDetailClient() {
                 <FabricAddToCartButton fabric={fabric} whatsappLink={whatsappLink} />
               </div>
             </div>
+
+            <StoreTrustStrip compact />
+            <FabricTailoringCta fabric={fabric} />
           </motion.div>
         </div>
+
+        <SimilarFabrics fabric={fabric} fabrics={fabrics} />
       </div>
 
       {/* Image Gallery Modal */}

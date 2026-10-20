@@ -8,6 +8,7 @@ import { trackWhatsAppClick } from '@/lib/fabric-analytics'
 /**
  * أداتا فهم سلوك الزائرات:
  * 1. عدّاد ضغطات واتساب في كل الموقع (generate_lead في GA) بمستمع واحد، بدل ربط كل زر.
+ *    الزر يحدد موضعه بـ data-wa-placement (ورمز القماش بـ data-wa-item) وإلا يُستنتج من المسار.
  * 2. Microsoft Clarity (تسجيل الجلسات والخرائط الحرارية) — يُحمَّل فقط إن ضُبط
  *    NEXT_PUBLIC_CLARITY_PROJECT_ID. لا يُحمَّل في صفحات الدفع وتتبّع الطلب نفسها (نفس
  *    استثناء GA)، ويتوقف إن انتقلت الزائرة إليها. في لوحة Clarity يجب ضبط الإخفاء على
@@ -51,7 +52,11 @@ export default function SiteInsights() {
       if (!link) return
       const href = link.href
       if (!/(^https?:\/\/(wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)\/)|^whatsapp:/i.test(href)) return
-      trackWhatsAppClick(placementFor(window.location.pathname))
+      const itemId = link.dataset.waItem
+      trackWhatsAppClick(
+        link.dataset.waPlacement || placementFor(window.location.pathname),
+        itemId ? { id: itemId } : undefined
+      )
     }
     document.addEventListener('click', onClick, { capture: true })
     return () => document.removeEventListener('click', onClick, { capture: true })

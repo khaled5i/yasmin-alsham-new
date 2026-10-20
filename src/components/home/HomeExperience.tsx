@@ -1,10 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import HomeFooter from './HomeFooter'
 import HomeHeader from './HomeHeader'
 import {
-  BusinessGateway,
   CinematicHero,
   TailoringStory,
   type HomeSectionKey,
@@ -19,7 +18,7 @@ function getSectionFromHash(): HomeSectionKey | null {
   return hash === 'tailoring' ? hash : null
 }
 
-export default function HomeExperience() {
+export default function HomeExperience({ storeSections }: { storeSections?: ReactNode }) {
   const [activeSection, setActiveSection] = useState<HomeSectionKey | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollBehaviorRef = useRef<ScrollBehavior>('smooth')
@@ -111,7 +110,7 @@ export default function HomeExperience() {
         ) : (
           <>
             <CinematicHero onSelectSection={selectSection} />
-            <BusinessGateway onSelectSection={selectSection} />
+            {storeSections}
           </>
         )}
       </main>

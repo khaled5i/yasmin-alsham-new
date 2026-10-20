@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import HomeAnalytics from '@/components/home/HomeAnalytics'
 import HomeExperience from '@/components/home/HomeExperience'
+import HomeStoreSections from '@/components/home/HomeStoreSections'
 import styles from '@/components/home/home.module.css'
 import { homeDisplay, homeSans } from '@/components/home/home-fonts'
 
@@ -24,11 +25,14 @@ export const metadata: Metadata = {
   },
 }
 
+// أقسام المتجر («وصل حديثاً» والمجموعات والتصاميم) تُبنى على الخادم ويُحدَّث كل 10 دقائق، فلا تنتظر الزائرة قاعدة البيانات.
+export const revalidate = 600
+
 export default function Home() {
   return (
     <div className={`${styles.homeShell} ${homeSans.variable} ${homeDisplay.variable}`}>
       <HomeAnalytics />
-      <HomeExperience />
+      <HomeExperience storeSections={<HomeStoreSections />} />
     </div>
   )
 }

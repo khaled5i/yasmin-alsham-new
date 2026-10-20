@@ -8,14 +8,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getEffectiveFabricDiscountPercent } from '@/lib/fabric-display-pricing'
 import { metersToCentimeters, toScaledInteger } from '@/lib/fabric-store/money'
 import {
-  FABRIC_DELIVERY_OPTIONS,
   FABRIC_STORE_MAX_ORDER_TOTAL_HALALAS,
+  resolveFabricDeliveryOption,
   type FabricDeliveryMethod,
+  type FabricDeliveryOption,
   type FabricQuoteResponse,
   type QuotedFabricLine,
 } from '@/lib/fabric-store/checkout-contract'
 import {
   computeFabricOrderBreakdown,
+  computeFabricOrderTotals,
   priceFabricLine,
   type FabricPurchaseMode,
   type FabricSaleSource,
@@ -86,6 +88,8 @@ export interface PricedCart {
   /** null ما لم تكن كل الأسطر سليمة. */
   order: {
     items: OrderItemPayload[]
+    /** طريقة الاستلام برسومها الفعلية لهذه السلة. */
+    delivery: FabricDeliveryOption
     itemsNetHalalas: number
     shippingNetHalalas: number
     shippingVatHalalas: number
@@ -112,7 +116,6 @@ export function priceCart(
   lines: { fabricId: string; purchaseMode: FabricPurchaseMode; quantity: number }[],
   deliveryMethod: FabricDeliveryMethod
 ): PricedCart {
-  const delivery = FABRIC_DELIVERY_OPTIONS[deliveryMethod]
   const quoted: QuotedFabricLine[] = []
   const priced: { line: PricedFabricLine; row: SnapshotRow; fabric: FabricSaleSource }[] = []
 
@@ -153,6 +156,11 @@ export function priceCart(
   }
 
   const allOk = priced.length === lines.length
+  // عتبة الشحن المجاني تُقاس على الأقمشة السليمة شاملة الضريبة، قبل الشحن.
+  const itemsGrossHalalas = priced.length > 0
+    ? computeFabricOrderTotals(priced.map(entry => entry.line.netHalalas)).totalHalalas
+    : 0
+  const delivery = resolveFabricDeliveryOption(deliveryMethod, itemsGrossHalalas)
   let totals: FabricQuoteResponse['totals'] = null
   let order: PricedCart['order'] = null
   let overOrderCap = false
@@ -185,6 +193,7 @@ export function priceCart(
           net_halalas: line.netHalalas,
           vat_halalas: breakdown.lineGrossHalalas[index] - line.netHalalas,
         })),
+        delivery,
         itemsNetHalalas: breakdown.itemsNetHalalas,
         shippingNetHalalas: breakdown.shippingNetHalalas,
         shippingVatHalalas: breakdown.shippingGrossHalalas - breakdown.shippingNetHalalas,
@@ -201,7 +210,8 @@ export function priceCart(
       totals,
       canCheckout: allOk && !overOrderCap,
       overOrderCap,
-      deliveryOptions: Object.values(FABRIC_DELIVERY_OPTIONS),
+      deliveryOptions: (['pickup', 'shipping'] as const).map(method =>
+        resolveFabricDeliveryOption(method, itemsGrossHalalas)),
     },
     order,
   }
