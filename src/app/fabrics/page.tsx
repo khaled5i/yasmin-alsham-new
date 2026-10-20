@@ -13,6 +13,9 @@ import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
 import { FABRICS_PER_PAGE, useFabricBrowsePosition } from '@/hooks/useFabricBrowsePosition'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
+import { toAnalyticsItem, trackFabricFilter, trackFabricListView, trackFabricSearch, trackFabricSelect } from '@/lib/fabric-analytics'
+
+const STORE_LIST_NAME = 'متجر الأقمشة'
 
 // تحميل المكونات بشكل ديناميكي (Code Splitting)
 const FabricFilterSidebar = dynamic(() => import('@/components/FabricFilterSidebar'), {
@@ -71,6 +74,41 @@ export default function FabricsPage() {
   useEffect(() => {
     try { localStorage.removeItem(DESIGNS_VIEW_STORAGE_KEY) } catch { /* Legacy key cleanup. */ }
   }, [])
+
+  // ── Google Analytics: ما يُعرض، وما يُبحث عنه، وما يُصفّى ──
+  const listKey = JSON.stringify({ filters, sortBy, showDesigns })
+  const listTracked = useRef({ key: '', count: 0 })
+  useEffect(() => {
+    if (!isReady || isLoading) return
+    if (listTracked.current.key !== listKey) listTracked.current = { key: listKey, count: 0 }
+    const fresh = displayedFabrics.slice(listTracked.current.count)
+    if (fresh.length === 0) return
+    const start = listTracked.current.count
+    listTracked.current.count = displayedFabrics.length
+    trackFabricListView(STORE_LIST_NAME, fresh.map((fabric, i) =>
+      toAnalyticsItem(fabric, { price: getFinalPrice(fabric), index: start + i, listName: STORE_LIST_NAME })))
+  }, [displayedFabrics, isReady, isLoading, listKey])
+
+  // البحث يُرسل بعد توقف الكتابة، حتى لا يُسجَّل كل حرف بحثاً مستقلاً
+  useEffect(() => {
+    const term = filters.searchQuery
+    if (!term.trim() || isLoading) return
+    const timer = setTimeout(() => trackFabricSearch(term, filteredFabrics.length), 1500)
+    return () => clearTimeout(timer)
+  }, [filters.searchQuery, filteredFabrics.length, isLoading])
+
+  const filterKey = JSON.stringify({ category: filters.category, colors: filters.colors, sortBy, showDesigns })
+  const lastFilterKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (lastFilterKey.current === null) { lastFilterKey.current = filterKey; return }
+    if (lastFilterKey.current === filterKey) return
+    const previous = JSON.parse(lastFilterKey.current)
+    lastFilterKey.current = filterKey
+    if (sortBy !== previous.sortBy) trackFabricFilter('sort', sortBy)
+    if (showDesigns !== previous.showDesigns) trackFabricFilter('designs_view', String(showDesigns))
+    if (JSON.stringify(filters.category) !== JSON.stringify(previous.category)) trackFabricFilter('category', filters.category.join('،') || 'الكل')
+    if (JSON.stringify(filters.colors) !== JSON.stringify(previous.colors)) trackFabricFilter('color', filters.colors.join('،') || 'الكل')
+  }, [filterKey, filters.category, filters.colors, sortBy, showDesigns])
 
   useEffect(() => {
     if (!isReady || isRestoring) return
@@ -355,7 +393,10 @@ export default function FabricsPage() {
                         {/* عند القدوم من وضع التصاميم يفتح معرض التفاصيل على التصميم مباشرة */}
                         <Link
                           href={`/fabrics/${fabric.id}${isShowingDesign ? '?view=designs' : ''}`}
-                          onNavigate={() => rememberFabric(fabric.id)}
+                          onNavigate={() => {
+                            rememberFabric(fabric.id)
+                            trackFabricSelect(STORE_LIST_NAME, toAnalyticsItem(fabric, { price: finalPrice, index, listName: STORE_LIST_NAME }))
+                          }}
                         >
                           <div className="aspect-[9/16] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35 relative overflow-hidden cursor-pointer">
                             {currentImageIsVideo ? (

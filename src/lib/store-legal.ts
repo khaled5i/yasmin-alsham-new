@@ -42,7 +42,7 @@ export const STORE_RETURN_RULES = {
 /** الوسائل المفعّلة بحسب تأكيد المالكة في 6 أكتوبر 2026؛ ظهور المحافظ حسب الجهاز. */
 export const STORE_PAYMENT_METHODS = ['مدى', 'Visa', 'Mastercard', 'Apple Pay', 'Samsung Pay'] as const
 
-export const STORE_POLICIES_UPDATED_AT = '6 أكتوبر 2026'
+export const STORE_POLICIES_UPDATED_AT = '20 أكتوبر 2026'
 
 export const STORE_POLICY_LINKS = [
   { href: '/sales-terms', label: 'شروط البيع' },

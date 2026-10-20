@@ -22,6 +22,7 @@ import { IS_FABRIC_STORE_CHECKOUT_ENABLED } from '@/lib/fabric-store/checkout-co
 import { buildBuyNowHref } from '@/lib/fabric-store/buy-now'
 import type { Fabric } from '@/store/fabricStore'
 import FabricQuantitySelector from './FabricQuantitySelector'
+import { toAnalyticsItem, trackBeginCheckout } from '@/lib/fabric-analytics'
 import { showFabricCommerceToast } from './fabricCommerceToast'
 
 /** الكمية المقترحة للبيع بالمتر: 3 أمتار (طول فستان شائع) متى توفّرت. */
@@ -146,6 +147,7 @@ export default function FabricAddToCartButton({
 
   const buyNow = () => {
     const amount = mode === 'piece' ? 1 : quantity
+    trackBeginCheckout([toAnalyticsItem(fabric, { price: unitPrice, quantity: amount })], 'buy_now')
     router.push(buildBuyNowHref({ fabricId: fabric.id, purchaseMode: mode, quantity: amount }))
   }
 

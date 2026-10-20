@@ -66,7 +66,7 @@ export const FABRIC_STORE_MAX_LINES = 40
 export const FABRIC_STORE_POLICY_VERSIONS = {
   terms: '2026-10-06', // المرحلة 10 B: الشحن شامل الضريبة ووسائل الدفع المعتمدة
   returns: '2026-09-28',
-  privacy: '2026-10-05', // الدفعة D (AUD-10/07): الاستضافة خارج المملكة، Google Analytics، محو العنوان بعد 90 يوماً
+  privacy: '2026-10-20', // أحداث المتجر في Google Analytics وإشعار نجاح الدفع، وMicrosoft Clarity (قبله 2026-10-05: الاستضافة خارج المملكة، GA، محو العنوان بعد 90 يوماً)
 } as const
 
 // ============================================

@@ -19,6 +19,23 @@ export const GA_EXCLUDED_PATH_PREFIXES = ['/fabrics/checkout/', '/fabrics/paymen
 
 export const GA_DISABLE_FLAG = `ga-disable-${GA_MEASUREMENT_ID}`
 
+/**
+ * جهاز موظف/عامل: يُعلَّم عند فتح لوحة التحكم بحساب (أو برابط `?staff-device=1` لمن لا حساب له،
+ * و`?staff-device=0` يزيل العلامة). زياراته تحمل traffic_type=internal فيستبعدها فلتر
+ * «الزيارات الداخلية» في GA أياً كانت الشبكة (واي فاي المحل أو بيانات الجوال)، ولا يُحمَّل له Clarity.
+ */
+export const STAFF_DEVICE_KEY = 'ys-staff-device'
+export const INTERNAL_TRAFFIC_TYPE = 'internal'
+
+export function isStaffDevice(): boolean {
+  try { return window.localStorage.getItem(STAFF_DEVICE_KEY) === '1' } catch { return false }
+}
+
+export function markStaffDevice() {
+  try { window.localStorage.setItem(STAFF_DEVICE_KEY, '1') } catch { /* التخزين مرفوض */ }
+  ;(window as unknown as { gtag?: (...args: unknown[]) => void }).gtag?.('set', { traffic_type: INTERNAL_TRAFFIC_TYPE })
+}
+
 export function isAnalyticsExcludedPath(pathname: string): boolean {
   const path = pathname.endsWith('/') ? pathname : `${pathname}/`
   return GA_EXCLUDED_PATH_PREFIXES.some(prefix => path.startsWith(prefix))
@@ -69,6 +86,14 @@ export function analyticsBootstrapScript(): string {
       });
       window.addEventListener('popstate', function () { guard(location.href); }, true);
     })();
+    var staff = false;
+    try {
+      var staffParam = new URLSearchParams(location.search).get('staff-device');
+      if (staffParam === '1') localStorage.setItem('${STAFF_DEVICE_KEY}', '1');
+      if (staffParam === '0') localStorage.removeItem('${STAFF_DEVICE_KEY}');
+      staff = localStorage.getItem('${STAFF_DEVICE_KEY}') === '1';
+    } catch (e) {}
+    if (staff) gtag('set', { traffic_type: '${INTERNAL_TRAFFIC_TYPE}' });
     gtag('js', new Date());
     gtag('config', '${GA_MEASUREMENT_ID}', {
       page_location: location.origin + location.pathname,

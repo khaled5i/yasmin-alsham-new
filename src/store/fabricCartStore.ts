@@ -30,6 +30,7 @@ import {
 } from '@/lib/fabric-local-store'
 import { roundFabricNumber } from '@/lib/fabric-number-format'
 import type { Fabric } from '@/store/fabricStore'
+import { snapshotToAnalyticsItem, toAnalyticsItem, trackAddToCart, trackRemoveFromCart } from '@/lib/fabric-analytics'
 
 export const FABRIC_CART_STORAGE_KEY = 'yasmin-fabric-cart-v1'
 
@@ -115,6 +116,9 @@ export const useFabricCartStore = create<FabricCartState>()((set, get) => ({
         ]
 
     set({ lines, isStorageBlocked: !persist(lines) })
+    // الكمية المضافة فعلاً (الفرق عند الدمج)، لا مجموع السطر
+    const added = roundFabricNumber(clamped - (existing?.quantity ?? 0))
+    if (added > 0) trackAddToCart(toAnalyticsItem(fabric, { price: snapshot.unitPrice, quantity: added }))
     return { ok: true, merged: Boolean(existing), quantity: clamped }
   },
 
@@ -138,6 +142,8 @@ export const useFabricCartStore = create<FabricCartState>()((set, get) => ({
   },
 
   removeLine: key => {
+    const removed = get().lines.find(line => getCartLineKey(line.fabricId, line.purchaseMode) === key)
+    if (removed) trackRemoveFromCart(snapshotToAnalyticsItem(removed.fabricId, removed.snapshot, removed.quantity))
     const lines = get().lines.filter(
       line => getCartLineKey(line.fabricId, line.purchaseMode) !== key
     )

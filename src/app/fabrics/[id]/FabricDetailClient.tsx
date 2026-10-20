@@ -15,6 +15,7 @@ import { requestFabricBrowseReturn } from '@/lib/fabric-browse-position'
 import FabricAddToCartButton from '@/components/fabrics/FabricAddToCartButton'
 import FabricFavoriteButton from '@/components/fabrics/FabricFavoriteButton'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
+import { toAnalyticsItem, trackFabricView } from '@/lib/fabric-analytics'
 
 export default function FabricDetailClient() {
   const params = useParams()
@@ -44,6 +45,14 @@ export default function FabricDetailClient() {
     if (fabric?.available_colors && fabric.available_colors.length > 0) {
       setSelectedColor(fabric.available_colors[0])
     }
+  }, [fabric])
+
+  // view_item مرة لكل قماش يُفتح
+  const viewedId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!fabric || viewedId.current === fabric.id) return
+    viewedId.current = fabric.id
+    trackFabricView(toAnalyticsItem(fabric, { price: getFinalPrice(fabric) }))
   }, [fabric])
 
   // القدوم من وضع «التصاميم النهائية» في المتجر ⇒ ابدأ المعرض من أول تصميم

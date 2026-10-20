@@ -3,6 +3,7 @@ import { Cairo, Noto_Kufi_Arabic } from "next/font/google";
 import { Toaster } from 'react-hot-toast';
 import Providers from "@/components/Providers";
 import AnalyticsPrivacyGuard from "@/components/AnalyticsPrivacyGuard";
+import SiteInsights from "@/components/SiteInsights";
 import { GA_MEASUREMENT_ID, analyticsBootstrapScript } from "@/lib/analytics-privacy";
 import "./globals.css";
 
@@ -169,6 +170,7 @@ export default function RootLayout({
           }}
         />
         <AnalyticsPrivacyGuard />
+        <SiteInsights />
         <Providers>
           {children}
         </Providers>

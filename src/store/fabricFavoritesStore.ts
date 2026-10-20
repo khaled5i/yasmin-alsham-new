@@ -12,6 +12,7 @@ import {
   buildCartSnapshot,
   fabricFavoritesStateSchema,
   type FabricFavoriteItem,
+  getFabricUnitPrice,
 } from '@/lib/fabric-commerce'
 import {
   isLocalStorageWritable,
@@ -20,6 +21,7 @@ import {
   writeValidated,
 } from '@/lib/fabric-local-store'
 import type { Fabric } from '@/store/fabricStore'
+import { toAnalyticsItem, trackAddToWishlist } from '@/lib/fabric-analytics'
 
 export const FABRIC_FAVORITES_STORAGE_KEY = 'yasmin-fabric-favorites-v1'
 
@@ -79,6 +81,7 @@ export const useFabricFavoritesStore = create<FabricFavoritesState>()((set, get)
       { fabricId: fabric.id, addedAt: new Date().toISOString(), snapshot: buildCartSnapshot(fabric) },
     ]
     set({ items, isStorageBlocked: !persist(items) })
+    trackAddToWishlist(toAnalyticsItem(fabric, { price: getFabricUnitPrice(fabric) }))
     return true
   },
 

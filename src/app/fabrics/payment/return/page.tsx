@@ -9,6 +9,7 @@ import { IS_FABRIC_STORE_PAYMENTS_ENABLED } from '@/lib/fabric-store/checkout-co
 import { IS_FABRIC_STORE_ORDERS_ENABLED } from '@/lib/fabric-store/order-status'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { useFabricCartStore } from '@/store/fabricCartStore'
+import { trackFabricPurchase } from '@/lib/fabric-analytics'
 
 /**
  * صفحة الرجوع من ميسر (المرحلة 5). **لا تثق بالرابط**: ما يضيفه ميسر إلى العنوان
@@ -80,8 +81,12 @@ function ReturnView() {
     if (paid && !cleared.current) {
       cleared.current = true
       clearCart()
+      // الدفعة التجريبية ليست مبيعاً: لا تدخل أرقام المبيعات في Google Analytics
+      if (!status?.isTest && status?.orderNumber && status.totalHalalas != null) {
+        trackFabricPurchase(status.orderNumber, status.totalHalalas / 100)
+      }
     }
-  }, [paid, clearCart])
+  }, [paid, clearCart, status])
 
   const card = 'mx-auto max-w-lg rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-6 text-center'
 

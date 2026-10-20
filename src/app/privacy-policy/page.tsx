@@ -123,7 +123,11 @@ export default function PrivacyPolicyPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-pink-600 mt-1">•</span>
-                <span><strong>Google Analytics</strong> لإحصاءات زيارات مجمّعة (الصفحات المزارة، نوع الجهاز، الدولة). <strong>لا يعمل في صفحات إتمام الطلب والدفع وتتبّع الطلب</strong>، ولا نرسل إليه اسمك أو جوالك أو عنوانك</span>
+                <span><strong>Google Analytics</strong> لإحصاءات زيارات مجمّعة (الصفحات المزارة، نوع الجهاز، الدولة، والأقمشة التي تُشاهَد وتُضاف إلى السلة والمفضلة). <strong>لا يعمل في صفحات إتمام الطلب والدفع وتتبّع الطلب</strong>، إلا إشعاراً واحداً عند نجاح الدفع يحمل رقم الطلب ومبلغه والأقمشة فقط. ولا نرسل إليه اسمك أو جوالك أو عنوانك</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600 mt-1">•</span>
+                <span><strong>Microsoft Clarity</strong> لفهم طريقة استخدام الموقع وتحسينه (أين تضغط الزائرات، وإلى أين ينزلن في الصفحة، والأخطاء التي تظهر لهن)، مع <strong>إخفاء كل النصوص</strong> المعروضة والمكتوبة. <strong>لا يعمل في صفحات إتمام الطلب والدفع وتتبّع الطلب</strong></span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-pink-600 mt-1">•</span>

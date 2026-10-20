@@ -1,11 +1,23 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Info, Loader2, MessageCircle, ShieldCheck } from 'lucide-react'
 import { FABRIC_VAT_RATE, type FabricCartTotals, type ResolvedFabricCartLine } from '@/lib/fabric-commerce'
 import { buildCartInquiryLink } from '@/lib/fabric-cart-whatsapp'
 import { IS_FABRIC_STORE_CHECKOUT_ENABLED } from '@/lib/fabric-store/checkout-contract'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import { snapshotToAnalyticsItem, toAnalyticsItem, trackBeginCheckout, trackViewCart, type FabricAnalyticsItem } from '@/lib/fabric-analytics'
+
+function toItems(lines: ResolvedFabricCartLine[]): FabricAnalyticsItem[] {
+  return lines
+    .filter(line => line.isPurchasable)
+    .map(line =>
+      line.fabric
+        ? toAnalyticsItem(line.fabric, { price: line.unitPrice, quantity: line.quantity })
+        : snapshotToAnalyticsItem(line.line.fabricId, line.line.snapshot, line.quantity)
+    )
+}
 
 interface FabricCartSummaryProps {
   lines: ResolvedFabricCartLine[]
@@ -24,6 +36,14 @@ export default function FabricCartSummary({ lines, totals }: FabricCartSummaryPr
   const isVerifying = lines.some(line => line.status === 'pending')
   const canSend = lines.length > 0 && !isVerifying
   const inquiryLink = buildCartInquiryLink(lines, totals)
+
+  // view_cart مرة واحدة لكل فتح للسلة (الصفحة أو الدرج)، بعد اكتمال التحقق من الأسعار
+  const viewTracked = useRef(false)
+  useEffect(() => {
+    if (viewTracked.current || !canSend) return
+    viewTracked.current = true
+    trackViewCart(toItems(lines))
+  }, [canSend, lines])
 
   return (
     <div className="rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-4 sm:p-5">
@@ -63,6 +83,7 @@ export default function FabricCartSummary({ lines, totals }: FabricCartSummaryPr
           aria-disabled={!canSend}
           onClick={event => {
             if (!canSend) event.preventDefault()
+            else trackBeginCheckout(toItems(lines), 'cart')
           }}
           className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-bold transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f6f0e8] ${
             canSend
