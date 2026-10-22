@@ -1,44 +1,25 @@
 import { ArrowLeft } from 'lucide-react'
 import { fabricCardImage, fabricCardPrice, fabricCardTitle } from '@/lib/fabric-card-display'
-import { formatFabricNumber } from '@/lib/fabric-number-format'
-import { StoreTrustStrip } from '@/components/fabrics/StoreTrust'
 import ArrivalLink from './ArrivalLink'
 import { fabricListingTime, type HomeFabricRow } from './home-store-data'
 import styles from './home.module.css'
 
 /**
- * «وصل حديثاً» في الصفحة الرئيسية: أقمشة حقيقية بأسعارها تُبنى على الخادم،
+ * أحدث الأقمشة في الصفحة الرئيسية: أقمشة حقيقية بأسعارها تُبنى على الخادم،
  * فيراها Google والزائرة في الشاشة الثانية مباشرة (كما يفعل House of CB وJoel & Son).
  */
 
 const SHOWN = 10
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export default function NewArrivals({ fabrics }: { fabrics: HomeFabricRow[] }) {
   const arrivals = [...fabrics].sort((a, b) => fabricListingTime(b) - fabricListingTime(a)).slice(0, SHOWN)
   if (arrivals.length === 0) return null
 
-  const weekAgo = Date.now() - WEEK_MS
-  const thisWeek = arrivals.filter(row => Date.parse(row.created_at) >= weekAgo).length
-  const heading = thisWeek >= 3 ? `وصل هذا الأسبوع: ${formatFabricNumber(thisWeek)} أقمشة` : 'أحدث الأقمشة في المتجر'
-
   return (
     <section id="new-arrivals" className={styles.arrivalsSection} aria-labelledby="new-arrivals-title">
       <div className={styles.arrivalsInner}>
         <header className={styles.arrivalsHeader}>
-          <div>
-            <p className={styles.sectionEyebrow}>وصل حديثاً</p>
-            <h2 id="new-arrivals-title" className={styles.arrivalsTitle}>{heading}</h2>
-          </div>
-          <ArrivalLink
-            href="/fabrics"
-            className={styles.arrivalsAll}
-            eventName="hero_cta_click"
-            eventProperties={{ destination: 'fabrics', placement: 'new_arrivals' }}
-          >
-            كل الأقمشة
-            <ArrowLeft aria-hidden="true" />
-          </ArrivalLink>
+          <h2 id="new-arrivals-title" className={styles.arrivalsTitle}>أحدث أقمشة ياسمين الشام</h2>
         </header>
 
         <ul className={styles.arrivalsRail}>
@@ -68,7 +49,18 @@ export default function NewArrivals({ fabrics }: { fabrics: HomeFabricRow[] }) {
           })}
         </ul>
 
-        <StoreTrustStrip className={styles.arrivalsTrust} />
+        {/* تحت البطاقات وفي جهة اليسار (نهاية السطر في RTL) */}
+        <div className={styles.arrivalsFooter}>
+          <ArrivalLink
+            href="/fabrics"
+            className={styles.arrivalsAll}
+            eventName="hero_cta_click"
+            eventProperties={{ destination: 'fabrics', placement: 'new_arrivals' }}
+          >
+            كل الأقمشة
+            <ArrowLeft aria-hidden="true" />
+          </ArrivalLink>
+        </div>
       </div>
     </section>
   )

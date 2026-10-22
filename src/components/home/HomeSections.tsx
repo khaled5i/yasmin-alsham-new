@@ -56,7 +56,19 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
           </TrackedLink>
         </div>
 
-        <a className={styles.heroScrollCue} href="#new-arrivals" aria-label="الانتقال إلى وصل حديثاً">
+        {/* تمرير مباشر بدل تغيير الـ hash: الانتقال إلى #new-arrivals يطلق popstate،
+            ومستمع HomeExperience يعيد الصفحة حينها إلى الأعلى فيبدو السهم معطّلاً على الجوال */}
+        <a
+          className={styles.heroScrollCue}
+          href="#new-arrivals"
+          aria-label="الانتقال إلى أحدث الأقمشة"
+          onClick={(event) => {
+            const target = document.getElementById('new-arrivals')
+            if (!target) return
+            event.preventDefault()
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }}
+        >
           <ChevronDown aria-hidden="true" />
         </a>
       </div>

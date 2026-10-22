@@ -46,11 +46,11 @@ export default function FabricSortOptions() {
       {/* Sort Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2.5 py-2.5 sm:px-4 bg-[#f6f0e8] border-2 border-[#d8c5ae] rounded-xl hover:border-[#6b1726] hover:shadow-md transition-all duration-300 text-[#211b19] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]"
+        className="inline-flex h-9 w-9 items-center justify-center gap-1.5 rounded-full border border-[#d8c5ae] bg-white text-[13px] font-medium text-[#211b19] transition-colors hover:border-[#6b1726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] sm:w-auto sm:px-3.5"
         aria-label="خيارات الترتيب"
         aria-expanded={isOpen}
       >
-        <ArrowUpDown className="w-5 h-5 text-[#6b1726]" />
+        <ArrowUpDown className="h-4 w-4 text-[#6b1726]" />
         {/* على الجوال أيقونة فقط حتى يتسع صف الأدوات كله في سطر واحد */}
         <span className="hidden text-sm sm:inline">{currentLabel}</span>
         <svg

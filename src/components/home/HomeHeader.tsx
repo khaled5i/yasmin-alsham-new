@@ -86,6 +86,9 @@ export default function HomeHeader({
       window.removeEventListener('scroll', handleScroll)
       window.removeEventListener('resize', handleScroll)
       if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current)
+      // بدون التصفير يبقى رقم الإطار الملغى، فيرفض المستمع الجديد كل تمرير وتتجمّد الترويسة شفافة
+      // (يحدث عند العودة من المتجر حين يتغير activeSection قبل أن يُنفَّذ الإطار الأول)
+      scrollFrameRef.current = null
     }
   }, [activeSection])
 

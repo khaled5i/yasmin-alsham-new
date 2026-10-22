@@ -2,11 +2,12 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare } from 'lucide-react'
+import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare, Ruler, Scissors, CalendarDays, ArrowRight } from 'lucide-react'
 import { useOrderStore } from '@/store/orderStore'
 import { formatGregorianDate, shiftDate } from '@/lib/date-utils'
 import NumericInput from '@/components/NumericInput'
 import SiteHeader from '@/components/SiteHeader'
+import { homeDisplay, homeSans } from '@/components/home/home-fonts'
 import { useTranslation } from '@/hooks/useTranslation'
 
 const EXCLUDED_KEYS = [
@@ -15,6 +16,13 @@ const EXCLUDED_KEYS = [
   // أعلام نُقلت لأعمدة مستقلة (migration 29) - تُبقى للتوافق مع البيانات القديمة
   'is_printed', 'has_measurements', 'whatsapp_sent', 'needs_review', 'is_pre_booking', 'fabric_type'
 ]
+
+// ألوان الهوية الجديدة (نفس متغيرات home.module.css)
+const display = 'font-[family-name:var(--font-home-display)]'
+const card = 'rounded-3xl border border-[#d8c5ae] bg-white shadow-[0_18px_50px_-30px_rgba(47,12,20,0.35)]'
+const field = 'rounded-2xl bg-[#fbf8f3] p-3.5'
+const fieldLabel = 'mb-1 block text-xs text-[#211b19]/55'
+const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-white'
 
 interface OrderInfo {
   order_number: string
@@ -145,11 +153,11 @@ export default function TrackOrderPage() {
 
   const getStatusInfo = (status: string, adminConfirmed?: boolean) => {
     const statusMap = {
-      pending: { label: 'في الانتظار', color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
-      assigned: { label: 'تم التعيين', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
-      in_progress: { label: 'قيد التنفيذ', color: 'text-purple-600', bgColor: 'bg-purple-100', icon: Package },
-      completed: { label: 'مكتمل وجاهز للتسليم', color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
-      delivered: { label: 'تم التسليم', color: 'text-green-700', bgColor: 'bg-green-200', icon: CheckCircle }
+      pending: { label: 'في الانتظار', chip: 'bg-[#d8c5ae]/40 text-[#2f0c14]', icon: Clock },
+      assigned: { label: 'تم التعيين', chip: 'bg-[#b99a68]/20 text-[#7a5f33]', icon: Package },
+      in_progress: { label: 'قيد التنفيذ', chip: 'bg-[#b99a68]/20 text-[#7a5f33]', icon: Scissors },
+      completed: { label: 'مكتمل وجاهز للتسليم', chip: 'bg-[#6b1726] text-[#f6f0e8]', icon: CheckCircle },
+      delivered: { label: 'تم التسليم', chip: 'bg-[#2f0c14] text-[#f6f0e8]', icon: CheckCircle }
     }
     return statusMap[status as keyof typeof statusMap] || statusMap.pending
   }
@@ -198,6 +206,12 @@ export default function TrackOrderPage() {
     return measurementNames[key] || key
   }
 
+  const switchSearchType = (type: 'order' | 'phone') => {
+    setSearchType(type)
+    setSearchTerm('')
+    setError(null)
+  }
+
   const renderOrderCard = (orderData: OrderInfo, index: number, total: number) => {
     const statusInfo = getStatusInfo(orderData.status, orderData.admin_confirmed)
     const hasMeasurements = orderData.measurements &&
@@ -234,120 +248,119 @@ export default function TrackOrderPage() {
     ]
 
     return (
-      <div key={orderData.order_number || index} className="space-y-4">
+      <div key={orderData.order_number || index} className="space-y-5">
         {/* عنوان الطلب عند وجود أكثر من طلب */}
         {total > 1 && (
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-pink-500 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-[#b99a68] text-sm font-semibold text-[#6b1726]">
               {index + 1}
-            </div>
-            <h3 className="text-base font-bold text-gray-700">طلب {index + 1}</h3>
-            <div className="flex-1 h-px bg-pink-100"></div>
+            </span>
+            <h3 className={`${display} text-lg font-semibold text-[#2f0c14]`}>طلب {index + 1}</h3>
+            <div className="h-px flex-1 bg-[#d8c5ae]"></div>
           </div>
         )}
 
         {/* معلومات الطلب */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden border border-pink-100 shadow-sm">
-          <div className="px-6 py-4 flex items-center space-x-3 space-x-reverse border-b border-pink-100">
-            <Package className="w-5 h-5 text-pink-500" />
-            <h2 className="text-lg font-bold text-gray-800">معلومات الطلب</h2>
+        <section className={`${card} overflow-hidden`}>
+          {/* رأس البطاقة: رقم الطلب + الحالة */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-[#2f0c14] px-5 py-4 text-[#f6f0e8] sm:px-6">
+            <div className="min-w-0">
+              <p className="text-[0.7rem] font-medium tracking-[0.12em] text-[#b99a68]">رقم الطلب</p>
+              <p dir="ltr" className="text-right text-lg font-semibold">{orderData.order_number}</p>
+            </div>
+            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-semibold ${
+              orderData.status === 'completed' || orderData.status === 'delivered'
+                ? 'bg-[#f6f0e8] text-[#6b1726]'
+                : 'bg-[#f6f0e8]/10 text-[#f6f0e8] ring-1 ring-[#f6f0e8]/25'
+            }`}>
+              {React.createElement(statusInfo.icon, { className: 'h-4 w-4', 'aria-hidden': true })}
+              {statusInfo.label}
+            </span>
           </div>
 
-          <div className="p-5 space-y-3">
-            {/* السطر الأول: الاسم + رقم الطلب أو رقم الهاتف حسب الحالة */}
+          <div className="space-y-3 p-5 sm:p-6">
+            {/* الاسم + رقم الهاتف أو رقم الطلب حسب طريقة البحث */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-gray-50 rounded-xl p-3">
-                <span className="text-xs text-gray-400 block mb-1">الاسم</span>
-                <p className="text-base font-semibold text-gray-800 truncate">{orderData.client_name}</p>
+              <div className={field}>
+                <span className={fieldLabel}>الاسم</span>
+                <p className="truncate text-base font-semibold text-[#211b19]">{orderData.client_name}</p>
               </div>
               {searchType === 'order' ? (
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <span className="text-xs text-gray-400 block mb-1">رقم الهاتف</span>
-                  <p className="text-sm font-medium text-gray-800 dir-ltr text-right">{orderData.client_phone}</p>
+                <div className={field}>
+                  <span className={fieldLabel}>رقم الهاتف</span>
+                  <p dir="ltr" className="text-right text-sm font-medium text-[#211b19]">{orderData.client_phone}</p>
                 </div>
               ) : (
-                <div className="bg-pink-50 rounded-xl p-3">
-                  <span className="text-xs text-pink-400 block mb-1">رقم الطلب</span>
-                  <p className="text-sm font-bold text-pink-600">{orderData.order_number}</p>
+                <div className={field}>
+                  <span className={fieldLabel}>رقم الطلب</span>
+                  <p dir="ltr" className="text-right text-sm font-semibold text-[#6b1726]">{orderData.order_number}</p>
                 </div>
               )}
             </div>
 
-            {/* السطر الثاني: موعد البروفا الأولى + موعد البروفا الثانية (نفس الحجم واللون) */}
+            {/* مواعيد البروفا */}
             <div className="grid grid-cols-2 gap-3">
-              <div className={`bg-gray-50 rounded-xl p-3 ${!orderData.has_second_proof ? 'col-span-2' : ''}`}>
-                <span className="text-xs text-gray-400 block mb-1">{orderData.has_second_proof ? 'موعد البروفا الأولى' : 'موعد البروفا'}</span>
-                <p className="text-sm font-medium text-gray-800">
+              <div className={`${field} ${!orderData.has_second_proof ? 'col-span-2' : ''}`}>
+                <span className={fieldLabel}>{orderData.has_second_proof ? 'موعد البروفا الأولى' : 'موعد البروفا'}</span>
+                <p className="text-sm font-medium text-[#211b19]">
                   {orderData.proof_delivery_date ? formatDate(orderData.proof_delivery_date) : '—'}
                 </p>
               </div>
               {orderData.has_second_proof && orderData.due_date && (
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <span className="text-xs text-gray-400 block mb-1">موعد البروفا الثانية</span>
-                  <p className="text-sm font-medium text-gray-800">
+                <div className={field}>
+                  <span className={fieldLabel}>موعد البروفا الثانية</span>
+                  <p className="text-sm font-medium text-[#211b19]">
                     {formatDate(orderData.second_proof_date || shiftDate(orderData.due_date, -1))}
                   </p>
                 </div>
               )}
             </div>
 
-            {/* حالة الطلب */}
-            <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`w-10 h-10 rounded-full ${statusInfo.bgColor} flex items-center justify-center flex-shrink-0`}>
-                    {React.createElement(statusInfo.icon, {
-                      className: `w-5 h-5 ${statusInfo.color}`
-                    })}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-500">حالة الطلب</p>
-                    <p className={`text-base font-bold whitespace-nowrap ${statusInfo.color}`}>
-                      {statusInfo.label}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-left flex-shrink-0">
-                  <p className="text-xs text-gray-500 whitespace-nowrap">موعد التسليم</p>
-                  {/* للطلبات الجديدة: التاريخ الحقيقي للزبون من customer_due_date (migration 49).
-                      للطلبات القديمة: نُبقي السلوك السابق (due_date + 2). */}
-                  <p className="text-sm font-bold text-gray-800">{formatDate(orderData.customer_due_date || shiftDate(orderData.due_date, 2))}</p>
-                </div>
+            {/* موعد التسليم */}
+            <div className="flex items-center gap-4 rounded-2xl border border-[#b99a68]/50 bg-[#f6f0e8] p-4">
+              <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-white text-[#6b1726]">
+                <CalendarDays className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs text-[#211b19]/60">موعد التسليم</p>
+                {/* للطلبات الجديدة: التاريخ الحقيقي للزبون من customer_due_date (migration 49).
+                    للطلبات القديمة: نُبقي السلوك السابق (due_date + 2). */}
+                <p className={`${display} text-xl font-semibold text-[#6b1726]`}>
+                  {formatDate(orderData.customer_due_date || shiftDate(orderData.due_date, 2))}
+                </p>
               </div>
-
-              {orderData.status === 'completed' && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4 }}
-                  className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200"
-                >
-                  <div className="flex items-center space-x-3 space-x-reverse">
-                    <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                    <div>
-                      <p className="font-medium text-green-800 text-sm">الطلب مكتمل وجاهز للتسليم</p>
-                      <p className="text-xs text-green-700 mt-0.5">
-                        يرجى إحضار المتبقي من الحساب كاش
-                      </p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
             </div>
+
+            {orderData.status === 'completed' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="flex items-start gap-3 rounded-2xl bg-[#6b1726] p-4 text-[#f6f0e8]"
+              >
+                <CheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#d8c5ae]" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold">الطلب مكتمل وجاهز للتسليم</p>
+                  <p className="mt-0.5 text-xs text-[#f6f0e8]/80">
+                    يرجى إحضار المتبقي من الحساب كاش
+                  </p>
+                </div>
+              </motion.div>
+            )}
 
             {/* مراحل فحص الجاهزية الجديدة؛ حالة الطلب الأصلية أعلاه تبقى كما هي. */}
             {SHOW_READINESS_STAGES && (
-            <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white p-4">
+            <div className="rounded-2xl border border-[#d8c5ae] bg-[#fbf8f3] p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-black text-emerald-950">
+                  <p className="text-sm font-semibold text-[#2f0c14]">
                     {isArabic ? 'مراحل جاهزية الطلب' : 'Order readiness stages'}
                   </p>
-                  <p className="mt-0.5 text-xs text-emerald-700">
+                  <p className="mt-0.5 text-xs text-[#211b19]/60">
                     {isArabic ? 'تتحدث بعد مراجعة الورشة لكل مرحلة' : 'Updated after the workshop reviews each stage'}
                   </p>
                 </div>
-                <CheckCircle className="h-5 w-5 flex-none text-emerald-600" />
+                <CheckCircle className="h-5 w-5 flex-none text-[#b99a68]" aria-hidden="true" />
               </div>
               <div className="space-y-2">
                 {readinessStages.map(readiness => {
@@ -357,16 +370,16 @@ export default function TrackOrderPage() {
                       key={readiness.key}
                       className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
                         isReady
-                          ? 'border-emerald-200 bg-white text-emerald-800'
-                          : 'border-stone-200 bg-stone-50/80 text-stone-500'
+                          ? 'border-[#6b1726]/25 bg-white text-[#6b1726]'
+                          : 'border-[#d8c5ae] bg-white/60 text-[#211b19]/55'
                       }`}
                     >
-                      <span className={`flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-black ${
-                        isReady ? 'bg-emerald-600 text-white' : 'bg-stone-200 text-stone-600'
+                      <span className={`flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-semibold ${
+                        isReady ? 'bg-[#6b1726] text-white' : 'bg-[#d8c5ae]/50 text-[#211b19]/70'
                       }`}>
                         {isReady ? <CheckCircle className="h-4 w-4" /> : readiness.number}
                       </span>
-                      <span className="text-sm font-bold">
+                      <span className="text-sm font-semibold">
                         {isReady ? readiness.readyLabel : readiness.pendingLabel}
                       </span>
                     </div>
@@ -376,35 +389,35 @@ export default function TrackOrderPage() {
             </div>
             )}
           </div>
-        </div>
+        </section>
 
         {/* المقاسات */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden border border-pink-100 shadow-sm">
-          <div className="px-6 py-4 flex items-center space-x-3 space-x-reverse border-b border-pink-100">
-            <Package className="w-5 h-5 text-pink-500" />
-            <h3 className="text-lg font-bold text-gray-800">المقاسات</h3>
+        <section className={`${card} overflow-hidden`}>
+          <div className="flex items-center gap-3 border-b border-[#d8c5ae]/70 px-5 py-4 sm:px-6">
+            <Ruler className="h-5 w-5 text-[#b99a68]" aria-hidden="true" />
+            <h3 className={`${display} text-xl font-semibold text-[#2f0c14]`}>المقاسات</h3>
+            <span className="ms-auto text-xs text-[#211b19]/50">بالإنش</span>
           </div>
 
           {hasMeasurements ? (
-            <div className="p-5">
-              <div className="grid grid-cols-3 gap-3">
+            <div className="p-5 sm:p-6">
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
                 {Object.entries(orderData.measurements!)
                   .filter(([key]) => !EXCLUDED_KEYS.includes(key))
                   .filter(([, value]) => value !== null && value !== undefined && value !== '')
                   .map(([key, value]) => {
                     if (key === 'additional_notes') {
                       return (
-                        <div key={key} className="col-span-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                          <span className="text-xs text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
-                          <p className="text-sm font-medium text-gray-800 whitespace-pre-wrap">{String(value)}</p>
+                        <div key={key} className="col-span-3 rounded-2xl bg-[#fbf8f3] p-3.5 sm:col-span-4">
+                          <span className={fieldLabel}>{getMeasurementNameInArabic(key)}</span>
+                          <p className="whitespace-pre-wrap text-sm font-medium text-[#211b19]">{String(value)}</p>
                         </div>
                       )
                     }
                     return (
-                      <div key={key} className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-center">
-                        <span className="text-xs text-gray-500 block mb-1">{getMeasurementNameInArabic(key)}</span>
-                        <span className="text-base font-semibold text-gray-800">{String(value)}</span>
-                        <span className="text-xs text-gray-400 block">انش</span>
+                      <div key={key} className="rounded-2xl bg-[#fbf8f3] px-2 py-3 text-center">
+                        <span className="mb-1 block text-xs text-[#211b19]/55">{getMeasurementNameInArabic(key)}</span>
+                        <span className="text-lg font-semibold text-[#6b1726]">{String(value)}</span>
                       </div>
                     )
                   })}
@@ -412,155 +425,143 @@ export default function TrackOrderPage() {
             </div>
           ) : (
             <div className="p-8 text-center">
-              <p className="text-gray-500 text-base">لا توجد مقاسات مسجلة لهذا الطلب حتى الآن</p>
+              <p className="text-base text-[#211b19]/60">لا توجد مقاسات مسجلة لهذا الطلب حتى الآن</p>
             </div>
           )}
-        </div>
+        </section>
 
         {/* أحدث تصاميم ياسمين الشام */}
-        <div className="bg-gradient-to-br from-pink-50 to-purple-50 rounded-2xl p-6 border border-pink-100 shadow-sm">
-          <h3 className="text-base font-bold text-gray-800 mb-2 text-center">
-            اطّلعي على أحدث تصاميم ياسمين الشام
+        <section className="rounded-3xl bg-[#2f0c14] px-6 py-8 text-center text-[#f6f0e8]">
+          <p className="text-[0.7rem] font-medium tracking-[0.12em] text-[#b99a68]">ياسمين الشام</p>
+          <h3 className={`${display} mt-1 text-2xl font-semibold`}>
+            اطّلعي على أحدث تصاميمنا
           </h3>
-          <p className="text-gray-500 text-sm text-center mb-4">
+          <p className="mx-auto mt-2 max-w-sm text-sm text-[#f6f0e8]/75">
             تابعينا على تيك توك لمشاهدة آخر التصاميم والإطلالات الجديدة
           </p>
-          <div className="flex justify-center">
-            <a
-              href="https://www.tiktok.com/@yasminalshamtextile"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-black transition-colors duration-300"
-            >
-              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
-                <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.35 6.35 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34l-.01-8.83a8.22 8.22 0 0 0 4.79 1.53V4.56a4.85 4.85 0 0 1-1.02-.12z" />
-              </svg>
-              <span>تابعينا على تيك توك</span>
-            </a>
-          </div>
-        </div>
+          <a
+            href="https://www.tiktok.com/@yasminalshamtextile"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#f6f0e8] px-6 py-3 font-semibold text-[#2f0c14] transition-colors duration-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#2f0c14]"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+              <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.35 6.35 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34l-.01-8.83a8.22 8.22 0 0 0 4.79 1.53V4.56a4.85 4.85 0 0 1-1.02-.12z" />
+            </svg>
+            <span>تابعينا على تيك توك</span>
+          </a>
+        </section>
       </div>
     )
   }
 
   return (
-    <>
-      <SiteHeader />
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className={`${homeSans.variable} ${homeDisplay.variable} min-h-screen bg-[#fbf8f3] font-[family-name:var(--font-home-sans)] text-[#211b19]`}>
+      <SiteHeader tone="wine" />
+      <main className="pb-20 pt-28 sm:pt-32">
+        <div className="mx-auto w-[min(100%-32px,640px)]">
 
           {/* العنوان - يختفي بعد ظهور النتائج */}
           {ordersData.length === 0 && (
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
-              className="text-center mb-12"
+              transition={{ duration: 0.7 }}
+              className="mb-10 text-center"
             >
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6">
-                <span className="bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-                  استعلام عن الطلب
-                </span>
+              <p className="text-xs font-semibold tracking-[0.14em] text-[#b99a68]">تفصيل ياسمين الشام</p>
+              <h1 className={`${display} mt-2 text-4xl font-semibold leading-tight text-[#6b1726] sm:text-5xl`}>
+                استعلام عن الطلب
               </h1>
-              <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
+              <div className="mx-auto mt-4 h-px w-16 bg-[#b99a68]" aria-hidden="true" />
+              <p className="mx-auto mt-4 max-w-md leading-relaxed text-[#211b19]/70">
                 تابعي حالة طلبك في أي وقت. أدخلي رقم الطلب لمعرفة مرحلة التفصيل والموعد المتوقع للتسليم
               </p>
             </motion.div>
           )}
 
-          <div className="max-w-4xl mx-auto">
-            {/* نموذج البحث - يختفي بعد ظهور النتائج */}
-            {ordersData.length === 0 && (
+          {/* نموذج البحث - يختفي بعد ظهور النتائج */}
+          {ordersData.length === 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100 mb-8"
+              transition={{ duration: 0.6, delay: 0.15 }}
+              className={`${card} mb-6 p-5 sm:p-7`}
             >
-              <form onSubmit={handleSearch} className="space-y-6">
+              <form onSubmit={handleSearch} className="space-y-5">
                 {/* اختيار نوع البحث */}
-                <div>
-                  <label className="block text-lg font-medium text-gray-700 mb-4 text-center">
-                    اختاري طريقة البحث
-                  </label>
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchType('order')
-                        setSearchTerm('')
-                        setError(null)
-                      }}
-                      className={`p-4 rounded-xl border-2 transition-all duration-300 ${searchType === 'order'
-                        ? 'border-pink-500 bg-pink-50 text-pink-700'
-                        : 'border-gray-300 bg-white text-gray-700 hover:border-pink-300'
+                <div role="tablist" aria-label="طريقة البحث" className="grid grid-cols-2 gap-1 rounded-full bg-[#f6f0e8] p-1">
+                  {([
+                    { type: 'order', label: 'رقم الطلب', icon: Package },
+                    { type: 'phone', label: 'رقم الهاتف', icon: Phone },
+                  ] as const).map(option => {
+                    const active = searchType === option.type
+                    return (
+                      <button
+                        key={option.type}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => switchSearchType(option.type)}
+                        className={`flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold transition-colors duration-200 ${focusRing} ${
+                          active
+                            ? 'bg-[#6b1726] text-[#f6f0e8] shadow-sm'
+                            : 'text-[#211b19]/65 hover:text-[#6b1726]'
                         }`}
-                    >
-                      <Package className="w-6 h-6 mx-auto mb-2" />
-                      <span className="font-medium">رقم الطلب</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchType('phone')
-                        setSearchTerm('')
-                        setError(null)
-                      }}
-                      className={`p-4 rounded-xl border-2 transition-all duration-300 ${searchType === 'phone'
-                        ? 'border-pink-500 bg-pink-50 text-pink-700'
-                        : 'border-gray-300 bg-white text-gray-700 hover:border-pink-300'
-                        }`}
-                    >
-                      <Phone className="w-6 h-6 mx-auto mb-2" />
-                      <span className="font-medium">رقم الهاتف</span>
-                    </button>
-                  </div>
+                      >
+                        <option.icon className="h-4 w-4" aria-hidden="true" />
+                        {option.label}
+                      </button>
+                    )
+                  })}
                 </div>
 
                 {/* حقل البحث */}
                 <div>
-                  <label className="block text-lg font-medium text-gray-700 mb-4 text-center">
+                  <label htmlFor="track-search" className="mb-2 block text-sm font-medium text-[#211b19]/75">
                     {searchType === 'order' ? 'أدخلي رقم الطلب' : 'أدخلي رقم الهاتف'}
                   </label>
                   <div className="relative">
                     {searchType === 'phone' ? (
                       <NumericInput
+                        id="track-search"
                         value={searchTerm}
                         onChange={setSearchTerm}
                         type="phone"
                         placeholder="مثال: 0512345678"
-                        className="px-6 py-4 text-lg rounded-xl text-center"
+                        className="rounded-2xl! border-[#d8c5ae]! bg-[#fbf8f3]! px-12! py-3.5! text-center text-lg focus:border-[#6b1726]! focus:ring-[#b99a68]!"
                         disabled={isLoading}
                       />
                     ) : (
                       <input
+                        id="track-search"
                         type="text"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full px-6 py-4 text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all duration-300 text-center"
+                        className="w-full rounded-2xl border border-[#d8c5ae] bg-[#fbf8f3] px-12 py-3.5 text-center text-lg text-[#211b19] transition-colors duration-200 placeholder:text-[#211b19]/35 focus:border-[#6b1726] focus:outline-none focus:ring-2 focus:ring-[#b99a68]"
                         placeholder="مثال: 2026-0001"
                         disabled={isLoading}
                       />
                     )}
-                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-6 h-6 text-gray-400" />
+                    <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#b99a68]" aria-hidden="true" />
                   </div>
                 </div>
 
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full btn-primary py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`flex w-full items-center justify-center gap-2 rounded-full bg-[#6b1726] py-3.5 text-base font-semibold text-[#f6f0e8] shadow-lg shadow-[#6b1726]/20 transition-colors duration-300 hover:bg-[#2f0c14] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
                 >
                   {isLoading ? (
-                    <div className="flex items-center justify-center space-x-2 space-x-reverse">
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <>
+                      <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#f6f0e8] border-t-transparent" aria-hidden="true"></span>
                       <span>جاري البحث...</span>
-                    </div>
+                    </>
                   ) : (
-                    <div className="flex items-center justify-center space-x-2 space-x-reverse">
-                      <Search className="w-5 h-5" />
+                    <>
+                      <Search className="h-5 w-5" aria-hidden="true" />
                       <span>البحث عن الطلب</span>
-                    </div>
+                    </>
                   )}
                 </button>
               </form>
@@ -568,94 +569,98 @@ export default function TrackOrderPage() {
               {/* رسالة الخطأ */}
               {error && (
                 <motion.div
+                  role="alert"
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-6 p-4 bg-red-50 text-red-800 border border-red-200 rounded-lg flex items-center space-x-3 space-x-reverse"
+                  className="mt-5 flex items-start gap-3 rounded-2xl bg-[#6b1726]/8 p-4 text-sm font-medium text-[#6b1726]"
                 >
-                  <AlertCircle className="w-5 h-5 text-red-600" />
+                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden="true" />
                   <span>{error}</span>
                 </motion.div>
               )}
             </motion.div>
-            )}
+          )}
 
-            {/* نتائج البحث */}
-            {ordersData.length > 0 && (
-              <motion.div
-                ref={resultsRef}
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6 }}
-                className="space-y-8"
-              >
+          {/* نتائج البحث */}
+          {ordersData.length > 0 && (
+            <motion.div
+              ref={resultsRef}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="scroll-mt-28 space-y-8"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h1 className={`${display} text-3xl font-semibold text-[#6b1726]`}>
+                  {ordersData.length > 1 ? 'طلباتك' : 'طلبك'}
+                </h1>
                 {/* زر البحث عن طلب آخر */}
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOrdersData([])
-                      setSearchTerm('')
-                      setError(null)
-                      window.scrollTo({ top: 0, behavior: 'smooth' })
-                    }}
-                    className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse"
-                  >
-                    <Search className="w-5 h-5" />
-                    <span>بحث عن طلب آخر</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrdersData([])
+                    setSearchTerm('')
+                    setError(null)
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border border-[#6b1726]/30 px-4 py-2 text-sm font-semibold text-[#6b1726] transition-colors duration-200 hover:bg-white ${focusRing}`}
+                >
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  <span>بحث عن طلب آخر</span>
+                </button>
+              </div>
 
-                {/* عنوان النتائج عند وجود أكثر من طلب */}
-                {ordersData.length > 1 && (
-                  <div className="text-center">
-                    <p className="text-gray-600 font-medium">
-                      تم العثور على <span className="text-pink-600 font-bold">{ordersData.length}</span> طلبات مرتبطة بهذا الرقم
-                    </p>
-                  </div>
-                )}
+              {/* عدد النتائج عند وجود أكثر من طلب */}
+              {ordersData.length > 1 && (
+                <p className="-mt-5 text-sm text-[#211b19]/65">
+                  تم العثور على <span className="font-semibold text-[#6b1726]">{ordersData.length}</span> طلبات مرتبطة بهذا الرقم
+                </p>
+              )}
 
-                {ordersData.map((order, index) => renderOrderCard(order, index, ordersData.length))}
-              </motion.div>
-            )}
+              {ordersData.map((order, index) => renderOrderCard(order, index, ordersData.length))}
+            </motion.div>
+          )}
 
-            {/* نصائح للاستخدام */}
-            {ordersData.length === 0 && !isLoading && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.4 }}
-                className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100"
-              >
-                <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">
-                  كيفية العثور على رقم طلبك
-                </h3>
+          {/* نصائح للاستخدام */}
+          {ordersData.length === 0 && !isLoading && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              className="rounded-3xl border border-[#d8c5ae] bg-[#f6f0e8] p-5 sm:p-7"
+            >
+              <h3 className={`${display} mb-5 text-center text-xl font-semibold text-[#2f0c14]`}>
+                كيفية العثور على رقم طلبك
+              </h3>
 
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-gradient-to-br from-pink-400 to-rose-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <MessageSquare className="w-6 h-6 text-white" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                {[
+                  {
+                    icon: MessageSquare,
+                    title: 'رسالة التأكيد',
+                    text: 'ستجدين رقم الطلب في رسالة التأكيد التي وصلتك عبر الواتساب أو الرسائل النصية',
+                  },
+                  {
+                    icon: Phone,
+                    title: 'باستخدام رقم الهاتف',
+                    text: 'إذا لم تجدي رقم الطلب، يمكنك البحث باستخدام رقم هاتفك المسجل لدينا',
+                  },
+                ].map(tip => (
+                  <div key={tip.title} className="flex items-start gap-3 rounded-2xl bg-white/70 p-4">
+                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-[#b99a68]/60 text-[#6b1726]">
+                      <tip.icon className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <h4 className="mb-1 font-semibold text-[#211b19]">{tip.title}</h4>
+                      <p className="text-sm leading-relaxed text-[#211b19]/65">{tip.text}</p>
                     </div>
-                    <h4 className="font-bold text-gray-800 mb-2">رسالة التأكيد</h4>
-                    <p className="text-gray-600 text-sm">
-                      ستجدين رقم الطلب في رسالة التأكيد التي وصلتك عبر الواتساب أو الرسائل النصية
-                    </p>
                   </div>
-
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Phone className="w-6 h-6 text-white" />
-                    </div>
-                    <h4 className="font-bold text-gray-800 mb-2">باستخدام رقم الهاتف</h4>
-                    <p className="text-gray-600 text-sm">
-                      إذا لم تجدي رقم الطلب، يمكنك البحث باستخدام رقم هاتفك المسجل لدينا
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   )
 }

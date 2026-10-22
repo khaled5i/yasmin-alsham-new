@@ -11,11 +11,13 @@ import HomeHeader from '@/components/home/HomeHeader'
 import { homeDisplay, homeSans } from '@/components/home/home-fonts'
 import styles from '@/components/home/home.module.css'
 
-export default function SiteHeader() {
+// tone="wine" للصفحات التي انتقلت لألوان الواجهة الجديدة؛ الافتراضي يبقى وردياً لباقي الصفحات
+export default function SiteHeader({ tone = 'rose' }: { tone?: 'rose' | 'wine' }) {
   const router = useRouter()
+  const scope = tone === 'wine' ? styles.siteHeaderWine : styles.siteHeaderScope
 
   return (
-    <div className={`${styles.siteHeaderScope} ${homeSans.variable} ${homeDisplay.variable}`}>
+    <div className={`${scope} ${homeSans.variable} ${homeDisplay.variable}`}>
       <HomeHeader
         forceSolid
         onSelectHome={() => router.push('/')}

@@ -1,6 +1,5 @@
 import { RotateCcw, ShieldCheck, Store, Truck, type LucideIcon } from 'lucide-react'
 import {
-  FABRIC_DELIVERY_OPTIONS,
   FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS,
   IS_FABRIC_STORE_CHECKOUT_ENABLED,
   IS_FABRIC_STORE_PAYMENTS_ENABLED,
@@ -8,19 +7,18 @@ import {
 import { STORE_RETURN_RULES } from '@/lib/store-legal'
 
 /**
- * وعود المتجر الظاهرة للزبونة: الشريط العلوي وشريط الضمانات.
- * كل رقم هنا مقروء من مصدر السياسة نفسه (رسوم الشحن، عتبة المجاني، مدة الإرجاع)
+ * وعود المتجر الظاهرة للزبونة: شريط الضمانات.
+ * كل رقم هنا مقروء من مصدر السياسة نفسه (عتبة الشحن المجاني، مدة الإرجاع)
  * فلا يختلف ما يُعلَن عمّا تحسبه صفحة الدفع. وعود الشحن والدفع لا تظهر ما دام
  * مفتاح الدفع الإلكتروني مطفأً.
  */
 
 const freeShippingSar = FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS / 100
-const shippingFeeSar = FABRIC_DELIVERY_OPTIONS.shipping.shippingGrossHalalas / 100
 
 interface TrustItem {
   icon: LucideIcon
   title: string
-  detail: string
+  detail?: string
 }
 
 function trustItems(): TrustItem[] {
@@ -29,33 +27,18 @@ function trustItems(): TrustItem[] {
     items.push({
       icon: Truck,
       title: 'شحن لكل مدن المملكة',
-      detail: `مجاني فوق ${freeShippingSar} ريال، وإلا ${shippingFeeSar} ريالاً`,
+      detail: `مجاني فوق ${freeShippingSar} ريال`,
     })
   }
-  items.push({ icon: Store, title: 'استلام من محلنا بالخبر', detail: 'جاهز في نفس يوم العمل' })
-  if (IS_FABRIC_STORE_CHECKOUT_ENABLED) {
-    items.push({
-      icon: RotateCcw,
-      title: `إرجاع خلال ${STORE_RETURN_RULES.returnWindowDays} أيام`,
-      detail: 'للقطع الكاملة غير المقصوصة',
-    })
-  }
+  // الدفع الآمن ثانياً والاستلام من المحل آخراً (طلب المالكة)
   if (IS_FABRIC_STORE_PAYMENTS_ENABLED) {
     items.push({ icon: ShieldCheck, title: 'دفع آمن', detail: 'مدى · Apple Pay · Visa' })
   }
+  if (IS_FABRIC_STORE_CHECKOUT_ENABLED) {
+    items.push({ icon: RotateCcw, title: `إرجاع خلال ${STORE_RETURN_RULES.returnWindowDays} أيام` })
+  }
+  items.push({ icon: Store, title: 'استلام من محلنا بالخبر' })
   return items
-}
-
-/** سطر رفيع أعلى صفحات المتجر — Lulus وMood وJoel & Son يبدؤون به. */
-export function StoreAnnouncementBar() {
-  if (!IS_FABRIC_STORE_CHECKOUT_ENABLED) return null
-  return (
-    <p className="bg-[#6b1726] px-4 py-2 text-center text-xs font-medium leading-relaxed text-[#f6f0e8] sm:text-sm">
-      شحن مجاني فوق {freeShippingSar} ريال
-      <span aria-hidden="true" className="mx-2 opacity-60">·</span>
-      استلام من محلنا بالخبر في نفس يوم العمل
-    </p>
-  )
 }
 
 // أسماء كاملة لا تُركَّب، حتى يولّدها Tailwind.
@@ -79,7 +62,7 @@ export function StoreTrustStrip({ className = '', compact = false }: {
           <Icon className="mt-0.5 h-5 w-5 shrink-0 text-[#6b1726]" aria-hidden="true" />
           <span className="min-w-0">
             <span className="block text-sm font-semibold text-[#211b19]">{title}</span>
-            <span className="block text-xs leading-relaxed text-[#211b19]/65">{detail}</span>
+            {detail && <span className="block text-xs leading-relaxed text-[#211b19]/65">{detail}</span>}
           </span>
         </li>
       ))}

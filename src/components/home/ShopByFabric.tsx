@@ -1,6 +1,7 @@
-import { FABRIC_COLLECTIONS, fabricCollectionPath, fabricMatchesCollection } from '@/lib/fabric-collections'
+import { FABRIC_COLLECTIONS, fabricStoreQueryPath } from '@/lib/fabric-collections'
 import { fabricCardImage } from '@/lib/fabric-card-display'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
+import { matchesFabricSearch } from '@/lib/fabric-search'
 import ArrivalLink from './ArrivalLink'
 import ShopByFabricExpander from './ShopByFabricExpander'
 import { fabricListingTime, type HomeFabricRow } from './home-store-data'
@@ -10,6 +11,7 @@ import styles from './home.module.css'
  * «تسوقي حسب الخامة»: بلاطة لكل مجموعة بصورة أحدث قماش فيها وعدد الأقمشة.
  * كل متاجر الأقمشة الثمانية التي حلّلناها تبدأ التصفح من نوع القماش.
  * تظهر أول أربع بلاطات فقط، والباقي خلف «عرض المزيد».
+ * البلاطة تفتح المتجر الأساسي مفلتراً بالخامة (?q=)، فالعدّ بنفس بحث المتجر حتى يطابق ما تراه الزائرة.
  */
 const VISIBLE_TILES = 4
 
@@ -17,7 +19,11 @@ export default function ShopByFabric({ fabrics }: { fabrics: HomeFabricRow[] }) 
   const newest = [...fabrics].sort((a, b) => fabricListingTime(b) - fabricListingTime(a))
   const used = new Set<string>()
   const tiles = FABRIC_COLLECTIONS.map(collection => {
-    const members = newest.filter(fabric => fabricMatchesCollection(fabric, collection))
+    const members = newest.filter(fabric => matchesFabricSearch(
+      { ...fabric, categories: fabric.categories?.length ? fabric.categories : [fabric.category ?? ''] },
+      collection.storeQuery,
+      { includeDescription: true }
+    ))
     // صورة مختلفة لكل بلاطة حيث أمكن، فلا يتكرر القماش نفسه في مجموعتين
     const cover = members.find(fabric => !used.has(fabric.id)) ?? members[0]
     if (cover) used.add(cover.id)
@@ -41,7 +47,7 @@ export default function ShopByFabric({ fabrics }: { fabrics: HomeFabricRow[] }) 
           {tiles.map(({ collection, count, image }, index) => (
             <li key={collection.slug} className={index >= VISIBLE_TILES ? `min-w-0 ${styles.shopFabricExtra}` : 'min-w-0'}>
               <ArrivalLink
-                href={fabricCollectionPath(collection.slug)}
+                href={fabricStoreQueryPath(collection.storeQuery)}
                 className={styles.shopFabricTile}
                 eventName="home_collection_click"
                 eventProperties={{ collection: collection.slug }}

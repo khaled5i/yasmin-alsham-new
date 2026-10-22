@@ -51,6 +51,21 @@
   }
 }
 
+/* شريط الصفحات الداخلية التي انتقلت للهوية الجديدة (نبيذي/عاجي) — مثل تتبع الطلب */
+.siteHeaderWine {
+  --wine: #6b1726;
+  --deep-wine: #2f0c14;
+  --ivory: #f6f0e8;
+  --ivory-soft: #fbf8f3;
+  --sand: #d8c5ae;
+  --rose: #c98e94;
+  --charcoal: #211b19;
+  --gold: #b99a68;
+  --white: #fff;
+  font-family: var(--font-home-sans), sans-serif;
+}
+
+.siteHeaderWine :is(a, button):focus-visible,
 .siteHeaderScope :is(a, button):focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 4px;
@@ -496,8 +511,13 @@
   height: 44px;
   margin: 14px auto 0;
   align-items: center;
+  position: relative;
+  /* فوق بداية القسم التالي الذي يتداخل معه المحتوى بهامش سالب */
+  z-index: 2;
   color: rgba(255, 255, 255, 0.82);
   text-decoration: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   animation: heroCueBounce 2.2s ease-in-out infinite;
 }
 
@@ -2463,8 +2483,16 @@
   border-radius: 14px;
 }
 
-.arrivalsTrust {
-  margin-top: 28px;
+.arrivalsFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+/* شريط الشحن والإرجاع والدفع: آخر الصفحة تحت تقييمات Google */
+.homeTrustSection {
+  padding: 8px 0 48px;
+  background: #fbf8f3;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2604,13 +2632,6 @@
   background: var(--ivory);
 }
 
-.fabricDressIntro {
-  max-width: 520px;
-  margin-top: 6px !important;
-  color: rgba(33, 27, 25, 0.7);
-  line-height: 1.8;
-}
-
 .fabricDressImage {
   position: relative;
   display: block;
@@ -2636,7 +2657,7 @@
 .fabricDressSwatch {
   position: absolute;
   inset: auto auto 10px 10px;
-  width: 30%;
+  width: 42%;
   aspect-ratio: 1;
   overflow: hidden;
   border: 3px solid var(--ivory);

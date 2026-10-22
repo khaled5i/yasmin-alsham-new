@@ -62,6 +62,23 @@ export function isAnalyticsExcludedPath(pathname: string): boolean {
   return GA_EXCLUDED_PATH_PREFIXES.some(prefix => path.startsWith(prefix))
 }
 
+/**
+ * Clarity على النطاق الرسمي فقط: لا localhost ولا 127.0.0.1 ولا 192.168.x.x ولا روابط Vercel التجريبية
+ * (‎*.vercel.app) ولا النطاق بلا www — أي اسم غير هذا بالضبط يُرفض.
+ */
+export const CLARITY_PRODUCTION_HOST = 'www.yasmin-alsham.fashion'
+
+export function isClarityProductionHost(hostname: string): boolean {
+  return hostname.toLowerCase() === CLARITY_PRODUCTION_HOST
+}
+
+/** صفحات الموظفين لا تُسجَّل في Clarity، فوق استثناءات GA (الدفع وتتبّع الطلب). */
+export const CLARITY_EXCLUDED_PATH_PREFIXES = ['/dashboard', '/login'] as const
+
+export function isClarityExcludedPath(pathname: string): boolean {
+  return isAnalyticsExcludedPath(pathname) || CLARITY_EXCLUDED_PATH_PREFIXES.some(prefix => pathname.startsWith(prefix))
+}
+
 interface AnalyticsWindow {
   location: { origin: string; pathname: string }
   gtag?: (...args: unknown[]) => void

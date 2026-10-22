@@ -1,7 +1,6 @@
 import { Metadata } from 'next'
 import FabricCommerceProvider from '@/components/fabrics/FabricCommerceProvider'
 import FloatingWhatsAppButton from '@/components/fabrics/FloatingWhatsAppButton'
-import { StoreAnnouncementBar } from '@/components/fabrics/StoreTrust'
 
 export const metadata: Metadata = {
   title: 'متجر الأقمشة النسائية - ياسمين الشام الخبر',
@@ -19,7 +18,6 @@ export default function FabricsLayout({ children }: { children: React.ReactNode 
     <>
       {/* يحمّل السلة والمفضلة من التخزين المحلي ويزامن التبويبات لكل صفحات المتجر */}
       <FabricCommerceProvider />
-      <StoreAnnouncementBar />
       {children}
       <FloatingWhatsAppButton />
     </>

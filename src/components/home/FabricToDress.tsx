@@ -6,7 +6,7 @@ import type { HomeFabricRow } from './home-store-data'
 import styles from './home.module.css'
 
 /**
- * «من القماش إلى الفستان»: صورة الفستان المنفَّذ في المشغل وبجانبها القماش نفسه.
+ * «شاهدي التصميم قبل شراء القماش»: صورة الفستان المنفَّذ في المشغل وبجانبها القماش نفسه.
  * لا يبيع أي منافس حلّلناه القماش ويفصّله في مكان واحد؛ هذا القسم يقول ذلك بالصور.
  * المصدر design_images التي ترفعها المالكة لكل قماش.
  */
@@ -30,16 +30,15 @@ export default function FabricToDress({ fabrics }: { fabrics: HomeFabricRow[] })
       <div className={styles.arrivalsInner}>
         <header className={styles.arrivalsHeader}>
           <div>
-            <p className={styles.sectionEyebrow}>القماش والخياطة في مكان واحد</p>
-            <h2 id="fabric-to-dress-title" className={styles.arrivalsTitle}>من القماش إلى الفستان</h2>
-            <p className={styles.fabricDressIntro}>فساتين فصّلناها في مشغلنا من أقمشة المتجر. اختاري القماش، ونفصّله لكِ.</p>
+            <p className={styles.sectionEyebrow}>لأنك في ياسمين الشام</p>
+            <h2 id="fabric-to-dress-title" className={styles.arrivalsTitle}>شاهدي التصميم قبل شراء القماش</h2>
           </div>
         </header>
 
         <ul className={styles.arrivalsRail}>
           {pairs.map(({ fabric, design }, index) => {
             const title = fabricCardTitle(fabric)
-            const swatch = fabricCardImage(fabric, 160, 160)
+            const swatch = fabricCardImage(fabric, 240, 240)
             return (
               <li key={fabric.id} className={styles.arrivalCard}>
                 <ArrivalLink
@@ -54,7 +53,7 @@ export default function FabricToDress({ fabrics }: { fabrics: HomeFabricRow[] })
                     {swatch && (
                       <span className={styles.fabricDressSwatch}>
                         {/* eslint-disable-next-line @next/next/no-img-element -- صور Supabase المحوّلة */}
-                        <img src={swatch} alt={`القماش: ${title}`} width={160} height={160} loading="lazy" decoding="async" />
+                        <img src={swatch} alt={`القماش: ${title}`} width={240} height={240} loading="lazy" decoding="async" />
                       </span>
                     )}
                   </span>

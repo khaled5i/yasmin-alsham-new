@@ -15,10 +15,15 @@ export interface HomeFabricRow extends FabricCardFields {
   design_images: string[] | null
   created_at: string
   boosted_at: string | null
+  // حقول بحث المتجر: «تسوقي حسب الخامة» يعدّ بنفس البحث الذي يفتح به المتجر
+  name_en: string | null
+  description: string | null
+  type: string | null
+  categories: string[] | null
 }
 
 const COLUMNS =
-  'id,name,fabric_code,category,available_colors,images,thumbnail_image,image_url,price_per_meter,is_on_sale,discount_percentage,stock_quantity,tags,occasions,design_images,created_at,boosted_at'
+  'id,name,fabric_code,category,available_colors,images,thumbnail_image,image_url,price_per_meter,is_on_sale,discount_percentage,stock_quantity,tags,occasions,design_images,created_at,boosted_at,name_en,description,type,categories'
 
 export const loadHomeFabrics = cache(async (): Promise<HomeFabricRow[]> => {
   // نفس شرط الظهور في المتجر وخريطة الموقع

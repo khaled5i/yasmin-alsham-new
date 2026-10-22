@@ -120,7 +120,7 @@ export default function RootLayout({
                   { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تفصيل فساتين الخطوبة" } },
                   { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "خياطة فساتين يومية" } },
                   { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "تعديل وتضييق الفساتين" } },
-                  { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "أقمشة نسائية للتفصيل" } }
+                  { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "أقمشة نسائية للتفصيل" } }
                 ]
               },
               "sameAs": [

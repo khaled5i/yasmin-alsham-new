@@ -17,6 +17,8 @@ export interface FabricCollection {
   allTags?: string[]
   /** يلزم كل المناسبات (contains). */
   occasions?: string[]
+  /** كلمة البحث في المتجر الأساسي (نفس شرائح نوع القماش)؛ بلاطات الرئيسية تفتح المتجر بها. */
+  storeQuery: string
 }
 
 export const FABRIC_COLLECTIONS: FabricCollection[] = [
@@ -25,66 +27,79 @@ export const FABRIC_COLLECTIONS: FabricCollection[] = [
     title: 'أقمشة فساتين الزفاف',
     intro: 'أقمشة بألوان العروس الهادئة (الأبيض والسكري والبيج) بتطريز كثيف وورود بارزة وخرز لؤلؤي، مختارة لفستان الزفاف والملكة.',
     occasions: ['زفاف'],
+    storeQuery: 'زفاف',
   },
   {
     slug: 'lace',
     title: 'أقمشة دانتيل',
     intro: 'دانتيل شانتيلي ناعم، ودانتيل كوردونيه بزخارف محددة، ودانتيل جبيير متماسك، لفساتين السهرة والأكمام والطبقات الخارجية.',
     anyTags: ['دانتيل', 'دانتيل جبيير'],
+    storeQuery: 'دانتيل',
   },
   {
     slug: 'embroidered-tulle',
     title: 'تول مطرز',
     intro: 'تول شفاف مطرز بنقشات الأغصان والسنابل والورود، من التطريز الناعم بلون واحد إلى التطريز الكثيف بلمعة الترتر.',
     allTags: ['تول', 'تطريز'],
+    storeQuery: 'تول',
   },
   {
     slug: 'sequins',
     title: 'أقمشة ترتر',
     intro: 'أقمشة مغطاة بالترتر بأحجام ولمعات مختلفة: ترتر منثور ناعم، وترتر كثيف يغطي القماش، وخطوط ترتر متموجة.',
     anyTags: ['ترتر'],
+    storeQuery: 'ترتر',
   },
   {
     slug: 'beaded',
     title: 'أقمشة مشغولة بالخرز',
     intro: 'تول ودانتيل مشغول بالخرز: شبكات هندسية، وريش متموج، وخطوط طولية تطيل القوام، وخرز لؤلؤي لفساتين المناسبات الكبيرة.',
     anyTags: ['خرز'],
+    storeQuery: 'خرز',
   },
   {
     slug: 'crystal',
     title: 'أقمشة بالكريستال',
     intro: 'أقمشة بحبات الكريستال المنثورة أو المرصوصة بنقشات شعاعية وشبكية، تعطي الفستان لمعة واضحة تحت إضاءة السهرة.',
     anyTags: ['كريستال'],
+    storeQuery: 'كريستال',
   },
   {
     slug: '3d-flowers',
     title: 'أقمشة بورود بارزة',
     intro: 'تول بورود ثلاثية الأبعاد بارزة عن سطح القماش، وحدها أو مع الخرز والترتر، لفستان يلفت النظر من غير إضافات.',
     anyTags: ['ورود بارزة ثلاثية الأبعاد'],
+    storeQuery: 'ورود بارزة',
   },
   {
     slug: 'applique',
     title: 'أقمشة أبليك',
     intro: 'ورود وأوراق أبليك مضافة على التول والدانتيل، بلون واحد أو بلونين متباينين، لتصاميم جريئة وواضحة التفاصيل.',
     anyTags: ['قطع أبليك'],
+    storeQuery: 'أبليك',
   },
   {
     slug: 'devore-velvet',
     title: 'مخمل محروق',
     intro: 'مخمل محروق (ديفوريه): نقشة مخملية على أرضية شفافة بورود ونقوش رخامية، لفساتين السهرة والجلابيات في المواسم الباردة.',
     anyTags: ['مخمل محروق'],
+    storeQuery: 'مخمل',
   },
   {
     slug: 'jacquard',
     title: 'أقمشة جاكار',
     intro: 'جاكار منسوج بلمعة معدنية ونقشات تجريدية ورخامية، خامة متماسكة تحافظ على شكل القصّة في الفساتين والجاكيتات.',
     anyTags: ['جاكار'],
+    storeQuery: 'جاكار',
   },
 ]
 
 export const getFabricCollection = (slug: string) => FABRIC_COLLECTIONS.find(c => c.slug === slug)
 
 export const fabricCollectionPath = (slug: string) => `/fabrics/collections/${slug}/`
+
+/** المتجر الأساسي مفلتراً بنوع القماش؛ صفحة المتجر تقرأ ?q= وتضعه في البحث. */
+export const fabricStoreQueryPath = (query: string) => `/fabrics?q=${encodeURIComponent(query)}`
 
 /** نفس شرط الصفحة، للعدّ في المتصفح (روابط المجموعات في الرئيسية). */
 export function fabricMatchesCollection(
