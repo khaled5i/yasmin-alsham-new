@@ -7,8 +7,10 @@ import { ArrowRight, Check, ChevronDown, Copy, Loader2, MessageCircle, RefreshCw
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
 import {
+  WHATSAPP_BIO_LINK_SOURCES,
   WHATSAPP_LINK_SOURCES,
   WHATSAPP_PLACEMENT_LABELS,
+  WHATSAPP_SITE_ENTRY_LINKS,
   WHATSAPP_SHOPS,
   WHATSAPP_SHOP_KEYS,
   WHATSAPP_SITE_SOURCE,
@@ -43,7 +45,6 @@ const PRESETS: { id: Preset; label: string }[] = [
 ]
 
 const SITE_ORIGIN = 'https://yasmin-alsham.fashion'
-const SHOP_LINK_SOURCES = (Object.keys(WHATSAPP_LINK_SOURCES) as (keyof typeof WHATSAPP_LINK_SOURCES)[]).filter(s => s !== 'other')
 
 const number = (value: number) => new Intl.NumberFormat('ar-SA').format(value)
 
@@ -269,13 +270,13 @@ export default function WhatsAppStatsPage() {
 
         <section className="mt-10 rounded-2xl border border-[#ced7c8] bg-white p-5" aria-label="الروابط">
           <h2 className="mb-1 text-xl font-bold">الروابط الجاهزة</h2>
-          <p className="mb-5 text-sm leading-7 text-[#627367]">يوضع كل رابط في مكانه بدل رابط wa.me العادي. الرابط يفتح واتساب المحل مباشرة ويُعدّ الضغطة.</p>
+          <p className="mb-5 text-sm leading-7 text-[#627367]">روابط البايو: توضع بدل رابط wa.me العادي، تفتح واتساب المحل مباشرة وتعدّ الضغطة.</p>
           <div className="grid gap-6 lg:grid-cols-2">
             {WHATSAPP_SHOP_KEYS.map(shop => (
               <div key={shop}>
                 <p className="mb-2 font-semibold">{WHATSAPP_SHOPS[shop].label}</p>
                 <ul className="space-y-2">
-                  {SHOP_LINK_SOURCES.map(source => {
+                  {WHATSAPP_BIO_LINK_SOURCES.map(source => {
                     const url = `${SITE_ORIGIN}/wa/${shop}/${source}/`
                     return (
                       <li key={source} className="flex items-center gap-3 rounded-lg bg-[#f4f5ef] px-3 py-2">
@@ -285,10 +286,21 @@ export default function WhatsAppStatsPage() {
                       </li>
                     )
                   })}
+                  {WHATSAPP_SITE_ENTRY_LINKS[shop].map(link => (
+                    <li key={link.url} className="flex items-center gap-3 rounded-lg bg-[#f4f5ef] px-3 py-2">
+                      <span className="w-24 shrink-0 text-sm">{link.label}</span>
+                      <code dir="ltr" className="min-w-0 flex-1 truncate text-left text-xs">{link.url}</code>
+                      <CopyLink url={link.url} />
+                    </li>
+                  ))}
                 </ul>
               </div>
             ))}
           </div>
+          <p className="mt-5 text-xs leading-6 text-[#627367]">
+            خرائط Google وإعلانات Google لا تقبل رابطاً يحوّل إلى واتساب، لذلك رابط الخرائط يفتح الموقع نفسه (في حقل «الموقع الإلكتروني»)،
+            والإعلان يوجَّه إلى صفحة في الموقع كالمعتاد. ضغطة واتساب من هناك تظهر تحت «أزرار الموقع والمتجر» بمصدر «خرائط Google» أو «إعلانات Google».
+          </p>
         </section>
       </div>
     </main>

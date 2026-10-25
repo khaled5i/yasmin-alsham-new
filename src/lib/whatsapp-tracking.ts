@@ -26,7 +26,11 @@ export function isWhatsAppShop(value: unknown): value is WhatsAppShop {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(WHATSAPP_SHOPS, value)
 }
 
-/** مصادر الروابط الوسيطة. أي مصدر آخر في الرابط يُسجَّل «other» ولا يكسر التحويل. */
+/**
+ * مصادر الروابط الوسيطة. أي مصدر آخر في الرابط يُسجَّل «other» ولا يكسر التحويل.
+ * maps وgoogle-ads وsnapchat باقية لقراءة السجلات القديمة فقط: Google ترفض رابطاً يحوّل إلى نطاق آخر
+ * (wa.me)، فهذه المصادر تُعدّ عبر رابط الموقع (WHATSAPP_SITE_ENTRY_LINKS) وأزرار واتساب فيه.
+ */
 export const WHATSAPP_LINK_SOURCES = {
   instagram: 'إنستغرام',
   tiktok: 'تيك توك',
@@ -35,6 +39,19 @@ export const WHATSAPP_LINK_SOURCES = {
   snapchat: 'سناب شات',
   other: 'رابط آخر',
 } as const
+
+/** الروابط الوسيطة المعروضة للنسخ في صفحة الإحصائيات (البايو فقط). */
+export const WHATSAPP_BIO_LINK_SOURCES = ['instagram', 'tiktok'] as const
+
+/**
+ * لخرائط Google وإعلانات Google: رابط إلى الموقع نفسه (Google تقبله)، وضغطة زر واتساب فيه تُسجَّل
+ * بمصدر الزيارة. الإعلانات لا تحتاج utm: معرّف النقرة gclid يُضاف تلقائياً ويُقرأ «google_ads».
+ * الأقمشة ← المتجر (زره العائم برقم الأقمشة)، والخياطة ← الرئيسية (أزرارها برقم الخياطة).
+ */
+export const WHATSAPP_SITE_ENTRY_LINKS: Record<WhatsAppShop, { label: string; url: string }[]> = {
+  fabrics: [{ label: 'خرائط Google', url: 'https://yasmin-alsham.fashion/fabrics/?utm_source=google_maps&utm_medium=organic' }],
+  tailoring: [{ label: 'خرائط Google', url: 'https://yasmin-alsham.fashion/?utm_source=google_maps&utm_medium=organic' }],
+}
 
 /** مصدر ضغطات أزرار الموقع والمتجر (طريق الـ beacon). */
 export const WHATSAPP_SITE_SOURCE = 'website'
@@ -75,6 +92,7 @@ export const WHATSAPP_PLACEMENT_LABELS: Record<string, string> = {
 
 export const WHATSAPP_VISIT_SOURCE_LABELS: Record<string, string> = {
   google_ads: 'إعلانات Google',
+  google_maps: 'خرائط Google',
   google: 'بحث Google',
   instagram: 'إنستغرام',
   tiktok: 'تيك توك',
