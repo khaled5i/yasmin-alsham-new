@@ -25,9 +25,28 @@ export const STORE_SUPPORT_PHONE = {
   whatsappUrl: 'https://wa.me/966539686805',
 } as const
 
+/**
+ * مدد الشحن بالأيام (قرار المالك 24 أكتوبر 2026): التجهيز 0–1 يوم ثم التوصيل مع
+ * الناقل 2–4 أيام، والشحن يعمل الأسبوع كاملاً. منها نص السياسة وصفحة الدفع وJSON-LD.
+ */
+export const STORE_SHIPPING_DAYS = {
+  handling: { min: 0, max: 1 },
+  transit: { min: 2, max: 4 },
+} as const
+
+/** مدة الشحن الكلية من تأكيد الدفع إلى الاستلام. */
+export const STORE_SHIPPING_TOTAL_DAYS = {
+  min: STORE_SHIPPING_DAYS.handling.min + STORE_SHIPPING_DAYS.transit.min,
+  max: STORE_SHIPPING_DAYS.handling.max + STORE_SHIPPING_DAYS.transit.max,
+} as const
+
+const shippingDaysRange = `من ${STORE_SHIPPING_TOTAL_DAYS.min} إلى ${STORE_SHIPPING_TOTAL_DAYS.max} أيام`
+
 export const STORE_DELIVERY_TIMES = {
   pickup: 'في نفس يوم العمل للطلبات المدفوعة خلال ساعات عمل المحل، وما يُدفع بعد الإغلاق يُجهَّز في يوم العمل التالي',
-  shipping: 'من 3 إلى 5 أيام عمل من تأكيد الدفع',
+  shipping: `${shippingDaysRange} من تأكيد الدفع`,
+  /** للوصف القصير في صفحة الدفع. */
+  shippingShort: `التوصيل ${shippingDaysRange}`,
 } as const
 
 export const STORE_RETURN_RULES = {
@@ -42,7 +61,7 @@ export const STORE_RETURN_RULES = {
 /** الوسائل المفعّلة بحسب تأكيد المالكة في 6 أكتوبر 2026؛ ظهور المحافظ حسب الجهاز. */
 export const STORE_PAYMENT_METHODS = ['مدى', 'Visa', 'Mastercard', 'Apple Pay', 'Samsung Pay'] as const
 
-export const STORE_POLICIES_UPDATED_AT = '20 أكتوبر 2026'
+export const STORE_POLICIES_UPDATED_AT = '24 أكتوبر 2026'
 
 export const STORE_POLICY_LINKS = [
   { href: '/sales-terms', label: 'شروط البيع' },

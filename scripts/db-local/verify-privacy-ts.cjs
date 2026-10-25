@@ -125,7 +125,7 @@ async function check(name, fn) {
     win.window = win
     win.dataLayer = []
     const ctx = vm.createContext(win)
-    vm.runInContext(analytics.analyticsBootstrapScript(), ctx)
+    vm.runInContext(analytics.analyticsBootstrapScript({ hosts: ['shop.example'] }), ctx)
     const flag = () => win['ga-disable-G-8KCD0TSPCJ']
     const config = win.dataLayer.find(a => a[0] === 'config')
     assert.equal(flag(), false, 'store page: analytics on')
@@ -144,7 +144,7 @@ async function check(name, fn) {
     const win2 = { location: new URL('https://shop.example/fabrics/payment/return/?attempt=1'), history: { pushState() {}, replaceState() {} },
       addEventListener() {}, URL, dataLayer: [] }
     win2.window = win2
-    vm.runInContext(analytics.analyticsBootstrapScript(), vm.createContext(win2))
+    vm.runInContext(analytics.analyticsBootstrapScript({ hosts: ['shop.example'] }), vm.createContext(win2))
     assert.equal(win2['ga-disable-G-8KCD0TSPCJ'], true)
     assert.equal(win2.dataLayer.find(a => a[0] === 'config')[2].send_page_view, false)
     assert.equal(win2.dataLayer.find(a => a[0] === 'config')[2].page_location, 'https://shop.example/fabrics/payment/return/')
@@ -163,6 +163,38 @@ async function check(name, fn) {
     assert.equal(win['ga-disable-G-8KCD0TSPCJ'], false)
     assert.deepEqual(sent[0], ['event', 'page_view', { page_location: 'https://shop.example/fabrics/abc/', page_path: '/fabrics/abc/' }])
     return 'excluded: flag on, nothing sent; allowed: one page_view'
+  })
+
+  await check('staff pages, staff devices, other hosts and non-production send nothing to GA', () => {
+    const vm = require('node:vm')
+    for (const p of ['/dashboard', '/dashboard/', '/dashboard/orders/123/', '/login', '/login/'])
+      assert.equal(analytics.isAnalyticsExcludedPath(p), true, p)
+    assert.equal(analytics.isAnalyticsProductionHost('www.yasmin-alsham.fashion'), true)
+    assert.equal(analytics.isAnalyticsProductionHost('Yasmin-Alsham.Fashion'), true)
+    for (const h of ['localhost', '127.0.0.1', '192.168.100.80', 'yasmin-alsham-new2-x.vercel.app', 'yasmin-alsham.fashion.evil.com'])
+      assert.equal(analytics.isAnalyticsProductionHost(h), false, h)
+    const run = (url, opts, stored = {}) => {
+      const storage = { ...stored }
+      const win = { location: new URL(url), history: { pushState() {}, replaceState() {} }, addEventListener() {}, URL, URLSearchParams, dataLayer: [],
+        localStorage: { getItem: k => storage[k] ?? null, setItem: (k, v) => { storage[k] = v }, removeItem: k => { delete storage[k] } } }
+      win.window = win
+      vm.runInContext(analytics.analyticsBootstrapScript(opts), vm.createContext(win))
+      return { flag: win['ga-disable-G-8KCD0TSPCJ'], off: win.__ysAnalyticsOff === true, pv: win.dataLayer.find(a => a[0] === 'config')[2].send_page_view, win }
+    }
+    const opts = { hosts: ['shop.example'] }
+    assert.deepEqual([run('https://shop.example/dashboard/orders/', opts).flag, run('https://shop.example/dashboard/orders/', opts).pv], [true, false])
+    assert.equal(run('https://shop.example/login/', opts).flag, true)
+    const visitor = run('https://shop.example/?utm_source=ig', opts)
+    assert.deepEqual([visitor.flag, visitor.off, visitor.pv], [false, false, true], 'a visitor on a public page is tracked')
+    assert.deepEqual([run('https://localhost/', {}).flag, run('http://192.168.100.80:3000/', {}).flag], [true, true])
+    assert.equal(run('https://shop.example/', { ...opts, enabled: false }).flag, true, 'NODE_ENV not production')
+    const staff = run('https://shop.example/fabrics/', opts, { 'ys-staff-device': '1' })
+    assert.deepEqual([staff.flag, staff.off, staff.pv], [true, true, false], 'a staff device on a public page')
+    assert.equal(run('https://shop.example/?staff-device=1', opts).flag, true)
+    // a staff device stays off after navigating to a public page, and the route guard agrees
+    assert.equal(analytics.applyAnalyticsRoute(staff.win, '/fabrics/abc/', false), 'excluded')
+    assert.equal(staff.win['ga-disable-G-8KCD0TSPCJ'], true)
+    return 'dashboard/login, staff devices, localhost/LAN/vercel.app and dev builds: flag on, no page_view'
   })
 
   await check('the «seen» key of a store alert does not change with the daily reconciliation time', () => {

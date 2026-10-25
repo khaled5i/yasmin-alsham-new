@@ -13,6 +13,7 @@
 import { z } from 'zod'
 import { FABRIC_MAX_CM_PER_LINE, FABRIC_VAT_BASIS_POINTS, type FabricLineRejection, type FabricPurchaseMode } from './pricing'
 import { divideRoundHalfUp } from './money'
+import { STORE_DELIVERY_TIMES } from '@/lib/store-legal'
 
 // ============================================
 // مفتاح الواجهة
@@ -64,7 +65,7 @@ export const FABRIC_STORE_MAX_LINES = 40
  * (مضمونها في `src/lib/store-legal.ts`). أي تغيير في مضمون سياسة يرفع إصدارها.
  */
 export const FABRIC_STORE_POLICY_VERSIONS = {
-  terms: '2026-10-20', // الشحن مجاني فوق 1000 ريال (قبله 2026-10-06: الشحن شامل الضريبة ووسائل الدفع المعتمدة)
+  terms: '2026-10-24', // الشحن من 2 إلى 5 أيام طوال الأسبوع (قبله 2026-10-20: الشحن مجاني فوق 1000 ريال؛ 2026-10-06: الشحن شامل الضريبة ووسائل الدفع المعتمدة)
   returns: '2026-09-28',
   privacy: '2026-10-20', // أحداث المتجر في Google Analytics وإشعار نجاح الدفع، وMicrosoft Clarity (قبله 2026-10-05: الاستضافة خارج المملكة، GA، محو العنوان بعد 90 يوماً)
 } as const
@@ -108,7 +109,7 @@ export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliver
     method: 'shipping',
     code: 'ksa_flat',
     label: 'شحن داخل السعودية',
-    description: 'سعر موحّد لكل مدن المملكة — التوصيل من 3 إلى 5 أيام عمل.',
+    description: `سعر موحّد لكل مدن المملكة — ${STORE_DELIVERY_TIMES.shippingShort}.`,
     shippingNetHalalas: divideRoundHalfUp(
       FABRIC_STORE_SHIPPING_GROSS_HALALAS * 10_000,
       10_000 + FABRIC_VAT_BASIS_POINTS
@@ -127,7 +128,7 @@ const FREE_SHIPPING_OPTION: FabricDeliveryOption = {
   method: 'shipping',
   code: 'ksa_free',
   label: 'شحن داخل السعودية',
-  description: 'مجاني لطلبك — التوصيل من 3 إلى 5 أيام عمل.',
+  description: `مجاني لطلبك — ${STORE_DELIVERY_TIMES.shippingShort}.`,
   shippingNetHalalas: 0,
   shippingGrossHalalas: 0,
 }

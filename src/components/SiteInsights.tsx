@@ -3,14 +3,16 @@
 import { useEffect, useState } from 'react'
 import Script from 'next/script'
 import { usePathname } from 'next/navigation'
-import { isClarityExcludedPath, isClarityProductionHost, isStaffDevice, markStaffDevice } from '@/lib/analytics-privacy'
+import { ANALYTICS_OFF_KEY, isAnalyticsExcludedPath, isAnalyticsProductionHost, isClarityExcludedPath, isStaffDevice, markStaffDevice } from '@/lib/analytics-privacy'
 import { trackWhatsAppClick } from '@/lib/fabric-analytics'
+import { readVisitSource, rememberVisitSource, shopFromWhatsAppHref } from '@/lib/whatsapp-tracking'
 import { supabase } from '@/lib/supabase'
 
 /**
  * أداتا فهم سلوك الزائرات:
- * 1. عدّاد ضغطات واتساب في كل الموقع (generate_lead في GA) بمستمع واحد، بدل ربط كل زر.
- *    الزر يحدد موضعه بـ data-wa-placement (ورمز القماش بـ data-wa-item) وإلا يُستنتج من المسار.
+ * 1. عدّاد ضغطات واتساب في كل الموقع (generate_lead في GA + جدول whatsapp_clicks) بمستمع واحد،
+ *    بدل ربط كل زر. الزر يحدد موضعه بـ data-wa-placement (ورمز القماش بـ data-wa-item) وإلا
+ *    يُستنتج من المسار، والمحل من الرقم في الرابط (whatsapp-tracking.ts).
  * 2. Microsoft Clarity (تسجيل الجلسات والخرائط الحرارية) — يُحمَّل فقط إن ضُبط
  *    NEXT_PUBLIC_CLARITY_PROJECT_ID. لا يُحمَّل في صفحات الدفع وتتبّع الطلب نفسها (نفس
  *    استثناء GA)، ويتوقف إن انتقلت الزائرة إليها. في لوحة Clarity يجب ضبط الإخفاء على
@@ -58,16 +60,30 @@ export default function SiteInsights() {
   const pathname = usePathname() ?? '/'
 
   useEffect(() => {
+    rememberVisitSource()
     const onClick = (event: MouseEvent) => {
       const link = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
       if (!link) return
       const href = link.href
       if (!/(^https?:\/\/(wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)\/)|^whatsapp:/i.test(href)) return
       const itemId = link.dataset.waItem
-      trackWhatsAppClick(
-        link.dataset.waPlacement || placementFor(window.location.pathname),
-        itemId ? { id: itemId } : undefined
-      )
+      const placement = link.dataset.waPlacement || placementFor(window.location.pathname)
+      const shop = shopFromWhatsAppHref(href)
+      trackWhatsAppClick(placement, itemId ? { id: itemId } : undefined, shop ?? undefined)
+      // عدّاد Supabase (لوحة «ضغطات واتساب»): رقما المحلين فقط، وليس من جهاز موظف أو خارج الإنتاج
+      // أو من صفحات مستثناة (لوحة التحكم ترسل أرقام الزبونات). keepalive يكمل الطلب بعد مغادرة الصفحة.
+      const off = (window as unknown as Record<string, unknown>)[ANALYTICS_OFF_KEY] === true
+      if (!shop || off || isAnalyticsExcludedPath(window.location.pathname)) return
+      try {
+        void fetch('/api/wa-click/', {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shop, placement, visitSource: readVisitSource() }),
+        }).catch(() => {})
+      } catch {
+        // المتصفح رفض الطلب: GA وحده يعدّ هذه الضغطة
+      }
     }
     document.addEventListener('click', onClick, { capture: true })
     return () => document.removeEventListener('click', onClick, { capture: true })
@@ -78,7 +94,7 @@ export default function SiteInsights() {
   const [clarityRequested, setClarityRequested] = useState(false)
 
   useEffect(() => {
-    if (!CLARITY_ID || !isClarityProductionHost(window.location.hostname) || isStaffDevice()) {
+    if (!CLARITY_ID || process.env.NODE_ENV !== 'production' || !isAnalyticsProductionHost(window.location.hostname) || isStaffDevice()) {
       setVisitorAllowed(false)
       return
     }

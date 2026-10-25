@@ -131,11 +131,14 @@ export default function RootLayout({
           }}
         />
         {/* Google tag (gtag.js) — معطّل في صفحات الطلب والدفع والتتبّع، وبلا استعلام في page_location (الدفعة D).
-            سكربت الحماية أولاً: يضبط العلم ويلفّ history قبل أن يُحمَّل gtag.js (R-CD-07). */}
+            سكربت الحماية أولاً: يضبط العلم ويلفّ history قبل أن يُحمَّل gtag.js (R-CD-07).
+            التشغيل المحلي (next dev) لا يحمّل gtag.js أصلاً؛ ونسخة الإنتاج خارج النطاق الرسمي تبقى معطّلة بالعلم. */}
         <script
-          dangerouslySetInnerHTML={{ __html: analyticsBootstrapScript() }}
+          dangerouslySetInnerHTML={{ __html: analyticsBootstrapScript({ enabled: process.env.NODE_ENV === 'production' }) }}
         />
-        <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}></script>
+        {process.env.NODE_ENV === 'production' && (
+          <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}></script>
+        )}
       </head>
       <body
         className={`${cairo.variable} ${notoKufi.variable} font-sans antialiased bg-gradient-to-br from-rose-50 to-pink-50 min-h-screen`}

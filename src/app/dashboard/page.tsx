@@ -45,7 +45,8 @@ import {
   Boxes,
   WalletCards,
   ReceiptText,
-  UserRound
+  UserRound,
+  MessageCircle
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 import { fetchStoreAlerts } from '@/components/fabric-store/StoreAlertsPanel'
@@ -749,6 +750,14 @@ function DashboardContent() {
                     <Users className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">متابعة العمال</span>
                   </Link>
+
+                  <Link
+                    href="/dashboard/whatsapp-stats"
+                    className="p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <MessageCircle className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-green-800">ضغطات واتساب</span>
+                  </Link>
                 </div>
               </motion.div>
             )}
@@ -942,6 +951,14 @@ function DashboardContent() {
                   >
                     <Users className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">متابعة العمال</span>
+                  </Link>
+
+                  <Link
+                    href="/dashboard/whatsapp-stats"
+                    className="p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <MessageCircle className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-green-800">ضغطات واتساب</span>
                   </Link>
                 </div>
               </motion.div>

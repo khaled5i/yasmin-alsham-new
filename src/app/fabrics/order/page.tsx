@@ -13,6 +13,7 @@ import {
   type FabricStorePaymentStatus,
 } from '@/lib/fabric-store/order-status'
 import { STORE_ENTITY, STORE_SUPPORT_PHONE } from '@/lib/store-legal'
+import FabricOrderReviews from '@/components/fabrics/FabricOrderReviews'
 
 /**
  * تتبّع طلب المتجر الإلكتروني (المرحلة 7). يعمل برابط واتساب (`#n=…&k=…`، والقديم `?t=…`) أو من المتصفح الذي
@@ -49,6 +50,9 @@ const money = (halalas: number) => `${formatFabricNumber(halalas / 100)} ريا�
 const when = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh' }) : ''
 
+/** طلب مفتوح بكوكي المتصفح: لا ترويسات إضافية (ثابت حتى لا يُعاد تحميل التقييمات مع كل رسم). */
+const COOKIE_ONLY: Record<string, string> = {}
+
 const card = 'mx-auto max-w-lg rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-6'
 
 /**
@@ -72,6 +76,8 @@ function OrderView() {
   const credentials = useRef<Record<string, string> | undefined | null>(null)
   // null = لم يُحمَّل بعد؛ [] = لا طلب محفوظ ⇒ نموذج البحث.
   const [orders, setOrders] = useState<TrackedOrder[] | null>(null)
+  // الطلب المفتوح بإثبات (كوكي أو رابط التتبّع) — وحده يُقيَّم؛ نتائج البحث بالجوال بلا إثبات
+  const [provenOrderNumber, setProvenOrderNumber] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
@@ -87,7 +93,7 @@ function OrderView() {
       .then(async response => {
         const data = await response.json().catch(() => null)
         if (!active) return
-        if (response.ok && data?.ok) { setOrders([data.order]); return }
+        if (response.ok && data?.ok) { setOrders([data.order]); setProvenOrderNumber(data.order.orderNumber); return }
         setOrders([])
         // لا رمز في هذا المتصفح ليس خطأً: نعرض البحث مباشرة.
         if (data?.code !== 'no-token') setError(data?.error || 'تعذّر تحميل الطلب')
@@ -156,12 +162,18 @@ function OrderView() {
         )}
       </form>
 
-      {orders.map(order => <OrderCard key={order.orderNumber} order={order} />)}
+      {orders.map(order => (
+        <OrderCard
+          key={order.orderNumber}
+          order={order}
+          reviewHeaders={order.orderNumber === provenOrderNumber ? credentials.current ?? COOKIE_ONLY : undefined}
+        />
+      ))}
     </div>
   )
 }
 
-function OrderCard({ order }: { order: TrackedOrder }) {
+function OrderCard({ order, reviewHeaders }: { order: TrackedOrder; reviewHeaders?: Record<string, string> }) {
   const cancelled = order.fulfillmentStatus === 'cancelled'
   const steps = customerSteps(order.deliveryMethod)
   const current = customerStepIndex(order.paymentStatus, order.fulfillmentStatus)
@@ -263,6 +275,10 @@ function OrderCard({ order }: { order: TrackedOrder }) {
           <span>الإجمالي شامل الضريبة</span><span>{money(order.totalHalalas)}</span>
         </p>
       </div>
+
+      {reviewHeaders && order.fulfillmentStatus === 'delivered' && !order.isTest && (
+        <FabricOrderReviews headers={reviewHeaders} />
+      )}
 
       <p className="text-center text-sm text-[#211b19]/70">
         لأي استفسار تواصلي معنا على

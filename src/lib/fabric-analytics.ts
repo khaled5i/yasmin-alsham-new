@@ -8,7 +8,7 @@
  * begin_checkout عند الضغط قبل الانتقال، وpurchase له مسار خاص موثَّق في trackFabricPurchase.
  */
 
-import { GA_DISABLE_FLAG } from './analytics-privacy'
+import { ANALYTICS_OFF_KEY, GA_DISABLE_FLAG } from './analytics-privacy'
 
 export interface FabricAnalyticsItem {
   item_id: string
@@ -123,11 +123,15 @@ function readCheckoutItems(): FabricAnalyticsItem[] {
   }
 }
 
-/** ضغطة على أي زر واتساب في المتجر (generate_lead حدث GA4 قياسي يمكن جعله «حدثاً رئيسياً»). */
-export const trackWhatsAppClick = (placement: string, fabric?: ItemSource) =>
+/**
+ * ضغطة على أي زر واتساب في المتجر (generate_lead حدث GA4 قياسي يمكن جعله «حدثاً رئيسياً»).
+ * shop: أي المحلين (fabrics/tailoring) حسب الرقم في الرابط.
+ */
+export const trackWhatsAppClick = (placement: string, fabric?: ItemSource, shop?: string) =>
   send('generate_lead', {
     lead_source: 'whatsapp',
     placement,
+    ...(shop && { shop }),
     ...(fabric && { item_id: fabric.fabric_code?.trim() || fabric.id }),
     transport_type: 'beacon',
   })
@@ -148,6 +152,8 @@ export const trackFabricFilter = (filterType: string, value: string) =>
 export function trackFabricPurchase(orderNumber: string, totalSar: number) {
   const g = gtag()
   if (!g || !orderNumber) return
+  // جهاز موظف أو خارج النطاق الرسمي: العلم لا يُرفع أبداً
+  if ((window as unknown as Record<string, unknown>)[ANALYTICS_OFF_KEY] === true) return
   const key = `ga-purchase-${orderNumber}`
   try {
     if (window.sessionStorage.getItem(key)) return

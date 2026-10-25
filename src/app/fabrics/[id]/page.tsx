@@ -4,6 +4,15 @@ import type { Metadata } from 'next'
 import { supabase } from '@/lib/supabase'
 import { isFabricPubliclyVisible } from '@/lib/fabric-store/pricing'
 import { getFabricNetPricePerMeter, getFabricStorefrontPricing } from '@/lib/fabric-display-pricing'
+import { buildFabricReturnPolicy, buildFabricShippingDetails } from '@/lib/fabric-store/structured-data'
+import {
+  FABRIC_REVIEWS_SHOWN,
+  buildFabricReviewJsonLd,
+  summarizeFabricRatings,
+  type FabricReviewSummary,
+  type PublicFabricReview,
+} from '@/lib/fabric-store/reviews'
+import FabricReviews from '@/components/fabrics/FabricReviews'
 import FabricDetailClient from './FabricDetailClient'
 
 const SITE_URL = 'https://www.yasmin-alsham.fashion'
@@ -52,6 +61,28 @@ const lookupFabric = cache(async (id: string): Promise<FabricLookup> => {
   if (!data || !isFabricPubliclyVisible(data)) return { status: 'missing' }
   return { status: 'found', fabric: data as FabricSeoRow }
 })
+
+/**
+ * التقييمات المنشورة: الأحدث للعرض، وكل النجوم للمتوسط. أي خطأ (ومنه جدول لم يُنشأ
+ * بعد) ⇒ بلا تقييمات، فلا تتعطل صفحة القماش ولا يظهر في JSON-LD تقييم غير معروض.
+ */
+async function loadFabricReviews(fabricId: string): Promise<{ summary: FabricReviewSummary; reviews: PublicFabricReview[] }> {
+  const empty = { summary: summarizeFabricRatings([]), reviews: [] }
+  const table = () => supabase.from('fabric_product_reviews')
+  const [shown, ratings] = await Promise.all([
+    table()
+      .select('id,rating,comment,reviewer_name,created_at')
+      .eq('fabric_id', fabricId)
+      .order('created_at', { ascending: false })
+      .limit(FABRIC_REVIEWS_SHOWN),
+    table().select('rating').eq('fabric_id', fabricId).limit(5000),
+  ])
+  if (shown.error || ratings.error) return empty
+  return {
+    summary: summarizeFabricRatings((ratings.data ?? []).map(row => Number(row.rating))),
+    reviews: (shown.data ?? []) as PublicFabricReview[],
+  }
+}
 
 function fabricTitle(fabric: FabricSeoRow): string {
   return fabric.name?.trim() || (fabric.fabric_code ? `قماش ${fabric.fabric_code}` : 'قماش نسائي')
@@ -107,8 +138,9 @@ export default async function FabricDetailPage({ params }: Props) {
   if (lookup.status === 'unknown') return <FabricDetailClient />
 
   const { fabric } = lookup
-  const price = getFabricStorefrontPricing(getFabricNetPricePerMeter(fabric), fabric.stock_quantity).amount
+  const { amount: price, isWholePiecePrice } = getFabricStorefrontPricing(getFabricNetPricePerMeter(fabric), fabric.stock_quantity)
   const images = fabricImages(fabric)
+  const { summary: reviewSummary, reviews } = await loadFabricReviews(fabric.id)
   const productJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
@@ -117,6 +149,7 @@ export default async function FabricDetailPage({ params }: Props) {
     ...(images.length > 0 && { image: images.slice(0, 5) }),
     ...(fabric.fabric_code && { sku: fabric.fabric_code }),
     brand: { '@type': 'Brand', name: 'ياسمين الشام' },
+    ...buildFabricReviewJsonLd(reviewSummary, reviews),
     ...(price != null && {
       offers: {
         '@type': 'Offer',
@@ -125,6 +158,8 @@ export default async function FabricDetailPage({ params }: Props) {
         price,
         availability: (fabric.stock_quantity ?? 0) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
         seller: { '@type': 'Organization', name: 'ياسمين الشام' },
+        shippingDetails: buildFabricShippingDetails(price),
+        hasMerchantReturnPolicy: buildFabricReturnPolicy(isWholePiecePrice),
       },
     }),
   }
@@ -136,6 +171,7 @@ export default async function FabricDetailPage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd).replace(/</g, '\\u003c') }}
       />
       <FabricDetailClient />
+      <FabricReviews summary={reviewSummary} reviews={reviews} />
     </>
   )
 }
