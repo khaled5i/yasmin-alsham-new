@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Script from 'next/script'
 import { usePathname } from 'next/navigation'
-import { ANALYTICS_OFF_KEY, isAnalyticsExcludedPath, isAnalyticsProductionHost, isClarityExcludedPath, isStaffDevice, markStaffDevice } from '@/lib/analytics-privacy'
+import { ANALYTICS_OFF_KEY, CLARITY_EXCLUDED_PATH_PREFIXES, isAnalyticsProductionHost, isClarityExcludedPath, isStaffDevice, markStaffDevice } from '@/lib/analytics-privacy'
 import { trackWhatsAppClick } from '@/lib/fabric-analytics'
 import { readVisitSource, rememberVisitSource, shopFromWhatsAppHref } from '@/lib/whatsapp-tracking'
 import { supabase } from '@/lib/supabase'
@@ -51,6 +51,8 @@ function placementFor(pathname: string): string {
   if (pathname === '/' || pathname === '') return 'home'
   if (pathname.startsWith('/fabrics/cart')) return 'cart'
   if (pathname.startsWith('/fabrics/favorites')) return 'favorites'
+  if (pathname.startsWith('/fabrics/checkout')) return 'checkout'
+  if (pathname.startsWith('/fabrics/order')) return 'order_tracking'
   if (/^\/fabrics\/[^/]+\/?$/.test(pathname)) return 'fabric_page'
   if (pathname.startsWith('/fabrics')) return 'store'
   return pathname.split('/').filter(Boolean)[0] ?? 'other'
@@ -70,10 +72,12 @@ export default function SiteInsights() {
       const placement = link.dataset.waPlacement || placementFor(window.location.pathname)
       const shop = shopFromWhatsAppHref(href)
       trackWhatsAppClick(placement, itemId ? { id: itemId } : undefined, shop ?? undefined)
-      // عدّاد Supabase (لوحة «ضغطات واتساب»): رقما المحلين فقط، وليس من جهاز موظف أو خارج الإنتاج
-      // أو من صفحات مستثناة (لوحة التحكم ترسل أرقام الزبونات). keepalive يكمل الطلب بعد مغادرة الصفحة.
+      // عدّاد Supabase (لوحة «ضغطات واتساب»): كل ضغطة على رقم أحد المحلين، في كل صفحات الموقع بما فيها
+      // إتمام الطلب وتتبّعه (الطلب لا يحمل أي بيان شخصي ولا عنوان الصفحة، فاستثناء GA لا يلزمه)،
+      // إلا من جهاز موظف أو خارج الإنتاج أو من صفحات الموظفين. keepalive يكمل الطلب بعد مغادرة الصفحة.
       const off = (window as unknown as Record<string, unknown>)[ANALYTICS_OFF_KEY] === true
-      if (!shop || off || isAnalyticsExcludedPath(window.location.pathname)) return
+      const staffPage = CLARITY_EXCLUDED_PATH_PREFIXES.some(prefix => window.location.pathname.startsWith(prefix))
+      if (!shop || off || staffPage) return
       try {
         void fetch('/api/wa-click/', {
           method: 'POST',
