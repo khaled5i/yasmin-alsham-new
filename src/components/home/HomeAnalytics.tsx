@@ -12,7 +12,8 @@ export default function HomeAnalytics() {
 
     trackHomeEvent('home_view', {
       device_type: window.matchMedia('(max-width: 767px)').matches ? 'mobile' : 'desktop',
-      source: document.referrer ? 'referral' : 'direct',
+      // ليس `source`: GA4 يقرأ هذا الاسم كمصدر الزيارة فيظهر «referral /» و«direct /» في Unassigned
+      entry_type: document.referrer ? 'referral' : 'direct',
     })
   }, [])
 
