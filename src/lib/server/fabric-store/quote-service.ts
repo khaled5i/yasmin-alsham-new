@@ -16,8 +16,7 @@ import {
   type QuotedFabricLine,
 } from '@/lib/fabric-store/checkout-contract'
 import {
-  computeFabricOrderBreakdown,
-  computeFabricOrderTotals,
+  computeFabricGrossOrderBreakdown,
   priceFabricLine,
   type FabricPurchaseMode,
   type FabricSaleSource,
@@ -124,7 +123,7 @@ export function priceCart(
     const reject = (status: QuotedFabricLine['status'], currentMode: FabricPurchaseMode | null = null) =>
       quoted.push({
         fabricId: request.fabricId, status, currentMode, label: null,
-        unitPriceHalalas: null, netHalalas: null, availableCm: null,
+        unitPriceHalalas: null, grossHalalas: null, availableCm: null,
       })
 
     // غير الموجود والمخفي «غير متاح» بلا أي تفصيل: لا يُكشف سعر قماش مخفي.
@@ -144,30 +143,28 @@ export function priceCart(
     if (!result.ok) {
       quoted.push({
         fabricId: request.fabricId, status: result.reason, currentMode: result.currentMode, label,
-        unitPriceHalalas: null, netHalalas: null, availableCm,
+        unitPriceHalalas: null, grossHalalas: null, availableCm,
       })
       continue
     }
     quoted.push({
       fabricId: request.fabricId, status: 'ok', currentMode: result.line.purchaseMode, label,
-      unitPriceHalalas: result.line.unitPriceHalalas, netHalalas: result.line.netHalalas, availableCm,
+      unitPriceHalalas: result.line.unitPriceHalalas, grossHalalas: result.line.grossHalalas, availableCm,
     })
     priced.push({ line: result.line, row, fabric })
   }
 
   const allOk = priced.length === lines.length
   // عتبة الشحن المجاني تُقاس على الأقمشة السليمة شاملة الضريبة، قبل الشحن.
-  const itemsGrossHalalas = priced.length > 0
-    ? computeFabricOrderTotals(priced.map(entry => entry.line.netHalalas)).totalHalalas
-    : 0
+  const itemsGrossHalalas = priced.reduce((sum, entry) => sum + entry.line.grossHalalas, 0)
   const delivery = resolveFabricDeliveryOption(deliveryMethod, itemsGrossHalalas)
   let totals: FabricQuoteResponse['totals'] = null
   let order: PricedCart['order'] = null
   let overOrderCap = false
 
   if (priced.length > 0) {
-    const breakdown = computeFabricOrderBreakdown(
-      priced.map(entry => entry.line.netHalalas),
+    const breakdown = computeFabricGrossOrderBreakdown(
+      priced.map(entry => entry.line.grossHalalas),
       { shippingNetHalalas: delivery.shippingNetHalalas, shippingGrossHalalas: delivery.shippingGrossHalalas }
     )
     totals = {
@@ -190,8 +187,9 @@ export function priceCart(
           price_per_meter_halalas: toScaledInteger(row.price_per_meter, 2) as number,
           discount_basis_points: toScaledInteger(getEffectiveFabricDiscountPercent(fabric), 2) ?? 0,
           unit_price_halalas: line.unitPriceHalalas,
-          net_halalas: line.netHalalas,
-          vat_halalas: breakdown.lineGrossHalalas[index] - line.netHalalas,
+          // صافي السطر وحصته من ضريبة الطلب؛ القاعدة تتحقق أن مجموعهما = سعر المتر الشامل × الأمتار.
+          net_halalas: breakdown.lineNetHalalas[index],
+          vat_halalas: breakdown.lineVatHalalas[index],
         })),
         delivery,
         itemsNetHalalas: breakdown.itemsNetHalalas,

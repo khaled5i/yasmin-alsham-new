@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { AlertTriangle, ArrowRight, Heart, Loader2, Trash2 } from 'lucide-react'
+import FabricStoreLoader from '@/components/fabrics/FabricStoreLoader'
 import toast from 'react-hot-toast'
 import FabricAddToCartButton from '@/components/fabrics/FabricAddToCartButton'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
@@ -11,13 +12,11 @@ import {
   IS_FABRIC_CART_ENABLED,
   formatPurchaseModeLabel,
   formatUnitPriceLabel,
-  getFabricPieceMeters,
+  getFabricPayablePricePerMeter,
   getFabricPurchaseMode,
-  getFabricUnitPrice,
   isFabricPubliclyVisible,
 } from '@/lib/fabric-commerce'
 import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
-import { withFabricVat } from '@/lib/fabric-display-pricing'
 import { useFabricFavoritesStore } from '@/store/fabricFavoritesStore'
 
 export default function FabricFavoritesPage() {
@@ -97,10 +96,7 @@ export default function FabricFavoritesPage() {
         )}
 
         {(isPending || (isLoading && entries.length === 0)) && (
-          <div className="flex flex-col items-center justify-center py-24 text-[#211b19]/60">
-            <Loader2 className="mb-3 h-10 w-10 animate-spin text-[#6b1726]" aria-hidden="true" />
-            <p>جاري تحميل المفضلة...</p>
-          </div>
+          <FabricStoreLoader fullScreen size="lg" />
         )}
 
         {isEmpty && (
@@ -132,7 +128,7 @@ export default function FabricFavoritesPage() {
               const image =
                 fabric?.images?.[0] || fabric?.thumbnail_image || fabric?.image_url || entry.fallbackImage
               const isSellable = fabric ? isFabricPubliclyVisible(fabric) : false
-              const unitPrice = fabric ? getFabricUnitPrice(fabric) : null
+              const pricePerMeter = fabric ? getFabricPayablePricePerMeter(fabric) : null
               const mode = fabric ? getFabricPurchaseMode(fabric) : 'meter'
               const whatsappLink = `https://wa.me/${FABRIC_STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(
                 `مرحباً، أود الاستفسار عن القماش: ${label}`
@@ -208,8 +204,8 @@ export default function FabricFavoritesPage() {
                     </div>
 
                     <p className="mt-2 text-sm font-bold text-[#6b1726]">
-                      {formatUnitPriceLabel(withFabricVat(unitPrice), mode, fabric && mode === 'piece' ? getFabricPieceMeters(fabric) : null)}
-                      {unitPrice != null && <span className="font-normal text-[#211b19]/55"> شامل الضريبة</span>}
+                      {formatUnitPriceLabel(pricePerMeter, 'meter')}
+                      {pricePerMeter != null && <span className="font-normal text-[#211b19]/55"> شامل الضريبة</span>}
                     </p>
 
                     <div className="mt-auto pt-4">

@@ -341,7 +341,8 @@ export interface QuotedFabricLine {
   currentMode: FabricPurchaseMode | null
   label: string | null
   unitPriceHalalas: number | null
-  netHalalas: number | null
+  /** إجمالي السطر شاملاً الضريبة (سعر المتر بريال كامل × الأمتار). */
+  grossHalalas: number | null
   /** المتاح للبيع الإلكتروني الآن بالسنتيمتر (الفعلي − المحجوز). يُعاد فقط للقماش المعروض. */
   availableCm: number | null
 }

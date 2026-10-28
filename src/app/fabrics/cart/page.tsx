@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { AlertTriangle, ArrowRight, Loader2, ShoppingBag } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ShoppingBag } from 'lucide-react'
+import FabricStoreLoader from '@/components/fabrics/FabricStoreLoader'
 import FabricCartLineRow from '@/components/fabrics/FabricCartLineRow'
 import FabricCartSummary from '@/components/fabrics/FabricCartSummary'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
@@ -87,10 +88,7 @@ export default function FabricCartPage() {
         )}
 
         {(isPending || (isLoading && lines.length === 0)) && (
-          <div className="flex flex-col items-center justify-center py-24 text-[#211b19]/60">
-            <Loader2 className="mb-3 h-10 w-10 animate-spin text-[#6b1726]" aria-hidden="true" />
-            <p>جاري تحميل السلة...</p>
-          </div>
+          <FabricStoreLoader fullScreen size="lg" />
         )}
 
         {isEmpty && (

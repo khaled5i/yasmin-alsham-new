@@ -16,6 +16,8 @@
  *   أمتار ثابت على طولها مع ملاحظة «أقل كمية طلب» — الدفع والحجز بلا تغيير.
  * - البيع بالمتر: حد أدنى 1 متر وخطوة 0.5 متر.
  * - الأسعار المخزّنة غير شاملة الضريبة ⇒ تُضاف 15% في السلة.
+ * - تعديل 27 أكتوبر 2026: سعر المتر شاملاً الضريبة يُقرَّب لأقرب ريال كامل وهو ما
+ *   يُدفع (287.50 ⇒ 288)؛ أسطر السلة وإجمالياتها شاملة الضريبة من هذا السعر.
  * - `price_per_meter = null` يعني «السعر عند الطلب» ⇒ لا يُشترى تلقائياً.
  *   والصفر يبقى صفراً ولا يتحول إلى سعر افتراضي، ولا يُسمح بشرائه.
  */
@@ -27,8 +29,9 @@ import {
   FABRIC_METER_MIN_FALLBACK_CM,
   FABRIC_METER_STEP_CM,
   FABRIC_VAT_BASIS_POINTS,
-  computeFabricLineNetHalalas,
-  computeFabricOrderTotals,
+  computeFabricGrossOrderTotals,
+  computeFabricLineGrossHalalas,
+  getFabricGrossPricePerMeterHalalas,
   getFabricMeterBounds,
   getFabricPurchaseMode,
   getFabricStockCentimeters,
@@ -138,6 +141,15 @@ export function getFabricUnitPrice(fabric: Fabric): number | null {
   return halalas == null ? null : halalasToSar(halalas)
 }
 
+/**
+ * سعر المتر شاملاً الضريبة بريال كامل — ما تراه الزبونة وما تدفعه للمتر، للمتر
+ * وللقطعة الكاملة معاً (`getFabricGrossPricePerMeterHalalas`).
+ */
+export function getFabricPayablePricePerMeter(fabric: Fabric): number | null {
+  const halalas = getFabricGrossPricePerMeterHalalas(fabric)
+  return halalas == null ? null : halalasToSar(halalas)
+}
+
 /** حدود الكمية المسموحة لهذا القماش بطريقة بيعه الحالية. */
 export interface FabricQuantityBounds {
   min: number
@@ -211,31 +223,34 @@ export interface ResolvedFabricCartLine {
   status: FabricLineStatus
   isPurchasable: boolean
   purchaseMode: FabricPurchaseMode
+  /** سعر الوحدة قبل الضريبة (للمتر أو للقطعة) — لمقارنة اللقطة المحفوظة فقط. */
   unitPrice: number | null
+  /** سعر المتر شاملاً الضريبة بريال كامل، كما يُعرض ويُدفع. */
+  payablePricePerMeter: number | null
   quantity: number
   bounds: FabricQuantityBounds | null
-  /** إجمالي السطر قبل الضريبة بالريال (للعرض). */
+  /** إجمالي السطر شاملاً الضريبة بالريال (للعرض) = سعر المتر الشامل × الأمتار. */
   lineTotal: number | null
   /** نفس الإجمالي بالهللة — منه تُجمع الإجماليات، لا من الرقم العشري. */
   lineTotalHalalas: number | null
   notices: FabricLineNotice[]
 }
 
-/** إجمالي سطر السلة بالهللة من سعر الوحدة والكمية المثبّتة على حدودها. */
-function getCartLineNetHalalas(
+/** إجمالي سطر السلة شاملاً الضريبة بالهللة من سعر المتر الشامل والكمية المثبّتة على حدودها. */
+function getCartLineGrossHalalas(
   fabric: Fabric,
-  unitPriceHalalas: number,
+  grossPerMeterHalalas: number,
   purchaseMode: FabricPurchaseMode,
   quantity: number
 ): number {
   if (purchaseMode === 'piece') {
-    return computeFabricLineNetHalalas(unitPriceHalalas, {
+    return computeFabricLineGrossHalalas(grossPerMeterHalalas, {
       unit: 'piece',
       pieces: quantity,
       pieceLengthCm: getFabricStockCentimeters(fabric),
     })
   }
-  return computeFabricLineNetHalalas(unitPriceHalalas, {
+  return computeFabricLineGrossHalalas(grossPerMeterHalalas, {
     unit: 'meter',
     centimeters: metersToCentimeters(quantity) ?? 0,
   })
@@ -267,6 +282,7 @@ export function resolveCartLine(
     lineTotal: null,
     lineTotalHalalas: null,
     unitPrice: null,
+    payablePricePerMeter: null,
     purchaseMode: line.purchaseMode,
     notices,
   }
@@ -293,10 +309,12 @@ export function resolveCartLine(
   }
 
   const unitPriceHalalas = getFabricUnitPriceHalalas(fabric)
-  if (unitPriceHalalas == null) {
+  const grossPerMeterHalalas = getFabricGrossPricePerMeterHalalas(fabric)
+  if (unitPriceHalalas == null || grossPerMeterHalalas == null) {
     return { ...base, fabric, purchaseMode, status: 'price-on-request', isPurchasable: false }
   }
   const unitPrice = halalasToSar(unitPriceHalalas)
+  const payablePricePerMeter = halalasToSar(grossPerMeterHalalas)
 
   const bounds = getFabricQuantityBounds(fabric)
 
@@ -310,6 +328,7 @@ export function resolveCartLine(
       fabric,
       purchaseMode,
       unitPrice,
+      payablePricePerMeter,
       bounds,
       quantity: clampFabricQuantity(line.quantity, bounds) ?? bounds.min,
       status: 'needs-quantity',
@@ -323,11 +342,11 @@ export function resolveCartLine(
 
   const clamped = clampFabricQuantity(line.quantity, bounds)
   if (clamped == null) {
-    return { ...base, fabric, purchaseMode, unitPrice, bounds, status: 'out-of-stock', isPurchasable: false }
+    return { ...base, fabric, purchaseMode, unitPrice, payablePricePerMeter, bounds, status: 'out-of-stock', isPurchasable: false }
   }
   if (clamped !== roundFabricNumber(line.quantity)) notices.push('quantity-adjusted')
 
-  const lineTotalHalalas = getCartLineNetHalalas(fabric, unitPriceHalalas, purchaseMode, clamped)
+  const lineTotalHalalas = getCartLineGrossHalalas(fabric, grossPerMeterHalalas, purchaseMode, clamped)
 
   return {
     // المفتاح يُبنى دائماً من طريقة البيع المحفوظة لا الحيّة: هو عنوان السطر
@@ -339,6 +358,7 @@ export function resolveCartLine(
     isPurchasable: true,
     purchaseMode,
     unitPrice,
+    payablePricePerMeter,
     quantity: clamped,
     bounds,
     lineTotal: halalasToSar(lineTotalHalalas),
@@ -366,18 +386,18 @@ export interface FabricCartTotals {
 
 /**
  * الإجمالي المحلي تقديري للعرض فقط؛ الخادم هو مرجع السعر النهائي عند الطلب،
- * لكنه يحسبه بنفس الدالة (`computeFabricOrderTotals`) فلا يختلف الرقمان إلا إن
+ * لكنه يحسبه بنفس الدالة (`computeFabricGrossOrderTotals`) فلا يختلف الرقمان إلا إن
  * تغيّرت البيانات نفسها. الأسطر غير القابلة للشراء لا تدخل الإجمالي لكنها
  * تبقى ظاهرة في السلة.
  */
 export function computeCartTotals(lines: ResolvedFabricCartLine[]): FabricCartTotals {
-  const lineNetHalalas: number[] = []
+  const lineGrossHalalas: number[] = []
   let purchasableCount = 0
   let blockedCount = 0
 
   for (const line of lines) {
     if (line.isPurchasable && line.lineTotalHalalas != null) {
-      lineNetHalalas.push(line.lineTotalHalalas)
+      lineGrossHalalas.push(line.lineTotalHalalas)
       purchasableCount += 1
     } else if (line.status !== 'pending') {
       // السطر قيد التحميل ليس سطراً «معطّلاً»؛ أما المنتظر إعادة اختيار الكمية
@@ -386,7 +406,7 @@ export function computeCartTotals(lines: ResolvedFabricCartLine[]): FabricCartTo
     }
   }
 
-  const totals = computeFabricOrderTotals(lineNetHalalas)
+  const totals = computeFabricGrossOrderTotals(lineGrossHalalas)
   return {
     subtotal: halalasToSar(totals.itemsNetHalalas),
     vat: halalasToSar(totals.vatHalalas),

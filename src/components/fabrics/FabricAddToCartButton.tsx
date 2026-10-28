@@ -152,7 +152,7 @@ export default function FabricAddToCartButton({
   }
 
   const buttonBase =
-    'flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 font-bold transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]'
+    'flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-3 font-bold transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbf8f3]'
 
   return (
     <div className={`space-y-3 ${className}`}>

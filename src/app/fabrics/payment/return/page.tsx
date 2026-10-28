@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, RefreshCw } from 'lucide-react'
+import FabricStoreLoader from '@/components/fabrics/FabricStoreLoader'
 import FabricPayNowButton from '@/components/fabrics/FabricPayNowButton'
 import { IS_FABRIC_STORE_PAYMENTS_ENABLED } from '@/lib/fabric-store/checkout-contract'
 import { IS_FABRIC_STORE_ORDERS_ENABLED } from '@/lib/fabric-store/order-status'
@@ -176,7 +177,7 @@ function ReturnView() {
 
   return (
     <div className={card} role="status" aria-live="polite">
-      <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-[#6b1726]" aria-hidden="true" />
+      <div className="mb-3"><FabricStoreLoader size="sm" /></div>
       <h1 className="mb-2 text-xl font-bold">جارٍ التحقق من الدفع...</h1>
       <p className="text-sm text-[#211b19]/70">لا تغلقي الصفحة ولا تدفعي مرة أخرى.</p>
       {error && <p className="mt-3 text-sm font-semibold text-[#6b1726]">{error}</p>}
@@ -187,7 +188,7 @@ function ReturnView() {
 export default function FabricPaymentReturnPage() {
   return (
     <main className="min-h-screen bg-[#fbf8f3] px-4 py-10 text-[#211b19]">
-      <Suspense fallback={<div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-[#6b1726]" aria-hidden="true" /></div>}>
+      <Suspense fallback={<FabricStoreLoader fullScreen size="lg" />}>
         <ReturnView />
       </Suspense>
     </main>

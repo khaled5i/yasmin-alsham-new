@@ -3,15 +3,16 @@
 import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import { ArrowRight, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, Search, X, Eye, Grid3X3, Grid2X2, Shirt } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, Search, X, Eye, Shirt } from 'lucide-react'
 import { useFabricStore, Fabric, getFinalPrice, hasFabricDesignImages } from '@/store/fabricStore'
 import FabricSortOptions from '@/components/FabricSortOptions'
 
 import dynamic from 'next/dynamic'
 import { getSupabaseImageSrcSet, getSupabaseImageUrl, isVideoFile } from '@/lib/utils/media'
-import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { FABRICS_PER_PAGE, useFabricBrowsePosition } from '@/hooks/useFabricBrowsePosition'
 import FabricStoreActionsBar from '@/components/fabrics/FabricStoreActionsBar'
+import FabricStoreLoader from '@/components/fabrics/FabricStoreLoader'
+import DesignFlipCard from '@/components/fabrics/DesignFlipCard'
 import { StoreTrustStrip } from '@/components/fabrics/StoreTrust'
 import { matchesFabricSearch } from '@/lib/fabric-search'
 import { toAnalyticsItem, trackFabricFilter, trackFabricListView, trackFabricSearch, trackFabricSelect } from '@/lib/fabric-analytics'
@@ -71,7 +72,6 @@ export default function FabricsPage() {
   const { fabrics, loadFabrics, isLoading, error, getFilteredFabrics, filters, sortBy, setFilters, resetFilters } = useFabricStore()
   // وضع «التصاميم النهائية»: يعرض الأقمشة التي تملك تصاميم فقط، وبصورة التصميم بدل صورة القماش
   const [showDesigns, setShowDesigns] = useState(false)
-  const designsCount = fabrics.filter(hasFabricDesignImages).length
   // البحث له شريط خاص به، فالعدّاد على زر التصفية يحسب ما في لوحة الفلاتر فقط
   const activeFiltersCount = filters.category.length + filters.colors.length + (filters.priceRange ? 1 : 0)
   const kindChips = useMemo(() => FABRIC_KIND_CHIPS.filter(({ query }) =>
@@ -79,10 +79,12 @@ export default function FabricsPage() {
   const matchingFabrics = getFilteredFabrics()
   const filteredFabrics = showDesigns ? matchingFabrics.filter(hasFabricDesignImages) : matchingFabrics
   const {
-    page, setPage, isSingleColumn, setIsSingleColumn,
+    page, setPage,
     currentImageIndexes, setCurrentImageIndexes,
     isReady, isRestoring, restoredCount, rememberFabric,
   } = useFabricBrowsePosition(JSON.stringify({ filters, sortBy }), filteredFabrics, isLoading)
+  // زر العرض الأحادي أُزيل، فالشبكة ثنائية دائماً على الجوال حتى لمن حفظ «single» سابقاً
+  const isSingleColumn = false
   const displayedFabrics = isReady ? filteredFabrics.slice(0, page * FABRICS_PER_PAGE) : []
   const hasMore = displayedFabrics.length < filteredFabrics.length
   const [isFilterOpen, setIsFilterOpen] = useState(false)
@@ -90,10 +92,15 @@ export default function FabricsPage() {
   const [isQuickViewOpen, setIsQuickViewOpen] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
 
+  // قبل أول طلب تكون القائمة فارغة وisLoading=false، فلا نعرض «لا توجد أقمشة» حتى ينتهي الطلب
+  const [hasLoadSettled, setHasLoadSettled] = useState(false)
+
   useEffect(() => {
     console.log('🔄 تحميل الأقمشة من Supabase...')
-    loadFabrics(true) // forceReload = true للحصول على أحدث الأقمشة
+    loadFabrics(true).finally(() => setHasLoadSettled(true)) // forceReload = true للحصول على أحدث الأقمشة
   }, [loadFabrics])
+
+  const isInitialLoading = fabrics.length === 0 && !error && (isLoading || !hasLoadSettled)
 
   // ?q= من بلاطات «تسوقي حسب الخامة» في الرئيسية: يُطبَّق مرة ثم يُحذف من الرابط،
   // فلا يعيد فرض الفلتر إن غيّرته الزائرة ثم عادت للصفحة
@@ -175,13 +182,6 @@ export default function FabricsPage() {
     setShowDesigns(prev => !prev)
   }
 
-  // حفظ حالة العرض في localStorage
-  const toggleViewMode = () => {
-    const newMode = !isSingleColumn
-    setIsSingleColumn(newMode)
-    try { localStorage.setItem('yasmin-fabrics-view-mode', newMode ? 'single' : 'double') } catch { /* Optional preference. */ }
-  }
-
   // فتح QuickView
   const openQuickView = (fabric: Fabric, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -198,6 +198,8 @@ export default function FabricsPage() {
 
   return (
     <>
+      {/* غطاء الشعار يخفي الصفحة كلها حتى تصل الأقمشة؛ خارج main حتى لا يحبسه أي transform */}
+      {isInitialLoading && <FabricStoreLoader fullScreen size="lg" />}
       <main className="min-h-screen bg-[#fbf8f3] text-[#211b19]">
         {/* رأس ثابت أعلى الشاشة: رجوع، العنوان، المفضلة والسلة.
             بلا transform ولا backdrop-filter حتى لا يُحبس درج السلة (fixed) داخله. */}
@@ -240,14 +242,14 @@ export default function FabricsPage() {
             {/* البحث + زر الفلاتر بجانبه */}
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute right-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#6b1726]/70" aria-hidden="true" />
+                <Search className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6b1726]/70" aria-hidden="true" />
                 <input
                   type="search"
                   enterKeyHint="search"
                   placeholder="ابحثي بالنوع أو اللون أو الرقم"
                   value={filters.searchQuery}
                   onChange={(e) => setFilters({ searchQuery: e.target.value })}
-                  className="h-12 w-full rounded-full border border-[#d8c5ae] bg-white pl-11 pr-11 text-[15px] text-[#211b19] shadow-[0_1px_2px_rgba(47,12,20,0.04)] transition-colors placeholder:text-[#211b19]/40 focus:border-[#6b1726] focus:outline-none focus:ring-4 focus:ring-[#b99a68]/20 [&::-webkit-search-cancel-button]:hidden"
+                  className="h-11 w-full rounded-full border border-[#d8c5ae] bg-white pl-10 pr-10 text-sm text-[#211b19] shadow-[0_1px_2px_rgba(47,12,20,0.04)] transition-colors placeholder:text-[#211b19]/40 focus:border-[#6b1726] focus:outline-none focus:ring-4 focus:ring-[#b99a68]/20 [&::-webkit-search-cancel-button]:hidden"
                   aria-label="البحث عن الأقمشة"
                 />
                 {filters.searchQuery && (
@@ -265,17 +267,18 @@ export default function FabricsPage() {
               <button
                 type="button"
                 onClick={() => setIsFilterOpen(true)}
-                className="relative inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#6b1726] px-4 text-[#f6f0e8] shadow-sm transition-colors hover:bg-[#2f0c14] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#b99a68]/40 sm:px-5"
+                className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#6b1726] text-[#f6f0e8] shadow-sm transition-colors hover:bg-[#2f0c14] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#b99a68]/40"
                 aria-label={activeFiltersCount > 0 ? `فتح الفلاتر، ${activeFiltersCount} مفعّل` : 'فتح الفلاتر'}
               >
                 <SlidersHorizontal className="h-[18px] w-[18px]" aria-hidden="true" />
-                <span className="text-sm font-semibold">تصفية</span>
                 {activeFiltersCount > 0 && (
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f6f0e8] px-1 text-[11px] font-bold text-[#6b1726]" aria-hidden="true">
+                  <span className="absolute -left-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#fbf8f3] bg-[#b99a68] px-1 text-[11px] font-bold text-white" aria-hidden="true">
                     {activeFiltersCount}
                   </span>
                 )}
               </button>
+
+              <FabricSortOptions />
             </div>
 
             {/* تسوّقي حسب نوع القماش: كل شريحة بحثٌ بكلمة تظهر في أسماء الأقمشة وأوصافها،
@@ -304,49 +307,6 @@ export default function FabricsPage() {
               </div>
             )}
 
-            {/* شريط النتائج: العدد يميناً، والتصاميم والترتيب وتبديل العرض يساراً */}
-            <div className="mt-4 flex items-center justify-between gap-2 border-t border-[#d8c5ae]/50 pt-3 sm:mt-5 sm:pt-4">
-              <p className="min-w-0 truncate text-[13px] text-[#211b19]/60 sm:text-sm" aria-live="polite">
-                {isLoading && fabrics.length === 0
-                  ? 'جارٍ التحميل…'
-                  : <><span className="font-bold text-[#211b19]">{formatFabricNumber(filteredFabrics.length)}</span> {showDesigns ? 'تصميم' : 'قماش'}</>}
-              </p>
-
-              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                {/* عرض التصاميم النهائية للأقمشة */}
-                {designsCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={toggleDesignsView}
-                    aria-pressed={showDesigns}
-                    aria-label={showDesigns ? 'عرض جميع الأقمشة' : `عرض التصاميم النهائية للأقمشة (${designsCount})`}
-                    className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] ${showDesigns
-                      ? 'border-[#6b1726] bg-[#6b1726] text-[#f6f0e8]'
-                      : 'border-[#d8c5ae] bg-white text-[#211b19] hover:border-[#6b1726]'
-                      }`}
-                  >
-                    <Shirt className={`h-4 w-4 shrink-0 ${showDesigns ? 'text-[#f6f0e8]' : 'text-[#6b1726]'}`} aria-hidden="true" />
-                    <span className="sm:hidden">{showDesigns ? 'كل الأقمشة' : 'التصاميم'}</span>
-                    <span className="hidden sm:inline">{showDesigns ? 'عرض جميع الأقمشة' : 'التصاميم النهائية'}</span>
-                    {!showDesigns && (
-                      <span className="rounded-full bg-[#f6f0e8] px-1.5 text-[11px] font-bold leading-5 text-[#6b1726]">{designsCount}</span>
-                    )}
-                  </button>
-                )}
-
-                <FabricSortOptions />
-
-                {/* زر تبديل العرض (الجوال فقط) */}
-                <button
-                  type="button"
-                  onClick={toggleViewMode}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d8c5ae] bg-white text-[#6b1726] transition-colors hover:border-[#6b1726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] sm:hidden"
-                  aria-label={isSingleColumn ? 'تبديل إلى العرض الثنائي' : 'تبديل إلى العرض الفردي'}
-                >
-                  {isSingleColumn ? <Grid2X2 className="h-4 w-4" /> : <Grid3X3 className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
           </motion.div>
 
           {/* Filter Sidebar - Modal لجميع الأحجام */}
@@ -362,16 +322,6 @@ export default function FabricsPage() {
             )}
 
             {/* حالة التحميل */}
-            {isLoading && fabrics.length === 0 && (
-              <div className={`grid gap-8 ${isSingleColumn
-                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                }`}>
-                {Array.from({ length: 12 }).map((_, index) => (
-                  <FabricSkeleton key={index} />
-                ))}
-              </div>
-            )}
 
             {/* لا توجد نتائج */}
             {!isLoading && displayedFabrics.length === 0 && fabrics.length > 0 && (
@@ -405,9 +355,8 @@ export default function FabricsPage() {
             )}
 
             {/* لا توجد أقمشة في قاعدة البيانات */}
-            {!isLoading && fabrics.length === 0 && (
+            {!isInitialLoading && !isLoading && fabrics.length === 0 && (
               <div className="text-center py-20">
-                <Loader2 className="w-12 h-12 text-[#6b1726] animate-spin mx-auto mb-4" />
                 <p className="text-[#211b19]/70 text-lg">لا توجد أقمشة متاحة حالياً</p>
               </div>
             )}
@@ -445,6 +394,21 @@ export default function FabricsPage() {
                       { width: 720, height: 1280 },
                     ])
                   const fallbackImage = isShowingDesign ? originalImage : (fabric.thumbnail_image || originalImage)
+                  const cardImageSizes = isSingleColumn
+                    ? '(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), (max-width: 1279px) calc(33vw - 2rem), 300px'
+                    : '(max-width: 639px) calc(50vw - 1.5rem), (max-width: 1023px) calc(50vw - 2rem), (max-width: 1279px) calc(33vw - 2rem), 300px'
+                  // خارج وضع التصاميم: البطاقة تنقلب تدريجياً لتعرض أول تصميم (صورة لا فيديو)
+                  const flipDesign = isShowingDesign ? null : designImages.find(url => url && !isVideoFile(url)) || null
+                  const flipDesignImage = flipDesign
+                    ? getSupabaseImageUrl(flipDesign, { width: 720, height: 1280, quality: 82 })
+                    : null
+                  const flipDesignSrcSet = flipDesign
+                    ? getSupabaseImageSrcSet(flipDesign, [
+                      { width: 360, height: 640 },
+                      { width: 540, height: 960 },
+                      { width: 720, height: 1280 },
+                    ])
+                    : undefined
                   return (
                     <Fragment key={fabric.id}>
                     <motion.div
@@ -464,6 +428,13 @@ export default function FabricsPage() {
                           }}
                         >
                           <div className="aspect-[9/16] bg-gradient-to-br from-[#d8c5ae]/55 via-[#f6f0e8] to-[#d8c5ae]/35 relative overflow-hidden cursor-pointer">
+                            <DesignFlipCard
+                              designSrc={flipDesignImage}
+                              designSrcSet={flipDesignSrcSet}
+                              sizes={cardImageSizes}
+                              alt={`${fabric.name || fabric.category || 'قماش'} - تصميم 1`}
+                              resetKey={currentIndex}
+                            >
                             {currentImageIsVideo ? (
                               <video
                                 src={currentImage}
@@ -475,9 +446,7 @@ export default function FabricsPage() {
                               <img
                                 src={currentImage}
                                 srcSet={currentImageSrcSet}
-                                sizes={isSingleColumn
-                                  ? '(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), (max-width: 1279px) calc(33vw - 2rem), 300px'
-                                  : '(max-width: 639px) calc(50vw - 1.5rem), (max-width: 1023px) calc(50vw - 2rem), (max-width: 1279px) calc(33vw - 2rem), 300px'}
+                                sizes={cardImageSizes}
                                 alt={`${fabric.name || fabric.category || 'قماش'} - صورة ${currentIndex + 1}`}
                                 width={720}
                                 height={1280}
@@ -493,6 +462,7 @@ export default function FabricsPage() {
                                 }}
                               />
                             )}
+                            </DesignFlipCard>
 
                             {fabricImages.length > 1 && (
                               <>
@@ -526,9 +496,13 @@ export default function FabricsPage() {
                             )}
 
                             {designImages.length > 0 && (
-                              <div className="absolute top-4 left-4 flex items-center gap-1 bg-[#f6f0e8]/95 text-[#6b1726] px-2.5 py-1 rounded-full text-[10px] font-bold shadow-lg sm:px-3 sm:text-xs">
-                                <Shirt className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                                <span>تحتوي على {designImages.length} تصميم</span>
+                              <div
+                                className="absolute top-4 left-4 z-10 flex items-center gap-1 bg-[#f6f0e8]/95 text-[#6b1726] px-2.5 py-1 rounded-full text-xs font-bold shadow-lg sm:text-sm"
+                                title={`${designImages.length} تصميم`}
+                                aria-label={`${designImages.length} تصميم`}
+                              >
+                                <Shirt className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+                                <span aria-hidden="true">{designImages.length}</span>
                               </div>
                             )}
 

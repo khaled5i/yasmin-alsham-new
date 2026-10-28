@@ -14,7 +14,7 @@ import {
   type FabricCartTotals,
   type ResolvedFabricCartLine,
 } from './fabric-commerce'
-import { formatFabricNumber, roundFabricNumber } from './fabric-number-format'
+import { formatFabricNumber } from './fabric-number-format'
 import { STORE_SUPPORT_PHONE } from './store-legal'
 
 /** نفس رقم الاستفسار المستخدم في صفحة القماش والمعاينة السريعة. */
@@ -34,14 +34,12 @@ export function buildCartInquiryMessage(
     const identity = [name, code ? `رقم ${code}` : null, color].filter(Boolean).join(' — ')
     parts.push(`${index + 1}) ${identity}`)
 
-    if (line.isPurchasable && line.unitPrice != null && line.lineTotal != null) {
-      // القطعة 3 أو 3.5م تُكتب بالمتر وسعر المتر، كما تعرضها السلة.
+    if (line.isPurchasable && line.payablePricePerMeter != null && line.lineTotal != null) {
+      // القطعة 3 أو 3.5م تُكتب بالمتر وسعر المتر، كما تعرضها السلة — شاملاً الضريبة.
       const pieceMeters = line.purchaseMode === 'piece' && line.fabric ? getFabricPieceMeters(line.fabric) : null
       const quantityLabel = formatQuantityLabel(line.quantity, line.purchaseMode, pieceMeters)
-      const unitPrice = pieceMeters ? roundFabricNumber(line.unitPrice / pieceMeters) : line.unitPrice
-      const unitLabel = line.purchaseMode === 'piece' && !pieceMeters ? 'القطعة' : 'المتر'
       parts.push(
-        `   ${quantityLabel} × ${formatFabricNumber(unitPrice)} ريال/${unitLabel} = ${formatFabricNumber(line.lineTotal)} ريال`
+        `   ${quantityLabel} × ${formatFabricNumber(line.payablePricePerMeter)} ريال/المتر = ${formatFabricNumber(line.lineTotal)} ريال`
       )
     } else if (line.status === 'price-on-request') {
       parts.push('   السعر عند الطلب')
@@ -57,9 +55,8 @@ export function buildCartInquiryMessage(
   if (totals.purchasableCount > 0) {
     parts.push(
       '',
-      `المجموع قبل الضريبة: ${formatFabricNumber(totals.subtotal)} ريال`,
-      `ضريبة القيمة المضافة ${Math.round(FABRIC_VAT_RATE * 100)}%: ${formatFabricNumber(totals.vat)} ريال`,
-      `الإجمالي التقديري: ${formatFabricNumber(totals.total)} ريال`
+      `الإجمالي التقديري شامل الضريبة: ${formatFabricNumber(totals.total)} ريال`,
+      `منها ضريبة القيمة المضافة ${Math.round(FABRIC_VAT_RATE * 100)}%: ${formatFabricNumber(totals.vat)} ريال`
     )
   }
 

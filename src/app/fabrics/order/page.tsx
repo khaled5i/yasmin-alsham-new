@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Loader2, MapPin, Search, Truck } from 'lucide-react'
+import FabricStoreLoader from '@/components/fabrics/FabricStoreLoader'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import {
   IS_FABRIC_STORE_ORDERS_ENABLED,
@@ -124,7 +125,7 @@ function OrderView() {
   }
 
   if (orders === null) {
-    return <div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-[#6b1726]" aria-hidden="true" /></div>
+    return <FabricStoreLoader fullScreen size="lg" />
   }
 
   return (
@@ -302,7 +303,7 @@ export default function FabricOrderTrackingPage() {
         </Link>
       </div>
       {IS_FABRIC_STORE_ORDERS_ENABLED ? (
-        <Suspense fallback={<div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-[#6b1726]" aria-hidden="true" /></div>}>
+        <Suspense fallback={<FabricStoreLoader fullScreen size="lg" />}>
           <OrderView />
         </Suspense>
       ) : (

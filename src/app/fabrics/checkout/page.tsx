@@ -538,7 +538,7 @@ export default function FabricCheckoutPage() {
                             )}
                           </span>
                           <span className="shrink-0 text-left font-semibold">
-                            {line.netHalalas != null ? <>{sar(line.netHalalas)}<span className="block text-xs font-normal text-[#211b19]/60">قبل الضريبة</span></> : '—'}
+                            {line.grossHalalas != null ? <>{sar(line.grossHalalas)}<span className="block text-xs font-normal text-[#211b19]/60">شامل الضريبة</span></> : '—'}
                           </span>
                         </li>
                       )

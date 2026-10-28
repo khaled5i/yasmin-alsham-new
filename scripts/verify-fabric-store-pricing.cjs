@@ -45,6 +45,12 @@ function load(fileFromSrc) {
 const money = load('lib/fabric-store/money')
 const pricing = load('lib/fabric-store/pricing')
 const commerce = load('lib/fabric-commerce')
+const display = load('lib/fabric-display-pricing')
+
+// نفس تعابير القيود في هجرة 20261027120000، بأعداد BigInt وقسمة صحيحة كما في Postgres.
+const sqlGrossRiyalsPerMeter = (priceHalalas, discountBasisPoints) =>
+  ((BigInt(priceHalalas) * (10000n - BigInt(discountBasisPoints)) + 5000n) / 10000n * 11500n + 500000n) / 1000000n
+const sqlVatFromTotal = (totalHalalas) => (BigInt(totalHalalas) * 1500n * 2n + 11500n) / 23000n
 
 /** قماش افتراضي مرئي للبيع؛ الاختبارات تعدّل ما يعنيها فقط. */
 const fabric = (overrides = {}) => ({
@@ -214,6 +220,7 @@ for (const price of [1e6, 1e7, 1e9, 1e11, 1e12, 1e13, 5e15]) {
       commerce.computeCartTotals([resolved, resolved, resolved])
       commerce.getFabricQuantityBounds(source)
       pricing.priceFabricLine(source, { purchaseMode: mode, quantity: mode === 'piece' ? 1 : 100 })
+      display.getFabricStorefrontPricing(display.getFabricNetPricePerMeter(source), stock)
     }, `لا استثناء: سعر ${price} ومخزون ${stock}`)
   }
 }
@@ -224,6 +231,49 @@ const maxLine = commerce.resolveCartLine(
 )
 assert.equal(maxLine.status, 'ok')
 assert.doesNotThrow(() => commerce.computeCartTotals(Array.from({ length: 40 }, () => maxLine)))
+
+// ============================================
+// 4ب) سعر المتر شاملاً الضريبة بريال كامل (قرار المالكة 27 أكتوبر 2026)
+// ============================================
+const grossPerMeter = overrides => pricing.getFabricGrossPricePerMeterHalalas(fabric(overrides))
+assert.equal(grossPerMeter({ price_per_meter: 250 }), 28800, '250 + 15% = 287.50 ⇒ 288')
+assert.equal(grossPerMeter({ price_per_meter: 210 }), 24200, '241.50 ⇒ 242')
+assert.equal(grossPerMeter({ price_per_meter: 130 }), 15000, '149.50 ⇒ 150')
+assert.equal(grossPerMeter({ price_per_meter: 100 }), 11500, 'السعر الصحيح أصلاً لا يتغير')
+assert.equal(grossPerMeter({ price_per_meter: 249.78 }), 28700, '287.247 ⇒ 287 (أقرب ريال، للأسفل أيضاً)')
+assert.equal(grossPerMeter({ price_per_meter: 200, ...onSale }), 17300, 'الخصم أولاً: 150 ⇒ 172.50 ⇒ 173')
+assert.equal(grossPerMeter({ price_per_meter: 250, stock_quantity: 3.5 }), 28800, 'سعر المتر للقطعة نفسه، لا يتبع المخزون')
+assert.equal(grossPerMeter(odd), 3300, '2833 هللة ⇒ 32.58 ⇒ 33')
+assert.equal(grossPerMeter({ price_per_meter: 0.43 }), null, '0.49 ريال يُقرَّب إلى صفر ⇒ لا يُشترى')
+assert.equal(grossPerMeter({ price_per_meter: 0.44 }), 100, '0.506 ⇒ ريال واحد')
+assert.equal(grossPerMeter({ price_per_meter: 1_000_000 }), 115_000_000, 'حد الأمان نفسه')
+for (const [label, overrides] of [
+  ['السعر عند الطلب', { price_per_meter: null }],
+  ['الصفر', { price_per_meter: 0 }],
+  ['خصم 100%', { is_on_sale: true, discount_percentage: 100 }],
+  ['فوق حد الأمان', { price_per_meter: 1_000_000.01 }],
+]) {
+  assert.equal(grossPerMeter(overrides), null, label)
+}
+
+// الكود = تعبير القيد في القاعدة، والمعروض في المتجر = ما يُدفع للمتر، على شبكة واسعة.
+let grossGrid = 0
+for (let priceHalalas = 1; priceHalalas <= 120000; priceHalalas += priceHalalas < 2000 ? 1 : 37) {
+  for (const discount of [0, 500, 1000, 1250, 1500, 2500, 3300, 5000, 9999]) {
+    const source = fabric({
+      price_per_meter: priceHalalas / 100,
+      is_on_sale: discount > 0,
+      discount_percentage: discount / 100,
+    })
+    const expectedRiyals = sqlGrossRiyalsPerMeter(priceHalalas, discount)
+    const actual = pricing.getFabricGrossPricePerMeterHalalas(source)
+    assert.equal(actual, expectedRiyals > 0n ? Number(expectedRiyals) * 100 : null, `TS = SQL (${priceHalalas}/${discount})`)
+    const shown = display.getFabricStorefrontPricing(display.getFabricNetPricePerMeter(source), 10).amount
+    assert.equal(shown, actual == null ? Number(expectedRiyals) : actual / 100, `المعروض = المدفوع (${priceHalalas}/${discount})`)
+    grossGrid += 1
+  }
+}
+assert.ok(grossGrid > 30000, `شبكة سعر المتر الشامل غطّت ${grossGrid} حالة`)
 
 // ============================================
 // 5) حدود البيع بالمتر
@@ -244,22 +294,31 @@ assert.equal(meterOk.ok, true)
 assert.deepEqual(meterOk.line, {
   purchaseMode: 'meter',
   unitPriceHalalas: 20000,
+  grossPerMeterHalalas: 23000,
   quantity: { unit: 'meter', centimeters: 250 },
   stockConsumptionCm: 250,
-  netHalalas: 50000,
+  grossHalalas: 57500,
 })
 
-const halfHalala = pricing.priceFabricLine(fabric({ price_per_meter: 33.33 }), { purchaseMode: 'meter', quantity: 1.5 })
-assert.equal(halfHalala.line.netHalalas, 5000, '3333 × 1.5 = 4999.5 ⇒ 5000')
+const halfMeter = pricing.priceFabricLine(fabric({ price_per_meter: 250 }), { purchaseMode: 'meter', quantity: 1.5 })
+assert.equal(halfMeter.line.grossHalalas, 43200, '288 × 1.5 = 432 بالضبط، بلا تقريب')
+const oddRiyal = pricing.priceFabricLine(fabric({ price_per_meter: 33.33 }), { purchaseMode: 'meter', quantity: 1.5 })
+assert.equal(oddRiyal.line.grossHalalas, 5700, '38 × 1.5 = 57')
 
-const pieceOk = pricing.priceFabricLine(fabric({ stock_quantity: 3.5 }), { purchaseMode: 'piece', quantity: 1 })
+const pieceOk = pricing.priceFabricLine(fabric({ stock_quantity: 3.5, price_per_meter: 250 }), { purchaseMode: 'piece', quantity: 1 })
 assert.deepEqual(pieceOk.line, {
   purchaseMode: 'piece',
-  unitPriceHalalas: 35000,
+  unitPriceHalalas: 87500,
+  grossPerMeterHalalas: 28800,
   quantity: { unit: 'piece', pieces: 1, pieceLengthCm: 350 },
   stockConsumptionCm: 350,
-  netHalalas: 35000,
-}, 'القطعة تستهلك طولها كاملاً من المخزون')
+  grossHalalas: 100800,
+}, 'القطعة تستهلك طولها كاملاً من المخزون، وتُدفع 288 × 3.5 = 1008')
+assert.equal(
+  rejectionOf(pricing.priceFabricLine(fabric({ price_per_meter: 0.43 }), { purchaseMode: 'meter', quantity: 1 })),
+  'price-on-request',
+  'سعر يُقرَّب إلى صفر ريال لا يُشترى'
+)
 
 const cases = [
   ['قطعتان من قطعة واحدة', fabric({ stock_quantity: 3.5 }), { purchaseMode: 'piece', quantity: 2 }, 'invalid-quantity'],
@@ -318,59 +377,98 @@ assert.equal(
 // ============================================
 // 7) إجماليات الطلب والضريبة
 // ============================================
-assert.deepEqual(pricing.computeFabricOrderTotals([50000, 35000]), {
+// منذ 27 أكتوبر: الأسطر شاملة الضريبة تُجمع كما هي، والضريبة تُستخرج من الإجمالي مرة واحدة.
+assert.deepEqual(pricing.computeFabricGrossOrderTotals([57500, 40250]), {
   itemsNetHalalas: 85000,
   shippingNetHalalas: 0,
   taxableHalalas: 85000,
   vatHalalas: 12750,
   totalHalalas: 97750,
-}, 'نفس مثال السلة: 850 + 127.5 = 977.5')
+}, 'نفس مثال السلة: 575 + 402.5 = 977.5 منها 127.5 ضريبة')
 
-const basic = pricing.computeFabricOrderBreakdown([50000, 35000])
+const basic = pricing.computeFabricGrossOrderBreakdown([57500, 40250])
 assert.deepEqual(basic.lineGrossHalalas, [57500, 40250])
+assert.deepEqual(basic.lineVatHalalas, [7500, 5250])
+assert.deepEqual(basic.lineNetHalalas, [50000, 35000])
 assert.equal(basic.shippingGrossHalalas, 0)
 assert.equal(basic.totalHalalas, 97750, 'التفصيل لا يغيّر الإجماليات')
 
-const withShipping = pricing.computeFabricOrderBreakdown([10000], { shippingNetHalalas: 2500 })
-assert.equal(withShipping.taxableHalalas, 12500, 'الشحن داخل وعاء الضريبة')
-assert.equal(withShipping.vatHalalas, 1875)
-assert.equal(withShipping.totalHalalas, 14375)
-assert.deepEqual(withShipping.lineGrossHalalas, [11500])
-assert.equal(withShipping.shippingGrossHalalas, 2875)
+// متر بـ288 + شحن 50 = 338 بالضبط؛ الضريبة round(338 × 15/115 = 44.087) = 44.09.
+const withShipping = pricing.computeFabricGrossOrderBreakdown([28800], { shippingNetHalalas: 4348, shippingGrossHalalas: 5000 })
+assert.equal(withShipping.totalHalalas, 33800, 'الإجمالي = السعر المعروض × الأمتار + 50، بلا هللة زائدة')
+assert.equal(withShipping.vatHalalas, 4409)
+assert.equal(withShipping.taxableHalalas, 29391)
+assert.equal(withShipping.itemsNetHalalas, 25043)
+assert.deepEqual(withShipping.lineVatHalalas, [3757], 'الشحن يأخذ 6.52 الثابتة والباقي للقماش')
+assert.deepEqual(withShipping.lineNetHalalas, [25043])
+assert.equal(withShipping.shippingGrossHalalas, 5000)
+assert.throws(() => pricing.computeFabricGrossOrderTotals([28800], { shippingNetHalalas: 4348, shippingGrossHalalas: 5001 }), RangeError)
+assert.throws(() => pricing.computeFabricGrossOrderTotals([28800], { shippingGrossHalalas: 5000 }), RangeError, 'الشامل بلا صافيه')
+assert.throws(() => pricing.computeFabricGrossOrderTotals([28800], { shippingNetHalalas: 4348 }), RangeError, 'الصافي بلا شامله')
 
-const rounding = pricing.computeFabricOrderBreakdown([1111, 1111, 1111])
-assert.equal(rounding.vatHalalas, 500, '3333 × 15% = 499.95 ⇒ 500، تقريب واحد على الطلب')
-assert.deepEqual(rounding.lineGrossHalalas, [1278, 1278, 1277])
-assert.equal(
-  rounding.lineGrossHalalas.reduce((a, b) => a + b, 0) + rounding.shippingGrossHalalas,
-  rounding.totalHalalas,
-  'مجموع بنود الفاتورة شاملة الضريبة = الإجمالي المدفوع بالضبط'
-)
+const rounding = pricing.computeFabricGrossOrderBreakdown([100, 100, 100])
+assert.equal(rounding.vatHalalas, 39, '300 × 15/115 = 39.13 ⇒ 39، تقريب واحد على الطلب')
+assert.deepEqual(rounding.lineVatHalalas, [13, 13, 13])
+assert.deepEqual(rounding.lineNetHalalas, [87, 87, 87])
 
-assert.deepEqual(pricing.computeFabricOrderBreakdown([]), {
+assert.deepEqual(pricing.computeFabricGrossOrderBreakdown([]), {
   itemsNetHalalas: 0,
   shippingNetHalalas: 0,
   taxableHalalas: 0,
   vatHalalas: 0,
   totalHalalas: 0,
   lineGrossHalalas: [],
+  lineVatHalalas: [],
+  lineNetHalalas: [],
   shippingGrossHalalas: 0,
 })
-assert.throws(() => pricing.computeFabricOrderTotals([-1]), RangeError)
-assert.throws(() => pricing.computeFabricOrderTotals([10.5]), RangeError)
-assert.throws(() => pricing.computeFabricOrderTotals([100], { shippingNetHalalas: -1 }), RangeError)
+assert.throws(() => pricing.computeFabricGrossOrderTotals([-1]), RangeError)
+assert.throws(() => pricing.computeFabricGrossOrderTotals([10.5]), RangeError)
+assert.throws(() => pricing.computeFabricGrossOrderTotals([100], { shippingNetHalalas: -1, shippingGrossHalalas: -1 }), RangeError)
 
 // سقف الطلب الواحد: التفصيل يرفض صراحةً بدل توزيع غير دقيق؛ والإجماليات وحدها لا ترمي.
-const atCap = Math.floor(pricing.FABRIC_MAX_ORDER_TOTAL_HALALAS / 1.15)
-assert.doesNotThrow(() => pricing.computeFabricOrderBreakdown([atCap - 7, 7]))
-const breakdownAtCap = pricing.computeFabricOrderBreakdown([atCap - 7, 7])
+const atCap = pricing.FABRIC_MAX_ORDER_TOTAL_HALALAS
+assert.doesNotThrow(() => pricing.computeFabricGrossOrderBreakdown([atCap - 7, 7]))
+const breakdownAtCap = pricing.computeFabricGrossOrderBreakdown([atCap - 7, 7])
 assert.equal(
-  breakdownAtCap.lineGrossHalalas.reduce((a, b) => a + b, 0),
+  breakdownAtCap.lineNetHalalas.reduce((a, b) => a + b, 0) + breakdownAtCap.lineVatHalalas.reduce((a, b) => a + b, 0),
   breakdownAtCap.totalHalalas,
   'التوزيع دقيق حتى عند السقف'
 )
-assert.throws(() => pricing.computeFabricOrderBreakdown([atCap + 100]), RangeError)
-assert.doesNotThrow(() => pricing.computeFabricOrderTotals([4e11]), 'أكبر سلة ممكنة لا تُسقط الإجماليات')
+assert.throws(() => pricing.computeFabricGrossOrderBreakdown([atCap + 100]), RangeError)
+assert.doesNotThrow(() => pricing.computeFabricGrossOrderTotals([4.6e11]), 'أكبر سلة ممكنة لا تُسقط الإجماليات')
+
+// كل طلب ينتجه التفصيل يمر بقيود القاعدة كما هي بعد الهجرة: ضريبة الطلب = تعبير القيد،
+// الإجمالي = صافٍ + شحن + ضريبة، مجموع الأسطر وحصص الضريبة = ما في الطلب، ولا سالب.
+let orderShapes = 0
+for (let total = 1; total <= 30000; total += 1) {
+  assert.equal(
+    pricing.computeFabricGrossOrderTotals([total]).vatHalalas,
+    Number(sqlVatFromTotal(total)),
+    `ضريبة ${total} = تعبير القيد`
+  )
+}
+for (let riyals = 1; riyals <= 1500; riyals += 7) {
+  for (const centimeters of [[100], [150, 50], [350, 100, 250], [1000]]) {
+    for (const shipping of [{}, { shippingNetHalalas: 4348, shippingGrossHalalas: 5000 }]) {
+      const lines = centimeters.map((cm, i) => (riyals + i * 13) * cm)
+      const b = pricing.computeFabricGrossOrderBreakdown(lines, shipping)
+      const shippingNet = shipping.shippingNetHalalas ?? 0
+      const shippingVat = (shipping.shippingGrossHalalas ?? 0) - shippingNet
+      assert.equal(b.vatHalalas, Number(sqlVatFromTotal(b.totalHalalas)), 'قيد ضريبة الطلب')
+      assert.equal(b.totalHalalas, b.itemsNetHalalas + shippingNet + b.vatHalalas, 'قيد مجموع الطلب')
+      assert.equal(b.lineNetHalalas.reduce((x, y) => x + y, 0), b.itemsNetHalalas, 'مجموع صافي الأسطر')
+      assert.equal(b.lineVatHalalas.reduce((x, y) => x + y, 0) + shippingVat, b.vatHalalas, 'حصص الضريبة')
+      assert.ok(shippingVat <= b.vatHalalas)
+      b.lineGrossHalalas.forEach((gross, i) => {
+        assert.equal(b.lineNetHalalas[i] + b.lineVatHalalas[i], gross, 'الصافي + الحصة = الشامل')
+        assert.ok(b.lineNetHalalas[i] >= 0 && b.lineVatHalalas[i] >= 0, 'لا سالب')
+      })
+      orderShapes += 1
+    }
+  }
+}
+assert.ok(orderShapes > 1500, `أشكال الطلب المفحوصة ${orderShapes}`)
 
 // ============================================
 // 8) السلة والخادم يحسبان الرقم نفسه
@@ -395,7 +493,7 @@ for (const price of prices) {
         const mode = commerce.getFabricPurchaseMode(source)
         const bounds = commerce.getFabricQuantityBounds(source)
         const resolvedLines = []
-        const serverNets = []
+        const serverGross = []
         for (let raw = 0; raw <= 20; raw += 0.25) {
           const quantity = commerce.clampFabricQuantity(raw, bounds)
           if (quantity == null) continue
@@ -403,15 +501,19 @@ for (const price of prices) {
           const server = pricing.priceFabricLine(source, { purchaseMode: mode, quantity })
           assert.equal(server.ok, resolved.isPurchasable, `قبول الخادم = قبول السلة (${price}/${stock}/${quantity})`)
           if (!server.ok) continue
-          assert.equal(server.line.netHalalas, resolved.lineTotalHalalas, `نفس إجمالي السطر (${price}/${stock}/${quantity})`)
+          assert.equal(server.line.grossHalalas, resolved.lineTotalHalalas, `نفس إجمالي السطر (${price}/${stock}/${quantity})`)
           assert.equal(resolved.lineTotal, money.halalasToSar(resolved.lineTotalHalalas))
+          // ما يُدفع للسطر = سعر المتر المعروض × الأمتار بالضبط.
+          const shown = display.getFabricStorefrontPricing(display.getFabricNetPricePerMeter(source), stock).amount
+          assert.equal(resolved.payablePricePerMeter, shown, `سعر المتر في السلة = المعروض (${price}/${discount})`)
+          assert.equal(server.line.grossHalalas, shown * server.line.stockConsumptionCm, `السطر = المعروض × الأمتار (${price}/${stock}/${quantity})`)
           resolvedLines.push(resolved)
-          serverNets.push(server.line.netHalalas)
+          serverGross.push(server.line.grossHalalas)
           pairs += 1
         }
         if (resolvedLines.length > 0) {
           const cartTotals = commerce.computeCartTotals(resolvedLines)
-          const serverTotals = pricing.computeFabricOrderTotals(serverNets)
+          const serverTotals = pricing.computeFabricGrossOrderTotals(serverGross)
           assert.equal(money.sarToHalalas(cartTotals.total), serverTotals.totalHalalas, 'نفس إجمالي الطلب')
           assert.equal(money.sarToHalalas(cartTotals.vat), serverTotals.vatHalalas, 'نفس الضريبة')
         }
@@ -433,6 +535,7 @@ assert.equal(commerce.getFabricPurchaseMode, pricing.getFabricPurchaseMode, 'ق�
 
 console.log('PASS: التحويل إلى هللة وسنتيمتر بلا ضجيج ثنائي، القسمة والتقريب نصف للأعلى، والتوزيع بالباقي الأكبر يساوي المبلغ بالضبط.')
 console.log('PASS: سعر الوحدة بالهللة (المتر والقطعة والخصم مرة واحدة وأنصاف الهللات)، وما لا يُشترى تلقائياً يُرفض.')
+console.log(`PASS: سعر المتر الشامل بريال كامل (287.50 ⇒ 288) = تعبير قيد القاعدة = المعروض في المتجر، في ${grossGrid} حالة.`)
 console.log('PASS: تحقق الخادم الصارم يرفض بسبب محدد (الوحدة، الحد الأدنى، الخطوة، الخانات، المخزون، المحجوز) ولا يعدّل بصمت.')
-console.log('PASS: الضريبة على مجموع الطلب مع الشحن، وبنود الفاتورة شاملة الضريبة تساوي الإجمالي بالهللة.')
+console.log(`PASS: الإجمالي = الأسطر الشاملة + الشحن بلا تقريب، الضريبة مستخرجة منه مرة واحدة، وكل طلب يمر بقيود القاعدة (${orderShapes} شكلاً).`)
 console.log(`PASS: السلة والخادم يحسبان نفس الإجمالي في ${pairs} حالة، وكل كمية تنتجها السلة يقبلها الخادم.`)

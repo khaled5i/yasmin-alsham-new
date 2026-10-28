@@ -1,5 +1,6 @@
 import { roundFabricNumber } from './fabric-number-format'
-import { FABRIC_VAT_BASIS_POINTS } from './fabric-store/pricing'
+import { toScaledInteger } from './fabric-store/money'
+import { FABRIC_MAX_PRICE_PER_METER_HALALAS, toFabricGrossWholeRiyals } from './fabric-store/pricing'
 
 export type FabricPricingUnit = 'meter' | 'piece'
 
@@ -84,20 +85,24 @@ export function getFabricDisplayPricing(
 }
 
 /**
- * السعر شاملاً ضريبة القيمة المضافة — ما تراه الزبونة في واجهة المتجر (الأسعار المخزّنة
- * غير شاملة). للعرض فقط: ما يُدفع يُحسب بالهللة في `fabric-store/pricing.ts`، والضريبة
- * هناك على مجموع الطلب، فقد يختلف مجموع الأسطر المعروضة عن الإجمالي بهللة.
+ * سعر المتر قبل الضريبة (ريال) ⇒ شاملاً الضريبة بريال كامل، كما يُدفع (قرار المالكة
+ * 27 أكتوبر 2026): 250 ⇒ 287.50 ⇒ 288. نفس تقريب `getFabricGrossPricePerMeterHalalas`
+ * (أقرب هللة ثم أقرب ريال)، فلا يختلف المعروض عن المدفوع. لسعر المتر فقط: سعر قطعة
+ * كاملة قبل الضريبة لا يمر من هنا (القطعة = سعر المتر الشامل × أمتارها).
  */
-export function withFabricVat(amount: number | null): number | null {
-  if (amount == null || !Number.isFinite(amount)) return null
-  return roundFabricNumber(amount * (1 + FABRIC_VAT_BASIS_POINTS / 10_000))
+export function getFabricGrossPricePerMeter(netPricePerMeter: number | null): number | null {
+  if (netPricePerMeter == null || !Number.isFinite(netPricePerMeter)) return null
+  const netHalalas = toScaledInteger(netPricePerMeter, 2)
+  // فوق حد الأمان خطأ إدخال يعامله الدفع كـ«السعر عند الطلب»، ولا يُسقط الصفحة بخطأ ضرب.
+  if (netHalalas == null || Math.abs(netHalalas) > FABRIC_MAX_PRICE_PER_METER_HALALAS) return null
+  return toFabricGrossWholeRiyals(netHalalas)
 }
 
 /**
- * سعر الواجهة العامة شاملاً الضريبة — بالمتر دائماً (قرار المالك 18 أكتوبر 2026).
+ * سعر الواجهة العامة شاملاً الضريبة بريال كامل — بالمتر دائماً (قرار المالك 18 أكتوبر 2026).
  * القطعة 3 أو 3.5م لا يُعرض لها سعر قطعة كاملة، بل سعر المتر مع ملاحظة «أقل كمية
  * طلب»؛ و`isWholePiecePrice` يبقى ليعرف المتجر متى يُظهر تلك الملاحظة.
- * ما يُدفع لم يتغيّر: يُحسب بالهللة في `fabric-store/pricing.ts`.
+ * هو نفسه ما يُدفع للمتر: يُحسب بالهللة في `fabric-store/pricing.ts`.
  */
 export function getFabricStorefrontPricing(
   pricePerInventoryUnit: number | null | undefined,
@@ -106,10 +111,8 @@ export function getFabricStorefrontPricing(
 ): FabricDisplayPricing {
   const isWholePiecePrice = isWholeFabricPiece(availableQuantity, inventoryUnit)
   const unit: FabricPricingUnit = inventoryUnit === 'piece' ? 'piece' : 'meter'
-  const amount = pricePerInventoryUnit == null || !Number.isFinite(Number(pricePerInventoryUnit))
-    ? null
-    : roundFabricNumber(Number(pricePerInventoryUnit))
-  return { amount: withFabricVat(amount), unit, isWholePiecePrice }
+  const amount = pricePerInventoryUnit == null ? null : Number(pricePerInventoryUnit)
+  return { amount: getFabricGrossPricePerMeter(amount), unit, isWholePiecePrice }
 }
 
 export function getFabricPricingUnitLabel(unit: FabricPricingUnit): string {

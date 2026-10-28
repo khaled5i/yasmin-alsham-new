@@ -16,14 +16,19 @@
  * 2. الخصم الفعّال يُطبَّق مرة واحدة ثم يُقرَّب سعر الوحدة:
  *    - بالمتر: سعر المتر بعد الخصم ⇒ أقرب هللة.
  *    - بالقطعة: سعر المتر بعد الخصم × أمتار القطعة ⇒ أقرب هللة (تقريب واحد في النهاية).
- * 3. إجمالي السطر = سعر الوحدة × الكمية ⇒ أقرب هللة (القطعة عدد صحيح أصلاً).
- * 4. الضريبة على مجموع الطلب (البنود + الشحن) لا على كل سطر، وتُقرَّب مرة واحدة.
- * 5. الإجمالي = المجموع + الضريبة. وتوزَّع الضريبة على الأسطر بالباقي الأكبر
- *    (`computeFabricOrderBreakdown`). للشحن بسعر شامل ثابت تُثبّت حصته أولاً
- *    ثم يُوزّع باقي الضريبة على الأقمشة؛ فمجموع الأسطر شاملةً الضريبة يساوي الإجمالي
- *    بالضبط (بنود فاتورة الأستاذ والاسترداد الجزئي تُبنى عليه).
- * هي نفسها قواعد السلة السابقة بالأرقام العشرية، لكن بأعداد صحيحة: فلا تنحرف عند
- * أنصاف الهللات، ولا يُعرض سعر قُرِّب إلى صفر كأنه قابل للشراء.
+ *    سعر الوحدة هذا (قبل الضريبة) يُحفظ مع السطر كما هو، ولا يحدد ما يُدفع منذ 27 أكتوبر.
+ *
+ * سعر المتر بريال كامل شاملاً الضريبة (قرار المالكة 27 أكتوبر 2026):
+ * 3. سعر المتر بعد الخصم بالهللة × 1.15 ⇒ أقرب ريال كامل (250 + 15% = 287.50 ⇒ 288).
+ *    هو ما تراه الزبونة في كل المتجر وما تدفعه للمتر بالضبط.
+ * 4. إجمالي السطر شاملاً الضريبة = سعر المتر الشامل × الأمتار (القطعة = طولها كاملاً)،
+ *    بلا تقريب: الريال الكامل × سنتيمترات = هللات صحيحة دائماً.
+ * 5. الإجمالي = مجموع الأسطر + الشحن الشامل، بلا تقريب. الضريبة تُستخرج منه مرة واحدة
+ *    على مجموع الطلب: round(الإجمالي × 15 / 115)، والصافي = الإجمالي − الضريبة.
+ * 6. حصص الضريبة: الشحن بسعره الشامل الثابت يأخذ حصته أولاً، ويُوزّع الباقي على الأقمشة
+ *    بالباقي الأكبر (`computeFabricGrossOrderBreakdown`)؛ فمجموع الأسطر شاملةً الضريبة يساوي
+ *    الإجمالي بالضبط (بنود فاتورة الأستاذ والاسترداد الجزئي تُبنى عليه).
+ * القاعدة تقبل الطريقتين منذ هجرة `20261027120000`: طلبات ما قبلها حُسبت ضريبتها من الصافي.
  */
 
 import {
@@ -117,12 +122,10 @@ export function getFabricStockCentimeters(
   return centimeters != null && centimeters > 0 ? centimeters : 0
 }
 
-/**
- * سعر الوحدة الواحدة بالهللة، بعد الخصم وقبل الضريبة:
- * سعر المتر للبيع بالمتر، وسعر القطعة كاملةً للبيع بالقطعة (3.5 × 100 = 350 ريال).
- * `null` = لا يُشترى تلقائياً (السعر عند الطلب، أو صفر، أو خصم يلغي السعر).
- */
-export function getFabricUnitPriceHalalas(fabric: FabricPricingSource): number | null {
+/** سعر المتر المخزّن بالهللة وحصته الباقية بعد الخصم (بأجزاء العشرة آلاف)، أو null إن لم يُشترَ. */
+function readFabricPriceFactors(
+  fabric: FabricDiscountFields
+): { pricePerMeter: number; keptShare: number } | null {
   if (fabric.price_per_meter == null) return null
   const pricePerMeter = toScaledInteger(fabric.price_per_meter, 2)
   if (
@@ -137,6 +140,47 @@ export function getFabricUnitPriceHalalas(fabric: FabricPricingSource): number |
   const discount = toScaledInteger(getEffectiveFabricDiscountPercent(fabric), 2) ?? 0
   const keptShare = BASIS_POINTS_SCALE - discount
   if (keptShare <= 0) return null
+  return { pricePerMeter, keptShare }
+}
+
+/**
+ * صافي سعر بالهللة ⇒ نفس السعر شاملاً الضريبة مقرّباً لأقرب ريال كامل (بالريال).
+ * 25000 ⇒ 287.5 ⇒ 288. يستعمله العرض أيضاً (`getFabricStorefrontPricing`) فلا يختلف
+ * المعروض عما يُدفع. يطابق في القاعدة: `(net * 11500 + 500000) / 1000000`.
+ */
+export function toFabricGrossWholeRiyals(netHalalas: number): number {
+  return divideRoundHalfUp(
+    multiplyExact(netHalalas, BASIS_POINTS_SCALE + FABRIC_VAT_BASIS_POINTS),
+    BASIS_POINTS_SCALE * 100
+  )
+}
+
+/**
+ * سعر المتر بعد الخصم شاملاً الضريبة، بالهللة، مقرّباً لأقرب ريال كامل — ما تراه
+ * الزبونة وما تدفعه للمتر، بالمتر وبالقطعة معاً (القطعة = هذا × أمتارها).
+ * يبدأ من سعر المتر بعد الخصم بالهللة (نفس `getFabricUnitPriceHalalas` بالمتر).
+ * `null` = لا يُشترى تلقائياً، ومنه سعر يُقرَّب إلى صفر ريال.
+ */
+export function getFabricGrossPricePerMeterHalalas(fabric: FabricDiscountFields): number | null {
+  const factors = readFabricPriceFactors(fabric)
+  if (!factors) return null
+  const netPerMeter = divideRoundHalfUp(
+    multiplyExact(factors.pricePerMeter, factors.keptShare),
+    BASIS_POINTS_SCALE
+  )
+  const grossRiyals = toFabricGrossWholeRiyals(netPerMeter)
+  return grossRiyals > 0 ? multiplyExact(grossRiyals, 100) : null
+}
+
+/**
+ * سعر الوحدة الواحدة بالهللة، بعد الخصم وقبل الضريبة:
+ * سعر المتر للبيع بالمتر، وسعر القطعة كاملةً للبيع بالقطعة (3.5 × 100 = 350 ريال).
+ * `null` = لا يُشترى تلقائياً (السعر عند الطلب، أو صفر، أو خصم يلغي السعر).
+ */
+export function getFabricUnitPriceHalalas(fabric: FabricPricingSource): number | null {
+  const factors = readFabricPriceFactors(fabric)
+  if (!factors) return null
+  const { pricePerMeter, keptShare } = factors
 
   let unitPrice: number
   if (getFabricPurchaseMode(fabric) === 'piece') {
@@ -184,13 +228,15 @@ export type FabricLineQuantity =
 
 export interface PricedFabricLine {
   purchaseMode: FabricPurchaseMode
-  /** سعر الوحدة بعد الخصم وقبل الضريبة: للمتر أو للقطعة كاملة. */
+  /** سعر الوحدة بعد الخصم وقبل الضريبة: للمتر أو للقطعة كاملة. يُحفظ مع السطر للسجل. */
   unitPriceHalalas: number
+  /** سعر المتر شاملاً الضريبة بريال كامل — منه يُحسب ما يُدفع. */
+  grossPerMeterHalalas: number
   quantity: FabricLineQuantity
   /** ما يُخصم من المخزون بالسنتيمتر (القطعة = طولها كاملاً). */
   stockConsumptionCm: number
-  /** إجمالي السطر قبل الضريبة. */
-  netHalalas: number
+  /** إجمالي السطر شاملاً الضريبة. صافيه وحصته من الضريبة من `computeFabricGrossOrderBreakdown`. */
+  grossHalalas: number
 }
 
 export type FabricLineRejection =
@@ -221,13 +267,18 @@ export type PriceFabricLineResult =
   | { ok: true; line: PricedFabricLine }
   | { ok: false; reason: FabricLineRejection; currentMode: FabricPurchaseMode }
 
-/** إجمالي السطر قبل الضريبة بالهللة. */
-export function computeFabricLineNetHalalas(
-  unitPriceHalalas: number,
+/**
+ * إجمالي السطر شاملاً الضريبة بالهللة: سعر المتر الشامل × الأمتار. القطعة بطولها كاملاً
+ * (قطعة 3.5م بـ288 للمتر = 1008). سعر المتر ريال كامل فالناتج هللات صحيحة بلا تقريب.
+ */
+export function computeFabricLineGrossHalalas(
+  grossPerMeterHalalas: number,
   quantity: FabricLineQuantity
 ): number {
-  if (quantity.unit === 'piece') return multiplyExact(unitPriceHalalas, quantity.pieces)
-  return divideRoundHalfUp(multiplyExact(unitPriceHalalas, quantity.centimeters), 100)
+  const centimeters = quantity.unit === 'piece'
+    ? multiplyExact(quantity.pieceLengthCm, quantity.pieces)
+    : quantity.centimeters
+  return divideRoundHalfUp(multiplyExact(grossPerMeterHalalas, centimeters), 100)
 }
 
 /**
@@ -253,7 +304,8 @@ export function priceFabricLine(
   if (stockCm <= 0) return reject('out-of-stock')
 
   const unitPriceHalalas = getFabricUnitPriceHalalas(fabric)
-  if (unitPriceHalalas == null) return reject('price-on-request')
+  const grossPerMeterHalalas = getFabricGrossPricePerMeterHalalas(fabric)
+  if (unitPriceHalalas == null || grossPerMeterHalalas == null) return reject('price-on-request')
 
   if (request.purchaseMode !== currentMode) return reject('mode-changed')
 
@@ -290,9 +342,10 @@ export function priceFabricLine(
     line: {
       purchaseMode: currentMode,
       unitPriceHalalas,
+      grossPerMeterHalalas,
       quantity,
       stockConsumptionCm,
-      netHalalas: computeFabricLineNetHalalas(unitPriceHalalas, quantity),
+      grossHalalas: computeFabricLineGrossHalalas(grossPerMeterHalalas, quantity),
     },
   }
 }
@@ -309,94 +362,101 @@ export function priceFabricLine(
 export const FABRIC_MAX_ORDER_TOTAL_HALALAS = 100_000_000
 
 export interface FabricOrderTotals {
-  /** مجموع الأسطر قبل الضريبة. */
+  /** مجموع الأسطر قبل الضريبة (= الإجمالي − الضريبة − صافي الشحن). */
   itemsNetHalalas: number
   /** رسوم الشحن قبل الضريبة (صفر للاستلام من المحل). */
   shippingNetHalalas: number
-  /** وعاء الضريبة = البنود + الشحن. */
+  /** وعاء الضريبة = البنود + الشحن قبل الضريبة. */
   taxableHalalas: number
   vatHalalas: number
-  /** ما تدفعه الزبونة. */
+  /** ما تدفعه الزبونة = مجموع الأسطر الشاملة + الشحن الشامل. */
   totalHalalas: number
 }
 
+export interface FabricShippingAmounts {
+  /** صافي الشحن (4348 للخمسين ريالاً). */
+  shippingNetHalalas?: number
+  /** الشحن شاملاً الضريبة كما يُعرض ويُدفع (5000). يجب أن يساوي الصافي + ضريبته. */
+  shippingGrossHalalas?: number
+}
+
 /**
- * إجماليات الطلب من صافي الأسطر ورسوم الشحن (كلاهما قبل الضريبة).
+ * إجماليات الطلب من أسطر شاملة الضريبة (`computeFabricLineGrossHalalas`) ومن الشحن.
+ * الإجمالي جمع بلا تقريب، والضريبة تُستخرج منه مرة واحدة: round(الإجمالي × 15 / 115).
  * تستعملها السلة للعرض والخادم للاعتماد، فلا يختلف الرقمان. لا ترمي لأي سلة
  * ممكنة (40 سطراً × 100 متر × أعلى سعر مقبول)، فلا تُسقط صفحة السلة.
  */
-export function computeFabricOrderTotals(
-  lineNetHalalas: readonly number[],
-  options: { shippingNetHalalas?: number } = {}
+export function computeFabricGrossOrderTotals(
+  lineGrossHalalas: readonly number[],
+  options: FabricShippingAmounts = {}
 ): FabricOrderTotals {
   const shippingNetHalalas = options.shippingNetHalalas ?? 0
-  for (const amount of [...lineNetHalalas, shippingNetHalalas]) {
+  const shippingGrossHalalas = options.shippingGrossHalalas ?? 0
+  for (const amount of [...lineGrossHalalas, shippingNetHalalas, shippingGrossHalalas]) {
     if (!Number.isSafeInteger(amount) || amount < 0) {
       throw new RangeError('مبالغ الطلب يجب أن تكون هللات صحيحة غير سالبة')
     }
   }
-
-  const itemsNetHalalas = lineNetHalalas.reduce((sum, amount) => sum + amount, 0)
-  const taxableHalalas = itemsNetHalalas + shippingNetHalalas
-  const vatHalalas = divideRoundHalfUp(
-    multiplyExact(taxableHalalas, FABRIC_VAT_BASIS_POINTS),
-    BASIS_POINTS_SCALE
+  // حصة الشحن من الضريبة ثابتة (الشامل − الصافي)، فيجب أن يكون زوجاً متسقاً.
+  const expectedShippingGross = shippingNetHalalas + divideRoundHalfUp(
+    multiplyExact(shippingNetHalalas, FABRIC_VAT_BASIS_POINTS), BASIS_POINTS_SCALE
   )
+  if (shippingGrossHalalas !== expectedShippingGross) {
+    throw new RangeError('رسم الشحن الشامل لا يطابق صافي الشحن وضريبته')
+  }
+
+  const totalHalalas = lineGrossHalalas.reduce((sum, amount) => sum + amount, 0) + shippingGrossHalalas
+  const vatHalalas = divideRoundHalfUp(
+    multiplyExact(totalHalalas, FABRIC_VAT_BASIS_POINTS),
+    BASIS_POINTS_SCALE + FABRIC_VAT_BASIS_POINTS
+  )
+  const taxableHalalas = totalHalalas - vatHalalas
 
   return {
-    itemsNetHalalas,
+    itemsNetHalalas: taxableHalalas - shippingNetHalalas,
     shippingNetHalalas,
     taxableHalalas,
     vatHalalas,
-    totalHalalas: taxableHalalas + vatHalalas,
+    totalHalalas,
   }
 }
 
 export interface FabricOrderBreakdown extends FabricOrderTotals {
-  /** كل سطر شاملاً حصته من الضريبة، بنفس ترتيب المدخلات. */
+  /** كل سطر شاملاً الضريبة، كما دخل وبنفس الترتيب. */
   lineGrossHalalas: number[]
-  /** الشحن شاملاً حصته من الضريبة. */
+  /** حصة كل سطر من ضريبة الطلب (الباقي الأكبر بنسبة مبلغه). */
+  lineVatHalalas: number[]
+  /** كل سطر قبل الضريبة = الشامل − حصته. */
+  lineNetHalalas: number[]
+  /** الشحن شاملاً الضريبة. */
   shippingGrossHalalas: number
 }
 
 /**
- * الإجماليات + كل سطر شاملاً حصته من الضريبة، لبنود فاتورة الأستاذ والاسترداد
- * الجزئي. مجموع `lineGrossHalalas` + `shippingGrossHalalas` = `totalHalalas` دائماً.
+ * الإجماليات + صافي كل سطر وحصته من الضريبة، لأسطر الطلب في القاعدة وبنود فاتورة
+ * الأستاذ والاسترداد الجزئي. الشحن يأخذ حصته الثابتة أولاً فيبقى 50.00 في العرض
+ * والفاتورة، ويُوزّع باقي ضريبة الطلب على الأقمشة. مجموع `lineGrossHalalas` +
+ * `shippingGrossHalalas` = `totalHalalas` دائماً.
  * للخادم فقط: ترمي لطلب فوق `FABRIC_MAX_ORDER_TOTAL_HALALAS` بدل نتيجة غير دقيقة.
  */
-export function computeFabricOrderBreakdown(
-  lineNetHalalas: readonly number[],
-  options: { shippingNetHalalas?: number; shippingGrossHalalas?: number } = {}
+export function computeFabricGrossOrderBreakdown(
+  lineGrossHalalas: readonly number[],
+  options: FabricShippingAmounts = {}
 ): FabricOrderBreakdown {
-  const totals = computeFabricOrderTotals(lineNetHalalas, options)
+  const totals = computeFabricGrossOrderTotals(lineGrossHalalas, options)
   if (totals.totalHalalas > FABRIC_MAX_ORDER_TOTAL_HALALAS) {
     throw new RangeError('إجمالي الطلب يتجاوز السقف التقني للطلب الواحد')
   }
 
-  let lineVatShares: number[]
-  let shippingVat: number
-  if (options.shippingGrossHalalas !== undefined) {
-    // المرحلة 10 B: يبقى الشحن 50.00 في العرض والفاتورة حتى عند بواقي التقريب.
-    // ضريبة الطلب لم تتغير؛ أي هللة متبقية تُوزّع على الأقمشة بالباقي الأكبر.
-    const gross = options.shippingGrossHalalas
-    const expectedGross = totals.shippingNetHalalas + divideRoundHalfUp(
-      multiplyExact(totals.shippingNetHalalas, FABRIC_VAT_BASIS_POINTS), BASIS_POINTS_SCALE
-    )
-    if (!Number.isSafeInteger(gross) || gross < 0 || gross !== expectedGross) {
-      throw new RangeError('رسم الشحن الشامل لا يطابق صافي الشحن وضريبته')
-    }
-    shippingVat = gross - totals.shippingNetHalalas
-    lineVatShares = allocateByWeights(totals.vatHalalas - shippingVat, lineNetHalalas)
-  } else {
-    // الطلبات/المستهلكون السابقون الذين يمررون صافي الشحن فقط يحتفظون بعقدهم.
-    const vatShares = allocateByWeights(totals.vatHalalas, [...lineNetHalalas, totals.shippingNetHalalas])
-    shippingVat = vatShares[vatShares.length - 1]
-    lineVatShares = vatShares.slice(0, -1)
-  }
+  const shippingGrossHalalas = options.shippingGrossHalalas ?? 0
+  const itemsVatHalalas = totals.vatHalalas - (shippingGrossHalalas - totals.shippingNetHalalas)
+  const lineVatHalalas = allocateByWeights(itemsVatHalalas, lineGrossHalalas)
 
   return {
     ...totals,
-    lineGrossHalalas: lineNetHalalas.map((amount, index) => amount + lineVatShares[index]),
-    shippingGrossHalalas: totals.shippingNetHalalas + shippingVat,
+    lineGrossHalalas: [...lineGrossHalalas],
+    lineVatHalalas,
+    lineNetHalalas: lineGrossHalalas.map((amount, index) => amount - lineVatHalalas[index]),
+    shippingGrossHalalas,
   }
 }

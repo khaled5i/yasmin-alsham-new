@@ -46,7 +46,7 @@ export default function FabricSortOptions() {
       {/* Sort Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="inline-flex h-9 w-9 items-center justify-center gap-1.5 rounded-full border border-[#d8c5ae] bg-white text-[13px] font-medium text-[#211b19] transition-colors hover:border-[#6b1726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] sm:w-auto sm:px-3.5"
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center gap-1.5 rounded-full border border-[#d8c5ae] bg-white text-[13px] font-medium text-[#211b19] transition-colors hover:border-[#6b1726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68] sm:w-auto sm:px-4"
         aria-label="خيارات الترتيب"
         aria-expanded={isOpen}
       >

@@ -201,6 +201,44 @@ body {
   }
 }
 
+/* مؤشر تحميل متجر الأقمشة (FabricStoreLoader) */
+.fabric-loader-logo {
+  animation: fabricLoaderBreath 1.8s ease-in-out infinite;
+}
+
+.fabric-loader-shine {
+  background: linear-gradient(105deg, transparent 35%, rgba(251, 248, 243, 0.85) 50%, transparent 65%);
+  transform: translateX(-120%);
+  animation: fabricLoaderShine 1.8s ease-in-out infinite;
+}
+
+.fabric-loader-bar {
+  animation: fabricLoaderBar 1.2s ease-in-out infinite;
+}
+
+@keyframes fabricLoaderBreath {
+  0%, 100% { opacity: 0.75; transform: scale(0.97); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fabricLoaderShine {
+  0% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(120%); }
+}
+
+@keyframes fabricLoaderBar {
+  0% { right: -33%; }
+  100% { right: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fabric-loader-logo,
+  .fabric-loader-shine,
+  .fabric-loader-bar {
+    animation: none;
+  }
+}
+
 /* أنماط الأزرار المخصصة */
 .btn-primary {
   @apply bg-gradient-to-r from-pink-400 to-rose-400 hover:from-pink-500 hover:to-rose-500 text-white font-semibold py-3 px-6 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105;

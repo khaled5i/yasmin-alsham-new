@@ -64,6 +64,10 @@ const FILES = {
   migrationE: repoPath('supabase/migrations/20261006120000_fabric_store_purge_retention_floor.sql'),
   testE: repoPath('supabase/tests/fabric_store_purge_retention_floor.sql'),
   rollbackE: repoPath('docs/store-launch-plans/implementation/payments/fixes/FIX-E-rollback.sql'),
+  // whole-riyal meter price (owner, 27 Oct 2026): order VAT and line net constraints accept both rules
+  migrationW: repoPath('supabase/migrations/20261027120000_fabric_store_whole_riyal_meter_price.sql'),
+  testW: repoPath('supabase/tests/fabric_store_whole_riyal_meter_price.sql'),
+  rollbackW: repoPath('docs/store-launch-plans/implementation/payments/fixes/FIX-whole-riyal-rollback.sql'),
   report7: repoPath('docs/store-launch-plans/implementation/payments/stage-07-order-admin.md'),
   report2: repoPath('docs/store-launch-plans/implementation/payments/stage-02-orders-and-payments-schema.md'),
   report3: repoPath('docs/store-launch-plans/implementation/payments/stage-03-stock-reservations.md'),

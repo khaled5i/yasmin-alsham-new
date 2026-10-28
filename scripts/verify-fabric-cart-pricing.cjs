@@ -95,7 +95,8 @@ const pieceLine = commerce.resolveCartLine(
   line({ purchaseMode: 'piece', quantity: 1, snapshot: { ...line().snapshot, unitPrice: 350 } }),
   wholePiece
 )
-assert.equal(pieceLine.lineTotal, 350, 'إجمالي القطعة لا يُضرب بعدد الأمتار مرة ثانية')
+assert.equal(pieceLine.lineTotal, 402.5, 'إجمالي القطعة شاملاً الضريبة = 115 للمتر × 3.5، لا يُضرب بالأمتار مرة ثانية')
+assert.equal(pieceLine.payablePricePerMeter, 115, 'القطعة تُعرض وتُدفع بسعر المتر الشامل')
 assert.equal(pieceLine.status, 'ok')
 assert.deepEqual(pieceLine.notices, [])
 
@@ -120,7 +121,7 @@ const meterLine = commerce.resolveCartLine(
   line({ quantity: 2.5, snapshot: { ...line().snapshot, unitPrice: 200 } }),
   meterFabric
 )
-assert.equal(meterLine.lineTotal, 500, '2.5 متر × 200 = 500')
+assert.equal(meterLine.lineTotal, 575, '2.5 متر × 230 شامل الضريبة = 575')
 
 // ============================================
 // 4) حدود المخزون
