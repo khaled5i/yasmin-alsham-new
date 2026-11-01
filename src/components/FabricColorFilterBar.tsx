@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useFabricStore } from '@/store/fabricStore'
+import { normalizeColorName as normalizeColor } from '@/lib/fabric-color-swatches'
 
 // لوحة الألوان الظاهرة في الشريط العائم
 // aliases = الكلمات التي نبحث عنها داخل ألوان القماش المخزّنة (بعد التطبيع)
@@ -14,16 +15,6 @@ const COLOR_SWATCHES: { key: string; label: string; hex: string; ring: string; a
   { key: 'beige', label: 'بيج', hex: '#d8c5ae', ring: '#b99a68', aliases: ['بيج', 'بيچ', 'beige'] },
   { key: 'pink', label: 'وردي', hex: '#e6a2b6', ring: '#c97e96', aliases: ['وردي', 'ورديه', 'زهري', 'روز', 'بينك', 'pink'] },
 ]
-
-// تطبيع اسم اللون: إزالة التشكيل وتوحيد الألف والهاء وحذف الفراغات
-const normalizeColor = (value: string): string =>
-  value
-    .toLowerCase()
-    .replace(/[ً-ْـ]/g, '')
-    .replace(/[أإآٱ]/g, 'ا')
-    .replace(/ة/g, 'ه')
-    .replace(/ى/g, 'ي')
-    .replace(/[\s\-_/،,]/g, '')
 
 export default function FabricColorFilterBar() {
   const { fabrics, filters, setFilters } = useFabricStore()

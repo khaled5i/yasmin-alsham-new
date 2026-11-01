@@ -1,9 +1,11 @@
-import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
+import { STORE_SUPPORT_PHONE } from '@/lib/store-legal'
 
 const MESSAGE = 'مرحباً، أود الاستفسار عن أقمشة متجر ياسمين الشام'
 
 /**
  * زر واتساب العائم أسفل يسار صفحات المتجر، إلى رقم محل الأقمشة.
+ * مكوّن سيرفر: الرقم من store-legal مباشرة لا من fabric-cart-whatsapp ('use client')، وإلا وصل
+ * إلى السيرفر «مرجع عميل» بدل الرقم وصار الرابط wa.me/function(){throw Error(...)} (نوفمبر 2026).
  * مرفوع فوق شريط «تسوقي بحسب اللون» العائم حتى لا يغطي طرفه.
  * التتبّع من المستمع العام في SiteInsights (generate_lead في GA، ومنه إلى Google Ads)،
  * وdata-wa-placement يميّز ضغطاته عن بقية أزرار واتساب. لا onClick هنا حتى لا يُعدّ مرتين.
@@ -11,7 +13,7 @@ const MESSAGE = 'مرحباً، أود الاستفسار عن أقمشة متج
 export default function FloatingWhatsAppButton() {
   return (
     <a
-      href={`https://wa.me/${FABRIC_STORE_WHATSAPP_NUMBER}?text=${encodeURIComponent(MESSAGE)}`}
+      href={`${STORE_SUPPORT_PHONE.whatsappUrl}?text=${encodeURIComponent(MESSAGE)}`}
       target="_blank"
       rel="noopener noreferrer"
       data-wa-placement="store_floating_button"

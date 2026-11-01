@@ -78,11 +78,14 @@ export default function FabricsPage() {
     fabrics.some(fabric => matchesFabricSearch(fabric, query, { includeDescription: true }))), [fabrics])
   const matchingFabrics = getFilteredFabrics()
   const filteredFabrics = showDesigns ? matchingFabrics.filter(hasFabricDesignImages) : matchingFabrics
+  // قبل أول طلب تكون القائمة فارغة وisLoading=false، فلا نعرض «لا توجد أقمشة» حتى ينتهي الطلب
+  const [hasLoadSettled, setHasLoadSettled] = useState(false)
+  // العودة من صفحة القماش تُرجع البطاقة فوراً من القائمة المحفوظة، ثم تثبّتها مكانها حين يصل التحديث
   const {
     page, setPage,
     currentImageIndexes, setCurrentImageIndexes,
     isReady, isRestoring, restoredCount, rememberFabric,
-  } = useFabricBrowsePosition(JSON.stringify({ filters, sortBy }), filteredFabrics, isLoading)
+  } = useFabricBrowsePosition(JSON.stringify({ filters, sortBy }), filteredFabrics, isLoading || !hasLoadSettled)
   // زر العرض الأحادي أُزيل، فالشبكة ثنائية دائماً على الجوال حتى لمن حفظ «single» سابقاً
   const isSingleColumn = false
   const displayedFabrics = isReady ? filteredFabrics.slice(0, page * FABRICS_PER_PAGE) : []
@@ -91,9 +94,6 @@ export default function FabricsPage() {
   const [quickViewFabric, setQuickViewFabric] = useState<Fabric | null>(null)
   const [isQuickViewOpen, setIsQuickViewOpen] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
-
-  // قبل أول طلب تكون القائمة فارغة وisLoading=false، فلا نعرض «لا توجد أقمشة» حتى ينتهي الطلب
-  const [hasLoadSettled, setHasLoadSettled] = useState(false)
 
   useEffect(() => {
     console.log('🔄 تحميل الأقمشة من Supabase...')

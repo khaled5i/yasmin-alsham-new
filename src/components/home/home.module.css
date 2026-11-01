@@ -2149,6 +2149,274 @@
   height: 16px;
 }
 
+/* «تقييم عميلاتنا على Google» أسفل قسم التفصيل: نفس النبيذي الداكن وعنوان الخطّين وبطاقات بحواف المعرض */
+.tailoringReviewsSection {
+  color: var(--ivory);
+  background:
+    radial-gradient(circle at 84% 22%, rgba(201, 142, 148, 0.11), transparent 26%),
+    radial-gradient(circle at 12% 82%, rgba(185, 154, 104, 0.07), transparent 24%),
+    var(--deep-wine);
+  border-top: 1px solid rgba(216, 197, 174, 0.12);
+}
+
+.tailoringReviewsInner {
+  width: min(100% - 28px, 1220px);
+  margin-inline: auto;
+  padding: 54px 0 max(68px, calc(50px + env(safe-area-inset-bottom, 0px)));
+  text-align: center;
+}
+
+.tailoringReviewsEyebrow {
+  padding-bottom: 10px;
+  color: var(--gold);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.tailoringReviewsSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  margin-top: 20px;
+}
+
+.tailoringReviewsSummary strong {
+  color: var(--ivory);
+  font-family: var(--font-home-display), serif;
+  font-size: clamp(2.2rem, 9vw, 3rem);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tailoringReviewsSummary > span:last-child {
+  color: rgba(246, 240, 232, 0.6);
+  font-size: 0.8rem;
+}
+
+.reviewStars {
+  display: inline-flex;
+  gap: 2px;
+  color: var(--gold);
+}
+
+.reviewStars svg {
+  width: 18px;
+  height: 18px;
+}
+
+.reviewStarsSmall svg {
+  width: 13px;
+  height: 13px;
+}
+
+.reviewStarFilled {
+  fill: currentColor;
+}
+
+.reviewStarEmpty {
+  color: rgba(216, 197, 174, 0.3);
+}
+
+.tailoringReviewsList {
+  display: flex;
+  gap: 14px;
+  margin: 34px -14px 0;
+  padding: 0 14px 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  list-style: none;
+  text-align: right;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 14px;
+  scrollbar-width: none;
+}
+
+.tailoringReviewsList::-webkit-scrollbar {
+  display: none;
+}
+
+.tailoringReviewCard {
+  position: relative;
+  display: flex;
+  flex: 0 0 82%;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 18px 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(216, 197, 174, 0.18);
+  border-radius: 17px;
+  box-shadow: 0 18px 44px rgba(12, 2, 5, 0.28);
+  scroll-snap-align: start;
+  transition: border-color 220ms ease, transform 220ms ease;
+}
+
+/* علامة اقتباس بخط العناوين في زاوية البطاقة */
+.tailoringReviewCard::before {
+  position: absolute;
+  top: 6px;
+  left: 16px;
+  color: rgba(185, 154, 104, 0.3);
+  font-family: var(--font-home-display), serif;
+  font-size: 3.4rem;
+  line-height: 1;
+  content: '”';
+  pointer-events: none;
+}
+
+.tailoringReviewAuthor {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 34px;
+}
+
+.tailoringReviewAvatar {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  place-items: center;
+  color: var(--deep-wine);
+  font-weight: 600;
+  object-fit: cover;
+  background: var(--sand);
+  border: 1px solid rgba(216, 197, 174, 0.4);
+  border-radius: 50%;
+}
+
+.tailoringReviewAuthorText {
+  min-width: 0;
+}
+
+.tailoringReviewName {
+  display: block;
+  overflow: hidden;
+  color: var(--ivory);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.tailoringReviewName:hover {
+  text-decoration: underline;
+}
+
+.tailoringReviewMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  color: rgba(246, 240, 232, 0.5);
+  font-size: 0.7rem;
+}
+
+.tailoringReviewText {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(246, 240, 232, 0.78);
+  font-size: 0.86rem;
+  line-height: 1.95;
+  text-align: start;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.tailoringReviewLink {
+  margin-top: auto;
+  color: var(--sand);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tailoringReviewLink:hover {
+  color: var(--ivory);
+  text-decoration: underline;
+}
+
+.tailoringReviewsAllButton {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 30px;
+  padding: 11px 19px;
+  color: var(--ivory);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(246, 240, 232, 0.38);
+  border-radius: 12px;
+  transition: color 200ms ease, background-color 200ms ease, transform 200ms ease;
+}
+
+.tailoringReviewsAllButton:hover {
+  color: var(--deep-wine);
+  background: var(--ivory);
+  transform: translateY(-2px);
+}
+
+.tailoringReviewsAllButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tailoringReviewsSource {
+  padding-top: 16px;
+  color: rgba(246, 240, 232, 0.42);
+  font-size: 0.62rem;
+}
+
+@media (min-width: 640px) {
+  .tailoringReviewsInner {
+    width: min(100% - 64px, 1220px);
+  }
+
+  .tailoringReviewsList {
+    margin-inline: -32px;
+    padding-inline: 32px;
+    scroll-padding-inline: 32px;
+  }
+
+  .tailoringReviewCard {
+    flex-basis: 45%;
+  }
+}
+
+@media (min-width: 768px) {
+  .tailoringReviewsInner {
+    padding-top: 72px;
+  }
+}
+
+@media (min-width: 960px) {
+  .tailoringReviewsList {
+    justify-content: center;
+    margin-inline: 0;
+    padding-inline: 0;
+    overflow: visible;
+  }
+
+  .tailoringReviewCard {
+    flex: 1 1 0;
+    max-width: 300px;
+  }
+
+  .tailoringReviewCard:hover {
+    border-color: rgba(216, 197, 174, 0.34);
+    transform: translateY(-3px);
+  }
+}
+
 @keyframes tailoringScrollDrop {
   0%, 100% { opacity: 0.4; transform: translateY(0); }
   50% { opacity: 1; transform: translateY(15px); }

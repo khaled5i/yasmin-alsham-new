@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import HomeAnalytics from '@/components/home/HomeAnalytics'
 import HomeExperience from '@/components/home/HomeExperience'
 import HomeStoreSections from '@/components/home/HomeStoreSections'
+import TailoringReviews from '@/components/home/TailoringReviews'
 import styles from '@/components/home/home.module.css'
 import { homeDisplay, homeSans } from '@/components/home/home-fonts'
 
@@ -32,7 +33,7 @@ export default function Home() {
   return (
     <div className={`${styles.homeShell} ${homeSans.variable} ${homeDisplay.variable}`}>
       <HomeAnalytics />
-      <HomeExperience storeSections={<HomeStoreSections />} />
+      <HomeExperience storeSections={<HomeStoreSections />} tailoringReviews={<TailoringReviews />} />
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Image from 'next/image'
 import { ArrowLeft, ChevronDown, MessageCircle } from 'lucide-react'
 import ResponsiveHeroMedia from './ResponsiveHeroMedia'
@@ -76,7 +77,8 @@ export function CinematicHero({ onSelectSection }: SectionSelectionProps) {
   )
 }
 
-export function TailoringStory() {
+/** reviews: تقييمات Google تُبنى على الخادم (TailoringReviews) وتُمرَّر من الصفحة لأن هذا القسم يُعرض داخل مكوّن عميل. */
+export function TailoringStory({ reviews }: { reviews?: ReactNode }) {
   return (
     <>
       <section className={styles.tailoringHero} aria-labelledby="tailoring-title">
@@ -138,6 +140,8 @@ export function TailoringStory() {
           </div>
         </div>
       </section>
+
+      {reviews}
     </>
   )
 }

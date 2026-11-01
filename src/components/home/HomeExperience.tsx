@@ -18,7 +18,13 @@ function getSectionFromHash(): HomeSectionKey | null {
   return hash === 'tailoring' ? hash : null
 }
 
-export default function HomeExperience({ storeSections }: { storeSections?: ReactNode }) {
+export default function HomeExperience({
+  storeSections,
+  tailoringReviews,
+}: {
+  storeSections?: ReactNode
+  tailoringReviews?: ReactNode
+}) {
   const [activeSection, setActiveSection] = useState<HomeSectionKey | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollBehaviorRef = useRef<ScrollBehavior>('smooth')
@@ -105,7 +111,7 @@ export default function HomeExperience({ storeSections }: { storeSections?: Reac
             tabIndex={-1}
             data-section={activeSection}
           >
-            <TailoringStory />
+            <TailoringStory reviews={tailoringReviews} />
           </div>
         ) : (
           <>

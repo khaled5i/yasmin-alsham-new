@@ -126,6 +126,49 @@ const defaultFilters: FilterState = {
   searchQuery: ''
 }
 
+/** فئات القماش؛ القماش القديم بلا `categories` يُعامل بفئته الوحيدة. */
+export const getFabricCategories = (fabric: Pick<Fabric, 'category' | 'categories'>): string[] =>
+  fabric.categories?.length ? fabric.categories : [fabric.category]
+
+/**
+ * هل يطابق القماش الفلاتر؟ قاعدة المتجر الوحيدة: يستخدمها `getFilteredFabrics`،
+ * وتعدّ بها لوحة الفلاتر ما سيظهر لكل خيار قبل اختياره.
+ */
+export function fabricMatchesFilters(fabric: Fabric, filters: FilterState): boolean {
+  // فلتر الفئة
+  if (Array.isArray(filters.category) && filters.category.length > 0) {
+    const fabricCategories = getFabricCategories(fabric)
+    if (!filters.category.some(category => fabricCategories.includes(category))) return false
+  }
+
+  // فلتر السعر
+  if (filters.priceRange) {
+    const { min, max } = filters.priceRange
+    // النطاق يُختار على السعر الظاهر للزبونة (شامل الضريبة)
+    const displayedPrice = getFabricStorefrontPricing(
+      fabric.price_per_meter,
+      fabric.stock_quantity
+    ).amount
+    if (displayedPrice == null || displayedPrice < min || displayedPrice > max) return false
+  }
+
+  // فلتر الألوان
+  if (filters.colors.length > 0) {
+    const hasMatchingColor = filters.colors.some(color =>
+      fabric.available_colors.includes(color)
+    )
+    if (!hasMatchingColor) return false
+  }
+
+  // فلتر البحث: الاسم، الرقم، النوع/الفئة، اللون، والوصف — مع تطبيع الحروف العربية
+  if (filters.searchQuery) {
+    const searchable = { ...fabric, categories: getFabricCategories(fabric) }
+    if (!matchesFabricSearch(searchable, filters.searchQuery, { includeDescription: true })) return false
+  }
+
+  return true
+}
+
 // ============================================
 // إنشاء المتجر
 // ============================================
@@ -212,43 +255,7 @@ export const useFabricStore = create<FabricStoreState>()(
         const { fabrics, filters, sortBy } = get()
 
         // تطبيق الفلاتر
-        const filtered = fabrics.filter((fabric) => {
-          // فلتر الفئة
-          if (Array.isArray(filters.category) && filters.category.length > 0) {
-            const fabricCategories = fabric.categories?.length ? fabric.categories : [fabric.category]
-            if (!filters.category.some(category => fabricCategories.includes(category))) return false
-          }
-
-          // فلتر السعر
-          if (filters.priceRange) {
-            const { min, max } = filters.priceRange
-            // النطاق يُختار على السعر الظاهر للزبونة (شامل الضريبة)
-            const displayedPrice = getFabricStorefrontPricing(
-              fabric.price_per_meter,
-              fabric.stock_quantity
-            ).amount
-            if (displayedPrice == null || displayedPrice < min || displayedPrice > max) return false
-          }
-
-          // فلتر الألوان
-          if (filters.colors.length > 0) {
-            const hasMatchingColor = filters.colors.some(color =>
-              fabric.available_colors.includes(color)
-            )
-            if (!hasMatchingColor) return false
-          }
-
-          // فلتر البحث: الاسم، الرقم، النوع/الفئة، اللون، والوصف — مع تطبيع الحروف العربية
-          if (filters.searchQuery) {
-            const searchable = {
-              ...fabric,
-              categories: fabric.categories?.length ? fabric.categories : [fabric.category]
-            }
-            if (!matchesFabricSearch(searchable, filters.searchQuery, { includeDescription: true })) return false
-          }
-
-          return true
-        })
+        const filtered = fabrics.filter(fabric => fabricMatchesFilters(fabric, filters))
 
         // تطبيق الترتيب
         filtered.sort((a, b) => {
