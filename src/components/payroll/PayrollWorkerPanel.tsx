@@ -682,7 +682,7 @@ export default function PayrollWorkerPanel({
               )}
               <details className="text-sm text-stone-600">
                 <summary className="cursor-pointer py-2">
-                  {t('التاريخ والملاحظة', 'Date and note')} · {date}
+                  {t('تاريخ العملية', 'Entry date')} · {date}
                 </summary>
                 <div className="mt-2 space-y-3">
                   <label className="block">
@@ -697,17 +697,17 @@ export default function PayrollWorkerPanel({
                       onChange={(e) => setDate(e.target.value)}
                     />
                   </label>
-                  <label className="block">
-                    {t('ملاحظة اختيارية', 'Optional note')}
-                    <textarea
-                      rows={2}
-                      className={payrollInput}
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                    />
-                  </label>
                 </div>
               </details>
+              <label className="block text-sm text-stone-600">
+                {t('ملاحظة اختيارية', 'Optional note')}
+                <textarea
+                  rows={2}
+                  className={payrollInput}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </label>
               {paymentAmount + deductionAmount > 0 && (
                 <p className="rounded-xl bg-teal-50 p-3 text-sm leading-6 text-teal-900">
                   {form === 'debt'

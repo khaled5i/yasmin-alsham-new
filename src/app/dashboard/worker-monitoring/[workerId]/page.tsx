@@ -304,6 +304,14 @@ export default function WorkerDetailPage() {
         }
       }
 
+      const thumbnails = await orderService.getCompletedImageThumbnails(loadedOrders.map((order) => order.id))
+      if (thumbnails.error) {
+        toast.error('تعذر تحميل صور العمل المكتمل. أعد تحميل الطلبات للمحاولة مجددًا.')
+      }
+      loadedOrders = loadedOrders.map((order) => ({
+        ...order,
+        completed_images: thumbnails.data[order.id] ? [thumbnails.data[order.id]] : [],
+      }))
       setCompletedOrders(loadedOrders)
       setCompletedOrdersTotal(total || 0)
       // قراءة بيانات التسعير من أعمدة الطلب مباشرةً
@@ -431,7 +439,7 @@ export default function WorkerDetailPage() {
       return pricingVersions.current.get(orderId) === version
     } catch {
       if (pricingVersions.current.get(orderId) === version) {
-        toast.error(isArabic ? 'تعذر حفظ التسعير ومزامنة الراتب. المدخلات محفوظة في الشاشة؛ اضغط حفظ لإعادة المحاولة.' : 'Pricing and payroll sync failed. Your input is still on screen; press Save to retry.')
+        toast.error(isArabic ? 'تعذر حفظ التسعير ومزامنة الراتب. المدخلات محفوظة في الشاشة؛ اضغط إعادة المحاولة أسفل السعر.' : 'Pricing and payroll sync failed. Your input is still on screen; use Retry below the price.')
       }
       return false
     }
@@ -1316,8 +1324,9 @@ function CompletedOrderRow({
 }) {
   const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
   const hasPricing = pricingData.price.trim() !== ''
-  const isEvaluated = hasPricing || pricingData.rating > 0
-  const thumbnail = (order as any).design_thumbnail || '/front2.png'
+  const isEvaluated = hasPricing
+  const completedThumbnail = order.completed_images?.[0]
+  const thumbnail = completedThumbnail || order.design_thumbnail || '/front2.png'
 
   // مسوّدة تاريخ/ساعة إنهاء العامل أثناء التعديل — تُعاد للقيمة المحفوظة عند كل فتح
   const [completedAtDraft, setCompletedAtDraft] = useState('')
@@ -1327,15 +1336,15 @@ function CompletedOrderRow({
     }
   }, [isEditingCompletedAt, order.worker_completed_at])
 
-  // حفظ ثم طي البطاقة
-  const [savingPricing, setSavingPricing] = useState(false)
-  async function handleSaveAndCollapse() {
-    if (savingPricing) return
-    setSavingPricing(true)
-    try {
-      const saved = await onSavePricing(order.id, pricingData)
-      if (saved) onToggle(order)
-    } finally { setSavingPricing(false) }
+  const [pricingSaveStatus, setPricingSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const pricingSaveVersion = useRef(0)
+  async function handlePriceChange(price: string) {
+    const version = ++pricingSaveVersion.current
+    setPricingSaveStatus('saving')
+    const saved = await onSavePricing(order.id, { ...pricingData, price })
+    if (version === pricingSaveVersion.current) {
+      setPricingSaveStatus(saved ? 'saved' : 'error')
+    }
   }
 
   const completedImages = orderFullDetail?.completed_images || []
@@ -1347,42 +1356,49 @@ function CompletedOrderRow({
 
   return (
     <div
-      className={`rounded-2xl border transition-all duration-200 shadow-sm ${
-        isExpanded
-          ? 'border-pink-300 shadow-md'
-          : isEvaluated
-          ? 'border-green-300 bg-green-50/20 hover:border-green-400 hover:shadow-md'
-          : 'border-gray-200 bg-white hover:border-pink-200 hover:shadow-md'
-      }`}
+      className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-shadow duration-200 hover:shadow-md"
     >
       {/* ===== وجه البطاقة ===== */}
-      <div className="p-4">
-        <div className="flex gap-4">
-          {/* صورة التصميم المصغرة */}
+      <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-4 py-3 sm:px-5">
+        <span className="text-xs font-semibold tracking-wide text-stone-500">
+          {order.order_number ? `طلب #${order.order_number}` : 'طلب مكتمل'}
+        </span>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${status.bg} ${status.color}`}>
+          <CheckCircle className="h-3.5 w-3.5" />
+          {status.label}
+        </span>
+      </div>
+      <div className="p-4 sm:p-5">
+        <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-6">
+          {/* صورة العمل المكتمل على وجه البطاقة */}
           <button
-            onClick={() => onOpenModal(order)}
-            className="flex-shrink-0 w-20 sm:w-24 self-start"
+            type="button"
+            onClick={() => completedThumbnail ? onLightbox(completedThumbnail) : onOpenModal(order)}
+            aria-label={completedThumbnail ? 'تكبير صورة العمل المكتمل' : 'عرض تصميم الطلب'}
+            className="group relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-stone-200 bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 focus-visible:ring-offset-2"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={thumbnail}
-              alt="صورة التصميم"
-              className="w-full rounded-xl border border-pink-100 object-contain shadow-sm bg-gray-50 hover:opacity-90 transition-opacity"
-              style={{ aspectRatio: '3/4' }}
+              alt={completedThumbnail ? `العمل المكتمل لطلب ${order.order_number || order.client_name}` : 'تصميم الطلب — لا توجد صورة للعمل المكتمل'}
+              className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
+              loading="lazy"
             />
+            {!completedThumbnail && (
+              <span className="absolute inset-x-2 bottom-2 rounded-lg bg-white/95 px-2 py-1.5 text-center text-xs font-semibold text-stone-700 shadow-sm">
+                تصميم الطلب · لا توجد صورة للعمل المكتمل
+              </span>
+            )}
           </button>
 
           {/* المعلومات */}
           <div className="flex-1 min-w-0">
             {/* الحالة + شارة التقييم */}
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.bg} ${status.color}`}>
-                {status.label}
-              </span>
-              {isEvaluated && !isExpanded && (
+              {isEvaluated && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
                   <CheckCircle className="w-3 h-3" />
-                  تم التقييم
+                  تم التسعير
                 </span>
               )}
               {Number(order.alteration_count || 0) > 0 ? (
@@ -1394,20 +1410,17 @@ function CompletedOrderRow({
             </div>
 
             {/* الاسم ورقم الطلب */}
-            <button onClick={() => onOpenModal(order)} className="text-right w-full">
-              <div className="flex items-center gap-2 mb-1">
-                <p className="font-bold text-gray-900 truncate">{order.client_name}</p>
-                {order.order_number && (
-                  <span className="text-xs text-gray-400 flex-shrink-0">#{order.order_number}</span>
-                )}
+            <button onClick={() => onOpenModal(order)} className="w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 rounded-lg">
+              <div className="mb-1 flex min-w-0 items-center gap-2">
+                <p className="break-words text-base font-bold leading-7 text-stone-900 sm:text-lg">{order.client_name}</p>
               </div>
               {order.description && (
-                <p className="text-sm text-gray-500 line-clamp-2 mb-2">{order.description}</p>
+                <p className="mb-3 line-clamp-2 text-xs leading-6 text-stone-500 sm:text-sm">{order.description}</p>
               )}
             </button>
 
             <OrderCutterInfo order={order} />
-            <div className="space-y-1 mt-1">
+            <div className="mt-3 space-y-3 border-t border-stone-100 pt-3">
               {/* تاريخ وساعة إنهاء العامل — قابل للتعديل يدوياً من قبل المدير */}
               {isEditingCompletedAt ? (
                 <div className="rounded-xl border border-green-200 bg-green-50/60 p-2.5 space-y-2">
@@ -1452,7 +1465,7 @@ function CompletedOrderRow({
               ) : (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {order.worker_completed_at ? (
-                    <p className="text-xs text-green-600 flex items-center gap-1 font-medium">
+                    <p className="flex flex-wrap items-center gap-1.5 text-xs font-medium leading-5 text-stone-600">
                       <CheckCircle className="w-3 h-3 flex-shrink-0" />
                       أنهاه العامل:{' '}
                       {formatGregorianDateTime(order.worker_completed_at)}
@@ -1482,56 +1495,70 @@ function CompletedOrderRow({
                 </div>
               )}
               {completionGap !== null && (
-                <p className="text-xs text-indigo-600 flex items-center gap-1 font-medium">
+                <p className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-stone-600">
                   <TrendingUp className="w-3 h-3 flex-shrink-0" />
                   وقت الإنجاز:{' '}
-                  <span className="bg-indigo-50 border border-indigo-200 rounded-md px-1.5 py-0.5">
+                  <span className="rounded-md bg-stone-100 px-2 py-1 font-semibold text-stone-800">
                     {formatDuration(completionGap)}
                   </span>
                 </p>
               )}
               {order.due_date && (
-                <p className="text-xs text-gray-500 flex items-center gap-1">
+                <p className="flex flex-wrap items-center gap-1.5 text-xs leading-5 text-stone-500">
                   <Clock className="w-3 h-3 flex-shrink-0" />
                   موعد التسليم:{' '}
                   {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
                 </p>
               )}
-              {hasPricing && !isExpanded && (
-                <p className="text-xs font-semibold text-pink-700 flex items-center gap-1">
-                  <Tag className="w-3 h-3" />
-                  {parseFloat(pricingData.price).toLocaleString('ar-SA-u-nu-latn')} ر.س
-                </p>
-              )}
-              {pricingData.rating > 0 && !isExpanded && (
-                <div className="flex items-center gap-0.5 mt-1">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className={`w-3.5 h-3.5 ${i < pricingData.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'}`} />
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
-          {/* يمين: السعر + أزرار التقييم */}
-          <div className="flex flex-col items-end justify-between flex-shrink-0 gap-2">
-            {order.price ? (
-              <span className="text-sm font-bold text-gray-800">{order.price.toLocaleString('ar-SA-u-nu-latn')} ر.س</span>
-            ) : <span />}
+        </div>
+      </div>
+
+      {isAdmin && (
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-stone-100 bg-stone-50/80 px-4 py-4 sm:px-5">
+          <label className="block w-full text-xs font-semibold text-stone-600 sm:w-56">
+            أجر القطعة · ر.س
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="أدخل السعر"
+              value={pricingData.price}
+              onChange={(e) => { void handlePriceChange(sanitizeNum(e.target.value)) }}
+              className="mt-2 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 py-2 text-lg font-bold tabular-nums text-stone-900 shadow-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+          </label>
+          <div className="text-xs text-stone-500" role="status" aria-live="polite">
+            {pricingSaveStatus === 'saving' ? 'جاري الحفظ والمزامنة…'
+              : pricingSaveStatus === 'saved' ? 'تم الحفظ تلقائيًا'
+              : pricingSaveStatus === 'error' ? (
+                <button type="button" onClick={() => { void handlePriceChange(pricingData.price) }} className="font-semibold text-red-600 underline">
+                  تعذر الحفظ — إعادة المحاولة
+                </button>
+              ) : null}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 px-4 py-3 sm:px-5">
+          {/* السعر وأزرار الصور والظهور للعامل */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => onOpenModal(order)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-100">
+              تفاصيل الطلب
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
             {isAdmin && (
               <>
                 <button
+                  type="button"
+                  aria-expanded={isExpanded}
                   onClick={() => onToggle(order)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                    isExpanded
-                      ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
-                      : isEvaluated
-                      ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                      : 'bg-slate-100 text-slate-600 hover:bg-pink-50 hover:text-pink-700'
-                  }`}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-100"
                 >
-                  <Star className="w-3.5 h-3.5" />
-                  {isExpanded ? 'إغلاق' : isEvaluated ? 'تعديل' : 'تقييم'}
+                  <Package className="w-3.5 h-3.5" />
+                  {isExpanded ? 'إخفاء الصور' : 'صور العمل'}
                 </button>
                 {isEvaluated && (
                   <button
@@ -1541,7 +1568,7 @@ function CompletedOrderRow({
                         ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
                         : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                     }`}
-                    title={order.worker_rating_visible ? 'إخفاء التقييم عن العامل' : 'عرض التقييم للعامل'}
+                    title={order.worker_rating_visible ? 'إخفاء التسعير عن العامل' : 'عرض التسعير للعامل'}
                   >
                     <Eye className="w-3.5 h-3.5" />
                     {order.worker_rating_visible ? 'مرئي للعامل' : 'عرض للعامل'}
@@ -1550,18 +1577,22 @@ function CompletedOrderRow({
               </>
             )}
           </div>
-        </div>
+        {order.price != null && (
+          <p className="text-xs text-stone-400">
+            قيمة الطلب <span className="ms-1 font-semibold tabular-nums text-stone-600">{order.price.toLocaleString('ar-SA-u-nu-latn')} ر.س</span>
+          </p>
+        )}
       </div>
 
-      {/* ===== قسم التسعير والتقييم — يظهر عند الفتح ===== */}
+      {/* ===== صور العمل — تظهر عند الفتح ===== */}
       {isAdmin && isExpanded && (
-        <div className="border-t border-pink-100 p-4 bg-gradient-to-br from-pink-50/50 to-purple-50/30">
+        <div className="border-t border-stone-100 bg-stone-50 p-4 sm:p-5">
 
-          {/* صور العمل + فورم التسعير جنباً لجنب */}
+          {/* صور العمل المكتمل */}
           <div className="flex flex-col sm:flex-row gap-4">
 
             {/* الصور (يمين في RTL) */}
-            <div className="sm:w-2/5">
+            <div className="w-full">
               {!orderFullDetail ? (
                 <div className="flex items-center gap-2 text-xs text-gray-400 py-4">
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -1578,7 +1609,7 @@ function CompletedOrderRow({
                     <Package className="w-3.5 h-3.5 text-pink-500" />
                     صور العمل ({completedImages.length})
                   </p>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                     {completedImages.map((src, i) => (
                       <button
                         key={i}
@@ -1605,94 +1636,6 @@ function CompletedOrderRow({
               )}
             </div>
 
-            {/* فورم التسعير (يسار في RTL = start في RTL يعني اليمين، لكن بالعرض يبدو على اليسار في layout LTR) */}
-            <div className="sm:w-3/5 space-y-3">
-              <h4 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
-                <Tag className="w-4 h-4 text-pink-600" />
-                التسعير والتقييم
-              </h4>
-
-              {/* السعر */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">السعر (ر.س)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="أدخل السعر"
-                  value={pricingData.price}
-                  onChange={(e) => onSavePricing(order.id, { ...pricingData, price: sanitizeNum(e.target.value) })}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-              </div>
-
-              {/* المكافأة */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">المكافأة (ر.س)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="أدخل المكافأة"
-                  value={pricingData.bonus}
-                  onChange={(e) => onSavePricing(order.id, { ...pricingData, bonus: sanitizeNum(e.target.value) })}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-              </div>
-
-              {/* الملاحظات */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">الملاحظات</label>
-                <textarea
-                  rows={2}
-                  placeholder="ملاحظات اختيارية..."
-                  value={pricingData.notes}
-                  onChange={(e) => onSavePricing(order.id, { ...pricingData, notes: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none focus:ring-2 focus:ring-pink-100 resize-none"
-                />
-              </div>
-
-              {/* التقييم بالنجوم */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">التقييم</label>
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        const newRating = pricingData.rating === i + 1 ? 0 : i + 1
-                        onSavePricing(order.id, { ...pricingData, rating: newRating })
-                      }}
-                      className="transition-transform hover:scale-110 focus:outline-none"
-                    >
-                      <Star
-                        className={`w-6 h-6 transition-colors ${
-                          i < pricingData.rating
-                            ? 'text-yellow-400 fill-yellow-400'
-                            : 'text-gray-300 hover:text-yellow-300'
-                        }`}
-                      />
-                    </button>
-                  ))}
-                  {pricingData.rating > 0 && (
-                    <span className="text-xs text-gray-500 mr-1">{pricingData.rating}/5</span>
-                  )}
-                </div>
-              </div>
-
-              {/* زر الحفظ */}
-              <div className="flex justify-end pt-1">
-                <button
-                  onClick={handleSaveAndCollapse}
-                  disabled={savingPricing}
-                  className="inline-flex items-center gap-2 rounded-lg bg-pink-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pink-700 transition-colors shadow-sm"
-                >
-                  <Save className="w-4 h-4" />
-                  {savingPricing ? 'جاري الحفظ والمزامنة…' : 'حفظ وطي'}
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

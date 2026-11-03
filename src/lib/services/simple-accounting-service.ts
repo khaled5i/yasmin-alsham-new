@@ -1327,19 +1327,26 @@ export async function getCashBoxBalance(branch: BranchType, asOfDate?: string): 
  */
 export async function getCashBoxTransactions(
   branch: BranchType,
-  limit = 100
+  limit = 100,
+  search = ''
 ): Promise<CashBoxTransaction[]> {
   if (!isSupabaseConfigured()) return []
 
   try {
     const { data, error } = await supabase.rpc('get_cash_box_transactions', {
       p_branch: branch,
-      p_limit: Math.max(1, Math.min(limit, 200))
+      p_limit: Math.max(1, Math.min(limit, 200)),
+      // يُرسل عند البحث فقط حتى يبقى السجل يعمل قبل تطبيق هجرة البحث
+      ...(search ? { p_search: search } : {})
     })
 
     if (error) {
       if (error.code === '42883' || error.code === 'PGRST202') {
-        throw new Error('سجل الصندوق غير مفعّل في قاعدة البيانات بعد.')
+        throw new Error(
+          search
+            ? 'البحث في سجل الصندوق غير مفعّل في قاعدة البيانات بعد.'
+            : 'سجل الصندوق غير مفعّل في قاعدة البيانات بعد.'
+        )
       }
       throw new Error(error.message || 'تعذّر تحميل سجل الصندوق.')
     }

@@ -29,6 +29,7 @@ import {
   Printer,
   ReceiptText,
   RefreshCw,
+  Search,
   ShoppingBag,
   SlidersHorizontal,
   UserRound,
@@ -58,6 +59,14 @@ import type {
 } from '@/types/simple-accounting'
 
 type MovementFilter = 'all' | 'in' | 'out'
+
+const SEARCH_RESULTS_LIMIT = 200
+
+interface CashBoxSearchResult {
+  term: string
+  rows: CashBoxTransaction[]
+  error: string
+}
 
 const currencyFormatter = new Intl.NumberFormat('ar-SA-u-nu-latn', {
   style: 'currency',
@@ -471,6 +480,8 @@ function CashBoxContent() {
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [movementFilter, setMovementFilter] = useState<MovementFilter>('all')
+  const [search, setSearch] = useState('')
+  const [searchResult, setSearchResult] = useState<CashBoxSearchResult | null>(null)
   const [drawerRetry, setDrawerRetry] = useState<CashDrawerWithdrawalVoucher | null>(null)
   const [retryingDrawer, setRetryingDrawer] = useState(false)
   const [openingDrawer, setOpeningDrawer] = useState(false)
@@ -499,11 +510,38 @@ function CashBoxContent() {
     void loadCashBox()
   }, [loadCashBox])
 
+  const searchTerm = search.trim()
+  const currentSearch = searchTerm && searchResult?.term === searchTerm ? searchResult : null
+  const searchPending = Boolean(searchTerm) && !currentSearch
+
+  // البحث من قاعدة البيانات ليشمل السجل كله، لا آخر الحركات المحمّلة فقط.
+  // transactions ضمن الاعتماديات لتتحدث النتائج بعد كل سحب أو تحديث للسجل.
+  useEffect(() => {
+    if (!searchTerm) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      getCashBoxTransactions('tailoring', SEARCH_RESULTS_LIMIT, searchTerm)
+        .then((rows) => {
+          if (!cancelled) setSearchResult({ term: searchTerm, rows, error: '' })
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setSearchResult({ term: searchTerm, rows: [], error: getErrorMessage(error) })
+          }
+        })
+    }, 350)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [searchTerm, transactions])
+
   const filteredTransactions = useMemo(() => {
-    if (movementFilter === 'in') return transactions.filter((item) => item.amount > 0)
-    if (movementFilter === 'out') return transactions.filter((item) => item.amount < 0)
-    return transactions
-  }, [movementFilter, transactions])
+    const source = searchTerm ? currentSearch?.rows ?? [] : transactions
+    if (movementFilter === 'in') return source.filter((item) => item.amount > 0)
+    if (movementFilter === 'out') return source.filter((item) => item.amount < 0)
+    return source
+  }, [currentSearch, movementFilter, searchTerm, transactions])
 
   const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' })
   const todayTotals = useMemo(() => {
@@ -847,6 +885,40 @@ function CashBoxContent() {
             </div>
           </div>
 
+          <div className="border-b border-stone-200 px-5 py-3 sm:px-6">
+            <div className="relative">
+              <Search className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                maxLength={100}
+                enterKeyHint="search"
+                aria-label="بحث في سجل العمليات"
+                placeholder="ابحث: اسم، رقم طلب، سبب، مبلغ"
+                className="w-full rounded-xl border border-stone-200 bg-white py-2.5 pl-10 pr-10 text-sm font-medium text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+              />
+              {search ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  aria-label="مسح البحث"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+            {currentSearch && !currentSearch.error ? (
+              <p aria-live="polite" className="mt-2 text-xs font-bold text-stone-500">
+                نتائج البحث في السجل كاملاً: {filteredTransactions.length}
+                {currentSearch.rows.length >= SEARCH_RESULTS_LIMIT
+                  ? ` — تظهر أحدث ${SEARCH_RESULTS_LIMIT} حركة فقط، حدّد البحث أكثر`
+                  : ''}
+              </p>
+            ) : null}
+          </div>
+
           {loadError ? (
             <div className="m-5 flex flex-col items-center rounded-2xl border border-rose-200 bg-rose-50 px-5 py-8 text-center">
               <AlertCircle className="mb-3 h-8 w-8 text-rose-600" />
@@ -860,20 +932,30 @@ function CashBoxContent() {
                 إعادة المحاولة
               </button>
             </div>
-          ) : loading ? (
+          ) : loading || searchPending ? (
             <div className="space-y-3 p-5 sm:p-6">
               {[0, 1, 2, 3].map((item) => (
                 <div key={item} className="h-20 animate-pulse rounded-2xl bg-stone-100" />
               ))}
             </div>
+          ) : currentSearch?.error ? (
+            <div className="m-5 flex flex-col items-center rounded-2xl border border-rose-200 bg-rose-50 px-5 py-8 text-center">
+              <AlertCircle className="mb-3 h-8 w-8 text-rose-600" />
+              <p className="font-black text-rose-800">تعذّر البحث في سجل الصندوق</p>
+              <p className="mt-1 text-sm text-rose-700">{currentSearch.error}</p>
+            </div>
           ) : filteredTransactions.length === 0 ? (
             <div className="flex flex-col items-center px-5 py-16 text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-stone-100 text-stone-400">
-                <History className="h-8 w-8" />
+                {searchTerm ? <Search className="h-8 w-8" /> : <History className="h-8 w-8" />}
               </div>
-              <p className="text-lg font-black text-stone-800">لا توجد حركات لعرضها</p>
-              <p className="mt-1 max-w-sm text-sm text-stone-500">
-                ستظهر هنا دفعات الكاش من الطلبات وعمليات السحب فور تسجيلها.
+              <p className="text-lg font-black text-stone-800">
+                {searchTerm ? 'لا توجد نتائج' : 'لا توجد حركات لعرضها'}
+              </p>
+              <p className="mt-1 max-w-sm break-words text-sm text-stone-500">
+                {searchTerm
+                  ? `لا توجد حركة تطابق «${searchTerm}»${movementFilter === 'all' ? '' : ' ضمن الفلتر المحدد'}.`
+                  : 'ستظهر هنا دفعات الكاش من الطلبات وعمليات السحب فور تسجيلها.'}
               </p>
             </div>
           ) : (
