@@ -204,7 +204,6 @@ export default function WorkerDetailPage() {
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set())
   const [orderFullDetails, setOrderFullDetails] = useState<Record<string, Order>>({})
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
-  const [isExpandingAll, setIsExpandingAll] = useState(false)
   const [isShowingAllRatings, setIsShowingAllRatings] = useState(false)
 
   // تعديل تاريخ وساعة إنهاء العامل للطلب — للمدير فقط
@@ -399,29 +398,6 @@ export default function WorkerDetailPage() {
       } catch { /* تجاهل — الصور ستكون غير متاحة */ }
     }
   }, [orderFullDetails])
-
-  const handleExpandAll = useCallback(async () => {
-    if (isExpandingAll) return
-    setIsExpandingAll(true)
-    // افتح جميع البطاقات فوراً
-    setExpandedOrderIds(new Set(completedOrders.map((o) => o.id)))
-    // جلب التفاصيل الكاملة بالتوازي لكل طلب لم يُحمَّل بعد
-    try {
-      const missing = completedOrders.filter((o) => !orderFullDetails[o.id])
-      await Promise.all(
-        missing.map(async (order) => {
-          try {
-            const result = await orderService.getById(order.id)
-            if (result.data) {
-              setOrderFullDetails((prev) => ({ ...prev, [order.id]: result.data! }))
-            }
-          } catch { /* تجاهل */ }
-        })
-      )
-    } finally {
-      setIsExpandingAll(false)
-    }
-  }, [completedOrders, orderFullDetails, isExpandingAll])
 
   const pricingVersions = useRef(new Map<string, number>())
   const handleSavePricing = useCallback(async (orderId: string, data: OrderPricingData): Promise<boolean> => {
@@ -735,7 +711,6 @@ export default function WorkerDetailPage() {
                 pricingForms={pricingForms}
                 expandedOrderIds={expandedOrderIds}
                 orderFullDetails={orderFullDetails}
-                isExpandingAll={isExpandingAll}
                 monthFilter={completedMonthFilter}
                 unratedOnly={completedUnratedOnly}
                 onFilterChange={handleCompletedFilterChange}
@@ -743,7 +718,6 @@ export default function WorkerDetailPage() {
                 onSavePricing={handleSavePricing}
                 onOpenModal={openOrderModal}
                 onLightbox={setLightboxImage}
-                onExpandAll={handleExpandAll}
                 onToggleRatingVisibility={handleToggleRatingVisibility}
                 onShowAllRatings={handleShowAllRatings}
                 isShowingAllRatings={isShowingAllRatings}
@@ -1055,7 +1029,6 @@ function CompletedOrdersTab({
   pricingForms,
   expandedOrderIds,
   orderFullDetails,
-  isExpandingAll,
   monthFilter,
   unratedOnly,
   onFilterChange,
@@ -1063,7 +1036,6 @@ function CompletedOrdersTab({
   onSavePricing,
   onOpenModal,
   onLightbox,
-  onExpandAll,
   onToggleRatingVisibility,
   onShowAllRatings,
   isShowingAllRatings,
@@ -1081,7 +1053,6 @@ function CompletedOrdersTab({
   pricingForms: Record<string, OrderPricingData>
   expandedOrderIds: Set<string>
   orderFullDetails: Record<string, Order>
-  isExpandingAll: boolean
   monthFilter: string
   unratedOnly: boolean
   onFilterChange: (monthFilter: string, unratedOnly: boolean) => void
@@ -1089,7 +1060,6 @@ function CompletedOrdersTab({
   onSavePricing: (orderId: string, data: OrderPricingData) => Promise<boolean>
   onOpenModal: (order: Order) => void
   onLightbox: (src: string) => void
-  onExpandAll: () => void
   onToggleRatingVisibility: (order: Order) => void
   onShowAllRatings: () => void
   isShowingAllRatings: boolean
@@ -1186,19 +1156,6 @@ function CompletedOrdersTab({
       <>
       {/* أزرار الأعلى */}
       <div className="mb-4 flex items-center gap-2 flex-wrap">
-        <button
-          onClick={onExpandAll}
-          disabled={isExpandingAll}
-          className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {isExpandingAll ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Package className="w-4 h-4" />
-          )}
-          {isExpandingAll ? 'جاري تحميل الصور...' : 'تحميل جميع صور العمل المكتمل'}
-        </button>
-
         {isAdmin && pendingVisibilityCount > 0 && (
           <button
             onClick={onShowAllRatings}
