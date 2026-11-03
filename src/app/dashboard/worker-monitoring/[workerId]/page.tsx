@@ -119,7 +119,11 @@ function pricingFormHasWorkerEvaluation(form?: OrderPricingData): boolean {
 }
 
 function sanitizeNum(val: string): string {
-  const cleaned = val.replace(/[^\d.]/g, '')
+  const cleaned = val
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0))
+    .replace(/٫/g, '.')
+    .replace(/[^\d.]/g, '')
   const parts = cleaned.split('.')
   return parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned
 }
@@ -1430,6 +1434,7 @@ function CompletedOrderRow({
                   </label>
                   <input
                     type="datetime-local"
+                    lang="en"
                     value={completedAtDraft}
                     onChange={(e) => setCompletedAtDraft(e.target.value)}
                     disabled={isSavingCompletedAt}
@@ -1468,13 +1473,13 @@ function CompletedOrderRow({
                     <p className="flex flex-wrap items-center gap-1.5 text-xs font-medium leading-5 text-stone-600">
                       <CheckCircle className="w-3 h-3 flex-shrink-0" />
                       أنهاه العامل:{' '}
-                      {formatGregorianDateTime(order.worker_completed_at)}
+                      {formatGregorianDateTime(order.worker_completed_at, 'ar-SA-u-nu-latn', { numberingSystem: 'latn' })}
                     </p>
                   ) : fallbackCompletionDate ? (
                     <p className="text-xs text-gray-400 flex items-center gap-1">
                       <CheckCircle className="w-3 h-3 flex-shrink-0" />
                       لا يوجد تاريخ إنهاء — {fallbackCompletionLabel}:{' '}
-                      {formatGregorianDateTime(fallbackCompletionDate)}
+                      {formatGregorianDateTime(fallbackCompletionDate, 'ar-SA-u-nu-latn', { numberingSystem: 'latn' })}
                     </p>
                   ) : isAdmin ? (
                     <p className="text-xs text-gray-400 flex items-center gap-1">
@@ -1507,7 +1512,7 @@ function CompletedOrderRow({
                 <p className="flex flex-wrap items-center gap-1.5 text-xs leading-5 text-stone-500">
                   <Clock className="w-3 h-3 flex-shrink-0" />
                   موعد التسليم:{' '}
-                  {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' })}
+                  {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn', { year: 'numeric', month: 'short', day: 'numeric', numberingSystem: 'latn' })}
                 </p>
               )}
             </div>
@@ -1521,9 +1526,11 @@ function CompletedOrderRow({
           <label className="block w-full text-xs font-semibold text-stone-600 sm:w-56">
             أجر القطعة · ر.س
             <input
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              lang="en"
+              dir="ltr"
+              inputMode="decimal"
+              style={{ fontFamily: 'Arial, sans-serif' }}
               placeholder="أدخل السعر"
               value={pricingData.price}
               onChange={(e) => { void handlePriceChange(sanitizeNum(e.target.value)) }}
@@ -1579,7 +1586,7 @@ function CompletedOrderRow({
           </div>
         {order.price != null && (
           <p className="text-xs text-stone-400">
-            قيمة الطلب <span className="ms-1 font-semibold tabular-nums text-stone-600">{order.price.toLocaleString('ar-SA-u-nu-latn')} ر.س</span>
+            قيمة الطلب <span className="ms-1 font-semibold tabular-nums text-stone-600">{order.price.toLocaleString('en-US')} ر.س</span>
           </p>
         )}
       </div>
