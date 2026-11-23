@@ -59,7 +59,14 @@ public final class StationDatabase extends SQLiteOpenHelper {
         db.beginTransaction();
         try {
             LocalPrintJob existing = getJob(db, job.id);
-            if (existing != null && (
+            // رمز مهمة جديد = قرار من الخادم بطباعتها من جديد (مثل «إعادة الطباعة»
+            // من لوحة المحطة لمهمة غير مؤكدة). الخادم هو المرجع، فنستبدل السجل
+            // المحلي القديم بدل تجاهل المهمة؛ تجاهلها كان يحجزها 120 ثانية بعد
+            // كل استلام ويوقف الطابور كله خلفها بلا نهاية.
+            boolean freshServerClaim = existing != null
+                    && existing.jobToken != null
+                    && !existing.jobToken.equals(job.jobToken);
+            if (existing != null && !freshServerClaim && (
                     existing.state == LocalJobState.DISPATCHING
                             || existing.state == LocalJobState.SENT_AWAITING_ACK
                             || existing.state == LocalJobState.UNCERTAIN

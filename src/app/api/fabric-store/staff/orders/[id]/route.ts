@@ -44,7 +44,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .eq('order_id', id).order('line_number'),
     order.delivery_method === 'shipping'
       ? client.from('fabric_store_order_addresses')
-        .select('recipient_name, recipient_phone, city, district, street, building_number, postal_code, additional_number, short_address, notes, anonymized_at')
+        .select('country_code, recipient_name, recipient_phone, city, district, street, building_number, postal_code, additional_number, short_address, notes, anonymized_at')
         .eq('order_id', id).maybeSingle()
       : Promise.resolve({ data: null }),
     client.from('fabric_store_payment_attempts')

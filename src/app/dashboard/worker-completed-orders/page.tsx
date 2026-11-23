@@ -886,6 +886,7 @@ export default function WorkerCompletedOrdersPage() {
         isOpen={showViewModal}
         onClose={handleCloseModal}
         autoTranslateAlterationsToHindi={user.role === 'worker' && workerType === 'tailor'}
+        layout="modern"
       />
 
       <DeleteOrderModal

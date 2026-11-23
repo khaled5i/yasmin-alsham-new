@@ -20,6 +20,9 @@ import {
 } from '@/lib/date-utils'
 import CutOrdersTab from '@/components/CutOrdersTab'
 import ShakOrdersTab from '@/components/ShakOrdersTab'
+import WorkerAlterationsTab from '@/components/worker-quality/WorkerAlterationsTab'
+import { OrderAlterationsBreakdown, useOrdersAlterations } from '@/components/worker-quality/order-alterations-breakdown'
+import type { WorkerQualityAlteration } from '@/lib/services/alteration-service'
 import OrderCutterInfo from '@/components/OrderCutterInfo'
 import { useTranslation } from '@/hooks/useTranslation'
 import toast from 'react-hot-toast'
@@ -128,7 +131,7 @@ function sanitizeNum(val: string): string {
   return parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned
 }
 
-type TabType = 'cut' | 'shak' | 'active' | 'completed' | 'payroll' | 'attendance'
+type TabType = 'cut' | 'shak' | 'active' | 'completed' | 'alterations' | 'payroll' | 'attendance'
 
 
 // ترتيب الطلبات المنجزة تنازلياً حسب تاريخ الإنجاز الفعلي.
@@ -169,11 +172,14 @@ export default function WorkerDetailPage() {
   const isShakWorker = worker?.worker_type === 'shak_worker'
   // القصّاص والشكّاك لا يملكان طلبات مُسندة، فتبويباهما يحلّان محل «النشطة/المكتملة»
   const ownTab: TabType | null = isCutter ? 'cut' : isShakWorker ? 'shak' : null
+  // تبويب «التعديلات» (التقييم وأسباب التعديل) للمدير فقط، وللخياط والقصّاص فقط
+  const canSeeQuality = user?.role === 'admin' && !!worker && !isShakWorker
+  const tabSelection: TabType = selectedTab === 'alterations' && !canSeeQuality ? (ownTab ?? 'active') : selectedTab
   const activeTab = ownTab
-    ? (selectedTab === 'active' || selectedTab === 'completed' || selectedTab === 'cut' || selectedTab === 'shak'
+    ? (tabSelection === 'active' || tabSelection === 'completed' || tabSelection === 'cut' || tabSelection === 'shak'
         ? ownTab
-        : selectedTab)
-    : (selectedTab === 'cut' || selectedTab === 'shak' ? 'active' : selectedTab)
+        : tabSelection)
+    : (tabSelection === 'cut' || tabSelection === 'shak' ? 'active' : tabSelection)
   const [cutRefresh, setCutRefresh] = useState(0)
 
   // Active orders tab
@@ -238,6 +244,13 @@ export default function WorkerDetailPage() {
     })
     return () => { cancelled = true }
   }, [workerId])
+
+  // رابط «التعديلات» من قائمة العمال يفتح التبويب مباشرة (?tab=alterations)
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get('tab') === 'alterations') setActiveTab('alterations')
+    } catch { /* رابط بلا معاملات */ }
+  }, [])
 
   // Load workers for OrderModal prop
   useEffect(() => {
@@ -352,6 +365,16 @@ export default function WorkerDetailPage() {
   function openOrderModal(order: Order) {
     setSelectedOrder(order)
     setIsModalOpen(true)
+  }
+
+  // فتح الطلب من تبويب التعديلات: القائمة تحمل أعمدة قليلة، فنجلب الطلب كاملاً أولاً
+  async function openOrderById(orderId: string) {
+    const { data, error } = await orderService.getById(orderId)
+    if (error || !data) {
+      toast.error(error || 'تعذّر فتح الطلب')
+      return
+    }
+    openOrderModal(data)
   }
 
   // تبديل حالة جهوزية البروفا الثانية من قبل المدير — يُسجَّل تماماً كما لو غيّرها العامل
@@ -655,6 +678,7 @@ export default function WorkerDetailPage() {
                 { key: 'active' as TabType, label: 'الطلبات النشطة', icon: Package, count: activeOrdersTotal },
                 { key: 'completed' as TabType, label: 'الطلبات المكتملة', icon: CheckCircle, count: completedOrdersTotal },
                 ]),
+                ...(canSeeQuality ? [{ key: 'alterations' as TabType, label: 'التعديلات', icon: Wrench, count: null }] : []),
                 { key: 'payroll' as TabType, label: isArabic ? 'الراتب' : 'Salary', icon: Wallet, count: null },
                 { key: 'attendance' as TabType, label: isArabic ? 'الحضور' : 'Attendance', icon: Fingerprint, count: null },
               ] as const
@@ -664,7 +688,7 @@ export default function WorkerDetailPage() {
                 <button
                   key={tab.key}
                   onClick={() => handleTabSwitch(tab.key)}
-                  className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs font-medium transition-colors border-b-2 sm:gap-2 sm:px-3 sm:py-4 sm:text-sm ${
+                  className={`flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs font-medium transition-colors border-b-2 sm:gap-2 sm:px-3 sm:py-4 sm:text-sm ${
                     activeTab === tab.key
                       ? 'border-teal-500 text-teal-600 bg-teal-50/50'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-slate-50'
@@ -673,7 +697,7 @@ export default function WorkerDetailPage() {
                   <Icon className="w-4 h-4" />
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">
-                    {isCutter || isShakWorker ? tab.label : tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : tab.key === 'payroll' ? 'الراتب' : 'الحضور'}
+                    {tab.key === 'alterations' ? 'تعديلات' : isCutter || isShakWorker ? tab.label : tab.key === 'active' ? 'نشطة' : tab.key === 'completed' ? 'مكتملة' : tab.key === 'payroll' ? 'الراتب' : 'الحضور'}
                   </span>
                   {tab.count !== null && tab.count > 0 && (
                     <span className="hidden rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 sm:inline-flex">
@@ -727,6 +751,13 @@ export default function WorkerDetailPage() {
                 onStartEditCompletedAt={handleStartEditCompletedAt}
                 onCancelEditCompletedAt={handleCancelEditCompletedAt}
                 onSaveCompletedAt={handleSaveCompletedAt}
+              />
+            )}
+            {activeTab === 'alterations' && canSeeQuality && (
+              <WorkerAlterationsTab
+                workerId={workerId}
+                role={isCutter ? 'cutter' : 'tailor'}
+                onOpenOrder={(orderId) => { void openOrderById(orderId) }}
               />
             )}
             {activeTab === 'payroll' && (
@@ -1070,6 +1101,9 @@ function CompletedOrdersTab({
   onCancelEditCompletedAt: () => void
   onSaveCompletedAt: (order: Order, localValue: string) => void
 }) {
+  // كل تعديلات الطلبات المعروضة (كل الأنواع)، والسبب للمدير فقط
+  const alterationsByOrder = useOrdersAlterations(orders.map((order) => order.id), isAdmin)
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-16">
@@ -1227,6 +1261,7 @@ function CompletedOrdersTab({
               onStartEditCompletedAt={onStartEditCompletedAt}
               onCancelEditCompletedAt={onCancelEditCompletedAt}
               onSaveCompletedAt={onSaveCompletedAt}
+              alterations={alterationsByOrder ? (alterationsByOrder[order.id] || []) : null}
             />
           )
         })}
@@ -1264,6 +1299,7 @@ function CompletedOrderRow({
   onStartEditCompletedAt,
   onCancelEditCompletedAt,
   onSaveCompletedAt,
+  alterations,
 }: {
   order: Order
   isAdmin: boolean
@@ -1282,6 +1318,8 @@ function CompletedOrderRow({
   onStartEditCompletedAt: (order: Order) => void
   onCancelEditCompletedAt: () => void
   onSaveCompletedAt: (order: Order, localValue: string) => void
+  /** null = لم تُحمَّل بعد، فنعرض عدّاد ما بعد التسليم القديم مؤقتاً. */
+  alterations: WorkerQualityAlteration[] | null
 }) {
   const status = STATUS_MAP[order.status] || { label: order.status, color: 'text-gray-600', bg: 'bg-gray-50 border-gray-100' }
   const hasPricing = pricingData.price.trim() !== ''
@@ -1362,13 +1400,14 @@ function CompletedOrderRow({
                   تم التسعير
                 </span>
               )}
-              {Number(order.alteration_count || 0) > 0 ? (
+              {alterations === null && Number(order.alteration_count || 0) > 0 ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-700">
                   <Wrench className="h-3 w-3" />
                   تعديلات بعد التسليم: {Number(order.alteration_count)}
                 </span>
               ) : null}
             </div>
+            {alterations ? <OrderAlterationsBreakdown alterations={alterations} showReasons={isAdmin} /> : null}
 
             {/* الاسم ورقم الطلب */}
             <button onClick={() => onOpenModal(order)} className="w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 rounded-lg">

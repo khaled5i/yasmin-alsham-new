@@ -51,6 +51,7 @@ import {
 import { useAppResume } from '@/hooks/useAppResume'
 import { openWhatsApp } from '@/utils/whatsapp'
 import PrintOrderModal from '@/components/PrintOrderModal'
+import OrderTakenByModal from '@/components/OrderTakenByModal'
 import DesignSummarySection from '@/components/DesignSummarySection'
 import { Order } from '@/lib/services/order-service'
 import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
@@ -523,6 +524,9 @@ function AddOrderContent() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isSubmittingRef = useRef(false)
+  // نافذة «مين أخذ الطلب؟» — تظهر قبل الحفظ، والاسم المختار يُرسل في taken_by
+  const [takenByAction, setTakenByAction] = useState<'submit' | 'preBooking' | null>(null)
+  const takenByRef = useRef('')
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -833,8 +837,8 @@ function AddOrderContent() {
 
 
   // إرسال النموذج
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
 
     if (isSubmittingRef.current) return
 
@@ -1062,7 +1066,8 @@ function AddOrderContent() {
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
         custom_design_image: customDesignImageBase64,
         status: 'pending',
-        paid_amount: paidAmount
+        paid_amount: paidAmount,
+        taken_by: takenByRef.current || undefined
         // payment_status سيتم حسابه تلقائياً بواسطة trigger
       })
 
@@ -1222,7 +1227,8 @@ function AddOrderContent() {
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
         custom_design_image: customDesignImageBase64,
         status: 'pending',
-        paid_amount: paidAmount
+        paid_amount: paidAmount,
+        taken_by: takenByRef.current || undefined
       })
 
       if (!result.success) {
@@ -1286,8 +1292,8 @@ function AddOrderContent() {
   }
 
   // حفظ الطلب كحجز مسبق
-  const handleSubmitAsPreBooking = async (e: React.MouseEvent) => {
-    e.preventDefault()
+  const handleSubmitAsPreBooking = async (e?: React.MouseEvent) => {
+    e?.preventDefault()
     if (!requireTranscriptionDone()) return
 
     if (isSubmittingRef.current) return
@@ -1373,7 +1379,8 @@ function AddOrderContent() {
         design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
         image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
-        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
+        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount,
+        taken_by: takenByRef.current || undefined
       })
 
       if (!result.success) {
@@ -1497,7 +1504,8 @@ function AddOrderContent() {
         design_summary_notes: formData.designSummaryNotes.length > 0 ? formData.designSummaryNotes : undefined,
         image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
         image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
-        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount
+        custom_design_image: customDesignImageBase64, status: 'pending', paid_amount: paidAmount,
+        taken_by: takenByRef.current || undefined
       })
 
       if (!result.success) {
@@ -1531,6 +1539,35 @@ function AddOrderContent() {
       setIsSubmitting(false)
     }
   }
+
+  // زرّا الحفظ يتحققان من النموذج أولاً، ثم يفتحان نافذة «مين أخذ الطلب؟»،
+  // والحفظ الفعلي يبدأ فقط بعد اختيار الاسم.
+  const requestSaveOrder = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isSubmittingRef.current) return
+    if (!requireBasicInformation()) return
+    if (!requireDesignSummary()) return
+    if (!requireTranscriptionDone()) return
+    setTakenByAction('submit')
+  }
+
+  const requestSavePreBooking = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!requireTranscriptionDone()) return
+    if (isSubmittingRef.current) return
+    if (!requireBasicInformation()) return
+    setTakenByAction('preBooking')
+  }
+
+  const handleTakenByConfirm = (name: string) => {
+    const action = takenByAction
+    setTakenByAction(null)
+    takenByRef.current = name
+    if (action === 'preBooking') void handleSubmitAsPreBooking()
+    else if (action === 'submit') void handleSubmit()
+  }
+
+  const handleTakenByCancel = useCallback(() => setTakenByAction(null), [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 pt-20">
@@ -1606,7 +1643,7 @@ function AddOrderContent() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="max-w-4xl mx-auto"
         >
-          <form onSubmit={handleSubmit} className="space-y-8" noValidate>
+          <form onSubmit={requestSaveOrder} className="space-y-8" noValidate>
             {/* المعلومات الأساسية */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-pink-100">
               <div className="flex items-center justify-between mb-6">
@@ -2137,7 +2174,7 @@ function AddOrderContent() {
               {/* زر حفظ الطلب كحجز مسبق */}
               <button
                 type="button"
-                onClick={handleSubmitAsPreBooking}
+                onClick={requestSavePreBooking}
                 disabled={isSubmitting}
                 className="bg-blue-600 hover:bg-blue-700 text-white py-4 px-8 text-lg rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 space-x-reverse"
               >
@@ -2203,6 +2240,13 @@ function AddOrderContent() {
           </div>
         </div>
       )}
+
+      {/* نافذة «مين أخذ الطلب؟» */}
+      <OrderTakenByModal
+        isOpen={takenByAction !== null}
+        onCancel={handleTakenByCancel}
+        onConfirm={handleTakenByConfirm}
+      />
 
       {/* مودال الطباعة */}
       {savedOrderForPrint && (

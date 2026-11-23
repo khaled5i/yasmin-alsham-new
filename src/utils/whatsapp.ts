@@ -399,6 +399,37 @@ export function sendReadyForPickupWhatsApp(clientName: string, clientPhone: stri
 }
 
 /**
+ * نافذة واتساب تُحجز الآن (داخل سياق النقرة) وتُوجَّه لاحقاً بعد عمليات async،
+ * لأن window.open بعد await يُحجب في بعض المتصفحات. على التطبيق (Capacitor) لا
+ * تُفتح صفحة وسيطة؛ يُفتح واتساب مباشرة عند send. يجب استدعاء send أو cancel
+ * مرة واحدة (الاستدعاء الثاني يُتجاهَل).
+ */
+export function reserveWhatsAppWindow(): {
+  send: (phone: string, message: string) => void
+  cancel: () => void
+} {
+  const popup = isCapacitorNative() ? null : window.open('', '_blank')
+  let settled = false
+  return {
+    send(phone, message) {
+      if (settled) return
+      settled = true
+      const link = `https://wa.me/${formatPhoneNumber(phone)}?text=${encodeURIComponent(message)}`
+      if (popup && !popup.closed) {
+        popup.location.href = link
+      } else {
+        window.open(link, '_blank')
+      }
+    },
+    cancel() {
+      if (settled) return
+      settled = true
+      if (popup && !popup.closed) popup.close()
+    },
+  }
+}
+
+/**
  * إرسال رسالة "تم التسليم" عبر واتساب مع كود خصم الهدية.
  *
  * يُولَّد لكل طلب مُسلَّم كود خصم 20% صالح شهراً يُستخدَم في محل الأقمشة.

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveStaff } from '@/lib/server/api-auth'
 
 const SONIOX_API = 'https://api.soniox.com/v1'
-const MODEL = 'stt-async-v4'
+const MODEL = 'stt-async-v6'
 const POLL_INTERVAL_MS = 2000
 const MAX_WAIT_MS = 120_000
 

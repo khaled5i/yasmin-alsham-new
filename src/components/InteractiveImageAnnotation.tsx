@@ -3329,7 +3329,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
             audioCtxRef.current = audioCtx
             const sampleRate = audioCtx.sampleRate
 
-            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket')
+            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket', ['soniox-api-key', apiKey])
             sonioxWsRef.current = ws
 
             ws.onopen = () => {
@@ -3340,8 +3340,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
                 return
               }
               ws.send(JSON.stringify({
-                api_key: apiKey,
-                model: 'stt-rt-v4',
+                model: 'stt-rt-v6',
                 language_hints: ['ar'],
                 audio_format: 'pcm_s16le',
                 sample_rate: sampleRate,

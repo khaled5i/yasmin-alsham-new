@@ -1,6 +1,5 @@
 import { RotateCcw, ShieldCheck, Store, Truck, type LucideIcon } from 'lucide-react'
 import {
-  FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS,
   IS_FABRIC_STORE_CHECKOUT_ENABLED,
   IS_FABRIC_STORE_PAYMENTS_ENABLED,
 } from '@/lib/fabric-store/checkout-contract'
@@ -8,12 +7,10 @@ import { STORE_RETURN_RULES } from '@/lib/store-legal'
 
 /**
  * وعود المتجر الظاهرة للزبونة: شريط الضمانات.
- * كل رقم هنا مقروء من مصدر السياسة نفسه (عتبة الشحن المجاني، مدة الإرجاع)
+ * كل رقم هنا مقروء من مصدر السياسة نفسه (مدة الإرجاع)
  * فلا يختلف ما يُعلَن عمّا تحسبه صفحة الدفع. وعود الشحن والدفع لا تظهر ما دام
  * مفتاح الدفع الإلكتروني مطفأً.
  */
-
-const freeShippingSar = FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS / 100
 
 interface TrustItem {
   icon: LucideIcon
@@ -26,8 +23,8 @@ function trustItems(): TrustItem[] {
   if (IS_FABRIC_STORE_CHECKOUT_ENABLED) {
     items.push({
       icon: Truck,
-      title: 'شحن لكل مدن المملكة',
-      detail: `مجاني فوق ${freeShippingSar} ريال`,
+      title: 'شحن مجاني',
+      detail: 'لكل مدن المملكة ودول العالم',
     })
   }
   // الدفع الآمن ثانياً والاستلام من المحل آخراً (طلب المالكة)

@@ -10,7 +10,6 @@ import {
   FABRIC_STORE_HOLD_MINUTES,
   FABRIC_STORE_MAX_ORDER_LINES,
   FABRIC_STORE_PAYMENT_HOLD_MINUTES,
-  FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS,
   IS_FABRIC_STORE_CHECKOUT_ENABLED,
   IS_FABRIC_STORE_PAYMENTS_ENABLED,
   describeFabricCheckoutIssue,
@@ -27,6 +26,8 @@ import { FABRIC_STORE_WHATSAPP_NUMBER } from '@/lib/fabric-cart-whatsapp'
 import { formatFabricNumber } from '@/lib/fabric-number-format'
 import { useFabricCartStore } from '@/store/fabricCartStore'
 import { getAuthHeader } from '@/lib/client-auth'
+import { FABRIC_STORE_HOME_COUNTRY, fabricCountryOptions } from '@/lib/fabric-store/countries'
+import { STORE_DELIVERY_TIMES } from '@/lib/store-legal'
 
 /**
  * صفحة إتمام الطلب: إنشاء الطلب ثم الانتقال لصفحة دفع ميسر بضغطة واحدة («ادفعي الآن»).
@@ -48,6 +49,7 @@ interface FormState {
   name: string
   phone: string
   email: string
+  countryCode: string
   city: string
   shortAddress: string
   district: string
@@ -60,7 +62,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
-  name: '', phone: '', email: '', city: '', shortAddress: '',
+  name: '', phone: '', email: '', countryCode: FABRIC_STORE_HOME_COUNTRY, city: '', shortAddress: '',
   district: '', street: '', buildingNumber: '', postalCode: '', notes: '',
   acceptPolicies: false, marketingOptIn: false,
 }
@@ -70,7 +72,7 @@ const EMPTY_FORM: FormState = {
  * الموافقة على الشروط لا تُحفظ (تُعطى صراحةً في كل طلب)، وتُمسح المسودة بعد إنشاء الطلب.
  */
 const DRAFT_STORAGE_KEY = 'yasmin-fabric-checkout-draft-v1'
-const DRAFT_TEXT_FIELDS = ['name', 'phone', 'email', 'city', 'shortAddress', 'district', 'street', 'buildingNumber', 'postalCode', 'notes'] as const
+const DRAFT_TEXT_FIELDS = ['name', 'phone', 'email', 'countryCode', 'city', 'shortAddress', 'district', 'street', 'buildingNumber', 'postalCode', 'notes'] as const
 
 interface CheckoutDraft {
   form: Partial<FormState>
@@ -200,6 +202,7 @@ export default function FabricCheckoutPage() {
     ? {
         recipientName: form.name,
         recipientPhone: form.phone,
+        countryCode: form.countryCode,
         city: form.city,
         shortAddress: form.shortAddress,
         district: form.district,
@@ -356,6 +359,8 @@ export default function FabricCheckoutPage() {
   }
 
   const shipping = deliveryMethod === 'shipping'
+  const international = shipping && form.countryCode !== FABRIC_STORE_HOME_COUNTRY
+  const countryOptions = fabricCountryOptions()
   const inputClass =
     'w-full rounded-xl border-2 border-[#d8c5ae] bg-white px-3 py-2.5 text-sm text-[#211b19] focus:border-[#6b1726] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#b99a68]'
 
@@ -421,11 +426,6 @@ export default function FabricCheckoutPage() {
                     </label>
                   ))}
                 </div>
-                {quote?.totals && quote.totals.totalHalalas - quote.totals.shippingGrossHalalas < FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS && (
-                  <p className="mt-3 text-xs text-[#211b19]/70">
-                    أضيفي أقمشة بـ {sar(FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS - (quote.totals.totalHalalas - quote.totals.shippingGrossHalalas))} ليصبح الشحن مجانياً.
-                  </p>
-                )}
               </fieldset>
 
               <fieldset className="rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-4 sm:p-5">
@@ -439,7 +439,8 @@ export default function FabricCheckoutPage() {
                   <label className="text-sm font-semibold">
                     رقم الجوال
                     <input className={`${inputClass} mt-1`} value={form.phone} dir="ltr" inputMode="tel" autoComplete="tel"
-                      placeholder="05xxxxxxxx" maxLength={20} onChange={event => update('phone', event.target.value)} required />
+                      placeholder={international ? '+971501234567' : '05xxxxxxxx'} maxLength={20} onChange={event => update('phone', event.target.value)} required />
+                    {international && <span className="mt-1 block text-xs font-normal text-[#211b19]/60">اكتبيه برمز الدولة، يبدأ بـ +</span>}
                   </label>
                   <label className="text-sm font-semibold sm:col-span-2">
                     البريد الإلكتروني <span className="font-normal text-[#211b19]/55">(اختياري)</span>
@@ -452,41 +453,80 @@ export default function FabricCheckoutPage() {
               {shipping && (
                 <fieldset className="rounded-2xl border-2 border-[#d8c5ae] bg-[#f6f0e8] p-4 sm:p-5">
                   <legend className="px-1 text-lg font-bold">عنوان الشحن</legend>
-                  <p className="mb-3 text-xs text-[#211b19]/65">
-                    اكتبي العنوان المختصر من «العنوان الوطني» (مثل RRRD2929)، أو الحي والشارع.
-                    يُسلَّم الطلب باسمك ورقم جوالك المكتوبين أعلاه.
-                  </p>
+                  <label className="mb-3 block text-sm font-semibold">
+                    الدولة
+                    <select className={`${inputClass} mt-1`} value={form.countryCode} autoComplete="country"
+                      onChange={event => update('countryCode', event.target.value)} required>
+                      {countryOptions.map(country => (
+                        <option key={country.code} value={country.code}>{country.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {international ? (
+                    <p className="mb-3 text-xs text-[#211b19]/65">
+                      الشحن مجاني لكل الدول، ويصل {STORE_DELIVERY_TIMES.international}.
+                      الجمارك والضرائب في بلد الوصول — إن وُجدت — على المستلمة.
+                      يُسلَّم الطلب باسمك ورقم جوالك المكتوبين أعلاه.
+                    </p>
+                  ) : (
+                    <p className="mb-3 text-xs text-[#211b19]/65">
+                      اكتبي العنوان المختصر من «العنوان الوطني» (مثل RRRD2929)، أو الحي والشارع.
+                      يُسلَّم الطلب باسمك ورقم جوالك المكتوبين أعلاه.
+                    </p>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="text-sm font-semibold">
                       المدينة
                       <input className={`${inputClass} mt-1`} value={form.city} autoComplete="address-level2" maxLength={60}
                         onChange={event => update('city', event.target.value)} required />
                     </label>
-                    <label className="text-sm font-semibold">
-                      العنوان المختصر
-                      <input className={`${inputClass} mt-1`} value={form.shortAddress} dir="ltr" maxLength={8}
-                        placeholder="ABCD1234" onChange={event => update('shortAddress', event.target.value)} />
-                    </label>
-                    <label className="text-sm font-semibold">
-                      الحي
-                      <input className={`${inputClass} mt-1`} value={form.district} maxLength={80}
-                        onChange={event => update('district', event.target.value)} />
-                    </label>
-                    <label className="text-sm font-semibold">
-                      الشارع
-                      <input className={`${inputClass} mt-1`} value={form.street} maxLength={120}
-                        onChange={event => update('street', event.target.value)} />
-                    </label>
-                    <label className="text-sm font-semibold">
-                      رقم المبنى <span className="font-normal text-[#211b19]/55">(4 أرقام)</span>
-                      <input className={`${inputClass} mt-1`} value={form.buildingNumber} dir="ltr" inputMode="numeric" maxLength={4}
-                        onChange={event => update('buildingNumber', event.target.value)} />
-                    </label>
-                    <label className="text-sm font-semibold">
-                      الرمز البريدي <span className="font-normal text-[#211b19]/55">(5 أرقام)</span>
-                      <input className={`${inputClass} mt-1`} value={form.postalCode} dir="ltr" inputMode="numeric" maxLength={5}
-                        onChange={event => update('postalCode', event.target.value)} />
-                    </label>
+                    {international ? (
+                      <>
+                        <label className="text-sm font-semibold">
+                          المنطقة أو الولاية <span className="font-normal text-[#211b19]/55">(اختياري)</span>
+                          <input className={`${inputClass} mt-1`} value={form.district} autoComplete="address-level1" maxLength={80}
+                            onChange={event => update('district', event.target.value)} />
+                        </label>
+                        <label className="text-sm font-semibold sm:col-span-2">
+                          العنوان <span className="font-normal text-[#211b19]/55">(الشارع، ورقم المبنى أو الشقة)</span>
+                          <input className={`${inputClass} mt-1`} value={form.street} autoComplete="street-address" maxLength={120}
+                            onChange={event => update('street', event.target.value)} required />
+                        </label>
+                        <label className="text-sm font-semibold">
+                          الرمز البريدي <span className="font-normal text-[#211b19]/55">(إن وُجد)</span>
+                          <input className={`${inputClass} mt-1`} value={form.postalCode} dir="ltr" autoComplete="postal-code" maxLength={12}
+                            onChange={event => update('postalCode', event.target.value)} />
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <label className="text-sm font-semibold">
+                          العنوان المختصر
+                          <input className={`${inputClass} mt-1`} value={form.shortAddress} dir="ltr" maxLength={8}
+                            placeholder="ABCD1234" onChange={event => update('shortAddress', event.target.value)} />
+                        </label>
+                        <label className="text-sm font-semibold">
+                          الحي
+                          <input className={`${inputClass} mt-1`} value={form.district} maxLength={80}
+                            onChange={event => update('district', event.target.value)} />
+                        </label>
+                        <label className="text-sm font-semibold">
+                          الشارع
+                          <input className={`${inputClass} mt-1`} value={form.street} maxLength={120}
+                            onChange={event => update('street', event.target.value)} />
+                        </label>
+                        <label className="text-sm font-semibold">
+                          رقم المبنى <span className="font-normal text-[#211b19]/55">(4 أرقام)</span>
+                          <input className={`${inputClass} mt-1`} value={form.buildingNumber} dir="ltr" inputMode="numeric" maxLength={4}
+                            onChange={event => update('buildingNumber', event.target.value)} />
+                        </label>
+                        <label className="text-sm font-semibold">
+                          الرمز البريدي <span className="font-normal text-[#211b19]/55">(5 أرقام)</span>
+                          <input className={`${inputClass} mt-1`} value={form.postalCode} dir="ltr" inputMode="numeric" maxLength={5}
+                            onChange={event => update('postalCode', event.target.value)} />
+                        </label>
+                      </>
+                    )}
                     <label className="text-sm font-semibold sm:col-span-2">
                       ملاحظات للتوصيل <span className="font-normal text-[#211b19]/55">(اختياري)</span>
                       <textarea className={`${inputClass} mt-1`} value={form.notes} rows={2} maxLength={300}
@@ -549,7 +589,7 @@ export default function FabricCheckoutPage() {
                     <dl className="space-y-1.5 border-t-2 border-[#d8c5ae] pt-3 text-sm">
                       <div className="flex justify-between"><dt className="text-[#211b19]/70">الأقمشة شاملة الضريبة</dt><dd>{sar(quote.totals.totalHalalas - quote.totals.shippingGrossHalalas)}</dd></div>
                       {shipping && (
-                        <div className="flex justify-between"><dt className="text-[#211b19]/70">الشحن شامل الضريبة</dt><dd>{sar(quote.totals.shippingGrossHalalas)}</dd></div>
+                        <div className="flex justify-between"><dt className="text-[#211b19]/70">الشحن</dt><dd>{quote.totals.shippingGrossHalalas ? `${sar(quote.totals.shippingGrossHalalas)} شامل الضريبة` : <span className="font-semibold text-[#6b1726]">مجاني</span>}</dd></div>
                       )}
                       <div className="flex justify-between"><dt className="text-[#211b19]/70">الضريبة المضمّنة في الإجمالي (15%)</dt><dd>{sar(quote.totals.vatHalalas)}</dd></div>
                       <div className="flex justify-between border-t-2 border-[#d8c5ae] pt-2 text-base font-bold">

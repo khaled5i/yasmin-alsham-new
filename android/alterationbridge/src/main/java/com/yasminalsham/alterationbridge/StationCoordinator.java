@@ -56,6 +56,8 @@ public final class StationCoordinator implements AutoCloseable {
 
     private final Object scheduleLock = new Object();
     private ScheduledFuture<?> nextTick;
+    private long tickSequence;
+    private boolean wakeRequested;
     private volatile long generation;
     private volatile boolean printerReachable;
     private volatile String lastError = "";
@@ -152,11 +154,14 @@ public final class StationCoordinator implements AutoCloseable {
             scheduleNext(30_000);
             return;
         }
-        if (!networkMonitor.isInternetAvailable()) {
+        // لا ننتظر علامة «الإنترنت مُتحقَّق منه» من أندرويد: كثير من الراوترات
+        // تُفشل فحص Google للاتصال لدقائق بينما Supabase يعمل، فكانت المحطة
+        // تتوقف كليًا بلا سبب حقيقي. نداء الخادم نفسه هو الاختبار الصادق.
+        if (!networkMonitor.hasAnyNetwork()) {
             publish(status.get().withRuntime(
                     StationStatus.Role.OFFLINE,
                     printerReachable,
-                    "لا يوجد اتصال إنترنت صالح"
+                    "لا يوجد اتصال بالشبكة"
             ));
             scheduleNext(nextFailureDelay());
             return;
@@ -225,13 +230,21 @@ public final class StationCoordinator implements AutoCloseable {
             retryCompletion(credentials, local);
             return;
         }
-        if (local.state != LocalJobState.CLAIMED) return;
+        if (local.state != LocalJobState.CLAIMED) {
+            // المهمة نفسها وبالرمز نفسه، لكن هذا التابلت قد يكون أرسلها للطابعة
+            // سابقًا. لا نطبعها (منعًا للتكرار)، لكن لا نتركها محجوزة عندنا على
+            // الخادم أيضًا: كان ذلك يعيدها مع كل استلام فيتوقف الطابور خلفها.
+            releaseLocallyUncertainClaim(credentials, local);
+            return;
+        }
         if (!processingJob.compareAndSet(false, true)) return;
 
         currentJobId.set(claimed.id);
         printExecutor.execute(() -> {
             try {
                 processClaimedJob(credentials, claimed, claimedGeneration);
+            } catch (Throwable error) {
+                lastError = safeError(error);
             } finally {
                 currentJobId.set("");
                 processingJob.set(false);
@@ -248,12 +261,17 @@ public final class StationCoordinator implements AutoCloseable {
         byte[] printBytes;
         try {
             printBytes = buildPrintBytes(job);
-        } catch (Exception error) {
+        } catch (Throwable error) {
+            // Throwable لا Exception: نفاد الذاكرة أثناء رسم ورقة طويلة كان يفلت
+            // من هنا، فتبقى المهمة محجوزة ثم تعود للطابور بلا احتساب محاولة،
+            // وتتكرر إلى الأبد أمام كل المهام التي بعدها.
             reportSafeFailure(
                     credentials,
                     job,
                     error instanceof PrinterException
                             ? ((PrinterException) error).code
+                            : error instanceof OutOfMemoryError
+                            ? "render_out_of_memory"
                             : "invalid_payload",
                     safeError(error)
             );
@@ -300,6 +318,8 @@ public final class StationCoordinator implements AutoCloseable {
             );
             database.markSentAwaitingAck(job.id, sent);
             printerReachable = true;
+            // طباعة ناجحة = فحص ناجح؛ لا نفتح اتصالًا إضافيًا والطابعة ما زالت تُخرج الورقة.
+            lastPrinterProbeElapsed = SystemClock.elapsedRealtime();
             lastError = "";
 
             try {
@@ -435,6 +455,27 @@ public final class StationCoordinator implements AutoCloseable {
         }
     }
 
+    private void releaseLocallyUncertainClaim(
+            StationPreferences.PairingCredentials credentials,
+            LocalPrintJob local
+    ) {
+        int bytesSent = Math.max(1, local.bytesSent);
+        try {
+            StationApiClient.FailResult result = api.failJob(
+                    credentials,
+                    local.jobId,
+                    local.jobToken,
+                    bytesSent,
+                    "station_local_outcome_unknown",
+                    "سبق أن أرسل هذا التابلت المهمة للطابعة؛ افحص الورق ثم أعد الطباعة عند الحاجة"
+            );
+            if (isPending(result.status)) database.deleteJob(local.jobId);
+        } catch (ApiException error) {
+            lastError = safeError(error);
+        }
+        emitEvent("مهمة غير مؤكدة تنتظر قرار المدير " + shortId(local.jobId));
+    }
+
     private void reportSafeFailure(
             StationPreferences.PairingCredentials credentials,
             ClaimedJob job,
@@ -499,40 +540,92 @@ public final class StationCoordinator implements AutoCloseable {
             return;
         }
         lastPrinterProbeElapsed = now;
-        printerReachable = printerTransport.probe(
-                preferences.getPrinterIp(),
-                networkMonitor.getWifiNetwork()
+        String printerIp = preferences.getPrinterIp();
+        boolean reachable = printerTransport.probe(
+                printerIp,
+                networkMonitor.getWifiNetwork(),
+                1_500
         );
+        if (!reachable) {
+            // فحص واحد فاشل (الطابعة ما زالت تُنهي ورقة، أو تذبذب لحظي في Wi-Fi)
+            // كان يُسقط المحطة من الدور النشط 15 ثانية على الأقل. نعيد المحاولة
+            // مرة بمهلة أطول قبل الحكم بأن الطابعة غير متاحة.
+            SystemClock.sleep(800);
+            reachable = printerTransport.probe(
+                    printerIp,
+                    networkMonitor.getWifiNetwork(),
+                    3_000
+            );
+        }
+        printerReachable = reachable;
         if (!printerReachable) lastError = "الطابعة غير متاحة على الشبكة";
     }
 
+    /*
+     * سلسلة دورات واحدة فقط في أي لحظة.
+     *
+     * النسخة السابقة كانت تلغي «الدورة التالية» ثم تجدول دورة فورية، لكن إذا
+     * وصل الإيقاظ (تغيّر الشبكة، أو انتهاء مهمة طباعة) أثناء تنفيذ دورة، كانت
+     * الدورة الجارية تجدول تاليتها أيضًا، فتعيش سلسلتان. ومع كل إيقاظ كهذا
+     * تزيد السلاسل ولا تنقص، فتتضاعف نداءات الخادم على خيط واحد حتى تتأخر
+     * الطباعة دقائق، ولا يحلّها إلا إعادة تشغيل التطبيق.
+     *
+     * الآن لكل جدولة رقم تسلسلي، وأي دورة رقمها قديم تخرج فورًا. والإيقاظ
+     * الذي يصل أثناء دورة جارية لا يضيع: تجدول الدورة الجارية تاليتها فورًا.
+     */
     private void wakeNow() {
         if (!running.get()) return;
         synchronized (scheduleLock) {
-            if (nextTick != null && !nextTick.isDone()) nextTick.cancel(false);
-            try {
-                nextTick = scheduler.schedule(this::tick, 0, TimeUnit.MILLISECONDS);
-            } catch (RuntimeException ignored) {
-            }
+            wakeRequested = true;
+            scheduleTickLocked(0);
         }
     }
 
     private void scheduleNext(long delayMs) {
         if (!running.get()) return;
         synchronized (scheduleLock) {
-            try {
-                nextTick = scheduler.schedule(
-                        this::tick,
-                        Math.max(500, delayMs),
-                        TimeUnit.MILLISECONDS
-                );
-            } catch (RuntimeException ignored) {
+            scheduleTickLocked(wakeRequested ? 0 : Math.max(500, delayMs));
+        }
+    }
+
+    private void scheduleTickLocked(long delayMs) {
+        if (!running.get()) return;
+        if (nextTick != null) nextTick.cancel(false);
+        final long sequence = ++tickSequence;
+        try {
+            nextTick = scheduler.schedule(
+                    () -> runTick(sequence),
+                    Math.max(0, delayMs),
+                    TimeUnit.MILLISECONDS
+            );
+        } catch (RuntimeException ignored) {
+            // The scheduler is shutting down.
+        }
+    }
+
+    private void runTick(long sequence) {
+        synchronized (scheduleLock) {
+            if (!running.get() || sequence != tickSequence) return;
+            wakeRequested = false;
+        }
+        try {
+            tick();
+        } catch (Throwable error) {
+            // أي استثناء غير متوقع كان يُبتلع داخل المُجدول فتموت الحلقة بصمت
+            // وتتوقف المحطة نهائيًا مع بقاء الإشعار «تعمل».
+            lastError = safeError(error);
+        } finally {
+            synchronized (scheduleLock) {
+                if (running.get() && sequence == tickSequence) {
+                    scheduleTickLocked(nextFailureDelay());
+                }
             }
         }
     }
 
     private void cancelNextTick() {
         synchronized (scheduleLock) {
+            tickSequence++;
             if (nextTick != null) nextTick.cancel(false);
             nextTick = null;
         }

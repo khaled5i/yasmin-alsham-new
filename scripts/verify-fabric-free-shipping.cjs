@@ -1,5 +1,5 @@
-// الشحن المجاني فوق 1000 ريال (قرار المالكة 20 أكتوبر 2026): تسعير الخادم يختار
-// رسم الشحن من مجموع الأقمشة شاملة الضريبة، ويبقى الإجمالي = الأقمشة + الشحن.
+// الشحن المجاني لكل الطلبات ولكل الدول (قرار المالكة 19 نوفمبر 2026): رسم الشحن صفر
+// دائماً، والإجمالي = الأقمشة؛ وعنوان دولي وجوال برمز الدولة مقبولان.
 // يعمل بلا شبكة وبلا Supabase. التشغيل: node scripts/verify-fabric-free-shipping.cjs
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
@@ -69,57 +69,57 @@ const rows = new Map([['a', row('a', 100)], ['b', row('b', 200)]])
 const priceMeters = (fabricId, meters, method) =>
   priceCart(rows, [{ fabricId, purchaseMode: 'meter', quantity: meters }], method)
 
-const THRESHOLD = contract.FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS
-assert.equal(THRESHOLD, 100_000)
-
-// تحت العتبة: 8 م × 100 = 800 صافي ⇒ 920 شامل ⇒ الشحن 50 كما كان.
-{
-  const { quote, order } = priceMeters('a', 8, 'shipping')
-  assert.equal(order.delivery.code, 'ksa_flat')
-  assert.equal(quote.totals.shippingGrossHalalas, 5_000)
-  assert.equal(quote.totals.totalHalalas, 92_000 + 5_000)
-  assert.equal(order.shippingNetHalalas + order.shippingVatHalalas, 5_000)
-  const shipping = quote.deliveryOptions.find(option => option.method === 'shipping')
-  assert.equal(shipping.shippingGrossHalalas, 5_000)
-}
-
-// عند العتبة تماماً: 1000 ريال شاملة ⇒ مجاني. 869.57 صافي لا يُنتج 1000.00 بالضبط،
-// فنختبر الحدّ بالدالة مباشرة، ثم بسلة حقيقية فوقه.
-assert.equal(contract.resolveFabricDeliveryOption('shipping', THRESHOLD).shippingGrossHalalas, 0)
-assert.equal(contract.resolveFabricDeliveryOption('shipping', THRESHOLD - 1).shippingGrossHalalas, 5_000)
-assert.equal(contract.resolveFabricDeliveryOption('pickup', THRESHOLD - 1).shippingGrossHalalas, 0)
-
-// فوقها: 5 م × 200 = 1000 صافي ⇒ 1150 شامل ⇒ الشحن صفر، والإجمالي = الأقمشة فقط.
-{
-  const { quote, order } = priceMeters('b', 5, 'shipping')
+// قرار المالكة 19 نوفمبر 2026: الشحن مجاني لكل الطلبات ولكل الدول (قبله 50 ريالاً ومجاني فوق 1000).
+for (const [fabricId, meters] of [['a', 1], ['a', 8], ['b', 5]]) {
+  const { quote, order } = priceMeters(fabricId, meters, 'shipping')
   assert.equal(order.delivery.method, 'shipping')
-  assert.equal(order.delivery.code, 'ksa_free')
+  assert.equal(order.delivery.code, 'free_worldwide')
   assert.match(order.delivery.code, /^[a-z0-9_]{1,40}$/) // قيد القاعدة على delivery_option_code
   assert.equal(order.shippingNetHalalas, 0)
   assert.equal(order.shippingVatHalalas, 0)
   assert.equal(quote.totals.shippingGrossHalalas, 0)
-  assert.equal(quote.totals.totalHalalas, 115_000)
   assert.equal(order.totalHalalas, order.itemsNetHalalas + order.vatHalalas)
-  // قيد القاعدة: الضريبة = (البنود + الشحن) × 15% مقرّبة نصفاً للأعلى.
   assert.equal(order.vatHalalas, Math.floor((order.itemsNetHalalas * 1500 + 5000) / 10000))
   assert.equal(order.items.reduce((sum, item) => sum + item.vat_halalas, 0), order.vatHalalas)
+  for (const option of quote.deliveryOptions) assert.equal(option.shippingGrossHalalas, 0)
 }
-
-// الاستلام من المحل لا يتغير أبداً.
 {
   const { order } = priceMeters('b', 5, 'pickup')
   assert.equal(order.delivery.code, 'shop_pickup')
   assert.equal(order.shippingNetHalalas, 0)
 }
 
-// سطر مرفوض لا يُحتسب في العتبة: القماش السليم وحده (920) تحت 1000.
+// الجوال: الصيغ السعودية كما كانت، والدولية برمز الدولة.
+assert.equal(contract.normalizeCustomerPhone('0551234567'), '+966551234567')
+assert.equal(contract.normalizeCustomerPhone('+971 50 123 4567'), '+971501234567')
+assert.equal(contract.normalizeCustomerPhone('0044 7700 900123'), '+447700900123')
+assert.equal(contract.normalizeCustomerPhone('+966 13 812 3456'), null) // أرضي سعودي
+assert.equal(contract.normalizeCustomerPhone('12345'), null)
+
+// العنوان: السعودية بقواعد العنوان الوطني، وبقية الدول بسطر عنوان ورمز بريدي حر.
+const base = { recipientName: 'سارة', recipientPhone: '+971501234567', city: 'دبي' }
 {
-  const { quote } = priceCart(rows, [
-    { fabricId: 'a', purchaseMode: 'meter', quantity: 8 },
-    { fabricId: 'missing', purchaseMode: 'meter', quantity: 50 },
-  ], 'shipping')
-  assert.equal(quote.canCheckout, false)
-  assert.equal(quote.totals.shippingGrossHalalas, 5_000)
+  const parsed = contract.fabricAddressSchema.safeParse({ ...base, countryCode: 'ae', street: 'Marina, Bldg 4, Apt 12', postalCode: '', shortAddress: 'RRRD2929', buildingNumber: '2929' })
+  assert.equal(parsed.success, true)
+  assert.equal(parsed.data.countryCode, 'AE')
+  assert.equal(parsed.data.shortAddress, null)
+  assert.equal(parsed.data.buildingNumber, null)
+}
+{
+  const parsed = contract.fabricAddressSchema.safeParse({ ...base, countryCode: 'GB', street: '10 Downing St', postalCode: 'sw1a 2aa' })
+  assert.equal(parsed.success, true)
+  assert.equal(parsed.data.postalCode, 'SW1A 2AA')
+}
+assert.equal(contract.fabricAddressSchema.safeParse({ ...base, countryCode: 'AE' }).success, false) // بلا عنوان
+assert.equal(contract.fabricAddressSchema.safeParse({ ...base, countryCode: 'IL', street: 'x st' }).success, false)
+assert.equal(contract.fabricAddressSchema.safeParse({ ...base, countryCode: 'ZZ', street: 'x st' }).success, false)
+{
+  const sa = { recipientName: 'سارة', recipientPhone: '0551234567', city: 'الخبر' }
+  const ok = contract.fabricAddressSchema.safeParse({ ...sa, shortAddress: 'RRRD2929' })
+  assert.equal(ok.success, true)
+  assert.equal(ok.data.countryCode, 'SA') // غياب الدولة = السعودية
+  assert.equal(contract.fabricAddressSchema.safeParse({ ...sa, countryCode: 'SA', street: 'x' }).success, false)
+  assert.equal(contract.fabricAddressSchema.safeParse({ ...sa, countryCode: 'SA', shortAddress: 'RRRD2929', postalCode: 'AB12' }).success, false)
 }
 
-console.log('OK: free shipping over 1000 SAR')
+console.log('OK: free worldwide shipping')

@@ -91,7 +91,7 @@ function fabricTitle(fabric: FabricSeoRow): string {
 function fabricDescription(fabric: FabricSeoRow): string {
   const description = fabric.description?.trim()
   if (description) return description.slice(0, 160)
-  return `${fabricTitle(fabric)} من متجر أقمشة ياسمين الشام في الخبر — أقمشة نسائية مختارة للتفصيل والخياطة مع توصيل داخل المملكة.`
+  return `${fabricTitle(fabric)} من متجر أقمشة ياسمين الشام في الخبر — أقمشة نسائية مختارة للتفصيل والخياطة مع شحن مجاني لكل دول العالم.`
 }
 
 function fabricImages(fabric: FabricSeoRow): string[] {

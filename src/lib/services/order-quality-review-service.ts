@@ -43,7 +43,48 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+/** ملخص محاولة مراجعة بلا تفاصيل (بلا مقاسات ولا تسجيلات صوتية). */
+export interface QualityReviewAttemptSummary {
+  order_id: string
+  stage: OrderQualityReviewStage
+  attempt_number: number
+  status: 'passed' | 'failed'
+  /** يصل فقط مع includeCreatedAt. */
+  created_at?: string
+}
+
 export const orderQualityReviewService = {
+  /**
+   * محاولات المراجعة لمجموعة طلبات بأعمدة خفيفة — لعرض «النجاح من أول مراجعة» في متابعة العمال.
+   */
+  async getAttemptSummariesForOrders(
+    orderIds: string[],
+    options: { includeCreatedAt?: boolean } = {}
+  ): Promise<{ data: QualityReviewAttemptSummary[]; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: [], error: 'Supabase is not configured.' }
+    }
+    const ids = [...new Set(orderIds.filter(Boolean))]
+    if (ids.length === 0) return { data: [], error: null }
+
+    const CHUNK = 100
+    const rows: QualityReviewAttemptSummary[] = []
+    try {
+      for (let index = 0; index < ids.length; index += CHUNK) {
+        const { data, error } = await supabase
+          .from('order_quality_review_attempts')
+          .select(`order_id,stage,attempt_number,status${options.includeCreatedAt ? ',created_at' : ''}`)
+          .in('order_id', ids.slice(index, index + CHUNK))
+          .range(0, 999)
+        if (error) throw error
+        rows.push(...((data || []) as unknown as QualityReviewAttemptSummary[]))
+      }
+      return { data: rows, error: null }
+    } catch (error: unknown) {
+      return { data: [], error: getErrorMessage(error, 'تعذّر تحميل مراجعات الجودة') }
+    }
+  },
+
   async getLatestReview(
     orderId: string,
     stage: OrderQualityReviewStage

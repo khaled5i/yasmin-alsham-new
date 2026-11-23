@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { FABRIC_MAX_CM_PER_LINE, FABRIC_VAT_BASIS_POINTS, type FabricLineRejection, type FabricPurchaseMode } from './pricing'
 import { divideRoundHalfUp } from './money'
 import { STORE_DELIVERY_TIMES } from '@/lib/store-legal'
+import { FABRIC_STORE_HOME_COUNTRY, isFabricStoreCountry } from './countries'
 
 // ============================================
 // مفتاح الواجهة
@@ -65,8 +66,8 @@ export const FABRIC_STORE_MAX_LINES = 40
  * (مضمونها في `src/lib/store-legal.ts`). أي تغيير في مضمون سياسة يرفع إصدارها.
  */
 export const FABRIC_STORE_POLICY_VERSIONS = {
-  terms: '2026-10-24', // الشحن من 2 إلى 5 أيام طوال الأسبوع (قبله 2026-10-20: الشحن مجاني فوق 1000 ريال؛ 2026-10-06: الشحن شامل الضريبة ووسائل الدفع المعتمدة)
-  returns: '2026-09-28',
+  terms: '2026-11-19', // الشحن مجاني ولكل دول العالم (7–14 يوماً للدولي، الجمارك على المستلمة) (قبله 2026-10-24: الشحن من 2 إلى 5 أيام طوال الأسبوع (قبله 2026-10-20: الشحن مجاني فوق 1000 ريال؛ 2026-10-06: الشحن شامل الضريبة ووسائل الدفع المعتمدة)
+  returns: '2026-11-19', // شحن الإرجاع بلا «رسوم الشحن الأصلية» (الشحن مجاني)، وجمارك المرتجع الدولي (قبله 2026-09-28)
   privacy: '2026-10-20', // أحداث المتجر في Google Analytics وإشعار نجاح الدفع، وMicrosoft Clarity (قبله 2026-10-05: الاستضافة خارج المملكة، GA، محو العنوان بعد 90 يوماً)
 } as const
 
@@ -87,14 +88,16 @@ export interface FabricDeliveryOption {
   shippingGrossHalalas: number
 }
 
-/** قرار المالكة 6 أكتوبر 2026: الشحن 50 ريالاً شاملة الضريبة، لا 50 + الضريبة. */
-export const FABRIC_STORE_SHIPPING_GROSS_HALALAS = 5_000
+/**
+ * قرار المالكة 19 نوفمبر 2026: الشحن مجاني لكل الطلبات ولكل الدول (قبله: 50 ريالاً
+ * شاملة الضريبة، ومجاني فوق 1000 ريال). القاعدة تقبل شحناً بصفر، وحقول الشحن في
+ * الطلب والفاتورة باقية بصفر — لإعادة رسم يكفي رفع هذا الرقم.
+ */
+export const FABRIC_STORE_SHIPPING_GROSS_HALALAS = 0
 
 /**
- * استلام من المحل أو شحن لكل مدن السعودية. قرار 6 أكتوبر 2026: رسم الشحن
- * ثابت شامل الضريبة؛ تختار المالكة الناقل عند أول طلب، والمدد الحالية باقية.
- * الصافي بالهللة مقرّب نصفاً للأعلى، وحصة ضريبة الشحن تثبّت المبلغ الشامل
- * في pricing.ts مع إبقاء ضريبة الطلب محسوبة مرة واحدة على مجموع الصافي.
+ * استلام من المحل، أو شحن مجاني داخل السعودية ولكل دول العالم (قرار 19 نوفمبر 2026).
+ * الدولة في العنوان لا تغيّر السعر، فطريقة الشحن واحدة وتختلف المدة وحدها.
  */
 export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliveryOption> = {
   pickup: {
@@ -107,9 +110,9 @@ export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliver
   },
   shipping: {
     method: 'shipping',
-    code: 'ksa_flat',
-    label: 'شحن داخل السعودية',
-    description: `سعر موحّد لكل مدن المملكة — ${STORE_DELIVERY_TIMES.shippingShort}.`,
+    code: 'free_worldwide',
+    label: 'شحن مجاني',
+    description: `داخل السعودية ${STORE_DELIVERY_TIMES.shippingRange}، ولبقية الدول ${STORE_DELIVERY_TIMES.internationalRange}.`,
     shippingNetHalalas: divideRoundHalfUp(
       FABRIC_STORE_SHIPPING_GROSS_HALALAS * 10_000,
       10_000 + FABRIC_VAT_BASIS_POINTS
@@ -119,28 +122,13 @@ export const FABRIC_DELIVERY_OPTIONS: Record<FabricDeliveryMethod, FabricDeliver
 }
 
 /**
- * قرار المالكة 20 أكتوبر 2026: الشحن مجاني متى بلغت الأقمشة 1000 ريال شاملة
- * الضريبة (قبل الشحن). القاعدة تقبل شحناً بصفر، فالعتبة تُطبَّق في التسعير وحده.
+ * طريقة الاستلام الفعلية للسلة. لا عتبة بعد قرار 19 نوفمبر 2026 (الشحن مجاني دائماً)،
+ * والتوقيع باقٍ حتى لا يتغيّر مسار التسعير إن عاد رسم أو عتبة.
  */
-export const FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS = 100_000
-
-const FREE_SHIPPING_OPTION: FabricDeliveryOption = {
-  method: 'shipping',
-  code: 'ksa_free',
-  label: 'شحن داخل السعودية',
-  description: `مجاني لطلبك — ${STORE_DELIVERY_TIMES.shippingShort}.`,
-  shippingNetHalalas: 0,
-  shippingGrossHalalas: 0,
-}
-
-/** طريقة الاستلام الفعلية لسلة بهذا المجموع (الأقمشة شاملة الضريبة، بلا شحن). */
 export function resolveFabricDeliveryOption(
   method: FabricDeliveryMethod,
-  itemsGrossHalalas: number
+  _itemsGrossHalalas: number
 ): FabricDeliveryOption {
-  if (method === 'shipping' && itemsGrossHalalas >= FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS) {
-    return FREE_SHIPPING_OPTION
-  }
   return FABRIC_DELIVERY_OPTIONS[method]
 }
 
@@ -168,6 +156,22 @@ export function normalizeSaudiMobile(input: string): string | null {
   return match ? `+966${match[1]}` : null
 }
 
+/**
+ * جوال الزبونة ⇒ E.164، أو null. الصيغ السعودية كما في normalizeSaudiMobile، وأي رقم
+ * دولي يبدأ بـ + أو 00 ثم رمز الدولة (8 إلى 15 رقماً — نفس قيد القاعدة) منذ فتح الشحن
+ * لكل الدول (19 نوفمبر 2026).
+ */
+export function normalizeCustomerPhone(input: string): string | null {
+  const saudi = normalizeSaudiMobile(input)
+  if (saudi) return saudi
+  const compact = toLatinDigits(input).replace(/[\s\-().]/g, '')
+  const match = /^(?:\+|00)([1-9]\d{7,14})$/.exec(compact)
+  if (!match) return null
+  // رقم سعودي بصيغة دولية لكنه ليس جوالاً (مثل أرضي) يبقى مرفوضاً كما كان.
+  if (match[1].startsWith('966')) return null
+  return `+${match[1]}`
+}
+
 // ============================================
 // مخططات الطلبات
 // ============================================
@@ -186,11 +190,11 @@ const optionalText = (max: number) =>
     .pipe(z.string().max(max))
     .transform(value => value || null)
 
-const saudiMobile = z
+const customerPhone = z
   .string()
   .max(30)
   .transform((value, ctx) => {
-    const phone = normalizeSaudiMobile(value)
+    const phone = normalizeCustomerPhone(value)
     if (!phone) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'invalid-phone' })
       return z.NEVER
@@ -228,13 +232,25 @@ export type FabricQuoteRequest = z.infer<typeof fabricQuoteRequestSchema>
 
 export const fabricAddressSchema = z
   .object({
+    /** ISO 3166-1 ثنائي. غيابه = السعودية (طلبات ما قبل الشحن الدولي). */
+    countryCode: z
+      .string()
+      .optional()
+      .transform(value => (value ?? '').trim().toUpperCase() || FABRIC_STORE_HOME_COUNTRY)
+      .refine(isFabricStoreCountry, 'invalid-country'),
     recipientName: cleanText(2, 120),
-    recipientPhone: saudiMobile,
+    recipientPhone: customerPhone,
     city: cleanText(2, 60),
     district: optionalText(80),
     street: optionalText(120),
     buildingNumber: digitsOf(4),
-    postalCode: digitsOf(5),
+    // السعودية: 5 أرقام (تُفحص أدناه). بقية الدول: حروف إنجليزية وأرقام، مثل SW1A 1AA.
+    postalCode: z
+      .string()
+      .optional()
+      .transform(value => toLatinDigits(value ?? '').replace(/\s+/g, ' ').trim().toUpperCase())
+      .pipe(z.string().regex(/^([A-Z0-9][A-Z0-9 -]{1,11})?$/))
+      .transform(value => value || null),
     additionalNumber: digitsOf(4),
     shortAddress: z
       .string()
@@ -244,19 +260,31 @@ export const fabricAddressSchema = z
       .transform(value => value || null),
     notes: optionalText(300),
   })
-  // نفس قيد القاعدة: العنوان المختصر، أو الحي والشارع معاً. المسار يشير إلى
-  // الحقل الناقص فعلاً حتى تعرف الزبونة ماذا تكتب (لا رسالة عامة).
+  // نفس قيد القاعدة: في السعودية العنوان المختصر، أو الحي والشارع معاً؛ وخارجها سطر
+  // العنوان (الشارع) إلزامي والحي/الولاية اختياري. المسار يشير إلى الحقل الناقص فعلاً.
   .superRefine((address, ctx) => {
+    if (address.countryCode !== FABRIC_STORE_HOME_COUNTRY) {
+      if (!address.street) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'address-line-required', path: ['street'] })
+      return
+    }
+    if (address.postalCode && !/^\d{5}$/.test(address.postalCode)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'postal-sa', path: ['postalCode'] })
+      return
+    }
     if (address.shortAddress || (address.district && address.street)) return
     const path = address.district ? ['street'] : address.street ? ['district'] : []
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'address-incomplete', path })
   })
+  // حقول «العنوان الوطني» سعودية فقط: لا تُحفظ لعنوان خارج المملكة (ولو بقيت في المسودة).
+  .transform(address => address.countryCode === FABRIC_STORE_HOME_COUNTRY
+    ? address
+    : { ...address, buildingNumber: null, additionalNumber: null, shortAddress: null })
 
 export type FabricAddressInput = z.infer<typeof fabricAddressSchema>
 
 export const fabricCustomerSchema = z.object({
   name: cleanText(2, 120),
-  phone: saudiMobile,
+  phone: customerPhone,
   email: z
     .string()
     .max(254)
@@ -291,14 +319,17 @@ export const fabricCheckoutFormSchema = z.object({
   address: fabricAddressSchema.nullable(),
 })
 
+const PHONE_MESSAGE = 'رقم الجوال غير صحيح — اكتبيه مثل 05xxxxxxxx، أو برمز الدولة مثل ‎+971501234567'
+
 const ADDRESS_FIELD_MESSAGES: Record<string, string> = {
   recipientName: 'اكتبي الاسم (حرفان على الأقل)',
-  recipientPhone: 'رقم الجوال غير صحيح — اكتبيه مثل 05xxxxxxxx',
+  countryCode: 'اختاري الدولة من القائمة',
+  recipientPhone: PHONE_MESSAGE,
   city: 'اكتبي اسم المدينة',
   district: 'اسم الحي أطول من المسموح (80 حرفاً)',
-  street: 'اسم الشارع أطول من المسموح (120 حرفاً)',
+  street: 'العنوان أطول من المسموح (120 حرفاً)',
   buildingNumber: 'رقم المبنى يجب أن يكون 4 أرقام بالضبط، مثل 2929',
-  postalCode: 'الرمز البريدي يجب أن يكون 5 أرقام بالضبط، مثل 12345',
+  postalCode: 'الرمز البريدي غير صحيح — حروف إنجليزية وأرقام فقط',
   additionalNumber: 'الرقم الإضافي يجب أن يكون 4 أرقام بالضبط',
   shortAddress: 'العنوان المختصر غير صحيح — 4 حروف إنجليزية ثم 4 أرقام، مثل RRRD2929',
   notes: 'ملاحظات التوصيل أطول من 300 حرف',
@@ -312,7 +343,9 @@ export function describeFabricCheckoutIssue(issues: { path: (string | number)[];
   const first = issues[0]
   const path = first?.path ?? []
   const field = path.join('.')
-  if (first?.message === 'invalid-phone') return 'رقم الجوال غير صحيح — اكتبيه مثل 05xxxxxxxx'
+  if (first?.message === 'invalid-phone') return PHONE_MESSAGE
+  if (first?.message === 'postal-sa') return 'الرمز البريدي في السعودية 5 أرقام بالضبط، مثل 12345'
+  if (first?.message === 'address-line-required') return 'اكتبي العنوان: الشارع ورقم المبنى أو الشقة'
   if (first?.message === 'address-incomplete') {
     if (path[path.length - 1] === 'street') return 'اكتبي اسم الشارع — أو اكتبي العنوان المختصر بدلاً من الحي والشارع'
     if (path[path.length - 1] === 'district') return 'اكتبي اسم الحي — أو اكتبي العنوان المختصر بدلاً من الحي والشارع'
@@ -363,7 +396,7 @@ export interface FabricQuoteResponse {
   /** كل الأسطر سليمة، والإجمالي ضمن السقف. */
   canCheckout: boolean
   overOrderCap: boolean
-  /** رسومها محسوبة لهذه السلة (الشحن مجاني فوق العتبة). */
+  /** طرق الاستلام لهذه السلة (الشحن مجاني منذ 19 نوفمبر 2026). */
   deliveryOptions: FabricDeliveryOption[]
 }
 

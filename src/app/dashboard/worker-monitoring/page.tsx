@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -18,23 +18,28 @@ import {
   CheckCircle,
   LogOut,
   Loader2,
-  Calendar,
   Fingerprint,
   UserCog,
+  RotateCw,
 } from 'lucide-react'
+import {
+  computeMonthSummary,
+  computeRoleStats,
+  cutMonthOf,
+  type QualityRole,
+  type WorkerQualityStats,
+} from '@/lib/worker-alteration-stats'
+import { useWorkerQualityData } from '@/components/worker-quality/worker-quality-data'
+import { MonthSelect } from '@/components/worker-quality/worker-quality-ui'
+import {
+  MonthQualitySummary,
+  SortChips,
+  WorkerQualityCard,
+  sortWorkersByQuality,
+  type QualitySort,
+} from '@/components/worker-quality/worker-quality-list'
 
-const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
-
-function getRecentMonths(count: number): { key: string; label: string }[] {
-  const months = []
-  const now = new Date()
-  for (let i = 0; i < count; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    months.push({ key, label: `${ARABIC_MONTHS[d.getMonth()]} ${d.getFullYear()}` })
-  }
-  return months
-}
+type Segment = 'tailors' | 'cutters' | 'shak'
 
 export default function WorkerMonitoringPage() {
   const { t, isArabic } = useTranslation()
@@ -49,6 +54,8 @@ export default function WorkerMonitoringPage() {
   const [shakPendingTotal, setShakPendingTotal] = useState(0)
   const [shakDoneCounts, setShakDoneCounts] = useState<Record<string, number>>({})
   const [tailors, setTailors] = useState<WorkerWithUser[]>([])
+  // كل الخياطين بمن فيهم غير المتاحين — يظهر غير المتاح في تقييم الشهر إن كانت له طلبات فيه
+  const [allTailors, setAllTailors] = useState<WorkerWithUser[]>([])
   const [activeOrderCounts, setActiveOrderCounts] = useState<Record<string, number>>({})
   const [completedOrderCounts, setCompletedOrderCounts] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
@@ -56,7 +63,61 @@ export default function WorkerMonitoringPage() {
   const [sharedMonth, setSharedMonth] = useSelectedMonth()
   const [allMonths, setAllMonths] = useState(false)
   const selectedMonth = allMonths ? '' : sharedMonth
-  const recentMonths = getRecentMonths(18)
+  const isAdmin = user?.role === 'admin'
+  const [segment, setSegment] = useState<Segment>('tailors')
+  const [qualitySort, setQualitySort] = useState<QualitySort>('best')
+
+  // تقييم التعديلات وأسبابها للمدير فقط، ولشهر محدد (التقييم شهري بطبيعته)
+  const quality = useWorkerQualityData({
+    enabled: isAdmin && !!selectedMonth,
+    fromMonth: selectedMonth,
+    toMonth: selectedMonth,
+    kinds: ['completed', 'cut'],
+  })
+  const qualityReady = isAdmin && !!selectedMonth && !!quality.data && !quality.loading
+  const tailorStats = useMemo(() => (
+    quality.data && selectedMonth
+      ? computeRoleStats({
+          role: 'tailor',
+          month: selectedMonth,
+          orders: quality.data.completed,
+          alterations: quality.data.alterations,
+          reviews: quality.data.reviews,
+          workerIds: allTailors.map(worker => worker.id),
+        })
+      : new Map<string, WorkerQualityStats>()
+  ), [quality.data, selectedMonth, allTailors])
+  const cutterStats = useMemo(() => (
+    quality.data && selectedMonth
+      ? computeRoleStats({
+          role: 'cutter',
+          month: selectedMonth,
+          orders: quality.data.cut,
+          alterations: quality.data.alterations,
+          reviews: quality.data.reviews,
+          workerIds: managers.map(worker => worker.id),
+        })
+      : new Map<string, WorkerQualityStats>()
+  ), [quality.data, selectedMonth, managers])
+  const monthSummary = useMemo(() => (
+    quality.data && selectedMonth ? computeMonthSummary(selectedMonth, quality.data.completed, quality.data.alterations) : null
+  ), [quality.data, selectedMonth])
+  const qualityTailors = useMemo(() => sortWorkersByQuality(
+    allTailors.filter(worker => worker.is_available || (tailorStats.get(worker.id)?.orders ?? 0) > 0),
+    tailorStats,
+    qualitySort
+  ), [allTailors, tailorStats, qualitySort])
+  // قيد التنفيذ للقصّاص: طلبات قصّها في الشهر ولم تكتمل بعد
+  const cutterActiveCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const order of quality.data?.cut || []) {
+      if (!order.cutter_id || cutMonthOf(order) !== selectedMonth) continue
+      if (order.status !== 'pending' && order.status !== 'in_progress') continue
+      counts[order.cutter_id] = (counts[order.cutter_id] || 0) + 1
+    }
+    return counts
+  }, [quality.data, selectedMonth])
+  const qualityCutters = useMemo(() => sortWorkersByQuality(managers, cutterStats, qualitySort), [managers, cutterStats, qualitySort])
 
   // «كل الأشهر» ليس شهراً، فيبقى محلياً ولا يمحو الشهر المختار للأقسام الأخرى
   function handleMonthChange(value: string) {
@@ -120,6 +181,7 @@ export default function WorkerMonitoringPage() {
           (w) => w.worker_type === 'tailor' && w.is_available
         )
         setTailors(tailorsList)
+        setAllTailors((workersResult.data || []).filter((w) => w.worker_type === 'tailor'))
 
         // Count active orders per worker_id
         const activeCounts: Record<string, number> = {}
@@ -209,14 +271,14 @@ export default function WorkerMonitoringPage() {
           className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
         >
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-800">الخياطون</h2>
-            <p className="text-sm text-gray-500 mt-1">عرض ومتابعة أداء جميع الخياطين وطلباتهم</p>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800">العمال</h2>
+            <p className="text-sm text-gray-500 mt-1">متابعة أداء العمال وطلباتهم{isAdmin ? ' وتعديلاتهم' : ''}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:self-auto">
             {user?.role === 'admin' && (
               <Link
                 href="/dashboard/workers"
-                className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-white px-3.5 py-2 text-sm font-bold text-teal-800 shadow-sm transition-colors hover:bg-teal-50"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-teal-200 bg-white px-3.5 text-sm font-bold text-teal-800 shadow-sm transition-colors hover:bg-teal-50"
               >
                 <UserCog className="h-4 w-4" />
                 إدارة العمال
@@ -224,28 +286,22 @@ export default function WorkerMonitoringPage() {
             )}
             <Link
               href="/dashboard/worker-monitoring/attendance"
-              className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-3.5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-teal-800"
+              className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-teal-800 ${user?.role === 'admin' ? '' : 'col-span-2'}`}
             >
               <Fingerprint className="h-4 w-4" />
               الحضور والانصراف
             </Link>
-            <div className="relative">
-              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-500 pointer-events-none" />
-              <select
-                value={selectedMonth}
-                onChange={(e) => handleMonthChange(e.target.value)}
-                className="pr-9 pl-4 py-2 text-sm border border-teal-200 rounded-xl bg-white focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100 appearance-none cursor-pointer font-medium text-gray-700 shadow-sm"
-              >
-                <option value="">كل الأشهر</option>
-                {recentMonths.map((m) => (
-                  <option key={m.key} value={m.key}>{m.label}</option>
-                ))}
-              </select>
-            </div>
+            <MonthSelect
+              value={selectedMonth}
+              onChange={handleMonthChange}
+              includeAll
+              className="col-span-2 sm:w-48"
+            />
           </div>
         </motion.div>
 
-        {/* Summary stats bar */}
+        {/* Summary stats bar — يُستبدل بملخص التعديلات في عرض المدير الشهري */}
+        {!(isAdmin && selectedMonth) && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -269,7 +325,36 @@ export default function WorkerMonitoringPage() {
             <p className="text-xs text-gray-500 mt-1">الطلبات المكتملة</p>
           </div>
         </motion.div>
+        )}
 
+        {isAdmin && selectedMonth ? (
+          <QualityView
+            month={selectedMonth}
+            loading={quality.loading || !qualityReady}
+            error={quality.error}
+            onRetry={quality.retry}
+            summary={monthSummary}
+            segment={segment}
+            onSegmentChange={setSegment}
+            sort={qualitySort}
+            onSortChange={setQualitySort}
+            tailors={qualityTailors}
+            cutters={qualityCutters}
+            shakWorkers={shakWorkers}
+            tailorStats={tailorStats}
+            cutterStats={cutterStats}
+            activeCounts={activeOrderCounts}
+            cutterActiveCounts={cutterActiveCounts}
+            shakDoneCounts={shakDoneCounts}
+            shakPendingTotal={shakPendingTotal}
+          />
+        ) : (
+        <>
+        {isAdmin && !selectedMonth ? (
+          <p className="mb-4 rounded-xl border border-pink-100 bg-pink-50/60 px-4 py-3 text-sm font-bold text-pink-800">
+            اختر شهراً لعرض تقييم التعديلات وترتيب العمال.
+          </p>
+        ) : null}
         {/* Worker grid */}
         {tailors.length === 0 ? (
           <motion.div
@@ -329,6 +414,8 @@ export default function WorkerMonitoringPage() {
               ))}
             </div>
           </section>
+        )}
+        </>
         )}
       </main>
     </div>
@@ -424,5 +511,155 @@ function WorkerCard({
         </div>
       </Link>
     </motion.div>
+  )
+}
+
+// ============================================================================
+// عرض المدير لشهر محدد: ملخص تعديلات الشهر + تقييم وترتيب كل عامل
+// ============================================================================
+
+function QualityView({
+  month,
+  loading,
+  error,
+  onRetry,
+  summary,
+  segment,
+  onSegmentChange,
+  sort,
+  onSortChange,
+  tailors,
+  cutters,
+  shakWorkers,
+  tailorStats,
+  cutterStats,
+  activeCounts,
+  cutterActiveCounts,
+  shakDoneCounts,
+  shakPendingTotal,
+}: {
+  month: string
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+  summary: ReturnType<typeof computeMonthSummary> | null
+  segment: Segment
+  onSegmentChange: (segment: Segment) => void
+  sort: QualitySort
+  onSortChange: (sort: QualitySort) => void
+  tailors: WorkerWithUser[]
+  cutters: WorkerWithUser[]
+  shakWorkers: WorkerWithUser[]
+  tailorStats: Map<string, WorkerQualityStats>
+  cutterStats: Map<string, WorkerQualityStats>
+  activeCounts: Record<string, number>
+  cutterActiveCounts: Record<string, number>
+  shakDoneCounts: Record<string, number>
+  shakPendingTotal: number
+}) {
+  const segments: Array<{ key: Segment; label: string; count: number }> = [
+    { key: 'tailors', label: 'الخياطون', count: tailors.length },
+    { key: 'cutters', label: 'القصّاصون', count: cutters.length },
+    ...(shakWorkers.length > 0 ? [{ key: 'shak' as Segment, label: 'الشكّاكون', count: shakWorkers.length }] : []),
+  ]
+  const active: Segment = segment === 'shak' && shakWorkers.length === 0 ? 'tailors' : segment
+  const role: QualityRole = active === 'cutters' ? 'cutter' : 'tailor'
+  const list = active === 'cutters' ? cutters : tailors
+  const stats = active === 'cutters' ? cutterStats : tailorStats
+
+  return (
+    <div className="space-y-4">
+      {error ? (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p className="font-bold">تعذّر تحميل تعديلات الشهر</p>
+          <p className="mt-1 break-words">{error}</p>
+          <button type="button" onClick={onRetry} className="mt-3 inline-flex h-11 items-center gap-2 rounded-xl border border-red-200 bg-white px-4 font-bold">
+            <RotateCw className="h-4 w-4" /> إعادة المحاولة
+          </button>
+        </div>
+      ) : loading || !summary ? (
+        <div className="h-40 animate-pulse rounded-2xl border border-pink-100 bg-white/80" />
+      ) : (
+        <MonthQualitySummary month={month} summary={summary} />
+      )}
+
+      <div
+        role="tablist"
+        aria-label="نوع العمال"
+        className={`grid gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm ${segments.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} sm:max-w-lg`}
+      >
+        {segments.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={active === item.key}
+            onClick={() => onSegmentChange(item.key)}
+            className={`h-11 rounded-xl px-2 text-sm font-bold transition ${
+              active === item.key ? 'bg-gradient-to-l from-pink-500 to-purple-500 text-white shadow-sm' : 'text-slate-600 hover:bg-pink-50'
+            }`}
+          >
+            {item.label} <span className="tabular-nums opacity-80">({item.count})</span>
+          </button>
+        ))}
+      </div>
+
+      {active === 'shak' ? (
+        <section aria-label="الشكّاكون" className="space-y-3">
+          <p className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm leading-6 text-indigo-800">
+            لا تقييم للشكّاكين (لا يوجد سبب تعديل يُنسب إليهم). شك قيد التنفيذ:{' '}
+            <strong className="tabular-nums">{shakPendingTotal}</strong>
+          </p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {shakWorkers.map((shakWorker) => (
+              <Link
+                key={shakWorker.id}
+                href={`/dashboard/worker-monitoring/${shakWorker.id}`}
+                className="flex min-h-[72px] items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-white p-4 transition-colors hover:border-indigo-400"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-extrabold text-slate-900">{shakWorker.user?.full_name || 'بدون اسم'}</span>
+                  <span className="text-sm text-slate-500">شكّاك</span>
+                </span>
+                <span className="shrink-0 text-sm text-indigo-700">
+                  شك مكتمل: <strong className="tabular-nums">{shakDoneCounts[shakWorker.id] || 0}</strong>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <>
+          <SortChips value={sort} onChange={onSortChange} />
+          {loading ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {[0, 1, 2].map((index) => (
+                <div key={index} className="h-56 animate-pulse rounded-2xl border border-slate-100 bg-white/80" />
+              ))}
+            </div>
+          ) : error ? null : list.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center">
+              <Users className="mx-auto mb-3 h-12 w-12 text-slate-300" />
+              <p className="font-bold text-slate-700">
+                {active === 'cutters' ? 'لا يوجد قصّاصون مسجّلون' : 'لا يوجد خياطون متاحون أو لهم طلبات في هذا الشهر'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {list.map((worker, index) => (
+                <WorkerQualityCard
+                  key={worker.id}
+                  worker={worker}
+                  role={role}
+                  stats={stats.get(worker.id)}
+                  activeOrders={(active === 'cutters' ? cutterActiveCounts : activeCounts)[worker.id] || 0}
+                  index={index}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   )
 }

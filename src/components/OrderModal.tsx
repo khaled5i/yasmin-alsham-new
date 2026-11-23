@@ -34,7 +34,10 @@ import {
   Trash2,
   Download,
   Camera,
-  Link2
+  Link2,
+  Info,
+  StickyNote,
+  Wallet
 } from 'lucide-react'
 import { Order, orderService } from '@/lib/services/order-service'
 import { Worker } from '@/lib/services/worker-service'
@@ -62,6 +65,150 @@ import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { isVideoFile } from '@/lib/utils/media'
 import { formatGregorianDate, formatGregorianDateTime, parseDateForDisplay, shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
+import {
+  formatAlterationDate,
+  formatAlterationTimestampDate,
+  getDueInfo,
+  getSecondProofDate,
+  type DueKind,
+} from '@/components/alterations/alteration-ui'
+
+// ============================================================================
+// التصميم الحديث لنافذة تفاصيل الطلب (layout="modern")
+// يُستخدم حالياً في صفحة الطلبات الحديثة فقط؛ باقي الصفحات تبقى على التصميم الكلاسيكي.
+// المحتوى والصلاحيات نفسها تماماً — يتغيّر الترتيب والشكل فقط.
+// ============================================================================
+
+const MODERN_WIDE_LAYOUT_QUERY = '(min-width: 1024px)'
+
+const MODERN_SECTION_TONES = {
+  pink: 'bg-pink-100 text-pink-700',
+  amber: 'bg-amber-100 text-amber-700',
+  emerald: 'bg-emerald-100 text-emerald-700',
+  sky: 'bg-sky-100 text-sky-700',
+  violet: 'bg-violet-100 text-violet-700',
+  slate: 'bg-slate-100 text-slate-700',
+} as const
+
+type ModernSectionTone = keyof typeof MODERN_SECTION_TONES
+
+/** مبلغ بأرقام إنجليزية: 1,250.5 */
+function formatModernAmount(value: unknown): string {
+  const amount = Number(value) || 0
+  return amount.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
+/** بطاقة قسم موحّدة: أيقونة + عنوان + عدد، وتُطوى اختيارياً (للعمال). */
+function ModernSection({
+  sectionId,
+  icon,
+  title,
+  count,
+  tone = 'pink',
+  actions,
+  collapsible = false,
+  open = true,
+  onToggle,
+  children,
+  bodyClassName = 'p-3 sm:p-4',
+}: {
+  sectionId?: string
+  icon: React.ReactNode
+  title: React.ReactNode
+  count?: number | null
+  tone?: ModernSectionTone
+  actions?: React.ReactNode
+  collapsible?: boolean
+  open?: boolean
+  onToggle?: () => void
+  children: React.ReactNode
+  bodyClassName?: string
+}) {
+  const titleBlock = (
+    <span className="flex min-w-0 items-center gap-2.5">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${MODERN_SECTION_TONES[tone]}`}>{icon}</span>
+      <span className="min-w-0 truncate text-[15px] font-extrabold text-slate-900">{title}</span>
+      {count != null && count > 0 ? (
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 tabular-nums">{count}</span>
+      ) : null}
+    </span>
+  )
+
+  return (
+    // بدون overflow-hidden: قوائم الترجمة المنسدلة داخل تعليقات التصميم يجب ألا تُقص
+    <section data-om-section={sectionId} className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <div className="flex min-h-14 items-center gap-2 px-3 py-2 sm:px-4">
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            className="-my-1 flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 rounded-xl text-start"
+          >
+            {titleBlock}
+            <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
+          </button>
+        ) : (
+          <div className="min-w-0 flex-1">{titleBlock}</div>
+        )}
+        {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
+      </div>
+      {open ? <div className={`border-t border-slate-100 ${bodyClassName}`}>{children}</div> : null}
+    </section>
+  )
+}
+
+/** عنصر معلومة: عنوان صغير فوق قيمة واضحة. */
+function ModernInfoItem({ label, children, className = '' }: { label: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`min-w-0 rounded-xl bg-slate-50 px-3 py-2 ${className}`}>
+      <dt className="text-[11px] font-bold text-slate-500">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm font-bold leading-6 text-slate-800">{children}</dd>
+    </div>
+  )
+}
+
+/** موعد (بروفا/تسليم) بلون يوضح قربه: اليوم، غداً، بعد أيام، متأخر. */
+function ModernMilestoneTile({
+  label,
+  dotClass,
+  date,
+  relative,
+  tone,
+  isNext,
+}: {
+  label: string
+  dotClass: string
+  date: string
+  relative: string
+  tone: string
+  isNext: boolean
+}) {
+  return (
+    <div className={`min-w-0 rounded-xl border px-1.5 py-2 text-center sm:w-44 sm:flex-none sm:px-3 ${tone} ${isNext ? 'shadow-sm ring-2 ring-pink-300/70' : ''}`}>
+      <p className="flex items-center justify-center gap-1 text-[11px] font-bold leading-4 opacity-80">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+        <span className="truncate">{label}</span>
+      </p>
+      <p className="mt-1 text-[15px] font-extrabold leading-5 tabular-nums" dir="ltr">{date}</p>
+      {relative ? <p className="mt-0.5 truncate text-xs font-bold">{relative}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * حالة الموعد بالنسبة لليوم. موعد التسليم الماضي لطلب لم يكتمل = متأخر (أحمر)،
+ * أما البروفا الماضية فلا تُعدّ تأخيراً (قد تكون تمّت) فتظهر باهتة فقط.
+ */
+function getModernMilestoneInfo(value: string | null | undefined, orderStatus: string, isDeadline: boolean, isArabic: boolean) {
+  const due = getDueInfo(value, orderStatus, isArabic)
+  if (!isDeadline && due.kind === 'overdue') {
+    return { ...due, relative: isArabic ? 'مضى الموعد' : 'Passed', tone: 'border-slate-200 bg-slate-50 text-slate-500' }
+  }
+  return due
+}
+
+const UPCOMING_MILESTONE_KINDS: DueKind[] = ['today', 'tomorrow', 'upcoming']
 
 interface OrderModalProps {
   order: Order | null
@@ -75,9 +222,16 @@ interface OrderModalProps {
   isProcessing?: boolean
   currentWorkerId?: string
   autoTranslateAlterationsToHindi?: boolean
+  /** 'modern' = التصميم الجديد المبسّط (الحديثة، المكتملة، المسلّمة، طلباتي المكتملة). الافتراضي 'classic' لباقي الصفحات. */
+  layout?: 'classic' | 'modern'
+  /**
+   * إخفاء رقم هاتف الزبونة داخل النافذة — يطابق قاعدة الصفحة نفسها
+   * (مثلاً مدير الورشة يرى «***» في بطاقات المكتملة والمسلّمة).
+   */
+  hideClientPhone?: boolean
 }
 
-export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, onOrderUpdated, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId, autoTranslateAlterationsToHindi = false }: OrderModalProps) {
+export default function OrderModal({ order: initialOrder, workers, isOpen, onClose, onOrderUpdated, showCartoonButton = false, onStartWork, onCompleteWork, isProcessing, currentWorkerId, autoTranslateAlterationsToHindi = false, layout = 'classic', hideClientPhone = false }: OrderModalProps) {
   const voiceSessionRef = useRef({ id: initialOrder?.id, open: isOpen, version: 0 })
   if (voiceSessionRef.current.id !== initialOrder?.id || voiceSessionRef.current.open !== isOpen) {
     voiceSessionRef.current = { id: initialOrder?.id, open: isOpen, version: voiceSessionRef.current.version + 1 }
@@ -220,6 +374,51 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const isWorkerView = user?.role === 'worker'
   const [isOrderInfoOpen, setIsOrderInfoOpen] = useState(false)
   const [isMeasurementsOpen, setIsMeasurementsOpen] = useState(false)
+
+  // التصميم الحديث: عمود جانبي للمعلومات على الآيباد الأفقي والكمبيوتر (≥1024px)،
+  // وعمود واحد مرتب على الجوال والآيباد العمودي.
+  const isModernLayout = layout === 'modern'
+  const [isWideLayout, setIsWideLayout] = useState(false)
+  const modernBodyRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!isModernLayout || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(MODERN_WIDE_LAYOUT_QUERY)
+    const sync = () => setIsWideLayout(query.matches)
+    sync()
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', sync)
+      return () => query.removeEventListener('change', sync)
+    }
+    // Safari القديم على الآيباد
+    query.addListener(sync)
+    return () => query.removeListener(sync)
+  }, [isModernLayout])
+
+  // تعليقات التصميم في التصميم الحديث: الأمام والخلف (وكل التعليقات) مفتوحة افتراضياً،
+  // وكل تعليق يُفتح ويُغلق وحده دون أن يُغلق غيره. نحفظ المُغلَق فقط، فالجديد يبدأ مفتوحاً.
+  // التصميم الكلاسيكي يبقى على تعليق واحد مفتوح (expandedCommentId) كما كان.
+  const [collapsedCommentIds, setCollapsedCommentIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    setCollapsedCommentIds(new Set())
+  }, [initialOrder?.id])
+
+  const isCommentExpanded = (commentId: string) =>
+    isModernLayout ? !collapsedCommentIds.has(commentId) : expandedCommentId === commentId
+
+  const toggleCommentExpanded = (commentId: string) => {
+    if (!isModernLayout) {
+      setExpandedCommentId(expandedCommentId === commentId ? null : commentId)
+      return
+    }
+    setCollapsedCommentIds(prev => {
+      const next = new Set(prev)
+      if (next.has(commentId)) next.delete(commentId)
+      else next.add(commentId)
+      return next
+    })
+  }
 
   // تحديث ملخص التصميم (تعديل النص/حذف/تسجيل جديد) مع الحفظ المباشر في قاعدة البيانات
   const handleDesignSummaryNotesChange = useCallback((notes: DesignSummaryNote[]) => {
@@ -998,11 +1197,1276 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     </div>
   ) : null
 
+  // ── أجزاء مشتركة بين التصميم الكلاسيكي والتصميم الحديث (نفس المحتوى ونفس الصلاحيات) ──
+
+  // قائمة تغيير الحالة — تُعرض للمدير فقط (زرّها محصور بـ user.role === 'admin')
+  const statusDropdownMenu = showStatusDropdown ? (
+    <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl min-w-[180px] overflow-hidden">
+      {/* الحالات الأساسية */}
+      <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">
+        الحالة الأساسية
+      </div>
+      {([
+        { value: 'pending'     as const, label: 'في الانتظار', color: 'text-yellow-700', bg: 'hover:bg-yellow-50' },
+        { value: 'in_progress' as const, label: 'قيد التنفيذ', color: 'text-blue-700',   bg: 'hover:bg-blue-50'   },
+        { value: 'completed'   as const, label: 'مكتمل',        color: 'text-green-700',  bg: 'hover:bg-green-50'  },
+        { value: 'delivered'   as const, label: 'تم التسليم',   color: 'text-purple-700', bg: 'hover:bg-purple-50' },
+      ] as const).map(s => (
+        <button
+          key={s.value}
+          onClick={() => s.value === 'delivered' ? requestDeliver() : handleStatusChange({ status: s.value })}
+          className={`w-full text-right px-3 py-2 text-sm ${s.color} ${s.bg} flex items-center gap-2 transition-colors`}
+        >
+          {order.status === s.value && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+          <span className={order.status === s.value ? 'font-bold' : ''}>{s.label}</span>
+        </button>
+      ))}
+
+      {/* الحالات الإضافية */}
+      <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-t border-b border-gray-100 mt-1">
+        حالات إضافية
+      </div>
+      <button
+        onClick={() => handleStatusChange({ is_pre_booking: !(order as any).is_pre_booking })}
+        className="w-full text-right px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2 transition-colors"
+      >
+        {(order as any).is_pre_booking && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+        <span className={(order as any).is_pre_booking ? 'font-bold' : ''}>
+          حجز مسبق {(order as any).is_pre_booking ? '✓' : ''}
+        </span>
+      </button>
+      <button
+        onClick={() => handleStatusChange({ needs_review: !(order as any).needs_review })}
+        className="w-full text-right px-3 py-2 text-sm text-orange-700 hover:bg-orange-50 flex items-center gap-2 transition-colors"
+      >
+        {(order as any).needs_review && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+        <span className={(order as any).needs_review ? 'font-bold' : ''}>
+          يحتاج مراجعة {(order as any).needs_review ? '✓' : ''}
+        </span>
+      </button>
+      <button
+        onClick={() => handleStatusChange({ has_alterations: !(order as any).has_alterations })}
+        className="w-full text-right px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-2 transition-colors"
+      >
+        {(order as any).has_alterations && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+        <span className={(order as any).has_alterations ? 'font-bold' : ''}>
+          تعديل {(order as any).has_alterations ? '✓' : ''}
+        </span>
+      </button>
+    </div>
+  ) : null
+
+  // زر التبديل للهندية — يظهر فقط إذا وُجدت ترجمة هندية محفوظة
+  const designCommentsHindiToggle = savedDesignComments.some(c => c.annotations?.some((a: any) => a.hindiText)) ? (
+    <button
+      onClick={() => setShowHindiComments(!showHindiComments)}
+      className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${
+        showHindiComments
+          ? 'bg-orange-500 text-white border-orange-500'
+          : 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100'
+      }`}
+      title={showHindiComments ? 'عرض النسخة العربية' : 'عرض النسخة الهندية'}
+    >
+      {showHindiComments ? 'العربية' : 'हिंदी में'}
+    </button>
+  ) : null
+
+  // قائمة تعليقات التصميم (البنية الجديدة المتعددة + توافق البيانات القديمة)
+  // في التصميم الحديث تُعرض تعليقات الأمام والخلف جنباً إلى جنب على الآيباد والشاشات الأكبر.
+  const designCommentsBody = (
+    <>
+      {/* عرض التعليقات المتعددة المحفوظة */}
+      {savedDesignComments.length > 0 && (
+        <div className={isModernLayout && savedDesignComments.length > 1 ? 'grid items-start gap-3 md:grid-cols-2' : 'space-y-4'}>
+          {savedDesignComments.map((comment, commentIndex) => (
+            <div
+              key={comment.id}
+              className="bg-white rounded-xl border-2 border-pink-100 overflow-hidden"
+            >
+              {/* رأس التعليق */}
+              <button
+                onClick={() => toggleCommentExpanded(comment.id)}
+                aria-expanded={isCommentExpanded(comment.id)}
+                className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white font-bold">
+                    {commentIndex + 1}
+                  </div>
+                  <span className="font-medium text-gray-800">
+                    {comment.title
+                      ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back'))
+                      : `${t('comment_default_title')} ${commentIndex + 1}`}
+                  </span>
+                </div>
+                <motion.div
+                  animate={{ rotate: isCommentExpanded(comment.id) ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </motion.div>
+              </button>
+
+              {/* محتوى التعليق */}
+              <AnimatePresence>
+                {isCommentExpanded(comment.id) && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 space-y-4">
+                      {/* الصورة مع العلامات والرسومات */}
+                      <div className="relative rounded-xl overflow-hidden border border-pink-200">
+                        {/* إذا وجدت صورة مركّبة محفوظة، نعرضها مباشرة */}
+                        {/* في وضع الهندية: نعرض compositeImageHi إذا وجدت */}
+                        {(showHindiComments && (comment as any).compositeImageHi) ? (
+                          <img
+                            src={(comment as any).compositeImageHi}
+                            alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`} (हिंदी)`}
+                            className="w-full h-auto cursor-pointer"
+                            onClick={() => openLightbox(0, [(comment as any).compositeImageHi])}
+                          />
+                        ) : comment.compositeImage ? (
+                          <img
+                            src={comment.compositeImage}
+                            alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`}`}
+                            className="w-full h-auto cursor-pointer"
+                            onClick={() => openLightbox(0, [comment.compositeImage!])}
+                          />
+                        ) : (
+                          <>
+                            <img
+                              src={resolveCommentImageSrc(comment)}
+                              alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`}`}
+                              className="w-full h-auto cursor-pointer"
+                              onClick={() => openLightbox(0, [resolveCommentImageSrc(comment)])}
+                              onLoad={() => {
+                                const canvas = canvasRefs.current.get(comment.id)
+                                if (canvas && comment.drawings && comment.drawings.length > 0) {
+                                  const imageSrc = resolveCommentImageSrc(comment)
+                                  void drawPathsOnCanvas(canvas, comment.drawings, imageSrc)
+                                }
+                              }}
+                            />
+                            {/* طبقة الرسومات - فقط إذا لم توجد صورة مركّبة */}
+                            {comment.drawings && comment.drawings.length > 0 && (
+                              <canvas
+                                ref={(el) => {
+                                  if (el) {
+                                    canvasRefs.current.set(comment.id, el)
+                                    // رسم الخطوط مباشرة عند تعيين الـ ref
+                                    const imageSrc = resolveCommentImageSrc(comment)
+                                    drawPathsOnCanvas(el, comment.drawings || [], imageSrc)
+                                  }
+                                }}
+                                className="absolute inset-0 w-full h-full pointer-events-none"
+                              />
+                            )}
+                            {/* علامات التعليقات - فقط إذا لم توجد صورة مركّبة */}
+                            {comment.annotations?.map((annotation, idx) => (
+                              <div
+                                key={annotation.id}
+                                className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                                style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                              >
+                                <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
+                                  {idx + 1}
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+
+                      {/* قائمة التعليقات الصوتية */}
+                      {comment.annotations && comment.annotations.length > 0 && (
+                        <div className="bg-gray-50 rounded-lg p-3 border border-gray-200" style={{ overflow: 'visible' }}>
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">
+                            {t('annotations_count', { count: comment.annotations.length })}
+                          </h4>
+                          <div className="space-y-2" style={{ overflow: 'visible' }}>
+                            {comment.annotations.map((annotation, idx) => (
+                              <div
+                                key={annotation.id}
+                                className="bg-white rounded-lg p-2 border border-gray-100 relative"
+                                style={{ overflow: 'visible' }}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <div className="w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                    {idx + 1}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    {showHindiComments && (annotation as any).hindiText ? (
+                                      <p className="text-gray-700 mb-1" dir="ltr" style={{ fontSize: '0.74rem', lineHeight: 1.5 }}>{(annotation as any).hindiText}</p>
+                                    ) : annotation.transcription ? (
+                                      <p className="text-sm text-gray-700 mb-1 break-words" dir="rtl">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
+                                    ) : null}
+                                  </div>
+                                  {/* أزرار التحكم */}
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    {/* زر تشغيل الصوت */}
+                                    {annotation.audioData && (
+                                      <button
+                                        onClick={() => toggleAnnotationAudio(annotation)}
+                                        className={`p-1.5 rounded transition-colors ${playingAudioId === annotation.id
+                                          ? 'bg-green-500 text-white'
+                                          : 'text-green-600 hover:bg-green-50'
+                                          }`}
+                                        title={playingAudioId === annotation.id ? t('stop_audio') : t('play_audio')}
+                                      >
+                                        {playingAudioId === annotation.id ? (
+                                          <Pause className="w-4 h-4" />
+                                        ) : (
+                                          <Play className="w-4 h-4" />
+                                        )}
+                                      </button>
+                                    )}
+                                    {/* زر الترجمة مع dropdown */}
+                                    {annotation.transcription && (
+                                      <div className="relative annotation-language-dropdown-container">
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowAnnotationLanguageDropdown(
+                                            showAnnotationLanguageDropdown === annotation.id ? null : annotation.id
+                                          )}
+                                          disabled={translatingAnnotationId === annotation.id}
+                                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
+                                          title={t('translate')}
+                                        >
+                                          {translatingAnnotationId === annotation.id ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <>
+                                              <Languages className="w-4 h-4" />
+                                              <ChevronDown className="w-3 h-3" />
+                                            </>
+                                          )}
+                                        </button>
+                                        <AnimatePresence>
+                                          {showAnnotationLanguageDropdown === annotation.id && (
+                                            <motion.div
+                                              initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                                              exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                                              transition={{ duration: 0.15 }}
+                                              className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[140px] overflow-hidden"
+                                            >
+                                              {availableLanguages.map((lang) => (
+                                                <button
+                                                  key={lang.code}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    translateAnnotation(comment.id, annotation.id, lang.code)
+                                                    setShowAnnotationLanguageDropdown(null)
+                                                  }}
+                                                  className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${annotation.translationLanguage === lang.code
+                                                    ? 'bg-purple-100 text-purple-700 font-semibold'
+                                                    : 'text-gray-700'
+                                                    }`}
+                                                >
+                                                  <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-xs text-gray-500">{lang.name}</span>
+                                                    <span>{lang.nameAr}</span>
+                                                  </div>
+                                                </button>
+                                              ))}
+                                            </motion.div>
+                                          )}
+                                        </AnimatePresence>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {/* عرض الترجمة في صندوق بنفسجي */}
+                                {annotation.translatedText && (
+                                  <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-7">
+                                    <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                                      <Languages className="w-3 h-3" />
+                                      {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
+                                    </p>
+                                    <p className="text-sm text-gray-600" dir="auto">
+                                      {annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* عرض التعليق الحالي (للتوافق مع البيانات القديمة) */}
+      {savedDesignComments.length === 0 && (imageAnnotations.length > 0 || imageDrawings.length > 0 || customDesignImage) && (
+        <>
+          <div className="relative rounded-xl overflow-hidden border-2 border-pink-200 bg-white">
+            <div className="relative">
+              <img
+                src={customDesignImage || "/front2.png"}
+                alt={t('design_image_alt')}
+                className="w-full h-auto"
+                onClick={() => openLightbox(0, [customDesignImage || "/front2.png"])}
+                onLoad={() => {
+                  if (canvasRef.current && imageDrawings.length > 0) {
+                    const imageSrc = customDesignImage || "/front2.png"
+                    void drawPathsOnCanvas(canvasRef.current, imageDrawings, imageSrc)
+                  }
+                }}
+                style={{ cursor: 'pointer' }}
+              />
+              {imageDrawings.length > 0 && (
+                <canvas
+                  ref={canvasRef}
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                />
+              )}
+              {imageAnnotations.map((annotation, index) => (
+                <div
+                  key={annotation.id}
+                  className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                >
+                  <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
+                    {index + 1}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {imageAnnotations.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200" style={{ overflow: 'visible' }}>
+              <h4 className="text-sm font-medium text-gray-700 mb-3">
+                {t('annotations_count', { count: imageAnnotations.length })}
+              </h4>
+              <div className="space-y-3" style={{ overflow: 'visible' }}>
+                {imageAnnotations.map((annotation, index) => (
+                  <div
+                    key={annotation.id}
+                    className="bg-white rounded-lg p-3 border border-gray-100 relative"
+                    style={{ overflow: 'visible' }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {annotation.transcription && (
+                          <p className="text-sm text-gray-700 mb-2 break-words" dir="rtl">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
+                        )}
+                        {!annotation.transcription && !annotation.audioData && (
+                          <p className="text-sm text-gray-400 italic">{t('marker_without_comment')}</p>
+                        )}
+                      </div>
+                      {/* أزرار التحكم */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* زر تشغيل الصوت */}
+                        {annotation.audioData && (
+                          <button
+                            onClick={() => toggleAnnotationAudio(annotation)}
+                            className={`p-1.5 rounded transition-colors ${playingAudioId === annotation.id
+                              ? 'bg-green-500 text-white'
+                              : 'text-green-600 hover:bg-green-50'
+                              }`}
+                            title={playingAudioId === annotation.id ? t('stop_audio') : t('play_audio')}
+                          >
+                            {playingAudioId === annotation.id ? (
+                              <Pause className="w-4 h-4" />
+                            ) : (
+                              <Play className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                        {/* زر الترجمة مع dropdown */}
+                        {annotation.transcription && (
+                          <div className="relative annotation-language-dropdown-container">
+                            <button
+                              type="button"
+                              onClick={() => setShowAnnotationLanguageDropdown(
+                                showAnnotationLanguageDropdown === annotation.id ? null : annotation.id
+                              )}
+                              disabled={translatingAnnotationId === annotation.id}
+                              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
+                              title={t('translate')}
+                            >
+                              {translatingAnnotationId === annotation.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Languages className="w-4 h-4" />
+                                  <ChevronDown className="w-3 h-3" />
+                                </>
+                              )}
+                            </button>
+                            <AnimatePresence>
+                              {showAnnotationLanguageDropdown === annotation.id && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                                  transition={{ duration: 0.15 }}
+                                  className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[140px] overflow-hidden"
+                                >
+                                  {availableLanguages.map((lang) => (
+                                    <button
+                                      key={lang.code}
+                                      type="button"
+                                      onClick={async () => {
+                                        setShowAnnotationLanguageDropdown(null)
+                                        setTranslatingAnnotationId(annotation.id)
+                                        try {
+                                          const response = await fetch('/api/translate', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              text: annotation.transcription,
+                                              targetLanguage: lang.code
+                                            })
+                                          })
+                                          if (response.ok) {
+                                            const data = await response.json()
+                                            setImageAnnotations(prev => prev.map(a =>
+                                              a.id === annotation.id
+                                                ? { ...a, translatedText: data.translatedText, translationLanguage: lang.code }
+                                                : a
+                                            ))
+                                          }
+                                        } catch (error) {
+                                          console.error('Translation error:', error)
+                                        } finally {
+                                          setTranslatingAnnotationId(null)
+                                        }
+                                      }}
+                                      className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${annotation.translationLanguage === lang.code
+                                        ? 'bg-purple-100 text-purple-700 font-semibold'
+                                        : 'text-gray-700'
+                                        }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs text-gray-500">{lang.name}</span>
+                                        <span>{lang.nameAr}</span>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* عرض الترجمة في صندوق بنفسجي */}
+                    {annotation.translatedText && (
+                      <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-9">
+                        <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
+                          <Languages className="w-3 h-3" />
+                          {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
+                        </p>
+                        <p className="text-sm text-gray-600" dir="auto">
+                          {annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  )
+
+  // بطاقة الصورة الكرتونية المولدة
+  const cartoonResultBody = cartoonImage ? (
+    <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 space-y-3">
+      <div ref={cartoonImageRef} className="relative rounded-lg overflow-hidden border border-purple-300">
+        <img
+          src={cartoonImage}
+          alt={t('cartoon_design')}
+          className="w-full object-contain max-h-[500px] cursor-pointer hover:opacity-95 transition-opacity"
+          onClick={() => openLightbox(0, [cartoonImage])}
+        />
+        {/* زر الطباعة فوق الصورة */}
+        <button
+          onClick={() => handlePrintCartoonImage(cartoonImage)}
+          className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-purple-700 rounded-lg text-sm font-medium shadow-md border border-purple-200 transition-all duration-200"
+          title={t('print_image')}
+        >
+          <PrinterIcon className="w-4 h-4" />
+          <span>{t('print')}</span>
+        </button>
+      </div>
+      {/* ملاحظات للإعادة */}
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+          <MessageSquare className="w-3 h-3" />
+          ملاحظات للذكاء الاصطناعي
+          <span className="font-normal text-gray-400">(اختياري)</span>
+        </label>
+        <textarea
+          value={cartoonNotes}
+          onChange={e => setCartoonNotes(e.target.value)}
+          placeholder="مثال: ركّز على تفاصيل التطريز، الفستان باللون الأزرق..."
+          rows={2}
+          className="w-full px-3 py-2 text-sm border border-purple-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent placeholder-gray-400 bg-white"
+        />
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => handleConvertToCartoon()}
+          disabled={isConvertingToCartoon}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          {isConvertingToCartoon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+          <span>{t('regenerate')}</span>
+        </button>
+        <button
+          onClick={() => {
+            const a = document.createElement('a')
+            a.href = cartoonImage
+            a.download = `cartoon-${order?.client_name || 'design'}-${Date.now()}.png`
+            a.click()
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-sm font-medium border border-green-200 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          <span>تحميل</span>
+        </button>
+        <button
+          onClick={() => handlePrintCartoonImage(cartoonImage)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 transition-colors"
+        >
+          <Printer className="w-4 h-4" />
+          <span>{t('print')}</span>
+        </button>
+        <button
+          onClick={handleDeleteCartoonImage}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium border border-red-200 transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+          <span>{t('delete')}</span>
+        </button>
+      </div>
+    </div>
+  ) : null
+
+  // ==========================================================================
+  // التصميم الحديث (layout="modern") — نفس الصلاحيات حرفياً:
+  // • السعر/المدفوع/المتبقي/المصروفات: للمدير فقط (user.role === 'admin')
+  // • تغيير الحالة: للمدير فقط — والباقي يرون الحالة دون تعديل
+  // • الطباعة: للمدير ومدير الورشة — اختيار العمال: canEditAssignment
+  // • سبب خطأ التعديل: للمدير فقط — تسجيل ملخص التصميم: مدير الورشة فقط
+  // • موعد التسليم المعروض هو due_date الداخلي؛ customer_due_date لا يظهر هنا أبداً
+  // ==========================================================================
+  const renderModernPanel = () => {
+    const statusInfo = getStatusInfo(order.status)
+    const isAdmin = user?.role === 'admin'
+    const canPrint = isAdmin || workerType === 'workshop_manager'
+    // رقم الهاتف ظاهر للجميع كما كان؛ تحويله لزر اتصال مباشر للمدير ومدير الورشة فقط.
+    const canCallClient = isAdmin || workerType === 'workshop_manager'
+
+    // ── الشارات الإضافية (نفس الشارات الظاهرة سابقاً لكل الأدوار) ──
+    const flagChips: Array<{ key: string; label: string; className: string }> = []
+    if (order.is_pre_booking) flagChips.push({ key: 'pre', label: isArabic ? 'حجز مسبق' : 'Pre-booking', className: 'border-indigo-200 bg-indigo-50 text-indigo-700' })
+    if (order.needs_review) flagChips.push({ key: 'review', label: isArabic ? 'يحتاج مراجعة' : 'Needs review', className: 'border-orange-200 bg-orange-50 text-orange-700' })
+    if (order.is_urgent) flagChips.push({ key: 'urgent', label: isArabic ? '⚡ مستعجل' : '⚡ Urgent', className: 'border-orange-300 bg-orange-100 text-orange-800' })
+    if (order.has_alterations) {
+      flagChips.push({
+        key: 'alterations',
+        label: `${isArabic ? 'تعديل' : 'Alteration'}${order.alteration_count > 1 ? ` (${order.alteration_count})` : ''}`,
+        className: 'border-purple-200 bg-purple-50 text-purple-700',
+      })
+    }
+    if (order.has_shak_work === true) {
+      flagChips.push({ key: 'shak', label: `${isArabic ? 'شك' : 'Shak'}${order.shak_completed ? ' ✓' : ''}`, className: 'border-indigo-200 bg-white text-indigo-700' })
+    }
+    // نفس شارة بطاقة «الطلبات المسلّمة» الظاهرة لكل من يدخلها (المبلغ نفسه للمدير فقط في قسم الدفع)
+    if (order.status === 'delivered' && order.delivered_with_outstanding_balance === true) {
+      flagChips.push({ key: 'silent', label: isArabic ? 'تسليم صامت' : 'Silent delivery', className: 'border-amber-200 bg-amber-50 text-amber-800' })
+    }
+
+    // ── المواعيد: البروفا الأولى ← البروفا الثانية ← التسليم ──
+    const milestones = [
+      order.proof_delivery_date
+        ? {
+            key: 'proof',
+            label: order.has_second_proof ? (isArabic ? 'البروفا الأولى' : 'First proof') : (isArabic ? 'البروفا' : 'Proof'),
+            value: order.proof_delivery_date,
+            dotClass: 'bg-amber-400',
+            isDeadline: false,
+          }
+        : null,
+      order.has_second_proof && order.due_date
+        ? { key: 'second-proof', label: isArabic ? 'البروفا الثانية' : 'Second proof', value: getSecondProofDate(order), dotClass: 'bg-emerald-500', isDeadline: false }
+        : null,
+      order.due_date
+        ? { key: 'due', label: isArabic ? 'التسليم' : 'Delivery', value: order.due_date, dotClass: 'bg-pink-500', isDeadline: true }
+        : null,
+    ]
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .map(item => ({ ...item, info: getModernMilestoneInfo(item.value, order.status, item.isDeadline, isArabic) }))
+      .filter(item => Boolean(item.info.date))
+    // الطلب المسلَّم: تاريخ التسليم الفعلي (نفس مصدر بطاقة «الطلبات المسلّمة»: وقت إشعار التسليم ثم delivery_date)
+    const actualDeliveryDate = order.status === 'delivered'
+      ? (order.delivery_notified_at
+          ? formatAlterationTimestampDate(order.delivery_notified_at)
+          : formatAlterationDate(order.delivery_date))
+      : ''
+    if (actualDeliveryDate) {
+      milestones.push({
+        key: 'delivered',
+        label: isArabic ? 'سُلّم فعلياً' : 'Delivered on',
+        value: order.delivery_notified_at || order.delivery_date || '',
+        dotClass: 'bg-violet-500',
+        isDeadline: false,
+        info: {
+          kind: 'closed',
+          date: actualDeliveryDate,
+          relative: '',
+          tone: 'border-violet-200 bg-violet-50 text-violet-800',
+        },
+      })
+    }
+    const nextMilestoneKey = milestones.find(item => UPCOMING_MILESTONE_KINDS.includes(item.info.kind))?.key
+    const milestoneGridCols = milestones.length === 3 ? 'grid-cols-3' : milestones.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+
+    const statusControl = isAdmin ? (
+      <div className="relative" ref={statusDropdownRef}>
+        <button
+          type="button"
+          onClick={() => setShowStatusDropdown(v => !v)}
+          disabled={isUpdatingStatus}
+          aria-haspopup="menu"
+          aria-expanded={showStatusDropdown}
+          className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-sm font-extrabold transition hover:opacity-80 ${statusInfo.bgColor} ${statusInfo.color}`}
+        >
+          {isUpdatingStatus ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="h-2 w-2 rounded-full bg-current opacity-70" aria-hidden />}
+          {statusInfo.label}
+          <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+        </button>
+        {statusDropdownMenu}
+      </div>
+    ) : (
+      <span className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-sm font-extrabold ${statusInfo.bgColor} ${statusInfo.color}`}>
+        <span className="h-2 w-2 rounded-full bg-current opacity-70" aria-hidden />
+        {statusInfo.label}
+      </span>
+    )
+
+    const heroSection = (
+      <section className="rounded-2xl border border-pink-100 bg-gradient-to-br from-pink-50/80 via-white to-purple-50/60 p-3 shadow-sm sm:p-4">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {statusControl}
+          {flagChips.map(chip => (
+            <span key={chip.key} className={`inline-flex min-h-8 items-center rounded-full border px-2.5 text-xs font-bold ${chip.className}`}>
+              {chip.label}
+            </span>
+          ))}
+        </div>
+        {milestones.length > 0 ? (
+          <div className={`mt-3 grid gap-2 sm:flex sm:flex-wrap ${milestoneGridCols}`}>
+            {milestones.map(item => (
+              <ModernMilestoneTile
+                key={item.key}
+                label={item.label}
+                dotClass={item.dotClass}
+                date={item.info.date}
+                relative={item.info.relative}
+                tone={item.info.tone}
+                isNext={item.key === nextMilestoneKey}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
+    )
+
+    // ── معلومات الطلب + العمال (تُطوى للعمال كما كانت) ──
+    const description = order.description?.trim()
+    // العمال في خانة صغيرة بجانب «تاريخ استلام الطلب» وبنفس حجمها.
+    // إن وُجد الهاتف أو القماش وحده يأخذ السطر كاملاً، حتى تبقى خانتا الاستلام والعمال متجاورتين.
+    const showClientPhone = Boolean(order.client_phone) && !hideClientPhone
+    const topDetailCount = (showClientPhone ? 1 : 0) + (order.fabric ? 1 : 0)
+    const topDetailSpan = topDetailCount === 1 && order.order_received_date ? 'col-span-2' : ''
+    const tailorName = getWorkerName(order.worker_id)
+    const cutterName = order.cutter_name || t('not_specified')
+    const shakFinishedAt = order.shak_completed && order.shak_completed_at
+      ? formatGregorianDateTime(order.shak_completed_at, isArabic ? 'ar-SA-u-nu-latn' : 'en-GB', { timeZone: 'Asia/Riyadh' })
+      : ''
+    const workersTile = (
+      <div className="min-w-0 rounded-xl bg-slate-50 px-3 py-2">
+        <dt className="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-500">
+          <span className="flex items-center gap-1">
+            <UserCheck className="h-3 w-3" />
+            {t('workers')}
+          </span>
+          {canEditAssignment ? (
+            <button
+              type="button"
+              onClick={() => setShowWorkerAssignment(true)}
+              className="-my-1 -me-1.5 rounded-md px-1.5 py-1 text-[11px] font-bold text-pink-700 transition-colors hover:bg-pink-100"
+              aria-label={isArabic ? 'اختيار العمال' : 'Assign workers'}
+            >
+              {isArabic ? 'اختيار' : 'Assign'}
+            </button>
+          ) : null}
+        </dt>
+        <dd className="mt-0.5 space-y-0.5 text-[13px] leading-5">
+          <p className="truncate" title={tailorName}>
+            <span className="text-slate-500">{isArabic ? 'خياط' : 'Tailor'}: </span>
+            <span className={`font-bold ${order.worker_id ? 'text-slate-800' : 'text-slate-400'}`}>{tailorName}</span>
+          </p>
+          <p className="truncate" title={cutterName}>
+            <span className="text-slate-500">{isArabic ? 'قصّاص' : 'Cutter'}: </span>
+            <span className={`font-bold ${order.cutter_name ? 'text-slate-800' : 'text-slate-400'}`}>{cutterName}</span>
+          </p>
+          {order.has_shak_work === true ? (
+            <p className="truncate" title={shakFinishedAt ? `${isArabic ? 'أنهى الشك' : 'Finished shak'}: ${shakFinishedAt}` : undefined}>
+              <span className="text-slate-500">{isArabic ? 'شكّاك' : 'Shak'}: </span>
+              {order.shak_completed ? (
+                <span className="font-bold text-green-700">{order.shak_worker_name || t('not_specified')} ✓</span>
+              ) : (
+                <span className="font-bold text-amber-700">{isArabic ? 'لم ينتهِ بعد' : 'Not finished'}</span>
+              )}
+            </p>
+          ) : null}
+        </dd>
+      </div>
+    )
+    const detailsSection = (
+      <ModernSection
+        sectionId="details"
+        icon={<Info className="h-4 w-4" />}
+        title={t('order_info')}
+        tone="slate"
+        collapsible={isWorkerView}
+        open={!isWorkerView || isOrderInfoOpen}
+        onToggle={() => setIsOrderInfoOpen(v => !v)}
+      >
+        <dl className="grid grid-cols-2 gap-2">
+          {showClientPhone ? (
+            <ModernInfoItem label={t('phone')} className={topDetailSpan}>
+              {canCallClient ? (
+                <a href={`tel:${order.client_phone}`} dir="ltr" className="inline-flex items-center gap-1.5 text-pink-700 hover:underline">
+                  <Phone className="h-3.5 w-3.5 shrink-0" />
+                  <span className="tabular-nums">{order.client_phone}</span>
+                </a>
+              ) : (
+                <span dir="ltr" className="tabular-nums">{order.client_phone}</span>
+              )}
+            </ModernInfoItem>
+          ) : null}
+          {order.fabric ? <ModernInfoItem label={t('fabric_type')} className={topDetailSpan}>{order.fabric}</ModernInfoItem> : null}
+          {order.order_received_date ? (
+            <ModernInfoItem label={t('order_received_date')}>
+              <span dir="ltr" className="tabular-nums">{formatDate(order.order_received_date)}</span>
+            </ModernInfoItem>
+          ) : null}
+          {workersTile}
+          {description ? (
+            <ModernInfoItem label={t('description')} className="col-span-2">
+              <span className="whitespace-pre-wrap font-semibold">{description}</span>
+            </ModernInfoItem>
+          ) : null}
+        </dl>
+      </ModernSection>
+    )
+
+    // ── الدفع: للمدير فقط ──
+    const paymentSection = isAdmin ? (() => {
+      const price = Number(order.price) || 0
+      const paid = Number(order.paid_amount) || 0
+      const remaining = order.remaining_amount != null ? Number(order.remaining_amount) : Math.max(0, price - paid)
+      const isFullyPaid = remaining <= 0
+      const { expenses, adjustments, expensesTotal, basePrice } = getOrderPriceBreakdown(order)
+      const breakdown = paid > 0 ? computePaymentBreakdown(order) : null
+      return (
+        <ModernSection sectionId="payment" icon={<Wallet className="h-4 w-4" />} title={isArabic ? 'الدفع' : 'Payment'} tone="emerald">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="min-w-0 rounded-xl bg-slate-50 px-1.5 py-2 text-center">
+              <p className="text-[11px] font-bold text-slate-500">{t('price')}</p>
+              <p className="mt-0.5 truncate text-base font-extrabold text-slate-900 tabular-nums sm:text-lg" dir="ltr">{formatModernAmount(price)}</p>
+              <p className="text-[10px] font-semibold text-slate-400">{t('sar')}</p>
+            </div>
+            <div className="min-w-0 rounded-xl bg-blue-50 px-1.5 py-2 text-center">
+              <p className="text-[11px] font-bold text-blue-700/80">{isArabic ? 'المدفوع' : 'Paid'}</p>
+              <p className="mt-0.5 truncate text-base font-extrabold text-blue-700 tabular-nums sm:text-lg" dir="ltr">{formatModernAmount(paid)}</p>
+              <p className="text-[10px] font-semibold text-blue-400">{t('sar')}</p>
+            </div>
+            <div className={`min-w-0 rounded-xl px-1.5 py-2 text-center ${isFullyPaid ? 'bg-green-50' : 'bg-red-50'}`}>
+              <p className={`text-[11px] font-bold ${isFullyPaid ? 'text-green-700/80' : 'text-red-700/80'}`}>{isArabic ? 'المتبقي' : 'Remaining'}</p>
+              {isFullyPaid ? (
+                <p className="mt-1 text-sm font-extrabold leading-5 text-green-700">{isArabic ? 'مدفوع بالكامل' : 'Fully paid'}</p>
+              ) : (
+                <>
+                  <p className="mt-0.5 truncate text-base font-extrabold text-red-700 tabular-nums sm:text-lg" dir="ltr">{formatModernAmount(remaining)}</p>
+                  <p className="text-[10px] font-semibold text-red-400">{t('sar')}</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {order.status === 'delivered' && order.delivered_with_outstanding_balance === true && !isFullyPaid ? (
+            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800">
+              {isArabic ? 'سُلّم بصمت مع إبقاء الدفعة المتبقية' : 'Delivered silently with the balance still outstanding'}
+            </p>
+          ) : null}
+
+          {expensesTotal > 0 ? (
+            <p className="mt-2 text-xs font-semibold text-amber-700">
+              {isArabic ? 'السعر' : 'Price'}: <span dir="ltr" className="tabular-nums">{formatModernAmount(basePrice)}</span> + {isArabic ? 'مصروفات' : 'expenses'}{' '}
+              <span dir="ltr" className="tabular-nums">{formatModernAmount(expensesTotal)}</span>
+            </p>
+          ) : null}
+
+          {breakdown ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="inline-flex items-center gap-1 rounded-lg border border-green-200 bg-green-50 px-2 py-1 text-xs font-bold text-green-700">
+                {isArabic ? 'كاش' : 'Cash'}: <span dir="ltr" className="tabular-nums">{formatModernAmount(breakdown.cashTotal)}</span>
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">
+                {isArabic ? 'شبكة' : 'Card'}: <span dir="ltr" className="tabular-nums">{formatModernAmount(breakdown.networkTotal)}</span>
+              </span>
+            </div>
+          ) : null}
+
+          {expenses.length > 0 ? (
+            <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/50 p-2.5 text-xs sm:text-sm">
+              <p className="mb-1 font-bold text-amber-800">{isArabic ? 'مصروفات الطلب' : 'Order expenses'}</p>
+              <ul className="space-y-0.5 text-slate-700">
+                {expenses.map(expense => (
+                  <li key={expense.id} className="break-words">
+                    • <span dir="ltr" className="tabular-nums">{formatModernAmount(expense.amount)}</span> {t('sar')}{expense.note ? ` — ${expense.note}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {adjustments.length > 0 ? (
+            <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/50 p-2.5 text-xs sm:text-sm">
+              <p className="mb-1 font-bold text-violet-800">{isArabic ? 'تنبيه: تم تعديل سعر هذا الطلب' : 'Note: this order price was changed'}</p>
+              <ul className="space-y-1 text-slate-700">
+                {adjustments.map(adjustment => (
+                  <li key={adjustment.id} className="break-words">
+                    • {describePriceAdjustment(adjustment)}
+                    {adjustment.reason ? ` — السبب: ${adjustment.reason}` : ''}
+                    {formatAdjustmentDate(adjustment.created_at) ? ` (${formatAdjustmentDate(adjustment.created_at)})` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </ModernSection>
+      )
+    })() : null
+
+    // ── الملاحظات (نص + صوت) ──
+    const notesSection = order.notes || voiceNotes.length > 0 ? (
+      <ModernSection
+        sectionId="notes"
+        icon={<StickyNote className="h-4 w-4" />}
+        title={t('notes')}
+        count={(order.notes ? 1 : 0) + voiceNotes.length}
+        tone="amber"
+      >
+        {order.notes ? (
+          <p className="whitespace-pre-wrap rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-[15px] leading-7 text-slate-800">
+            {order.notes.replace(/<end>/gi, '\n')}
+          </p>
+        ) : null}
+        {voiceNotes.length > 0 ? (
+          <div className={order.notes ? 'mt-3' : ''}>
+            <VoiceNotes
+              key={`${order.id}:${voiceSessionVersion}`}
+              isSessionActive={() => voiceSessionRef.current.open && voiceSessionRef.current.version === voiceSessionVersion}
+              voiceNotes={voiceNotes}
+              onVoiceNotesChange={setVoiceNotes}
+              readOnly={true}
+              orderId={order.id}
+            />
+          </div>
+        ) : null}
+      </ModernSection>
+    ) : null
+
+    // ── التعديلات (المكوّن نفسه؛ يخفي نفسه إن لم توجد تعديلات) ──
+    const alterationsBlock = (
+      <div data-om-section="alterations" className="empty:hidden">
+        <OrderAlterationsSection
+          orderId={order.id}
+          autoTranslateHindi={autoTranslateAlterationsToHindi}
+          onOpenImage={openLightbox}
+          showErrorReason={user?.role === 'admin'}
+        />
+      </div>
+    )
+
+    // ── التصميم: تعليقات التصميم + ملخص التصميم الصوتي ──
+    const hasDesignComments = savedDesignComments.length > 0 || imageAnnotations.length > 0 || imageDrawings.length > 0 || Boolean(customDesignImage)
+    const hasDesignSummary = canManageDesignSummary || designSummaryNotes.length > 0
+    const designBlock = hasDesignComments || hasDesignSummary ? (
+      <div data-om-section="design" className="flex flex-col gap-3 sm:gap-4">
+        {hasDesignComments ? (
+          <ModernSection
+            icon={<Pencil className="h-4 w-4" />}
+            title={t('design_comments')}
+            count={savedDesignComments.length}
+            actions={designCommentsHindiToggle}
+          >
+            <div className="space-y-4">{designCommentsBody}</div>
+          </ModernSection>
+        ) : null}
+        {/* مدير الورشة وحده: إضافة/استبدال/حذف الصوت. البقية: عرض فقط عند وجود تسجيلات. */}
+        {canManageDesignSummary ? (
+          <DesignSummarySection
+            notes={designSummaryNotes}
+            onNotesChange={handleDesignSummaryNotesChange}
+            allowRecording
+            saveStatus={designSummarySaveStatus}
+            variant="compact"
+          />
+        ) : designSummaryNotes.length > 0 ? (
+          <DesignSummarySection
+            notes={designSummaryNotes}
+            onNotesChange={() => {}}
+            readOnly
+            variant="compact"
+          />
+        ) : null}
+      </div>
+    ) : null
+
+    // ── صور التصميم + الروابط ──
+    const renderMediaGrid = (images: string[], altPrefix: string, frameClass: string) => (
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        {images.map((image, index) => isVideoFile(image) ? (
+          <div key={index} className={`col-span-full overflow-hidden rounded-xl border bg-black ${frameClass}`}>
+            <video src={image} controls preload="metadata" className="max-h-[60vh] w-full object-contain" onClick={(e) => e.stopPropagation()} />
+          </div>
+        ) : (
+          <button
+            key={index}
+            type="button"
+            onClick={() => openLightbox(index, images)}
+            aria-label={`${altPrefix} ${index + 1}`}
+            className={`group relative aspect-square overflow-hidden rounded-xl border bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 ${frameClass}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- stored images can be data URLs */}
+            <img
+              src={image}
+              alt={`${altPrefix} ${index + 1}`}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+            <span className="absolute bottom-1 end-1 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-[11px] font-bold text-white tabular-nums">{index + 1}</span>
+          </button>
+        ))}
+      </div>
+    )
+
+    const designImages = order.images || []
+    const imagesSection = designImages.length > 0 ? (
+      <ModernSection sectionId="images" icon={<ImageIcon className="h-4 w-4" />} title={t('design_images')} count={designImages.length}>
+        {renderMediaGrid(designImages, t('design_image'), 'border-pink-100')}
+      </ModernSection>
+    ) : null
+
+    const designLinkLines = (order.design_links || '').split('\n').map(line => line.trim()).filter(Boolean)
+    const linksSection = designLinkLines.length > 0 ? (
+      <ModernSection sectionId="links" icon={<Link2 className="h-4 w-4" />} title={t('design_links')} count={designLinkLines.length} tone="sky">
+        <div className="space-y-2">
+          {designLinkLines.map((line, index) => /^https?:\/\//i.test(line) ? (
+            <a
+              key={index}
+              href={line}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-11 items-center gap-2 break-all rounded-xl bg-sky-50/60 px-3 py-2 text-sm font-semibold text-sky-700 hover:underline"
+            >
+              <Link2 className="h-4 w-4 shrink-0" />
+              {line}
+            </a>
+          ) : (
+            <p key={index} className="break-all rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">{line}</p>
+          ))}
+        </div>
+      </ModernSection>
+    ) : null
+
+    // ── المقاسات: تُطوى للعمال كما كانت ──
+    const measurementSource = (measurementsData || order.measurements || {}) as Record<string, string | number | null | undefined>
+    const measurementEntries = MEASUREMENT_ORDER
+      .filter(key => key !== 'additional_notes')
+      .map(key => ({ key, value: measurementSource[key] }))
+      .filter(entry => Boolean(entry.value))
+    const additionalMeasurementNotes = measurementSource.additional_notes
+    const measurementsCard = measurementEntries.length > 0 || additionalMeasurementNotes ? (
+      <ModernSection
+        sectionId="measurements"
+        icon={<Ruler className="h-4 w-4" />}
+        title={t('measurements_cm')}
+        count={measurementEntries.length}
+        tone="emerald"
+        collapsible={isWorkerView}
+        open={!isWorkerView || isMeasurementsOpen}
+        onToggle={() => setIsMeasurementsOpen(v => !v)}
+      >
+        {measurementEntries.length > 0 ? (
+          <div className={`grid gap-2 ${isWideLayout ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'}`}>
+            {measurementEntries.map(({ key, value }) => (
+              <div key={key} className="min-w-0 rounded-xl border border-emerald-100 bg-emerald-50/50 px-1 py-2 text-center">
+                <p className="text-[11px] font-bold leading-4 text-slate-500">{getMeasurementLabelWithSymbol(key)}</p>
+                <p className="mt-0.5 text-lg font-extrabold text-slate-900 tabular-nums" dir="ltr">{value}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {additionalMeasurementNotes ? (
+          <div className={`rounded-xl border border-blue-100 bg-blue-50/60 p-3 ${measurementEntries.length > 0 ? 'mt-3' : ''}`}>
+            <p className="mb-1 text-xs font-extrabold text-blue-800">{t('measurement_additional_notes')}</p>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{additionalMeasurementNotes}</p>
+          </div>
+        ) : null}
+      </ModernSection>
+    ) : null
+
+    // ── العمل المكتمل + الكرتون ──
+    const cartoonButton = canShowCartoonButton ? (
+      <button
+        type="button"
+        onClick={() => handleConvertToCartoon()}
+        disabled={isConvertingToCartoon}
+        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-teal-500 to-emerald-600 px-4 text-sm font-bold text-white shadow-sm transition hover:from-teal-600 hover:to-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+      >
+        {isConvertingToCartoon ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+        <span>{isConvertingToCartoon ? t('converting_to_cartoon') : t('convert_to_cartoon')}</span>
+      </button>
+    ) : null
+
+    const completedImages = order.completed_images || []
+    const workerCompletedAtLabel = order.worker_completed_at ? (() => {
+      const d = new Date(order.worker_completed_at)
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const hours = String(d.getHours()).padStart(2, '0')
+      const minutes = String(d.getMinutes()).padStart(2, '0')
+      return `${day}/${month}/${d.getFullYear()} ${hours}:${minutes}`
+    })() : null
+    const completedSection = completedImages.length > 0 ? (
+      <ModernSection
+        sectionId="completed"
+        icon={<CheckCircle className="h-4 w-4" />}
+        title={t('completed_work_images')}
+        count={completedImages.length}
+        tone="emerald"
+      >
+        {renderMediaGrid(completedImages, t('completed_work_image_alt'), 'border-green-200')}
+        {workerCompletedAtLabel ? (
+          <p className="mt-3 flex items-center gap-2 text-sm text-green-700">
+            <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
+            <span>
+              {t('worker_completed_at_label')}: <span className="font-semibold tabular-nums" dir="ltr">{workerCompletedAtLabel}</span>
+            </span>
+          </p>
+        ) : null}
+        {cartoonButton ? <div className="mt-3 border-t border-slate-100 pt-3">{cartoonButton}</div> : null}
+      </ModernSection>
+    ) : cartoonButton ? (
+      <div>{cartoonButton}</div>
+    ) : null
+
+    const cartoonSection = cartoonResultBody ? (
+      <ModernSection sectionId="cartoon" icon={<Wand2 className="h-4 w-4" />} title={t('cartoon_design')} tone="violet">
+        {cartoonResultBody}
+      </ModernSection>
+    ) : null
+
+    // ── شريط التنقّل السريع بين الأقسام ──
+    const jumpLinks = [
+      notesSection ? { id: 'notes', label: t('notes') } : null,
+      order.has_alterations || (order.alteration_count ?? 0) > 0 ? { id: 'alterations', label: isArabic ? 'التعديلات' : 'Alterations' } : null,
+      designBlock ? { id: 'design', label: isArabic ? 'التصميم' : 'Design' } : null,
+      imagesSection ? { id: 'images', label: isArabic ? 'الصور' : 'Images' } : null,
+      measurementsCard ? { id: 'measurements', label: isArabic ? 'المقاسات' : 'Measurements' } : null,
+      completedImages.length > 0 ? { id: 'completed', label: isArabic ? 'العمل المكتمل' : 'Completed work' } : null,
+    ].filter((link): link is { id: string; label: string } => link !== null)
+
+    const scrollToSection = (sectionId: string) => {
+      const body = modernBodyRef.current
+      const target = body?.querySelector<HTMLElement>(`[data-om-section="${sectionId}"]`)
+      if (!body || !target) return
+      if (sectionId === 'measurements' && isWorkerView) setIsMeasurementsOpen(true)
+      const top = target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 12
+      body.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }
+
+    // ── أزرار العامل المكلّف (نفس شروط التصميم الكلاسيكي) ──
+    const isAssignedWorker = user?.role === 'worker' && Boolean(currentWorkerId) && order.worker_id === currentWorkerId
+    const showStartWork = isAssignedWorker && order.status === 'pending' && Boolean(onStartWork)
+    const showCompleteWork = isAssignedWorker && order.status === 'in_progress' && Boolean(onCompleteWork)
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 48 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 48 }}
+        transition={{ duration: 0.22, ease: 'easeOut' }}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('order_details')}
+        className="relative flex max-h-[94vh] w-full flex-col overflow-hidden rounded-t-[28px] bg-slate-50 shadow-2xl supports-[max-height:1dvh]:max-h-[94dvh] sm:max-h-[92vh] sm:max-w-3xl sm:rounded-3xl supports-[max-height:1dvh]:sm:max-h-[92dvh] lg:max-w-6xl"
+      >
+        {/* الرأس: اسم الزبونة ورقم الطلب ثابتان دائماً، وتحتهما التنقّل السريع */}
+        <div className="shrink-0 border-b border-slate-200/80 bg-white px-3 pb-2.5 pt-2 sm:px-5 sm:pb-3 sm:pt-4">
+          <div className="mx-auto mb-1.5 h-1.5 w-10 rounded-full bg-slate-200 sm:hidden" aria-hidden />
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1 pt-0.5">
+              <p className="text-xs font-bold text-pink-600">{t('order_details')}</p>
+              <h2 className="truncate text-lg font-extrabold leading-7 text-slate-900 sm:text-xl">{order.client_name}</h2>
+              <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-slate-500">
+                <span dir="ltr" className="max-w-[60%] shrink-0 truncate tabular-nums">#{order.order_number || order.id}</span>
+                {order.fabric ? (
+                  <>
+                    <span aria-hidden className="text-slate-300">•</span>
+                    <span className="min-w-0 truncate">{order.fabric}</span>
+                  </>
+                ) : null}
+              </p>
+            </div>
+            {canPrint ? (
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(true)}
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-pink-600 transition hover:bg-pink-50"
+                title={t('print_order')}
+                aria-label={t('print_order')}
+              >
+                <Printer className="h-5 w-5" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+              aria-label={t('close')}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          {jumpLinks.length > 1 ? (
+            <nav
+              aria-label={isArabic ? 'أقسام الطلب' : 'Order sections'}
+              className="-mx-3 mt-2 flex gap-1.5 overflow-x-auto px-3 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden"
+            >
+              {jumpLinks.map(link => (
+                <button
+                  key={link.id}
+                  type="button"
+                  onClick={() => scrollToSection(link.id)}
+                  className="inline-flex h-8 shrink-0 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-pink-300 hover:bg-pink-50 hover:text-pink-700"
+                >
+                  {link.label}
+                </button>
+              ))}
+            </nav>
+          ) : null}
+        </div>
+
+        {/* المحتوى */}
+        <div ref={modernBodyRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col gap-3 sm:gap-4">
+            {heroSection}
+
+            <div className={isWideLayout ? 'grid grid-cols-[340px_minmax(0,1fr)] items-start gap-4' : 'flex flex-col gap-3 sm:gap-4'}>
+              {/* العمود الجانبي (آيباد أفقي/كمبيوتر): المعلومات والدفع والمقاسات بجانب التصميم */}
+              {isWideLayout ? (
+                <aside className="flex min-w-0 flex-col gap-4">
+                  {detailsSection}
+                  {paymentSection}
+                  {measurementsCard}
+                </aside>
+              ) : null}
+
+              {/* العمود الرئيسي — ترتيب العناصر ثابت حتى لا يُعاد تحميل الصوتيات عند تدوير الآيباد */}
+              <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
+                {!isWideLayout ? detailsSection : null}
+                {!isWideLayout ? paymentSection : null}
+                {notesSection}
+                {alterationsBlock}
+                {designBlock}
+                {imagesSection}
+                {linksSection}
+                {!isWideLayout && !isWorkerView ? measurementsCard : null}
+                {completedSection}
+                {cartoonSection}
+                {/* للعمال: المقاسات في الأسفل (قائمة منسدلة) كما كانت */}
+                {!isWideLayout && isWorkerView ? measurementsCard : null}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* أزرار العامل المكلّف — شريط ثابت أسفل الشاشة */}
+        {showStartWork || showCompleteWork ? (
+          <div className="shrink-0 border-t border-slate-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pb-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              {showStartWork && onStartWork ? (
+                <button
+                  type="button"
+                  onClick={() => { onStartWork(order.id); onClose() }}
+                  disabled={isProcessing}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-8 text-base font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Package className="h-5 w-5" />}
+                  <span>{t('start_work') || 'بدء العمل'}</span>
+                </button>
+              ) : null}
+              {showCompleteWork && onCompleteWork ? (
+                <button
+                  type="button"
+                  onClick={() => { onClose(); onCompleteWork(order) }}
+                  disabled={isProcessing}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-green-600 px-8 text-base font-bold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5" />}
+                  <span>{t('complete_order') || 'إنهاء الطلب'}</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="h-[env(safe-area-inset-bottom)] shrink-0" aria-hidden />
+        )}
+      </motion.div>
+    )
+  }
+
   return (
     <>
     <AnimatePresence>
       {isOpen && (
-        <div key="order-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          key="order-modal"
+          className={isModernLayout
+            // الحديث: لوحة تنزلق من الأسفل على الجوال، ونافذة في الوسط على الآيباد والكمبيوتر
+            ? 'fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4'
+            : 'fixed inset-0 z-50 flex items-center justify-center p-4'}
+        >
           {/* خلفية مظلمة */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -1013,6 +2477,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           />
 
           {/* النافذة المنبثقة */}
+          {isModernLayout ? renderModernPanel() : (
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1201,61 +2666,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                         </button>
 
                         {/* Dropdown */}
-                        {showStatusDropdown && (
-                          <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl min-w-[180px] overflow-hidden">
-                            {/* الحالات الأساسية */}
-                            <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">
-                              الحالة الأساسية
-                            </div>
-                            {([
-                              { value: 'pending'     as const, label: 'في الانتظار', color: 'text-yellow-700', bg: 'hover:bg-yellow-50' },
-                              { value: 'in_progress' as const, label: 'قيد التنفيذ', color: 'text-blue-700',   bg: 'hover:bg-blue-50'   },
-                              { value: 'completed'   as const, label: 'مكتمل',        color: 'text-green-700',  bg: 'hover:bg-green-50'  },
-                              { value: 'delivered'   as const, label: 'تم التسليم',   color: 'text-purple-700', bg: 'hover:bg-purple-50' },
-                            ] as const).map(s => (
-                              <button
-                                key={s.value}
-                                onClick={() => s.value === 'delivered' ? requestDeliver() : handleStatusChange({ status: s.value })}
-                                className={`w-full text-right px-3 py-2 text-sm ${s.color} ${s.bg} flex items-center gap-2 transition-colors`}
-                              >
-                                {order.status === s.value && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
-                                <span className={order.status === s.value ? 'font-bold' : ''}>{s.label}</span>
-                              </button>
-                            ))}
-
-                            {/* الحالات الإضافية */}
-                            <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-t border-b border-gray-100 mt-1">
-                              حالات إضافية
-                            </div>
-                            <button
-                              onClick={() => handleStatusChange({ is_pre_booking: !(order as any).is_pre_booking })}
-                              className="w-full text-right px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2 transition-colors"
-                            >
-                              {(order as any).is_pre_booking && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
-                              <span className={(order as any).is_pre_booking ? 'font-bold' : ''}>
-                                حجز مسبق {(order as any).is_pre_booking ? '✓' : ''}
-                              </span>
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange({ needs_review: !(order as any).needs_review })}
-                              className="w-full text-right px-3 py-2 text-sm text-orange-700 hover:bg-orange-50 flex items-center gap-2 transition-colors"
-                            >
-                              {(order as any).needs_review && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
-                              <span className={(order as any).needs_review ? 'font-bold' : ''}>
-                                يحتاج مراجعة {(order as any).needs_review ? '✓' : ''}
-                              </span>
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange({ has_alterations: !(order as any).has_alterations })}
-                              className="w-full text-right px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-2 transition-colors"
-                            >
-                              {(order as any).has_alterations && <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />}
-                              <span className={(order as any).has_alterations ? 'font-bold' : ''}>
-                                تعديل {(order as any).has_alterations ? '✓' : ''}
-                              </span>
-                            </button>
-                          </div>
-                        )}
+                        {statusDropdownMenu}
 
                         {/* badges الحالات الإضافية الفعّالة */}
                         <div className="flex flex-wrap gap-1 mt-1">
@@ -1301,8 +2712,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     )}
                   </div>
 
-                  {/* رقم الهاتف - للجميع */}
-                  {order.client_phone && (
+                  {/* رقم الهاتف - للجميع (إلا إذا طلبت الصفحة إخفاءه) */}
+                  {order.client_phone && !hideClientPhone && (
                     <div className="bg-white p-2 sm:p-3 rounded-lg">
                       <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
                         <Phone className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
@@ -1473,431 +2884,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       </span>
                     )}
                     {/* زر التبديل للهندية - يظهر إذا وجدت ترجمة هندية */}
-                    {savedDesignComments.some(c => c.annotations?.some((a: any) => a.hindiText)) && (
-                      <button
-                        onClick={() => setShowHindiComments(!showHindiComments)}
-                        className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${
-                          showHindiComments
-                            ? 'bg-orange-500 text-white border-orange-500'
-                            : 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100'
-                        }`}
-                        title={showHindiComments ? 'عرض النسخة العربية' : 'عرض النسخة الهندية'}
-                      >
-                        {showHindiComments ? 'العربية' : 'हिंदी में'}
-                      </button>
-                    )}
+                    {designCommentsHindiToggle}
                   </h3>
 
-                  {/* عرض التعليقات المتعددة المحفوظة */}
-                  {savedDesignComments.length > 0 && (
-                    <div className="space-y-4">
-                      {savedDesignComments.map((comment, commentIndex) => (
-                        <div
-                          key={comment.id}
-                          className="bg-white rounded-xl border-2 border-pink-100 overflow-hidden"
-                        >
-                          {/* رأس التعليق */}
-                          <button
-                            onClick={() => setExpandedCommentId(expandedCommentId === comment.id ? null : comment.id)}
-                            className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 transition-colors"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white font-bold">
-                                {commentIndex + 1}
-                              </div>
-                              <span className="font-medium text-gray-800">
-                                {comment.title
-                                  ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back'))
-                                  : `${t('comment_default_title')} ${commentIndex + 1}`}
-                              </span>
-                            </div>
-                            <motion.div
-                              animate={{ rotate: expandedCommentId === comment.id ? 180 : 0 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </motion.div>
-                          </button>
-
-                          {/* محتوى التعليق */}
-                          <AnimatePresence>
-                            {expandedCommentId === comment.id && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.3 }}
-                                className="overflow-hidden"
-                              >
-                                <div className="p-4 space-y-4">
-                                  {/* الصورة مع العلامات والرسومات */}
-                                  <div className="relative rounded-xl overflow-hidden border border-pink-200">
-                                    {/* إذا وجدت صورة مركّبة محفوظة، نعرضها مباشرة */}
-                                    {/* في وضع الهندية: نعرض compositeImageHi إذا وجدت */}
-                                    {(showHindiComments && (comment as any).compositeImageHi) ? (
-                                      <img
-                                        src={(comment as any).compositeImageHi}
-                                        alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`} (हिंदी)`}
-                                        className="w-full h-auto cursor-pointer"
-                                        onClick={() => openLightbox(0, [(comment as any).compositeImageHi])}
-                                      />
-                                    ) : comment.compositeImage ? (
-                                      <img
-                                        src={comment.compositeImage}
-                                        alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`}`}
-                                        className="w-full h-auto cursor-pointer"
-                                        onClick={() => openLightbox(0, [comment.compositeImage!])}
-                                      />
-                                    ) : (
-                                      <>
-                                        <img
-                                          src={resolveCommentImageSrc(comment)}
-                                          alt={`${t('design_image_alt')} ${comment.title ? comment.title.replace(/^أمام/, t('view_front')).replace(/^خلف/, t('view_back')) : `${t('comment_default_title')} ${commentIndex + 1}`}`}
-                                          className="w-full h-auto cursor-pointer"
-                                          onClick={() => openLightbox(0, [resolveCommentImageSrc(comment)])}
-                                          onLoad={() => {
-                                            const canvas = canvasRefs.current.get(comment.id)
-                                            if (canvas && comment.drawings && comment.drawings.length > 0) {
-                                              const imageSrc = resolveCommentImageSrc(comment)
-                                              void drawPathsOnCanvas(canvas, comment.drawings, imageSrc)
-                                            }
-                                          }}
-                                        />
-                                        {/* طبقة الرسومات - فقط إذا لم توجد صورة مركّبة */}
-                                        {comment.drawings && comment.drawings.length > 0 && (
-                                          <canvas
-                                            ref={(el) => {
-                                              if (el) {
-                                                canvasRefs.current.set(comment.id, el)
-                                                // رسم الخطوط مباشرة عند تعيين الـ ref
-                                                const imageSrc = resolveCommentImageSrc(comment)
-                                                drawPathsOnCanvas(el, comment.drawings || [], imageSrc)
-                                              }
-                                            }}
-                                            className="absolute inset-0 w-full h-full pointer-events-none"
-                                          />
-                                        )}
-                                        {/* علامات التعليقات - فقط إذا لم توجد صورة مركّبة */}
-                                        {comment.annotations?.map((annotation, idx) => (
-                                          <div
-                                            key={annotation.id}
-                                            className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                                            style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
-                                          >
-                                            <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
-                                              {idx + 1}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </>
-                                    )}
-                                  </div>
-
-                                  {/* قائمة التعليقات الصوتية */}
-                                  {comment.annotations && comment.annotations.length > 0 && (
-                                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200" style={{ overflow: 'visible' }}>
-                                      <h4 className="text-sm font-medium text-gray-700 mb-2">
-                                        {t('annotations_count', { count: comment.annotations.length })}
-                                      </h4>
-                                      <div className="space-y-2" style={{ overflow: 'visible' }}>
-                                        {comment.annotations.map((annotation, idx) => (
-                                          <div
-                                            key={annotation.id}
-                                            className="bg-white rounded-lg p-2 border border-gray-100 relative"
-                                            style={{ overflow: 'visible' }}
-                                          >
-                                            <div className="flex items-start gap-2">
-                                              <div className="w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                                {idx + 1}
-                                              </div>
-                                              <div className="flex-1 min-w-0">
-                                                {showHindiComments && (annotation as any).hindiText ? (
-                                                  <p className="text-gray-700 mb-1" dir="ltr" style={{ fontSize: '0.74rem', lineHeight: 1.5 }}>{(annotation as any).hindiText}</p>
-                                                ) : annotation.transcription ? (
-                                                  <p className="text-sm text-gray-700 mb-1 break-words" dir="rtl">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
-                                                ) : null}
-                                              </div>
-                                              {/* أزرار التحكم */}
-                                              <div className="flex items-center gap-1 flex-shrink-0">
-                                                {/* زر تشغيل الصوت */}
-                                                {annotation.audioData && (
-                                                  <button
-                                                    onClick={() => toggleAnnotationAudio(annotation)}
-                                                    className={`p-1.5 rounded transition-colors ${playingAudioId === annotation.id
-                                                      ? 'bg-green-500 text-white'
-                                                      : 'text-green-600 hover:bg-green-50'
-                                                      }`}
-                                                    title={playingAudioId === annotation.id ? t('stop_audio') : t('play_audio')}
-                                                  >
-                                                    {playingAudioId === annotation.id ? (
-                                                      <Pause className="w-4 h-4" />
-                                                    ) : (
-                                                      <Play className="w-4 h-4" />
-                                                    )}
-                                                  </button>
-                                                )}
-                                                {/* زر الترجمة مع dropdown */}
-                                                {annotation.transcription && (
-                                                  <div className="relative annotation-language-dropdown-container">
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => setShowAnnotationLanguageDropdown(
-                                                        showAnnotationLanguageDropdown === annotation.id ? null : annotation.id
-                                                      )}
-                                                      disabled={translatingAnnotationId === annotation.id}
-                                                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
-                                                      title={t('translate')}
-                                                    >
-                                                      {translatingAnnotationId === annotation.id ? (
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                      ) : (
-                                                        <>
-                                                          <Languages className="w-4 h-4" />
-                                                          <ChevronDown className="w-3 h-3" />
-                                                        </>
-                                                      )}
-                                                    </button>
-                                                    <AnimatePresence>
-                                                      {showAnnotationLanguageDropdown === annotation.id && (
-                                                        <motion.div
-                                                          initial={{ opacity: 0, y: -5, scale: 0.95 }}
-                                                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                          exit={{ opacity: 0, y: -5, scale: 0.95 }}
-                                                          transition={{ duration: 0.15 }}
-                                                          className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[140px] overflow-hidden"
-                                                        >
-                                                          {availableLanguages.map((lang) => (
-                                                            <button
-                                                              key={lang.code}
-                                                              type="button"
-                                                              onClick={() => {
-                                                                translateAnnotation(comment.id, annotation.id, lang.code)
-                                                                setShowAnnotationLanguageDropdown(null)
-                                                              }}
-                                                              className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${annotation.translationLanguage === lang.code
-                                                                ? 'bg-purple-100 text-purple-700 font-semibold'
-                                                                : 'text-gray-700'
-                                                                }`}
-                                                            >
-                                                              <div className="flex items-center justify-between gap-2">
-                                                                <span className="text-xs text-gray-500">{lang.name}</span>
-                                                                <span>{lang.nameAr}</span>
-                                                              </div>
-                                                            </button>
-                                                          ))}
-                                                        </motion.div>
-                                                      )}
-                                                    </AnimatePresence>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </div>
-                                            {/* عرض الترجمة في صندوق بنفسجي */}
-                                            {annotation.translatedText && (
-                                              <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-7">
-                                                <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
-                                                  <Languages className="w-3 h-3" />
-                                                  {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
-                                                </p>
-                                                <p className="text-sm text-gray-600" dir="auto">
-                                                  {annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
-                                                </p>
-                                              </div>
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* عرض التعليق الحالي (للتوافق مع البيانات القديمة) */}
-                  {savedDesignComments.length === 0 && (imageAnnotations.length > 0 || imageDrawings.length > 0 || customDesignImage) && (
-                    <>
-                      <div className="relative rounded-xl overflow-hidden border-2 border-pink-200 bg-white">
-                        <div className="relative">
-                          <img
-                            src={customDesignImage || "/front2.png"}
-                            alt={t('design_image_alt')}
-                            className="w-full h-auto"
-                            onClick={() => openLightbox(0, [customDesignImage || "/front2.png"])}
-                            onLoad={() => {
-                              if (canvasRef.current && imageDrawings.length > 0) {
-                                const imageSrc = customDesignImage || "/front2.png"
-                                void drawPathsOnCanvas(canvasRef.current, imageDrawings, imageSrc)
-                              }
-                            }}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          {imageDrawings.length > 0 && (
-                            <canvas
-                              ref={canvasRef}
-                              className="absolute inset-0 w-full h-full pointer-events-none"
-                            />
-                          )}
-                          {imageAnnotations.map((annotation, index) => (
-                            <div
-                              key={annotation.id}
-                              className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                              style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
-                            >
-                              <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
-                                {index + 1}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {imageAnnotations.length > 0 && (
-                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200" style={{ overflow: 'visible' }}>
-                          <h4 className="text-sm font-medium text-gray-700 mb-3">
-                            {t('annotations_count', { count: imageAnnotations.length })}
-                          </h4>
-                          <div className="space-y-3" style={{ overflow: 'visible' }}>
-                            {imageAnnotations.map((annotation, index) => (
-                              <div
-                                key={annotation.id}
-                                className="bg-white rounded-lg p-3 border border-gray-100 relative"
-                                style={{ overflow: 'visible' }}
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                    {index + 1}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    {annotation.transcription && (
-                                      <p className="text-sm text-gray-700 mb-2 break-words" dir="rtl">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
-                                    )}
-                                    {!annotation.transcription && !annotation.audioData && (
-                                      <p className="text-sm text-gray-400 italic">{t('marker_without_comment')}</p>
-                                    )}
-                                  </div>
-                                  {/* أزرار التحكم */}
-                                  <div className="flex items-center gap-1 flex-shrink-0">
-                                    {/* زر تشغيل الصوت */}
-                                    {annotation.audioData && (
-                                      <button
-                                        onClick={() => toggleAnnotationAudio(annotation)}
-                                        className={`p-1.5 rounded transition-colors ${playingAudioId === annotation.id
-                                          ? 'bg-green-500 text-white'
-                                          : 'text-green-600 hover:bg-green-50'
-                                          }`}
-                                        title={playingAudioId === annotation.id ? t('stop_audio') : t('play_audio')}
-                                      >
-                                        {playingAudioId === annotation.id ? (
-                                          <Pause className="w-4 h-4" />
-                                        ) : (
-                                          <Play className="w-4 h-4" />
-                                        )}
-                                      </button>
-                                    )}
-                                    {/* زر الترجمة مع dropdown */}
-                                    {annotation.transcription && (
-                                      <div className="relative annotation-language-dropdown-container">
-                                        <button
-                                          type="button"
-                                          onClick={() => setShowAnnotationLanguageDropdown(
-                                            showAnnotationLanguageDropdown === annotation.id ? null : annotation.id
-                                          )}
-                                          disabled={translatingAnnotationId === annotation.id}
-                                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors disabled:opacity-50 flex items-center gap-0.5"
-                                          title={t('translate')}
-                                        >
-                                          {translatingAnnotationId === annotation.id ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : (
-                                            <>
-                                              <Languages className="w-4 h-4" />
-                                              <ChevronDown className="w-3 h-3" />
-                                            </>
-                                          )}
-                                        </button>
-                                        <AnimatePresence>
-                                          {showAnnotationLanguageDropdown === annotation.id && (
-                                            <motion.div
-                                              initial={{ opacity: 0, y: -5, scale: 0.95 }}
-                                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                                              exit={{ opacity: 0, y: -5, scale: 0.95 }}
-                                              transition={{ duration: 0.15 }}
-                                              className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[9999] min-w-[140px] overflow-hidden"
-                                            >
-                                              {availableLanguages.map((lang) => (
-                                                <button
-                                                  key={lang.code}
-                                                  type="button"
-                                                  onClick={async () => {
-                                                    setShowAnnotationLanguageDropdown(null)
-                                                    setTranslatingAnnotationId(annotation.id)
-                                                    try {
-                                                      const response = await fetch('/api/translate', {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({
-                                                          text: annotation.transcription,
-                                                          targetLanguage: lang.code
-                                                        })
-                                                      })
-                                                      if (response.ok) {
-                                                        const data = await response.json()
-                                                        setImageAnnotations(prev => prev.map(a =>
-                                                          a.id === annotation.id
-                                                            ? { ...a, translatedText: data.translatedText, translationLanguage: lang.code }
-                                                            : a
-                                                        ))
-                                                      }
-                                                    } catch (error) {
-                                                      console.error('Translation error:', error)
-                                                    } finally {
-                                                      setTranslatingAnnotationId(null)
-                                                    }
-                                                  }}
-                                                  className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors ${annotation.translationLanguage === lang.code
-                                                    ? 'bg-purple-100 text-purple-700 font-semibold'
-                                                    : 'text-gray-700'
-                                                    }`}
-                                                >
-                                                  <div className="flex items-center justify-between gap-2">
-                                                    <span className="text-xs text-gray-500">{lang.name}</span>
-                                                    <span>{lang.nameAr}</span>
-                                                  </div>
-                                                </button>
-                                              ))}
-                                            </motion.div>
-                                          )}
-                                        </AnimatePresence>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                {/* عرض الترجمة في صندوق بنفسجي */}
-                                {annotation.translatedText && (
-                                  <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-2 mr-9">
-                                    <p className="text-xs text-purple-600 font-medium mb-0.5 flex items-center gap-1">
-                                      <Languages className="w-3 h-3" />
-                                      {t('translation_label')} ({getLanguageName(annotation.translationLanguage || 'en')})
-                                    </p>
-                                    <p className="text-sm text-gray-600" dir="auto">
-                                      {annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
+                  {designCommentsBody}
                 </div>
               )}
 
@@ -2114,76 +3104,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     <Wand2 className="w-5 h-5 text-purple-600" />
                     <span>{t('cartoon_design')}</span>
                   </h3>
-                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 space-y-3">
-                    <div ref={cartoonImageRef} className="relative rounded-lg overflow-hidden border border-purple-300">
-                      <img
-                        src={cartoonImage}
-                        alt={t('cartoon_design')}
-                        className="w-full object-contain max-h-[500px] cursor-pointer hover:opacity-95 transition-opacity"
-                        onClick={() => openLightbox(0, [cartoonImage])}
-                      />
-                      {/* زر الطباعة فوق الصورة */}
-                      <button
-                        onClick={() => handlePrintCartoonImage(cartoonImage)}
-                        className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-purple-700 rounded-lg text-sm font-medium shadow-md border border-purple-200 transition-all duration-200"
-                        title={t('print_image')}
-                      >
-                        <PrinterIcon className="w-4 h-4" />
-                        <span>{t('print')}</span>
-                      </button>
-                    </div>
-                    {/* ملاحظات للإعادة */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3" />
-                        ملاحظات للذكاء الاصطناعي
-                        <span className="font-normal text-gray-400">(اختياري)</span>
-                      </label>
-                      <textarea
-                        value={cartoonNotes}
-                        onChange={e => setCartoonNotes(e.target.value)}
-                        placeholder="مثال: ركّز على تفاصيل التطريز، الفستان باللون الأزرق..."
-                        rows={2}
-                        className="w-full px-3 py-2 text-sm border border-purple-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent placeholder-gray-400 bg-white"
-                      />
-                    </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => handleConvertToCartoon()}
-                        disabled={isConvertingToCartoon}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                      >
-                        {isConvertingToCartoon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                        <span>{t('regenerate')}</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          const a = document.createElement('a')
-                          a.href = cartoonImage
-                          a.download = `cartoon-${order?.client_name || 'design'}-${Date.now()}.png`
-                          a.click()
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-sm font-medium border border-green-200 transition-colors"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>تحميل</span>
-                      </button>
-                      <button
-                        onClick={() => handlePrintCartoonImage(cartoonImage)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium border border-gray-200 transition-colors"
-                      >
-                        <Printer className="w-4 h-4" />
-                        <span>{t('print')}</span>
-                      </button>
-                      <button
-                        onClick={handleDeleteCartoonImage}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium border border-red-200 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>{t('delete')}</span>
-                      </button>
-                    </div>
-                  </div>
+                  {cartoonResultBody}
                 </div>
               )}
 
@@ -2237,6 +3158,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               </div>
             </div>
           </motion.div>
+          )}
 
           {/* مودال اختيار صورة للتحويل إلى كرتون */}
           {showCartoonUploadModal && (

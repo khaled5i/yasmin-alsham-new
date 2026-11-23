@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Loader2, Trash2, Play, Pause, Languages, Pencil, Check, X } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -28,6 +28,8 @@ interface UnifiedNotesInputProps {
   placeholder?: string
   appendTranscriptionToNotes?: boolean
   allowTranscriptionEditing?: boolean
+  /** أزرار إضافية تظهر تحت زر الترجمة (مثل زر الكاميرا في صفحة التعديل)؛ تُخفى أثناء التسجيل. */
+  extraActions?: ReactNode
 }
 
 export default function UnifiedNotesInput({
@@ -40,7 +42,8 @@ export default function UnifiedNotesInput({
   disabled = false,
   placeholder = 'اكتب ملاحظاتك هنا أو اضغط على المايكروفون للتسجيل الصوتي...',
   appendTranscriptionToNotes = true,
-  allowTranscriptionEditing = false
+  allowTranscriptionEditing = false,
+  extraActions
 }: UnifiedNotesInputProps) {
   const { t, isArabic } = useTranslation()
   const [isRecording, setIsRecording] = useState(false)
@@ -234,13 +237,12 @@ export default function UnifiedNotesInput({
             audioContextRef.current = audioCtx
             const sampleRate = audioCtx.sampleRate
 
-            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket')
+            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket', ['soniox-api-key', apiKey])
             sonioxWsRef.current = ws
 
             ws.onopen = () => {
               ws.send(JSON.stringify({
-                api_key: apiKey,
-                model: 'stt-rt-v4',
+                model: 'stt-rt-v6',
                 language_hints: ['ar'],
                 audio_format: 'pcm_s16le',
                 sample_rate: sampleRate,
@@ -678,6 +680,8 @@ export default function UnifiedNotesInput({
               )}
             </AnimatePresence>
           </div>
+
+          {!isRecording ? extraActions : null}
         </div>
 
         {/* مؤشر التسجيل */}

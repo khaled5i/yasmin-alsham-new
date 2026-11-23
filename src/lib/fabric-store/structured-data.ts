@@ -6,7 +6,7 @@
  * لا يجمع تقييمات منتجات، وجوجل يمنع إضافة تقييمات غير معروضة على الصفحة.
  */
 
-import { FABRIC_DELIVERY_OPTIONS, FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS } from './checkout-contract'
+import { FABRIC_DELIVERY_OPTIONS } from './checkout-contract'
 import { STORE_RETURN_RULES, STORE_SHIPPING_DAYS } from '@/lib/store-legal'
 
 const SCHEMA = 'https://schema.org/'
@@ -17,12 +17,11 @@ function dayRange(range: { min: number; max: number }) {
 }
 
 /**
- * الشحن داخل السعودية لشراء وحدة واحدة بسعر العرض (شامل الضريبة): مجاني متى بلغ
- * العتبة، وإلا الرسم الموحّد. نفس منطق resolveFabricDeliveryOption.
+ * الشحن داخل السعودية (سوق نتائج البحث): مجاني لكل الطلبات منذ 19 نوفمبر 2026 —
+ * نفس رسم resolveFabricDeliveryOption. المعامل باقٍ لتوافق المستدعين.
  */
-export function buildFabricShippingDetails(unitPriceGrossSar: number) {
-  const isFree = Math.round(unitPriceGrossSar * 100) >= FABRIC_STORE_FREE_SHIPPING_MIN_ITEMS_GROSS_HALALAS
-  const rateHalalas = isFree ? 0 : FABRIC_DELIVERY_OPTIONS.shipping.shippingGrossHalalas
+export function buildFabricShippingDetails(_unitPriceGrossSar: number) {
+  const rateHalalas = FABRIC_DELIVERY_OPTIONS.shipping.shippingGrossHalalas
 
   return {
     '@type': 'OfferShippingDetails',

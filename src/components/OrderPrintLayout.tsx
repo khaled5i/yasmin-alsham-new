@@ -234,7 +234,9 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
 
           {/* معلومات العميل في صف أفقي واحد */}
           <div className="print-order-info">
-            <div className="info-grid-single-row" style={{ fontSize: '1.3em' }}>
+            <div className="info-grid-single-row" style={{ fontSize: '1.3em', flexWrap: 'nowrap' }}>
+              {/* النصف الأيمن: الاسم + رقم الهاتف #رقم الطلب */}
+              <div style={{ flex: '0 0 50%', maxWidth: '50%', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
               <div className="info-item-inline">
                 <span className="info-label">الاسم:</span>
                 <span
@@ -250,15 +252,12 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                   {order.client_name}
                 </span>
               </div>
-              <div className="info-item-inline">
-                <span className="info-label">رقم الهاتف:</span>
+              <div className="info-item-inline" style={{ whiteSpace: 'nowrap' }}>
                 <span className="info-value" dir="ltr">{order.client_phone}</span>
+                <span className="info-value" dir="ltr" style={{ fontWeight: 'bold' }}>#{order.order_number || order.id.slice(0, 8)}</span>
               </div>
-              <div className="info-item-inline">
-                <span className="info-label">رقم الطلب:</span>
-                <span className="info-value">#{order.order_number || order.id.slice(0, 8)}</span>
               </div>
-              <div className="info-item-inline">
+              <div className="info-item-inline" style={{ marginRight: 'auto' }}>
                 <span className="info-label">تاريخ الطلب:</span>
                 <span className="info-value">{formatDate(order.order_received_date || order.created_at)}</span>
               </div>

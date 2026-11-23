@@ -936,6 +936,9 @@ export default function CompletedOrdersPage() {
         isOpen={showViewModal}
         onClose={handleCloseModal}
         showCartoonButton={true}
+        layout="modern"
+        // نفس قاعدة البطاقات هنا: مدير الورشة يرى «***» بدل رقم الزبونة
+        hideClientPhone={workerType === 'workshop_manager'}
       />
 
       <CartoonGridModal

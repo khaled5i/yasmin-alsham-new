@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Save, Ruler, RotateCcw, Store, MapPin, Banknote, CreditCard, LockKeyhole } from 'lucide-react'
+import { X, Save, Ruler, RotateCcw, Store, MapPin, Banknote, CreditCard, LockKeyhole, UserCheck } from 'lucide-react'
+import { RECEPTION_STAFF } from '@/lib/reception-staff'
 import { useTranslation } from '@/hooks/useTranslation'
 import NumericInput from './NumericInput'
 import {
@@ -61,8 +62,11 @@ function clearDraftFromLocal(orderId: string) {
 interface MeasurementsModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (measurements: Measurements, metadata?: MeasurementSaveMetadata) => Promise<void>
+  /** takenBy: من أخذ المقاس (هبة / منال / ندى) — إجباري قبل الحفظ */
+  onSave: (measurements: Measurements, metadata: MeasurementSaveMetadata | undefined, takenBy: string) => Promise<void>
   initialMeasurements?: Measurements
+  /** من أخذ المقاس سابقاً (orders.measurement_taken_by) */
+  initialTakenBy?: string | null
   orderId: string
   showMeasurementOptions?: boolean
   initialMeasurementSource?: MeasurementSource | null
@@ -75,6 +79,7 @@ export default function MeasurementsModal({
   onClose,
   onSave,
   initialMeasurements,
+  initialTakenBy = null,
   orderId,
   showMeasurementOptions = false,
   initialMeasurementSource = null,
@@ -85,6 +90,7 @@ export default function MeasurementsModal({
   const [measurements, setMeasurements] = useState<Measurements>(initialMeasurements || {})
   const [measurementSource, setMeasurementSource] = useState<MeasurementSource | null>(initialMeasurementSource)
   const [measurementPaymentMethod, setMeasurementPaymentMethod] = useState<MeasurementPaymentMethod | null>(initialMeasurementPaymentMethod)
+  const [takenBy, setTakenBy] = useState<string>(initialTakenBy || '')
   const [isSaving, setIsSaving] = useState(false)
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
@@ -114,6 +120,7 @@ export default function MeasurementsModal({
         setMeasurementPaymentMethod(initialMeasurementPaymentMethod)
         setShowDraftBanner(false)
       }
+      setTakenBy(initialTakenBy || '')
       setValidationError(null)
       setSaveError(null)
       userHasEdited.current = false
@@ -121,6 +128,7 @@ export default function MeasurementsModal({
   }, [
     isOpen,
     orderId,
+    initialTakenBy,
     initialMeasurements,
     initialMeasurementSource,
     initialMeasurementPaymentMethod,
@@ -182,6 +190,10 @@ export default function MeasurementsModal({
   }
 
   const handleSave = async () => {
+    if (!takenBy) {
+      setValidationError(isArabic ? 'يرجى اختيار من أخذ المقاس قبل الحفظ' : 'Select who took the measurements before saving')
+      return
+    }
     let metadata: MeasurementSaveMetadata | undefined
     if (showMeasurementOptions) {
       if (!measurementSource) {
@@ -218,7 +230,7 @@ export default function MeasurementsModal({
         }
       })
 
-      await onSave(processedMeasurements, metadata)
+      await onSave(processedMeasurements, metadata, takenBy)
       // عند الحفظ الناجح، مسح المسودة المحلية
       clearDraftFromLocal(orderId)
       onClose()
@@ -290,6 +302,43 @@ export default function MeasurementsModal({
 
               {/* Content */}
               <div className="p-6">
+                <fieldset className="mb-5 rounded-2xl border border-purple-100 bg-purple-50/60 p-4">
+                  <legend className="flex items-center gap-1.5 px-2 text-sm font-bold text-gray-800">
+                    <UserCheck className="h-4 w-4 text-purple-600" aria-hidden="true" />
+                    {isArabic ? 'مين أخذ المقاس؟' : 'Who took the measurements?'}
+                    <span className="text-rose-600" aria-hidden="true">*</span>
+                  </legend>
+                  <div className="mt-2 grid grid-cols-3 gap-3">
+                    {RECEPTION_STAFF.map((name) => {
+                      const selected = takenBy === name
+                      return (
+                        <label
+                          key={name}
+                          className={`flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                            selected
+                              ? 'border-purple-500 bg-white text-purple-700 shadow-sm'
+                              : 'border-purple-100 bg-white/70 text-gray-700 hover:border-purple-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`measurement-taken-by-${orderId}`}
+                            value={name}
+                            checked={selected}
+                            onChange={() => {
+                              setTakenBy(name)
+                              setValidationError(null)
+                            }}
+                            disabled={isSaving}
+                            className="h-4 w-4 accent-purple-600"
+                          />
+                          <span>{name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </fieldset>
+
                 {showMeasurementOptions && (
                   <div className="mb-7 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <fieldset className="rounded-2xl border border-pink-100 bg-pink-50/60 p-4">

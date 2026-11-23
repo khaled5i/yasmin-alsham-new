@@ -15,6 +15,7 @@ import type { Expense } from '@/types/simple-accounting'
 import type { WorkerPayrollMonth } from '@/types/worker-payroll'
 
 import { useTranslation } from '@/hooks/useTranslation'
+import AlterationsReportSection from '@/components/reports/alterations/AlterationsReportSection'
 import ReportPeriodPicker, {
   computePresetRange,
   getPeriodLabel,
@@ -1248,6 +1249,14 @@ export default function ReportsPage() {
             })()}
           </div>
         </motion.div>
+
+        {/* التعديلات — مكوّن مستقل، يتبع نفس الفترة */}
+        <AlterationsReportSection
+          isAdmin={user?.role === 'admin'}
+          startDate={periodRange.startDate}
+          endDate={periodRange.endDate}
+          periodLabel={getPeriodLabel(selectedPeriod, periodRange)}
+        />
 
         {/* Custom Analysis Chart - تحليل مخصص حسب الفترة والمؤشر */}
         <motion.div

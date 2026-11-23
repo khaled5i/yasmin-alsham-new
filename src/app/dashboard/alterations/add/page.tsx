@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
@@ -9,35 +9,44 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { alterationService, AlterationErrorType, isAlterationType, type AlterationType } from '@/lib/services/alteration-service'
 import { orderService, Order } from '@/lib/services/order-service'
 import AlterationStageModal, { getAvailableAlterationTypes } from '@/components/AlterationStageModal'
-import ImageUpload from '@/components/ImageUpload'
 import UnifiedNotesInput from '@/components/UnifiedNotesInput'
-import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
-import NumericInput from '@/components/NumericInput'
+import type { ImageAnnotation, DrawingPath, SavedDesignComment } from '@/components/InteractiveImageAnnotation'
 import DatePickerWithStats from '@/components/DatePickerWithStats'
 import { imageService } from '@/lib/services/image-service'
 import { printAlterationSlip } from '@/lib/services/alteration-slip-printer'
 import {
+  ALTERATION_REASON_META,
+  ALTERATION_TYPE_META,
+  BottomSheet,
+  ImageViewer,
+  formatAlterationDate,
+  getOrderStatusMeta,
+  getSecondProofDate,
+} from '@/components/alterations/alteration-ui'
+import {
   ArrowRight,
-  Upload,
-  User,
   MessageSquare,
   AlertCircle,
   Loader2,
   MessageCircle,
   ChevronDown,
-  ChevronUp,
   Camera,
+  CalendarDays,
   Ruler,
   Image as ImageIcon,
   Play,
   Pause,
   Package,
   Phone,
-  Clock,
   CheckCircle,
   Pencil,
-  Printer
+  Printer,
+  Shirt,
+  UserCheck,
+  Wrench,
+  X
 } from 'lucide-react'
+import { RECEPTION_STAFF } from '@/lib/reception-staff'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
 import {
   ALTERATION_ACCESSORY_KEYS,
@@ -74,7 +83,6 @@ function AddAlterationContent() {
   const { t, isArabic } = useTranslation()
   const voiceBusyRef = useRef(false)
   const errorVoiceBusyRef = useRef(false)
-  const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const orderId = searchParams.get('orderId')
@@ -86,12 +94,21 @@ function AddAlterationContent() {
   const [isLoadingOrder, setIsLoadingOrder] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [showAlterationStageModal, setShowAlterationStageModal] = useState(false)
+  // نافذة الأسئلة الإجبارية قبل الحفظ: null = مغلقة
+  const [questionsAction, setQuestionsAction] = useState<'print' | 'whatsapp' | null>(null)
+  const [questionsStep, setQuestionsStep] = useState<'accessories' | 'reason' | 'taker'>('accessories')
+  const questionStepNumber = questionsStep === 'accessories' ? 1 : questionsStep === 'reason' ? 2 : 3
+  // «لم تُحضر شيئاً» جواب صريح، حتى لا تُتجاوز خطوة المستلزمات بدون قصد
+  const [accessoriesNoneChosen, setAccessoriesNoneChosen] = useState(false)
 
   useEffect(() => {
     if (orderId) {
       loadOriginalOrder(orderId)
+    } else if (!editId) {
+      // لا توجد تعديلات خارجية: إضافة تعديل تبدأ دائماً من طلب موجود
+      router.replace('/dashboard/alterations')
     }
-  }, [orderId])
+  }, [orderId, editId])
 
   // تحميل بيانات طلب التعديل للتعديل
   useEffect(() => {
@@ -121,22 +138,19 @@ function AddAlterationContent() {
         alterationType: alteration.alteration_type || 'after_delivery',
         clientName: alteration.client_name,
         clientPhone: alteration.client_phone,
-        price: alteration.price.toString(),
-        paidAmount: alteration.paid_amount.toString(),
-        paymentMethod: alteration.payment_method || 'cash',
         orderReceivedDate: alteration.order_received_date || new Date().toISOString().split('T')[0],
         alterationDueDate: alteration.alteration_due_date || '',
         errorType: (alteration.error_type as AlterationErrorType) || '',
         errorNotes: alteration.error_notes || '',
         errorVoiceNotes: (alteration as any).error_voice_transcriptions || [],
         broughtAccessories: normalizeAlterationAccessories((alteration as any).brought_accessories),
+        takenBy: alteration.taken_by || '',
         notes: alteration.notes || '',
         voiceNotes: (alteration as any).voice_transcriptions || [],
         images: alteration.images || [],
         alterationPhotos: alteration.alteration_photos || [],
         imageAnnotations: initialAnnotations,
         imageDrawings: initialDrawings,
-        customDesignImage: null,
         savedDesignComments: (alteration as any).saved_design_comments || []
       })
 
@@ -154,7 +168,6 @@ function AddAlterationContent() {
         }).catch(console.error)
       }
 
-      toast.success(isArabic ? 'تم تحميل بيانات طلب التعديل' : 'Alteration data loaded')
     } catch (error: any) {
       console.error('Error loading alteration:', error)
       toast.error(isArabic ? 'فشل تحميل بيانات طلب التعديل' : 'Failed to load alteration data')
@@ -196,9 +209,6 @@ function AddAlterationContent() {
     alterationType: 'after_delivery' as AlterationType,
     clientName: '',
     clientPhone: '',
-    price: '',
-    paidAmount: '',
-    paymentMethod: 'cash' as 'cash' | 'card' | 'bank_transfer' | 'check',
     orderReceivedDate: new Date().toISOString().split('T')[0],
     alterationDueDate: '',
     errorType: '' as AlterationErrorType | '',
@@ -214,6 +224,8 @@ function AddAlterationContent() {
     }>,
     // المستلزمات التي أحضرتها العميلة؛ الغائب عن القائمة يُطبع كغير مُحضَر.
     broughtAccessories: [] as AlterationAccessory[],
+    // من أخذ التعديل (هبة / منال / ندى) — السؤال الإجباري الثالث قبل الحفظ
+    takenBy: '',
     notes: '',
     voiceNotes: [] as Array<{
       id: string
@@ -228,7 +240,6 @@ function AddAlterationContent() {
     alterationPhotos: [] as string[],
     imageAnnotations: [] as ImageAnnotation[],
     imageDrawings: [] as DrawingPath[],
-    customDesignImage: null as File | null,
     savedDesignComments: [] as SavedDesignComment[]
   })
 
@@ -242,6 +253,10 @@ function AddAlterationContent() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showDressDetails, setShowDressDetails] = useState(false)
+  // الاسم والهاتف يأتيان من الطلب الأصلي؛ حقلا التصحيح يظهران عند الطلب فقط
+  const [showClientEdit, setShowClientEdit] = useState(false)
+  const [showTypePicker, setShowTypePicker] = useState(false)
+  const [viewerImage, setViewerImage] = useState<string | null>(null)
   const [isCameraUploading, setIsCameraUploading] = useState(false)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const initialDesignStateRef = useRef<{ annotations: string; drawings: string }>({
@@ -277,13 +292,6 @@ function AddAlterationContent() {
       drawings: JSON.stringify(initialDrawings)
     }
   }
-
-  // حساب المبلغ المتبقي
-  const remainingAmount = useMemo(() => {
-    const price = Number(formData.price) || 0
-    const paidAmount = Number(formData.paidAmount) || 0
-    return Math.max(0, price - paidAmount)
-  }, [formData.price, formData.paidAmount])
 
   // معالجة تغيير الحقول
   const handleInputChange = (field: string, value: string | string[] | null) => {
@@ -322,38 +330,6 @@ function AddAlterationContent() {
     setFormData(prev => ({
       ...prev,
       voiceNotes
-    }))
-  }
-
-  // معالجة تغيير التعليقات على الصورة
-  const handleImageAnnotationsChange = (annotations: ImageAnnotation[]) => {
-    setFormData(prev => ({
-      ...prev,
-      imageAnnotations: annotations
-    }))
-  }
-
-  // معالجة تغيير الرسومات على الصورة
-  const handleImageDrawingsChange = (drawings: DrawingPath[]) => {
-    setFormData(prev => ({
-      ...prev,
-      imageDrawings: drawings
-    }))
-  }
-
-  // معالجة تغيير صورة التصميم المخصصة
-  const handleDesignImageChange = (image: File | null) => {
-    setFormData(prev => ({
-      ...prev,
-      customDesignImage: image
-    }))
-  }
-
-  // معالجة تغيير التعليقات المحفوظة
-  const handleSavedCommentsChange = (comments: SavedDesignComment[]) => {
-    setFormData(prev => ({
-      ...prev,
-      savedDesignComments: comments
     }))
   }
 
@@ -440,25 +416,46 @@ function AddAlterationContent() {
     }
   }
 
-  const formatOrderDate = (dateString: string) => {
-    if (!dateString) return ''
-    try {
-      const d = new Date(dateString)
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-    } catch { return dateString }
-  }
+  const tr = (ar: string, en: string) => (isArabic ? ar : en)
 
-  const statusLabels: Record<string, string> = {
-    pending: 'في الانتظار', in_progress: 'قيد التنفيذ', completed: 'مكتمل',
-    delivered: 'تم التسليم', cancelled: 'ملغى'
-  }
-  const statusColors: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-700', in_progress: 'bg-blue-100 text-blue-700',
-    completed: 'bg-green-100 text-green-700', delivered: 'bg-purple-100 text-purple-700',
-    cancelled: 'bg-red-100 text-red-700'
-  }
+  // تعديل خارجي قديم: بلا طلب أصلي، فالاسم والهاتف يُعدّلان مباشرة ولا توجد مواعيد طلب
+  const isLegacyExternal = isEditMode && !effectiveOrderId
+  const clientFieldsOpen = showClientEdit || isLegacyExternal
 
-  const buildSavedCommentsForSubmit = useCallback((customDesignImageBase64?: string) => {
+  // مواعيد الطلب الأصلي (للعرض فقط): الثلاثة تظهر دائماً، والموعد غير الموجود يُكتب «—»
+  const orderDates = originalOrder
+    ? [
+        { key: 'first', label: tr('البروفة الأولى', 'First proof'), value: originalOrder.proof_delivery_date || '', tone: 'text-amber-700' },
+        { key: 'second', label: tr('البروفة الثانية', 'Second proof'), value: getSecondProofDate(originalOrder), tone: 'text-emerald-700' },
+        { key: 'final', label: tr('التسليم النهائي', 'Final delivery'), value: originalOrder.due_date || '', tone: 'text-pink-700' },
+      ]
+    : []
+
+  // الأنواع المتاحة للطلب، مع إبقاء النوع المحفوظ ظاهراً عند فتح تعديل قديم
+  const canChangeAlterationType = Boolean(effectiveOrderId && originalOrder)
+  const alterationTypeOptions = (['first_proof', 'second_proof', 'after_delivery'] as AlterationType[])
+    .filter(type => availableAlterationTypes.includes(type) || type === formData.alterationType)
+
+  // ملخص تفاصيل الفستان على زر الطيّ
+  const measurementEntries = originalOrder?.measurements
+    ? MEASUREMENT_ORDER
+        .filter(key => key !== 'additional_notes')
+        .map(key => ({ key, value: (originalOrder.measurements as any)?.[key] }))
+        .filter(entry => entry.value !== undefined && entry.value !== null && String(entry.value).trim() !== '')
+    : []
+  const measurementNotes = String((originalOrder?.measurements as any)?.additional_notes || '').trim()
+  const hasLegacyDesign = roSavedDesignComments.length === 0
+    && (roImageAnnotations.length > 0 || roImageDrawings.length > 0 || Boolean(roCustomDesignImage))
+  const designCommentsCount = roSavedDesignComments.length || (hasLegacyDesign ? 1 : 0)
+  const designImages = originalOrder?.images || []
+  const dressSummary = [
+    designCommentsCount > 0 ? `${tr('تعليقات', 'Comments')} ${designCommentsCount}` : '',
+    designImages.length > 0 ? `${tr('صور', 'Photos')} ${designImages.length}` : '',
+    measurementEntries.length > 0 ? `${tr('مقاسات', 'Measurements')} ${measurementEntries.length}` : '',
+  ].filter(Boolean).join(' · ')
+
+  // تعليقات التصميم تُنسخ من الطلب الأصلي (للقراءة فقط)، فالعرض الحالي دائماً «أمام»
+  const buildSavedCommentsForSubmit = useCallback(() => {
     let allSavedComments = [...formData.savedDesignComments]
     const hasCurrentPayload = formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0
 
@@ -466,8 +463,8 @@ function AddAlterationContent() {
       return allSavedComments
     }
 
-    const currentView = annotationRef.current?.getCurrentView() || 'front'
-    const viewLabel = currentView === 'front' ? 'أمام' : 'خلف'
+    const currentView = 'front' as const
+    const viewLabel = 'أمام'
 
     // البحث عن slot العرض الحالي وتحديثه أو إنشاؤه
     const existingSlotIndex = allSavedComments.findIndex(c => {
@@ -481,7 +478,7 @@ function AddAlterationContent() {
         ...allSavedComments[existingSlotIndex],
         annotations: formData.imageAnnotations,
         drawings: formData.imageDrawings,
-        image: customDesignImageBase64 || (allSavedComments[existingSlotIndex].image || null),
+        image: allSavedComments[existingSlotIndex].image || null,
         view: currentView,
         timestamp: Date.now()
       }
@@ -493,7 +490,7 @@ function AddAlterationContent() {
       timestamp: Date.now(),
       annotations: formData.imageAnnotations,
       drawings: formData.imageDrawings,
-      image: customDesignImageBase64 || null,
+      image: null,
       title: viewLabel,
       view: currentView
     }]
@@ -532,13 +529,41 @@ function AddAlterationContent() {
     }
   }
 
-  // حفظ النموذج وإرسال ورقة التعديل تلقائياً إلى طابور طابعة الورشة
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // زرّا الحفظ لا يحفظان مباشرة: يتحققان من الحقول الأساسية ثم يفتحان الأسئلة الإجبارية
+  // (المستلزمات المُحضَرة ثم سبب التعديل)، والحفظ الفعلي يتم من آخر خطوة في النافذة.
+  const openRequiredQuestions = (action: 'print' | 'whatsapp') => {
+    if (action === 'whatsapp' && (!formData.clientPhone || formData.clientPhone.trim() === '')) {
+      toast.error('يجب إدخال رقم هاتف العميل لإرسال رسالة واتساب', { icon: '⚠️' })
+      return
+    }
+    if (!formData.clientName || !formData.clientPhone) {
+      setShowClientEdit(true)
+      toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
+      return
+    }
+    if (voiceBusyRef.current) {
+      toast.error('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار قبل حفظ الطلب.')
+      return
+    }
+    setAccessoriesNoneChosen(false)
+    setQuestionsStep('accessories')
+    setQuestionsAction(action)
+  }
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    openRequiredQuestions('print')
+  }
+
+  const handleSubmitAndSendWhatsApp = (e: React.FormEvent) => {
+    e.preventDefault()
+    openRequiredQuestions('whatsapp')
+  }
+
+  // حفظ النموذج وإرسال ورقة التعديل تلقائياً إلى طابور طابعة الورشة
+  const performSubmit = async () => {
     // التحقق من الحقول المطلوبة
-    // السعر مطلوب فقط للفساتين الخارجية (عدم وجود effectiveOrderId)
-    if (!formData.clientName || !formData.clientPhone || (!effectiveOrderId && !formData.price)) {
+    if (!formData.clientName || !formData.clientPhone) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
@@ -548,7 +573,12 @@ function AddAlterationContent() {
       return
     }
 
-    if (voiceBusyRef.current || errorVoiceBusyRef.current || annotationRef.current?.isTranscribing()) {
+    if (!formData.takenBy) {
+      toast.error(isArabic ? 'يرجى اختيار من أخذ التعديل' : 'Please select who took the alteration')
+      return
+    }
+
+    if (voiceBusyRef.current || errorVoiceBusyRef.current) {
       toast.error('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار قبل حفظ الطلب.')
       return
     }
@@ -582,47 +612,7 @@ function AddAlterationContent() {
         translationLanguage: vn.translationLanguage
       }))
 
-      // تحويل السعر والدفعة المستلمة إلى أرقام
-      // للفساتين الداخلية (effectiveOrderId موجود)، السعر يكون 0
-      const price = effectiveOrderId ? 0 : Number(formData.price)
-      const paidAmount = Number(formData.paidAmount) || 0
-
-      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
-      let customDesignImageBase64: string | undefined = undefined
-      if (formData.customDesignImage) {
-        try {
-          // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
-          let safeBlob: Blob = formData.customDesignImage
-          const isAndroid = /android/i.test(navigator.userAgent)
-          if (isAndroid) {
-            try {
-              const buffer = await formData.customDesignImage.arrayBuffer()
-              safeBlob = new Blob([buffer], { type: formData.customDesignImage.type || 'image/jpeg' })
-            } catch { safeBlob = formData.customDesignImage }
-          }
-          const reader = new FileReader()
-          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(safeBlob)
-          })
-          const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
-          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
-
-          if (imageSizeKB > 5 * 1024) {
-            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
-            setIsSubmitting(false)
-            return
-          }
-        } catch (imageError) {
-          console.error('❌ Error converting image to base64:', imageError)
-          toast.error('خطأ في تحويل الصورة')
-          setIsSubmitting(false)
-          return
-        }
-      }
-
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
+      const allSavedComments = buildSavedCommentsForSubmit()
 
       // إنشاء أو تحديث طلب التعديل
       if (isEditMode && editId) {
@@ -631,13 +621,12 @@ function AddAlterationContent() {
           alteration_type: formData.alterationType,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
-          price: price,
-          payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || null,
           error_notes: formData.errorNotes || null,
           brought_accessories: formData.broughtAccessories,
+          taken_by: formData.takenBy || undefined,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -646,9 +635,7 @@ function AddAlterationContent() {
           alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
-          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
-          custom_design_image: customDesignImageBase64,
-          paid_amount: paidAmount
+          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined
         })
 
         if (result.error) {
@@ -674,16 +661,15 @@ function AddAlterationContent() {
         const result = await alterationService.create({
           alteration_number: formData.alterationNumber && formData.alterationNumber.trim() !== '' ? formData.alterationNumber.trim() : undefined,
           alteration_type: formData.alterationType,
-          original_order_id: effectiveOrderId || undefined,
+          original_order_id: effectiveOrderId ?? '',
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
-          price: price,
-          payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || undefined,
           error_notes: formData.errorNotes || undefined,
           brought_accessories: formData.broughtAccessories,
+          taken_by: formData.takenBy || undefined,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -693,9 +679,7 @@ function AddAlterationContent() {
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
           image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
-          custom_design_image: customDesignImageBase64,
-          status: 'pending',
-          paid_amount: paidAmount
+          status: 'pending'
         })
 
         if (result.error) {
@@ -725,9 +709,7 @@ function AddAlterationContent() {
   }
 
   // حفظ طلب التعديل وإرسال رسالة واتساب
-  const handleSubmitAndSendWhatsApp = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const performSubmitAndSendWhatsApp = async () => {
     // التحقق من وجود رقم الهاتف
     if (!formData.clientPhone || formData.clientPhone.trim() === '') {
       toast.error('يجب إدخال رقم هاتف العميل لإرسال رسالة واتساب', {
@@ -737,7 +719,7 @@ function AddAlterationContent() {
     }
 
     // التحقق من الحقول المطلوبة
-    if (!formData.clientName || !formData.clientPhone || (!effectiveOrderId && !formData.price)) {
+    if (!formData.clientName || !formData.clientPhone) {
       toast.error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
@@ -747,7 +729,12 @@ function AddAlterationContent() {
       return
     }
 
-    if (voiceBusyRef.current || errorVoiceBusyRef.current || annotationRef.current?.isTranscribing()) {
+    if (!formData.takenBy) {
+      toast.error(isArabic ? 'يرجى اختيار من أخذ التعديل' : 'Please select who took the alteration')
+      return
+    }
+
+    if (voiceBusyRef.current || errorVoiceBusyRef.current) {
       toast.error('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار قبل حفظ الطلب.')
       return
     }
@@ -781,46 +768,8 @@ function AddAlterationContent() {
         translationLanguage: vn.translationLanguage
       }))
 
-      // تحويل السعر والدفعة المستلمة إلى أرقام
-      const price = effectiveOrderId ? 0 : Number(formData.price)
-      const paidAmount = Number(formData.paidAmount) || 0
 
-      // تحويل صورة التصميم المخصصة إلى base64 إذا كانت موجودة
-      let customDesignImageBase64: string | undefined = undefined
-      if (formData.customDesignImage) {
-        try {
-          // على Android، ملفات الكاميرا مدعومة بـ content:// URI قد يصبح غير مستقر
-          let safeBlob: Blob = formData.customDesignImage
-          const isAndroid = /android/i.test(navigator.userAgent)
-          if (isAndroid) {
-            try {
-              const buffer = await formData.customDesignImage.arrayBuffer()
-              safeBlob = new Blob([buffer], { type: formData.customDesignImage.type || 'image/jpeg' })
-            } catch { safeBlob = formData.customDesignImage }
-          }
-          const reader = new FileReader()
-          customDesignImageBase64 = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = (e) => reject(new Error(`Failed to read image: ${e}`))
-            reader.readAsDataURL(safeBlob)
-          })
-          const imageSizeKB = Math.round(customDesignImageBase64.length / 1024)
-          console.log(`📸 Custom design image converted to base64: ${imageSizeKB}KB`)
-
-          if (imageSizeKB > 5 * 1024) {
-            toast.error(`حجم الصورة كبير جداً (${Math.round(imageSizeKB / 1024)}MB). الحد الأقصى هو 5MB`)
-            setIsSubmitting(false)
-            return
-          }
-        } catch (imageError) {
-          console.error('❌ Error converting image to base64:', imageError)
-          toast.error('خطأ في تحويل الصورة')
-          setIsSubmitting(false)
-          return
-        }
-      }
-
-      const allSavedComments = buildSavedCommentsForSubmit(customDesignImageBase64)
+      const allSavedComments = buildSavedCommentsForSubmit()
 
       let result
       let alterationNumber = formData.alterationNumber
@@ -832,13 +781,12 @@ function AddAlterationContent() {
           alteration_type: formData.alterationType,
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
-          price: price,
-          payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || null,
           error_notes: formData.errorNotes || null,
           brought_accessories: formData.broughtAccessories,
+          taken_by: formData.takenBy || undefined,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -847,9 +795,7 @@ function AddAlterationContent() {
           alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
-          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
-          custom_design_image: customDesignImageBase64,
-          paid_amount: paidAmount
+          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined
         })
 
         if (result.error) {
@@ -865,16 +811,15 @@ function AddAlterationContent() {
         result = await alterationService.create({
           alteration_number: formData.alterationNumber && formData.alterationNumber.trim() !== '' ? formData.alterationNumber.trim() : undefined,
           alteration_type: formData.alterationType,
-          original_order_id: effectiveOrderId || undefined,
+          original_order_id: effectiveOrderId ?? '',
           client_name: formData.clientName,
           client_phone: formData.clientPhone,
-          price: price,
-          payment_method: formData.paymentMethod,
           order_received_date: formData.orderReceivedDate,
           alteration_due_date: formData.alterationDueDate || null,
           error_type: formData.errorType as AlterationErrorType || undefined,
           error_notes: formData.errorNotes || undefined,
           brought_accessories: formData.broughtAccessories,
+          taken_by: formData.takenBy || undefined,
           notes: formData.notes || undefined,
           voice_notes: voiceNotesData.length > 0 ? voiceNotesData : undefined,
           voice_transcriptions: voiceTranscriptions.length > 0 ? voiceTranscriptions : undefined,
@@ -883,9 +828,7 @@ function AddAlterationContent() {
           alteration_photos: formData.alterationPhotos.length > 0 ? formData.alterationPhotos : undefined,
           saved_design_comments: allSavedComments.length > 0 ? allSavedComments : undefined,
           image_annotations: formData.imageAnnotations.length > 0 ? formData.imageAnnotations : undefined,
-          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined,
-          custom_design_image: customDesignImageBase64,
-          paid_amount: paidAmount
+          image_drawings: formData.imageDrawings.length > 0 ? formData.imageDrawings : undefined
         })
 
         if (result.error) {
@@ -960,274 +903,709 @@ function AddAlterationContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 p-4 sm:p-6 lg:p-8">
-      <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
+    <div dir={isArabic ? 'rtl' : 'ltr'} className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
+      {/* الشريط العلوي */}
+      <header className="sticky top-0 z-30 border-b border-pink-100 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2 sm:px-6">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="-ms-2 grid h-11 w-11 shrink-0 place-items-center rounded-full text-slate-600 transition hover:bg-pink-50 hover:text-pink-700"
+            aria-label={tr('رجوع', 'Back')}
+          >
+            <ArrowRight className={`h-5 w-5 ${isArabic ? '' : 'rotate-180'}`} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-extrabold text-slate-900 sm:text-xl">
+              {isEditMode ? tr('تعديل طلب التعديل', 'Edit alteration') : tr('طلب تعديل جديد', 'New alteration')}
+            </h1>
+            <p className="truncate text-xs text-slate-500 sm:text-sm">
+              {isEditMode ? (
+                <span dir="ltr">{formData.alterationNumber || '—'}</span>
+              ) : originalOrder ? (
+                <>
+                  {tr('مرتبط بالطلب', 'Linked to order')} <span dir="ltr">{originalOrder.order_number || '—'}</span>
+                </>
+              ) : null}
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <form onSubmit={handleSubmit} noValidate className="mx-auto max-w-3xl space-y-4 px-4 pt-4 sm:px-6">
+        {/* 1. الطلب الأصلي والزبونة ومواعيد الطلب */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-white rounded-lg transition-colors"
-            >
-              <ArrowRight className={`w-6 h-6 text-gray-600 ${isArabic ? '' : 'rotate-180'}`} />
-            </button>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                {isEditMode
-                  ? (isArabic ? 'تعديل طلب التعديل' : 'Edit Alteration')
-                  : (isArabic ? 'إضافة طلب تعديل جديد' : 'Add New Alteration')
-                }
-              </h1>
-              {originalOrder && !isEditMode && (
-                <p className="text-sm text-gray-600 mt-1">
-                  {isArabic ? 'مرتبط بالطلب:' : 'Linked to order:'} {originalOrder.order_number}
-                </p>
-              )}
-              {isEditMode && (
-                <p className="text-sm text-gray-600 mt-1">
-                  {formData.alterationNumber}
-                </p>
+          <div className="flex items-start gap-3 p-4 sm:p-5">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-500 text-lg font-extrabold text-white">
+              {(formData.clientName || '؟').trim().charAt(0) || '؟'}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-pink-600">
+                {isLegacyExternal ? tr('تعديل خارجي (قديم)', 'Legacy external alteration') : tr('الطلب الأصلي', 'Original order')}
+              </p>
+              <h2 className="truncate text-lg font-extrabold leading-7 text-slate-900">
+                {formData.clientName || tr('بدون اسم', 'No name')}
+              </h2>
+              {formData.clientPhone ? (
+                <a
+                  href={`tel:${formData.clientPhone}`}
+                  className="inline-flex min-h-9 items-center gap-1.5 text-[15px] font-semibold text-slate-600 hover:text-pink-700"
+                >
+                  <Phone className="h-4 w-4" />
+                  <span dir="ltr">{formData.clientPhone}</span>
+                </a>
+              ) : (
+                <p className="mt-1 text-sm font-semibold text-red-600">{tr('لا يوجد رقم هاتف', 'No phone number')}</p>
               )}
             </div>
+            {!isLegacyExternal ? (
+              <button
+                type="button"
+                onClick={() => setShowClientEdit(previous => !previous)}
+                aria-expanded={showClientEdit}
+                className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border transition ${showClientEdit ? 'border-pink-300 bg-pink-50 text-pink-700' : 'border-slate-200 text-slate-500 hover:border-pink-300 hover:text-pink-700'}`}
+                aria-label={tr('تصحيح الاسم والهاتف', 'Edit name and phone')}
+              >
+                {showClientEdit ? <X className="h-5 w-5" /> : <Pencil className="h-4 w-4" />}
+              </button>
+            ) : null}
           </div>
-        </motion.div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-          {/* 1. المعلومات الأساسية */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-          >
-            <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-              <User className="w-5 h-5 text-pink-500" />
-              {isArabic ? 'المعلومات الأساسية' : 'Basic Information'}
-            </h2>
+          {originalOrder ? (
+            <div className="flex flex-wrap gap-1.5 px-4 pb-4 sm:px-5">
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
+                {tr('طلب', 'Order')} <span dir="ltr">{originalOrder.order_number || '—'}</span>
+              </span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${getOrderStatusMeta(originalOrder.status).badge}`}>
+                {isArabic ? getOrderStatusMeta(originalOrder.status).label.ar : getOrderStatusMeta(originalOrder.status).label.en}
+              </span>
+              {originalOrder.fabric ? (
+                <span className="max-w-full truncate rounded-full border border-purple-100 bg-purple-50 px-2.5 py-1 text-xs font-bold text-purple-700">
+                  {tr('القماش', 'Fabric')}: {originalOrder.fabric}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 1.2. اسم الزبونة */}
+          {clientFieldsOpen ? (
+            <div className="grid grid-cols-1 gap-3 border-t border-slate-100 bg-slate-50/70 p-4 sm:grid-cols-2 sm:p-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isArabic ? 'اسم الزبونة' : 'Client Name'} <span className="text-red-500">*</span>
+                <label className="mb-1.5 block text-sm font-bold text-slate-700">
+                  {tr('اسم الزبونة', 'Client Name')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={formData.clientName}
                   onChange={(e) => handleInputChange('clientName', e.target.value)}
-                  placeholder={isArabic ? 'أدخل اسم الزبونة' : 'Enter client name'}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  placeholder={tr('أدخل اسم الزبونة', 'Enter client name')}
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-[15px] outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
                   required
                   dir={isArabic ? 'rtl' : 'ltr'}
                 />
               </div>
-
-              {/* 1.3. رقم الهاتف */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isArabic ? 'رقم الهاتف' : 'Phone Number'} <span className="text-red-500">*</span>
+                <label className="mb-1.5 block text-sm font-bold text-slate-700">
+                  {tr('رقم الهاتف', 'Phone Number')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="tel"
                   value={formData.clientPhone}
                   onChange={(e) => handleInputChange('clientPhone', e.target.value)}
-                  placeholder={isArabic ? 'أدخل رقم الهاتف' : 'Enter phone number'}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  placeholder={tr('أدخل رقم الهاتف', 'Enter phone number')}
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-[15px] outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
                   required
                   dir="ltr"
                 />
               </div>
-
-              {/* نوع التعديل: يُعبّأ من نافذة الاختيار ويبقى قابلًا للتصحيح */}
-              {effectiveOrderId && originalOrder ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'نوع التعديل' : 'Alteration Type'} <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.alterationType}
-                    onChange={(event) => handleInputChange('alterationType', event.target.value as AlterationType)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                    required
-                  >
-                    {availableAlterationTypes.includes('first_proof') ? (
-                      <option value="first_proof">{isArabic ? 'تعديل البروفة الأولى' : 'First proof alteration'}</option>
-                    ) : null}
-                    {availableAlterationTypes.includes('second_proof') ? (
-                      <option value="second_proof">{isArabic ? 'تعديل البروفة الثانية' : 'Second proof alteration'}</option>
-                    ) : null}
-                    <option value="after_delivery">{isArabic ? 'تعديل بعد التسليم' : 'Post-delivery alteration'}</option>
-                  </select>
-                  <p className="mt-1.5 text-xs text-gray-500">
-                    {isArabic ? 'يمكنك تصحيح النوع هنا إذا تم اختياره بالخطأ.' : 'You can correct the type here if it was selected by mistake.'}
-                  </p>
-                </div>
-              ) : null}
-
-              {/* 1.4. موعد تسليم التعديل */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isArabic ? 'موعد تسليم التعديل' : 'Alteration Due Date'}
-                </label>
-                <DatePickerWithStats
-                  selectedDate={formData.alterationDueDate}
-                  onChange={(date) => handleInputChange('alterationDueDate', date)}
-                  minDate={new Date()}
-                  required={false}
-                  statsType="alterations"
-                />
-              </div>
-
-              {/* 1.5. السعر - يظهر فقط للتعديلات الخارجية */}
-              {!effectiveOrderId && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'سعر التعديل (ر.س)' : 'Alteration Price (SAR)'} <span className="text-red-500">*</span>
-                  </label>
-                  <NumericInput
-                    type="price"
-                    value={formData.price}
-                    onChange={(value) => handleInputChange('price', value)}
-                    placeholder={isArabic ? 'أدخل السعر' : 'Enter price'}
-                    required
-                  />
-                </div>
-              )}
-
-              {/* 1.6. المبلغ المدفوع - يظهر فقط للتعديلات الخارجية */}
-              {!effectiveOrderId && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isArabic ? 'المبلغ المدفوع (ر.س)' : 'Paid Amount (SAR)'}
-                  </label>
-                  <NumericInput
-                    type="price"
-                    value={formData.paidAmount}
-                    onChange={(value) => handleInputChange('paidAmount', value)}
-                    placeholder={isArabic ? 'أدخل المبلغ المدفوع' : 'Enter paid amount'}
-                  />
-                </div>
-              )}
             </div>
+          ) : null}
 
-            {/* 1.7. المبلغ المتبقي - يظهر فقط للتعديلات الخارجية */}
-            {!effectiveOrderId && (
-              <div className="mt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isArabic ? 'المبلغ المتبقي (ر.س)' : 'Remaining Amount (SAR)'}
-                </label>
-                <div className="w-full px-4 py-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-semibold">
-                  {remainingAmount.toFixed(2)}
-                </div>
+          {originalOrder ? (
+            <div className="border-t border-slate-100 p-4 sm:p-5">
+              <p className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-slate-700">
+                <CalendarDays className="h-4 w-4 text-pink-500" />
+                {tr('مواعيد الطلب', 'Order Dates')}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {orderDates.map(item => (
+                  <div key={item.key} className="rounded-2xl border border-slate-200 bg-slate-50/70 px-1 py-2.5 text-center">
+                    <p className="text-xs font-semibold leading-5 text-slate-500">{item.label}</p>
+                    <p dir="ltr" className={`mt-0.5 text-sm font-extrabold tabular-nums ${item.value ? item.tone : 'text-slate-400'}`}>
+                      {formatAlterationDate(item.value) || '—'}
+                    </p>
+                  </div>
+                ))}
               </div>
-            )}
-          </motion.div>
+            </div>
+          ) : effectiveOrderId ? (
+            <div className="border-t border-slate-100 p-4 sm:p-5">
+              <div className="grid grid-cols-3 gap-2">
+                {[0, 1, 2].map(index => (
+                  <div key={index} className="h-16 animate-pulse rounded-2xl bg-slate-100" />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </motion.section>
 
-          {/* 2. وصف التعديل المطلوب */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-          >
-            <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-pink-500" />
-              {isArabic ? 'وصف التعديل المطلوب' : 'Alteration Description'}
-            </h2>
+        {/* 2. نوع التعديل وموعده */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+        >
+          {/* نوع التعديل نادراً ما يتغيّر: سطر واحد، والخيارات تظهر فقط عند «تغيير» */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Wrench className="h-4 w-4 shrink-0 text-pink-500" />
+              <span className="text-sm font-bold text-slate-700">{tr('نوع التعديل', 'Alteration Type')}</span>
+              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${ALTERATION_TYPE_META[formData.alterationType]?.badge || ''}`}>
+                {isArabic ? ALTERATION_TYPE_META[formData.alterationType]?.short.ar : ALTERATION_TYPE_META[formData.alterationType]?.short.en}
+              </span>
+            </div>
+            {canChangeAlterationType && alterationTypeOptions.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => setShowTypePicker(previous => !previous)}
+                aria-expanded={showTypePicker}
+                className="min-h-11 shrink-0 rounded-xl px-3 text-sm font-bold text-pink-600 transition hover:bg-pink-50"
+              >
+                {showTypePicker ? tr('إغلاق', 'Close') : tr('تغيير', 'Change')}
+              </button>
+            ) : null}
+          </div>
 
-            <UnifiedNotesInput
-              notes={formData.notes}
-              voiceNotes={formData.voiceNotes}
-              onNotesChange={(notes) => handleInputChange('notes', notes)}
-              onVoiceNotesChange={handleVoiceNotesChange}
-              onBusyChange={busy => { voiceBusyRef.current = busy }}
-              appendTranscriptionToNotes={false}
-              allowTranscriptionEditing
+          {showTypePicker && canChangeAlterationType ? (
+            <div
+              role="radiogroup"
+              aria-label={tr('نوع التعديل', 'Alteration Type')}
+              className={`mt-2 grid gap-2 ${alterationTypeOptions.length >= 3 ? 'grid-cols-3' : alterationTypeOptions.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}
+            >
+              {alterationTypeOptions.map(type => {
+                const meta = ALTERATION_TYPE_META[type]
+                const isSelected = formData.alterationType === type
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    onClick={() => {
+                      handleInputChange('alterationType', type)
+                      setShowTypePicker(false)
+                    }}
+                    className={`min-h-11 rounded-xl border px-2 py-1.5 text-sm font-bold leading-5 transition ${isSelected ? meta.selected : 'border-slate-200 bg-white text-slate-600 hover:border-pink-200'}`}
+                  >
+                    {isArabic ? meta.short.ar : meta.short.en}
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <label className="mb-2 block text-sm font-bold text-slate-700">
+              {tr('موعد تسليم التعديل', 'Alteration Due Date')}
+            </label>
+            <DatePickerWithStats
+              selectedDate={formData.alterationDueDate}
+              onChange={(date) => handleInputChange('alterationDueDate', date)}
+              minDate={new Date()}
+              required={false}
+              statsType="alterations"
             />
+          </div>
+        </motion.section>
 
-            {/* زر الكاميرا - إضافة صورة التعديل */}
-            <div className="mt-4">
+        {/* 3. وصف التعديل المطلوب: نص + صوت + صور */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+        >
+          <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+            <MessageSquare className="h-5 w-5 text-pink-500" />
+            {tr('وصف التعديل المطلوب', 'Alteration Description')}
+          </h2>
+          <p className="mb-3 mt-0.5 text-sm text-slate-500">
+            {tr('اكتبي أو سجّلي بالصوت، وأضيفي صوراً للتوضيح.', 'Type or record, and add photos to explain.')}
+          </p>
+
+          <UnifiedNotesInput
+            notes={formData.notes}
+            voiceNotes={formData.voiceNotes}
+            onNotesChange={(notes) => handleInputChange('notes', notes)}
+            onVoiceNotesChange={handleVoiceNotesChange}
+            onBusyChange={busy => { voiceBusyRef.current = busy }}
+            appendTranscriptionToNotes={false}
+            allowTranscriptionEditing
+            extraActions={(
+              // زر الكاميرا تحت زر الترجمة مباشرة، بنفس شكل زرّي المايكروفون والترجمة
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
                 disabled={isSubmitting || isCameraUploading}
-                className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-300 text-green-700 rounded-lg hover:bg-green-100 hover:border-green-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-2 bg-green-600 text-white rounded-full hover:bg-green-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                title={tr('إضافة صورة من الكاميرا', 'Add photo from camera')}
+                aria-label={tr('إضافة صورة من الكاميرا', 'Add photo from camera')}
               >
-                {isCameraUploading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span className="text-sm font-medium">{isArabic ? 'جاري رفع الصورة...' : 'Uploading...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Camera className="w-5 h-5" />
-                    <span className="text-sm font-medium">{isArabic ? 'إضافة صورة من الكاميرا' : 'Add Photo from Camera'}</span>
-                  </>
-                )}
+                {isCameraUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
               </button>
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleCameraCapture}
-              />
-            </div>
-
-            {/* معرض صور التعديل */}
-            {formData.alterationPhotos.length > 0 && (
-              <div className="mt-4">
-                <p className="text-sm font-medium text-gray-700 mb-2">
-                  {isArabic ? 'صور التعديل' : 'Alteration Photos'} ({formData.alterationPhotos.length})
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  {formData.alterationPhotos.map((url, idx) => (
-                    <div key={idx} className="relative group">
-                      <img
-                        src={url}
-                        alt={`alteration-photo-${idx + 1}`}
-                        className="w-24 h-24 object-cover rounded-lg border border-gray-200 shadow-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({
-                          ...prev,
-                          alterationPhotos: prev.alterationPhotos.filter((_, i) => i !== idx)
-                        }))}
-                        className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
             )}
-          </motion.div>
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleCameraCapture}
+          />
 
-          {/* 2.5 مستلزمات القياس التي أحضرتها العميلة */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
+          {/* صور التعديل: مصغّرات صغيرة تظهر فقط عند وجود صور */}
+          {formData.alterationPhotos.length > 0 || isCameraUploading ? (
+            <div className="mt-3 flex flex-wrap gap-2.5">
+              {formData.alterationPhotos.map((url, idx) => (
+                <div key={`${url}-${idx}`} className="relative h-16 w-16">
+                  <button
+                    type="button"
+                    onClick={() => setViewerImage(url)}
+                    className="h-full w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+                    aria-label={tr(`عرض الصورة ${idx + 1}`, `View photo ${idx + 1}`)}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- uploaded photos are Storage URLs */}
+                    <img src={url} alt={`alteration-photo-${idx + 1}`} className="h-full w-full object-cover" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({
+                      ...prev,
+                      alterationPhotos: prev.alterationPhotos.filter((_, i) => i !== idx)
+                    }))}
+                    className="absolute -end-2 -top-2 grid h-8 w-8 place-items-center"
+                    aria-label={tr('حذف الصورة', 'Remove photo')}
+                  >
+                    <span className="grid h-6 w-6 place-items-center rounded-full bg-red-500 text-white shadow ring-2 ring-white">
+                      <X className="h-3.5 w-3.5" />
+                    </span>
+                  </button>
+                </div>
+              ))}
+              {isCameraUploading ? (
+                <div className="grid h-16 w-16 place-items-center rounded-xl border border-dashed border-green-300 bg-green-50 text-green-600">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </motion.section>
+
+        {/* المستلزمات المُحضَرة وسبب التعديل صارا أسئلة إجبارية في نافذة تظهر عند الحفظ */}
+
+        {/* 4. تفاصيل الفستان للقراءة فقط (للتعديلات المرتبطة بطلب) */}
+        {effectiveOrderId ? (
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+            transition={{ delay: 0.15 }}
+            className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
           >
-            <h2 className="text-xl font-semibold text-gray-900 mb-2 flex items-center gap-2">
-              <Package className="w-5 h-5 text-pink-500" />
-              {isArabic ? 'المستلزمات المُحضَرة' : 'Accessories Brought'}
-            </h2>
-            <p className="text-sm text-gray-500 mb-5">
-              {isArabic
-                ? 'اختر ما أحضرته العميلة معها. ما لا تختاره يُطبع على ورقة الورشة كغير مُحضَر.'
-                : 'Select what the client brought in. Anything left unselected prints on the workshop slip as not brought.'}
+            <button
+              type="button"
+              onClick={() => setShowDressDetails(prev => !prev)}
+              aria-expanded={showDressDetails}
+              className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-start transition hover:bg-pink-50/40 sm:px-5"
+            >
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-purple-50 text-purple-600">
+                <Shirt className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-extrabold text-slate-900">{tr('تفاصيل الفستان', 'Dress details')}</span>
+                <span className="block truncate text-sm text-slate-500">
+                  {originalOrder ? (dressSummary || tr('لا توجد تفاصيل محفوظة', 'No saved details')) : tr('جارٍ التحميل…', 'Loading…')}
+                  <span className="text-slate-400"> · {tr('للقراءة فقط', 'read only')}</span>
+                </span>
+              </span>
+              <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 ${showDressDetails ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showDressDetails && originalOrder ? (
+              <div className="space-y-6 border-t border-slate-100 p-4 sm:p-5">
+                {/* أ. تعليقات التصميم */}
+                {(roSavedDesignComments.length > 0 || hasLegacyDesign) ? (
+                  <div>
+                    <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-slate-800">
+                      <Pencil className="h-4 w-4 text-pink-500" />
+                      {tr('تعليقات التصميم', 'Design comments')}
+                      {roSavedDesignComments.length > 0 ? (
+                        <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs font-bold text-pink-700">{roSavedDesignComments.length}</span>
+                      ) : null}
+                    </h3>
+
+                    {roSavedDesignComments.length > 0 ? (
+                      <div className="space-y-3">
+                        {roSavedDesignComments.map((comment, commentIndex) => (
+                          <div key={comment.id} className="overflow-hidden rounded-2xl border border-pink-100">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedROCommentId(expandedROCommentId === comment.id ? null : comment.id)}
+                              aria-expanded={expandedROCommentId === comment.id}
+                              className="flex min-h-12 w-full items-center justify-between gap-3 bg-gradient-to-l from-pink-50 to-purple-50 px-4 py-2.5 text-start"
+                            >
+                              <span className="flex items-center gap-3">
+                                <span className="grid h-8 w-8 place-items-center rounded-full bg-pink-500 text-sm font-bold text-white">
+                                  {commentIndex + 1}
+                                </span>
+                                <span className="text-[15px] font-bold text-slate-800">
+                                  {comment.title
+                                    ? comment.title.replace(/^أمام/, 'الأمام').replace(/^خلف/, 'الخلف')
+                                    : `${tr('تعليق', 'Comment')} ${commentIndex + 1}`}
+                                </span>
+                              </span>
+                              <ChevronDown className={`h-5 w-5 text-slate-500 transition-transform duration-200 ${expandedROCommentId === comment.id ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {expandedROCommentId === comment.id ? (
+                              <div className="space-y-3 p-3">
+                                <div className="relative overflow-hidden rounded-xl border border-pink-200 bg-white">
+                                  {comment.compositeImage ? (
+                                    // eslint-disable-next-line @next/next/no-img-element -- composite images are data/Storage URLs
+                                    <img
+                                      src={comment.compositeImage}
+                                      alt={`تصميم ${comment.title || commentIndex + 1}`}
+                                      className="h-auto w-full"
+                                    />
+                                  ) : (
+                                    <>
+                                      {/* eslint-disable-next-line @next/next/no-img-element -- design base images can be data URLs */}
+                                      <img
+                                        src={resolveROCommentImageSrc(comment)}
+                                        alt={`تصميم ${comment.title || commentIndex + 1}`}
+                                        className="h-auto w-full"
+                                        onLoad={() => {
+                                          const canvas = roCanvasRefs.current.get(comment.id)
+                                          if (canvas && comment.drawings && comment.drawings.length > 0) {
+                                            void drawROPathsOnCanvas(canvas, comment.drawings)
+                                          }
+                                        }}
+                                      />
+                                      {comment.drawings && comment.drawings.length > 0 ? (
+                                        <canvas
+                                          ref={(el) => {
+                                            if (el) {
+                                              roCanvasRefs.current.set(comment.id, el)
+                                              void drawROPathsOnCanvas(el, comment.drawings || [])
+                                            }
+                                          }}
+                                          className="pointer-events-none absolute inset-0 h-full w-full"
+                                        />
+                                      ) : null}
+                                      {comment.annotations?.map((annotation, idx) => (
+                                        <div
+                                          key={annotation.id}
+                                          className="absolute -translate-x-1/2 -translate-y-1/2 transform"
+                                          style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                                        >
+                                          <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-pink-500 text-xs font-bold text-white shadow-lg">
+                                            {idx + 1}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </>
+                                  )}
+                                </div>
+
+                                {comment.annotations && comment.annotations.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {comment.annotations.map((annotation, idx) => (
+                                      <div key={annotation.id} className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                                        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-pink-500 text-xs font-bold text-white">
+                                          {idx + 1}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                          {annotation.transcription ? (
+                                            <p className="text-sm leading-6 text-slate-700">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
+                                          ) : (
+                                            <p className="text-sm text-slate-400">{tr('تعليق صوتي', 'Voice note')}</p>
+                                          )}
+                                          {annotation.translatedText ? (
+                                            <div className="mt-1.5 rounded-lg border border-purple-200 bg-purple-50 p-2">
+                                              <p className="mb-0.5 text-xs font-bold text-purple-600">{tr('الترجمة', 'Translation')}</p>
+                                              <p className="text-sm text-slate-600" dir="auto">{annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                        {annotation.audioData ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleROAudio(annotation)}
+                                            className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl transition-colors ${playingROAudioId === annotation.id ? 'bg-green-500 text-white' : 'border border-green-200 bg-white text-green-600 hover:bg-green-50'}`}
+                                            aria-label={playingROAudioId === annotation.id ? tr('إيقاف', 'Pause') : tr('تشغيل', 'Play')}
+                                          >
+                                            {playingROAudioId === annotation.id ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {/* التعليق القديم (توافق مع البيانات القديمة) */}
+                    {hasLegacyDesign ? (
+                      <div className="relative overflow-hidden rounded-2xl border border-pink-200 bg-white">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- legacy design image can be a data URL */}
+                        <img
+                          src={roCustomDesignImage || '/front2.png'}
+                          alt="تصميم الفستان"
+                          className="h-auto w-full"
+                          onLoad={() => {
+                            if (roCanvasRef.current && roImageDrawings.length > 0) {
+                              void drawROPathsOnCanvas(roCanvasRef.current, roImageDrawings)
+                            }
+                          }}
+                        />
+                        {roImageDrawings.length > 0 ? (
+                          <canvas ref={roCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+                        ) : null}
+                        {roImageAnnotations.map((annotation, index) => (
+                          <div
+                            key={annotation.id}
+                            className="absolute -translate-x-1/2 -translate-y-1/2 transform"
+                            style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+                          >
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-pink-500 text-xs font-bold text-white shadow-lg">
+                              {index + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {/* ب. صور التصميم */}
+                {designImages.length > 0 ? (
+                  <div>
+                    <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-slate-800">
+                      <ImageIcon className="h-4 w-4 text-pink-500" />
+                      {tr('صور التصميم', 'Design photos')}
+                      <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs font-bold text-pink-700">{designImages.length}</span>
+                    </h3>
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                      {designImages.map((image, index) => (
+                        <button
+                          key={`${image}-${index}`}
+                          type="button"
+                          onClick={() => setViewerImage(image)}
+                          className="relative aspect-square overflow-hidden rounded-2xl border border-pink-100 bg-slate-50"
+                          aria-label={tr(`عرض صورة التصميم ${index + 1}`, `View design photo ${index + 1}`)}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- order images can be data URLs */}
+                          <img src={image} alt={`صورة التصميم ${index + 1}`} className="h-full w-full object-cover" />
+                          <span className="absolute bottom-1.5 start-1.5 rounded-md bg-slate-900/65 px-1.5 py-0.5 text-xs font-bold text-white">
+                            {index + 1}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* ج. المقاسات */}
+                {measurementEntries.length > 0 || measurementNotes ? (
+                  <div>
+                    <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-slate-800">
+                      <Ruler className="h-4 w-4 text-pink-500" />
+                      {tr('المقاسات (سم)', 'Measurements (cm)')}
+                    </h3>
+                    {measurementEntries.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {measurementEntries.map(({ key, value }) => (
+                          <div key={key} className="rounded-2xl border border-pink-100 bg-gradient-to-br from-pink-50/70 to-purple-50/70 px-2 py-2.5 text-center">
+                            <p className="text-xs font-semibold leading-5 text-slate-600">{getMeasurementLabelWithSymbol(key as any)}</p>
+                            <p className="mt-0.5 text-lg font-extrabold tabular-nums text-slate-900" dir="ltr">{String(value)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {measurementNotes ? (
+                      <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3">
+                        <p className="mb-1 text-xs font-bold text-blue-700">{tr('ملاحظات المقاسات', 'Measurement notes')}</p>
+                        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{measurementNotes}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {!dressSummary && !measurementNotes ? (
+                  <p className="py-4 text-center text-[15px] text-slate-500">
+                    {tr('لا توجد تفاصيل محفوظة لهذا الطلب.', 'No saved details for this order.')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showDressDetails && !originalOrder ? (
+              <div className="flex items-center justify-center border-t border-slate-100 py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-pink-500" />
+              </div>
+            ) : null}
+          </motion.section>
+        ) : null}
+
+        {/* 5. أزرار الحفظ: ثابتة أسفل الشاشة */}
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-pink-100 bg-white/95 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+          <div className="mx-auto grid max-w-3xl grid-cols-2 gap-2 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:grid-cols-[1fr_1fr_auto] sm:gap-3 sm:px-6">
+            {/* زر حفظ طلب التعديل وإرساله تلقائياً إلى طابور الطباعة */}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-pink-500 to-purple-500 px-3 text-[15px] font-bold text-white shadow-md transition hover:from-pink-600 hover:to-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Printer className="h-5 w-5" />}
+              {isSubmitting
+                ? tr('جارٍ الحفظ…', 'Saving…')
+                : isEditMode ? tr('تحديث وطباعة', 'Update & Print') : tr('حفظ وطباعة', 'Save & Print')}
+            </button>
+
+            {/* زر حفظ طلب التعديل وإرسال واتساب */}
+            <button
+              type="button"
+              onClick={handleSubmitAndSendWhatsApp}
+              disabled={isSubmitting || !formData.clientPhone}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-green-600 px-3 text-[15px] font-bold text-white shadow-md transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              title={!formData.clientPhone ? 'يجب إدخال رقم هاتف العميل أولاً' : ''}
+            >
+              {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <MessageCircle className="h-5 w-5" />}
+              {isSubmitting ? tr('جارٍ الحفظ…', 'Saving…') : tr('حفظ وإرسال رسالة', 'Save & Send Message')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => router.back()}
+              disabled={isSubmitting}
+              className="hidden h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 text-[15px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:inline-flex"
+            >
+              {tr('إلغاء', 'Cancel')}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {/* الأسئلة الإجبارية قبل الحفظ: 1) المستلزمات المُحضَرة 2) سبب التعديل */}
+      <BottomSheet
+        open={questionsAction !== null}
+        onClose={() => { if (!isSubmitting) setQuestionsAction(null) }}
+        dir={isArabic ? 'rtl' : 'ltr'}
+        zIndex="z-50"
+        eyebrow={tr(
+          `السؤال ${questionStepNumber} من 3`,
+          `Question ${questionStepNumber} of 3`
+        )}
+        title={(
+          <span className="flex items-center gap-2">
+            {questionsStep === 'accessories'
+              ? <Package className="h-5 w-5 shrink-0 text-pink-500" />
+              : questionsStep === 'reason'
+                ? <AlertCircle className="h-5 w-5 shrink-0 text-pink-500" />
+                : <UserCheck className="h-5 w-5 shrink-0 text-pink-500" />}
+            {questionsStep === 'accessories'
+              ? tr('ما المستلزمات التي أحضرتها العميلة؟', 'What did the client bring?')
+              : questionsStep === 'reason'
+                ? tr('ما سبب التعديل؟', 'Reason for alteration?')
+                : tr('مين أخذ التعديل؟', 'Who took the alteration?')}
+            <span className="text-sm text-red-500">*</span>
+          </span>
+        )}
+        footer={questionsStep === 'accessories' ? (
+          <button
+            type="button"
+            disabled={formData.broughtAccessories.length === 0 && !accessoriesNoneChosen}
+            onClick={() => setQuestionsStep('reason')}
+            className="h-12 w-full rounded-2xl bg-gradient-to-l from-pink-500 to-purple-500 text-[15px] font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {tr('التالي', 'Next')}
+          </button>
+        ) : questionsStep === 'reason' ? (
+          <div className="flex gap-3">
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => setQuestionsStep('accessories')}
+              className="h-12 rounded-2xl border border-slate-200 bg-white px-5 text-[15px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {tr('رجوع', 'Back')}
+            </button>
+            <button
+              type="button"
+              disabled={isSubmitting || !formData.errorType}
+              onClick={() => setQuestionsStep('taker')}
+              className="h-12 flex-1 rounded-2xl bg-gradient-to-l from-pink-500 to-purple-500 text-[15px] font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {tr('التالي', 'Next')}
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => setQuestionsStep('reason')}
+              className="h-12 rounded-2xl border border-slate-200 bg-white px-5 text-[15px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {tr('رجوع', 'Back')}
+            </button>
+            <button
+              type="button"
+              disabled={isSubmitting || !formData.errorType || !formData.takenBy}
+              onClick={() => {
+                if (questionsAction === 'whatsapp') void performSubmitAndSendWhatsApp()
+                else void performSubmit()
+              }}
+              className={`inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-[15px] font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50 ${
+                questionsAction === 'whatsapp' ? 'bg-green-600 hover:bg-green-700' : 'bg-gradient-to-l from-pink-500 to-purple-500'
+              }`}
+            >
+              {isSubmitting ? (
+                <><Loader2 className="h-5 w-5 animate-spin" />{tr('جارٍ الحفظ…', 'Saving…')}</>
+              ) : questionsAction === 'whatsapp' ? (
+                <><MessageCircle className="h-5 w-5" />{tr('حفظ وإرسال رسالة', 'Save & Send Message')}</>
+              ) : (
+                <><Printer className="h-5 w-5" />{isEditMode ? tr('تحديث وطباعة', 'Update & Print') : tr('حفظ وطباعة', 'Save & Print')}</>
+              )}
+            </button>
+          </div>
+        )}
+      >
+        {/* شريط التقدّم */}
+        <div className="mb-4 grid grid-cols-3 gap-1.5" aria-hidden>
+          <span className="h-1.5 rounded-full bg-pink-500" />
+          <span className={`h-1.5 rounded-full ${questionStepNumber >= 2 ? 'bg-pink-500' : 'bg-slate-200'}`} />
+          <span className={`h-1.5 rounded-full ${questionStepNumber >= 3 ? 'bg-pink-500' : 'bg-slate-200'}`} />
+        </div>
+
+        {questionsStep === 'accessories' ? (
+          <>
+            <p className="mb-4 text-sm leading-6 text-slate-500">
+              {tr(
+                'اختاري ما أحضرته، أو «لم تُحضر أي شيء». ما لا تختارينه يُطبع على ورقة الورشة كغير مُحضَر.',
+                'Pick what was brought, or "Nothing brought". Anything unselected prints as not brought.'
+              )}
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" dir="rtl">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {ALTERATION_ACCESSORY_KEYS.map((accessory) => {
                 const isSelected = formData.broughtAccessories.includes(accessory)
                 return (
@@ -1237,85 +1615,92 @@ function AddAlterationContent() {
                     role="switch"
                     aria-checked={isSelected}
                     disabled={isSubmitting}
-                    onClick={() => setFormData(prev => ({
-                      ...prev,
-                      broughtAccessories: toggleAlterationAccessory(prev.broughtAccessories, accessory)
-                    }))}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 font-medium text-sm transition-all disabled:opacity-50 ${
+                    onClick={() => {
+                      setAccessoriesNoneChosen(false)
+                      setFormData(prev => ({
+                        ...prev,
+                        broughtAccessories: toggleAlterationAccessory(prev.broughtAccessories, accessory)
+                      }))
+                    }}
+                    className={`flex min-h-12 items-center gap-2 rounded-2xl border-2 px-4 text-[15px] font-bold transition-all disabled:opacity-50 ${
                       isSelected
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                        : 'border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 text-gray-700'
+                        : 'border-slate-200 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50'
                     }`}
                   >
-                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isSelected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${isSelected ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                     {getAccessoryLabel(accessory, isArabic ? 'ar' : 'en')}
-                    {isSelected && <CheckCircle className="w-4 h-4 mr-auto flex-shrink-0" />}
+                    {isSelected && <CheckCircle className="ms-auto h-5 w-5 shrink-0" />}
                   </button>
                 )
               })}
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setAccessoriesNoneChosen(true)
+                  setFormData(prev => ({ ...prev, broughtAccessories: [] }))
+                }}
+                className={`flex min-h-12 items-center gap-2 rounded-2xl border-2 px-4 text-[15px] font-bold transition-all disabled:opacity-50 ${
+                  accessoriesNoneChosen
+                    ? 'border-slate-600 bg-slate-100 text-slate-800'
+                    : 'border-slate-200 text-slate-700 hover:border-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${accessoriesNoneChosen ? 'bg-slate-600' : 'bg-slate-300'}`} />
+                {tr('لم تُحضر أي شيء', 'Nothing brought')}
+                {accessoriesNoneChosen && <CheckCircle className="ms-auto h-5 w-5 shrink-0" />}
+              </button>
             </div>
 
             {/* معاينة ما سيُطبع، حتى لا يُكتشف الخطأ بعد خروج الورقة */}
-            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-4" dir="rtl">
-              <p className="text-xs font-medium text-gray-500 mb-2">
-                {isArabic ? 'سيظهر على ورقة الورشة:' : 'Will appear on the workshop slip:'}
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-2 text-xs font-bold text-slate-500">
+                {tr('سيظهر على ورقة الورشة:', 'Will appear on the workshop slip:')}
               </p>
-              <pre className="text-sm text-gray-800 font-sans whitespace-pre-wrap leading-6 m-0">
+              <pre className="m-0 whitespace-pre-wrap font-sans text-sm leading-6 text-slate-800">
                 {buildAccessoriesLines(formData.broughtAccessories, 'ar')}
               </pre>
             </div>
-          </motion.div>
-
-          {/* 3. سبب التعديل */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-          >
-            <h2 className="text-xl font-semibold text-gray-900 mb-5 flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-pink-500" />
-              {isArabic ? 'سبب التعديل' : 'Reason for Alteration'}
-              <span className="text-red-500 text-sm font-normal mr-1">*</span>
-            </h2>
-
-            {/* خيارات سبب الخطأ */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5" dir="rtl">
+          </>
+        ) : questionsStep === 'reason' ? (
+          <>
+            <div role="radiogroup" className="mb-5 grid grid-cols-2 gap-2">
               {(
                 [
-                  { value: 'tailor_error',      label: 'خطأ الخياط',      color: 'red' },
-                  { value: 'cutter_error',       label: 'خطأ القصاص',     color: 'orange' },
-                  { value: 'measurement_error',  label: 'خطأ قياس',       color: 'yellow' },
-                  { value: 'customer_error',     label: 'خطأ زبونة',      color: 'blue' },
-                  { value: 'reception_error',    label: 'خطأ الاستقبال',  color: 'purple' },
-                  { value: 'other_error',        label: 'خطأ آخر',        color: 'gray' },
+                  { value: 'tailor_error',      color: 'red' },
+                  { value: 'cutter_error',       color: 'orange' },
+                  { value: 'measurement_error',  color: 'yellow' },
+                  { value: 'customer_error',     color: 'blue' },
+                  { value: 'reception_error',    color: 'purple' },
                 ] as const
-              ).map(({ value, label, color }) => {
+              ).map(({ value, color }) => {
                 const isSelected = formData.errorType === value
+                const label = isArabic ? ALTERATION_REASON_META[value].label.ar : ALTERATION_REASON_META[value].label.en
                 const colorMap: Record<string, string> = {
-                  red:    isSelected ? 'border-red-500 bg-red-50 text-red-700'       : 'border-gray-200 hover:border-red-300 hover:bg-red-50 text-gray-700',
-                  orange: isSelected ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50 text-gray-700',
-                  yellow: isSelected ? 'border-yellow-500 bg-yellow-50 text-yellow-700' : 'border-gray-200 hover:border-yellow-300 hover:bg-yellow-50 text-gray-700',
-                  blue:   isSelected ? 'border-blue-500 bg-blue-50 text-blue-700'    : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-700',
-                  purple: isSelected ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50 text-gray-700',
-                  gray:   isSelected ? 'border-gray-500 bg-gray-100 text-gray-700'   : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700',
+                  red:    isSelected ? 'border-red-500 bg-red-50 text-red-700'       : 'border-slate-200 hover:border-red-300 hover:bg-red-50 text-slate-700',
+                  orange: isSelected ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 hover:border-orange-300 hover:bg-orange-50 text-slate-700',
+                  yellow: isSelected ? 'border-yellow-500 bg-yellow-50 text-yellow-700' : 'border-slate-200 hover:border-yellow-300 hover:bg-yellow-50 text-slate-700',
+                  blue:   isSelected ? 'border-blue-500 bg-blue-50 text-blue-700'    : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700',
+                  purple: isSelected ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 hover:border-purple-300 hover:bg-purple-50 text-slate-700',
                 }
                 const dotMap: Record<string, string> = {
                   red: 'bg-red-500', orange: 'bg-orange-500', yellow: 'bg-yellow-500',
-                  blue: 'bg-blue-500', purple: 'bg-purple-500', gray: 'bg-gray-500'
+                  blue: 'bg-blue-500', purple: 'bg-purple-500'
                 }
                 return (
                   <button
                     key={value}
                     type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    disabled={isSubmitting}
                     onClick={() => setFormData(prev => ({ ...prev, errorType: value }))}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 font-medium text-sm transition-all ${colorMap[color]}`}
+                    className={`flex min-h-12 items-center gap-2 rounded-2xl border-2 px-3 text-[15px] font-bold transition-all disabled:opacity-50 ${colorMap[color]}`}
                   >
-                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isSelected ? dotMap[color] : 'bg-gray-300'}`} />
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${isSelected ? dotMap[color] : 'bg-slate-300'}`} />
                     {label}
-                    {isSelected && (
-                      <span className="mr-auto text-xs font-bold">✓</span>
-                    )}
+                    {isSelected && <CheckCircle className="ms-auto h-4 w-4 shrink-0" />}
                   </button>
                 )
               })}
@@ -1323,9 +1708,9 @@ function AddAlterationContent() {
 
             {/* ملاحظات عن الخطأ - اختيارية */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {isArabic ? 'ملاحظات عن الخطأ' : 'Error Notes'}
-                <span className="text-gray-400 font-normal mr-2 text-xs">({isArabic ? 'اختياري' : 'Optional'})</span>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                {tr('ملاحظات عن الخطأ', 'Error Notes')}
+                <span className="ms-2 text-xs font-normal text-slate-400">({tr('اختياري', 'Optional')})</span>
               </label>
               <UnifiedNotesInput
                 notes={formData.errorNotes}
@@ -1334,436 +1719,41 @@ function AddAlterationContent() {
                 onVoiceNotesChange={handleErrorVoiceNotesChange}
                 onBusyChange={busy => { errorVoiceBusyRef.current = busy }}
                 disabled={isSubmitting}
-                placeholder={isArabic ? 'أضف ملاحظات إضافية حول سبب التعديل أو اضغط على المايكروفون...' : 'Add additional notes about the error or press the mic...'}
+                placeholder={tr('أضيفي ملاحظات إضافية حول سبب التعديل أو اضغطي على المايكروفون...', 'Add additional notes about the error or press the mic...')}
                 appendTranscriptionToNotes={false}
                 allowTranscriptionEditing
               />
             </div>
-          </motion.div>
-
-          {/* زر عرض تفاصيل الفستان - للتعديلات الداخلية فقط */}
-          {effectiveOrderId && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25 }}
-            >
-              <button
-                type="button"
-                onClick={() => setShowDressDetails(prev => !prev)}
-                className="w-full flex items-center justify-between px-6 py-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-pink-300 hover:bg-pink-50 transition-all group"
-              >
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5 text-pink-500" />
-                  <span className="font-semibold text-gray-800">
-                    {isArabic ? 'عرض تفاصيل الفستان' : 'Show Dress Details'}
-                  </span>
-                  {(roSavedDesignComments.length > 0 || roImageAnnotations.length > 0 || (originalOrder?.images?.length ?? 0) > 0 || (originalOrder?.measurements && Object.values(originalOrder.measurements).some(v => v !== undefined && v !== null && v !== ''))) && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-700">
-                      {isArabic ? 'يحتوي بيانات' : 'Has data'}
-                    </span>
-                  )}
-                </div>
-                {showDressDetails
-                  ? <ChevronUp className="w-5 h-5 text-gray-400 group-hover:text-pink-500 transition-colors" />
-                  : <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-pink-500 transition-colors" />
-                }
-              </button>
-            </motion.div>
-          )}
-
-          {/* 4 & 5. للتعديلات الخارجية: تعليقات التصميم وصور التصميم قابلة للتعديل */}
-          {!effectiveOrderId && (
-            <>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-              >
-                <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5 text-pink-500" />
-                  {isArabic ? 'تعليقات التصميم' : 'Design Comments'}
-                </h2>
-                <InteractiveImageAnnotation
-                  ref={annotationRef}
-                  imageSrc="/front2.png"
-                  annotations={formData.imageAnnotations}
-                  onAnnotationsChange={handleImageAnnotationsChange}
-                  drawings={formData.imageDrawings}
-                  onDrawingsChange={handleImageDrawingsChange}
-                  customImage={formData.customDesignImage}
-                  onImageChange={handleDesignImageChange}
+          </>
+        ) : (
+          <div role="radiogroup" aria-label={tr('مين أخذ التعديل؟', 'Who took the alteration?')} className="grid grid-cols-1 gap-2">
+            {RECEPTION_STAFF.map((name) => {
+              const isSelected = formData.takenBy === name
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
                   disabled={isSubmitting}
-                  savedComments={formData.savedDesignComments}
-                  onSavedCommentsChange={handleSavedCommentsChange}
-                />
-              </motion.div>
+                  onClick={() => setFormData(prev => ({ ...prev, takenBy: name }))}
+                  className={`flex min-h-12 items-center gap-2 rounded-2xl border-2 px-4 text-[15px] font-bold transition-all disabled:opacity-50 ${
+                    isSelected
+                      ? 'border-pink-500 bg-pink-50 text-pink-700'
+                      : 'border-slate-200 text-slate-700 hover:border-pink-300 hover:bg-pink-50'
+                  }`}
+                >
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${isSelected ? 'bg-pink-500' : 'bg-slate-300'}`} />
+                  {name}
+                  {isSelected && <CheckCircle className="ms-auto h-5 w-5 shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </BottomSheet>
 
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-              >
-                <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                  <Upload className="w-5 h-5 text-pink-500" />
-                  {isArabic ? 'صور التصميم' : 'Design Images'}
-                </h2>
-                <ImageUpload
-                  images={formData.images}
-                  onImagesChange={(images) => handleInputChange('images', images)}
-                  maxImages={10}
-                />
-              </motion.div>
-            </>
-          )}
-
-          {/* للتعديلات الداخلية: عرض تفاصيل الفستان للقراءة فقط */}
-          {effectiveOrderId && showDressDetails && originalOrder && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="space-y-6"
-            >
-              {/* أ. المعلومات الأساسية للطلب */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Package className="w-5 h-5 text-pink-500" />
-                  معلومات الطلب الأصلي
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {originalOrder.order_number && (
-                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
-                      <p className="text-xs text-gray-500 mb-1">رقم الطلب</p>
-                      <p className="font-semibold text-gray-800 text-sm">{originalOrder.order_number}</p>
-                    </div>
-                  )}
-                  <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
-                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><User className="w-3 h-3" /> اسم الزبونة</p>
-                    <p className="font-semibold text-gray-800 text-sm">{originalOrder.client_name}</p>
-                  </div>
-                  {originalOrder.client_phone && (
-                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
-                      <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Phone className="w-3 h-3" /> رقم الهاتف</p>
-                      <p className="font-semibold text-gray-800 text-sm" dir="ltr">{originalOrder.client_phone}</p>
-                    </div>
-                  )}
-                  {originalOrder.due_date && (
-                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
-                      <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> موعد التسليم</p>
-                      <p className="font-semibold text-gray-800 text-sm">{formatOrderDate(originalOrder.due_date)}</p>
-                    </div>
-                  )}
-                  {originalOrder.fabric && (
-                    <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
-                      <p className="text-xs text-gray-500 mb-1">القماش</p>
-                      <p className="font-semibold text-gray-800 text-sm">{originalOrder.fabric}</p>
-                    </div>
-                  )}
-                  <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg border border-pink-100">
-                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> الحالة</p>
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[originalOrder.status] || 'bg-gray-100 text-gray-700'}`}>
-                      {statusLabels[originalOrder.status] || originalOrder.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* ب. تعليقات التصميم (قراءة فقط) */}
-              {(roSavedDesignComments.length > 0 || roImageAnnotations.length > 0 || roImageDrawings.length > 0 || roCustomDesignImage) && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Pencil className="w-5 h-5 text-pink-500" />
-                    تعليقات التصميم
-                    {roSavedDesignComments.length > 0 && (
-                      <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded-full">
-                        {roSavedDesignComments.length} تعليق
-                      </span>
-                    )}
-                  </h2>
-
-                  {/* التعليقات المتعددة */}
-                  {roSavedDesignComments.length > 0 && (
-                    <div className="space-y-4">
-                      {roSavedDesignComments.map((comment, commentIndex) => (
-                        <div key={comment.id} className="bg-white rounded-xl border-2 border-pink-100 overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedROCommentId(expandedROCommentId === comment.id ? null : comment.id)}
-                            className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 transition-colors"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                                {commentIndex + 1}
-                              </div>
-                              <span className="font-medium text-gray-800">
-                                {comment.title
-                                  ? comment.title.replace(/^أمام/, 'الأمام').replace(/^خلف/, 'الخلف')
-                                  : `تعليق ${commentIndex + 1}`}
-                              </span>
-                            </div>
-                            <motion.div
-                              animate={{ rotate: expandedROCommentId === comment.id ? 180 : 0 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <ChevronDown className="w-5 h-5 text-gray-500" />
-                            </motion.div>
-                          </button>
-
-                          {expandedROCommentId === comment.id && (
-                            <div className="p-4 space-y-4">
-                              {/* صورة التعليق */}
-                              <div className="relative rounded-xl overflow-hidden border border-pink-200">
-                                {comment.compositeImage ? (
-                                  <img
-                                    src={comment.compositeImage}
-                                    alt={`تصميم ${comment.title || commentIndex + 1}`}
-                                    className="w-full h-auto"
-                                  />
-                                ) : (
-                                  <>
-                                    <img
-                                      src={resolveROCommentImageSrc(comment)}
-                                      alt={`تصميم ${comment.title || commentIndex + 1}`}
-                                      className="w-full h-auto"
-                                      onLoad={() => {
-                                        const canvas = roCanvasRefs.current.get(comment.id)
-                                        if (canvas && comment.drawings && comment.drawings.length > 0) {
-                                          void drawROPathsOnCanvas(canvas, comment.drawings)
-                                        }
-                                      }}
-                                    />
-                                    {comment.drawings && comment.drawings.length > 0 && (
-                                      <canvas
-                                        ref={(el) => {
-                                          if (el) {
-                                            roCanvasRefs.current.set(comment.id, el)
-                                            void drawROPathsOnCanvas(el, comment.drawings || [])
-                                          }
-                                        }}
-                                        className="absolute inset-0 w-full h-full pointer-events-none"
-                                      />
-                                    )}
-                                    {comment.annotations?.map((annotation, idx) => (
-                                      <div
-                                        key={annotation.id}
-                                        className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                                        style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
-                                      >
-                                        <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
-                                          {idx + 1}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </>
-                                )}
-                              </div>
-
-                              {/* تعليقات الصوت */}
-                              {comment.annotations && comment.annotations.length > 0 && (
-                                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-2">
-                                    {comment.annotations.length} تعليق صوتي
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {comment.annotations.map((annotation, idx) => (
-                                      <div key={annotation.id} className="bg-white rounded-lg p-2 border border-gray-100">
-                                        <div className="flex items-start gap-2">
-                                          <div className="w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                            {idx + 1}
-                                          </div>
-                                          <div className="flex-1 min-w-0">
-                                            {annotation.transcription && (
-                                              <p className="text-sm text-gray-700">{annotation.transcription.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
-                                            )}
-                                            {annotation.translatedText && (
-                                              <div className="mt-1.5 bg-purple-50 border border-purple-200 rounded-lg p-2">
-                                                <p className="text-xs text-purple-600 font-medium mb-0.5">الترجمة</p>
-                                                <p className="text-sm text-gray-600" dir="auto">{annotation.translatedText.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (<span key={i}>{i > 0 && <br />}{line.trim()}</span>))}</p>
-                                              </div>
-                                            )}
-                                          </div>
-                                          {annotation.audioData && (
-                                            <button
-                                              type="button"
-                                              onClick={() => toggleROAudio(annotation)}
-                                              className={`p-1.5 rounded transition-colors flex-shrink-0 ${playingROAudioId === annotation.id ? 'bg-green-500 text-white' : 'text-green-600 hover:bg-green-50'}`}
-                                            >
-                                              {playingROAudioId === annotation.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* التعليق القديم (توافق مع البيانات القديمة) */}
-                  {roSavedDesignComments.length === 0 && (roImageAnnotations.length > 0 || roImageDrawings.length > 0 || roCustomDesignImage) && (
-                    <div className="relative rounded-xl overflow-hidden border-2 border-pink-200 bg-white">
-                      <div className="relative">
-                        <img
-                          src={roCustomDesignImage || '/front2.png'}
-                          alt="تصميم الفستان"
-                          className="w-full h-auto"
-                          onLoad={() => {
-                            if (roCanvasRef.current && roImageDrawings.length > 0) {
-                              void drawROPathsOnCanvas(roCanvasRef.current, roImageDrawings)
-                            }
-                          }}
-                        />
-                        {roImageDrawings.length > 0 && (
-                          <canvas ref={roCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-                        )}
-                        {roImageAnnotations.map((annotation, index) => (
-                          <div
-                            key={annotation.id}
-                            className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                            style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
-                          >
-                            <div className="w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white">
-                              {index + 1}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ج. صور التصميم (قراءة فقط) */}
-              {originalOrder.images && originalOrder.images.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <ImageIcon className="w-5 h-5 text-pink-500" />
-                    صور التصميم
-                    <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded-full">
-                      {originalOrder.images.length}
-                    </span>
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {originalOrder.images.map((image, index) => (
-                      <div key={index} className="relative group">
-                        <div className="rounded-lg overflow-hidden border border-pink-200 aspect-square">
-                          <img
-                            src={image}
-                            alt={`صورة التصميم ${index + 1}`}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="absolute bottom-2 left-2 bg-pink-600/80 text-white text-xs px-2 py-1 rounded">
-                          {index + 1}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* د. المقاسات (قراءة فقط) */}
-              {originalOrder.measurements && Object.values(originalOrder.measurements).some(v => v !== undefined && v !== null && v !== '') && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Ruler className="w-5 h-5 text-pink-500" />
-                    المقاسات (سم)
-                  </h2>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {MEASUREMENT_ORDER.filter(key => key !== 'additional_notes').map((key) => {
-                      const value = (originalOrder.measurements as any)?.[key]
-                      if (!value) return null
-                      return (
-                        <div key={key} className="bg-gradient-to-br from-pink-50 to-purple-50 p-3 rounded-lg text-center border border-pink-100">
-                          <p className="text-xs text-gray-600 mb-1">{getMeasurementLabelWithSymbol(key as any)}</p>
-                          <p className="text-lg font-bold text-gray-800">{value}</p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {(originalOrder.measurements as any)?.additional_notes && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-semibold text-gray-700 mb-2 border-b border-pink-200 pb-2">ملاحظات المقاسات</h4>
-                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{(originalOrder.measurements as any)?.additional_notes}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* 6. أزرار الإجراءات */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="flex flex-col sm:flex-row gap-4"
-          >
-            {/* زر حفظ طلب التعديل وإرساله تلقائياً إلى طابور الطباعة */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-lg hover:from-pink-600 hover:to-purple-600 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {isArabic ? 'جاري الحفظ والطباعة...' : 'Saving & printing...'}
-                </>
-              ) : (
-                <>
-                  <Printer className="w-5 h-5" />
-                  {isEditMode
-                    ? (isArabic ? 'تحديث وطباعة' : 'Update & Print')
-                    : (isArabic ? 'حفظ وطباعة' : 'Save & Print')
-                  }
-                </>
-              )}
-            </button>
-
-            {/* زر حفظ طلب التعديل وإرسال واتساب */}
-            <button
-              type="button"
-              onClick={handleSubmitAndSendWhatsApp}
-              disabled={isSubmitting || !formData.clientPhone}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              title={!formData.clientPhone ? 'يجب إدخال رقم هاتف العميل أولاً' : ''}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {isArabic ? 'جاري الحفظ...' : 'Saving...'}
-                </>
-              ) : (
-                <>
-                  <MessageCircle className="w-5 h-5" />
-                  {isArabic ? 'حفظ وإرسال رسالة' : 'Save & Send Message'}
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => router.back()}
-              disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <AlertCircle className="w-5 h-5" />
-              {isArabic ? 'إلغاء' : 'Cancel'}
-            </button>
-          </motion.div>
-        </form>
-      </div>
+      <ImageViewer src={viewerImage} onClose={() => setViewerImage(null)} />
 
       {originalOrder && !isEditMode ? (
         <AlterationStageModal

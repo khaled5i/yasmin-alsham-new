@@ -15,7 +15,16 @@ interface Props {
   /** إظهار أدوات إضافة التسجيل واستبداله (لمدير الورشة في نافذة الطلب). */
   allowRecording?: boolean
   saveStatus?: 'idle' | 'saving' | 'saved' | 'error'
+  /**
+   * 'compact' = بطاقة مضغوطة (نافذة الطلب الحديثة): زر تشغيل دائري بجانب النص، والنص الطويل
+   * يُختصر إلى 3 أسطر مع «عرض الكل». الوظائف والصلاحيات نفسها تماماً.
+   * الافتراضي 'default' = الشكل الأصلي (إضافة الطلب، تعديل الطلب، النافذة الكلاسيكية).
+   */
+  variant?: 'default' | 'compact'
 }
+
+const COMPACT_TEXT_CLAMP_CHARS = 160
+const COMPACT_TEXT_CLAMP_LINES = 3
 
 interface AudioEntry {
   audio: HTMLAudioElement
@@ -40,9 +49,12 @@ export default function DesignSummarySection({
   onNotesChange,
   readOnly = false,
   allowRecording = false,
-  saveStatus = 'idle'
+  saveStatus = 'idle',
+  variant = 'default'
 }: Props) {
   const [playingId, setPlayingId] = useState<string | null>(null)
+  // الشكل المضغوط: التسجيلات التي فتح المستخدم نصها الكامل
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [replacingId, setReplacingId] = useState<string | null>(null)
   const [draftText, setDraftText] = useState('')
@@ -217,6 +229,204 @@ export default function DesignSummarySection({
     )
     setReplacingId(null)
   }, [onNotesChange, replacingId])
+
+  if (variant === 'compact') {
+    const canEdit = !readOnly
+    const toggleExpanded = (noteId: string) => {
+      setExpandedIds(prev => {
+        const next = new Set(prev)
+        if (next.has(noteId)) next.delete(noteId)
+        else next.add(noteId)
+        return next
+      })
+    }
+
+    return (
+      <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        {/* الرأس: العنوان + العدد + حالة الحفظ، وزر التسجيل لمدير الورشة فقط */}
+        <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-teal-100 text-teal-700">
+              <Mic className="h-4 w-4" />
+            </span>
+            <span className="truncate text-[15px] font-extrabold text-slate-900">ملخص التصميم</span>
+            {notes.length > 0 ? (
+              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 tabular-nums">{notes.length}</span>
+            ) : null}
+            {saveStatus !== 'idle' ? (
+              <span
+                aria-live="polite"
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  saveStatus === 'error'
+                    ? 'bg-red-50 text-red-700'
+                    : saveStatus === 'saved'
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'bg-teal-50 text-teal-700'
+                }`}
+              >
+                {saveStatus === 'saving' ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                {saveStatus === 'saved' ? <Check className="h-3 w-3" /> : null}
+                {saveStatus === 'error' ? <AlertCircle className="h-3 w-3" /> : null}
+                {saveStatus === 'saving' ? 'جارٍ الحفظ' : saveStatus === 'saved' ? 'تم الحفظ' : 'تعذّر الحفظ'}
+              </span>
+            ) : null}
+          </div>
+          {allowRecording && canEdit ? <DesignSummaryRecorder onRecordingComplete={addRecording} /> : null}
+        </div>
+
+        {notes.length > 0 ? (
+          <ul className="divide-y divide-slate-100 border-t border-slate-100">
+            {notes.map((note, index) => {
+              const isPlaying = playingId === note.id
+              const isEditing = editingId === note.id
+              const isReplacing = replacingId === note.id
+              const text = (note.transcription || '').split('\n').filter(Boolean).join('\n')
+              const isLong = text.length > COMPACT_TEXT_CLAMP_CHARS || text.split('\n').length > COMPACT_TEXT_CLAMP_LINES
+              const isExpanded = expandedIds.has(note.id)
+
+              return (
+                <li key={note.id} className="flex items-start gap-2.5 px-3 py-2.5 sm:px-4">
+                  {/* زر التشغيل */}
+                  <button
+                    type="button"
+                    onClick={() => togglePlayback(note)}
+                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors ${
+                      isPlaying ? 'bg-teal-600 text-white' : 'bg-teal-50 text-teal-700 hover:bg-teal-100'
+                    }`}
+                    title={isPlaying ? 'إيقاف' : 'تشغيل الصوت'}
+                    aria-label={isPlaying ? 'إيقاف' : `تشغيل التسجيل ${index + 1}`}
+                  >
+                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+                    {isEditing ? (
+                      <div>
+                        <textarea
+                          value={draftText}
+                          onChange={(e) => setDraftText(e.target.value)}
+                          dir="rtl"
+                          rows={3}
+                          autoFocus
+                          placeholder="اكتب نص الملاحظة..."
+                          className="w-full resize-y rounded-lg border border-teal-300 bg-white p-2 text-right text-sm leading-relaxed text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                        />
+                        <div className="mt-2 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => saveEditing(note.id)}
+                            className="flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs text-white transition-colors hover:bg-teal-700"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>حفظ</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditing}
+                            className="flex items-center gap-1 rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:bg-gray-200"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            <span>إلغاء</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : text ? (
+                      <>
+                        <p className={`whitespace-pre-line text-right text-sm leading-6 text-slate-800 ${isLong && !isExpanded ? 'line-clamp-3' : ''}`}>
+                          {text}
+                        </p>
+                        {isLong ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(note.id)}
+                            className="mt-0.5 text-xs font-bold text-teal-700 hover:underline"
+                          >
+                            {isExpanded ? 'إخفاء' : 'عرض الكل'}
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (transcribingIds.has(note.id) || (!allowRecording && !readOnly)) ? (
+                      <div className="flex items-center gap-1.5 pt-2 text-sm text-gray-400">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>جاري التحويل إلى نص...</span>
+                      </div>
+                    ) : (
+                      <p className="pt-2 text-sm italic text-gray-400">تسجيل صوتي (بدون نص محوّل)</p>
+                    )}
+
+                    {/* رقم التسجيل · المدة · التاريخ — سطر صغير واحد */}
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-400">
+                      <span className="tabular-nums">#{index + 1}</span>
+                      {note.duration !== undefined ? (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span className="tabular-nums" dir="ltr">{formatTime(note.duration)}</span>
+                        </>
+                      ) : null}
+                      <span aria-hidden>·</span>
+                      <span>{formatDate(note.timestamp)}</span>
+                    </p>
+
+                    {isReplacing ? (
+                      <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 p-2.5">
+                        <p className="mb-2 text-xs font-semibold text-amber-800">
+                          سجّل الصوت البديل. سيبقى التسجيل الحالي محفوظًا حتى تنهي التسجيل الجديد.
+                        </p>
+                        <DesignSummaryRecorder
+                          mode="replace"
+                          onRecordingComplete={replaceRecording}
+                          onCancel={() => setReplacingId(null)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* أدوات التعديل — لا تظهر في وضع العرض فقط */}
+                  {canEdit && !isEditing && !isReplacing ? (
+                    <div className="flex shrink-0 items-center">
+                      {allowRecording ? (
+                        <button
+                          type="button"
+                          onClick={() => startReplacing(note.id)}
+                          className="grid h-9 w-9 place-items-center rounded-lg text-amber-700 transition-colors hover:bg-amber-100"
+                          title="تعديل الصوت بتسجيل بديل"
+                          aria-label="تعديل الصوت بتسجيل بديل"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => startEditing(note)}
+                        className="grid h-9 w-9 place-items-center rounded-lg text-teal-700 transition-colors hover:bg-teal-100"
+                        title="تعديل النص المحوّل"
+                        aria-label="تعديل النص المحوّل"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteNote(note.id)}
+                        className="grid h-9 w-9 place-items-center rounded-lg text-red-400 transition-colors hover:bg-red-50"
+                        title="حذف التسجيل الصوتي"
+                        aria-label="حذف التسجيل الصوتي"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        ) : allowRecording && canEdit ? (
+          <p className="border-t border-slate-100 px-3 py-2.5 text-xs text-slate-400 sm:px-4">
+            لا توجد تسجيلات بعد — اضغط زر التسجيل لإضافة ملخص صوتي.
+          </p>
+        ) : null}
+      </section>
+    )
+  }
 
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-teal-100">

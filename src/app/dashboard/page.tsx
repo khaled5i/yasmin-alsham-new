@@ -13,7 +13,6 @@ import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { formatGregorianDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import AlterationTypeModal from '@/components/AlterationTypeModal'
 import OrderSearchModal from '@/components/OrderSearchModal'
 import WomenWorkshopInvoiceModal from '@/components/WomenWorkshopInvoiceModal'
 import TailoringInvoiceModal from '@/components/TailoringInvoiceModal'
@@ -45,7 +44,6 @@ import {
   Boxes,
   WalletCards,
   ReceiptText,
-  UserRound,
   MessageCircle
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
@@ -62,7 +60,6 @@ function DashboardContent() {
   const router = useRouter()
 
   // States for Alteration Modals
-  const [showTypeModal, setShowTypeModal] = useState(false)
   const [showOrderSearchModal, setShowOrderSearchModal] = useState(false)
   const [showWomenWorkshopInvoiceModal, setShowWomenWorkshopInvoiceModal] = useState(false)
   const [showTailoringInvoiceModal, setShowTailoringInvoiceModal] = useState(false)
@@ -152,15 +149,6 @@ function DashboardContent() {
   const handleAddNewAlteration = () => {
     // فتح البحث عن طلب مباشرة (تعديل داخلي)
     setShowOrderSearchModal(true)
-  }
-
-  const handleSelectType = (type: 'existing' | 'new') => {
-    if (type === 'existing') {
-      setShowOrderSearchModal(true)
-    } else {
-      // فستان خارجي - الانتقال مباشرة لصفحة إضافة طلب تعديل
-      router.push('/dashboard/alterations/add')
-    }
   }
 
   const handleSelectOrder = (order: Order) => {
@@ -816,13 +804,6 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون متجر الأقمشة' : 'Fabric Store Inventory'}</span>
                   </Link>
 
-                  <Link
-                    href="/dashboard/accounting/tailoring/personal-expenses"
-                    className="p-4 bg-gradient-to-r from-violet-50 to-indigo-100 rounded-lg border border-violet-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <UserRound className="w-6 h-6 text-violet-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-violet-800">{isArabic ? 'مصروفات شخصية' : 'Personal Expenses'}</span>
-                  </Link>
 
                 </div>
               </motion.div>
@@ -1018,13 +999,6 @@ function DashboardContent() {
                     <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون متجر الأقمشة' : 'Fabric Store Inventory'}</span>
                   </Link>
 
-                  <Link
-                    href="/dashboard/accounting/tailoring/personal-expenses"
-                    className="p-4 bg-gradient-to-r from-violet-50 to-indigo-100 rounded-lg border border-violet-200 hover:shadow-md transition-all duration-300 text-center block"
-                  >
-                    <UserRound className="w-6 h-6 text-violet-600 mx-auto mb-2" />
-                    <span className="text-sm font-medium text-violet-800">{isArabic ? 'مصروفات شخصية' : 'Personal Expenses'}</span>
-                  </Link>
 
                 </div>
               </motion.div>
@@ -1034,12 +1008,6 @@ function DashboardContent() {
       </div>
 
       {/* Modals */}
-      <AlterationTypeModal
-        isOpen={showTypeModal}
-        onClose={() => setShowTypeModal(false)}
-        onSelectType={handleSelectType}
-      />
-
       <OrderSearchModal
         isOpen={showOrderSearchModal}
         onClose={() => setShowOrderSearchModal(false)}

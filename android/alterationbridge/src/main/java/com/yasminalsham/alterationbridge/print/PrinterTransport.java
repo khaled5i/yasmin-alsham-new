@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class PrinterTransport {
     public static final int PRINTER_PORT = 9100;
     private static final long CONNECT_TIMEOUT_MS = 3_000;
-    private static final long WRITE_TIMEOUT_MS = 25_000;
+    private static final long WRITE_TIMEOUT_MS = 20_000;
     private static final int PROGRESS_STEP_BYTES = 8 * 1024;
 
     private final AtomicReference<Connection> activeConnection = new AtomicReference<>();
@@ -46,10 +46,14 @@ public final class PrinterTransport {
     }
 
     public boolean probe(String printerIp, Network wifiNetwork) {
+        return probe(printerIp, wifiNetwork, 1_500);
+    }
+
+    public boolean probe(String printerIp, Network wifiNetwork, long timeoutMs) {
         Connection connection = null;
         try {
             connection = openConnection(wifiNetwork);
-            connection.connect(printerIp, PRINTER_PORT, 1_500);
+            connection.connect(printerIp, PRINTER_PORT, timeoutMs);
             return true;
         } catch (Exception ignored) {
             return false;
@@ -142,6 +146,10 @@ public final class PrinterTransport {
                     int written = channel.write(buffer);
                     if (written > 0) {
                         bytesSent += written;
+                        // مهلة توقّف لا مهلة إجمالية: ورقة طويلة تستغرق وقتًا أطول
+                        // والطابعة تعمل، فلا تُعامَل كفشل. يبقى الإنذار إذا توقفت
+                        // الطابعة عن السحب (نفاد الورق/غطاء مفتوح) مدة المهلة كاملة.
+                        deadline = SystemClock.elapsedRealtime() + WRITE_TIMEOUT_MS;
                         if (listener != null && bytesSent >= nextProgress) {
                             listener.onProgress(bytesSent);
                             nextProgress = bytesSent + PROGRESS_STEP_BYTES;

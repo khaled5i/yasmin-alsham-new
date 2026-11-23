@@ -331,6 +331,13 @@ function isMissingFabricImagesColumn(error: { code?: string; message?: string } 
   )
 }
 
+// هل الخطأ ناتج عن عمود seller_name غير موجود بعد (لم تُطبَّق هجرة 20261119120000)؟
+// يُفحص أولاً لأن فحوص fabric_images/fabric_items تلتقط أي PGRST204 وتحذف حقولها خطأً.
+function isMissingSellerColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return error.message?.includes('seller_name') ?? false
+}
+
 // هل الخطأ ناتج عن عمودي buyer_name/buyer_phone غير موجودين بعد (لم تُطبَّق الهجرة 61)؟
 function isMissingBuyerColumns(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
@@ -455,6 +462,19 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income | n
       .insert(payload)
       .select()
       .single()
+
+    // توافق تدريجي: إذا لم يُطبَّق عمود seller_name بعد، أعد المحاولة بدونه كي لا يتوقف البيع
+    if (error && isMissingSellerColumn(error)) {
+      console.warn('⚠️ income.seller_name column missing. Please run migrations/20261119120000_income_seller_name.sql')
+      const withoutSeller = { ...payload }
+      delete withoutSeller.seller_name
+      payload = withoutSeller
+      ;({ data, error } = await supabase
+        .from('income')
+        .insert(payload)
+        .select()
+        .single())
+    }
 
     // توافق تدريجي: إذا لم يُطبَّق عمودا buyer_name/buyer_phone بعد، أعد المحاولة بدونهما
     if (error && isMissingBuyerColumns(error)) {
@@ -585,6 +605,20 @@ export async function updateIncome(id: string, input: Partial<CreateIncomeInput>
       .eq('id', id)
       .select()
       .single()
+
+    // توافق تدريجي: إذا لم يُطبَّق عمود seller_name بعد، أعد المحاولة بدونه
+    if (error && isMissingSellerColumn(error)) {
+      console.warn('⚠️ income.seller_name column missing. Please run migrations/20261119120000_income_seller_name.sql')
+      const withoutSeller = { ...payload }
+      delete withoutSeller.seller_name
+      payload = withoutSeller
+      ;({ data, error } = await supabase
+        .from('income')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single())
+    }
 
     // توافق تدريجي: إذا لم يُطبَّق عمودا buyer_name/buyer_phone بعد، أعد المحاولة بدونهما
     if (error && isMissingBuyerColumns(error)) {

@@ -2,10 +2,16 @@
 
 import { getAuthHeader } from '@/lib/client-auth'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ChevronDown, ImageIcon, Languages, Loader2, RefreshCw, Wrench } from 'lucide-react'
+import { AlertCircle, CalendarClock, ChevronDown, ImageIcon, Languages, Loader2, RefreshCw, Wrench } from 'lucide-react'
 import { alterationService, type OrderAlterationSummary } from '@/lib/services/alteration-service'
 import { getAlterationText } from '@/lib/alteration-text'
 import { useTranslation } from '@/hooks/useTranslation'
+import {
+  StatusBadge,
+  formatAlterationTimestampDate,
+  getAlterationTypeMeta,
+  getDueInfo,
+} from '@/components/alterations/alteration-ui'
 
 type TranslationMap = Record<string, string>
 
@@ -17,34 +23,7 @@ interface OrderAlterationsSectionProps {
   showErrorReason?: boolean
 }
 
-// لون مميز لكل نوع تعديل: البروفة الثانية بالأخضر والتعديل بعد التسليم بالأحمر.
-const ALTERATION_TYPE_THEMES = {
-  first_proof: {
-    card: 'border-amber-200 bg-white/90 ring-amber-100/70',
-    title: 'text-slate-900',
-    badge: 'bg-amber-50 text-amber-700',
-    restoreButton: 'border-amber-200 bg-white text-amber-800 hover:bg-amber-50',
-  },
-  second_proof: {
-    card: 'border-emerald-300 bg-emerald-50/70 ring-emerald-100',
-    title: 'text-emerald-900',
-    badge: 'bg-emerald-100 text-emerald-700',
-    restoreButton: 'border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50',
-  },
-  after_delivery: {
-    card: 'border-red-300 bg-red-50/70 ring-red-100',
-    title: 'text-red-900',
-    badge: 'bg-red-100 text-red-700',
-    restoreButton: 'border-red-200 bg-white text-red-800 hover:bg-red-50',
-  },
-} as const
-
-type AlterationTypeTheme = typeof ALTERATION_TYPE_THEMES[keyof typeof ALTERATION_TYPE_THEMES]
-
-function getAlterationTheme(alterationType: string | null | undefined): AlterationTypeTheme {
-  return ALTERATION_TYPE_THEMES[alterationType as keyof typeof ALTERATION_TYPE_THEMES]
-    || ALTERATION_TYPE_THEMES.first_proof
-}
+// ألوان الأنواع من المصدر المشترك: الأولى كهرماني، الثانية أخضر، بعد التسليم أحمر.
 
 export default function OrderAlterationsSection({
   orderId,
@@ -52,7 +31,7 @@ export default function OrderAlterationsSection({
   onOpenImage,
   showErrorReason = false,
 }: OrderAlterationsSectionProps) {
-  const { t } = useTranslation()
+  const { t, isArabic } = useTranslation()
   const [isSectionOpen, setIsSectionOpen] = useState(true)
   const [alterations, setAlterations] = useState<OrderAlterationSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -245,36 +224,38 @@ export default function OrderAlterationsSection({
   if (alterations.length === 0) return null
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50/80 via-white to-rose-50/70">
+    <section className="overflow-hidden rounded-2xl border border-pink-100 bg-gradient-to-br from-pink-50/60 via-white to-purple-50/60">
       <button
         type="button"
         onClick={() => setIsSectionOpen(previous => !previous)}
         aria-expanded={isSectionOpen}
-        className={`flex w-full items-center justify-between gap-3 bg-white/60 px-4 py-3 text-start transition hover:bg-white/80 ${isSectionOpen ? 'border-b border-amber-200/70' : ''}`}
+        className={`flex min-h-14 w-full items-center justify-between gap-3 bg-white/70 px-4 py-3 text-start transition hover:bg-white ${isSectionOpen ? 'border-b border-pink-100' : ''}`}
       >
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-pink-100 text-pink-700">
             <Wrench className="h-4 w-4" />
           </span>
-          <h3 className="font-extrabold text-slate-900">{t('alterations_section_title')}</h3>
+          <h3 className="text-base font-extrabold text-slate-900">{t('alterations_section_title')}</h3>
         </div>
         <div className="flex items-center gap-2">
-          <span className="rounded-full border border-amber-200 bg-white px-2.5 py-1 text-xs font-bold text-amber-800">
+          <span className="rounded-full border border-pink-200 bg-white px-2.5 py-1 text-sm font-bold text-pink-700">
             {alterations.length}
           </span>
-          <ChevronDown className={`h-5 w-5 flex-shrink-0 text-amber-700 transition-transform duration-300 ${isSectionOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`h-5 w-5 flex-shrink-0 text-pink-600 transition-transform duration-300 ${isSectionOpen ? 'rotate-180' : ''}`} />
         </div>
       </button>
 
       {isSectionOpen && (
-      <div className="grid gap-4 p-4 sm:grid-cols-2">
+      <div className="grid gap-3 p-3 sm:grid-cols-2 sm:gap-4 sm:p-4">
         {numberedAlterations.map(({ alteration, postDeliveryNumber }) => {
           const text = getAlterationText(alteration)
           const translatedText = visibleTranslationIds.has(alteration.id)
             ? translations[alteration.id]
             : undefined
           const isTranslating = translatingKeys.has(alteration.id)
-          const theme = getAlterationTheme(alteration.alteration_type)
+          const typeMeta = getAlterationTypeMeta(alteration.alteration_type)
+          const due = getDueInfo(alteration.alteration_due_date, alteration.status, isArabic)
+          const createdDate = formatAlterationTimestampDate(alteration.created_at)
           const alterationPhotos = Array.from(new Set(
             (alteration.alteration_photos || []).map(photo => photo.trim()).filter(Boolean)
           ))
@@ -288,26 +269,38 @@ export default function OrderAlterationsSection({
               : `${t('post_delivery_alteration')} (${postDeliveryNumber || 1})`
 
           return (
-            <article key={alteration.id} className={`flex min-h-44 flex-col rounded-2xl border p-4 shadow-sm ring-1 ${theme.card}`}>
-              {errorReason ? (
-                <p className="mb-2 flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                  <AlertCircle className="h-3 w-3 flex-shrink-0" />
-                  {t('alteration_error_reason')}: {errorReason}
-                </p>
-              ) : null}
+            <article key={alteration.id} className={`relative flex min-h-44 flex-col overflow-hidden rounded-2xl border bg-white p-4 ps-5 shadow-sm ${typeMeta.soft}`}>
+              <span className={`absolute inset-y-0 start-0 w-1.5 ${typeMeta.bar}`} aria-hidden />
 
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div>
-                  <h4 className={`font-black ${theme.title}`}>{title}</h4>
-                  <p className="mt-0.5 text-[11px] font-medium text-slate-400">{alteration.alteration_number}</p>
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="text-[15px] font-extrabold leading-6 text-slate-900">{title}</h4>
+                  <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                    <span dir="ltr">{alteration.alteration_number || '—'}</span>
+                    {createdDate ? <> · {isArabic ? 'سُجّل' : 'Added'} <span dir="ltr">{createdDate}</span></> : null}
+                  </p>
                 </div>
-                <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${theme.badge}`}>
-                  {t(`alteration_status_${alteration.status}`)}
-                </span>
+                <StatusBadge status={alteration.status} isArabic={isArabic} />
+              </div>
+
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {due.date ? (
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${due.tone}`}>
+                    <CalendarClock className="h-3.5 w-3.5" />
+                    <span dir="ltr">{due.date}</span>
+                    {due.relative ? <span>· {due.relative}</span> : null}
+                  </span>
+                ) : null}
+                {errorReason ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+                    <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                    {t('alteration_error_reason')}: {errorReason}
+                  </span>
+                ) : null}
               </div>
 
               <p
-                className="flex-1 whitespace-pre-wrap text-sm leading-6 text-slate-700"
+                className="flex-1 whitespace-pre-wrap text-[15px] leading-7 text-slate-700"
                 dir={translatedText ? 'ltr' : 'auto'}
               >
                 {translatedText || text || t('alteration_text_not_available')}
@@ -316,11 +309,11 @@ export default function OrderAlterationsSection({
               {alterationPhotos.length > 0 ? (
                 <div className="mt-4 border-t border-slate-200/70 pt-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700">
-                      <ImageIcon className="h-3.5 w-3.5" />
+                    <p className="flex items-center gap-1.5 text-sm font-extrabold text-slate-700">
+                      <ImageIcon className="h-4 w-4" />
                       {t('alteration_photos_label')}
                     </p>
-                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm">
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-500 shadow-sm">
                       {alterationPhotos.length}
                     </span>
                   </div>
@@ -341,7 +334,7 @@ export default function OrderAlterationsSection({
                           decoding="async"
                           className="h-full w-full object-contain p-1 transition-transform duration-300 group-hover:scale-[1.02]"
                         />
-                        <span className="absolute bottom-1.5 end-1.5 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
+                        <span className="absolute bottom-1.5 end-1.5 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-xs font-bold text-white backdrop-blur-sm">
                           {photoIndex + 1}
                         </span>
                       </button>
@@ -351,7 +344,7 @@ export default function OrderAlterationsSection({
               ) : null}
 
               {translationErrors[alteration.id] ? (
-                <p className="mt-2 text-xs font-medium text-red-600">
+                <p className="mt-2 text-sm font-medium text-red-600">
                   {translationErrors[alteration.id]}
                 </p>
               ) : null}
@@ -362,8 +355,8 @@ export default function OrderAlterationsSection({
                   ? restoreOriginalText(alteration.id)
                   : void translate(alteration)}
                 disabled={!text || isTranslating}
-                className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-extrabold transition disabled:cursor-not-allowed disabled:opacity-50 ${translatedText
-                  ? theme.restoreButton
+                className={`mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-50 ${translatedText
+                  ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                   : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100'
                 }`}
               >

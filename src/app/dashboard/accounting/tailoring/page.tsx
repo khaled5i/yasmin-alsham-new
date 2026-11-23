@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   Settings,
   WalletCards,
-  UserRound,
   Building2
 } from 'lucide-react'
 import { getQuickStats } from '@/lib/services/simple-accounting-service'
@@ -69,14 +68,6 @@ const sections = [
     icon: Users,
     href: '/dashboard/accounting/tailoring/salaries',
     color: 'from-purple-500 to-purple-600'
-  },
-  {
-    id: 'personal-expenses',
-    name: 'مصروفات شخصية',
-    description: 'مصروفات خاصة كاش أو شبكة',
-    icon: UserRound,
-    href: '/dashboard/accounting/tailoring/personal-expenses',
-    color: 'from-violet-500 to-indigo-600'
   },
   {
     id: 'organization-reports',

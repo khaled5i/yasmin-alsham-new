@@ -33,8 +33,21 @@ import {
   AlertTriangle,
   LockKeyhole,
   TicketPercent,
-  BadgeCheck
+  BadgeCheck,
+  Music2,
+  Camera,
+  MapPin,
+  HeartHandshake
 } from 'lucide-react'
+import {
+  FABRIC_CUSTOMER_SOURCES,
+  buildFabricThankYouMessage,
+  classifyFabricCustomerSource,
+  getFabricCustomerSourceLabel,
+  type FabricCustomerSourceKey,
+} from '@/lib/fabric-customer-source'
+import { FABRIC_SELLERS } from '@/lib/fabric-sellers'
+import { reserveWhatsAppWindow } from '@/utils/whatsapp'
 import toast from 'react-hot-toast'
 import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
 import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
@@ -88,7 +101,7 @@ import {
 } from '@/lib/services/influencer-code-service'
 
 // ─── بطاقة إحصائية (عدد الطلبات + إجمالي المدخول) ───
-type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple'
+type StatAccent = 'amber' | 'slate' | 'indigo' | 'green' | 'teal' | 'purple' | 'pink' | 'sky'
 
 const ACCENT_CLASSES: Record<StatAccent, { box: string; icon: string; total: string }> = {
   amber: { box: 'bg-amber-50 border-amber-100', icon: 'text-amber-600', total: 'text-amber-700' },
@@ -96,7 +109,22 @@ const ACCENT_CLASSES: Record<StatAccent, { box: string; icon: string; total: str
   indigo: { box: 'bg-indigo-50 border-indigo-100', icon: 'text-indigo-600', total: 'text-indigo-700' },
   green: { box: 'bg-green-50 border-green-100', icon: 'text-green-600', total: 'text-green-700' },
   teal: { box: 'bg-teal-50 border-teal-100', icon: 'text-teal-600', total: 'text-teal-700' },
-  purple: { box: 'bg-purple-50 border-purple-100', icon: 'text-purple-600', total: 'text-purple-700' }
+  purple: { box: 'bg-purple-50 border-purple-100', icon: 'text-purple-600', total: 'text-purple-700' },
+  pink: { box: 'bg-pink-50 border-pink-100', icon: 'text-pink-600', total: 'text-pink-700' },
+  sky: { box: 'bg-sky-50 border-sky-100', icon: 'text-sky-600', total: 'text-sky-700' }
+}
+
+// شكل بطاقة كل مصدر زبونة في الإحصائيات
+const SOURCE_CARD_STYLE: Record<
+  FabricCustomerSourceKey,
+  { icon: React.ComponentType<{ className?: string }>; accent: StatAccent }
+> = {
+  yasmin_alsham: { icon: Store, accent: 'amber' },
+  tiktok: { icon: Music2, accent: 'pink' },
+  instagram: { icon: Camera, accent: 'purple' },
+  google_maps: { icon: MapPin, accent: 'green' },
+  friend: { icon: HeartHandshake, accent: 'sky' },
+  other: { icon: Users, accent: 'slate' }
 }
 
 type FabricLine = {
@@ -293,8 +321,10 @@ function FabricsIncomeContent() {
   // جزء الشبكة وحده هو ما يُرسَل لتطبيق المحاسبة؛ جزء الكاش يدخل الصندوق فقط.
   const [mixedNetworkAmount, setMixedNetworkAmount] = useState('')
   const [mixedCashAmount, setMixedCashAmount] = useState('')
-  const [customerSource, setCustomerSource] = useState<'yasmin_alsham' | 'other' | ''>('')
+  const [customerSource, setCustomerSource] = useState<FabricCustomerSourceKey | ''>('')
   const [otherSourceText, setOtherSourceText] = useState('')
+  // البائع (عدنان / مهيب) — إجباري
+  const [sellerName, setSellerName] = useState('')
   const [fabricImages, setFabricImages] = useState<string[]>([])
   // اسم العميل ورقم هاتفه (اختياريان — لا يمنعان حفظ المبيعة)
   const [buyerName, setBuyerName] = useState('')
@@ -525,6 +555,7 @@ function FabricsIncomeContent() {
     setMixedCashAmount('')
     setCustomerSource('')
     setOtherSourceText('')
+    setSellerName('')
     setFabricImages([])
     setBuyerName('')
     setBuyerPhone('')
@@ -812,6 +843,10 @@ function FabricsIncomeContent() {
         return
       }
     }
+    if (!sellerName) {
+      alert('يرجى اختيار اسم البائع')
+      return
+    }
     if (!customerSource) {
       alert('يرجى اختيار مصدر الزبونة')
       return
@@ -826,9 +861,9 @@ function FabricsIncomeContent() {
         ? mixedTotal
         : roundFabricNumber(parseFloat(amount))
     const resolvedSource =
-      customerSource === 'yasmin_alsham'
-        ? 'ياسمين الشام'
-        : otherSourceText.trim() || 'مصدر آخر'
+      customerSource === 'other'
+        ? otherSourceText.trim() || 'مصدر آخر'
+        : getFabricCustomerSourceLabel(customerSource)
 
     // الاسم الأساسي = أول قماش (توافقاً مع العرض/الإحصائيات)؛ الأمتار = مجموع كل الأقمشة
     const fabricNames = items.map((it) => it.name).join('، ')
@@ -848,6 +883,7 @@ function FabricsIncomeContent() {
       network_amount: isMixedPayment ? mixedNetworkValue : null,
       cash_amount: isMixedPayment ? mixedCashValue : null,
       customer_source: resolvedSource,
+      seller_name: sellerName,
       fabric_images: showFabricImages ? fabricImages : [],
       buyer_name: buyerName.trim() || null,
       buyer_phone: buyerPhone.trim() || null,
@@ -903,6 +939,11 @@ function FabricsIncomeContent() {
     }
 
     // إضافة جديدة
+    // رسالة شكر + طلب تقييم على خرائط Google لمن أدخلت رقمها. النافذة تُحجز الآن
+    // (داخل سياق النقرة) لأن فتحها بعد await يُحجب، وتُغلق إن لم تُحفظ المبيعة.
+    const thanksPhone = buyerPhone.trim()
+    const thanksName = buyerName.trim()
+    const thanksWindow = thanksPhone.replace(/\D/g, '').length >= 9 ? reserveWhatsAppWindow() : null
     setSaving(true)
     try {
       const incomeId = pendingIncomeIdRef.current || globalThis.crypto.randomUUID()
@@ -939,6 +980,7 @@ function FabricsIncomeContent() {
 
       if (result) {
         setIncome((current) => [result as Income, ...current])
+        thanksWindow?.send(thanksPhone, buildFabricThankYouMessage(thanksName))
         await refreshInventoryItems()
         await sendReceiptToPrintStation(result)
       } else {
@@ -954,6 +996,8 @@ function FabricsIncomeContent() {
     } catch (error) {
       alert(`❌ ${getFabricSaleErrorMessage(error)}`)
     } finally {
+      // لم تُحفظ المبيعة (خطأ أو رجوع مبكر) ⇒ تُغلق النافذة المحجوزة؛ بعد send لا أثر لها
+      thanksWindow?.cancel()
       setSaving(false)
     }
   }
@@ -1054,16 +1098,11 @@ function FabricsIncomeContent() {
       setMixedCashAmount('')
     }
     // مصدر الزبونة: تحويل القيمة المخزّنة إلى خيار النموذج
-    if (item.customer_source === 'ياسمين الشام') {
-      setCustomerSource('yasmin_alsham')
-      setOtherSourceText('')
-    } else if (item.customer_source) {
-      setCustomerSource('other')
-      setOtherSourceText(item.customer_source)
-    } else {
-      setCustomerSource('')
-      setOtherSourceText('')
-    }
+    const savedSourceKey = classifyFabricCustomerSource(item.customer_source)
+    setCustomerSource(savedSourceKey ?? '')
+    setOtherSourceText(savedSourceKey === 'other' ? item.customer_source ?? '' : '')
+    // السجلات القديمة بلا بائع: يبقى فارغاً فيُطلب اختياره عند الحفظ
+    setSellerName(item.seller_name ?? '')
     setShowModal(true)
   }
 
@@ -1203,8 +1242,9 @@ function FabricsIncomeContent() {
       total: 0
     })
     const nextBreakdown = {
-      yasmin: emptySourceStat(),
-      otherSource: emptySourceStat(),
+      sources: Object.fromEntries(
+        FABRIC_CUSTOMER_SOURCES.map((s) => [s.key, emptySourceStat()])
+      ) as Record<FabricCustomerSourceKey, ReturnType<typeof emptySourceStat>>,
       network: emptyStat(),
       cash: emptyStat(),
       plain: emptyStat(),
@@ -1217,13 +1257,8 @@ function FabricsIncomeContent() {
       // المرحلة 8: مرتجع المتجر (سالب) يُنقص المجاميع ولا يُعدّ عملية بيع.
       const counted = item.amount < 0 ? 0 : 1
       const fabricKind = classifyFabric(item)
-      let sourceBucket: ReturnType<typeof emptySourceStat> | null = null
-
-      if (item.customer_source === 'ياسمين الشام') {
-        sourceBucket = nextBreakdown.yasmin
-      } else if (item.customer_source) {
-        sourceBucket = nextBreakdown.otherSource
-      }
+      const sourceKey = classifyFabricCustomerSource(item.customer_source)
+      const sourceBucket = sourceKey ? nextBreakdown.sources[sourceKey] : null
 
       if (sourceBucket) {
         sourceBucket.count += counted
@@ -1357,20 +1392,16 @@ function FabricsIncomeContent() {
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <h3 className="text-sm font-bold text-gray-700 mb-3">حسب مصدر الزبونة</h3>
             <div className="grid grid-cols-2 gap-3">
-              <SourceStatCard
-                icon={Store}
-                label="ياسمين الشام"
-                stat={breakdown.yasmin}
-                accent="amber"
-                formatCurrency={formatCurrency}
-              />
-              <SourceStatCard
-                icon={Users}
-                label="مصدر آخر"
-                stat={breakdown.otherSource}
-                accent="slate"
-                formatCurrency={formatCurrency}
-              />
+              {FABRIC_CUSTOMER_SOURCES.map((source) => (
+                <SourceStatCard
+                  key={source.key}
+                  icon={SOURCE_CARD_STYLE[source.key].icon}
+                  label={source.label}
+                  stat={breakdown.sources[source.key]}
+                  accent={SOURCE_CARD_STYLE[source.key].accent}
+                  formatCurrency={formatCurrency}
+                />
+              ))}
             </div>
           </div>
 
@@ -1571,6 +1602,12 @@ function FabricsIncomeContent() {
                         {item.customer_source && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium">
                             {item.customer_source}
+                          </span>
+                        )}
+                        {item.seller_name && (
+                          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 font-medium">
+                            <UserRound className="w-3 h-3" />
+                            البائع: {item.seller_name}
                           </span>
                         )}
                         {item.buyer_phone && (
@@ -2186,17 +2223,41 @@ function FabricsIncomeContent() {
                         )}
                       </div>
 
+                      {/* البائع — إجباري */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">البائع *</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {FABRIC_SELLERS.map((name) => (
+                            <label
+                              key={name}
+                              className={`flex items-center justify-center gap-2 px-3 py-2.5 text-sm border rounded-xl cursor-pointer transition-colors ${
+                                sellerName === name
+                                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                                  : 'border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="sellerName"
+                                value={name}
+                                checked={sellerName === name}
+                                onChange={() => setSellerName(name)}
+                                className="accent-emerald-600"
+                              />
+                              <span>{name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
                       {/* مصدر الزبونة */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">مصدر الزبونة *</label>
-                        <div className="grid grid-cols-2 gap-3">
-                          {([
-                            { value: 'yasmin_alsham', label: 'ياسمين الشام' },
-                            { value: 'other', label: 'مصدر آخر' }
-                          ] as const).map((opt) => (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {FABRIC_CUSTOMER_SOURCES.map(({ key, label }) => ({ value: key, label })).map((opt) => (
                             <label
                               key={opt.value}
-                              className={`flex items-center justify-center gap-2 px-4 py-2.5 border rounded-xl cursor-pointer transition-colors ${
+                              className={`flex items-center justify-center gap-2 px-3 py-2.5 text-sm border rounded-xl cursor-pointer transition-colors ${
                                 customerSource === opt.value
                                   ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
                                   : 'border-gray-200 hover:bg-gray-50'
@@ -2256,6 +2317,11 @@ function FabricsIncomeContent() {
                           </div>
                         </div>
                       </div>
+                      {!isEditing && buyerPhone.replace(/\D/g, '').length >= 9 && (
+                        <p className="-mt-2 text-[11px] text-emerald-700">
+                          عند الحفظ يُفتح واتساب برسالة شكر للعميلة وطلب تقييم على خرائط جوجل.
+                        </p>
+                      )}
 
                       {/* التاريخ والملاحظات في سطر واحد (على الجوال أيضاً) */}
                       <div className="grid grid-cols-2 gap-3">

@@ -1,115 +1,176 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useTranslation } from '@/hooks/useTranslation'
-import { alterationService, Alteration } from '@/lib/services/alteration-service'
-import AlterationTypeModal from '@/components/AlterationTypeModal'
+import { alterationService, type Alteration, type AlterationType } from '@/lib/services/alteration-service'
 import AlterationStageModal from '@/components/AlterationStageModal'
 import OrderSearchModal from '@/components/OrderSearchModal'
-import { Order } from '@/lib/services/order-service'
-import type { AlterationType } from '@/lib/services/alteration-service'
+import type { Order } from '@/lib/services/order-service'
+import { getAlterationText } from '@/lib/alteration-text'
 import {
-  Search,
-  Plus,
-  Loader2,
-  Package,
-  Trash2,
-  Printer,
-  Clock,
-  CheckCircle,
-  AlertCircle,
+  ALTERATION_STATUS_KEYS,
+  ALTERATION_TYPE_META,
+  BottomSheet,
+  ConfirmSheet,
+  StatusBadge,
+  getAlterationReasonMeta,
+  getAlterationStatusMeta,
+  getAlterationTypeMeta,
+  getDueInfo,
+  type AlterationStatus,
+} from '@/components/alterations/alteration-ui'
+import {
+  AlertTriangle,
   ArrowRight,
+  CalendarCheck2,
+  CalendarClock,
+  FolderOpen,
+  Layers,
+  Loader2,
   MessageCircle,
-  RadioTower
+  Package,
+  Plus,
+  Printer,
+  RadioTower,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
 import { printAlterationSlip } from '@/lib/services/alteration-slip-printer'
 
 const PAGE_SIZE = 30
 
+type QuickFilter = 'all' | 'today' | 'overdue'
+type SortKey = 'newest' | 'due_soonest'
+
+interface ListFilters {
+  status: AlterationStatus | 'all'
+  type: AlterationType | 'all'
+  sort: SortKey
+}
+
+const DEFAULT_FILTERS: ListFilters = { status: 'all', type: 'all', sort: 'newest' }
+const TYPE_KEYS: AlterationType[] = ['first_proof', 'second_proof', 'after_delivery']
+
 export default function AlterationsPage() {
   const { user } = useAuthStore()
   const { isArabic } = useTranslation()
   const router = useRouter()
+  const isAdmin = user?.role === 'admin'
+  const tr = (ar: string, en: string) => (isArabic ? ar : en)
 
-  // States
   const [alterations, setAlterations] = useState<Alteration[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(0)
   const [totalAlterations, setTotalAlterations] = useState(0)
-  const [showTypeModal, setShowTypeModal] = useState(false)
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
+  const [filters, setFilters] = useState<ListFilters>(DEFAULT_FILTERS)
+  const [draftFilters, setDraftFilters] = useState<ListFilters>(DEFAULT_FILTERS)
+  const [showFilterSheet, setShowFilterSheet] = useState(false)
+  const [counts, setCounts] = useState<{ total: number; today: number; overdue: number } | null>(null)
   const [showOrderSearchModal, setShowOrderSearchModal] = useState(false)
   const [selectedOrderForAlteration, setSelectedOrderForAlteration] = useState<Order | null>(null)
   const [printingAlterationId, setPrintingAlterationId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Alteration | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const requestIdRef = useRef(0)
 
-  const totalPages = Math.max(1, Math.ceil(totalAlterations / PAGE_SIZE))
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim())
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
-  // التحقق من الصلاحيات وتحميل البيانات
+  const fetchPage = useCallback((page: number) => alterationService.getAll({
+    page,
+    pageSize: PAGE_SIZE,
+    search: debouncedSearchTerm || undefined,
+    status: filters.status === 'all' ? undefined : filters.status,
+    alteration_type: filters.type === 'all' ? undefined : filters.type,
+    due: quickFilter === 'all' ? undefined : quickFilter,
+    sort: filters.sort,
+    includeErrorType: isAdmin,
+    withOrder: true,
+  }), [debouncedSearchTerm, filters, quickFilter, isAdmin])
+
+  // التحقق من الصلاحيات وتحميل أول صفحة عند تغيّر البحث أو الفلاتر
   useEffect(() => {
     if (!user) {
       router.push('/login')
       return
     }
 
-    loadAlterations(currentPage, debouncedSearchTerm)
-  }, [user, router, currentPage, debouncedSearchTerm])
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm.trim())
-    }, 300)
-
-    return () => clearTimeout(timer)
-  }, [searchTerm])
-
-  useEffect(() => {
-    setCurrentPage(0)
-  }, [debouncedSearchTerm])
-
-  useEffect(() => {
-    if (currentPage > totalPages - 1) {
-      setCurrentPage(Math.max(0, totalPages - 1))
-    }
-  }, [currentPage, totalPages])
-
-  const loadAlterations = async (page = 0, search = '') => {
+    const requestId = ++requestIdRef.current
     setIsLoading(true)
-    try {
-      const { data, error, total } = await alterationService.getAll({
-        page,
-        pageSize: PAGE_SIZE,
-        search: search || undefined
+    fetchPage(0)
+      .then(({ data, error, total }) => {
+        if (requestId !== requestIdRef.current) return
+        if (error) {
+          toast.error(error)
+          setAlterations([])
+          setTotalAlterations(0)
+          return
+        }
+        setAlterations(data || [])
+        setTotalAlterations(total ?? 0)
+        setCurrentPage(0)
       })
+      .catch((error: unknown) => {
+        if (requestId !== requestIdRef.current) return
+        toast.error(error instanceof Error ? error.message : 'Failed to load alterations')
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) setIsLoading(false)
+      })
+  }, [user, router, fetchPage])
+
+  const loadCounts = useCallback(async () => {
+    const { data } = await alterationService.getListCounts()
+    if (data) setCounts(data)
+  }, [])
+
+  useEffect(() => {
+    if (user) void loadCounts()
+  }, [user, loadCounts])
+
+  const handleLoadMore = async () => {
+    if (isLoadingMore) return
+    const requestId = requestIdRef.current
+    const nextPage = currentPage + 1
+    setIsLoadingMore(true)
+    try {
+      const { data, error, total } = await fetchPage(nextPage)
+      if (requestId !== requestIdRef.current) return
       if (error) {
         toast.error(error)
         return
       }
-      setAlterations(data || [])
-      setTotalAlterations(total ?? 0)
+      setAlterations(previous => {
+        const seen = new Set(previous.map(item => item.id))
+        return [...previous, ...(data || []).filter(item => !seen.has(item.id))]
+      })
+      if (typeof total === 'number') setTotalAlterations(total)
+      setCurrentPage(nextPage)
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : 'Failed to load alterations')
     } finally {
-      setIsLoading(false)
+      setIsLoadingMore(false)
     }
   }
 
+  // كل تعديل مرتبط بطلب موجود: البحث عن الطلب مباشرة
   const handleAddNewAlteration = () => {
-    setShowTypeModal(true)
-  }
-
-  const handleSelectType = (type: 'existing' | 'new') => {
-    if (type === 'existing') {
-      setShowOrderSearchModal(true)
-    } else {
-      // فستان خارجي - الانتقال مباشرة لصفحة إضافة طلب تعديل
-      router.push('/dashboard/alterations/add')
-    }
+    setShowOrderSearchModal(true)
   }
 
   const handleSelectOrder = (order: Order) => {
@@ -122,25 +183,33 @@ export default function AlterationsPage() {
     setSelectedOrderForAlteration(null)
   }
 
-  const handleDeleteAlteration = async (id: string, originalOrderId?: string | null) => {
-    if (!confirm(isArabic ? 'هل أنت متأكد من حذف طلب التعديل؟' : 'Are you sure you want to delete this alteration?')) {
-      return
-    }
+  const openAlteration = (id: string) => {
+    router.push(`/dashboard/alterations/add?editId=${id}`)
+  }
 
+  const handleConfirmDelete = async () => {
+    const target = deleteTarget
+    if (!target) return
+    setIsDeleting(true)
     try {
-      const { error } = await alterationService.delete(id)
+      const { error } = await alterationService.delete(target.id)
       if (error) {
         toast.error(error)
         return
       }
       // تحديث عداد التعديلات في الطلب الأصلي بعد الحذف
-      if (originalOrderId) {
-        await alterationService.syncOrderAlterationCount(originalOrderId)
+      if (target.original_order_id) {
+        await alterationService.syncOrderAlterationCount(target.original_order_id)
       }
-      toast.success(isArabic ? 'تم حذف طلب التعديل بنجاح' : 'Alteration deleted successfully')
-      loadAlterations(currentPage, debouncedSearchTerm)
+      toast.success(tr('تم حذف طلب التعديل بنجاح', 'Alteration deleted successfully'))
+      setAlterations(previous => previous.filter(item => item.id !== target.id))
+      setTotalAlterations(previous => Math.max(0, previous - 1))
+      setDeleteTarget(null)
+      void loadCounts()
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : 'Failed to delete alteration')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -179,300 +248,527 @@ export default function AlterationsPage() {
     }
   }
 
-  const getStatusInfo = (status: string) => {
-    const statusMap = {
-      pending: { label: isArabic ? 'قيد الانتظار' : 'Pending', color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Clock },
-      in_progress: { label: isArabic ? 'قيد التنفيذ' : 'In Progress', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Package },
-      completed: { label: isArabic ? 'مكتمل' : 'Completed', color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
-      delivered: { label: isArabic ? 'تم التسليم' : 'Delivered', color: 'text-purple-600', bgColor: 'bg-purple-100', icon: CheckCircle },
-      cancelled: { label: isArabic ? 'ملغي' : 'Cancelled', color: 'text-red-600', bgColor: 'bg-red-100', icon: AlertCircle }
+  const handleWhatsApp = (alteration: Alteration) => {
+    if (!alteration.client_phone) {
+      toast.error(tr('لا يوجد رقم هاتف لهذا العميل', 'No phone number for this client'))
+      return
     }
-    return statusMap[status as keyof typeof statusMap] || statusMap.pending
+    openAlterationWhatsApp({
+      clientName: alteration.client_name,
+      clientPhone: alteration.client_phone,
+      alterationNumber: alteration.alteration_number || undefined,
+      dueDate: alteration.alteration_due_date
+    })
   }
 
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; clear: () => void }> = []
+    if (filters.status !== 'all') {
+      const label = getAlterationStatusMeta(filters.status).label
+      chips.push({
+        key: 'status',
+        label: `${tr('الحالة', 'Status')}: ${isArabic ? label.ar : label.en}`,
+        clear: () => setFilters(previous => ({ ...previous, status: 'all' })),
+      })
+    }
+    if (filters.type !== 'all') {
+      const label = ALTERATION_TYPE_META[filters.type].short
+      chips.push({
+        key: 'type',
+        label: `${tr('النوع', 'Type')}: ${isArabic ? label.ar : label.en}`,
+        clear: () => setFilters(previous => ({ ...previous, type: 'all' })),
+      })
+    }
+    if (filters.sort !== 'newest') {
+      chips.push({
+        key: 'sort',
+        label: tr('الترتيب: الأقرب موعداً', 'Sort: soonest due'),
+        clear: () => setFilters(previous => ({ ...previous, sort: 'newest' })),
+      })
+    }
+    return chips
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, isArabic])
+
+  const hasAnyFilter = activeFilterChips.length > 0 || quickFilter !== 'all' || debouncedSearchTerm !== ''
+
+  const clearAllFilters = () => {
+    setFilters(DEFAULT_FILTERS)
+    setQuickFilter('all')
+    setSearchTerm('')
+    setDebouncedSearchTerm('')
+  }
+
+  const openFilterSheet = () => {
+    setDraftFilters(filters)
+    setShowFilterSheet(true)
+  }
+
+  const quickTiles: Array<{
+    key: QuickFilter
+    label: string
+    count: number | undefined
+    icon: typeof CalendarCheck2
+    active: string
+    idle: string
+  }> = [
+    {
+      key: 'today',
+      label: tr('موعدها اليوم', 'Due today'),
+      count: counts?.today,
+      icon: CalendarCheck2,
+      active: 'border-pink-400 bg-pink-50 text-pink-800 ring-2 ring-pink-200',
+      idle: 'border-pink-100 bg-white text-pink-700',
+    },
+    {
+      key: 'overdue',
+      label: tr('متأخرة', 'Overdue'),
+      count: counts?.overdue,
+      icon: AlertTriangle,
+      active: 'border-red-400 bg-red-50 text-red-800 ring-2 ring-red-200',
+      idle: 'border-red-100 bg-white text-red-700',
+    },
+    {
+      key: 'all',
+      label: tr('الكل', 'All'),
+      count: counts?.total,
+      icon: Layers,
+      active: 'border-purple-400 bg-purple-50 text-purple-800 ring-2 ring-purple-200',
+      idle: 'border-slate-200 bg-white text-slate-700',
+    },
+  ]
+
+  const hasMore = alterations.length < totalAlterations
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 p-4 sm:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Back to Dashboard Button */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
+    <div dir={isArabic ? 'rtl' : 'ltr'} className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 pb-28 sm:pb-12">
+      {/* الشريط العلوي */}
+      <header className="sticky top-0 z-30 border-b border-pink-100 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 sm:px-6">
           <button
+            type="button"
             onClick={() => router.push('/dashboard')}
-            className="text-pink-600 hover:text-pink-700 transition-colors duration-300 group flex items-center space-x-2 space-x-reverse"
+            className="-ms-2 grid h-11 w-11 shrink-0 place-items-center rounded-full text-slate-600 transition hover:bg-pink-50 hover:text-pink-700"
+            aria-label={tr('العودة إلى لوحة التحكم', 'Back to Dashboard')}
           >
-            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
-            <span className="text-sm font-medium">{isArabic ? 'العودة إلى لوحة التحكم' : 'Back to Dashboard'}</span>
+            <ArrowRight className={`h-5 w-5 ${isArabic ? '' : 'rotate-180'}`} />
           </button>
-        </motion.div>
-
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
-        >
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {isArabic ? 'قسم التعديلات' : 'Alterations Section'}
-          </h1>
-          <p className="text-gray-600">
-            {isArabic ? 'إدارة طلبات التعديلات على الفساتين' : 'Manage dress alteration requests'}
-          </p>
-        </motion.div>
-
-        {/* Search and Add Button */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6"
-        >
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* Search */}
-            <div className="flex-1 relative">
-              <Search className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 ${isArabic ? 'right-3' : 'left-3'}`} />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={isArabic ? 'ابحث بالاسم أو رقم الهاتف أو رقم الطلب...' : 'Search by name, phone, or order number...'}
-                className={`w-full ${isArabic ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent`}
-                dir={isArabic ? 'rtl' : 'ltr'}
-              />
-            </div>
-
-            {/* Add Button */}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-extrabold text-slate-900 sm:text-xl">
+              {tr('قسم التعديلات', 'Alterations')}
+            </h1>
+            <p className="truncate text-xs text-slate-500 sm:text-sm">
+              {tr('إدارة طلبات تعديل الفساتين', 'Manage dress alteration requests')}
+            </p>
+          </div>
+          {isAdmin ? (
             <button
-              onClick={handleAddNewAlteration}
-              className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-lg hover:from-pink-600 hover:to-purple-600 transition-all shadow-md hover:shadow-lg whitespace-nowrap"
+              type="button"
+              onClick={() => router.push('/dashboard/alterations/print-station')}
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 transition hover:border-pink-300 hover:text-pink-700"
+              aria-label={tr('محطة الطباعة', 'Print Station')}
             >
-              <Plus className="w-5 h-5" />
-              {isArabic ? 'إضافة طلب تعديل جديد' : 'Add New Alteration'}
+              <RadioTower className="h-5 w-5" />
+              <span className="hidden sm:inline">{tr('محطة الطباعة', 'Print Station')}</span>
             </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleAddNewAlteration}
+            className="hidden h-11 shrink-0 items-center gap-2 rounded-xl bg-gradient-to-l from-pink-500 to-purple-500 px-4 text-sm font-bold text-white shadow-sm transition hover:from-pink-600 hover:to-purple-600 sm:inline-flex"
+          >
+            <Plus className="h-5 w-5" />
+            {tr('تعديل جديد', 'New alteration')}
+          </button>
+        </div>
+      </header>
 
-            {user?.role === 'admin' && (
+      <main className="mx-auto max-w-7xl space-y-4 px-4 pt-4 sm:px-6">
+        {/* أرقام سريعة تعمل كفلاتر */}
+        <div className="grid grid-cols-3 gap-2 sm:max-w-xl sm:gap-3">
+          {quickTiles.map(tile => {
+            const Icon = tile.icon
+            const isActive = quickFilter === tile.key
+            return (
               <button
-                onClick={() => router.push('/dashboard/alterations/print-station')}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:border-pink-400 hover:text-pink-600 transition-all whitespace-nowrap"
-                title={isArabic ? 'إدارة تابلت الورشة الرئيسي والاحتياطي' : 'Manage the main and backup workshop tablets'}
+                key={tile.key}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setQuickFilter(tile.key)}
+                className={`min-h-[80px] rounded-2xl border p-3 text-start shadow-sm transition ${isActive ? tile.active : tile.idle}`}
               >
-                <RadioTower className="w-5 h-5" />
-                {isArabic ? 'محطة الطباعة' : 'Print Station'}
+                <Icon className="h-4 w-4" />
+                <p className="mt-1 text-2xl font-extrabold leading-8 tabular-nums">
+                  {typeof tile.count === 'number' ? tile.count : '—'}
+                </p>
+                <p className="text-[13px] font-bold leading-5">{tile.label}</p>
               </button>
-            )}
-          </div>
-        </motion.div>
+            )
+          })}
+        </div>
 
-        {!isLoading && (
-          <div className="mb-4 text-sm text-gray-600">
-            {isArabic
-              ? `عرض ${alterations.length} من أصل ${totalAlterations} طلب تعديل`
-              : `Showing ${alterations.length} of ${totalAlterations} alterations`}
+        {/* البحث والفلترة */}
+        <div className="flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              inputMode="search"
+              enterKeyHint="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={tr('اسم، هاتف، رقم تعديل أو طلب', 'Name, phone, alteration or order no.')}
+              className="h-12 w-full rounded-2xl border border-slate-200 bg-white pe-11 ps-10 text-[15px] text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+            />
+            {searchTerm ? (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute end-0.5 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full text-slate-400 hover:text-slate-700"
+                aria-label={tr('مسح البحث', 'Clear search')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
-        )}
+          <button
+            type="button"
+            onClick={openFilterSheet}
+            className={`relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl border shadow-sm transition ${activeFilterChips.length > 0 ? 'border-pink-400 bg-pink-50 text-pink-700' : 'border-slate-200 bg-white text-slate-600 hover:border-pink-300'}`}
+            aria-label={tr('فلترة', 'Filters')}
+          >
+            <SlidersHorizontal className="h-5 w-5" />
+            {activeFilterChips.length > 0 ? (
+              <span className="absolute -end-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-pink-600 px-1 text-[11px] font-bold text-white">
+                {activeFilterChips.length}
+              </span>
+            ) : null}
+          </button>
+        </div>
 
-        {/* Alterations List */}
+        {activeFilterChips.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {activeFilterChips.map(chip => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={chip.clear}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-pink-200 bg-white px-3 text-sm font-bold text-pink-700"
+              >
+                {chip.label}
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-between text-sm text-slate-500">
+          <span>
+            {isLoading
+              ? tr('جارٍ التحميل…', 'Loading…')
+              : tr(`عرض ${alterations.length} من ${totalAlterations}`, `Showing ${alterations.length} of ${totalAlterations}`)}
+          </span>
+          {hasAnyFilter ? (
+            <button type="button" onClick={clearAllFilters} className="min-h-9 px-1 font-bold text-pink-600">
+              {tr('مسح الفلاتر', 'Clear filters')}
+            </button>
+          ) : null}
+        </div>
+
+        {/* القائمة */}
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-12 h-12 text-pink-500 animate-spin" />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[0, 1, 2].map(index => (
+              <div key={index} className="h-56 animate-pulse rounded-2xl border border-slate-100 bg-white/80" />
+            ))}
           </div>
         ) : alterations.length === 0 ? (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center"
+            className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center shadow-sm"
           >
-            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {isArabic ? 'لا توجد طلبات تعديل' : 'No alterations found'}
+            <Package className="mx-auto mb-4 h-14 w-14 text-slate-300" />
+            <h3 className="text-lg font-extrabold text-slate-900">
+              {hasAnyFilter ? tr('لا توجد تعديلات مطابقة', 'No matching alterations') : tr('لا توجد طلبات تعديل', 'No alterations found')}
             </h3>
-            <p className="text-gray-500 mb-6">
-              {isArabic ? 'ابدأ بإضافة طلب تعديل جديد' : 'Start by adding a new alteration request'}
+            <p className="mx-auto mt-1 max-w-sm text-[15px] text-slate-500">
+              {hasAnyFilter
+                ? tr('جرّبي كلمة بحث أخرى أو امسحي الفلاتر.', 'Try another search or clear the filters.')
+                : tr('ابدئي بإضافة طلب تعديل جديد من طلب موجود.', 'Start by adding an alteration from an existing order.')}
             </p>
             <button
-              onClick={handleAddNewAlteration}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-lg hover:from-pink-600 hover:to-purple-600 transition-all shadow-md hover:shadow-lg"
+              type="button"
+              onClick={hasAnyFilter ? clearAllFilters : handleAddNewAlteration}
+              className="mt-6 inline-flex h-12 items-center gap-2 rounded-2xl bg-gradient-to-l from-pink-500 to-purple-500 px-6 text-[15px] font-bold text-white shadow-md"
             >
-              <Plus className="w-5 h-5" />
-              {isArabic ? 'إضافة طلب تعديل' : 'Add Alteration'}
+              {hasAnyFilter ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+              {hasAnyFilter ? tr('مسح البحث والفلاتر', 'Clear search & filters') : tr('إضافة طلب تعديل', 'Add alteration')}
             </button>
           </motion.div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {alterations.map((alteration, index) => {
-              const statusInfo = getStatusInfo(alteration.status)
-              const StatusIcon = statusInfo.icon
+              const typeMeta = getAlterationTypeMeta(alteration.alteration_type)
+              const reason = isAdmin ? getAlterationReasonMeta(alteration.error_type) : null
+              const due = getDueInfo(alteration.alteration_due_date, alteration.status, isArabic)
+              const text = getAlterationText({ description: alteration.description, notes: alteration.notes })
+              const orderNumber = alteration.original_order?.order_number
+              const isPrinting = printingAlterationId === alteration.id
 
               return (
-                <motion.div
+                <motion.article
                   key={alteration.id}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all"
+                  transition={{ delay: Math.min(index, 8) * 0.03 }}
+                  className="relative flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
                 >
-                  {/* Header */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1 cursor-pointer" onClick={() => router.push(`/dashboard/alterations/add?editId=${alteration.id}`)}>
-                      <h3 className="font-semibold text-gray-900 mb-1">
-                        {alteration.client_name}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {alteration.alteration_number}
-                      </p>
-                      {/* Internal/External Label */}
-                      <div className="mt-1">
-                        {alteration.original_order_id ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                            {isArabic ? 'تعديل داخلي' : 'Internal Alteration'}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                            {isArabic ? 'تعديل خارجي' : 'External Alteration'}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1">
-                        <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-bold text-orange-700">
-                          {alteration.alteration_type === 'first_proof'
-                            ? (isArabic ? 'تعديل البروفة الأولى' : 'First proof alteration')
-                            : alteration.alteration_type === 'second_proof'
-                              ? (isArabic ? 'تعديل البروفة الثانية' : 'Second proof alteration')
-                              : (isArabic ? 'تعديل بعد التسليم' : 'Post-delivery alteration')}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${statusInfo.bgColor}`}>
-                        <StatusIcon className={`w-4 h-4 ${statusInfo.color}`} />
-                        <span className={`text-xs font-medium ${statusInfo.color}`}>
-                          {statusInfo.label}
-                        </span>
-                      </div>
-                      {/* أزرار الإجراءات - عمودياً */}
-                      <div className="flex flex-col gap-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void handlePrintAlteration(alteration.id)
-                          }}
-                          disabled={printingAlterationId !== null}
-                          className="p-2 text-gray-600 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                          title={isArabic ? 'طباعة على طابعة الورشة (عربي + هندي)' : 'Print on the workshop printer (Arabic + Hindi)'}
-                        >
-                          {printingAlterationId === alteration.id
-                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                            : <Printer className="w-4 h-4" />}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (!alteration.client_phone) {
-                              toast.error(isArabic ? 'لا يوجد رقم هاتف لهذا العميل' : 'No phone number for this client')
-                              return
-                            }
-                            openAlterationWhatsApp({
-                              clientName: alteration.client_name,
-                              clientPhone: alteration.client_phone,
-                              alterationNumber: alteration.alteration_number || undefined,
-                              dueDate: alteration.alteration_due_date
-                            })
-                          }}
-                          className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                          title={isArabic ? 'إرسال رسالة واتساب' : 'Send WhatsApp Message'}
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteAlteration(alteration.id, alteration.original_order_id)
-                          }}
-                          className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title={isArabic ? 'حذف' : 'Delete'}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <span className={`absolute inset-y-0 start-0 w-1.5 ${typeMeta.bar}`} aria-hidden />
 
-                  {/* Details */}
-                  <div className="space-y-2 mb-4 cursor-pointer" onClick={() => router.push(`/dashboard/alterations/add?editId=${alteration.id}`)}>
-                    <p className="text-sm text-gray-600">
-                      <span className="font-medium">{isArabic ? 'الهاتف:' : 'Phone:'}</span> {alteration.client_phone}
-                    </p>
-                    {alteration.description && (
-                      <p className="text-sm text-gray-600 line-clamp-2">
-                        <span className="font-medium">{isArabic ? 'الوصف:' : 'Description:'}</span> {alteration.description}
-                      </p>
-                    )}
-                    {alteration.alteration_due_date ? (
-                      <p className="text-sm text-gray-600">
-                        <span className="font-medium">{isArabic ? 'موعد التسليم:' : 'Due Date:'}</span>{' '}
-                        {new Date(alteration.alteration_due_date).toLocaleDateString(isArabic ? 'ar-SA-u-nu-latn' : 'en-US')}
-                      </p>
+                  <button
+                    type="button"
+                    onClick={() => openAlteration(alteration.id)}
+                    className="block flex-1 pb-3 pe-4 ps-5 pt-4 text-start transition hover:bg-pink-50/40"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-base font-extrabold text-slate-900">
+                          {alteration.client_name || tr('بدون اسم', 'No name')}
+                        </h3>
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-slate-500">
+                          <span dir="ltr" className="font-semibold text-slate-600">{alteration.alteration_number || '—'}</span>
+                          <span aria-hidden>·</span>
+                          {alteration.original_order_id ? (
+                            <span>
+                              {tr('طلب', 'Order')}{' '}
+                              <span dir="ltr" className="font-semibold text-slate-600">{orderNumber || '—'}</span>
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-slate-400">{tr('بدون طلب (قديم)', 'No order (legacy)')}</span>
+                          )}
+                        </p>
+                      </div>
+                      <StatusBadge status={alteration.status} isArabic={isArabic} />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${typeMeta.badge}`}>
+                        {isArabic ? typeMeta.label.ar : typeMeta.label.en}
+                      </span>
+                      {reason ? (
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${reason.badge}`}>
+                          {isArabic ? reason.label.ar : reason.label.en}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className={`mt-3 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${due.tone}`}>
+                      <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                        <CalendarClock className="h-4 w-4 shrink-0" />
+                        {tr('موعد التعديل', 'Due')}
+                      </span>
+                      <span className="text-sm font-bold">
+                        {due.date ? <span dir="ltr">{due.date}</span> : tr('بدون موعد', 'No date')}
+                        {due.relative ? <span> · {due.relative}</span> : null}
+                      </span>
+                    </div>
+
+                    {text ? (
+                      <p className="mt-3 line-clamp-2 whitespace-pre-line text-sm leading-6 text-slate-600">{text}</p>
+                    ) : null}
+                  </button>
+
+                  <div className={`grid gap-2 border-t border-slate-100 px-3 py-3 ${isAdmin ? 'grid-cols-[1fr_1fr_1fr_auto]' : 'grid-cols-3'}`}>
+                    <button
+                      type="button"
+                      onClick={() => openAlteration(alteration.id)}
+                      className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 text-sm font-bold text-purple-700 transition hover:bg-purple-100"
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                      {tr('فتح', 'Open')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handlePrintAlteration(alteration.id)}
+                      disabled={printingAlterationId !== null}
+                      className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-pink-200 bg-pink-50 text-sm font-bold text-pink-700 transition hover:bg-pink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title={tr('طباعة على طابعة الورشة (عربي + هندي)', 'Print on the workshop printer (Arabic + Hindi)')}
+                    >
+                      {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                      {tr('طباعة', 'Print')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleWhatsApp(alteration)}
+                      disabled={!alteration.client_phone}
+                      className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-green-200 bg-green-50 text-sm font-bold text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-40"
+                      title={alteration.client_phone ? tr('إرسال رسالة واتساب', 'Send WhatsApp message') : tr('لا يوجد رقم هاتف', 'No phone number')}
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      {tr('واتساب', 'WhatsApp')}
+                    </button>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(alteration)}
+                        className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                        aria-label={tr('حذف', 'Delete')}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     ) : null}
                   </div>
-
-                  {/* السعر والمدفوع للتعديلات الخارجية فقط: التعديل الداخلي محسوب ضمن الطلب الأصلي */}
-                  {!alteration.original_order_id ? (
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-200 cursor-pointer" onClick={() => router.push(`/dashboard/alterations/add?editId=${alteration.id}`)}>
-                      <div>
-                        <p className="text-xs text-gray-500">{isArabic ? 'السعر' : 'Price'}</p>
-                        <p className="text-lg font-bold text-gray-900">
-                          {alteration.price.toFixed(2)} {isArabic ? 'ر.س' : 'SAR'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500">{isArabic ? 'المدفوع' : 'Paid'}</p>
-                        <p className="text-sm font-semibold text-green-600">
-                          {alteration.paid_amount.toFixed(2)} {isArabic ? 'ر.س' : 'SAR'}
-                        </p>
-                      </div>
-                    </div>
-                  ) : null}
-                </motion.div>
+                </motion.article>
               )
             })}
           </div>
         )}
 
-        {!isLoading && totalPages > 1 && (
-          <div className="mt-8 flex items-center justify-center gap-2">
+        {!isLoading && hasMore ? (
+          <button
+            type="button"
+            onClick={() => void handleLoadMore()}
+            disabled={isLoadingMore}
+            className="mx-auto flex h-12 w-full max-w-sm items-center justify-center gap-2 rounded-2xl border border-pink-200 bg-white text-[15px] font-bold text-pink-700 shadow-sm transition hover:bg-pink-50 disabled:opacity-60"
+          >
+            {isLoadingMore ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+            {tr(`عرض المزيد (${totalAlterations - alterations.length})`, `Show more (${totalAlterations - alterations.length})`)}
+          </button>
+        ) : null}
+      </main>
+
+      {/* زر الإضافة العائم على الهاتف */}
+      <button
+        type="button"
+        onClick={handleAddNewAlteration}
+        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] end-4 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-gradient-to-l from-pink-500 to-purple-500 px-5 text-[15px] font-bold text-white shadow-lg shadow-pink-500/30 sm:hidden"
+      >
+        <Plus className="h-5 w-5" />
+        {tr('تعديل جديد', 'New alteration')}
+      </button>
+
+      {/* الفلترة */}
+      <BottomSheet
+        open={showFilterSheet}
+        onClose={() => setShowFilterSheet(false)}
+        title={tr('فلترة التعديلات', 'Filter alterations')}
+        dir={isArabic ? 'rtl' : 'ltr'}
+        footer={(
+          <div className="grid grid-cols-[auto_1fr] gap-3">
             <button
-              onClick={() => setCurrentPage((prev) => Math.max(0, prev - 1))}
-              disabled={currentPage === 0}
-              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              type="button"
+              onClick={() => setDraftFilters(DEFAULT_FILTERS)}
+              className="h-12 rounded-2xl border border-slate-200 px-5 text-sm font-bold text-slate-600"
             >
-              {isArabic ? 'السابق' : 'Previous'}
+              {tr('إعادة ضبط', 'Reset')}
             </button>
-
-            <span className="px-3 py-2 text-sm text-gray-700">
-              {isArabic
-                ? `صفحة ${currentPage + 1} من ${totalPages}`
-                : `Page ${currentPage + 1} of ${totalPages}`}
-            </span>
-
             <button
-              onClick={() => setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1))}
-              disabled={currentPage >= totalPages - 1}
-              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              type="button"
+              onClick={() => {
+                setFilters(draftFilters)
+                setShowFilterSheet(false)
+              }}
+              className="h-12 rounded-2xl bg-gradient-to-l from-pink-500 to-purple-500 text-[15px] font-bold text-white shadow-sm"
             >
-              {isArabic ? 'التالي' : 'Next'}
+              {tr('عرض النتائج', 'Show results')}
             </button>
           </div>
         )}
-      </div>
+      >
+        <div className="space-y-6">
+          <section>
+            <h3 className="mb-2 text-sm font-extrabold text-slate-700">{tr('الحالة', 'Status')}</h3>
+            <div className="flex flex-wrap gap-2">
+              {(['all', ...ALTERATION_STATUS_KEYS] as const).map(status => {
+                const isSelected = draftFilters.status === status
+                const label = status === 'all'
+                  ? tr('الكل', 'All')
+                  : (isArabic ? getAlterationStatusMeta(status).label.ar : getAlterationStatusMeta(status).label.en)
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => setDraftFilters(previous => ({ ...previous, status }))}
+                    className={`min-h-11 rounded-full border px-4 text-sm font-bold transition ${isSelected ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-slate-200 bg-white text-slate-600'}`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
 
-      {/* Modals */}
-      <AlterationTypeModal
-        isOpen={showTypeModal}
-        onClose={() => setShowTypeModal(false)}
-        onSelectType={handleSelectType}
+          <section>
+            <h3 className="mb-2 text-sm font-extrabold text-slate-700">{tr('نوع التعديل', 'Alteration type')}</h3>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                aria-pressed={draftFilters.type === 'all'}
+                onClick={() => setDraftFilters(previous => ({ ...previous, type: 'all' }))}
+                className={`min-h-11 rounded-full border px-4 text-sm font-bold transition ${draftFilters.type === 'all' ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-slate-200 bg-white text-slate-600'}`}
+              >
+                {tr('الكل', 'All')}
+              </button>
+              {TYPE_KEYS.map(type => {
+                const meta = ALTERATION_TYPE_META[type]
+                const isSelected = draftFilters.type === type
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => setDraftFilters(previous => ({ ...previous, type }))}
+                    className={`min-h-11 rounded-full border px-4 text-sm font-bold transition ${isSelected ? meta.selected : 'border-slate-200 bg-white text-slate-600'}`}
+                  >
+                    {isArabic ? meta.short.ar : meta.short.en}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-sm font-extrabold text-slate-700">{tr('الترتيب', 'Sort')}</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { key: 'newest', label: tr('الأحدث أولاً', 'Newest first') },
+                { key: 'due_soonest', label: tr('الأقرب موعداً', 'Soonest due') },
+              ] as const).map(option => {
+                const isSelected = draftFilters.sort === option.key
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => setDraftFilters(previous => ({ ...previous, sort: option.key }))}
+                    className={`min-h-12 rounded-2xl border px-3 text-sm font-bold transition ${isSelected ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-slate-200 bg-white text-slate-600'}`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        </div>
+      </BottomSheet>
+
+      <ConfirmSheet
+        open={Boolean(deleteTarget)}
+        title={tr(`حذف التعديل ${deleteTarget?.alteration_number || ''}؟`, `Delete alteration ${deleteTarget?.alteration_number || ''}?`)}
+        message={tr(
+          `سيُحذف طلب التعديل الخاص بـ ${deleteTarget?.client_name || 'الزبونة'} نهائياً ولا يمكن التراجع.`,
+          'This alteration will be deleted permanently. This cannot be undone.'
+        )}
+        confirmLabel={tr('حذف نهائياً', 'Delete')}
+        cancelLabel={tr('تراجع', 'Cancel')}
+        busy={isDeleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onClose={() => setDeleteTarget(null)}
       />
 
+      {/* Modals */}
       <OrderSearchModal
         isOpen={showOrderSearchModal}
         onClose={() => setShowOrderSearchModal(false)}

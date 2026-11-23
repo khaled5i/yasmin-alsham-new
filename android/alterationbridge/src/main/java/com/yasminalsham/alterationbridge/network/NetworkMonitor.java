@@ -15,8 +15,8 @@ public final class NetworkMonitor implements AutoCloseable {
     private final AtomicBoolean internetAvailable = new AtomicBoolean(false);
     private final AtomicReference<Network> defaultNetwork = new AtomicReference<>();
     private final AtomicReference<Network> wifiNetwork = new AtomicReference<>();
-    private boolean defaultRegistered;
-    private boolean wifiRegistered;
+    private volatile boolean defaultRegistered;
+    private volatile boolean wifiRegistered;
 
     private final ConnectivityManager.NetworkCallback defaultCallback =
             new ConnectivityManager.NetworkCallback() {
@@ -32,13 +32,16 @@ public final class NetworkMonitor implements AutoCloseable {
                         NetworkCapabilities capabilities
                 ) {
                     defaultNetwork.set(network);
-                    internetAvailable.set(
+                    boolean available =
                             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                                     && capabilities.hasCapability(
                                     NetworkCapabilities.NET_CAPABILITY_VALIDATED
-                            )
-                    );
-                    notifyChanged();
+                            );
+                    // هذا النداء يتكرر مع كل تغيّر في قوة إشارة Wi-Fi؛ نوقظ المحطة
+                    // فقط عند تغيّر حقيقي في حالة الاتصال.
+                    if (internetAvailable.getAndSet(available) != available) {
+                        notifyChanged();
+                    }
                 }
 
                 @Override
@@ -88,6 +91,13 @@ public final class NetworkMonitor implements AutoCloseable {
 
     public boolean isInternetAvailable() {
         return internetAvailable.get();
+    }
+
+    public boolean hasAnyNetwork() {
+        // إن تعذّر تسجيل مراقب الشبكة لا نعرف الحالة، فنحاول الاتصال بدل
+        // أن تبقى المحطة «غير متصلة» إلى الأبد.
+        if (!defaultRegistered) return true;
+        return defaultNetwork.get() != null || wifiNetwork.get() != null;
     }
 
     public Network getWifiNetwork() {

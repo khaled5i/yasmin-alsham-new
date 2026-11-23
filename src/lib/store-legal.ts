@@ -40,13 +40,23 @@ export const STORE_SHIPPING_TOTAL_DAYS = {
   max: STORE_SHIPPING_DAYS.handling.max + STORE_SHIPPING_DAYS.transit.max,
 } as const
 
+/**
+ * الشحن الدولي (قرار المالكة 19 نوفمبر 2026): من 7 إلى 14 يوماً من تأكيد الدفع،
+ * والجمارك والضرائب في بلد الوصول على المستلمة.
+ */
+export const STORE_INTERNATIONAL_SHIPPING_TOTAL_DAYS = { min: 7, max: 14 } as const
+
 const shippingDaysRange = `من ${STORE_SHIPPING_TOTAL_DAYS.min} إلى ${STORE_SHIPPING_TOTAL_DAYS.max} أيام`
+const internationalDaysRange = `من ${STORE_INTERNATIONAL_SHIPPING_TOTAL_DAYS.min} إلى ${STORE_INTERNATIONAL_SHIPPING_TOTAL_DAYS.max} يوماً`
 
 export const STORE_DELIVERY_TIMES = {
   pickup: 'في نفس يوم العمل للطلبات المدفوعة خلال ساعات عمل المحل، وما يُدفع بعد الإغلاق يُجهَّز في يوم العمل التالي',
   shipping: `${shippingDaysRange} من تأكيد الدفع`,
   /** للوصف القصير في صفحة الدفع. */
   shippingShort: `التوصيل ${shippingDaysRange}`,
+  shippingRange: shippingDaysRange,
+  international: `${internationalDaysRange} من تأكيد الدفع`,
+  internationalRange: internationalDaysRange,
 } as const
 
 export const STORE_RETURN_RULES = {

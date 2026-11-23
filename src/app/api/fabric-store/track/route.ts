@@ -11,7 +11,7 @@ import {
   toByteaHex,
   trackTokenMatches,
 } from '@/lib/server/fabric-store/http'
-import { normalizeSaudiMobile, toLatinDigits } from '@/lib/fabric-store/checkout-contract'
+import { normalizeCustomerPhone, toLatinDigits } from '@/lib/fabric-store/checkout-contract'
 import { isOrdersServerEnabled } from '@/lib/server/fabric-store/staff-auth'
 
 export const dynamic = 'force-dynamic'
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
   const query = typeof raw === 'string' ? toLatinDigits(raw).trim().slice(0, 40) : ''
 
   const orderMatch = /^(?:FS)?[-\s]?(\d{6,8})$/i.exec(query.replace(/\s+/g, ''))
-  const phone = orderMatch ? null : normalizeSaudiMobile(query)
+  const phone = orderMatch ? null : normalizeCustomerPhone(query)
   if (!orderMatch && !phone) {
     return errorResponse(400, 'bad-query', 'اكتبي رقم الطلب مثل FS-100123، أو رقم الجوال مثل 05xxxxxxxx')
   }

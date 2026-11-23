@@ -7,6 +7,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -41,7 +42,10 @@ public final class AlterationBridgeService extends Service implements StationCoo
     private StationCoordinator coordinator;
     private DiagnosticHttpServer diagnosticServer;
     private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
+    private WifiManager.WifiLock highPerfWifiLock;
     private boolean explicitlyStopped;
+    private volatile String lastNotificationText;
 
     public static boolean isRunning() {
         return running;
@@ -162,13 +166,65 @@ public final class AlterationBridgeService extends Service implements StationCoo
     }
 
     private void updateNotification(String text) {
+        // كانت تُعاد كل ثانيتين؛ نظام أندرويد يحدّ معدل الإشعارات ويُثقل الجهاز.
+        if (text == null || text.equals(lastNotificationText)) return;
+        lastNotificationText = text;
         NotificationManager manager =
                 (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         manager.notify(NOTIFICATION_ID, buildNotification(text));
     }
 
+    /**
+     * يمنع دخول Wi-Fi في وضع توفير الطاقة عند إطفاء الشاشة، وهو ما كان يجعل
+     * الطابعة «تختفي» من الشبكة أو تتأخر الاستجابة حتى تفشل مهلة الاتصال.
+     */
+    @SuppressWarnings("deprecation")
+    private void acquireWifiLock() {
+        if (wifiLock != null && wifiLock.isHeld()) return;
+        WifiManager wifiManager =
+                (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+        if (wifiManager == null) return;
+        int mode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+        try {
+            wifiLock = wifiManager.createWifiLock(mode, getPackageName() + ":alterations_printer");
+            wifiLock.setReferenceCounted(false);
+            wifiLock.acquire();
+        } catch (RuntimeException ignored) {
+            wifiLock = null;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // LOW_LATENCY لا يعمل إلا والشاشة مضاءة؛ قفل HIGH_PERF يغطي ما سواه.
+            try {
+                highPerfWifiLock = wifiManager.createWifiLock(
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                        getPackageName() + ":alterations_printer_hp"
+                );
+                highPerfWifiLock.setReferenceCounted(false);
+                highPerfWifiLock.acquire();
+            } catch (RuntimeException ignored) {
+                highPerfWifiLock = null;
+            }
+        }
+    }
+
+    private void releaseWifiLock() {
+        WifiManager.WifiLock[] locks = {wifiLock, highPerfWifiLock};
+        wifiLock = null;
+        highPerfWifiLock = null;
+        for (WifiManager.WifiLock lock : locks) {
+            if (lock == null || !lock.isHeld()) continue;
+            try {
+                lock.release();
+            } catch (RuntimeException ignored) {
+            }
+        }
+    }
+
     @SuppressLint("WakelockTimeout")
     private void acquireWakeLock() {
+        acquireWifiLock();
         if (wakeLock != null && wakeLock.isHeld()) return;
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager == null) return;
@@ -184,6 +240,7 @@ public final class AlterationBridgeService extends Service implements StationCoo
     }
 
     private void releaseWakeLock() {
+        releaseWifiLock();
         PowerManager.WakeLock lock = wakeLock;
         wakeLock = null;
         if (lock == null || !lock.isHeld()) return;

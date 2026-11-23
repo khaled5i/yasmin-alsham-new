@@ -3,7 +3,7 @@
 
 Write-Host "Starting Yasmin Alsham Tailoring Website..." -ForegroundColor Green
 Write-Host "Project: Yasmin Alsham Custom Dress Tailoring" -ForegroundColor Cyan
-
+ 
 # Navigate to the project directory
 Set-Location $PSScriptRoot
 Write-Host "Working directory: $PWD" -ForegroundColor Yellow

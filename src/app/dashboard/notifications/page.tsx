@@ -370,7 +370,7 @@ export default function NotificationsPage() {
   }
 
   // حفظ المقاسات (منطق مطابق لصفحة الطلبات)
-  const handleSaveMeasurements = async (measurements: any) => {
+  const handleSaveMeasurements = async (measurements: any, _metadata: unknown, takenBy: string) => {
     if (!measurementsOrder) return
     try {
       const shouldMark = hasMeasurementsData(measurements) || measurementsOrder.has_measurements === true
@@ -383,6 +383,7 @@ export default function NotificationsPage() {
       const result = await updateOrder(measurementsOrder.id, {
         measurements: { ...cleanExisting, ...measurements },
         has_measurements: shouldMark,
+        measurement_taken_by: takenBy,
       })
       if (result.success) {
         refreshOrderInList(measurementsOrder.id, { has_measurements: shouldMark })
@@ -786,6 +787,7 @@ export default function NotificationsPage() {
           onClose={() => { setShowMeasurementsModal(false); setMeasurementsOrder(null) }}
           onSave={handleSaveMeasurements}
           initialMeasurements={measurementsOrder.measurements || {}}
+          initialTakenBy={measurementsOrder.measurement_taken_by || null}
           orderId={measurementsOrder.id}
         />
       )}

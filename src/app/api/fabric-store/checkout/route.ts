@@ -126,6 +126,7 @@ export async function POST(request: NextRequest) {
       },
       address: address
         ? {
+            country_code: address.countryCode,
             recipient_name: address.recipientName,
             recipient_phone: address.recipientPhone,
             city: address.city,
@@ -213,7 +214,8 @@ function canonicalCheckout(checkout: FabricCheckoutRequest): string {
     [checkout.customer.name, checkout.customer.phone, checkout.customer.email],
     address
       ? [address.recipientName, address.recipientPhone, address.city, address.district, address.street,
-         address.buildingNumber, address.postalCode, address.additionalNumber, address.shortAddress, address.notes]
+         address.buildingNumber, address.postalCode, address.additionalNumber, address.shortAddress, address.notes,
+         address.countryCode]
       : null,
     checkout.marketingOptIn,
     checkout.expectedTotalHalalas,

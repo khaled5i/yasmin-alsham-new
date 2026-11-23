@@ -36,6 +36,16 @@ const ALTERATION_LIST_COLUMNS = [
 
 const DEFAULT_PAGE_SIZE = 30
 
+// رقم الطلب الأصلي عبر المفتاح الأجنبي original_order_id → orders(id)
+const ALTERATION_ORDER_EMBED = 'original_order:original_order_id(order_number)'
+
+// التعديل «متأخر» إذا فات موعده وهو لم ينتهِ بعد
+const ALTERATION_OPEN_STATUSES = ['pending', 'in_progress']
+
+function localDateKey(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 // ============================================================================
 // أنواع البيانات (Types)
 // ============================================================================
@@ -74,7 +84,34 @@ export interface OrderAlterationSummary {
   }> | null
   alteration_translations?: AlterationStoredTranslation[] | null
   status: Alteration['status']
+  alteration_due_date?: string | null
   created_at: string
+}
+
+/** صف خفيف لحساب جودة العمال (getForOrders). error_type يصل للمدير فقط. */
+export interface WorkerQualityAlteration {
+  id: string
+  alteration_number: string | null
+  alteration_type: AlterationType
+  original_order_id: string
+  client_name: string | null
+  created_at: string
+  error_type?: AlterationErrorType | null
+}
+
+/** صف تقرير التعديلات (getForReport) — نصوص وتواريخ فقط، بلا صور ولا تسجيلات صوتية. */
+export interface ReportAlteration {
+  id: string
+  alteration_number: string | null
+  alteration_type: AlterationType
+  original_order_id: string | null
+  client_name: string | null
+  client_phone: string | null
+  created_at: string
+  alteration_due_date: string | null
+  error_type: AlterationErrorType | null
+  error_notes: string | null
+  notes: string | null
 }
 
 export interface Alteration {
@@ -102,6 +139,8 @@ export interface Alteration {
   admin_notes?: string | null
   /** مستلزمات القياس التي أحضرتها العميلة؛ ما ليس فيها يُعدّ غير مُحضَر. */
   brought_accessories?: AlterationAccessory[]
+  /** من أخذ طلب التعديل (migration 20261119150000) */
+  taken_by?: string | null
   images?: string[]
   alteration_photos?: string[]
   completed_images?: string[]
@@ -112,6 +151,8 @@ export interface Alteration {
   image_annotations?: any[]
   image_drawings?: any[]
   custom_design_image?: string | null
+  /** يُجلب فقط عند طلب withOrder في getAll. */
+  original_order?: { order_number: string | null } | null
   created_at: string
   updated_at: string
 }
@@ -119,7 +160,8 @@ export interface Alteration {
 export interface CreateAlterationData {
   alteration_number?: string
   alteration_type?: AlterationType
-  original_order_id?: string | null
+  // كل تعديل جديد مرتبط بطلب موجود (أُلغيت التعديلات الخارجية)
+  original_order_id: string
   worker_id?: string
   client_name: string
   client_phone: string
@@ -127,7 +169,8 @@ export interface CreateAlterationData {
   description?: string
   error_type?: AlterationErrorType
   error_notes?: string
-  price: number
+  // التعديل محسوب ضمن الطلب الأصلي، فالسعر 0 افتراضياً
+  price?: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'check'
@@ -138,6 +181,8 @@ export interface CreateAlterationData {
   notes?: string
   admin_notes?: string
   brought_accessories?: AlterationAccessory[]
+  /** من أخذ طلب التعديل (migration 20261119150000) */
+  taken_by?: string | null
   images?: string[]
   alteration_photos?: string[]
   voice_notes?: string[]
@@ -230,6 +275,8 @@ export interface UpdateAlterationData {
   notes?: string | null
   admin_notes?: string | null
   brought_accessories?: AlterationAccessory[]
+  /** من أخذ طلب التعديل (migration 20261119150000) */
+  taken_by?: string | null
   images?: string[]
   alteration_photos?: string[]
   voice_notes?: string[]
@@ -317,6 +364,10 @@ export const alterationService = {
       return { data: null, error: 'Supabase is not configured.' }
     }
 
+    if (!alterationData.original_order_id) {
+      return { data: null, error: 'يجب ربط طلب التعديل بطلب موجود' }
+    }
+
     try {
       await ensureValidSession()
 
@@ -345,7 +396,7 @@ export const alterationService = {
 
       // تحضير البيانات للإدخال
       const insertData: any = {
-        original_order_id: alterationData.original_order_id || null,
+        original_order_id: alterationData.original_order_id,
         alteration_type: alterationData.alteration_type || 'after_delivery',
         worker_id: alterationData.worker_id || null,
         client_name: alterationData.client_name,
@@ -354,7 +405,7 @@ export const alterationService = {
         description: alterationData.description || null,
         error_type: alterationData.error_type || null,
         error_notes: alterationData.error_notes || null,
-        price: alterationData.price,
+        price: alterationData.price ?? 0,
         paid_amount: alterationData.paid_amount || 0,
         payment_status: alterationData.payment_status || 'unpaid',
         payment_method: alterationData.payment_method || 'cash',
@@ -374,6 +425,11 @@ export const alterationService = {
         image_annotations: alterationData.image_annotations || [],
         image_drawings: alterationData.image_drawings || [],
         custom_design_image: alterationData.custom_design_image || null
+      }
+
+      // من أخذ التعديل — يُرسل فقط عند وجوده حتى لا تتأثر مسارات الإنشاء الأخرى
+      if (alterationData.taken_by && alterationData.taken_by.trim() !== '') {
+        insertData.taken_by = alterationData.taken_by.trim().slice(0, 100)
       }
 
       // إضافة alteration_number فقط إذا تم توفيره (وإلا سيتم توليده تلقائياً بواسطة trigger)
@@ -463,6 +519,14 @@ export const alterationService = {
     page?: number
     pageSize?: number
     lightweight?: boolean
+    // خيارات إضافية لقائمة التعديلات؛ غيابها يُبقي السلوك القديم كما هو
+    alteration_type?: AlterationType
+    due?: 'today' | 'overdue'
+    sort?: 'newest' | 'due_soonest'
+    /** سبب التعديل للمدير فقط، فلا يُطلب إلا عند التفعيل. */
+    includeErrorType?: boolean
+    /** جلب رقم الطلب الأصلي وتوسيع البحث ليشمله. */
+    withOrder?: boolean
   }): Promise<{ data: Alteration[] | null; error: string | null; total?: number }> {
     if (!isSupabaseConfigured()) {
       return { data: null, error: 'Supabase is not configured.' }
@@ -470,12 +534,31 @@ export const alterationService = {
 
     try {
       const useLightColumns = filters?.lightweight !== false
-      const selectColumns = useLightColumns ? ALTERATION_LIST_COLUMNS : '*'
+      let selectColumns = useLightColumns ? ALTERATION_LIST_COLUMNS : '*'
+      if (useLightColumns && filters?.includeErrorType) selectColumns += ',error_type'
+      if (filters?.withOrder) selectColumns += `,${ALTERATION_ORDER_EMBED}`
 
       let query = supabase
         .from('alterations')
         .select(selectColumns, { count: 'exact' })
-        .order('created_at', { ascending: false })
+
+      if (filters?.sort === 'due_soonest') {
+        query = query
+          .order('alteration_due_date', { ascending: true, nullsFirst: false })
+          .order('created_at', { ascending: false })
+      } else {
+        query = query.order('created_at', { ascending: false })
+      }
+
+      if (filters?.alteration_type) {
+        query = query.eq('alteration_type', filters.alteration_type)
+      }
+
+      if (filters?.due === 'today') {
+        query = query.eq('alteration_due_date', localDateKey()).neq('status', 'cancelled')
+      } else if (filters?.due === 'overdue') {
+        query = query.lt('alteration_due_date', localDateKey()).in('status', ALTERATION_OPEN_STATUSES)
+      }
 
       if (filters?.status) {
         if (Array.isArray(filters.status)) {
@@ -499,8 +582,20 @@ export const alterationService = {
 
       if (filters?.search?.trim()) {
         const safeTerm = filters.search.trim()
+        let orderIdClause = ''
+        if (filters.withOrder) {
+          // البحث برقم الطلب الأصلي: نجد الطلبات المطابقة أولاً ثم نضمّ تعديلاتها
+          const orderTerm = safeTerm.replace(/^#/, '')
+          const { data: matchedOrders } = await supabase
+            .from('orders')
+            .select('id')
+            .ilike('order_number', `%${orderTerm}%`)
+            .limit(50)
+          const ids = (matchedOrders || []).map((row: { id: string }) => row.id).filter(Boolean)
+          if (ids.length > 0) orderIdClause = `,original_order_id.in.(${ids.join(',')})`
+        }
         query = query.or(
-          `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,alteration_number.ilike.%${safeTerm}%`
+          `client_name.ilike.%${safeTerm}%,client_phone.ilike.%${safeTerm}%,alteration_number.ilike.%${safeTerm}%${orderIdClause}`
         )
       }
 
@@ -521,6 +616,163 @@ export const alterationService = {
     } catch (error: any) {
       console.error('❌ Exception in getAll alterations:', error)
       return { data: null, error: error.message }
+    }
+  },
+
+  /**
+   * أعداد سريعة لرأس قائمة التعديلات: الكل، موعدها اليوم، والمتأخرة.
+   * تعريف «اليوم» و«المتأخر» مطابق لفلتر due في getAll.
+   */
+  async getListCounts(): Promise<{ data: { total: number; today: number; overdue: number } | null; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: null, error: 'Supabase is not configured.' }
+    }
+
+    try {
+      const today = localDateKey()
+      const [totalResult, todayResult, overdueResult] = await Promise.all([
+        supabase.from('alterations').select('id', { count: 'exact', head: true }),
+        supabase
+          .from('alterations')
+          .select('id', { count: 'exact', head: true })
+          .eq('alteration_due_date', today)
+          .neq('status', 'cancelled'),
+        supabase
+          .from('alterations')
+          .select('id', { count: 'exact', head: true })
+          .lt('alteration_due_date', today)
+          .in('status', ALTERATION_OPEN_STATUSES),
+      ])
+
+      const countError = totalResult.error || todayResult.error || overdueResult.error
+      if (countError) {
+        return { data: null, error: countError.message }
+      }
+
+      return {
+        data: {
+          total: totalResult.count ?? 0,
+          today: todayResult.count ?? 0,
+          overdue: overdueResult.count ?? 0,
+        },
+        error: null,
+      }
+    } catch (error: any) {
+      console.error('❌ Exception in getListCounts alterations:', error)
+      return { data: null, error: error.message }
+    }
+  },
+
+  /**
+   * تعديلات مجموعة طلبات بأعمدة خفيفة — لحساب جودة العمال في متابعة العمال.
+   * تستبعد الملغاة كما تفعل عدّادات الطلب. سبب التعديل لا يُطلب إلا مع includeErrorType (المدير).
+   */
+  async getForOrders(
+    orderIds: string[],
+    options: { includeErrorType?: boolean } = {}
+  ): Promise<{ data: WorkerQualityAlteration[]; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: [], error: 'Supabase is not configured.' }
+    }
+
+    const ids = [...new Set(orderIds.filter(Boolean))]
+    if (ids.length === 0) return { data: [], error: null }
+
+    const columns = `id,alteration_number,alteration_type,original_order_id,client_name,created_at${options.includeErrorType ? ',error_type' : ''}`
+    const CHUNK = 100
+    const rows: WorkerQualityAlteration[] = []
+
+    try {
+      for (let index = 0; index < ids.length; index += CHUNK) {
+        const chunk = ids.slice(index, index + CHUNK)
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await supabase
+            .from('alterations')
+            .select(columns)
+            .in('original_order_id', chunk)
+            .neq('status', 'cancelled')
+            .order('created_at', { ascending: false })
+            .range(from, from + 999)
+          if (error) throw error
+          const batch = (data || []) as unknown as WorkerQualityAlteration[]
+          rows.push(...batch)
+          if (batch.length < 1000) break
+        }
+      }
+      return { data: rows, error: null }
+    } catch (error: any) {
+      console.error('❌ Exception in getForOrders alterations:', error)
+      return { data: [], error: error?.message || 'تعذّر تحميل التعديلات' }
+    }
+  },
+
+  /**
+   * تعديلات تقرير «التعديلات» في صفحة التقارير (للمدير فقط): أعمدة نصية خفيفة بلا صور ولا صوت.
+   * إما حسب تاريخ التسجيل (createdFrom/createdTo بتوقيت ISO)، أو حسب الطلبات (orderIds).
+   */
+  async getForReport(options: {
+    createdFrom?: string
+    createdTo?: string
+    orderIds?: string[]
+  }): Promise<{ data: ReportAlteration[]; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: [], error: 'Supabase is not configured.' }
+    }
+    const columns = 'id,alteration_number,alteration_type,original_order_id,client_name,client_phone,created_at,alteration_due_date,error_type,error_notes,notes'
+    const rows: ReportAlteration[] = []
+    const BATCH = 500
+
+    const fetchAll = async (apply: (query: any) => any) => {
+      for (let from = 0; ; from += BATCH) {
+        const { data, error } = await apply(
+          supabase.from('alterations').select(columns).neq('status', 'cancelled')
+        )
+          .order('id', { ascending: true })
+          .range(from, from + BATCH - 1)
+        if (error) throw error
+        const batch = (data || []) as unknown as ReportAlteration[]
+        rows.push(...batch)
+        if (batch.length < BATCH) break
+      }
+    }
+
+    try {
+      if (options.orderIds) {
+        const ids = [...new Set(options.orderIds.filter(Boolean))]
+        for (let index = 0; index < ids.length; index += 100) {
+          const chunk = ids.slice(index, index + 100)
+          await fetchAll((query) => query.in('original_order_id', chunk))
+        }
+      } else {
+        await fetchAll((query) => {
+          let next = query
+          if (options.createdFrom) next = next.gte('created_at', options.createdFrom)
+          if (options.createdTo) next = next.lte('created_at', options.createdTo)
+          return next
+        })
+      }
+      return { data: rows, error: null }
+    } catch (error: any) {
+      console.error('❌ Exception in getForReport alterations:', error)
+      return { data: [], error: error?.message || 'تعذّر تحميل التعديلات' }
+    }
+  },
+
+  /** عدد التعديلات القديمة غير المرتبطة بأي طلب (لا يمكن نسبتها لعامل). */
+  async countWithoutOrder(): Promise<{ data: number | null; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: null, error: 'Supabase is not configured.' }
+    }
+    try {
+      const { count, error } = await supabase
+        .from('alterations')
+        .select('id', { count: 'exact', head: true })
+        .is('original_order_id', null)
+        .neq('status', 'cancelled')
+      if (error) return { data: null, error: error.message }
+      return { data: count ?? 0, error: null }
+    } catch (error: any) {
+      return { data: null, error: error?.message || 'تعذّر العدّ' }
     }
   },
 
@@ -768,7 +1020,7 @@ export const alterationService = {
     try {
       const { data, error } = await supabase
         .from('alterations')
-        .select(`id,alteration_number,alteration_type,description,notes,alteration_photos,voice_transcriptions,status,created_at${options.includeErrorType ? ',error_type' : ''},alteration_translations(target_language,source_text,translated_text,updated_at)`)
+        .select(`id,alteration_number,alteration_type,description,notes,alteration_photos,voice_transcriptions,status,alteration_due_date,created_at${options.includeErrorType ? ',error_type' : ''},alteration_translations(target_language,source_text,translated_text,updated_at)`)
         .eq('original_order_id', orderId)
         .neq('status', 'cancelled')
         .order('created_at', { ascending: true })

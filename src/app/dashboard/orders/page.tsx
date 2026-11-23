@@ -699,7 +699,8 @@ function OrdersPageInner() {
   // حفظ المقاسات
   const handleSaveMeasurements = async (
     measurements: any,
-    metadata?: MeasurementSaveMetadata
+    metadata: MeasurementSaveMetadata | undefined,
+    takenBy: string
   ) => {
     if (!measurementsOrder) throw new Error('تعذّر تحديد الطلب المطلوب')
     if (!metadata) throw new Error('يرجى اختيار نوع المقاس وطريقة الدفع المطلوبة')
@@ -734,6 +735,7 @@ function OrdersPageInner() {
         has_measurements: shouldMarkHasMeasurements,
         measurement_source: metadata.source,
         measurement_payment_method: metadata.paymentMethod,
+        measurement_taken_by: takenBy,
       })
 
       if (!result.success) {
@@ -1955,6 +1957,7 @@ function OrdersPageInner() {
           isProcessing={isProcessing}
           currentWorkerId={currentWorkerId || undefined}
           autoTranslateAlterationsToHindi={user.role === 'worker' && workerType === 'tailor'}
+          layout="modern"
         />
 
         <EditOrderModal
@@ -2194,6 +2197,7 @@ function OrdersPageInner() {
               }}
               onSave={handleSaveMeasurements}
               initialMeasurements={measurementsOrder.measurements || {}}
+              initialTakenBy={measurementsOrder.measurement_taken_by || null}
               orderId={measurementsOrder.id}
               showMeasurementOptions
               initialMeasurementSource={measurementsOrder.measurement_source || null}

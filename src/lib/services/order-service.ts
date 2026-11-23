@@ -146,6 +146,55 @@ const ORDER_LIST_COLUMNS = [
   'alostaz_sync_status'
 ].join(',')
 
+/** أعمدة حساب جودة العمال فقط (getQualityOrders). */
+const WORKER_QUALITY_ORDER_COLUMNS = [
+  'id',
+  'order_number',
+  'client_name',
+  'status',
+  'worker_id',
+  'cutter_id',
+  'cut_at',
+  'worker_completed_at',
+  'admin_completed_at',
+  'delivery_date',
+  'worker_rating',
+].join(',')
+
+export interface WorkerQualityOrder {
+  id: string
+  order_number: string | null
+  client_name: string | null
+  status: string
+  worker_id: string | null
+  cutter_id: string | null
+  cut_at: string | null
+  worker_completed_at: string | null
+  admin_completed_at: string | null
+  delivery_date: string | null
+  worker_rating: number | null
+}
+
+/** أعمدة تقرير التعديلات في صفحة التقارير (getAlterationReportOrders): أعمدة الجودة + ما يلزم للتحليل. */
+const ALTERATION_REPORT_ORDER_COLUMNS = [
+  WORKER_QUALITY_ORDER_COLUMNS,
+  'created_at',
+  'measurement_source',
+  'has_second_proof',
+  'order_received_date',
+  'due_date',
+  'proof_delivery_date',
+].join(',')
+
+export interface AlterationReportOrder extends WorkerQualityOrder {
+  created_at: string | null
+  measurement_source: string | null
+  has_second_proof: boolean | null
+  order_received_date: string | null
+  due_date: string | null
+  proof_delivery_date: string | null
+}
+
 /**
  * Default page size for paginated queries
  */
@@ -174,6 +223,7 @@ export interface Order {
   has_measurements: boolean
   measurement_source?: 'yasmin_alsham' | 'external' | null
   measurement_payment_method?: 'cash' | 'card' | null
+  measurement_taken_by?: string | null // من أخذ المقاس (migration 20261119150000)
   is_printed: boolean
   whatsapp_sent: boolean
   needs_review: boolean
@@ -184,6 +234,7 @@ export interface Order {
   has_second_proof: boolean
   // أعمال الشك — مستقلة تماماً عن status (migration 20260908130000)
   has_shak_work?: boolean
+  taken_by?: string | null // من أخذ الطلب (migration 20261119130000)
   shak_completed?: boolean
   shak_completed_at?: string | null
   shak_worker_id?: string | null
@@ -309,6 +360,7 @@ export interface CreateOrderData {
   is_flagged?: boolean  // migration 40
   has_second_proof?: boolean // migration 23
   has_shak_work?: boolean // migration 20260908130000
+  taken_by?: string // من أخذ الطلب (migration 20261119130000)
   price: number
   paid_amount?: number
   payment_status?: 'unpaid' | 'partial' | 'paid'
@@ -428,6 +480,7 @@ export interface UpdateOrderData {
   has_measurements?: boolean
   measurement_source?: 'yasmin_alsham' | 'external' | null
   measurement_payment_method?: 'cash' | 'card' | null
+  measurement_taken_by?: string | null // من أخذ المقاس (migration 20261119150000)
   is_printed?: boolean
   // تتبع التعديلات (migration 34)
   alteration_count?: number
@@ -686,6 +739,12 @@ export const orderService = {
         cost_center: orderData.cost_center || 'CC-001',
         discount_amount: orderData.discount_amount || 0,
         tax_amount: orderData.tax_amount || 0
+      }
+
+      // من أخذ الطلب (migration 20261119130000) — يُرسل فقط عند توفره حتى لا تتأثر
+      // أماكن إنشاء الطلبات الأخرى
+      if (orderData.taken_by && orderData.taken_by.trim() !== '') {
+        insertData.taken_by = orderData.taken_by.trim().slice(0, 100)
       }
 
       // إضافة order_number فقط إذا تم توفيره (وإلا سيتم توليده تلقائياً بواسطة trigger)
@@ -983,6 +1042,126 @@ export const orderService = {
     } catch (error: any) {
       console.error('❌ Error in getAll orders:', error.message)
       return { data: [], error: error.message || error.hint || 'خطأ في جلب الطلبات' }
+    }
+  },
+
+  /**
+   * طلبات فترة بأعمدة قليلة لحساب جودة العمال (متابعة العمال ← التعديلات).
+   * - completed: المكتملة/المسلّمة حسب شهر الإنجاز الفعلي، بنفس سلسلة monthFilter في getAll
+   *   (worker_completed_at ← admin_completed_at ← delivery_date) حتى تطابق عدّاد «مكتملة».
+   * - cut: الطلبات المقصوصة حسب شهر القص بتوقيت الرياض، بنفس فلتر cutMonth.
+   * الأشهر شاملة (fromMonth..toMonth). تتجاوز حد الـ1000 صف بالجلب على دفعات.
+   */
+  async getQualityOrders(options: {
+    kind: 'completed' | 'cut'
+    fromMonth: string
+    toMonth: string
+  }): Promise<{ data: WorkerQualityOrder[]; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: [], error: 'Supabase is not configured.' }
+    }
+
+    const nextMonthKey = (key: string) => {
+      const [year, month] = key.split('-').map(Number)
+      return month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`
+    }
+    const startKey = options.fromMonth
+    const endKey = nextMonthKey(options.toMonth)
+    const BATCH = 1000
+    const rows: WorkerQualityOrder[] = []
+
+    try {
+      for (let from = 0; ; from += BATCH) {
+        let query = supabase
+          .from('orders')
+          .select(WORKER_QUALITY_ORDER_COLUMNS)
+          .order('id', { ascending: true })
+          .range(from, from + BATCH - 1)
+
+        if (options.kind === 'completed') {
+          const startDate = `${startKey}-01`
+          const endDate = `${endKey}-01`
+          query = query
+            .in('status', ['completed', 'delivered'])
+            .or([
+              `and(worker_completed_at.gte.${startDate},worker_completed_at.lt.${endDate})`,
+              `and(worker_completed_at.is.null,admin_completed_at.gte.${startDate},admin_completed_at.lt.${endDate})`,
+              `and(worker_completed_at.is.null,admin_completed_at.is.null,delivery_date.gte.${startDate},delivery_date.lt.${endDate})`,
+            ].join(','))
+        } else {
+          query = query
+            .not('cutter_id', 'is', null)
+            .neq('status', 'cancelled')
+            .gte('cut_at', `${startKey}-01T00:00:00+03:00`)
+            .lt('cut_at', `${endKey}-01T00:00:00+03:00`)
+        }
+
+        const { data, error } = await query
+        if (error) throw error
+        const batch = (data || []) as unknown as WorkerQualityOrder[]
+        rows.push(...batch)
+        if (batch.length < BATCH) break
+      }
+      return { data: rows, error: null }
+    } catch (error: any) {
+      console.error('❌ Error in getQualityOrders:', error?.message)
+      return { data: [], error: error?.message || 'خطأ في جلب الطلبات' }
+    }
+  },
+
+  /**
+   * طلبات تقرير التعديلات (للمدير): إما الطلبات المنجزة بين تاريخين بنفس سلسلة تاريخ الإنجاز
+   * في getQualityOrders (worker_completed_at ← admin_completed_at ← delivery_date)، أو طلبات بعينها (ids).
+   * أعمدة خفيفة فقط، وتتجاوز حد 1000 صف.
+   */
+  async getAlterationReportOrders(options: {
+    completedFrom?: string
+    completedTo?: string
+    ids?: string[]
+  }): Promise<{ data: AlterationReportOrder[]; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: [], error: 'Supabase is not configured.' }
+    }
+    const BATCH = 1000
+    const rows: AlterationReportOrder[] = []
+    try {
+      if (options.ids) {
+        const ids = [...new Set(options.ids.filter(Boolean))]
+        for (let index = 0; index < ids.length; index += 100) {
+          const { data, error } = await supabase
+            .from('orders')
+            .select(ALTERATION_REPORT_ORDER_COLUMNS)
+            .in('id', ids.slice(index, index + 100))
+          if (error) throw error
+          rows.push(...((data || []) as unknown as AlterationReportOrder[]))
+        }
+        return { data: rows, error: null }
+      }
+
+      const start = options.completedFrom
+      const end = options.completedTo
+      if (!start || !end) return { data: [], error: null }
+      for (let from = 0; ; from += BATCH) {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(ALTERATION_REPORT_ORDER_COLUMNS)
+          .in('status', ['completed', 'delivered'])
+          .or([
+            `and(worker_completed_at.gte.${start},worker_completed_at.lte.${end})`,
+            `and(worker_completed_at.is.null,admin_completed_at.gte.${start},admin_completed_at.lte.${end})`,
+            `and(worker_completed_at.is.null,admin_completed_at.is.null,delivery_date.gte.${start},delivery_date.lte.${end})`,
+          ].join(','))
+          .order('id', { ascending: true })
+          .range(from, from + BATCH - 1)
+        if (error) throw error
+        const batch = (data || []) as unknown as AlterationReportOrder[]
+        rows.push(...batch)
+        if (batch.length < BATCH) break
+      }
+      return { data: rows, error: null }
+    } catch (error: any) {
+      console.error('❌ Error in getAlterationReportOrders:', error?.message)
+      return { data: [], error: error?.message || 'خطأ في جلب الطلبات' }
     }
   },
 

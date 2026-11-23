@@ -800,6 +800,9 @@ export default function DeliveredOrdersPage() {
         isOpen={showViewModal}
         onClose={handleCloseViewModal}
         showCartoonButton={true}
+        layout="modern"
+        // نفس قاعدة البطاقات هنا: مدير الورشة يرى «***» بدل رقم الزبونة
+        hideClientPhone={workerType === 'workshop_manager'}
       />
 
       {/* مودال الحذف الموحد */}

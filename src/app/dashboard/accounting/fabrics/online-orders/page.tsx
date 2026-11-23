@@ -24,6 +24,7 @@ import {
 } from '@/lib/fabric-store/order-status'
 import { STORE_ENTITY } from '@/lib/store-legal'
 import { STORE_ALERT_LABELS, type StoreAlert } from '@/lib/fabric-store/store-alerts'
+import { FABRIC_STORE_HOME_COUNTRY, fabricCountryName } from '@/lib/fabric-store/countries'
 import {
   clearPending, isSettled, loadPending, savePending, type ActionOutcome, type PendingAction,
 } from '@/lib/fabric-store/pending-action'
@@ -75,7 +76,7 @@ interface OrderDetail {
   items: Array<{ lineNumber: number; name: string; code: string | null; color: string | null; imageUrl: string | null;
                  purchaseMode: string; pieceLengthCm: number | null; quantityCm: number | null; consumptionCm: number;
                  grossHalalas: number }>
-  address: null | { recipient_name: string | null; recipient_phone: string | null; city: string | null; district: string | null;
+  address: null | { country_code?: string | null; recipient_name: string | null; recipient_phone: string | null; city: string | null; district: string | null;
                     street: string | null; building_number: string | null; postal_code: string | null;
                     additional_number: string | null; short_address: string | null; notes: string | null; anonymized_at: string | null }
   attempts: Array<{ id: string; environment: string; status: string; amountHalalas: number; paymentId: string | null; createdAt: string
@@ -647,9 +648,12 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
           <h3 className="mb-2 font-bold text-gray-900">الزبونة</h3>
           <p>{order.customerName} · <span dir="ltr">{order.customerPhone}</span>{order.customerEmail ? ` · ${order.customerEmail}` : ''}</p>
           <p className="mt-2 font-semibold">{order.deliveryMethod === 'pickup' ? 'استلام من المحل' : (order.deliveryLabel || 'شحن')}</p>
+          {address?.country_code && address.country_code !== FABRIC_STORE_HOME_COUNTRY && (
+            <p className="font-bold text-amber-700">شحن دولي إلى {fabricCountryName(address.country_code)} — الجمارك على المستلمة</p>
+          )}
           {address && (address.anonymized_at ? <p className="text-gray-500">العنوان مُحي بعد انتهاء الطلب</p> : (
             <p className="text-gray-700">
-              {[address.recipient_name, address.recipient_phone, address.city, address.district, address.street,
+              {[address.recipient_name, address.recipient_phone, address.country_code ? fabricCountryName(address.country_code) : null, address.city, address.district, address.street,
                 address.building_number && `مبنى ${address.building_number}`, address.postal_code && `الرمز ${address.postal_code}`,
                 address.additional_number && `الإضافي ${address.additional_number}`, address.short_address && `العنوان المختصر ${address.short_address}`]
                 .filter(Boolean).join(' · ')}
