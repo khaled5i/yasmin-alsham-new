@@ -434,7 +434,7 @@ function AlterationPrintStationDashboard() {
       <main dir="rtl" className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 via-white to-purple-50 p-4">
         <section className="w-full max-w-md rounded-3xl border border-pink-100 bg-white p-6 text-center shadow-sm">
           <ShieldCheck className="mx-auto mb-4 h-10 w-10 text-pink-500" />
-          <h1 className="text-xl font-extrabold text-slate-900">إدارة المحطات للمدير فقط</h1>
+          <h1 className="text-xl font-extrabold text-slate-900">إدارة المحطات للمدير الأكبر فقط</h1>
           <p className="mt-2 text-[15px] leading-7 text-slate-600">
             تستمر أوراق التعديلات بالدخول إلى الطابور، ولا يلزم فتح هذه الصفحة على أجهزة الموظفين.
           </p>
@@ -803,7 +803,7 @@ function AlterationPrintStationDashboard() {
 
 export default function AlterationPrintStationPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessSettings" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'settings.print_stations'}>
       <AlterationPrintStationDashboard />
     </ProtectedWorkerRoute>
   )

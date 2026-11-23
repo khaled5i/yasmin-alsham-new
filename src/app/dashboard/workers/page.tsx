@@ -25,12 +25,16 @@ import {
   Mail,
   Eye,
   EyeOff,
-  Briefcase
+  Briefcase,
+  ShieldCheck,
+  Crown
 } from 'lucide-react'
 import NumericInput from '@/components/NumericInput'
 import { validatePhoneLength, getValidationErrorMessage } from '@/utils/inputValidation'
 import { WORKER_TYPES_OPTIONS, getWorkerTypeName, WORKER_TYPE_DESCRIPTIONS } from '@/lib/worker-types'
 import type { WorkerType } from '@/lib/services/worker-service'
+import StaffPermissionsEditor, { type StaffPermissionsTarget } from '@/components/workers/StaffPermissionsEditor'
+import { OWNER_ROLE_LABEL, GENERAL_MANAGER_LABEL } from '@/lib/staff-permissions'
 
 export default function WorkersPage() {
   const { user } = useAuthStore()
@@ -66,6 +70,38 @@ export default function WorkersPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
+  // الصلاحيات: العامل المفتوح في المحرر + عدد التخصيصات لكل مستخدم
+  const [permissionsTarget, setPermissionsTarget] = useState<StaffPermissionsTarget | null>(null)
+  const [overrideCounts, setOverrideCounts] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return
+    let active = true
+    void supabase
+      .from('staff_permissions')
+      .select('user_id, overrides')
+      .then(({ data, error: loadError }) => {
+        if (!active || loadError || !data) return
+        const counts: Record<string, number> = {}
+        for (const row of data as { user_id: string; overrides: Record<string, unknown> | null }[]) {
+          counts[row.user_id] = Object.keys(row.overrides || {}).length
+        }
+        setOverrideCounts(counts)
+      })
+    return () => { active = false }
+  }, [user])
+
+  const openPermissions = (worker: any) => {
+    if (!worker?.user_id) {
+      setMessage({ type: 'error', text: 'هذا العامل غير مرتبط بحساب دخول' })
+      return
+    }
+    setPermissionsTarget({
+      userId: worker.user_id,
+      fullName: worker.user?.full_name || 'عامل',
+      workerType: (worker.worker_type || 'tailor') as WorkerType
+    })
+  }
 
   // إضافة عامل جديد
   const handleAddWorker = async (e: React.FormEvent) => {
@@ -215,9 +251,23 @@ export default function WorkersPage() {
       const result = await updateWorkerSupabase(editingWorker.id, updates)
 
       if (result.success) {
-        setMessage({ type: 'success', text: t('worker_updated_success') || 'تم تحديث العامل بنجاح' })
+        const typeChanged = !!worker && (worker.worker_type || 'tailor') !== editingWorker.worker_type
+        setMessage({
+          type: 'success',
+          text: typeChanged
+            ? 'تم تحديث العامل — تغيّر نوعه، فراجع صلاحياته الآن'
+            : (t('worker_updated_success') || 'تم تحديث العامل بنجاح')
+        })
         setShowEditModal(false)
         setEditingWorker(null)
+        // تغيّر النوع ⇒ تتغيّر الصلاحيات الافتراضية: افتح المحرر للمراجعة
+        if (typeChanged && worker?.user_id) {
+          setPermissionsTarget({
+            userId: worker.user_id,
+            fullName: editingWorker.full_name || worker.user?.full_name || 'عامل',
+            workerType: editingWorker.worker_type as WorkerType
+          })
+        }
       } else {
         setMessage({ type: 'error', text: result.error || t('error_updating_worker') || 'خطأ في تحديث العامل' })
       }
@@ -288,11 +338,13 @@ export default function WorkersPage() {
     })
   }
 
-  const filteredWorkers = workers.filter(worker =>
-    worker.user?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    worker.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    worker.specialty?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredWorkers = workers
+    .filter(worker =>
+      worker.user?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      worker.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      worker.specialty?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a, b) => Number(b.worker_type === 'general_manager') - Number(a.worker_type === 'general_manager'))
 
   if (!user || user.role !== 'admin') {
     return (
@@ -349,6 +401,31 @@ export default function WorkersPage() {
             <Plus className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
             <span>{t('add_new_worker')}</span>
           </button>
+        </motion.div>
+
+        {/* التسلسل الإداري */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 rounded-2xl border border-amber-200 bg-gradient-to-l from-amber-50 to-white p-4"
+        >
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 font-bold text-amber-800">
+              <Crown className="w-4 h-4" />
+              {OWNER_ROLE_LABEL}
+            </span>
+            <span className="text-gray-400">←</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 px-3 py-1 font-bold text-purple-800">
+              <ShieldCheck className="w-4 h-4" />
+              {GENERAL_MANAGER_LABEL}
+            </span>
+            <span className="text-gray-400">←</span>
+            <span className="rounded-full bg-pink-100 px-3 py-1 font-bold text-pink-800">بقية العمال</span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-gray-600">
+            أنت {OWNER_ROLE_LABEL}: تملك كل الصلاحيات دائماً. اضغط «الصلاحيات» على أي عامل لتشغيل أو إطفاء صلاحياته في كل قسم.
+            {' '}{GENERAL_MANAGER_LABEL} يبدأ بكل الصلاحيات، وبقية العمال يبدؤون بصلاحيات نوعهم المعتادة.
+          </p>
         </motion.div>
 
         {/* رسائل الحالة */}
@@ -753,8 +830,10 @@ export default function WorkersPage() {
                       <h3 className="text-lg font-bold text-gray-800">{worker.user?.full_name || 'غير محدد'}</h3>
                       <p className="text-sm text-pink-600 font-medium">{worker.specialty}</p>
                       <div className="flex items-center gap-1 mt-1">
-                        <Briefcase className="w-3 h-3 text-purple-500" />
-                        <span className="text-xs text-purple-600 font-medium">
+                        {worker.worker_type === 'general_manager'
+                          ? <ShieldCheck className="w-3 h-3 text-purple-600" />
+                          : <Briefcase className="w-3 h-3 text-purple-500" />}
+                        <span className={`text-xs font-medium ${worker.worker_type === 'general_manager' ? 'text-purple-700 font-bold' : 'text-purple-600'}`}>
                           {getWorkerTypeName(worker.worker_type || 'tailor')}
                         </span>
                       </div>
@@ -801,6 +880,20 @@ export default function WorkersPage() {
                 <div className="text-xs text-gray-500 mb-4">
                   {t('joined_on') || 'انضم في'} {formatDate(worker.created_at)}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => openPermissions(worker)}
+                  className="mb-2 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-purple-200 bg-purple-50 py-2 text-sm font-semibold text-purple-700 transition-colors hover:bg-purple-100"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>الصلاحيات</span>
+                  {(overrideCounts[worker.user_id] || 0) > 0 && (
+                    <span className="rounded-full bg-purple-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                      {overrideCounts[worker.user_id]} مخصّصة
+                    </span>
+                  )}
+                </button>
 
                 <div className="flex gap-2">
                   <button
@@ -867,6 +960,12 @@ export default function WorkersPage() {
           </div>
         </motion.div>
       </div>
+
+      <StaffPermissionsEditor
+        target={permissionsTarget}
+        onClose={() => setPermissionsTarget(null)}
+        onSaved={(userId, count) => setOverrideCounts(prev => ({ ...prev, [userId]: count }))}
+      />
     </div>
   )
 }

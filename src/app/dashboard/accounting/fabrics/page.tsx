@@ -30,6 +30,8 @@ import type { FinancialSummary } from '@/types/simple-accounting'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { formatFabricCurrency as formatCurrency } from '@/lib/fabric-number-format'
+import { FABRICS_ACCOUNTING_KEYS, type StaffPermissionKey } from '@/lib/staff-permissions'
+
 
 // ============================================================================
 // أقسام المحاسبة
@@ -42,6 +44,7 @@ const sections = [
     description: 'إيرادات مبيعات الأقمشة',
     icon: TrendingUp,
     href: '/dashboard/accounting/fabrics/income',
+    permission: 'accounting.fabrics.income' as StaffPermissionKey,
     color: 'from-emerald-500 to-emerald-600'
   },
   {
@@ -50,6 +53,7 @@ const sections = [
     description: 'شراء الأقمشة والمواد',
     icon: ShoppingCart,
     href: '/dashboard/accounting/fabrics/purchases',
+    permission: 'accounting.fabrics.purchases' as StaffPermissionKey,
     color: 'from-orange-500 to-orange-600'
   },
   {
@@ -58,6 +62,7 @@ const sections = [
     description: 'إيجار، كهرباء، إنترنت',
     icon: Home,
     href: '/dashboard/accounting/fabrics/fixed-expenses',
+    permission: 'accounting.fabrics.fixed_expenses' as StaffPermissionKey,
     color: 'from-blue-500 to-blue-600'
   },
   {
@@ -66,6 +71,7 @@ const sections = [
     description: 'رواتب ومكافآت العاملين',
     icon: Users,
     href: '/dashboard/accounting/fabrics/salaries',
+    permission: 'accounting.fabrics.salaries' as StaffPermissionKey,
     color: 'from-purple-500 to-purple-600'
   },
   {
@@ -74,6 +80,7 @@ const sections = [
     description: 'إضافة وتعديل فئات المحاسبة',
     icon: Settings,
     href: '/dashboard/accounting/fabrics/categories',
+    permission: 'accounting.fabrics.categories' as StaffPermissionKey,
     color: 'from-pink-500 to-rose-600'
   },
   {
@@ -82,6 +89,7 @@ const sections = [
     description: 'إدارة مخزون الأقمشة والحركات',
     icon: Boxes,
     href: '/dashboard/accounting/fabrics/inventory',
+    permission: 'fabrics.inventory' as StaffPermissionKey,
     color: 'from-teal-500 to-teal-600'
   },
   {
@@ -90,6 +98,7 @@ const sections = [
     description: 'أكواد الخصم وأرباح شركاء النجاح',
     icon: Megaphone,
     href: '/dashboard/accounting/fabrics/influencers',
+    permission: 'accounting.fabrics.influencers' as StaffPermissionKey,
     color: 'from-fuchsia-500 to-pink-600',
     adminOnly: true
   },
@@ -99,6 +108,7 @@ const sections = [
     description: 'تجهيز الطلبات المدفوعة واستلامها وشحنها',
     icon: ClipboardList,
     href: '/dashboard/accounting/fabrics/online-orders',
+    permission: 'fabrics.online_orders' as StaffPermissionKey,
     color: 'from-rose-600 to-rose-800',
     // قرار المالك (المرحلة 7): المدير ومدير متجر الأقمشة فقط، وخلف مفتاح القسم
     onlineOrders: true
@@ -113,7 +123,7 @@ function FabricsAccountingContent() {
   const [stats, setStats] = useState<FinancialSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const { user } = useAuthStore()
-  const { workerType, getDashboardRoute } = useWorkerPermissions()
+  const { workerType, getDashboardRoute, can } = useWorkerPermissions()
 
   // فلتر الشهر لعرض ملخص الشهور السابقة (الافتراضي: الشهر الحالي)
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date())
@@ -127,7 +137,7 @@ function FabricsAccountingContent() {
   // زر تعديل الصندوق يظهر لمدير النظام فقط، وفقط عند عرض الشهر الحالي
   // (رصيد الشهور السابقة تاريخي ولا يُعدَّل)
   const isAdmin = user?.role === 'admin'
-  const canEditCashBox = isAdmin && isCurrentMonth
+  const canEditCashBox = can('accounting.fabrics.cash_box_edit') && isCurrentMonth
 
   // حالة نافذة تعديل رصيد الصندوق (خاص بالمدير)
   const [showCashBoxModal, setShowCashBoxModal] = useState(false)
@@ -203,6 +213,9 @@ function FabricsAccountingContent() {
     }
     if (user?.role === 'worker' && workerType === 'fabric_store_manager') {
       return '/dashboard/fabric-manager'
+    }
+    if (user?.role === 'worker' && workerType && workerType !== 'general_manager') {
+      return getDashboardRoute()
     }
     return '/dashboard/accounting'
   }
@@ -332,9 +345,8 @@ function FabricsAccountingContent() {
           <h2 className="text-lg font-bold text-gray-900 mb-4">الأقسام</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sections.filter((section) =>
-              (!section.adminOnly || isAdmin) &&
-              (!section.onlineOrders || (IS_FABRIC_STORE_ORDERS_ENABLED &&
-                (isAdmin || (user?.role === 'worker' && workerType === 'fabric_store_manager'))))
+              can(section.permission) &&
+              (!section.onlineOrders || IS_FABRIC_STORE_ORDERS_ENABLED)
             ).map((section, index) => (
               <Link key={section.id} href={section.href}>
                 <motion.div
@@ -447,7 +459,7 @@ function FabricsAccountingContent() {
 
 export default function FabricsAccountingPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={FABRICS_ACCOUNTING_KEYS}>
       <FabricsAccountingContent />
     </ProtectedWorkerRoute>
   )

@@ -227,8 +227,8 @@ function PushToggle() {
 
 function OnlineOrdersContent() {
   const { user } = useAuthStore()
-  const { workerType } = useWorkerPermissions()
-  const allowed = user?.role === 'admin' || (user?.role === 'worker' && workerType === 'fabric_store_manager')
+  const { can } = useWorkerPermissions()
+  const allowed = !!user && can('fabrics.online_orders')
 
   const [view, setView] = useState<View>('active')
   const [search, setSearch] = useState('')
@@ -583,7 +583,7 @@ function OrderPanel({ id, onClose, onChanged }: { id: string; onClose: () => voi
             </div>
           )}
           {!paid && order.fulfillmentStatus !== 'cancelled' && !isAdmin && (
-            <p className="mt-3 text-xs text-gray-500">إلغاء الطلب وحذفه للمدير فقط.</p>
+            <p className="mt-3 text-xs text-gray-500">إلغاء الطلب وحذفه للمدير الأكبر فقط.</p>
           )}
           {paid && order.fulfillmentStatus === 'unfulfilled' && (
             <p className="mt-3 text-xs text-gray-500">
@@ -1029,7 +1029,7 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
           </p>
         </div>
       )}
-      {!isAdmin && refundable > 0 && <p className="text-xs text-gray-500">الاسترداد للمدير فقط.</p>}
+      {!isAdmin && refundable > 0 && <p className="text-xs text-gray-500">الاسترداد للمدير الأكبر فقط.</p>}
 
       {/* الدفعة C (AUD-04): دفعة ناجحة ثانية لا تقابلها مبيعة */}
       {extraAttempts.map(a => (
@@ -1055,7 +1055,7 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
                   || (!!a.supportReferenceRequired && (extraSupportRefs[a.id] ?? '').trim().length < 3)} onClick={() => void refundExtra(a)}
                 className={`${button} bg-red-600 text-white hover:bg-red-700`}>رد الدفعة الإضافية</button>
             </div>
-          ) : !isAdmin && <p className="mt-1 text-xs text-gray-600">الرد للمدير فقط.</p>}
+          ) : !isAdmin && <p className="mt-1 text-xs text-gray-600">الرد للمدير الأكبر فقط.</p>}
         </div>
       ))}
 
@@ -1081,7 +1081,7 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
                   onClick={() => void recordExternal(a)}
                   className={`${button} border border-red-300 text-red-800 hover:bg-red-100`}>تسجيل الاسترداد الخارجي</button>
               </div>
-            ) : !isAdmin && <p className="mt-1 text-xs text-gray-600">التسجيل للمدير فقط.</p>}
+            ) : !isAdmin && <p className="mt-1 text-xs text-gray-600">التسجيل للمدير الأكبر فقط.</p>}
           </div>
         )
       })}
@@ -1135,7 +1135,7 @@ function RefundSection({ detail, busy, setBusy, reload, onChanged }: {
 
 export default function OnlineOrdersPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission="fabrics.online_orders">
       <OnlineOrdersContent />
     </ProtectedWorkerRoute>
   )

@@ -17,6 +17,7 @@ import {
   BottomSheet,
   ConfirmSheet,
   StatusBadge,
+  formatAlterationTimestampDate,
   getAlterationReasonMeta,
   getAlterationStatusMeta,
   getAlterationTypeMeta,
@@ -28,6 +29,7 @@ import {
   ArrowRight,
   CalendarCheck2,
   CalendarClock,
+  CalendarPlus,
   FolderOpen,
   Layers,
   Loader2,
@@ -42,6 +44,7 @@ import {
   X,
 } from 'lucide-react'
 import { openAlterationWhatsApp } from '@/utils/whatsapp'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { printAlterationSlip } from '@/lib/services/alteration-slip-printer'
 
 const PAGE_SIZE = 30
@@ -62,7 +65,11 @@ export default function AlterationsPage() {
   const { user } = useAuthStore()
   const { isArabic } = useTranslation()
   const router = useRouter()
-  const isAdmin = user?.role === 'admin'
+  const { can } = useWorkerPermissions()
+  // سبب الخطأ يُجلب ويُعرض لمن يملك صلاحيته فقط
+  const isAdmin = can('alterations.error_reason')
+  const canCreate = can('alterations.create')
+  const canDelete = can('alterations.delete')
   const tr = (ar: string, en: string) => (isArabic ? ar : en)
 
   const [alterations, setAlterations] = useState<Alteration[]>([])
@@ -170,6 +177,7 @@ export default function AlterationsPage() {
 
   // كل تعديل مرتبط بطلب موجود: البحث عن الطلب مباشرة
   const handleAddNewAlteration = () => {
+    if (!canCreate) return
     setShowOrderSearchModal(true)
   }
 
@@ -361,7 +369,7 @@ export default function AlterationsPage() {
               {tr('إدارة طلبات تعديل الفساتين', 'Manage dress alteration requests')}
             </p>
           </div>
-          {isAdmin ? (
+          {can('settings.print_stations') ? (
             <button
               type="button"
               onClick={() => router.push('/dashboard/alterations/print-station')}
@@ -372,14 +380,14 @@ export default function AlterationsPage() {
               <span className="hidden sm:inline">{tr('محطة الطباعة', 'Print Station')}</span>
             </button>
           ) : null}
-          <button
+          {canCreate && <button
             type="button"
             onClick={handleAddNewAlteration}
             className="hidden h-11 shrink-0 items-center gap-2 rounded-xl bg-gradient-to-l from-pink-500 to-purple-500 px-4 text-sm font-bold text-white shadow-sm transition hover:from-pink-600 hover:to-purple-600 sm:inline-flex"
           >
             <Plus className="h-5 w-5" />
             {tr('تعديل جديد', 'New alteration')}
-          </button>
+          </button>}
         </div>
       </header>
 
@@ -512,6 +520,8 @@ export default function AlterationsPage() {
               const typeMeta = getAlterationTypeMeta(alteration.alteration_type)
               const reason = isAdmin ? getAlterationReasonMeta(alteration.error_type) : null
               const due = getDueInfo(alteration.alteration_due_date, alteration.status, isArabic)
+              // تاريخ أخذ التعديل = وقت إنشائه بالتوقيت المحلي (يطابق order_received_date في كل السجلات)
+              const takenDate = formatAlterationTimestampDate(alteration.created_at)
               const text = getAlterationText({ description: alteration.description, notes: alteration.notes })
               const orderNumber = alteration.original_order?.order_number
               const isPrinting = printingAlterationId === alteration.id
@@ -563,7 +573,17 @@ export default function AlterationsPage() {
                       ) : null}
                     </div>
 
-                    <div className={`mt-3 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${due.tone}`}>
+                    <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                      <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                        <CalendarPlus className="h-4 w-4 shrink-0" />
+                        {tr('تاريخ أخذ التعديل', 'Taken on')}
+                      </span>
+                      <span className="text-sm font-bold">
+                        {takenDate ? <span dir="ltr">{takenDate}</span> : '—'}
+                      </span>
+                    </div>
+
+                    <div className={`mt-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${due.tone}`}>
                       <span className="flex items-center gap-1.5 text-[13px] font-semibold">
                         <CalendarClock className="h-4 w-4 shrink-0" />
                         {tr('موعد التعديل', 'Due')}
@@ -579,7 +599,7 @@ export default function AlterationsPage() {
                     ) : null}
                   </button>
 
-                  <div className={`grid gap-2 border-t border-slate-100 px-3 py-3 ${isAdmin ? 'grid-cols-[1fr_1fr_1fr_auto]' : 'grid-cols-3'}`}>
+                  <div className={`grid gap-2 border-t border-slate-100 px-3 py-3 ${canDelete ? 'grid-cols-[1fr_1fr_1fr_auto]' : 'grid-cols-3'}`}>
                     <button
                       type="button"
                       onClick={() => openAlteration(alteration.id)}
@@ -608,7 +628,7 @@ export default function AlterationsPage() {
                       <MessageCircle className="h-4 w-4" />
                       {tr('واتساب', 'WhatsApp')}
                     </button>
-                    {isAdmin ? (
+                    {canDelete ? (
                       <button
                         type="button"
                         onClick={() => setDeleteTarget(alteration)}
@@ -639,14 +659,14 @@ export default function AlterationsPage() {
       </main>
 
       {/* زر الإضافة العائم على الهاتف */}
-      <button
+      {canCreate && <button
         type="button"
         onClick={handleAddNewAlteration}
         className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] end-4 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-gradient-to-l from-pink-500 to-purple-500 px-5 text-[15px] font-bold text-white shadow-lg shadow-pink-500/30 sm:hidden"
       >
         <Plus className="h-5 w-5" />
         {tr('تعديل جديد', 'New alteration')}
-      </button>
+      </button>}
 
       {/* الفلترة */}
       <BottomSheet

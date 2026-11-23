@@ -374,7 +374,7 @@ function FabricsAdminContent() {
 
   const getBackLabel = () => {
     if (user?.role === 'admin') {
-      return 'العودة إلى لوحة المدير'
+      return 'العودة إلى لوحة المدير الأكبر'
     }
     if (user?.role === 'worker' && workerType === 'fabric_store_manager') {
       return 'العودة إلى لوحة التحكم'
@@ -1136,7 +1136,7 @@ function FabricsAdminContent() {
 
 export default function FabricsAdmin() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessFabrics" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'fabrics.manage'}>
       <FabricsAdminContent />
     </ProtectedWorkerRoute>
   )

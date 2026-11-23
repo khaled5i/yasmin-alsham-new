@@ -389,7 +389,7 @@ function TailoringPrintStationDashboard() {
       <main dir="rtl" className="grid min-h-screen place-items-center bg-[#f1eee7] p-6 text-stone-950">
         <section className="max-w-md rounded-3xl border border-stone-300 bg-white p-7 text-center shadow-xl">
           <ShieldCheck className="mx-auto mb-4 h-10 w-10 text-amber-700" />
-          <h1 className="text-xl font-black">إدارة المحطات للمدير فقط</h1>
+          <h1 className="text-xl font-black">إدارة المحطات للمدير الأكبر فقط</h1>
           <p className="mt-2 text-sm leading-6 text-stone-600">
             تستمر الفواتير بالدخول إلى الطابور تلقائيًا، ولا يلزم فتح هذه الصفحة على أجهزة الموظفين.
           </p>
@@ -744,7 +744,7 @@ function TailoringPrintStationDashboard() {
 
 export default function PrintStationPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessSettings" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'settings.print_stations'}>
       <TailoringPrintStationDashboard />
     </ProtectedWorkerRoute>
   )

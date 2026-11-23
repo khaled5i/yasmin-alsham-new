@@ -1110,6 +1110,49 @@ export const orderService = {
   },
 
   /**
+   * كل طلبات عامل واحد منذ البداية بأعمدة الجودة الخفيفة (قسم «إحصائياتي» في لوحة العامل نفسه).
+   * العامل يقرأ طلباته فقط بسياسة RLS «Workers can view assigned orders».
+   * - tailor: المكتملة/المسلّمة المسندة إليه (worker_id) — نفس شرط getQualityOrders.
+   * - cutter: ما قصّه (cutter_id) ولم يُلغَ — نفس شرط getQualityOrders.
+   * الشهر يُحسب في المتصفح بنفس دوال worker-alteration-stats حتى تطابق الأرقام بقية الشاشات.
+   */
+  async getWorkerHistoryOrders(options: {
+    workerId: string
+    role: 'tailor' | 'cutter'
+  }): Promise<{ data: WorkerQualityOrder[]; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: [], error: 'Supabase is not configured.' }
+    }
+    if (!options.workerId) return { data: [], error: null }
+
+    const BATCH = 1000
+    const rows: WorkerQualityOrder[] = []
+    try {
+      for (let from = 0; ; from += BATCH) {
+        let query = supabase
+          .from('orders')
+          .select(WORKER_QUALITY_ORDER_COLUMNS)
+          .order('id', { ascending: true })
+          .range(from, from + BATCH - 1)
+
+        query = options.role === 'tailor'
+          ? query.eq('worker_id', options.workerId).in('status', ['completed', 'delivered'])
+          : query.eq('cutter_id', options.workerId).not('cut_at', 'is', null).neq('status', 'cancelled')
+
+        const { data, error } = await query
+        if (error) throw error
+        const batch = (data || []) as unknown as WorkerQualityOrder[]
+        rows.push(...batch)
+        if (batch.length < BATCH) break
+      }
+      return { data: rows, error: null }
+    } catch (error: any) {
+      console.error('❌ Error in getWorkerHistoryOrders:', error?.message)
+      return { data: [], error: error?.message || 'خطأ في جلب الطلبات' }
+    }
+  },
+
+  /**
    * طلبات تقرير التعديلات (للمدير): إما الطلبات المنجزة بين تاريخين بنفس سلسلة تاريخ الإنجاز
    * في getQualityOrders (worker_completed_at ← admin_completed_at ← delivery_date)، أو طلبات بعينها (ids).
    * أعمدة خفيفة فقط، وتتجاوز حد 1000 صف.

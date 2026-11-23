@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { ArrowRight, Calculator, ShoppingBag, LogOut } from 'lucide-react'
+import GrantedSectionsPanel from '@/components/GrantedSectionsPanel'
 
 export default function AccountantDashboard() {
   const router = useRouter()
@@ -111,6 +112,9 @@ export default function AccountantDashboard() {
             </Link>
           </div>
         </motion.div>
+
+        {/* ما منحه المدير الأكبر زيادةً على صلاحيات النوع */}
+        <GrantedSectionsPanel />
 
       </div>
     </div>

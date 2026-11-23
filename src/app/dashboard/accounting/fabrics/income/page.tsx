@@ -293,11 +293,12 @@ function FabricsIncomeContent() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'admin'
   const {
-    permissions,
     workerType,
+    can,
     isLoading: workerPermissionsLoading,
   } = useWorkerPermissions()
-  const canSendToAccounting = isAdmin || !!permissions?.canAccessAccounting
+  // «إرسال المبيعات للمحاسبة» من نظام الصلاحيات (افتراضياً مدير متجر الأقمشة والمدير العام)
+  const canSendToAccounting = can('accounting.fabrics.send_alostaz')
   const isFabricStoreManager = user?.role === 'worker' && workerType === 'fabric_store_manager'
   const [income, setIncome] = useState<Income[]>([])
   const [inventoryItems, setInventoryItems] = useState<FabricInventoryItem[]>([])
@@ -2373,7 +2374,7 @@ function FabricsIncomeContent() {
 
 export default function FabricsIncomePage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.fabrics.income'}>
       <FabricsIncomeContent />
     </ProtectedWorkerRoute>
   )

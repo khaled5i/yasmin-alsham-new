@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendFabricIncomeToAlostaz } from '@/lib/server/alostaz-fabric-invoice'
+import { staffHasPermission } from '@/lib/server/api-auth'
 
 /**
  * مسار خادمي لإرسال فاتورة مبيعة قماش إلى تطبيق الأستاذ للمحاسبة.
@@ -57,22 +58,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'غير مسموح - الحساب غير نشط أو غير موجود' }, { status: 403 })
     }
 
-    let canSendFabricInvoice = userData.role === 'admin'
-    if (userData.role === 'worker') {
-      const { data: workerData, error: workerError } = await admin
-        .from('workers')
-        .select('worker_type')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!workerError) {
-        canSendFabricInvoice = [
-          'fabric_store_manager',
-          'accountant',
-          'general_manager',
-        ].includes(workerData?.worker_type)
-      }
-    }
+    // المدير الأكبر دائماً؛ وغيره حسب صلاحية «إرسال المبيعات للمحاسبة»
+    // (افتراضياً: مدير متجر الأقمشة والمدير العام).
+    const canSendFabricInvoice = await staffHasPermission(user.id, userData.role, 'accounting.fabrics.send_alostaz')
 
     if (!canSendFabricInvoice) {
       return NextResponse.json(

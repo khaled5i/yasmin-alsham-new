@@ -3387,7 +3387,7 @@ function FabricsInventoryContent() {
 
 export default function FabricsInventoryPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'fabrics.inventory'}>
       <FabricsInventoryContent />
     </ProtectedWorkerRoute>
   )

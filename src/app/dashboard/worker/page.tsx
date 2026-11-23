@@ -8,6 +8,8 @@ import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { useTranslation } from '@/hooks/useTranslation'
 import WorkerAttendanceSummary from '@/components/WorkerAttendanceSummary'
+import WorkerSalarySummary from '@/components/WorkerSalarySummary'
+import WorkerMonthlyStatsSection from '@/components/worker-stats/WorkerMonthlyStatsSection'
 import {
   LogOut,
   Package,
@@ -15,6 +17,7 @@ import {
   Scissors,
   Languages
 } from 'lucide-react'
+import GrantedSectionsPanel from '@/components/GrantedSectionsPanel'
 
 export default function WorkerDashboard() {
   const router = useRouter()
@@ -117,6 +120,7 @@ export default function WorkerDashboard() {
       {/* المحتوى الرئيسي */}
       <main className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
         <WorkerAttendanceSummary userId={user.id} language={language} t={t} />
+        <WorkerSalarySummary userId={user.id} language={language} />
 
         {/* لوحة التحكم - البطاقات */}
         <motion.div
@@ -176,6 +180,14 @@ export default function WorkerDashboard() {
             </Link>
           </div>
         </motion.div>
+
+        {/* ما منحه المدير الأكبر زيادةً على صلاحيات النوع */}
+        <GrantedSectionsPanel />
+
+        {/* إحصائياتي: الفساتين والتعديلات شهرياً — للخياط فقط (الشك بلا إسناد لكل طلب) */}
+        {workerType === 'tailor' && (
+          <WorkerMonthlyStatsSection userId={user.id} language={language} />
+        )}
       </main>
     </div>
   )

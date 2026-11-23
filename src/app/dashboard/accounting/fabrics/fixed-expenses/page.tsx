@@ -513,7 +513,7 @@ function FabricsFixedExpensesContent() {
 
 export default function FabricsFixedExpensesPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.fabrics.fixed_expenses'}>
       <FabricsFixedExpensesContent />
     </ProtectedWorkerRoute>
   )

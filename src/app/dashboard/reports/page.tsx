@@ -57,6 +57,7 @@ import {
   UserCog,
   ShoppingBag
 } from 'lucide-react'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
 // ============================================================================
 // Helper Functions
@@ -235,6 +236,8 @@ const CUSTOM_PRESETS: { key: string; label: string }[] = [
 
 export default function ReportsPage() {
   const { user } = useAuthStore()
+  const { can, isLoading: permissionsLoading } = useWorkerPermissions()
+  const allowed = !!user && can('reports.view')
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoadingOrders, setIsLoadingOrders] = useState(true)
   const [materialExpenses, setMaterialExpenses] = useState<Expense[]>([])
@@ -291,10 +294,10 @@ export default function ReportsPage() {
 
   // التحقق من الصلاحيات
   useEffect(() => {
-    if (!user || user.role !== 'admin') {
+    if (!user || (!permissionsLoading && !allowed)) {
       router.push('/dashboard')
     }
-  }, [user, router])
+  }, [user, permissionsLoading, allowed, router])
 
   // ============================================================================
   // Helper Functions - Date Filtering
@@ -695,7 +698,7 @@ export default function ReportsPage() {
   // Loading & Permission Check
   // ============================================================================
 
-  if (!user || user.role !== 'admin') {
+  if (!user || !allowed) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
@@ -1252,7 +1255,7 @@ export default function ReportsPage() {
 
         {/* التعديلات — مكوّن مستقل، يتبع نفس الفترة */}
         <AlterationsReportSection
-          isAdmin={user?.role === 'admin'}
+          isAdmin={can('alterations.error_reason')}
           startDate={periodRange.startDate}
           endDate={periodRange.endDate}
           periodLabel={getPeriodLabel(selectedPeriod, periodRange)}

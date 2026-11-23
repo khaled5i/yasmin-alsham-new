@@ -17,6 +17,7 @@ import {
   Languages,
   CalendarDays
 } from 'lucide-react'
+import GrantedSectionsPanel from '@/components/GrantedSectionsPanel'
 
 export default function WorkshopManagerDashboard() {
   const router = useRouter()
@@ -232,6 +233,9 @@ export default function WorkshopManagerDashboard() {
 
           </div>
         </motion.div>
+
+        {/* ما منحه المدير الأكبر زيادةً على صلاحيات النوع */}
+        <GrantedSectionsPanel />
       </main>
     </div>
   )

@@ -672,7 +672,7 @@ function CategoriesManagementContent() {
 
 export default function CategoriesManagementPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.tailoring.categories'}>
       <CategoriesManagementContent />
     </ProtectedWorkerRoute>
   )

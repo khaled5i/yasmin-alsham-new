@@ -163,7 +163,7 @@ export default function WorkerDetailPage() {
 
   const { user, signOut } = useAuthStore()
   const { workers, loadWorkers } = useWorkerStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+  const { workerType, isLoading: permissionsLoading, can } = useWorkerPermissions()
 
   const [worker, setWorker] = useState<WorkerWithUser | null>(null)
   const [isLoadingWorker, setIsLoadingWorker] = useState(true)
@@ -173,7 +173,7 @@ export default function WorkerDetailPage() {
   // القصّاص والشكّاك لا يملكان طلبات مُسندة، فتبويباهما يحلّان محل «النشطة/المكتملة»
   const ownTab: TabType | null = isCutter ? 'cut' : isShakWorker ? 'shak' : null
   // تبويب «التعديلات» (التقييم وأسباب التعديل) للمدير فقط، وللخياط والقصّاص فقط
-  const canSeeQuality = user?.role === 'admin' && !!worker && !isShakWorker
+  const canSeeQuality = can('workers.quality_report') && !!worker && !isShakWorker
   const tabSelection: TabType = selectedTab === 'alterations' && !canSeeQuality ? (ownTab ?? 'active') : selectedTab
   const activeTab = ownTab
     ? (tabSelection === 'active' || tabSelection === 'completed' || tabSelection === 'cut' || tabSelection === 'shak'
@@ -204,7 +204,7 @@ export default function WorkerDetailPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
-  // حالة التسعير والتقييم (للمدير فقط — مشتركة مع قسم المحاسبة)
+  // حالة التسعير والتقييم (للمدير الأكبر فقط — مرتبطة برواتب التفصيل)
   const isAdmin = user?.role === 'admin'
   const [pricingForms, setPricingForms] = useState<Record<string, OrderPricingData>>({})
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set())
@@ -224,12 +224,10 @@ export default function WorkerDetailPage() {
   useEffect(() => {
     if (!user) { router.push('/login'); return }
     if (permissionsLoading) return
-    const isAdmin = user.role === 'admin'
-    const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
-    if (!isAdmin && !isWorkshopManager) {
+    if (!can('workers.monitoring')) {
       router.push('/dashboard')
     }
-  }, [user, workerType, permissionsLoading, router])
+  }, [user, can, permissionsLoading, router])
 
   // Fetch worker profile
   useEffect(() => {

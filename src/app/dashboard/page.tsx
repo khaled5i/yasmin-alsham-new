@@ -44,11 +44,14 @@ import {
   Boxes,
   WalletCards,
   ReceiptText,
-  MessageCircle
+  MessageCircle,
+  ShieldCheck
 } from 'lucide-react'
 import { orderService } from '@/lib/services/order-service'
 import { fetchStoreAlerts } from '@/components/fabric-store/StoreAlertsPanel'
 import { loadSeenAlerts, newAlertsCount } from '@/lib/fabric-store/store-alerts'
+import { ACCOUNTING_HUB_KEYS, getStaffRoleLabel } from '@/lib/staff-permissions'
+
 
 function DashboardContent() {
   const { user, signOut } = useAuthStore()
@@ -56,7 +59,16 @@ function DashboardContent() {
   const { appointments, loadAppointments } = useAppointmentStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, language, changeLanguage, isArabic } = useTranslation()
-  const { getDashboardRoute, workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+  const { getDashboardRoute, workerType, isLoading: permissionsLoading, can, canAny, isGeneralManager } = useWorkerPermissions()
+  // واجهة الإدارة: المدير الأكبر والمدير العام — كل بطاقة تظهر حسب صلاحيتها
+  const isManagerView = user?.role === 'admin' || isGeneralManager
+  const roleLabel = getStaffRoleLabel(user?.role, workerType, isArabic ? 'ar' : 'en')
+  const canNotifications = isManagerView && can('orders.notifications')
+  const canAccountingHub = canAny(ACCOUNTING_HUB_KEYS)
+  const showOrdersSection = isManagerView && canAny(['alterations.view_all', 'orders.view_all', 'orders.completed', 'orders.delivered', 'orders.notifications'])
+  const showGeneralSection = isManagerView && (canAccountingHub || canAny(['fabrics.manage', 'reports.view', 'workers.monitoring', 'reports.whatsapp']))
+  const showQuickSection = isManagerView && canAny(['accounting.tailoring.cash_box', 'accounting.tailoring.income', 'accounting.tailoring.salaries', 'accounting.fabrics.income', 'fabrics.inventory'])
+  const showActionButtons = isManagerView && canAny(['orders.create', 'alterations.create', 'invoices.women_workshop', 'invoices.tailoring', 'orders.schedule'])
   const router = useRouter()
 
   // States for Alteration Modals
@@ -68,7 +80,7 @@ function DashboardContent() {
   const [notificationsCount, setNotificationsCount] = useState(0)
 
   const loadNotificationsCount = useCallback(async () => {
-    if (user?.role !== 'admin') return
+    if (!canNotifications) return
     try {
       const [secondProof, completion, delivery] = await Promise.all([
         orderService.getAll({
@@ -104,7 +116,7 @@ function DashboardContent() {
     } catch {
       // تجاهل أخطاء جلب العدّاد
     }
-  }, [user?.role])
+  }, [canNotifications])
 
   useEffect(() => {
     loadNotificationsCount()
@@ -114,7 +126,7 @@ function DashboardContent() {
   useEffect(() => {
     if (!permissionsLoading && user?.role === 'worker' && workerType) {
       const correctRoute = getDashboardRoute()
-      // إذا كان العامل ليس مدير عام، أعد توجيهه إلى صفحته المخصصة
+      // المدير العام يبقى هنا (واجهة الإدارة حسب صلاحياته)؛ غيره إلى صفحته المخصصة
       if (workerType !== 'general_manager' && correctRoute !== '/dashboard') {
         console.log('🔀 إعادة توجيه العامل من نوع', workerType, 'إلى:', correctRoute)
         router.push(correctRoute)
@@ -167,7 +179,7 @@ function DashboardContent() {
 
   // الإحصائيات حسب الدور
   const getStatsForRole = () => {
-    if (user?.role === 'worker') {
+    if (user?.role === 'worker' && !isGeneralManager) {
       // إحصائيات العامل - طلباته فقط
       // البحث عن العامل الذي user_id يطابق user.id
       const currentWorker = workers.find(w => w.user_id === user?.id)
@@ -246,7 +258,7 @@ function DashboardContent() {
       }
 
       // إذا كان المستخدم عامل، اعرض طلباته فقط
-      if (user?.role === 'worker') {
+      if (user?.role === 'worker' && !isGeneralManager) {
         // البحث عن العامل الذي user_id يطابق user.id
         const currentWorker = workers.find(w => w.user_id === user?.id)
         if (currentWorker) {
@@ -377,11 +389,11 @@ function DashboardContent() {
                     {t('welcome_back')}، {user?.full_name || user?.email}
                   </h1>
                   <p className="text-gray-600 text-sm">
-                    {user?.role === 'admin' ? t('admin_dashboard') : t('worker_dashboard')}
+                    {isManagerView ? `${isArabic ? 'لوحة' : 'Dashboard:'} ${roleLabel}` : t('worker_dashboard')}
                   </p>
                 </div>
                 <span className="px-3 py-1 bg-gradient-to-r from-pink-100 to-rose-100 text-pink-700 rounded-full text-sm font-medium whitespace-nowrap">
-                  {user?.role === 'admin' ? t('admin') : t('worker')}
+                  {roleLabel}
                 </span>
               </div>
 
@@ -393,7 +405,7 @@ function DashboardContent() {
                   </div>
 
                   {/* أيقونة جرس الإشعارات للمدير - شاشات كبيرة */}
-                  {user?.role === 'admin' && (
+                  {canNotifications && (
                     <Link
                       href="/dashboard/notifications"
                       className="relative p-2 text-gray-600 hover:text-pink-600 transition-colors duration-300"
@@ -460,10 +472,10 @@ function DashboardContent() {
 
                 <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse flex-shrink-0 min-w-0 language-btn-container">
                   <span className="px-2 sm:px-3 py-1 bg-gradient-to-r from-pink-100 to-rose-100 text-pink-700 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap">
-                    {t(user?.role === 'admin' ? 'admin' : 'worker')}
+                    {roleLabel}
                   </span>
                   {/* أيقونة جرس الإشعارات للمدير - شاشات صغيرة */}
-                  {user?.role === 'admin' && (
+                  {canNotifications && (
                     <Link
                       href="/dashboard/notifications"
                       className="relative p-1.5 text-gray-600 hover:text-pink-600 transition-colors duration-300 flex-shrink-0"
@@ -508,7 +520,7 @@ function DashboardContent() {
               <div className="pb-3 sm:pb-4 border-t border-gray-100">
                 <div className="pt-2 sm:pt-3">
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">
-                    {t('dashboard')} - {t(user?.role === 'admin' ? 'admin' : 'worker')}
+                    {t('dashboard')} - {roleLabel}
                   </p>
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">
@@ -532,8 +544,9 @@ function DashboardContent() {
           >
             <div className="flex flex-col gap-4 sm:gap-6">
               {/* أزرار العمل للمدير */}
-              {user?.role === 'admin' && (
+              {showActionButtons && (
                 <div className="grid w-full grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
+                  {can('orders.create') && (
                   <Link
                     href="/dashboard/add-order"
                     className="btn-primary inline-flex items-center justify-center space-x-2 space-x-reverse px-2 py-3 sm:px-6 sm:py-4 group text-xs sm:text-base flex-1 min-w-0"
@@ -541,6 +554,7 @@ function DashboardContent() {
                     <Plus className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
                     <span className="whitespace-nowrap">{t('add_new_order')}</span>
                   </Link>
+                  )}
 
                   {/* [HIDDEN TEMPORARILY] حجز موعد - مخفي مؤقتاً
                   <Link
@@ -552,15 +566,15 @@ function DashboardContent() {
                   </Link>
                   */}
 
-                  <button
+                  {can('alterations.create') && <button
                     onClick={handleAddNewAlteration}
                     className="btn-secondary inline-flex items-center justify-center space-x-2 space-x-reverse px-2 py-3 sm:px-6 sm:py-4 group text-xs sm:text-base flex-1 min-w-0"
                   >
                     <Wrench className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
                     <span className="whitespace-nowrap">{isArabic ? 'إضافة طلب تعديل' : 'Add Alteration'}</span>
-                  </button>
+                  </button>}
 
-                  <button
+                  {can('invoices.women_workshop') && <button
                     onClick={() => setShowWomenWorkshopInvoiceModal(true)}
                     className="group inline-flex min-w-0 flex-1 items-center justify-center space-x-2 space-x-reverse rounded-xl bg-gradient-to-r from-rose-500 to-fuchsia-600 px-2 py-3 text-xs font-semibold text-white shadow-md transition-all duration-300 hover:from-rose-600 hover:to-fuchsia-700 hover:shadow-lg sm:px-6 sm:py-4 sm:text-base"
                   >
@@ -568,9 +582,9 @@ function DashboardContent() {
                     <span className="leading-tight">
                       {isArabic ? 'إضافة فاتورة للمشغل النسائي' : 'Women Workshop Invoice'}
                     </span>
-                  </button>
+                  </button>}
 
-                  <button
+                  {can('invoices.tailoring') && <button
                     onClick={() => setShowTailoringInvoiceModal(true)}
                     className="group inline-flex min-w-0 flex-1 items-center justify-center space-x-2 space-x-reverse rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-2 py-3 text-xs font-semibold text-white shadow-md transition-all duration-300 hover:from-violet-600 hover:to-indigo-700 hover:shadow-lg sm:px-6 sm:py-4 sm:text-base"
                   >
@@ -578,8 +592,9 @@ function DashboardContent() {
                     <span className="leading-tight">
                       {isArabic ? 'إضافة فاتورة لياسمين الشام للخياطة' : 'Yasmin Al-Sham Tailoring Invoice'}
                     </span>
-                  </button>
+                  </button>}
 
+                  {can('orders.schedule') && (
                   <Link
                     href="/dashboard/order-schedule"
                     className="inline-flex items-center justify-center space-x-2 space-x-reverse px-2 py-3 sm:px-6 sm:py-4 group text-xs sm:text-base flex-1 min-w-0 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all duration-300"
@@ -587,11 +602,12 @@ function DashboardContent() {
                     <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300 flex-shrink-0" />
                     <span className="whitespace-nowrap">{isArabic ? 'عرض مواعيد الطلبات' : 'Order Schedule'}</span>
                   </Link>
+                  )}
                 </div>
               )}
 
               {/* رسالة ترحيب للعامل */}
-              {user?.role === 'worker' && (
+              {user?.role === 'worker' && !isGeneralManager && (
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg sm:rounded-xl p-4 sm:p-6 text-center sm:text-right overflow-hidden">
                   <h3 className="text-lg sm:text-xl font-semibold text-blue-800 mb-2 break-words">
                     {t('welcome_worker')}
@@ -619,7 +635,7 @@ function DashboardContent() {
           {/* ترتيب مختلف للشاشات الصغيرة والكبيرة */}
           <div className="block lg:hidden space-y-8">
             {/* قسم الطلبات - للمدير فقط في الشاشات الصغيرة */}
-            {user?.role === 'admin' && (
+            {showOrdersSection && (
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -633,6 +649,7 @@ function DashboardContent() {
 
                 <div className="grid gap-4 grid-cols-2">
                   {/* الصف الأول */}
+                  {can('alterations.view_all') && (
                   <Link
                     href="/dashboard/alterations"
                     className="p-4 bg-gradient-to-r from-orange-50 to-amber-100 rounded-lg border border-orange-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -640,7 +657,9 @@ function DashboardContent() {
                     <Wrench className="w-6 h-6 text-orange-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-orange-800">{isArabic ? 'قسم التعديلات' : 'Alterations Section'}</span>
                   </Link>
+                  )}
 
+                  {can('orders.view_all') && (
                   <Link
                     href="/dashboard/orders"
                     className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -648,8 +667,10 @@ function DashboardContent() {
                     <Package className="w-6 h-6 text-blue-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-blue-800">{t('recent_orders')}</span>
                   </Link>
+                  )}
 
                   {/* الصف الثاني */}
+                  {can('orders.completed') && (
                   <Link
                     href="/dashboard/completed-orders"
                     className="p-4 bg-gradient-to-r from-green-50 to-emerald-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -657,7 +678,9 @@ function DashboardContent() {
                     <PackageCheck className="w-6 h-6 text-green-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-green-800">{t('completed_orders_management')}</span>
                   </Link>
+                  )}
 
+                  {can('orders.delivered') && (
                   <Link
                     href="/dashboard/delivered-orders"
                     className="p-4 bg-gradient-to-r from-purple-50 to-indigo-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -665,8 +688,10 @@ function DashboardContent() {
                     <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
                   </Link>
+                  )}
 
                   {/* مركز الإشعارات - آخر بطاقة */}
+                  {can('orders.notifications') && (
                   <Link
                     href="/dashboard/notifications"
                     className="relative p-4 bg-gradient-to-r from-pink-50 to-rose-100 rounded-lg border border-pink-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -679,12 +704,13 @@ function DashboardContent() {
                     <Bell className="w-6 h-6 text-pink-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-pink-800">{isArabic ? 'مركز الإشعارات' : 'Notifications'}</span>
                   </Link>
+                  )}
                 </div>
               </motion.div>
             )}
 
             {/* الإدارة العامة - للمدير فقط في الشاشات الصغيرة */}
-            {user?.role === 'admin' && (
+            {showGeneralSection && (
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -697,6 +723,7 @@ function DashboardContent() {
                 </h3>
 
                 <div className="grid gap-4 grid-cols-2">
+                  {can('fabrics.manage') && (
                   <Link
                     href="/dashboard/fabrics"
                     className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -704,6 +731,7 @@ function DashboardContent() {
                     <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{t('fabrics_management')}</span>
                   </Link>
+                  )}
 
                   {/* إدارة المواعيد - مخفي مؤقتاً
                   <Link
@@ -715,6 +743,7 @@ function DashboardContent() {
                   </Link>
                   */}
 
+                  {canAccountingHub && (
                   <Link
                     href="/dashboard/accounting"
                     className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-lg border border-emerald-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -722,7 +751,9 @@ function DashboardContent() {
                     <Calculator className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-emerald-800">{isArabic ? 'النظام المحاسبي' : 'Accounting'}</span>
                   </Link>
+                  )}
 
+                  {can('reports.view') && (
                   <Link
                     href="/dashboard/reports"
                     className="p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 rounded-lg border border-cyan-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -730,7 +761,9 @@ function DashboardContent() {
                     <BarChart3 className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-cyan-800">{t('reports')}</span>
                   </Link>
+                  )}
 
+                  {can('workers.monitoring') && (
                   <Link
                     href="/dashboard/worker-monitoring"
                     className="p-4 bg-gradient-to-r from-teal-50 to-teal-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -738,7 +771,9 @@ function DashboardContent() {
                     <Users className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">متابعة العمال</span>
                   </Link>
+                  )}
 
+                  {can('reports.whatsapp') && (
                   <Link
                     href="/dashboard/whatsapp-stats"
                     className="p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -746,12 +781,23 @@ function DashboardContent() {
                     <MessageCircle className="w-6 h-6 text-green-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-green-800">ضغطات واتساب</span>
                   </Link>
+                  )}
+
+                  {user?.role === 'admin' && (
+                  <Link
+                    href="/dashboard/workers"
+                    className="p-4 bg-gradient-to-r from-purple-50 to-fuchsia-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <ShieldCheck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-purple-800">{isArabic ? 'إدارة العمال والصلاحيات' : 'Workers & Permissions'}</span>
+                  </Link>
+                  )}
                 </div>
               </motion.div>
             )}
 
             {/* لوحة الوصول السريع - للمدير فقط في الشاشات الصغيرة */}
-            {user?.role === 'admin' && (
+            {showQuickSection && (
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -764,6 +810,7 @@ function DashboardContent() {
                 </h3>
 
                 <div className="grid gap-4 grid-cols-2">
+                  {can('accounting.tailoring.cash_box') && (
                   <Link
                     href="/dashboard/accounting/tailoring/cash-box"
                     className="p-4 bg-gradient-to-r from-stone-50 to-amber-100 rounded-lg border border-amber-300 hover:shadow-md transition-all duration-300 text-center block"
@@ -771,7 +818,9 @@ function DashboardContent() {
                     <WalletCards className="w-6 h-6 text-amber-700 mx-auto mb-2" />
                     <span className="text-sm font-medium text-amber-900">{isArabic ? 'الصندوق' : 'Cash Box'}</span>
                   </Link>
+                  )}
 
+                  {can('accounting.tailoring.income') && (
                   <Link
                     href="/dashboard/accounting/tailoring/income"
                     className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-lg border border-emerald-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -779,7 +828,9 @@ function DashboardContent() {
                     <TrendingUp className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-emerald-800">{isArabic ? 'واردات قسم التفصيل' : 'Tailoring Income'}</span>
                   </Link>
+                  )}
 
+                  {can('accounting.tailoring.salaries') && (
                   <Link
                     href="/dashboard/accounting/tailoring/salaries"
                     className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -787,7 +838,9 @@ function DashboardContent() {
                     <Wallet className="w-6 h-6 text-amber-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-amber-800">{isArabic ? 'رواتب العمال' : 'Worker Salaries'}</span>
                   </Link>
+                  )}
 
+                  {can('accounting.fabrics.income') && (
                   <Link
                     href="/dashboard/accounting/fabrics/income"
                     className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -795,7 +848,9 @@ function DashboardContent() {
                     <ShoppingBag className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
                   </Link>
+                  )}
 
+                  {can('fabrics.inventory') && (
                   <Link
                     href="/dashboard/accounting/fabrics/inventory"
                     className="p-4 bg-gradient-to-r from-cyan-50 to-teal-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -803,6 +858,7 @@ function DashboardContent() {
                     <Boxes className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون متجر الأقمشة' : 'Fabric Store Inventory'}</span>
                   </Link>
+                  )}
 
 
                 </div>
@@ -814,7 +870,7 @@ function DashboardContent() {
           {/* التخطيط الأصلي للشاشات الكبيرة */}
           <div className="hidden lg:block space-y-8">
             {/* قسم الطلبات - للمدير فقط */}
-            {user?.role === 'admin' && (
+            {showOrdersSection && (
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -828,6 +884,7 @@ function DashboardContent() {
 
                 <div className="grid gap-4 grid-cols-2 lg:grid-cols-2">
                   {/* الصف الأول */}
+                  {can('alterations.view_all') && (
                   <Link
                     href="/dashboard/alterations"
                     className="p-4 bg-gradient-to-r from-orange-50 to-amber-100 rounded-lg border border-orange-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -835,7 +892,9 @@ function DashboardContent() {
                     <Wrench className="w-6 h-6 text-orange-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-orange-800">{isArabic ? 'قسم التعديلات' : 'Alterations Section'}</span>
                   </Link>
+                  )}
 
+                  {can('orders.view_all') && (
                   <Link
                     href="/dashboard/orders"
                     className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -843,8 +902,10 @@ function DashboardContent() {
                     <Package className="w-6 h-6 text-blue-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-blue-800">{t('recent_orders')}</span>
                   </Link>
+                  )}
 
                   {/* الصف الثاني */}
+                  {can('orders.completed') && (
                   <Link
                     href="/dashboard/completed-orders"
                     className="p-4 bg-gradient-to-r from-green-50 to-emerald-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -852,7 +913,9 @@ function DashboardContent() {
                     <PackageCheck className="w-6 h-6 text-green-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-green-800">{t('completed_orders_management')}</span>
                   </Link>
+                  )}
 
+                  {can('orders.delivered') && (
                   <Link
                     href="/dashboard/delivered-orders"
                     className="p-4 bg-gradient-to-r from-purple-50 to-indigo-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -860,8 +923,10 @@ function DashboardContent() {
                     <Truck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-purple-800">{t('delivered_orders_management')}</span>
                   </Link>
+                  )}
 
                   {/* مركز الإشعارات - آخر بطاقة */}
+                  {can('orders.notifications') && (
                   <Link
                     href="/dashboard/notifications"
                     className="relative p-4 bg-gradient-to-r from-pink-50 to-rose-100 rounded-lg border border-pink-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -874,12 +939,13 @@ function DashboardContent() {
                     <Bell className="w-6 h-6 text-pink-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-pink-800">{isArabic ? 'مركز الإشعارات' : 'Notifications'}</span>
                   </Link>
+                  )}
                 </div>
               </motion.div>
             )}
 
             {/* الإدارة العامة - للمدير فقط */}
-            {user?.role === 'admin' && (
+            {showGeneralSection && (
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -892,6 +958,7 @@ function DashboardContent() {
                 </h3>
 
                 <div className="grid gap-4 grid-cols-2 lg:grid-cols-2">
+                  {can('fabrics.manage') && (
                   <Link
                     href="/dashboard/fabrics"
                     className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -899,6 +966,7 @@ function DashboardContent() {
                     <Palette className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{t('fabrics_management')}</span>
                   </Link>
+                  )}
 
                   {/* إدارة المواعيد - مخفي مؤقتاً
                   <Link
@@ -910,6 +978,7 @@ function DashboardContent() {
                   </Link>
                   */}
 
+                  {canAccountingHub && (
                   <Link
                     href="/dashboard/accounting"
                     className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-lg border border-emerald-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -917,7 +986,9 @@ function DashboardContent() {
                     <Calculator className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-emerald-800">{isArabic ? 'النظام المحاسبي' : 'Accounting'}</span>
                   </Link>
+                  )}
 
+                  {can('reports.view') && (
                   <Link
                     href="/dashboard/reports"
                     className="p-4 bg-gradient-to-r from-cyan-50 to-cyan-100 rounded-lg border border-cyan-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -925,7 +996,9 @@ function DashboardContent() {
                     <BarChart3 className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-cyan-800">{t('reports')}</span>
                   </Link>
+                  )}
 
+                  {can('workers.monitoring') && (
                   <Link
                     href="/dashboard/worker-monitoring"
                     className="p-4 bg-gradient-to-r from-teal-50 to-teal-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -933,7 +1006,9 @@ function DashboardContent() {
                     <Users className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">متابعة العمال</span>
                   </Link>
+                  )}
 
+                  {can('reports.whatsapp') && (
                   <Link
                     href="/dashboard/whatsapp-stats"
                     className="p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -941,12 +1016,23 @@ function DashboardContent() {
                     <MessageCircle className="w-6 h-6 text-green-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-green-800">ضغطات واتساب</span>
                   </Link>
+                  )}
+
+                  {user?.role === 'admin' && (
+                  <Link
+                    href="/dashboard/workers"
+                    className="p-4 bg-gradient-to-r from-purple-50 to-fuchsia-100 rounded-lg border border-purple-200 hover:shadow-md transition-all duration-300 text-center block"
+                  >
+                    <ShieldCheck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+                    <span className="text-sm font-medium text-purple-800">{isArabic ? 'إدارة العمال والصلاحيات' : 'Workers & Permissions'}</span>
+                  </Link>
+                  )}
                 </div>
               </motion.div>
             )}
 
             {/* لوحة الوصول السريع - للمدير فقط */}
-            {user?.role === 'admin' && (
+            {showQuickSection && (
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -959,6 +1045,7 @@ function DashboardContent() {
                 </h3>
 
                 <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                  {can('accounting.tailoring.cash_box') && (
                   <Link
                     href="/dashboard/accounting/tailoring/cash-box"
                     className="p-4 bg-gradient-to-r from-stone-50 to-amber-100 rounded-lg border border-amber-300 hover:shadow-md transition-all duration-300 text-center block"
@@ -966,7 +1053,9 @@ function DashboardContent() {
                     <WalletCards className="w-6 h-6 text-amber-700 mx-auto mb-2" />
                     <span className="text-sm font-medium text-amber-900">{isArabic ? 'الصندوق' : 'Cash Box'}</span>
                   </Link>
+                  )}
 
+                  {can('accounting.tailoring.income') && (
                   <Link
                     href="/dashboard/accounting/tailoring/income"
                     className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-lg border border-emerald-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -974,7 +1063,9 @@ function DashboardContent() {
                     <TrendingUp className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-emerald-800">{isArabic ? 'واردات قسم التفصيل' : 'Tailoring Income'}</span>
                   </Link>
+                  )}
 
+                  {can('accounting.tailoring.salaries') && (
                   <Link
                     href="/dashboard/accounting/tailoring/salaries"
                     className="p-4 bg-gradient-to-r from-amber-50 to-yellow-100 rounded-lg border border-amber-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -982,7 +1073,9 @@ function DashboardContent() {
                     <Wallet className="w-6 h-6 text-amber-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-amber-800">{isArabic ? 'رواتب العمال' : 'Worker Salaries'}</span>
                   </Link>
+                  )}
 
+                  {can('accounting.fabrics.income') && (
                   <Link
                     href="/dashboard/accounting/fabrics/income"
                     className="p-4 bg-gradient-to-r from-rose-50 to-rose-100 rounded-lg border border-rose-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -990,7 +1083,9 @@ function DashboardContent() {
                     <ShoppingBag className="w-6 h-6 text-rose-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-rose-800">{isArabic ? 'مبيعات قسم الأقمشة' : 'Fabrics Sales'}</span>
                   </Link>
+                  )}
 
+                  {can('fabrics.inventory') && (
                   <Link
                     href="/dashboard/accounting/fabrics/inventory"
                     className="p-4 bg-gradient-to-r from-cyan-50 to-teal-100 rounded-lg border border-teal-200 hover:shadow-md transition-all duration-300 text-center block"
@@ -998,6 +1093,7 @@ function DashboardContent() {
                     <Boxes className="w-6 h-6 text-teal-600 mx-auto mb-2" />
                     <span className="text-sm font-medium text-teal-800">{isArabic ? 'مخزون متجر الأقمشة' : 'Fabric Store Inventory'}</span>
                   </Link>
+                  )}
 
 
                 </div>

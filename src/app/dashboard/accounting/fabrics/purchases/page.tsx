@@ -724,7 +724,7 @@ function FabricsPurchasesContent() {
 
 export default function FabricsPurchasesPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.fabrics.purchases'}>
       <FabricsPurchasesContent />
     </ProtectedWorkerRoute>
   )

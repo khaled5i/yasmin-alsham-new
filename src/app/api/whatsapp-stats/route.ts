@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getStaffServiceClient, requireActiveStaff } from '@/lib/server/api-auth'
+import { getStaffServiceClient, requireActiveStaff, staffHasPermission } from '@/lib/server/api-auth'
 
 /**
  * إحصائيات ضغطات واتساب للفترة ?from=yyyy-mm-dd&to=yyyy-mm-dd (بتوقيت الرياض، تشمل اليومين).
@@ -22,7 +22,9 @@ function nextDay(date: string): string {
 export async function GET(request: NextRequest) {
   const auth = await requireActiveStaff(request)
   if (!auth.ok) return auth.response
-  if (auth.staff.role !== 'admin') return reply({ error: 'إحصائيات واتساب متاحة للمدير فقط.' }, 403)
+  if (!(await staffHasPermission(auth.staff.userId, auth.staff.role, 'reports.whatsapp'))) {
+    return reply({ error: 'لا تملك صلاحية إحصائيات واتساب.' }, 403)
+  }
 
   const from = request.nextUrl.searchParams.get('from') ?? ''
   const to = request.nextUrl.searchParams.get('to') ?? ''

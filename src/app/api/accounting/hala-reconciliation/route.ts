@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireActiveStaff } from '@/lib/server/api-auth'
+import { requireActiveStaff, staffHasPermission } from '@/lib/server/api-auth'
 import { readAll } from '@/lib/server/hala-read-all'
 import { halaRiyadhDate, tailoringHalaEntries, type TailoringOrder, type TailoringPayment } from '@/lib/server/hala-tailoring'
 import { dateRange, halaCustomerName, parseHalaText, reconcileHala, toHalalas, type SiteEntry } from '@/lib/hala-reconciliation'
@@ -15,7 +15,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireActiveStaff(request)
   if (!auth.ok) return auth.response
   // Cross-branch finance is restricted to the owner/admin, including on the server.
-  if (auth.staff.role !== 'admin') return reply({ error: 'مطابقة هلا متاحة للمدير فقط.' }, 403)
+  if (!(await staffHasPermission(auth.staff.userId, auth.staff.role, 'accounting.hala'))) {
+    return reply({ error: 'لا تملك صلاحية مطابقة هلا.' }, 403)
+  }
   if (!request.headers.get('content-type')?.startsWith('application/json')) return reply({ error: 'صيغة الطلب غير صالحة.' }, 400)
   if (Number(request.headers.get('content-length') || 0) > MAX_BODY) return reply({ error: 'الملف أكبر من الحد المسموح.' }, 413)
   let body: { text?: unknown; start?: unknown; end?: unknown }

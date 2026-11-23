@@ -508,7 +508,7 @@ function FabricsSalariesContent() {
 
 export default function FabricsSalariesPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.fabrics.salaries'}>
       <FabricsSalariesContent />
     </ProtectedWorkerRoute>
   )

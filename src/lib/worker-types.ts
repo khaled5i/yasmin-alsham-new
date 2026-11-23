@@ -10,7 +10,7 @@ export const WORKER_TYPE_NAMES_AR: Record<WorkerType, string> = {
   tailor: 'خياط/خياطة',
   fabric_store_manager: 'مدير متجر الأقمشة',
   accountant: 'محاسب',
-  general_manager: 'مدير عام',
+  general_manager: 'المدير العام',
   workshop_manager: 'مدير الورشة',
   shak_worker: 'شكّاك'
 }
@@ -121,10 +121,10 @@ export function getWorkerDashboardRoute(type: WorkerType): string {
 
 // قائمة جميع أنواع العمال للاستخدام في القوائم المنسدلة
 export const WORKER_TYPES_OPTIONS = [
+  { value: 'general_manager', label: 'المدير العام', labelEn: 'General Manager' },
   { value: 'tailor', label: 'خياط/خياطة', labelEn: 'Tailor' },
   { value: 'fabric_store_manager', label: 'مدير متجر الأقمشة', labelEn: 'Fabric Store Manager' },
   { value: 'accountant', label: 'محاسب', labelEn: 'Accountant' },
-  { value: 'general_manager', label: 'مدير عام', labelEn: 'General Manager' },
   { value: 'workshop_manager', label: 'مدير الورشة', labelEn: 'Workshop Manager' },
   { value: 'shak_worker', label: 'شكّاك', labelEn: 'Shak Worker' }
 ] as const
@@ -134,7 +134,7 @@ export const WORKER_TYPE_DESCRIPTIONS: Record<WorkerType, string> = {
   tailor: 'مسؤول عن تنفيذ طلبات التفصيل والخياطة',
   fabric_store_manager: 'مسؤول عن إدارة متجر الأقمشة (إضافة، تعديل، حذف الأقمشة)',
   accountant: 'مسؤول عن النظام المحاسبي والتقارير المالية',
-  general_manager: 'صلاحيات كاملة على جميع أقسام النظام',
+  general_manager: 'تحت المدير الأكبر مباشرة — كل الصلاحيات افتراضياً، ويمكن إطفاء أي منها من زر «الصلاحيات»',
   workshop_manager: 'مسؤول عن متابعة الطلبات (الحديثة، المكتملة، المسلمة)',
   shak_worker: 'مسؤول عن أعمال الشك — تصله تلقائياً كل الطلبات التي فيها أعمال شك'
 }

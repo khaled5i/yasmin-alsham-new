@@ -13,6 +13,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { orderService, type Order } from '@/lib/services/order-service'
 import { shiftDate } from '@/lib/date-utils'
 import { useAppResume } from '@/hooks/useAppResume'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { sendDeliveredWhatsApp, sendSecondProofReadyWhatsApp, sendReadyForPickupWhatsApp } from '@/utils/whatsapp'
 import OrderModal from '@/components/OrderModal'
 import StoreAlertsPanel from '@/components/fabric-store/StoreAlertsPanel'
@@ -51,6 +52,8 @@ type SortOption = 'newest' | 'oldest' | 'priority'
 
 export default function NotificationsPage() {
   const { user, isLoading: authLoading } = useAuthStore()
+  const { can, isLoading: permissionsLoading } = useWorkerPermissions()
+  const allowed = !!user && can('orders.notifications')
   const { updateOrder } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, isArabic } = useTranslation()
@@ -89,17 +92,17 @@ export default function NotificationsPage() {
   const [printOrder, setPrintOrder] = useState<any>(null)
   const [isProcessing, setIsProcessing] = useState(false)
 
-  // حماية الصفحة: للمدير فقط
+  // حماية الصفحة: حسب صلاحية «مركز الإشعارات»
   useEffect(() => {
     if (authLoading) return
     if (!user) {
       router.push('/login')
       return
     }
-    if (user.role !== 'admin') {
+    if (!permissionsLoading && !allowed) {
       router.push('/dashboard')
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, permissionsLoading, allowed, router])
 
   // جلب كل أنواع الإشعارات معاً (مرتبة من الأحدث إلى الأقدم حسب تاريخ الإنجاز/الاكتمال)
   const loadNotifications = useCallback(async () => {
@@ -134,13 +137,13 @@ export default function NotificationsPage() {
   }, [])
 
   useEffect(() => {
-    if (!user || user.role !== 'admin') return
+    if (!allowed) return
     loadNotifications()
     loadWorkers()
-  }, [user, loadNotifications, loadWorkers])
+  }, [allowed, loadNotifications, loadWorkers])
 
   useAppResume(() => {
-    if (!user || user.role !== 'admin') return
+    if (!allowed) return
     loadNotifications()
   })
 

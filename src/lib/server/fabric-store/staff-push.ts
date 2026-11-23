@@ -11,6 +11,7 @@
 
 import webpush from 'web-push'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { staffHasPermission } from '@/lib/server/api-auth'
 
 export interface PushSubscriptionInput {
   endpoint: string
@@ -47,7 +48,7 @@ export function isStaffPushConfigured(): boolean {
   return configured
 }
 
-/** معرّفات من يحق لهم الإشعار الآن: المدير الفعّال ومدير متجر الأقمشة الفعّال. */
+/** معرّفات من يحق لهم الإشعار الآن: المدير الأكبر الفعّال ومن يملك صلاحية طلبات المتجر. */
 async function currentStaffIds(client: SupabaseClient, userIds: string[]): Promise<Set<string>> {
   const allowed = new Set<string>()
   if (!userIds.length) return allowed
@@ -58,10 +59,11 @@ async function currentStaffIds(client: SupabaseClient, userIds: string[]): Promi
     if (u.role === 'admin') allowed.add(u.id)
     else if (u.role === 'worker') workerIds.push(u.id)
   }
-  if (workerIds.length) {
-    const { data: workers } = await client.from('workers').select('user_id, worker_type').in('user_id', workerIds)
-    for (const w of workers ?? []) if (w.worker_type === 'fabric_store_manager') allowed.add(w.user_id)
-  }
+  // العمال: من يملك صلاحية «طلبات المتجر الإلكتروني» (افتراضياً مدير متجر الأقمشة والمدير العام)
+  const checks = await Promise.all(
+    workerIds.map(async id => ((await staffHasPermission(id, 'worker', 'fabrics.online_orders')) ? id : null))
+  )
+  for (const id of checks) if (id) allowed.add(id)
   return allowed
 }
 

@@ -13,6 +13,7 @@ import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import ImageUpload from '@/components/ImageUpload'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote, InteractiveImageAnnotationRef } from '@/components/InteractiveImageAnnotation'
 import NumericInput from '@/components/NumericInput'
@@ -2267,8 +2268,10 @@ function AddOrderContent() {
 
 export default function AddOrderPage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute>
+      <ProtectedWorkerRoute staffPermission="orders.create">
       <AddOrderContent />
+      </ProtectedWorkerRoute>
     </ProtectedRoute>
   )
 }

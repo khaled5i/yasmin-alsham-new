@@ -596,7 +596,7 @@ function PrintStationInner() {
 
 export default function PrintStationPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.fabrics.print_station'}>
       <PrintStationInner />
     </ProtectedWorkerRoute>
   )

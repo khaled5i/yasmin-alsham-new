@@ -22,6 +22,7 @@ import { MATERIAL_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
 import { getCategories, createCategory, type AccountingCategory } from '@/lib/services/accounting-category-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 import { getSuppliers, type Supplier } from '@/lib/services/supplier-service'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 
 function MaterialExpensesContent() {
   const [loading, setLoading] = useState(true)
@@ -719,37 +720,9 @@ function MaterialExpensesContent() {
 }
 
 export default function MaterialExpensesPage() {
-  const router = useRouter()
-  const { user, isLoading } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push('/login')
-      return
-    }
-
-    if (!isLoading && !permissionsLoading && user) {
-      const isAdmin = user.role === 'admin'
-      const isAccountant = user.role === 'worker' && workerType === 'accountant'
-
-      if (!isAdmin && !isAccountant) {
-        router.push('/dashboard')
-        return
-      }
-    }
-  }, [user, workerType, isLoading, permissionsLoading, router])
-
-  if (isLoading || permissionsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">جاري التحميل...</p>
-        </div>
-      </div>
-    )
-  }
-
-  return <MaterialExpensesContent />
+  return (
+    <ProtectedWorkerRoute staffPermission={'accounting.tailoring.materials'}>
+      <MaterialExpensesContent />
+    </ProtectedWorkerRoute>
+  )
 }

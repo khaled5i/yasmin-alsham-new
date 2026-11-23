@@ -36,6 +36,7 @@ import ReportPeriodPicker, {
   type DateFilter,
   type DateRange,
 } from '@/components/ReportPeriodPicker'
+import { WOMEN_WORKSHOP_KEYS } from '@/lib/staff-permissions'
 
 const moneyFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
@@ -308,7 +309,7 @@ function TransactionsTable({
 export default function WomenWorkshopAccountingPage() {
   const router = useRouter()
   const { user, isLoading: authLoading } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+  const { canAny, isLoading: permissionsLoading } = useWorkerPermissions()
   const [transactions, setTransactions] = useState<WomenWorkshopTransaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -332,16 +333,14 @@ export default function WomenWorkshopAccountingPage() {
     }
 
     if (!authLoading && !permissionsLoading && user) {
-      const canAccess = user.role === 'admin' || (user.role === 'worker' && workerType === 'accountant')
-      if (!canAccess) router.push('/dashboard')
+      if (!canAny(WOMEN_WORKSHOP_KEYS)) router.push('/dashboard')
     }
-  }, [authLoading, permissionsLoading, router, user, workerType])
+  }, [authLoading, permissionsLoading, router, user, canAny])
 
   useEffect(() => {
     if (authLoading || permissionsLoading || !user) return
-    const canAccess = user.role === 'admin' || (user.role === 'worker' && workerType === 'accountant')
-    if (canAccess) void loadTransactions()
-  }, [authLoading, loadTransactions, permissionsLoading, user, workerType])
+    if (canAny(WOMEN_WORKSHOP_KEYS)) void loadTransactions()
+  }, [authLoading, loadTransactions, permissionsLoading, user, canAny])
 
   const handleApplyPeriod = (period: DateRange, range: DateFilter) => {
     setSelectedPeriod(period)

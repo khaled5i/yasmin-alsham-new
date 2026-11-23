@@ -86,7 +86,10 @@ function OrdersPageInner() {
   } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
   const { t, language, changeLanguage, isArabic } = useTranslation()
-  const { getDashboardRoute, workerType } = useWorkerPermissions()
+  const { getDashboardRoute, workerType, can, isGeneralManager } = useWorkerPermissions()
+  // واجهة الإدارة (المدير الأكبر والمدير العام) مقابل واجهة العامل (خياط/مدير ورشة/شكّاك)
+  const isManagerView = user?.role === 'admin' || isGeneralManager
+  const isWorkerView = user?.role === 'worker' && !isGeneralManager
   const router = useRouter()
   const [currentPage, setCurrentPage] = useState(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -789,7 +792,7 @@ function OrdersPageInner() {
 
   // بدء العمل في الطلب (للعمال)
   const handleStartWork = (order: any) => {
-    if (!user || user.role !== 'worker') return
+    if (!user || !isWorkerView) return
 
     if (order.has_second_proof) {
       setOrderToStartWork(order)
@@ -801,7 +804,7 @@ function OrdersPageInner() {
   }
 
   const executeStartWork = async (orderId: string) => {
-    if (!user || user.role !== 'worker') return
+    if (!user || !isWorkerView) return
 
     setIsProcessing(true)
     try {
@@ -1015,7 +1018,7 @@ function OrdersPageInner() {
 
   // إبلاغ المدير بجهوزية البروفا الثانية (للعامل) — يدعم التراجع
   const handleNotifySecondProof = async (order: any) => {
-    if (!user || user.role !== 'worker') return
+    if (!user || !isWorkerView) return
 
     const markCompleted = !order.second_proof_completed
     setNotifyingSecondProofId(order.id)
@@ -1044,7 +1047,7 @@ function OrdersPageInner() {
 
   // إنهاء عمل الشك — يقلب علم الشك وحده ولا يمسّ حالة الطلب الرئيسية إطلاقاً
   const handleToggleShakCompleted = async (order: any) => {
-    if (!user || user.role !== 'worker') return
+    if (!user || !isWorkerView) return
 
     const markCompleted = !order.shak_completed
     setTogglingShakId(order.id)
@@ -1074,7 +1077,7 @@ function OrdersPageInner() {
 
   // إنهاء الطلب (للعمال)
   const handleCompleteWork = async () => {
-    if (!selectedOrder || !user || user.role !== 'worker') return
+    if (!selectedOrder || !user || !isWorkerView) return
 
     setIsProcessing(true)
     try {
@@ -1146,7 +1149,8 @@ function OrdersPageInner() {
 
   const filteredOrders = baseOrders.filter(order => {
     // فلترة حسب الدور
-    let matchesRole = user?.role === 'admin' || workerType === 'workshop_manager'
+    // كل الطلبات لمن يملك «عرض كل الطلبات»؛ وإلا طلباته المسندة إليه فقط
+    let matchesRole = can('orders.view_all')
 
     if (!matchesRole && user?.role === 'worker') {
       if (isShakWorker) {
@@ -1237,7 +1241,7 @@ function OrdersPageInner() {
           </div>
 
           <div className="flex items-center gap-3">
-            {user.role === 'admin' && (
+            {isManagerView && can('orders.create') && (
               <>
                 <Link
                   href="/dashboard/queue-management"
@@ -1330,16 +1334,16 @@ function OrdersPageInner() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
-          className={filteredOrders.length === 0 ? "space-y-6" : user.role === 'worker' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}
+          className={filteredOrders.length === 0 ? "space-y-6" : isWorkerView ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"}
         >
           {filteredOrders.length === 0 ? (
             <div className="text-center py-12 bg-white/80 backdrop-blur-sm rounded-2xl border border-pink-100">
               <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
               <h3 className="text-xl font-medium text-gray-600 mb-2">
-                {user.role === 'worker' ? t('no_orders_assigned') : t('no_orders_found')}
+                {isWorkerView ? t('no_orders_assigned') : t('no_orders_found')}
               </h3>
               <p className="text-gray-500">
-                {user.role === 'worker'
+                {isWorkerView
                   ? t('no_orders_assigned_desc')
                   : t('no_orders_found_desc')
                 }
@@ -1356,7 +1360,7 @@ function OrdersPageInner() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: Math.min(index, 5) * 0.1 }}
-                  className={`relative bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-all ${user.role === 'worker'
+                  className={`relative bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-all ${isWorkerView
                     ? workerType === 'workshop_manager'
                       ? 'py-5 pr-5 pl-20 shadow-md'
                       : 'p-5 shadow-md'
@@ -1408,7 +1412,7 @@ function OrdersPageInner() {
                       })}
                     </div>
                   ) : null}
-                  {user.role === 'worker' ? (
+                  {isWorkerView ? (
                     /* ========= بطاقة العامل ========= */
                     <>
                       {/* صورة الأمام + المعلومات جنباً لجنب */}
@@ -1703,21 +1707,21 @@ function OrdersPageInner() {
                         )}
 
                         {/* Admin Action Buttons */}
-                        {user.role === 'admin' && (
+                        {isManagerView && (
                           <>
                             {order.status === 'completed' ? (
                               /* أزرار الطلبات المكتملة - مطابقة لصفحة الطلبات المكتملة */
                               <div className="flex flex-col gap-2 mt-1">
-                                <Link
+                                {can('alterations.create') && <Link
                                   href={`/dashboard/alterations/add?orderId=${order.id}`}
                                   onClick={(e) => e.stopPropagation()}
                                   className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
                                   title="طلب تعديل"
                                 >
                                   <Wrench className="w-4 h-4" />
-                                </Link>
+                                </Link>}
 
-                                <button
+                                {can('orders.edit') && <button
                                   onClick={(e) => { e.stopPropagation(); handleSendReadyForPickup(order) }}
                                   disabled={!order.client_phone || order.client_phone.trim() === '' || confirmingOrderId === order.id || order.admin_confirmed === true}
                                   className={`p-2 rounded-lg transition-colors border ${
@@ -1740,9 +1744,9 @@ function OrdersPageInner() {
                                   ) : (
                                     <MessageCircle className="w-4 h-4" />
                                   )}
-                                </button>
+                                </button>}
 
-                                <button
+                                {can('orders.edit') && <button
                                   onClick={(e) => { e.stopPropagation(); handleMarkAsDeliveredWithCheck(order) }}
                                   disabled={isProcessing}
                                   className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-purple-100"
@@ -1753,19 +1757,19 @@ function OrdersPageInner() {
                                   ) : (
                                     <Truck className="w-4 h-4" />
                                   )}
-                                </button>
+                                </button>}
 
-                                <button
+                                {can('orders.delete') && <button
                                   onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
                                   className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
                                   title="حذف الطلب"
                                 >
                                   <Trash2 className="w-4 h-4" />
-                                </button>
+                                </button>}
 
                                 {/* زر إعادة الحالة */}
                                 <div className="relative">
-                                  <button
+                                  {can('orders.edit') && <button
                                     onClick={(e) => { e.stopPropagation(); setStatusChangeOrderId(statusChangeOrderId === order.id ? null : order.id) }}
                                     className={`p-2 rounded-lg transition-colors border ${
                                       statusChangeOrderId === order.id
@@ -1775,7 +1779,7 @@ function OrdersPageInner() {
                                     title="إعادة الطلب لحالة سابقة"
                                   >
                                     <RotateCcw className="w-4 h-4" />
-                                  </button>
+                                  </button>}
                                   {statusChangeOrderId === order.id && (
                                     <div
                                       className="absolute left-0 top-full mt-1 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-2 min-w-[160px]"
@@ -1805,84 +1809,84 @@ function OrdersPageInner() {
                             ) : order.status === 'delivered' ? (
                               /* أزرار الطلبات المستلمة - مطابقة لصفحة الطلبات المستلمة */
                               <div className="flex flex-col gap-2 mt-1">
-                                <Link
+                                {can('alterations.create') && <Link
                                   href={`/dashboard/alterations/add?orderId=${order.id}`}
                                   onClick={(e) => e.stopPropagation()}
                                   className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
                                   title="طلب تعديل"
                                 >
                                   <Wrench className="w-4 h-4" />
-                                </Link>
+                                </Link>}
 
-                                <button
+                                {can('orders.edit') && <button
                                   onClick={(e) => { e.stopPropagation(); handleSendThankYouMessage(order) }}
                                   disabled={!order.client_phone}
                                   className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-green-100"
                                   title="إرسال رسالة شكر"
                                 >
                                   <MessageCircle className="w-4 h-4" />
-                                </button>
+                                </button>}
 
-                                <button
+                                {can('orders.delete') && <button
                                   onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
                                   className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
                                   title="حذف الطلب"
                                 >
                                   <Trash2 className="w-4 h-4" />
-                                </button>
+                                </button>}
                               </div>
                             ) : (
                               /* أزرار الطلبات العادية (قيد الانتظار / قيد التنفيذ / ملغي) */
                               <div className="flex gap-1.5">
                                 <div className="flex flex-col gap-1.5">
-                                  <button
+                                  {can('orders.manage_workflow') && <button
                                     onClick={(e) => { e.stopPropagation(); handleOpenMeasurements(order) }}
                                     className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200"
                                     title={hasMeasurementsBadge(order) ? (t('edit_measurements') || 'تعديل المقاسات') : (t('add_measurements') || 'إضافة مقاسات')}
                                   >
                                     <Ruler className="w-5 h-5" />
                                     {hasMeasurementsBadge(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
-                                  </button>
-                                  <button
+                                  </button>}
+                                  {can('orders.manage_workflow') && <button
                                     onClick={(e) => { e.stopPropagation(); handlePrintOrder(order) }}
                                     className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-pink-600 hover:bg-pink-50 rounded-xl transition-colors border border-gray-200 hover:border-pink-200"
                                     title={t('print_order') || 'طباعة'}
                                   >
                                     <Printer className="w-5 h-5" />
                                     {isOrderPrinted(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
-                                  </button>
-                                  <button
+                                  </button>}
+                                  {can('orders.manage_workflow') && <button
                                     onClick={(e) => { e.stopPropagation(); handleSendWhatsAppOnly(order) }}
                                     className="relative flex items-center justify-center p-2.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-xl transition-colors border border-gray-200 hover:border-green-200"
                                     title={isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
                                   >
                                     <MessageCircle className="w-5 h-5" />
                                     {isWhatsAppSent(order) && <CheckCircle className="w-4 h-4 text-green-500 bg-white rounded-full fill-white absolute -top-1.5 -right-1.5" />}
-                                  </button>
+                                  </button>}
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                  <button
+                                  {can('orders.edit') && <button
                                     onClick={(e) => { e.stopPropagation(); handleEditOrder(order) }}
                                     className="flex items-center justify-center p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-gray-200 hover:border-blue-200"
                                     title={t('edit') || 'تعديل'}
                                   >
                                     <Edit className="w-5 h-5" />
-                                  </button>
-                                  <button
+                                  </button>}
+                                  {can('orders.edit') && <button
                                     onClick={(e) => { e.stopPropagation(); if (order.status === 'pending') handleMarkAsDeliveredWithCheck(order) }}
                                     disabled={isProcessing || order.status !== 'pending'}
                                     className="flex items-center justify-center p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors border border-gray-200 hover:border-purple-200 disabled:opacity-30 disabled:cursor-not-allowed"
                                     title={isArabic ? 'تم التسليم' : 'Mark as Delivered'}
                                   >
                                     <Truck className="w-5 h-5" />
-                                  </button>
-                                  <button
+                                  </button>}
+                                  {can('orders.delete') && <button
                                     onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order) }}
                                     className="flex items-center justify-center p-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-gray-200 hover:border-red-200"
                                     title={t('delete') || 'حذف'}
                                   >
                                     <Trash2 className="w-5 h-5" />
-                                  </button>
+                                  </button>}
                                 </div>
                               </div>
                             )}
@@ -1893,7 +1897,7 @@ function OrdersPageInner() {
                   )}
 
                   {/* Progress Bar - Print / Measurements / WhatsApp (للطلبات العادية فقط) */}
-                  {user.role === 'admin' && order.status !== 'completed' && order.status !== 'delivered' && (() => {
+                  {isManagerView && order.status !== 'completed' && order.status !== 'delivered' && (() => {
                     const done = [isOrderPrinted(order), hasMeasurementsBadge(order), isWhatsAppSent(order)].filter(Boolean).length
                     const pct = done === 0 ? 0 : done === 1 ? 33 : done === 2 ? 66 : 100
                     const barColor = done === 1 ? 'bg-red-400' : done === 2 ? 'bg-orange-400' : done === 3 ? 'bg-green-400' : 'bg-gray-200'
@@ -1915,7 +1919,7 @@ function OrdersPageInner() {
                   })()}
 
                   {/* Footer - Price (Full Width) */}
-                  {workerType !== 'workshop_manager' && workerType !== 'tailor' && !isShakWorker && (
+                  {can('orders.payments') && (
                     <div className="flex items-center justify-between pt-4 border-t border-gray-200 mt-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
                       <div>
                         <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
@@ -1952,8 +1956,8 @@ function OrdersPageInner() {
           workers={workers}
           isOpen={showViewModal}
           onClose={handleCloseModals}
-          onStartWork={user.role === 'worker' && !isShakWorker ? handleStartWork : undefined}
-          onCompleteWork={user.role === 'worker' && !isShakWorker ? handleOpenCompleteModal : undefined}
+          onStartWork={isWorkerView && !isShakWorker ? handleStartWork : undefined}
+          onCompleteWork={isWorkerView && !isShakWorker ? handleOpenCompleteModal : undefined}
           isProcessing={isProcessing}
           currentWorkerId={currentWorkerId || undefined}
           autoTranslateAlterationsToHindi={user.role === 'worker' && workerType === 'tailor'}

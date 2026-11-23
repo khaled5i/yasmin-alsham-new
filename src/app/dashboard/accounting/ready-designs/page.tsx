@@ -20,6 +20,7 @@ import { getQuickStats } from '@/lib/services/simple-accounting-service'
 import type { FinancialSummary } from '@/types/simple-accounting'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 
 const sections = [
   {
@@ -204,40 +205,9 @@ function ReadyDesignsAccountingContent() {
 }
 
 export default function ReadyDesignsAccountingPage() {
-  const router = useRouter()
-  const { user, isLoading } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
-
-  useEffect(() => {
-    // التحقق من تسجيل الدخول
-    if (!isLoading && !user) {
-      router.push('/login')
-      return
-    }
-
-    // التحقق من الصلاحيات - السماح للمدير والمحاسب فقط
-    if (!isLoading && !permissionsLoading && user) {
-      const isAdmin = user.role === 'admin'
-      const isAccountant = user.role === 'worker' && workerType === 'accountant'
-
-      if (!isAdmin && !isAccountant) {
-        router.push('/dashboard')
-        return
-      }
-    }
-  }, [user, workerType, isLoading, permissionsLoading, router])
-
-  if (isLoading || permissionsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-emerald-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">جاري التحميل...</p>
-        </div>
-      </div>
-    )
-  }
-
-  return <ReadyDesignsAccountingContent />
+  return (
+    <ProtectedWorkerRoute staffPermission={'accounting.ready_designs'}>
+      <ReadyDesignsAccountingContent />
+    </ProtectedWorkerRoute>
+  )
 }
-

@@ -21,6 +21,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
 import ReportPeriodPicker, {
   computePresetRange,
@@ -716,8 +717,10 @@ function OrganizationReportsContent() {
 
 export default function OrganizationReportsPage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute>
+      <ProtectedWorkerRoute staffPermission="accounting.organization_reports">
       <OrganizationReportsContent />
+      </ProtectedWorkerRoute>
     </ProtectedRoute>
   )
 }

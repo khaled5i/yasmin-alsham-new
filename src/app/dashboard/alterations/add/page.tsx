@@ -58,6 +58,7 @@ import {
 } from '@/lib/alteration-accessories'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 
 const getDesignViewLabel = (view: 'front' | 'back') => (view === 'front' ? 'أمام' : 'خلف')
 
@@ -1777,7 +1778,9 @@ export default function AddAlterationPage() {
         <Loader2 className="w-12 h-12 text-pink-500 animate-spin" />
       </div>
     }>
-      <AddAlterationContent />
+      <ProtectedWorkerRoute staffPermission="alterations.create">
+        <AddAlterationContent />
+      </ProtectedWorkerRoute>
     </Suspense>
   )
 }

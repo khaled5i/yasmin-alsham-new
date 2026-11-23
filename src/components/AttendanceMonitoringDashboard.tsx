@@ -149,7 +149,7 @@ interface AttendanceMonitoringDashboardProps {
 export default function AttendanceMonitoringDashboard({ embeddedWorkerId, initialWorkerId, initialMonth }: AttendanceMonitoringDashboardProps = {}) {
   const router = useRouter()
   const { user } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+  const { workerType, isLoading: permissionsLoading, can } = useWorkerPermissions()
   // الشهر المشترك مع بقية أقسام متابعة العمال وصفحة الرواتب — محفوظ لبقية اليوم
   const [selectedMonth, setSelectedMonth] = useSelectedMonth()
   const [dateKey, setDateKey] = useState(() => (initialMonth ? defaultDayInMonth(initialMonth) : getRiyadhDateKey()))
@@ -188,12 +188,8 @@ export default function AttendanceMonitoringDashboard({ embeddedWorkerId, initia
     setSelectedMonth(value.slice(0, 7))
   }, [setSelectedMonth])
 
-  const isAuthorized = Boolean(
-    user && (
-      user.role === 'admin'
-      || (user.role === 'worker' && workerType === 'workshop_manager')
-    )
-  )
+  // حسب صلاحية «الحضور والانصراف» (افتراضياً المدير الأكبر والمدير العام ومدير الورشة)
+  const isAuthorized = Boolean(user && can('workers.attendance'))
 
   useEffect(() => {
     if (!user) {

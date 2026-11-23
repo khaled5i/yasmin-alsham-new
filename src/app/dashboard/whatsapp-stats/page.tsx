@@ -18,6 +18,7 @@ import {
   WHATSAPP_VISIT_SOURCE_LABELS,
   type WhatsAppShop,
 } from '@/lib/whatsapp-tracking'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
 /**
  * ضغطات واتساب لكل محل ومصدر — للمدير فقط.
@@ -170,7 +171,10 @@ function CopyLink({ url }: { url: string }) {
 
 export default function WhatsAppStatsPage() {
   const router = useRouter()
-  const { user, isLoading } = useAuthStore()
+  const { user, isLoading: authLoading } = useAuthStore()
+  const { can, isLoading: permissionsLoading } = useWorkerPermissions()
+  const isLoading = authLoading || permissionsLoading
+  const allowed = !!user && can('reports.whatsapp')
   const [preset, setPreset] = useState<Preset>('30d')
   const [range, setRange] = useState(() => presetRange('30d'))
   const [rows, setRows] = useState<StatRow[] | null>(null)
@@ -179,8 +183,8 @@ export default function WhatsAppStatsPage() {
 
   useEffect(() => {
     if (!isLoading && !user) router.replace('/login')
-    else if (!isLoading && user?.role !== 'admin') router.replace('/dashboard')
-  }, [user, isLoading, router])
+    else if (!isLoading && !allowed) router.replace('/dashboard')
+  }, [user, isLoading, allowed, router])
 
   const load = useCallback(async (from: string, to: string) => {
     setLoading(true)
@@ -203,8 +207,8 @@ export default function WhatsAppStatsPage() {
   }, [])
 
   useEffect(() => {
-    if (user?.role === 'admin' && range.from && range.to && range.from <= range.to) void load(range.from, range.to)
-  }, [user?.role, range, load])
+    if (allowed && range.from && range.to && range.from <= range.to) void load(range.from, range.to)
+  }, [allowed, range, load])
 
   const byShop = useMemo(() => {
     const map: Record<WhatsAppShop, StatRow[]> = { fabrics: [], tailoring: [] }
@@ -217,7 +221,7 @@ export default function WhatsAppStatsPage() {
     if (id !== 'custom') setRange(presetRange(id))
   }
 
-  if (isLoading || user?.role !== 'admin') return <div className="p-12 text-center text-gray-500">جاري التحقق من الصلاحية…</div>
+  if (isLoading || !allowed) return <div className="p-12 text-center text-gray-500">جاري التحقق من الصلاحية…</div>
 
   return (
     <main dir="rtl" className="min-h-screen bg-[#f4f5ef] text-[#183d32]">

@@ -18,6 +18,7 @@ import {
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
 import { getCategories, categoriesToOptions, getCategoryLabel, type AccountingCategory } from '@/lib/services/accounting-category-service'
@@ -432,8 +433,10 @@ function ReadyDesignsSalariesContent() {
 
 export default function ReadyDesignsSalariesPage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute>
+      <ProtectedWorkerRoute staffPermission="accounting.ready_designs">
       <ReadyDesignsSalariesContent />
+      </ProtectedWorkerRoute>
     </ProtectedRoute>
   )
 }

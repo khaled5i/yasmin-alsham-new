@@ -15,6 +15,7 @@ import {
   Pencil
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import { getExpenses, createExpense, updateExpense, deleteExpense } from '@/lib/services/simple-accounting-service'
 import { FIXED_EXPENSE_CATEGORIES } from '@/types/simple-accounting'
 import type { Expense, CreateExpenseInput } from '@/types/simple-accounting'
@@ -522,8 +523,10 @@ function FixedExpensesContent() {
 
 export default function FixedExpensesPage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute>
+      <ProtectedWorkerRoute staffPermission="accounting.tailoring.fixed_expenses">
       <FixedExpensesContent />
+      </ProtectedWorkerRoute>
     </ProtectedRoute>
   )
 }

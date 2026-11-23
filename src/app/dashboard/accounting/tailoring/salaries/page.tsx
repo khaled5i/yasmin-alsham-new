@@ -5,7 +5,7 @@ import TailoringPayrollDashboard from '@/components/TailoringPayrollDashboard'
 
 export default function TailoringSalariesPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.tailoring.salaries'}>
       <TailoringPayrollDashboard />
     </ProtectedWorkerRoute>
   )

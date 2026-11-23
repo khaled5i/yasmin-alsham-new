@@ -23,6 +23,19 @@ import { usePayrollRefresh } from '@/hooks/usePayrollRefresh'
 import type { FinancialSummary } from '@/types/simple-accounting'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
+import { TAILORING_ACCOUNTING_KEYS, type StaffPermissionKey } from '@/lib/staff-permissions'
+
+// صلاحية كل بطاقة في محاسبة التفصيل
+const SECTION_PERMISSION: Record<string, StaffPermissionKey> = {
+  'cash-box': 'accounting.tailoring.cash_box',
+  income: 'accounting.tailoring.income',
+  materials: 'accounting.tailoring.materials',
+  fixed: 'accounting.tailoring.fixed_expenses',
+  salaries: 'accounting.tailoring.salaries',
+  'organization-reports': 'accounting.organization_reports',
+  categories: 'accounting.tailoring.categories',
+}
 
 // ============================================================================
 // أقسام المحاسبة
@@ -95,16 +108,18 @@ function TailoringAccountingContent() {
   const [stats, setStats] = useState<FinancialSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const { user } = useAuthStore()
-  const { workerType, getDashboardRoute } = useWorkerPermissions()
+  const { workerType, getDashboardRoute, can } = useWorkerPermissions()
 
-  const isAccountant = user?.role === 'worker' && workerType === 'accountant'
+  // ملخص الأرقام المالية لمن يرى الواردات أو الصندوق؛ المحاسب (المواد فقط) لا يراه
+  const isAccountant = !(can('accounting.tailoring.income') || can('accounting.tailoring.cash_box') || can('accounting.organization_reports'))
   usePayrollRefresh(() => {
     if (!isAccountant) void getQuickStats('tailoring').then(setStats).catch(error => console.error('Payroll summary refresh failed', error))
   })
-  // المحاسب يرى مصروفات المواد فقط — الصندوق للمدير وحده
-  const visibleSections = isAccountant
-    ? sections.filter((section) => section.id === 'materials')
-    : sections
+  // كل بطاقة تظهر حسب صلاحيتها
+  const visibleSections = sections.filter((section) => {
+    const key = SECTION_PERMISSION[section.id]
+    return key ? can(key) : false
+  })
 
   useEffect(() => {
     if (isAccountant) {
@@ -249,39 +264,9 @@ function TailoringAccountingContent() {
 }
 
 export default function TailoringAccountingPage() {
-  const router = useRouter()
-  const { user, isLoading } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
-
-  useEffect(() => {
-    // التحقق من تسجيل الدخول
-    if (!isLoading && !user) {
-      router.push('/login')
-      return
-    }
-
-    // التحقق من الصلاحيات - السماح للمدير والمحاسب فقط
-    if (!isLoading && !permissionsLoading && user) {
-      const isAdmin = user.role === 'admin'
-      const isAccountant = user.role === 'worker' && workerType === 'accountant'
-
-      if (!isAdmin && !isAccountant) {
-        router.push('/dashboard')
-        return
-      }
-    }
-  }, [user, workerType, isLoading, permissionsLoading, router])
-
-  if (isLoading || permissionsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-pink-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">جاري التحميل...</p>
-        </div>
-      </div>
-    )
-  }
-
-  return <TailoringAccountingContent />
+  return (
+    <ProtectedWorkerRoute staffPermission={TAILORING_ACCOUNTING_KEYS}>
+      <TailoringAccountingContent />
+    </ProtectedWorkerRoute>
+  )
 }

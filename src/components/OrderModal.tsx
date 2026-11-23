@@ -331,13 +331,19 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const order = fullOrder || initialOrder
 
   const { updateOrder } = useOrderStore()
-  const { workerType } = useWorkerPermissions() // للتحقق من صلاجيات مدير الورشة
-  const canEditAssignment = user?.role === 'admin' || (workerType === 'workshop_manager' && order?.status !== 'completed')
+  const { workerType, can, isGeneralManager } = useWorkerPermissions()
+  // نظام الصلاحيات: الإسناد/الطباعة/الاتصال = «إدارة سير الطلب»؛ الحالة = «تعديل الطلب»؛ الأسعار = «الأسعار والدفعات»
+  const canManageWorkflow = can('orders.manage_workflow')
+  const canEditOrder = can('orders.edit')
+  const canSeePayments = can('orders.payments')
+  const canSeeErrorReason = can('alterations.error_reason')
+  // من يملك «تعديل الطلب» يُسند دائماً؛ من يدير سير الطلب فقط (مدير الورشة افتراضياً) قبل اكتماله
+  const canEditAssignment = canEditOrder || (canManageWorkflow && order?.status !== 'completed')
 
   // زر تحويل الصورة إلى كرتون: يظهر لأي طلب مكتمل للمدراء ومدراء الورشة فقط
   const canShowCartoonButton =
     (order?.status === 'completed' || order?.status === 'delivered') &&
-    (user?.role === 'admin' || workerType === 'workshop_manager')
+    canManageWorkflow
 
   // حالات تعليقات التصميم
   const [imageAnnotations, setImageAnnotations] = useState<ImageAnnotation[]>([])
@@ -371,7 +377,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
   // في صفحة العمال فقط: قسم معلومات الطلب وقسم المقاسات يصبحان قائمتين منسدلتين،
   // مع نقل قسم المقاسات إلى أسفل الصفحة. لا يتغيّر محتوى القسمين إطلاقاً.
-  const isWorkerView = user?.role === 'worker'
+  const isWorkerView = user?.role === 'worker' && !isGeneralManager
   const [isOrderInfoOpen, setIsOrderInfoOpen] = useState(false)
   const [isMeasurementsOpen, setIsMeasurementsOpen] = useState(false)
 
@@ -1199,7 +1205,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
   // ── أجزاء مشتركة بين التصميم الكلاسيكي والتصميم الحديث (نفس المحتوى ونفس الصلاحيات) ──
 
-  // قائمة تغيير الحالة — تُعرض للمدير فقط (زرّها محصور بـ user.role === 'admin')
+  // قائمة تغيير الحالة — تُعرض لمن يملك «تعديل الطلب»
   const statusDropdownMenu = showStatusDropdown ? (
     <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl min-w-[180px] overflow-hidden">
       {/* الحالات الأساسية */}
@@ -1765,7 +1771,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
   // ==========================================================================
   // التصميم الحديث (layout="modern") — نفس الصلاحيات حرفياً:
-  // • السعر/المدفوع/المتبقي/المصروفات: للمدير فقط (user.role === 'admin')
+  // • السعر/المدفوع/المتبقي/المصروفات: لمن يملك صلاحية «الأسعار والدفعات»
   // • تغيير الحالة: للمدير فقط — والباقي يرون الحالة دون تعديل
   // • الطباعة: للمدير ومدير الورشة — اختيار العمال: canEditAssignment
   // • سبب خطأ التعديل: للمدير فقط — تسجيل ملخص التصميم: مدير الورشة فقط
@@ -1773,10 +1779,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   // ==========================================================================
   const renderModernPanel = () => {
     const statusInfo = getStatusInfo(order.status)
-    const isAdmin = user?.role === 'admin'
-    const canPrint = isAdmin || workerType === 'workshop_manager'
-    // رقم الهاتف ظاهر للجميع كما كان؛ تحويله لزر اتصال مباشر للمدير ومدير الورشة فقط.
-    const canCallClient = isAdmin || workerType === 'workshop_manager'
+    const isAdmin = canEditOrder
+    const canPrint = canManageWorkflow
+    // رقم الهاتف ظاهر للجميع كما كان؛ تحويله لزر اتصال مباشر لمن يدير سير الطلب.
+    const canCallClient = canManageWorkflow
 
     // ── الشارات الإضافية (نفس الشارات الظاهرة سابقاً لكل الأدوار) ──
     const flagChips: Array<{ key: string; label: string; className: string }> = []
@@ -1986,7 +1992,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     )
 
     // ── الدفع: للمدير فقط ──
-    const paymentSection = isAdmin ? (() => {
+    const paymentSection = canSeePayments ? (() => {
       const price = Number(order.price) || 0
       const paid = Number(order.paid_amount) || 0
       const remaining = order.remaining_amount != null ? Number(order.remaining_amount) : Math.max(0, price - paid)
@@ -2110,7 +2116,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
           orderId={order.id}
           autoTranslateHindi={autoTranslateAlterationsToHindi}
           onOpenImage={openLightbox}
-          showErrorReason={user?.role === 'admin'}
+          showErrorReason={canSeeErrorReason}
         />
       </div>
     )
@@ -2491,8 +2497,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   {t('order_details')}
                 </h2>
                 <div className="flex items-center space-x-3 space-x-reverse">
-                  {/* زر الطباعة - للمدراء ومدراء الورشة */}
-                  {(user?.role === 'admin' || workerType === 'workshop_manager') && (
+                  {/* زر الطباعة - لمن يدير سير الطلب */}
+                  {canManageWorkflow && (
                     <button
                       onClick={() => setShowPrintModal(true)}
                       className="p-2 text-pink-500 hover:text-pink-700 hover:bg-pink-50 rounded-full transition-colors duration-300"
@@ -2652,7 +2658,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                       <span className="text-xs sm:text-sm font-medium truncate">{t('status')}:</span>
                     </div>
 
-                    {user?.role === 'admin' ? (
+                    {canEditOrder ? (
                       <div className="relative" ref={statusDropdownRef}>
                         {/* Badge قابل للنقر */}
                         <button
@@ -2723,8 +2729,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     </div>
                   )}
 
-                  {/* السعر - للمدراء فقط */}
-                  {user?.role === 'admin' && (
+                  {/* السعر - لمن يملك الأسعار والدفعات */}
+                  {canSeePayments && (
                     <div className="bg-white p-2 sm:p-3 rounded-lg">
                       <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
                         <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
@@ -2742,8 +2748,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     </div>
                   )}
 
-                  {/* مصروفات الطلب وسجل تعديل السعر - للمدراء فقط */}
-                  {user?.role === 'admin' && (() => {
+                  {/* مصروفات الطلب وسجل تعديل السعر - لمن يملك الأسعار والدفعات */}
+                  {canSeePayments && (() => {
                     const { expenses, adjustments } = getOrderPriceBreakdown(order)
                     if (expenses.length === 0 && adjustments.length === 0) return null
                     return (
@@ -2778,8 +2784,8 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                     )
                   })()}
 
-                  {/* الدفعة المستلمة - للمدراء فقط */}
-                  {user?.role === 'admin' && (
+                  {/* الدفعة المستلمة - لمن يملك الأسعار والدفعات */}
+                  {canSeePayments && (
                     <div className="bg-white p-2 sm:p-3 rounded-lg">
                       <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse text-gray-600 mb-0.5 sm:mb-1">
                         <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
@@ -2790,7 +2796,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                   )}
 
                   {/* تفصيل المدفوع: كاش / شبكة - للمدراء فقط */}
-                  {user?.role === 'admin' && (Number(order.paid_amount) || 0) > 0 && (() => {
+                  {canSeePayments && (Number(order.paid_amount) || 0) > 0 && (() => {
                     const bd = computePaymentBreakdown(order as any)
                     return (
                       <div className="col-span-3 sm:col-span-2 lg:col-span-3 bg-white p-2 sm:p-3 rounded-lg">
@@ -2869,7 +2875,7 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
                 orderId={order.id}
                 autoTranslateHindi={autoTranslateAlterationsToHindi}
                 onOpenImage={openLightbox}
-                showErrorReason={user?.role === 'admin'}
+                showErrorReason={canSeeErrorReason}
               />
 
               {/* 3️⃣ قسم تعليقات التصميم */}

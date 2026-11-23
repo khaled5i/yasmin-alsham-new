@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * GET: الطلب وأسطره وعنوانه ومحاولات الدفع والمبيعة ومهام الطابور وسجل التدقيق،
  *      ورابط تتبّع الزبونة (يُشتق من مفتاح الطلب والسر، ولا يُخزَّن).
  * POST: { action: 'fulfillment' | 'resolve_review' | 'note' | 'delete', ... } ⇒ دوال القاعدة باسم الموظف.
- * قرار المالك (18 أكتوبر): إلغاء الطلب وحذفه للمدير فقط.
+ * قرار المالك (18 أكتوبر): إلغاء الطلب وحذفه للمدير الأكبر فقط.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireFabricStoreStaff(request)
@@ -242,7 +242,7 @@ const actionSchema = z.discriminatedUnion('action', [
     alertIds: z.array(z.string().uuid()).max(1000),
   }) }),
   z.object({ action: z.literal('note'), note: z.string().max(500) }),
-  // 18 أكتوبر: حذف (إخفاء) طلب لا مال عليه — للمدير فقط
+  // 18 أكتوبر: حذف (إخفاء) طلب لا مال عليه — للمدير الأكبر فقط
   z.object({ action: z.literal('delete'), note: z.string().max(300).optional().nullable() }),
   // المرحلة 8
   z.object({
@@ -305,7 +305,7 @@ const MESSAGES: Record<string, [number, string]> = {
   refund_pending: [409, 'إلغاء الطلب واسترداده قيد التنفيذ — لا يبدأ التجهيز'],
   // الدفعة C
   test_order: [409, 'هذا الطلب دُفع ببطاقة ميسر التجريبية: لا مبيعة ولا خصم، فلا يُجهَّز ولا يُسلَّم قماش. للمدير «تجربة اللوحة» فقط'],
-  forbidden: [403, 'للمدير فقط'],
+  forbidden: [403, 'للمدير الأكبر فقط'],
   payment_in_progress: [409, 'صفحة الدفع ما زالت مفتوحة عند الزبونة وقد تدفع الآن — لا يُلغى الطلب قبل انتهائها'],
   // حذف الطلب
   already_deleted: [409, 'الطلب محذوف من قبل'],
@@ -334,8 +334,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       || body.action === 'refund_external') {
     if (!isRefundsServerEnabled()) return errorResponse(404, 'not-found', 'غير موجود')
     if (body.action === 'refund_external') {
-      // قرار مالي: للمدير فقط (والقاعدة تتحقق بنفسها)
-      if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'للمدير فقط')
+      // قرار مالي: للمدير الأكبر فقط (والقاعدة تتحقق بنفسها)
+      if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'للمدير الأكبر فقط')
       const payment = getPaymentDeps()
       if (!payment.ok) return payment.response
       const { data: attemptRow } = await client.from('fabric_store_payment_attempts')
@@ -351,8 +351,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return jsonResponse({ ok: true, result: { status: 'ok', message: 'سُجّل الاسترداد الخارجي في سجل الطلب والواردات (لم يُرسل شيء لميسر)' } })
     }
     if (body.action === 'refund_close') {
-      // قرار مالي: للمدير فقط، كالاسترداد نفسه
-      if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'للمدير فقط')
+      // قرار مالي: للمدير الأكبر فقط، كالاسترداد نفسه
+      if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'للمدير الأكبر فقط')
       const payment = getPaymentDeps()
       if (!payment.ok) return payment.response
       const { data: refundRow } = await client.from('fabric_store_refunds')
@@ -369,8 +369,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return jsonResponse({ ok: true, result: { status: 'ok', message: 'أُغلق الاسترداد بقرارك ومرجع التسوية؛ يمكن الآن بدء استرداد جديد' } })
     }
     if (body.action === 'refund') {
-      // قرار المالك (21 سبتمبر): الاسترداد للمدير فقط.
-      if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'الاسترداد للمدير فقط')
+      // قرار المالك (21 سبتمبر): الاسترداد للمدير الأكبر فقط.
+      if (auth.staff.role !== 'admin') return errorResponse(403, 'forbidden', 'الاسترداد للمدير الأكبر فقط')
       const payment = getPaymentDeps()
       if (!payment.ok) return payment.response
       const { data: account } = await client.from('users').select('full_name').eq('id', userId).maybeSingle()
@@ -405,9 +405,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return errorResponse(httpStatus, result.status ?? 'error', result.status === 'exceeds' && result.message ? result.message : message)
   }
 
-  // قرار المالك (18 أكتوبر): الإلغاء والحذف للمدير فقط
+  // قرار المالك (18 أكتوبر): الإلغاء والحذف للمدير الأكبر فقط
   if (((body.action === 'fulfillment' && body.to === 'cancelled') || body.action === 'delete') && auth.staff.role !== 'admin') {
-    return errorResponse(403, 'forbidden', 'إلغاء الطلب وحذفه للمدير فقط')
+    return errorResponse(403, 'forbidden', 'إلغاء الطلب وحذفه للمدير الأكبر فقط')
   }
   if (body.action === 'delete') {
     const { data, error } = await client.rpc('fabric_store_staff_delete_order', {
@@ -427,7 +427,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // الدفعة C (AUD-06): «تجربة اللوحة» للمدير وحده (والقاعدة تتحقق بنفسها)
   if (body.action === 'fulfillment' && body.allowTest && auth.staff.role !== 'admin') {
-    return errorResponse(403, 'forbidden', 'تجربة اللوحة على طلب تجريبي للمدير فقط')
+    return errorResponse(403, 'forbidden', 'تجربة اللوحة على طلب تجريبي للمدير الأكبر فقط')
   }
   const { data, error } = body.action === 'fulfillment'
     ? await client.rpc('fabric_store_staff_set_fulfillment', {

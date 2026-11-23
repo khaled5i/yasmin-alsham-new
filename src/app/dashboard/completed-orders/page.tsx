@@ -75,7 +75,7 @@ export default function CompletedOrdersPage() {
   const { workers, loadWorkers } = useWorkerStore()
   const { t, isArabic } = useTranslation()
   const router = useRouter()
-  const { workerType, isLoading: permissionsLoading, getDashboardRoute } = useWorkerPermissions()
+  const { workerType, isLoading: permissionsLoading, getDashboardRoute, can, canAny } = useWorkerPermissions()
 
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -168,14 +168,11 @@ export default function CompletedOrdersPage() {
   useEffect(() => {
     if (authLoading || permissionsLoading || !user) return
 
-    // السماح للمدير ومدير الورشة فقط
-    const isAdmin = user.role === 'admin'
-    const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
-
-    if (!isAdmin && !isWorkshopManager) {
+    // حسب صلاحية «الطلبات المكتملة» (افتراضياً المدير الأكبر والمدير العام ومدير الورشة)
+    if (!can('orders.completed')) {
       router.push('/dashboard')
     }
-  }, [user, authLoading, workerType, permissionsLoading, router])
+  }, [user, authLoading, can, permissionsLoading, router])
 
   // فلترة الطلبات - نفلتر على status === 'completed' هنا أيضاً
   // لأن المتجر مشترك وقد يحتوي على طلبات بحالات أخرى من صفحات سابقة
@@ -494,10 +491,7 @@ export default function CompletedOrdersPage() {
     )
   }
 
-  const isAdmin = user.role === 'admin'
-  const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
-
-  if (!isAdmin && !isWorkshopManager) {
+  if (!can('orders.completed')) {
     return null
   }
 
@@ -740,7 +734,7 @@ export default function CompletedOrdersPage() {
                       {/* Details - integrated here to avoid specific gap from right column height */}
                       <div className="space-y-2">
                         <p className="text-sm text-gray-600">
-                          <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{workerType === 'workshop_manager' ? '***' : order.client_phone}</span>
+                          <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{!can('orders.client_phone') ? '***' : order.client_phone}</span>
                         </p>
                         {order.description && (
                           <p className="text-sm text-gray-600 line-clamp-2">
@@ -785,18 +779,18 @@ export default function CompletedOrdersPage() {
                       </div>
 
                       {/* Action Buttons Stack */}
-                      {!isWorkshopManager && (
+                      {canAny(['alterations.create', 'orders.edit']) && (
                         <div className="flex flex-col gap-2 mt-1">
-                          <Link
+                          {can('alterations.create') && <Link
                             href={`/dashboard/alterations/add?orderId=${order.id}`}
                             onClick={(e) => e.stopPropagation()}
                             className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
                             title={t('request_alteration') || 'طلب تعديل'}
                           >
                             <Wrench className="w-4 h-4" />
-                          </Link>
+                          </Link>}
 
-                          <button
+                          {can('orders.edit') && <button
                             onClick={(e) => {
                               e.stopPropagation()
                               handleSendReadyForPickup(order)
@@ -822,9 +816,9 @@ export default function CompletedOrdersPage() {
                             ) : (
                               <MessageCircle className="w-4 h-4" />
                             )}
-                          </button>
+                          </button>}
 
-                          <button
+                          {can('orders.edit') && <button
                             onClick={(e) => {
                               e.stopPropagation()
                               handleMarkAsDelivered(order.id)
@@ -838,18 +832,18 @@ export default function CompletedOrdersPage() {
                             ) : (
                               <Truck className="w-4 h-4" />
                             )}
-                          </button>
+                          </button>}
 
-                          <button
+                          {can('orders.delete') && <button
                             onClick={(e) => handleDeleteOrder(order, e)}
                             className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
                             title={t('delete_order') || 'حذف الطلب'}
                           >
                             <Trash2 className="w-4 h-4" />
-                          </button>
+                          </button>}
 
                           {/* زر تغيير الحالة */}
-                          <div className="relative">
+                          {can('orders.edit') && <div className="relative">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -890,14 +884,14 @@ export default function CompletedOrdersPage() {
                                 </button>
                               </div>
                             )}
-                          </div>
+                          </div>}
                         </div>
                       )}
                     </div>
                   </div>
 
                   {/* Footer - Price */}
-                  {workerType !== 'workshop_manager' && (
+                  {can('orders.payments') && (
                     <div className="flex items-center justify-between pt-4 border-t border-gray-200 mt-4 cursor-pointer" onClick={() => handleViewOrder(order)}>
                       <div>
                         <p className="text-xs text-gray-500">{t('price_label') || (isArabic ? 'السعر' : 'Price')}</p>
@@ -938,7 +932,7 @@ export default function CompletedOrdersPage() {
         showCartoonButton={true}
         layout="modern"
         // نفس قاعدة البطاقات هنا: مدير الورشة يرى «***» بدل رقم الزبونة
-        hideClientPhone={workerType === 'workshop_manager'}
+        hideClientPhone={!can('orders.client_phone')}
       />
 
       <CartoonGridModal

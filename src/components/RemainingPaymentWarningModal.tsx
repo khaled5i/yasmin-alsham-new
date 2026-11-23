@@ -32,6 +32,7 @@ import type {
   RemainingPaymentDetails,
   RemainingPaymentMethod,
 } from '@/lib/payment-breakdown'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
 export type {
   RemainingPaymentDetails,
@@ -93,11 +94,13 @@ export default function RemainingPaymentWarningModal({
   const [submittingAction, setSubmittingAction] = useState<SubmissionAction | null>(null)
   const isSubmittingRef = useRef(false)
 
+  const { can } = useWorkerPermissions()
+  const canEditPayments = can('orders.payments')
   const normalizedRemaining = roundMoney(Math.max(0, Number(remainingAmount) || 0))
   const hasRemaining = normalizedRemaining >= MONEY_TOLERANCE
   const priceBreakdown = order ? getOrderPriceBreakdown(order) : null
   const paidSoFar = roundMoney(Number(order?.paid_amount) || 0)
-  const canAdjustRemaining = !!order && !!onOrderUpdated && user?.role === 'admin'
+  const canAdjustRemaining = !!order && !!onOrderUpdated && canEditPayments
   const parsedEditedRemaining = roundMoney(parseAmount(editedRemaining))
   const editedRemainingValid =
     editedRemaining.trim() !== '' &&

@@ -115,10 +115,10 @@ const arTranslations: Translations = {
   'fill_required_fields': 'يرجى ملء جميع الحقول المطلوبة',
 
   // نصوص إضافية مطلوبة
-  'admin_dashboard': 'لوحة تحكم المدير',
+  'admin_dashboard': 'لوحة تحكم المدير الأكبر',
   'worker_dashboard': 'لوحة تحكم العامل',
   'tailor_dashboard': 'لوحة تحكم الخياط',
-  'admin': 'مدير',
+  'admin': 'المدير الأكبر',
   'worker': 'عامل',
   'tailor': 'خياط',
   'change_language': 'تغيير اللغة',
@@ -807,10 +807,10 @@ const enTranslations: Translations = {
   'fill_required_fields': 'Please fill all required fields',
 
   // نصوص إضافية مطلوبة
-  'admin_dashboard': 'Admin Dashboard',
+  'admin_dashboard': 'Top Manager Dashboard',
   'worker_dashboard': 'Worker Dashboard',
   'tailor_dashboard': 'Tailor Dashboard',
-  'admin': 'Admin',
+  'admin': 'Top Manager',
   'worker': 'Worker',
   'tailor': 'Tailor',
   'change_language': 'Change Language',

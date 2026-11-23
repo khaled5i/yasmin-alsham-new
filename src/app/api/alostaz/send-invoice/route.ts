@@ -9,6 +9,7 @@ import {
 import { computePaymentBreakdown } from '@/lib/payment-breakdown'
 import { ALOSTAZ_MEASUREMENT_FEE_SAR } from '@/lib/alostaz-config'
 import { isAlostazDeliverySyncEligible } from '@/lib/alostaz-delivery-eligibility'
+import { staffHasPermission } from '@/lib/server/api-auth'
 
 /**
  * مسار خادمي لفواتير التفصيل المرحلية في تطبيق الأستاذ.
@@ -82,8 +83,8 @@ export async function POST(request: NextRequest) {
     if (roleError || !userData?.is_active) {
       return NextResponse.json({ error: 'غير مسموح - الحساب غير نشط أو غير موجود' }, { status: 403 })
     }
-    if (userData.role !== 'admin') {
-      return NextResponse.json({ error: 'غير مسموح - للمدير فقط' }, { status: 403 })
+    if (!(await staffHasPermission(user.id, userData.role, ['orders.payments', 'orders.completed', 'orders.delivered', 'invoices.tailoring', 'accounting.tailoring.income']))) {
+      return NextResponse.json({ error: 'غير مسموح - لا تملك صلاحية إرسال فواتير الطلبات' }, { status: 403 })
     }
 
     const payload = await request.json()

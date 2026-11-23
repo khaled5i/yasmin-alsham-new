@@ -11,6 +11,8 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getDefaultPermission, type StaffPermissionKey } from '@/lib/staff-permissions'
+import type { WorkerType } from '@/lib/services/worker-service'
 
 let adminClient: SupabaseClient | null = null
 
@@ -91,4 +93,55 @@ export async function requireActiveStaff(request: NextRequest): Promise<StaffAut
     ok: true,
     staff: { userId: authData.user.id, role: profile.role, email: profile.email ?? null },
   }
+}
+
+/**
+ * هل يملك الموظف أياً من الصلاحيات؟ المدير الأكبر (admin) دائماً نعم.
+ *
+ * القرار من قاعدة البيانات (public.staff_can_user). إن لم تكن الهجرة مطبّقة بعد
+ * (الدالة غير موجودة) نرجع لافتراضيات نوع العامل في الكود حتى لا يتوقف أحد عن عمله
+ * أثناء النشر. أي خطأ آخر = رفض.
+ */
+export async function staffHasPermission(
+  userId: string,
+  role: string,
+  keys: StaffPermissionKey | StaffPermissionKey[]
+): Promise<boolean> {
+  if (role === 'admin') return true
+  if (role !== 'worker') return false
+  const list = Array.isArray(keys) ? keys : [keys]
+  if (list.length === 0) return false
+
+  const client = getAdminClient()
+  if (!client) return false
+
+  const { data, error } = await client.rpc('staff_can_user', { p_user_id: userId, p_keys: list })
+  if (!error) return data === true
+
+  const missingFunction = error.code === 'PGRST202' || error.code === '42883' ||
+    /staff_can_user/.test(error.message || '') && /not find|does not exist/i.test(error.message || '')
+  if (!missingFunction) {
+    console.error('staffHasPermission: permission check failed', error.message)
+    return false
+  }
+
+  const { data: worker } = await client
+    .from('workers')
+    .select('worker_type')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const workerType = (worker?.worker_type ?? null) as WorkerType | null
+  return list.some(key => getDefaultPermission(workerType, key))
+}
+
+/** requireActiveStaff + الصلاحية المطلوبة (أو أي واحدة منها). */
+export async function requireStaffPermission(
+  request: NextRequest,
+  keys: StaffPermissionKey | StaffPermissionKey[],
+  deniedMessage = 'غير مسموح - لا تملك صلاحية هذا الإجراء'
+): Promise<StaffAuthResult> {
+  const auth = await requireActiveStaff(request)
+  if (!auth.ok) return auth
+  if (await staffHasPermission(auth.staff.userId, auth.staff.role, keys)) return auth
+  return { ok: false, response: NextResponse.json({ error: deniedMessage }, { status: 403 }) }
 }

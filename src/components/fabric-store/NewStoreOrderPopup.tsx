@@ -38,9 +38,8 @@ function loadShown(): string[] {
 
 export default function NewStoreOrderPopup() {
   const { user } = useAuthStore()
-  const { workerType } = useWorkerPermissions()
-  const allowed = IS_FABRIC_STORE_ORDERS_ENABLED
-    && (user?.role === 'admin' || (user?.role === 'worker' && workerType === 'fabric_store_manager'))
+  const { can } = useWorkerPermissions()
+  const allowed = IS_FABRIC_STORE_ORDERS_ENABLED && !!user && can('fabrics.online_orders')
 
   const [orders, setOrders] = useState<NewOrder[]>([])
   const busy = useRef(false)

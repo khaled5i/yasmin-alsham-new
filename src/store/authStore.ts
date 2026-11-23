@@ -179,6 +179,7 @@ export const useAuthStore = create<AuthState>()(
           // مسح البيانات من localStorage
           if (typeof window !== 'undefined') {
             localStorage.removeItem('yasmin-auth-user')
+            localStorage.removeItem('yasmin-staff-permissions-cache-v2')
           }
 
           set({ user: null, isLoading: false, error: null })

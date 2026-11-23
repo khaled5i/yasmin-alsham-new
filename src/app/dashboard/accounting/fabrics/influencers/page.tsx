@@ -359,7 +359,7 @@ function InfluencersContent() {
   if (!isAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6 text-center text-gray-600" dir="rtl">
-        هذا القسم متاح لمدير النظام فقط
+        هذا القسم متاح للمدير الأكبر فقط
       </div>
     )
   }
@@ -798,7 +798,7 @@ function ModalActions({ saving, onCancel }: { saving: boolean; onCancel: () => v
 
 export default function FabricsInfluencersPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.fabrics.influencers'}>
       <InfluencersContent />
     </ProtectedWorkerRoute>
   )

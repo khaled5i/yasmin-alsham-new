@@ -1,22 +1,33 @@
 /**
- * Hook للتحقق من صلاحيات العامل
- * Worker Permissions Hook with Caching
- * 
- * PERFORMANCE OPTIMIZATION:
- * - Admins skip all DB calls (fast-track)
- * - Worker type is cached in localStorage with 10-minute TTL
- * - Returns cached value immediately while refreshing in background
+ * Hook للتحقق من صلاحيات الموظف
+ * Staff permissions hook (shared cache)
+ *
+ * - المدير الأكبر (admin): كل الصلاحيات بلا أي استدعاء للقاعدة.
+ * - العامل: يجلب نوعه وصلاحياته الفعلية من get_my_staff_permissions()
+ *   (القاعدة هي مصدر الحقيقة)، ويحفظها في localStorage لعرض فوري،
+ *   ثم يحدّثها في الخلفية. إن تعذّر الاستدعاء (مثلاً قبل تطبيق الهجرة)
+ *   تُستعمل افتراضيات نوعه من الكود.
+ * - كل نسخ الـhook تتشارك نفس الذاكرة والطلب الجاري، فلا تتكرر الاستدعاءات.
  */
 
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuthStore } from '@/store/authStore'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { getWorkerPermissions, getWorkerDashboardRoute } from '@/lib/worker-types'
 import type { WorkerType } from '@/lib/services/worker-service'
+import {
+  allStaffPermissions,
+  getDefaultPermissions,
+  isStaffPermissionKey,
+  STAFF_PERMISSION_KEYS,
+  type StaffPermissionKey,
+  type StaffPermissionMap,
+} from '@/lib/staff-permissions'
 
-// Permission cache TTL: 10 minutes
-const PERMISSION_TTL_MS = 10 * 60 * 1000
-const CACHE_KEY = 'yasmin-worker-permissions-cache'
+const CACHE_KEY = 'yasmin-staff-permissions-cache-v2'
+const LEGACY_CACHE_KEY = 'yasmin-worker-permissions-cache'
+const CACHE_TTL_MS = 10 * 60 * 1000
+const FRESH_MS = 60 * 1000
 
 interface WorkerPermissions {
   canAccessOrders: boolean
@@ -29,182 +40,216 @@ interface WorkerPermissions {
   dashboardRoute: string
 }
 
-interface CachedPermissions {
+interface StaffSnapshot {
   userId: string
-  workerType: WorkerType
-  permissions: WorkerPermissions
-  cachedAt: number
+  workerType: WorkerType | null
+  permissions: StaffPermissionMap
+  fetchedAt: number
 }
 
-// Helper to get cached permissions from localStorage
-function getCachedPermissions(userId: string): CachedPermissions | null {
+// ── ذاكرة مشتركة بين كل النسخ ───────────────────────────────────────────────
+let memo: StaffSnapshot | null = null
+let inflight: { userId: string; promise: Promise<StaffSnapshot | null> } | null = null
+const listeners = new Set<(snap: StaffSnapshot) => void>()
+
+function readStoredSnapshot(userId: string): StaffSnapshot | null {
   if (typeof window === 'undefined') return null
-
   try {
-    const cached = localStorage.getItem(CACHE_KEY)
-    if (!cached) return null
-
-    const parsed: CachedPermissions = JSON.parse(cached)
-
-    // Validate cache belongs to current user and is not expired
-    if (parsed.userId !== userId) {
-      localStorage.removeItem(CACHE_KEY)
-      return null
-    }
-
-    const now = Date.now()
-    if ((now - parsed.cachedAt) > PERMISSION_TTL_MS) {
-      console.log('⏰ Permission cache expired, will refresh')
-      return null
-    }
-
-    return parsed
-  } catch (error) {
-    console.error('Error reading permission cache:', error)
+    window.localStorage.removeItem(LEGACY_CACHE_KEY)
+    const raw = window.localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as StaffSnapshot
+    if (parsed.userId !== userId) return null
+    if (Date.now() - parsed.fetchedAt > CACHE_TTL_MS) return null
+    return { ...parsed, permissions: normalizeMap(parsed.permissions) }
+  } catch {
     return null
   }
 }
 
-// Helper to save permissions to cache
-function setCachedPermissions(userId: string, workerType: WorkerType, permissions: WorkerPermissions): void {
-  if (typeof window === 'undefined') return
+function storeSnapshot(snap: StaffSnapshot) {
+  memo = snap
+  if (typeof window !== 'undefined') {
+    try { window.localStorage.setItem(CACHE_KEY, JSON.stringify(snap)) } catch { /* ignore */ }
+  }
+  listeners.forEach(listener => {
+    try { listener(snap) } catch { /* ignore */ }
+  })
+}
 
-  try {
-    const cache: CachedPermissions = {
-      userId,
-      workerType,
-      permissions,
-      cachedAt: Date.now()
+function normalizeMap(input: unknown): StaffPermissionMap {
+  const map = allStaffPermissions(false)
+  if (input && typeof input === 'object') {
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+      if (isStaffPermissionKey(key) && value === true) map[key] = true
     }
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
-    console.log('💾 Permission cache saved')
-  } catch (error) {
-    console.error('Error saving permission cache:', error)
+  }
+  return map
+}
+
+async function fetchSnapshot(userId: string): Promise<StaffSnapshot | null> {
+  if (inflight && inflight.userId === userId) return inflight.promise
+
+  const promise = (async (): Promise<StaffSnapshot | null> => {
+    try {
+      const { data, error } = await supabase.rpc('get_my_staff_permissions')
+      if (!error && data && typeof data === 'object') {
+        const payload = data as { worker_type?: string | null; permissions?: unknown }
+        const snap: StaffSnapshot = {
+          userId,
+          workerType: (payload.worker_type as WorkerType | null) ?? null,
+          permissions: normalizeMap(payload.permissions),
+          fetchedAt: Date.now(),
+        }
+        storeSnapshot(snap)
+        return snap
+      }
+      if (error) console.warn('get_my_staff_permissions unavailable, using worker-type defaults:', error.message)
+
+      // احتياط: نوع العامل وافتراضياته من الكود
+      const { data: workerRow, error: workerError } = await supabase
+        .from('workers')
+        .select('worker_type')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (workerError) {
+        console.error('Error loading worker type:', workerError)
+        return null
+      }
+      const type = ((workerRow?.worker_type as WorkerType | undefined) ?? 'tailor')
+      const snap: StaffSnapshot = {
+        userId,
+        workerType: type,
+        permissions: getDefaultPermissions(type),
+        fetchedAt: Date.now(),
+      }
+      storeSnapshot(snap)
+      return snap
+    } catch (error) {
+      console.error('Error loading staff permissions:', error)
+      return null
+    } finally {
+      inflight = null
+    }
+  })()
+
+  inflight = { userId, promise }
+  return promise
+}
+
+/** يُستدعى بعد أن يغيّر المدير صلاحيات نفسه أو عند تسجيل الخروج. */
+export function invalidateStaffPermissionsCache() {
+  memo = null
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(CACHE_KEY)
+      window.localStorage.removeItem(LEGACY_CACHE_KEY)
+    } catch { /* ignore */ }
   }
 }
 
 export function useWorkerPermissions() {
   const { user } = useAuthStore()
-  const [workerType, setWorkerType] = useState<WorkerType | null>(null)
-  const [permissions, setPermissions] = useState<WorkerPermissions | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const hasFetchedRef = useRef(false)
+  const userId = user?.id ?? null
+  const role = user?.role ?? null
+
+  const initial = (): StaffSnapshot | null => {
+    if (!userId || role !== 'worker') return null
+    if (memo && memo.userId === userId) return memo
+    return readStoredSnapshot(userId)
+  }
+
+  const [snapshot, setSnapshot] = useState<StaffSnapshot | null>(initial)
+  // المستخدم الذي فشل جلب صلاحياته (حتى لا يبقى التحميل للأبد)
+  const [failedFor, setFailedFor] = useState<string | null>(null)
 
   useEffect(() => {
-    async function loadWorkerPermissions() {
-      // FAST-TRACK: Admins don't need any DB calls
-      if (!user || user.role === 'admin') {
-        console.log('⚡ Admin fast-track: skipping permission DB call')
-        setIsLoading(false)
-        return
-      }
-
-      // Only workers need permission checks
-      if (user.role !== 'worker') {
-        setIsLoading(false)
-        return
-      }
-
-      // OPTIMIZATION: Check cache first
-      const cached = getCachedPermissions(user.id)
-      if (cached) {
-        console.log('⚡ Using cached worker permissions:', cached.workerType)
-        setWorkerType(cached.workerType)
-        setPermissions(cached.permissions)
-        setIsLoading(false)
-
-        // Background refresh if cache is more than 5 minutes old
-        if ((Date.now() - cached.cachedAt) > PERMISSION_TTL_MS / 2) {
-          console.log('🔄 Background refresh of permissions...')
-          refreshPermissionsInBackground(user.id)
-        }
-        return
-      }
-
-      // No cache, fetch from DB
-      await fetchPermissions(user.id)
+    if (!userId || role !== 'worker') {
+      setSnapshot(null)
+      return
     }
 
-    async function fetchPermissions(userId: string) {
-      try {
-        console.log('📡 Fetching worker type from database...')
+    let active = true
+    const listener = (snap: StaffSnapshot) => {
+      if (active && snap.userId === userId) setSnapshot(snap)
+    }
+    listeners.add(listener)
 
-        const { data, error } = await supabase
-          .from('workers')
-          .select('worker_type')
-          .eq('user_id', userId)
-          .single()
+    const cached = (memo && memo.userId === userId) ? memo : readStoredSnapshot(userId)
+    if (cached) setSnapshot(cached)
 
-        if (error) {
-          console.error('Error loading worker type:', error)
-          setIsLoading(false)
-          return
-        }
-
-        const type = (data?.worker_type || 'tailor') as WorkerType
-        const perms = getWorkerPermissions(type)
-
-        setWorkerType(type)
-        setPermissions(perms)
-
-        // Cache the result
-        setCachedPermissions(userId, type, perms)
-      } catch (error) {
-        console.error('Error in useWorkerPermissions:', error)
-      } finally {
-        setIsLoading(false)
-      }
+    const needsRefresh = !cached || Date.now() - cached.fetchedAt > FRESH_MS
+    if (needsRefresh) {
+      void fetchSnapshot(userId).then(snap => {
+        if (!active) return
+        if (snap) setSnapshot(snap)
+        else if (!cached) setFailedFor(userId)
+      })
     }
 
-    async function refreshPermissionsInBackground(userId: string) {
-      if (hasFetchedRef.current) return
-      hasFetchedRef.current = true
-
-      try {
-        const { data, error } = await supabase
-          .from('workers')
-          .select('worker_type')
-          .eq('user_id', userId)
-          .single()
-
-        if (!error && data) {
-          const type = (data.worker_type || 'tailor') as WorkerType
-          const perms = getWorkerPermissions(type)
-
-          // Update state if type changed
-          if (type !== workerType) {
-            setWorkerType(type)
-            setPermissions(perms)
-          }
-
-          // Update cache
-          setCachedPermissions(userId, type, perms)
-        }
-      } catch (error) {
-        console.error('Background permission refresh failed:', error)
-      }
+    return () => {
+      active = false
+      listeners.delete(listener)
     }
+  }, [userId, role])
 
-    loadWorkerPermissions()
-  }, [user])
+  const isAdmin = role === 'admin'
+  const isWorker = role === 'worker'
+  const hasSnapshot = !!snapshot && snapshot.userId === userId
+  // العامل في حالة تحميل حتى تصل صلاحياته (أو يفشل جلبها) — لا نافذة يُعاد فيها توجيهه خطأً.
+  const isLoading = isWorker && !hasSnapshot && failedFor !== userId
+  const workerType = isWorker && hasSnapshot ? (snapshot!.workerType ?? null) : null
+  const isGeneralManager = isWorker && workerType === 'general_manager'
+
+  const staffPermissions = useMemo<StaffPermissionMap>(() => {
+    if (isAdmin) return allStaffPermissions(true)
+    if (!isWorker || !hasSnapshot) return allStaffPermissions(false)
+    return snapshot!.permissions
+  }, [isAdmin, isWorker, hasSnapshot, snapshot])
+
+  const legacyPermissions: WorkerPermissions | null = workerType ? getWorkerPermissions(workerType) : null
+
+  /** هل يملك المستخدم الصلاحية؟ المدير الأكبر دائماً نعم. */
+  const can = useCallback(
+    (key: StaffPermissionKey) => isAdmin || staffPermissions[key] === true,
+    [isAdmin, staffPermissions]
+  )
+
+  /** هل يملك أياً منها؟ */
+  const canAny = useCallback(
+    (keys: StaffPermissionKey[]) => isAdmin || keys.some(key => staffPermissions[key] === true),
+    [isAdmin, staffPermissions]
+  )
+
+  /** عدد الصلاحيات الممنوحة (للعرض). */
+  const grantedCount = useMemo(
+    () => STAFF_PERMISSION_KEYS.filter(key => staffPermissions[key]).length,
+    [staffPermissions]
+  )
 
   return {
     workerType,
-    permissions,
+    permissions: legacyPermissions,
+    staffPermissions,
+    grantedCount,
     isLoading,
-    isAdmin: user?.role === 'admin',
-    isWorker: user?.role === 'worker',
-    isClient: user?.role === 'client',
+    isAdmin,
+    /** المدير الأكبر — صاحب الصلاحيات كلها ومانحها. */
+    isOwner: isAdmin,
+    isGeneralManager,
+    isWorker,
+    isClient: role === 'client',
+    can,
+    canAny,
     canAccess: (permission: keyof WorkerPermissions) => {
-      // Admin always has access to everything
-      if (user?.role === 'admin') return true
-      if (!permissions) return false
-      return permissions[permission] as boolean
+      if (isAdmin) return true
+      if (!legacyPermissions) return false
+      return legacyPermissions[permission] as boolean
     },
     getDashboardRoute: () => {
-      if (user?.role === 'admin') return '/dashboard'
+      if (isAdmin) return '/dashboard'
       if (!workerType) return '/dashboard'
       return getWorkerDashboardRoute(workerType)
-    }
+    },
   }
 }

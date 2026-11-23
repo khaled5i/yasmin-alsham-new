@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 import { ArrowRight, Package, Sparkles, TrendingUp, LogOut, Calculator } from 'lucide-react'
+import GrantedSectionsPanel from '@/components/GrantedSectionsPanel'
 
 export default function FabricManagerDashboard() {
   const router = useRouter()
@@ -173,6 +174,9 @@ export default function FabricManagerDashboard() {
             </div>
           </Link>
         </motion.div>
+
+        {/* ما منحه المدير الأكبر زيادةً على صلاحيات النوع */}
+        <GrantedSectionsPanel />
       </div>
     </div>
   )

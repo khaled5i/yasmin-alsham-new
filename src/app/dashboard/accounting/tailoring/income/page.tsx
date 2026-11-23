@@ -24,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
 import AlostazInvoicePdfButton from '@/components/AlostazInvoicePdfButton'
 import LocalInvoicePrintButton from '@/components/LocalInvoicePrintButton'
 import ReportPeriodPicker, {
@@ -807,8 +808,10 @@ function IncomePageContent() {
 
 export default function IncomePage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute>
+      <ProtectedWorkerRoute staffPermission="accounting.tailoring.income">
       <IncomePageContent />
+      </ProtectedWorkerRoute>
     </ProtectedRoute>
   )
 }

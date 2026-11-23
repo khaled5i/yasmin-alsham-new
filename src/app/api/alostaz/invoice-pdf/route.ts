@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireActiveStaff, type StaffIdentity } from '@/lib/server/api-auth'
+import { requireActiveStaff, staffHasPermission, type StaffIdentity } from '@/lib/server/api-auth'
 import {
   createInvoiceShareLink,
   findInvoiceByCode,
@@ -13,8 +13,6 @@ import {
   ALOSTAZ_WOMEN_WORKSHOP_BRANCH_ID,
 } from '@/lib/alostaz-config'
 import { computePaymentBreakdown, type OrderPaymentInput } from '@/lib/payment-breakdown'
-import { WORKER_PERMISSIONS } from '@/lib/worker-types'
-import type { WorkerType } from '@/lib/services/worker-service'
 
 /**
  * رابط ملف PDF الرسمي لفاتورة شبكة واحدة كما يولّده الأستاذ (فاتورة ضريبية مبسطة
@@ -252,18 +250,19 @@ async function resolveInvoice(source: InvoicePdfSource, id: string): Promise<Res
 /** نفس صلاحيات صفحة الواردات في كل قسم. */
 async function canAccessSection(staff: StaffIdentity, section: Section): Promise<boolean> {
   if (staff.role === 'admin') return true
-  if (staff.role !== 'worker' || section === 'tailoring') return false
+  if (staff.role !== 'worker') return false
 
-  const { data } = await supabaseAdmin
-    .from('workers')
-    .select('worker_type')
-    .eq('user_id', staff.userId)
-    .maybeSingle()
-  const workerType = data?.worker_type as WorkerType | undefined
-  if (!workerType) return false
-
-  if (section === 'women') return workerType === 'accountant'
-  return WORKER_PERMISSIONS[workerType]?.canAccessAccounting === true
+  if (section === 'tailoring') {
+    return staffHasPermission(staff.userId, staff.role, [
+      'accounting.tailoring.income', 'orders.payments', 'orders.delivered', 'invoices.tailoring',
+    ])
+  }
+  if (section === 'women') {
+    return staffHasPermission(staff.userId, staff.role, [
+      'accounting.women_workshop', 'accounting.women_workshop_expenses', 'invoices.women_workshop',
+    ])
+  }
+  return staffHasPermission(staff.userId, staff.role, ['accounting.fabrics.income', 'accounting.fabrics.send_alostaz'])
 }
 
 export async function POST(request: NextRequest) {

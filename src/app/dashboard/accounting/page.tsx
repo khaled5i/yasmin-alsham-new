@@ -15,6 +15,22 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
+import ProtectedWorkerRoute from '@/components/ProtectedWorkerRoute'
+import {
+  ACCOUNTING_HUB_KEYS,
+  FABRICS_ACCOUNTING_KEYS,
+  READY_DESIGNS_KEYS,
+  TAILORING_ACCOUNTING_KEYS,
+  WOMEN_WORKSHOP_KEYS,
+  type StaffPermissionKey,
+} from '@/lib/staff-permissions'
+
+const BRANCH_KEYS: Record<string, StaffPermissionKey[]> = {
+  tailoring: TAILORING_ACCOUNTING_KEYS,
+  fabrics: FABRICS_ACCOUNTING_KEYS,
+  ready_designs: READY_DESIGNS_KEYS,
+  women_workshop: WOMEN_WORKSHOP_KEYS,
+}
 
 // ============================================================================
 // بيانات الفروع
@@ -69,12 +85,10 @@ const branches = [
 
 function AccountingMainContent() {
   const { user } = useAuthStore()
-  const { workerType, getDashboardRoute } = useWorkerPermissions()
+  const { workerType, getDashboardRoute, canAny } = useWorkerPermissions()
 
-  const isAccountant = user?.role === 'worker' && workerType === 'accountant'
-  const visibleBranches = isAccountant
-    ? branches.filter((branch) => ['tailoring', 'women_workshop'].includes(branch.id))
-    : branches
+  // كل فرع يظهر لمن يملك أي صلاحية فيه
+  const visibleBranches = branches.filter((branch) => canAny(BRANCH_KEYS[branch.id] ?? []))
 
   // تحديد مسار العودة حسب نوع المستخدم
   const getBackRoute = () => {
@@ -176,39 +190,9 @@ function AccountingMainContent() {
 }
 
 export default function AccountingPage() {
-  const router = useRouter()
-  const { user, isLoading } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
-
-  useEffect(() => {
-    // التحقق من تسجيل الدخول
-    if (!isLoading && !user) {
-      router.push('/login')
-      return
-    }
-
-    // التحقق من الصلاحيات - السماح للمدير والمحاسب فقط
-    if (!isLoading && !permissionsLoading && user) {
-      const isAdmin = user.role === 'admin'
-      const isAccountant = user.role === 'worker' && workerType === 'accountant'
-
-      if (!isAdmin && !isAccountant) {
-        router.push('/dashboard')
-        return
-      }
-    }
-  }, [user, workerType, isLoading, permissionsLoading, router])
-
-  if (isLoading || permissionsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-emerald-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">جاري التحميل...</p>
-        </div>
-      </div>
-    )
-  }
-
-  return <AccountingMainContent />
+  return (
+    <ProtectedWorkerRoute staffPermission={ACCOUNTING_HUB_KEYS}>
+      <AccountingMainContent />
+    </ProtectedWorkerRoute>
+  )
 }

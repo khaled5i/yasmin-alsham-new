@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
 import { HALA_BRANCHES, dateRange, type HalaReport } from '@/lib/hala-reconciliation'
 import { HALA_STATUS_LABELS, halaReportDays, isHalaMatched } from '@/lib/hala-report-view'
+import { useWorkerPermissions } from '@/hooks/useWorkerPermissions'
 
 const money = (halalas: number) => new Intl.NumberFormat('ar-SA',{minimumFractionDigits:2,maximumFractionDigits:2}).format(halalas/100)+' ر.س'
 
@@ -33,6 +34,8 @@ function exportReport(report: HalaReport) {
 
 export default function HalaReconciliationPage() {
   const router=useRouter(),{user,isLoading}=useAuthStore()
+  const {can,isLoading:permissionsLoading}=useWorkerPermissions()
+  const allowed=can('accounting.hala')
   const [dates,setDates]=useState(initialDates)
   const [file,setFile]=useState<File|null>(null)
   const [report,setReport]=useState<HalaReport|null>(null)
@@ -42,8 +45,8 @@ export default function HalaReconciliationPage() {
 
   useEffect(()=>{
     if(!isLoading && !user) router.replace('/login')
-    else if(!isLoading && user?.role!=='admin') router.replace('/dashboard')
-  },[user,isLoading,router])
+    else if(!isLoading && !permissionsLoading && !allowed) router.replace('/dashboard')
+  },[user,isLoading,permissionsLoading,allowed,router])
   useEffect(()=>()=>request.current?.abort(),[])
 
   const issueCount=report ? report.bankRows.filter(r=>!isHalaMatched(r.status)).length+report.unmatchedSite.length : 0
@@ -73,7 +76,7 @@ export default function HalaReconciliationPage() {
     finally {setProgress('')}
   }
 
-  if(isLoading || user?.role!=='admin') return <div className="p-12 text-center text-gray-500">جاري التحقق من الصلاحية…</div>
+  if(isLoading || permissionsLoading || !allowed) return <div className="p-12 text-center text-gray-500">جاري التحقق من الصلاحية…</div>
 
   return <main dir="rtl" className="min-h-screen bg-[#f4f5ef] text-[#183d32]">
     <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">

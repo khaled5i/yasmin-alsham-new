@@ -10,6 +10,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { NextRequest, NextResponse } from 'next/server'
 import { errorResponse, getFabricStoreServiceClient } from './http'
+import { staffHasPermission } from '@/lib/server/api-auth'
 
 export function isOrdersServerEnabled(): boolean {
   return (process.env.FABRIC_STORE_ORDERS_ENABLED ?? '').trim().toLowerCase() === 'true'
@@ -54,11 +55,10 @@ export async function requireFabricStoreStaff(
   const { data: account } = await client.from('users').select('role, is_active').eq('id', user.id).maybeSingle()
   if (!account?.is_active) return { ok: false, response: errorResponse(403, 'forbidden', 'غير مسموح') }
   if (account.role === 'admin') return { ok: true, staff: { userId: user.id, role: 'admin', client } }
-  if (account.role === 'worker') {
-    const { data: worker } = await client.from('workers').select('worker_type').eq('user_id', user.id).maybeSingle()
-    if (worker?.worker_type === 'fabric_store_manager') {
-      return { ok: true, staff: { userId: user.id, role: 'fabric_store_manager', client } }
-    }
+  // العامل: حسب صلاحية «طلبات المتجر الإلكتروني» (افتراضياً لمدير متجر الأقمشة والمدير العام).
+  // يُعامَل كمدير المتجر: الإلغاء والحذف والاسترداد تبقى للمدير الأكبر.
+  if (account.role === 'worker' && await staffHasPermission(user.id, account.role, 'fabrics.online_orders')) {
+    return { ok: true, staff: { userId: user.id, role: 'fabric_store_manager', client } }
   }
-  return { ok: false, response: errorResponse(403, 'forbidden', 'إدارة طلبات المتجر للمدير ومدير متجر الأقمشة فقط') }
+  return { ok: false, response: errorResponse(403, 'forbidden', 'لا تملك صلاحية طلبات المتجر الإلكتروني') }
 }

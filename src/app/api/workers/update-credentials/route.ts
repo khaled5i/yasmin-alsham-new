@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (currentUserData.role !== 'admin') {
-      return NextResponse.json({ error: 'غير مصرح - للمدير فقط' }, { status: 403 })
+      return NextResponse.json({ error: 'غير مصرح - للمدير الأكبر فقط' }, { status: 403 })
     }
 
     // 2. قراءة البيانات المطلوبة

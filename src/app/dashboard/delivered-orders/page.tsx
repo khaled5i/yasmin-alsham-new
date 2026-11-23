@@ -56,7 +56,7 @@ export default function DeliveredOrdersPage() {
   const { user, isLoading: authLoading } = useAuthStore()
   const { orders, loadOrders, loadMoreOrders, deleteOrder, hasMore, isLoadingMore, isLoading: ordersLoading } = useOrderStore()
   const { workers, loadWorkers } = useWorkerStore()
-  const { workerType, isLoading: permissionsLoading, getDashboardRoute } = useWorkerPermissions()
+  const { workerType, isLoading: permissionsLoading, getDashboardRoute, can } = useWorkerPermissions()
   const [showViewModal, setShowViewModal] = useState(false)
 
   // Delete modal state
@@ -289,13 +289,11 @@ export default function DeliveredOrdersPage() {
   useEffect(() => {
     if (authLoading || permissionsLoading || !user) return
 
-    const isAdmin = user.role === 'admin'
-    const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
-
-    if (!isAdmin && !isWorkshopManager) {
+    // حسب صلاحية «الطلبات المسلّمة»
+    if (!can('orders.delivered')) {
       router.push('/dashboard')
     }
-  }, [user, authLoading, workerType, permissionsLoading, router])
+  }, [user, authLoading, can, permissionsLoading, router])
 
   // فلترة الطلبات المسلمة فقط
   const deliveredOrders = orders.filter(order => {
@@ -416,10 +414,11 @@ export default function DeliveredOrdersPage() {
     )
   }
 
+  // مفتاح «الإرسال التلقائي» إعداد عام للمدير الأكبر وحده
   const isAdmin = user.role === 'admin'
-  const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
+  const canSendToAccounting = can('orders.payments')
 
-  if (!isAdmin && !isWorkshopManager) {
+  if (!can('orders.delivered')) {
     return null
   }
 
@@ -617,7 +616,7 @@ export default function DeliveredOrdersPage() {
                     {/* Details - integrated here to avoid specific gap from right column height */}
                     <div className="space-y-2">
                       <p className="text-sm text-gray-600">
-                        <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{workerType === 'workshop_manager' ? '***' : order.client_phone}</span>
+                        <span className="font-medium">{t('phone') || (isArabic ? 'الهاتف:' : 'Phone:')}</span> <span dir="ltr">{!can('orders.client_phone') ? '***' : order.client_phone}</span>
                       </p>
                       {order.description && (
                         <p className="text-sm text-gray-600 line-clamp-2">
@@ -655,8 +654,8 @@ export default function DeliveredOrdersPage() {
 
                     {/* Action Buttons Stack */}
                     <div className="flex flex-col gap-2 mt-1">
-                      {/* إرسال للمحاسبة (الأستاذ) — للمدير فقط */}
-                      {isAdmin && (
+                      {/* إرسال للمحاسبة (الأستاذ) — لمن يملك الأسعار والدفعات */}
+                      {canSendToAccounting && (
                         isOrderSent(order) ? (
                           <div
                             className="p-2 text-emerald-600 rounded-lg border border-emerald-100 bg-emerald-50 cursor-default"
@@ -704,18 +703,18 @@ export default function DeliveredOrdersPage() {
                         <MessageCircle className="w-4 h-4" />
                       </button>
 
-                      <button
+                      {can('orders.delete') && <button
                         onClick={(e) => handleDeleteOrder(order, e)}
                         className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
                         title={t('delete_order') || 'حذف الطلب'}
                       >
                         <Trash2 className="w-4 h-4" />
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 </div>
 
-                {workerType !== 'workshop_manager' && (
+                {can('orders.payments') && (
                   <>
                     <div className="grid grid-cols-2 gap-2 pt-4 border-t border-gray-200 mt-4">
                       <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
@@ -802,7 +801,7 @@ export default function DeliveredOrdersPage() {
         showCartoonButton={true}
         layout="modern"
         // نفس قاعدة البطاقات هنا: مدير الورشة يرى «***» بدل رقم الزبونة
-        hideClientPhone={workerType === 'workshop_manager'}
+        hideClientPhone={!can('orders.client_phone')}
       />
 
       {/* مودال الحذف الموحد */}

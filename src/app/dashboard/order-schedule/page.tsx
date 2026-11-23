@@ -477,7 +477,7 @@ function DateOrdersModal({ dateKey, orders, mode, workerNameMap, loadingOrderId,
 export default function OrderSchedulePage() {
     const router = useRouter()
     const { user, isLoading: authLoading } = useAuthStore()
-    const { workerType, isLoading: workerLoading } = useWorkerPermissions()
+    const { workerType, isLoading: workerLoading, can } = useWorkerPermissions()
     const { workers, loadWorkers } = useWorkerStore()
 
     const now = new Date()
@@ -504,9 +504,9 @@ export default function OrderSchedulePage() {
     const secondMonth = anchorMonth === 11 ? 0 : anchorMonth + 1
 
     useEffect(() => {
-        if (!authLoading && !workerLoading && user && user.role !== 'admin' && workerType !== 'workshop_manager') router.push('/dashboard')
+        if (!authLoading && !workerLoading && user && !can('orders.schedule')) router.push('/dashboard')
         if (!authLoading && !user) router.push('/login')
-    }, [user, authLoading, workerLoading, workerType, router])
+    }, [user, authLoading, workerLoading, can, router])
 
     const visibleStatuses = useMemo<OrderOnDate['status'][]>(() => {
         const statuses: OrderOnDate['status'][] = ['pending', 'in_progress']

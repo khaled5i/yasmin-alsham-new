@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { createProduct, getFabricsBranchContext } from '@/lib/services/alostaz-service'
+import { staffHasPermission } from '@/lib/server/api-auth'
 
 /**
  * مسار خادمي لإضافة صنف مخزون قماش كمنتج في تطبيق الأستاذ (فرع بروكار الشرقية).
@@ -53,8 +54,8 @@ export async function POST(request: NextRequest) {
     if (roleError || !userData?.is_active) {
       return NextResponse.json({ error: 'غير مسموح - الحساب غير نشط أو غير موجود' }, { status: 403 })
     }
-    if (userData.role !== 'admin') {
-      return NextResponse.json({ error: 'غير مسموح - للمدير فقط' }, { status: 403 })
+    if (!(await staffHasPermission(user.id, userData.role, ['fabrics.inventory', 'fabrics.manage', 'accounting.fabrics.send_alostaz']))) {
+      return NextResponse.json({ error: 'غير مسموح - لا تملك صلاحية مزامنة الأقمشة' }, { status: 403 })
     }
 
     // 2) قراءة معرّف صنف المخزون

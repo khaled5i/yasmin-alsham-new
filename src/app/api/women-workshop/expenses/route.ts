@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { staffHasPermission } from '@/lib/server/api-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,8 +48,8 @@ export async function POST(request: NextRequest) {
     if (roleError || !userData?.is_active) {
       return NextResponse.json({ error: 'غير مسموح - الحساب غير نشط أو غير موجود' }, { status: 403 })
     }
-    if (userData.role !== 'admin') {
-      return NextResponse.json({ error: 'غير مسموح - للمدير فقط' }, { status: 403 })
+    if (!(await staffHasPermission(user.id, userData.role, ['accounting.women_workshop_expenses']))) {
+      return NextResponse.json({ error: 'غير مسموح - لا تملك صلاحية مصاريف المشغل النسائي' }, { status: 403 })
     }
 
     const payload = await request.json()

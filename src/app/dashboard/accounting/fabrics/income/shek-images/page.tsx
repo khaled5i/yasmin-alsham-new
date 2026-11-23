@@ -313,7 +313,7 @@ function ShekImagesContent() {
 
 export default function ShekImagesPage() {
   return (
-    <ProtectedWorkerRoute requiredPermission="canAccessAccounting" allowAdmin={true}>
+    <ProtectedWorkerRoute staffPermission={'accounting.fabrics.income'}>
       <ShekImagesContent />
     </ProtectedWorkerRoute>
   )

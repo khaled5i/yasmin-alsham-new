@@ -45,7 +45,7 @@ export default function WorkerMonitoringPage() {
   const { t, isArabic } = useTranslation()
   const router = useRouter()
   const { user, signOut } = useAuthStore()
-  const { workerType, isLoading: permissionsLoading } = useWorkerPermissions()
+  const { workerType, isLoading: permissionsLoading, can } = useWorkerPermissions()
 
   const [managers, setManagers] = useState<WorkerWithUser[]>([])
   const [cutCounts, setCutCounts] = useState<Record<string, number>>({})
@@ -63,7 +63,8 @@ export default function WorkerMonitoringPage() {
   const [sharedMonth, setSharedMonth] = useSelectedMonth()
   const [allMonths, setAllMonths] = useState(false)
   const selectedMonth = allMonths ? '' : sharedMonth
-  const isAdmin = user?.role === 'admin'
+  // تقييم الجودة والتعديلات في متابعة العمال
+  const isAdmin = can('workers.quality_report')
   const [segment, setSegment] = useState<Segment>('tailors')
   const [qualitySort, setQualitySort] = useState<QualitySort>('best')
 
@@ -129,12 +130,10 @@ export default function WorkerMonitoringPage() {
   useEffect(() => {
     if (!user) { router.push('/login'); return }
     if (permissionsLoading) return
-    const isAdmin = user.role === 'admin'
-    const isWorkshopManager = user.role === 'worker' && workerType === 'workshop_manager'
-    if (!isAdmin && !isWorkshopManager) {
+    if (!can('workers.monitoring')) {
       router.push('/dashboard')
     }
-  }, [user, workerType, permissionsLoading, router])
+  }, [user, can, permissionsLoading, router])
 
   // Fetch tailors + active order counts
   useEffect(() => {
@@ -284,6 +283,7 @@ export default function WorkerMonitoringPage() {
                 إدارة العمال
               </Link>
             )}
+            {can('workers.attendance') && (
             <Link
               href="/dashboard/worker-monitoring/attendance"
               className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-teal-800 ${user?.role === 'admin' ? '' : 'col-span-2'}`}
@@ -291,6 +291,7 @@ export default function WorkerMonitoringPage() {
               <Fingerprint className="h-4 w-4" />
               الحضور والانصراف
             </Link>
+            )}
             <MonthSelect
               value={selectedMonth}
               onChange={handleMonthChange}
