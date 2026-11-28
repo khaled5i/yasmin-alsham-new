@@ -12,8 +12,9 @@ export interface OrderTakerOption {
 }
 
 export const ORDER_TAKERS: ReadonlyArray<OrderTakerOption> = [
+  { value: 'ابو خالد' },
   { value: 'وليد' },
-  { value: 'عبد الرحمن', hint: 'المدير' },
+  { value: 'عبدالرحمن', hint: 'المدير' },
 ]
 
 export const ORDER_TAKER_MAX_LENGTH = 100

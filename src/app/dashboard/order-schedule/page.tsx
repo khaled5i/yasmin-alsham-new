@@ -63,6 +63,7 @@ interface OrderOnDate {
     order_number: string
     status: 'pending' | 'in_progress' | 'completed' | 'delivered' | 'cancelled'
     worker_id?: string | null
+    taken_by?: string | null
     cutter_name?: string | null
     cut_at?: string | null
 }
@@ -546,6 +547,7 @@ export default function OrderSchedulePage() {
                     order_number: order.order_number,
                     status: order.status,
                     worker_id: order.worker_id || null,
+                    taken_by: order.taken_by,
                     cutter_name: order.cutter_name,
                     cut_at: order.cut_at,
                 })

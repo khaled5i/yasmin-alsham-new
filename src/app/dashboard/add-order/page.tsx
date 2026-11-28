@@ -54,6 +54,7 @@ import { openWhatsApp } from '@/utils/whatsapp'
 import PrintOrderModal from '@/components/PrintOrderModal'
 import OrderTakenByModal from '@/components/OrderTakenByModal'
 import DesignSummarySection from '@/components/DesignSummarySection'
+import { designImagesFromComments } from '@/lib/design-summary-images'
 import { Order } from '@/lib/services/order-service'
 import { generateAnnotationCompositeImage } from '@/lib/canvas-renderer'
 import { issueOrderPaymentReceipt } from '@/lib/services/order-payment-receipt'
@@ -322,6 +323,7 @@ function AddOrderContent() {
   const [customDesignImageFile, setCustomDesignImageFile] = useState<File | null>(null)
 
   // ref للوصول إلى دوال InteractiveImageAnnotation
+  const summaryBusyRef = useRef(false)
   const voiceBusyRef = useRef(false)
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
 
@@ -596,7 +598,7 @@ function AddOrderContent() {
   // الحفظ في هذه اللحظة يخزّن الملاحظة بدون نص (تظهر "جاري التحويل" للأبد في صفحة الطلب)
   // ويضيع ناتج التحويل لأن الصفحة تُغادر قبل اكتماله.
   const requireTranscriptionDone = useCallback((): boolean => {
-    if (voiceBusyRef.current || annotationRef.current?.isTranscribing()) {
+    if (voiceBusyRef.current || summaryBusyRef.current || annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return false
     }
@@ -686,6 +688,24 @@ function AddOrderContent() {
   const handleDesignSummaryNotesChange = useCallback((notes: DesignSummaryNote[]) => {
     setFormData(prev => ({ ...prev, designSummaryNotes: notes }))
   }, [setFormData])
+
+  // صورتا الأمام والخلف لتنقيح ملخص التصميم. يُقرأ أحدث state عبر ref لأن التنقيح
+  // يبدأ بعد انتهاء التفريغ، وقد يكون المستخدم رسم شيئًا جديدًا في هذه الأثناء.
+  const designImageStateRef = useRef({ comments: formData.savedDesignComments, live: false })
+  designImageStateRef.current = {
+    comments: formData.savedDesignComments,
+    live: formData.imageAnnotations.length > 0 || formData.imageDrawings.length > 0 || !!customDesignImageFile,
+  }
+  const getDesignImagesForSummary = useCallback(async () => {
+    const { comments, live } = designImageStateRef.current
+    const views = new Map(designImagesFromComments(comments).map(({ view, src }) => [view, src]))
+    // العرض الظاهر الآن قد لا يكون محفوظًا بعد في التعليقات، فنولّد صورته المركّبة الحالية.
+    if (live && annotationRef.current) {
+      const composite = await annotationRef.current.generateCompositeImage().catch(() => null)
+      if (composite) views.set(annotationRef.current.getCurrentView(), composite)
+    }
+    return [...views].map(([view, src]) => ({ view, src }))
+  }, [])
 
   // معالجة تغيير التعليقات على الصورة
   const handleImageAnnotationsChange = useCallback((annotations: ImageAnnotation[]) => {
@@ -2097,7 +2117,9 @@ function AddOrderContent() {
             {formData.designSummaryNotes.length > 0 && (
               <DesignSummarySection
                 notes={formData.designSummaryNotes}
+                onBusyChange={busy => { summaryBusyRef.current = busy }}
                 onNotesChange={handleDesignSummaryNotesChange}
+                getDesignImages={getDesignImagesForSummary}
               />
             )}
 

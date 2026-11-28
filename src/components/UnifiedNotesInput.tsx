@@ -1,5 +1,6 @@
 'use client'
 
+import { formatWorkshopInstructions, workshopSpeechContext } from '@/lib/workshop-speech'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Loader2, Trash2, Play, Pause, Languages, Pencil, Check, X } from 'lucide-react'
@@ -156,7 +157,7 @@ export default function UnifiedNotesInput({
     if (!sonioxFinishedRef.current) return
 
     const rawFinalText = finalTokensRef.current.join('')
-    const finalText = rawFinalText.replace(/<end>/gi, '\n').replace(/\n{2,}/g, '\n').trim()
+    const finalText = formatWorkshopInstructions(rawFinalText)
     const noteId = recordingIdRef.current
     const duration = recordingDurationRef.current
 
@@ -244,6 +245,7 @@ export default function UnifiedNotesInput({
               ws.send(JSON.stringify({
                 model: 'stt-rt-v6',
                 language_hints: ['ar'],
+                context: workshopSpeechContext,
                 audio_format: 'pcm_s16le',
                 sample_rate: sampleRate,
                 num_channels: 1,

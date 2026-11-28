@@ -5,7 +5,7 @@ const path = require('node:path')
 const ts = require('typescript')
 const next = require('next/server')
 const root = path.resolve(__dirname, '..')
-const routes = ['translate-text', 'generate-design-prompt', 'generate-design-image',
+const routes = ['refine-design-summary', 'translate-text', 'generate-design-prompt', 'generate-design-image',
   'convert-to-cartoon', 'remove-model', 'spatial-ocr', 'transcribe-audio']
 let identity, providerCalls, bodyReads, rpcCalls, budget
 const userId = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -36,8 +36,15 @@ const client = {
 }
 class OfflineOpenAI {
   chat = { completions: { create: async () => {
-    providerCalls++; return { choices: [{ message: { content: 'translated' } }] }
+    providerCalls++; return { choices: [{ finish_reason: 'stop', message: { content: 'translated' } }] }
   } } }
+  responses = { create: async () => {
+    providerCalls++
+    return { status: 'completed', output_text: JSON.stringify({
+      lines: [{ label: 'الكم', detail: 'طويل', hindiLabel: 'आस्तीन', hindiDetail: 'लंबी', sources: [1] }],
+      review: [{ sentence: 2, hindi: 'अस्पष्ट' }],
+    }) }
+  } }
   audio = { transcriptions: { create: async () => { providerCalls++; return { text: 'audio result' } } } }
 }
 function loader() {
@@ -65,7 +72,7 @@ function request(route, authenticated = false) {
   const req = new next.NextRequest(`https://test.example.invalid/api/${route}/`, {
     method: 'POST', headers: authenticated ? { authorization: `Bearer ${syntheticSession}` } : {},
   })
-  req.json = async () => { bodyReads++; return route === 'translate-text'
+  req.json = async () => { bodyReads++; return route === 'refine-design-summary' ? { text: 'كم طويل. كلام مبهم.' } : route === 'translate-text'
     ? { text: 'hello', targetLanguage: 'en' }
     : { enhancedPrompt: 'synthetic design', fabricImages: [], fabricInfo: { fabric: 'synthetic', fabricType: null },
       completedImage: 'data:image/png;base64,bG9jYWw=', imageBase64: 'bG9jYWw=', imageData: 'bG9jYWw=' } }
@@ -115,6 +122,12 @@ async function main() {
         assert.equal(rpcCalls, 0, 'distributed quota is off by default')
         assert.equal(response.status, 200, `${route}: ${role} still returns the original success`)
         assert.equal(providerCalls, 1)
+        if (route === 'refine-design-summary') {
+          const pair = await response.json()
+          assert.equal(pair.translationLanguage, 'hi')
+          assert.equal(pair.transcription, '• الكم: طويل\n• تحتاج مراجعة: كلام مبهم.')
+          assert.equal(pair.translatedText, '• आस्तीन: लंबी\n• जाँच आवश्यक: अस्पष्ट')
+        }
         if (route === 'translate-text') {
           assert.equal(response.status, 200); assert.equal(providerCalls, 1)
           assert.equal((await response.json()).translatedText, 'translated')

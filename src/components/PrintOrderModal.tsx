@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { originalSummary, printableSummaryNotes } from '@/lib/design-summary-text'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Printer, Check, Image as ImageIcon, Loader2 } from 'lucide-react'
 import { Order, orderService } from '@/lib/services/order-service'
 import { formatGregorianDate } from '@/lib/date-utils'
+import { flushSync } from 'react-dom'
+import { isVideoFile } from '@/lib/utils/media'
 import OrderPrintLayout from './OrderPrintLayout'
 import type { ImageAnnotation, DrawingPath, SavedDesignComment } from './InteractiveImageAnnotation'
 import { renderDrawingsOnCanvas, calculateObjectContainDimensions } from '@/lib/canvas-renderer'
@@ -26,331 +29,29 @@ interface PrintOrderModalProps {
   onPrint?: () => void
 }
 
-export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, onPrint }: PrintOrderModalProps) {
-  // Full order data (fetched when lightweight order is missing measurements)
-  const [fullOrder, setFullOrder] = useState<Order | null>(null)
-  const order = fullOrder || initialOrder
-
-  const [printableImages, setPrintableImages] = useState<string[]>([])
-  const [designComments, setDesignComments] = useState<string>(order.notes || '')
-  const [designCommentsSnapshots, setDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
-  const [selectedCommentsIds, setSelectedCommentsIds] = useState<string[]>([]) // التعليقات المحددة للطباعة
-  const [selectedSummaryNoteIds, setSelectedSummaryNoteIds] = useState<string[]>([]) // نصوص ملخص التصميم المحددة للطباعة
-  const [hindiDesignCommentsSnapshots, setHindiDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
-  const [includeHindiPrint, setIncludeHindiPrint] = useState(false)
-  const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(false)
-  const printRef = useRef<HTMLDivElement>(null)
-
-  // Fetch full order data when opened with lightweight-loaded order
-  // (list views exclude measurements which contains design comments)
-  useEffect(() => {
-    if (!isOpen || !initialOrder) {
-      setFullOrder(null)
-      return
-    }
-
-    // If measurements is already present, no need to fetch
-    if (initialOrder.measurements !== undefined) {
-      setFullOrder(null)
-      return
-    }
-
-    let cancelled = false
-    orderService.getById(initialOrder.id).then(result => {
-      if (!cancelled && result.data) {
-        setFullOrder(result.data)
-      }
-    })
-
-    return () => { cancelled = true }
-  }, [isOpen, initialOrder?.id])
-
-  // الحصول على التعليقات المحددة فقط
-  const selectedCommentsSnapshots = designCommentsSnapshots.filter(
-    snapshot => selectedCommentsIds.includes(snapshot.id)
-  )
-
-  // نصوص ملخص التصميم المحوّلة من الصوت (migration 50)
-  const designSummaryNotes = (order.design_summary_notes || []).filter(
-    note => note.transcription && note.transcription.trim()
-  )
-
-  // دالة مساعدة لإنشاء snapshot لتعليق واحد
-  const generateSingleSnapshot = async (
-    annotations: ImageAnnotation[],
-    drawings: DrawingPath[],
-    customImage: string | null,
-    title: string,
-    id: string,
-    compositeImage?: string | null // الصورة المركّبة المحفوظة (إذا وجدت)
-  ): Promise<DesignCommentSnapshot | null> => {
-    try {
-      // إذا وجدت صورة مركّبة محفوظة، استخدمها مباشرة بدلاً من إعادة الإنشاء
-      if (compositeImage) {
-        // فصل التعليقات المرئية والمخفية
-        const visibleAnnotations = annotations.filter(a => !a.isHidden && a.transcription)
-        const hiddenAnnotations = annotations.filter(a => a.isHidden && a.transcription)
-
-        // النصوص المرئية
-        const transcriptions = visibleAnnotations
-          .map((a, idx) => `${idx + 1}. ${a.transcription}`)
-
-        // النصوص المخفية مع ترجماتها ورقم العلامة الأصلي
-        const hiddenTranscriptions = hiddenAnnotations
-          .map(a => {
-            const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
-            return {
-              number: originalIndex,
-              text: a.transcription || '',
-              translation: a.translatedText
-            }
-          })
-
-        // النصوص المترجمة (المرئية فقط)
-        const translatedTexts = visibleAnnotations
-          .filter(a => a.translatedText)
-          .map(a => {
-            const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
-            return {
-              number: originalIndex,
-              text: a.transcription || '',
-              translation: a.translatedText || ''
-            }
-          })
-
-        return { id, title, imageDataUrl: compositeImage, transcriptions, hiddenTranscriptions, translatedTexts }
-      }
-
-      // إذا لم توجد صورة مركّبة، أنشئها من البيانات الخام (للتوافق مع البيانات القديمة)
-      // نستخدم نفس المنطق المستخدم في InteractiveImageAnnotation.generateCompositeImage
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return null
-
-      const baseImage = new Image()
-      baseImage.crossOrigin = 'anonymous'
-      const baseImageSrc = customImage && customImage !== 'custom' ? customImage : '/front2.png'
-
-      await new Promise<void>((resolve, reject) => {
-        baseImage.onload = () => resolve()
-        baseImage.onerror = () => reject(new Error('Failed to load image'))
-        baseImage.src = baseImageSrc
-      })
-
-      // استخدام نفس منطق aspect-[3/4] و object-contain المستخدم في العرض
-      // نحاكي container بعرض 400px ونسبة 3:4
-      const containerWidth = 400
-      const containerHeight = containerWidth * (4 / 3) // aspect-[3/4]
-      const qualityScale = 2 // للجودة العالية
-
-      canvas.width = containerWidth * qualityScale
-      canvas.height = containerHeight * qualityScale
-      ctx.scale(qualityScale, qualityScale)
-
-      // رسم خلفية بيضاء
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, containerWidth, containerHeight)
-
-      // حساب أبعاد الصورة مع الحفاظ على النسبة (object-contain)
-      const { offsetX, offsetY, drawWidth, drawHeight } = calculateObjectContainDimensions(
-        baseImage.width,
-        baseImage.height,
-        containerWidth,
-        containerHeight
-      )
-
-      // رسم الصورة الأساسية
-      ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
-
-      renderDrawingsOnCanvas(
-        ctx,
-        drawings,
-        containerWidth,
-        containerHeight,
-        baseImage,
-        { offsetX, offsetY, drawWidth, drawHeight }
-      )
-
+// دالة مساعدة لإنشاء snapshot لتعليق واحد
+const generateSingleSnapshot = async (
+  annotations: ImageAnnotation[],
+  drawings: DrawingPath[],
+  customImage: string | null,
+  title: string,
+  id: string,
+  compositeImage?: string | null // الصورة المركّبة المحفوظة (إذا وجدت)
+): Promise<DesignCommentSnapshot | null> => {
+  try {
+    // إذا وجدت صورة مركّبة محفوظة، استخدمها مباشرة بدلاً من إعادة الإنشاء
+    if (compositeImage) {
       // فصل التعليقات المرئية والمخفية
       const visibleAnnotations = annotations.filter(a => !a.isHidden && a.transcription)
       const hiddenAnnotations = annotations.filter(a => a.isHidden && a.transcription)
 
-      // رسم علامات التعليقات (الدوائر المرقمة)
-      const markerRadius = 10
-      annotations.forEach((annotation, index) => {
-        const markerX = (annotation.x / 100) * containerWidth
-        const markerY = (annotation.y / 100) * containerHeight
-        const hasTranscription = annotation.transcription && !annotation.isRecording
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(markerX, markerY, markerRadius, 0, Math.PI * 2)
-        ctx.fillStyle = annotation.isHidden ? '#9ca3af' : '#ec4899'
-        ctx.fill()
-        ctx.strokeStyle = '#ffffff'
-        ctx.lineWidth = 2
-        ctx.stroke()
-
-        if (hasTranscription) {
-          ctx.fillStyle = '#ffffff'
-          ctx.font = 'bold 10px Cairo, Arial, sans-serif'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText((index + 1).toString(), markerX, markerY)
-        }
-        ctx.restore()
-      })
-
-      // حساب مواقع النصوص - نفس المنطق المستخدم في InteractiveImageAnnotation
-      const TEXT_OFFSET = 2
-      const BOX_WIDTH_PERCENT = 25
-      const BOX_HEIGHT_PERCENT = 12
-      const SAFE_MARGIN = 2
-
-      const localGetBoxPosition = (markerX: number, markerY: number, position: string) => {
-        switch (position) {
-          case 'bottom': return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          case 'top': return { x: markerX, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          case 'right': return { x: markerX + TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          case 'left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          case 'bottom-right': return { x: markerX + TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          case 'bottom-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          case 'top-right': return { x: markerX + TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          case 'top-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-          default: return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
-        }
-      }
-
-      const localBoxesOverlap = (box1: { x: number; y: number; width: number; height: number }, box2: { x: number; y: number; width: number; height: number }) => {
-        return !(box1.x + box1.width + SAFE_MARGIN < box2.x ||
-          box2.x + box2.width + SAFE_MARGIN < box1.x ||
-          box1.y + box1.height + SAFE_MARGIN < box2.y ||
-          box2.y + box2.height + SAFE_MARGIN < box1.y)
-      }
-
-      const localIsBoxInBounds = (box: { x: number; y: number; width: number; height: number }) => {
-        return box.x >= 0 && box.y >= 0 && box.x + box.width <= 100 && box.y + box.height <= 100
-      }
-
-      // حساب مواقع النصوص
-      const textPositions: Map<string, { x: number; y: number }> = new Map()
-      const placedBoxes: { x: number; y: number; width: number; height: number }[] = []
-      const positionOrder = ['bottom', 'top', 'right', 'left', 'bottom-right', 'bottom-left', 'top-right', 'top-left']
-
-      const sortedAnnotations = [...annotations]
-        .filter(a => a.transcription && !a.isRecording)
-        .sort((a, b) => a.timestamp - b.timestamp)
-
-      sortedAnnotations.forEach((annotation) => {
-        if (annotation.boxX !== undefined && annotation.boxY !== undefined) {
-          textPositions.set(annotation.id, { x: annotation.boxX, y: annotation.boxY })
-          placedBoxes.push({ x: annotation.boxX, y: annotation.boxY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT })
-          return
-        }
-
-        let bestBox = localGetBoxPosition(annotation.x, annotation.y, 'bottom')
-        for (const position of positionOrder) {
-          const candidateBox = localGetBoxPosition(annotation.x, annotation.y, position)
-          if (!localIsBoxInBounds(candidateBox)) continue
-          const hasOverlap = placedBoxes.some(pb => localBoxesOverlap(candidateBox, pb))
-          if (!hasOverlap) {
-            bestBox = candidateBox
-            break
-          }
-        }
-        placedBoxes.push(bestBox)
-        textPositions.set(annotation.id, { x: bestBox.x, y: bestBox.y })
-      })
-
-      // رسم النصوص
-      annotations
-        .filter(a => a.transcription && !a.isRecording && !a.isHidden)
-        .forEach((annotation) => {
-          const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
-          const textPos = textPositions.get(annotation.id)
-          if (!textPos) return
-
-          const textScale = annotation.textScale ?? 1
-          const fontSize = Math.round(14 * textScale)
-          const textX = (textPos.x / 100) * containerWidth
-          const textY = (textPos.y / 100) * containerHeight
-
-          ctx.save()
-          ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
-          ctx.textBaseline = 'top'
-
-          const maxTextWidth = containerWidth * 0.5
-          const lineHeight = fontSize * 1.3
-          // تقسيم بحسب <end> أو \n مطابقاً لعرض HTML، مع لف الكلمات داخل كل مقطع
-          const rawText = annotation.translatedText || annotation.transcription || ''
-          // كشف اتجاه النص (مطابق dir="auto" في HTML)
-          const rtlRange = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/
-          const ltrRange = /[A-Za-z]/
-          let isRtl = true
-          for (const ch of rawText) {
-            if (rtlRange.test(ch)) { isRtl = true; break }
-            if (ltrRange.test(ch)) { isRtl = false; break }
-          }
-          const segments = rawText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
-          if (segments.length === 0) segments.push('')
-          // الرقم يبقى في بداية السلسلة المنطقية - bidi يضعه بصرياً
-          // على اليمين في RTL وعلى اليسار في LTR
-          segments[0] = `${annotationIndex}. ${segments[0]}`.trim()
-
-          const lines: string[] = []
-          for (const segment of segments) {
-            const words = segment.split(/\s+/).filter(Boolean)
-            let currentLine = ''
-            for (const word of words) {
-              const testLine = currentLine ? `${currentLine} ${word}` : word
-              const metrics = ctx.measureText(testLine)
-              if (metrics.width > maxTextWidth && currentLine) {
-                lines.push(currentLine)
-                currentLine = word
-              } else {
-                currentLine = testLine
-              }
-            }
-            if (currentLine) lines.push(currentLine)
-          }
-
-          // قياس أعرض سطر (مطابق لـ <p> shrunk-to-content)
-          let maxLineWidth = 0
-          lines.forEach(line => {
-            const w = ctx.measureText(line).width
-            if (w > maxLineWidth) maxLineWidth = w
-          })
-
-          // مطابقة CSS: drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)] - ظل ناعم وليس outline
-          // RTL: محاذاة لليمين عند الحافة اليمنى لأطول سطر (كحجم <p> shrunk-to-content)
-          // LTR: محاذاة لليسار عند textX (السلوك السابق)
-          ctx.textAlign = isRtl ? 'right' : 'left'
-          const anchorX = isRtl ? textX + maxLineWidth : textX
-          lines.forEach((line, lineIndex) => {
-            const lineY = textY + (lineIndex * lineHeight)
-            ctx.save()
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
-            ctx.shadowOffsetX = 0
-            ctx.shadowOffsetY = 1
-            ctx.shadowBlur = 2
-            ctx.fillStyle = '#000000'
-            ctx.fillText(line, anchorX, lineY)
-            ctx.restore()
-          })
-
-          ctx.restore()
-        })
-
-      const imageDataUrl = canvas.toDataURL('image/png')
-
-      // النصوص المرئية (للعرض أسفل الصورة كمرجع)
+      // النصوص المرئية
       const transcriptions = visibleAnnotations
         .map((a, idx) => `${idx + 1}. ${a.transcription}`)
 
       // النصوص المخفية مع ترجماتها ورقم العلامة الأصلي
       const hiddenTranscriptions = hiddenAnnotations
         .map(a => {
-          // إيجاد رقم العلامة الأصلي في قائمة جميع التعليقات
           const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
           return {
             number: originalIndex,
@@ -359,11 +60,10 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
           }
         })
 
-      // النصوص المترجمة (المرئية التي لها ترجمة) مع رقم العلامة الأصلي
+      // النصوص المترجمة (المرئية فقط)
       const translatedTexts = visibleAnnotations
         .filter(a => a.translatedText)
         .map(a => {
-          // إيجاد رقم العلامة الأصلي في قائمة جميع التعليقات
           const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
           return {
             number: originalIndex,
@@ -372,145 +72,413 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
           }
         })
 
-      return { id, title, imageDataUrl, transcriptions, hiddenTranscriptions, translatedTexts }
-    } catch (error) {
-      console.error('Error generating snapshot:', error)
-      return null
+      return { id, title, imageDataUrl: compositeImage, transcriptions, hiddenTranscriptions, translatedTexts }
     }
+
+    // إذا لم توجد صورة مركّبة، أنشئها من البيانات الخام (للتوافق مع البيانات القديمة)
+    // نستخدم نفس المنطق المستخدم في InteractiveImageAnnotation.generateCompositeImage
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    const baseImage = new Image()
+    baseImage.crossOrigin = 'anonymous'
+    const baseImageSrc = customImage && customImage !== 'custom' ? customImage : '/front2.png'
+
+    await new Promise<void>((resolve, reject) => {
+      baseImage.onload = () => resolve()
+      baseImage.onerror = () => reject(new Error('Failed to load image'))
+      baseImage.src = baseImageSrc
+    })
+
+    // استخدام نفس منطق aspect-[3/4] و object-contain المستخدم في العرض
+    // نحاكي container بعرض 400px ونسبة 3:4
+    const containerWidth = 400
+    const containerHeight = containerWidth * (4 / 3) // aspect-[3/4]
+    const qualityScale = 2 // للجودة العالية
+
+    canvas.width = containerWidth * qualityScale
+    canvas.height = containerHeight * qualityScale
+    ctx.scale(qualityScale, qualityScale)
+
+    // رسم خلفية بيضاء
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, containerWidth, containerHeight)
+
+    // حساب أبعاد الصورة مع الحفاظ على النسبة (object-contain)
+    const { offsetX, offsetY, drawWidth, drawHeight } = calculateObjectContainDimensions(
+      baseImage.width,
+      baseImage.height,
+      containerWidth,
+      containerHeight
+    )
+
+    // رسم الصورة الأساسية
+    ctx.drawImage(baseImage, offsetX, offsetY, drawWidth, drawHeight)
+
+    renderDrawingsOnCanvas(
+      ctx,
+      drawings,
+      containerWidth,
+      containerHeight,
+      baseImage,
+      { offsetX, offsetY, drawWidth, drawHeight }
+    )
+
+    // فصل التعليقات المرئية والمخفية
+    const visibleAnnotations = annotations.filter(a => !a.isHidden && a.transcription)
+    const hiddenAnnotations = annotations.filter(a => a.isHidden && a.transcription)
+
+    // رسم علامات التعليقات (الدوائر المرقمة)
+    const markerRadius = 10
+    annotations.forEach((annotation, index) => {
+      const markerX = (annotation.x / 100) * containerWidth
+      const markerY = (annotation.y / 100) * containerHeight
+      const hasTranscription = annotation.transcription && !annotation.isRecording
+
+      ctx.save()
+      ctx.beginPath()
+      ctx.arc(markerX, markerY, markerRadius, 0, Math.PI * 2)
+      ctx.fillStyle = annotation.isHidden ? '#9ca3af' : '#ec4899'
+      ctx.fill()
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2
+      ctx.stroke()
+
+      if (hasTranscription) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 10px Cairo, Arial, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText((index + 1).toString(), markerX, markerY)
+      }
+      ctx.restore()
+    })
+
+    // حساب مواقع النصوص - نفس المنطق المستخدم في InteractiveImageAnnotation
+    const TEXT_OFFSET = 2
+    const BOX_WIDTH_PERCENT = 25
+    const BOX_HEIGHT_PERCENT = 12
+    const SAFE_MARGIN = 2
+
+    const localGetBoxPosition = (markerX: number, markerY: number, position: string) => {
+      switch (position) {
+        case 'bottom': return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'top': return { x: markerX, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'right': return { x: markerX + TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'bottom-right': return { x: markerX + TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'bottom-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'top-right': return { x: markerX + TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        case 'top-left': return { x: markerX - BOX_WIDTH_PERCENT - TEXT_OFFSET, y: markerY - BOX_HEIGHT_PERCENT - TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+        default: return { x: markerX, y: markerY + TEXT_OFFSET, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT }
+      }
+    }
+
+    const localBoxesOverlap = (box1: { x: number; y: number; width: number; height: number }, box2: { x: number; y: number; width: number; height: number }) => {
+      return !(box1.x + box1.width + SAFE_MARGIN < box2.x ||
+        box2.x + box2.width + SAFE_MARGIN < box1.x ||
+        box1.y + box1.height + SAFE_MARGIN < box2.y ||
+        box2.y + box2.height + SAFE_MARGIN < box1.y)
+    }
+
+    const localIsBoxInBounds = (box: { x: number; y: number; width: number; height: number }) => {
+      return box.x >= 0 && box.y >= 0 && box.x + box.width <= 100 && box.y + box.height <= 100
+    }
+
+    // حساب مواقع النصوص
+    const textPositions: Map<string, { x: number; y: number }> = new Map()
+    const placedBoxes: { x: number; y: number; width: number; height: number }[] = []
+    const positionOrder = ['bottom', 'top', 'right', 'left', 'bottom-right', 'bottom-left', 'top-right', 'top-left']
+
+    const sortedAnnotations = [...annotations]
+      .filter(a => a.transcription && !a.isRecording)
+      .sort((a, b) => a.timestamp - b.timestamp)
+
+    sortedAnnotations.forEach((annotation) => {
+      if (annotation.boxX !== undefined && annotation.boxY !== undefined) {
+        textPositions.set(annotation.id, { x: annotation.boxX, y: annotation.boxY })
+        placedBoxes.push({ x: annotation.boxX, y: annotation.boxY, width: BOX_WIDTH_PERCENT, height: BOX_HEIGHT_PERCENT })
+        return
+      }
+
+      let bestBox = localGetBoxPosition(annotation.x, annotation.y, 'bottom')
+      for (const position of positionOrder) {
+        const candidateBox = localGetBoxPosition(annotation.x, annotation.y, position)
+        if (!localIsBoxInBounds(candidateBox)) continue
+        const hasOverlap = placedBoxes.some(pb => localBoxesOverlap(candidateBox, pb))
+        if (!hasOverlap) {
+          bestBox = candidateBox
+          break
+        }
+      }
+      placedBoxes.push(bestBox)
+      textPositions.set(annotation.id, { x: bestBox.x, y: bestBox.y })
+    })
+
+    // رسم النصوص
+    annotations
+      .filter(a => a.transcription && !a.isRecording && !a.isHidden)
+      .forEach((annotation) => {
+        const annotationIndex = annotations.findIndex(a => a.id === annotation.id) + 1
+        const textPos = textPositions.get(annotation.id)
+        if (!textPos) return
+
+        const textScale = annotation.textScale ?? 1
+        const fontSize = Math.round(14 * textScale)
+        const textX = (textPos.x / 100) * containerWidth
+        const textY = (textPos.y / 100) * containerHeight
+
+        ctx.save()
+        ctx.font = `bold ${fontSize}px Cairo, Arial, sans-serif`
+        ctx.textBaseline = 'top'
+
+        const maxTextWidth = containerWidth * 0.5
+        const lineHeight = fontSize * 1.3
+        // تقسيم بحسب <end> أو \n مطابقاً لعرض HTML، مع لف الكلمات داخل كل مقطع
+        const rawText = annotation.translatedText || annotation.transcription || ''
+        // كشف اتجاه النص (مطابق dir="auto" في HTML)
+        const rtlRange = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/
+        const ltrRange = /[A-Za-z]/
+        let isRtl = true
+        for (const ch of rawText) {
+          if (rtlRange.test(ch)) { isRtl = true; break }
+          if (ltrRange.test(ch)) { isRtl = false; break }
+        }
+        const segments = rawText.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
+        if (segments.length === 0) segments.push('')
+        // الرقم يبقى في بداية السلسلة المنطقية - bidi يضعه بصرياً
+        // على اليمين في RTL وعلى اليسار في LTR
+        segments[0] = `${annotationIndex}. ${segments[0]}`.trim()
+
+        const lines: string[] = []
+        for (const segment of segments) {
+          const words = segment.split(/\s+/).filter(Boolean)
+          let currentLine = ''
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word
+            const metrics = ctx.measureText(testLine)
+            if (metrics.width > maxTextWidth && currentLine) {
+              lines.push(currentLine)
+              currentLine = word
+            } else {
+              currentLine = testLine
+            }
+          }
+          if (currentLine) lines.push(currentLine)
+        }
+
+        // قياس أعرض سطر (مطابق لـ <p> shrunk-to-content)
+        let maxLineWidth = 0
+        lines.forEach(line => {
+          const w = ctx.measureText(line).width
+          if (w > maxLineWidth) maxLineWidth = w
+        })
+
+        // مطابقة CSS: drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)] - ظل ناعم وليس outline
+        // RTL: محاذاة لليمين عند الحافة اليمنى لأطول سطر (كحجم <p> shrunk-to-content)
+        // LTR: محاذاة لليسار عند textX (السلوك السابق)
+        ctx.textAlign = isRtl ? 'right' : 'left'
+        const anchorX = isRtl ? textX + maxLineWidth : textX
+        lines.forEach((line, lineIndex) => {
+          const lineY = textY + (lineIndex * lineHeight)
+          ctx.save()
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
+          ctx.shadowOffsetX = 0
+          ctx.shadowOffsetY = 1
+          ctx.shadowBlur = 2
+          ctx.fillStyle = '#000000'
+          ctx.fillText(line, anchorX, lineY)
+          ctx.restore()
+        })
+
+        ctx.restore()
+      })
+
+    const imageDataUrl = canvas.toDataURL('image/png')
+
+    // النصوص المرئية (للعرض أسفل الصورة كمرجع)
+    const transcriptions = visibleAnnotations
+      .map((a, idx) => `${idx + 1}. ${a.transcription}`)
+
+    // النصوص المخفية مع ترجماتها ورقم العلامة الأصلي
+    const hiddenTranscriptions = hiddenAnnotations
+      .map(a => {
+        // إيجاد رقم العلامة الأصلي في قائمة جميع التعليقات
+        const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
+        return {
+          number: originalIndex,
+          text: a.transcription || '',
+          translation: a.translatedText
+        }
+      })
+
+    // النصوص المترجمة (المرئية التي لها ترجمة) مع رقم العلامة الأصلي
+    const translatedTexts = visibleAnnotations
+      .filter(a => a.translatedText)
+      .map(a => {
+        // إيجاد رقم العلامة الأصلي في قائمة جميع التعليقات
+        const originalIndex = annotations.findIndex(ann => ann.id === a.id) + 1
+        return {
+          number: originalIndex,
+          text: a.transcription || '',
+          translation: a.translatedText || ''
+        }
+      })
+
+    return { id, title, imageDataUrl, transcriptions, hiddenTranscriptions, translatedTexts }
+  } catch (error) {
+    console.error('Error generating snapshot:', error)
+    return null
   }
+}
+
+
+export default function PrintOrderModal({ isOpen, ...props }: PrintOrderModalProps) {
+  return isOpen ? <PrintOrderSession key={props.order.id} {...props} /> : null
+}
+
+function PrintOrderSession({ onClose, order: initialOrder, onPrint }: Omit<PrintOrderModalProps, 'isOpen'>) {
+  const [fullOrder, setFullOrder] = useState<Order | null>(null)
+  const [loadError, setLoadError] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const order = fullOrder || initialOrder
+  const needsDetails = initialOrder.measurements === undefined
+  const loadingDetails = needsDetails && !fullOrder
+  const [step, setStep] = useState<'setup' | 'images'>('setup')
+  const [printableImages, setPrintableImages] = useState<string[]>([])
+  const [designCommentsSnapshots, setDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
+  const [selectedCommentsIds, setSelectedCommentsIds] = useState<string[]>([]) // التعليقات المحددة للطباعة
+  const [summarySelection, setSelectedSummaryNoteIds] = useState<string[] | null>(null)
+  const [hindiDesignCommentsSnapshots, setHindiDesignCommentsSnapshots] = useState<DesignCommentSnapshot[]>([])
+  const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(true)
+  const printRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!needsDetails) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const result = await orderService.getById(initialOrder.id)
+        if (!result.data) throw new Error('Missing order details')
+        if (!cancelled) setFullOrder(result.data)
+      } catch {
+        if (!cancelled) setLoadError(true)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [initialOrder.id, needsDetails, attempt])
+
+  // الحصول على التعليقات المحددة فقط
+  const selectedCommentsSnapshots = designCommentsSnapshots.filter(
+    snapshot => selectedCommentsIds.includes(snapshot.id)
+  )
+
+  // نصوص ملخص التصميم المحوّلة من الصوت (migration 50)
+  const designSummaryNotes = printableSummaryNotes(order)
+  const selectedSummaryNoteIds = summarySelection ?? designSummaryNotes.map(note => note.id)
+  const { measurements: savedMeasurements, design_comments, image_annotations, image_drawings } = order
 
   // إنشاء snapshots لجميع التعليقات
-  const generateAllSnapshots = useCallback(async () => {
-    const measurements = order.measurements || {}
-    const orderAny = order as any
-    // migration 30: الأعمدة المستقلة تتفوق على البيانات القديمة داخل measurements
-    const savedComments: SavedDesignComment[] =
-      (orderAny.design_comments?.length ? orderAny.design_comments : null) ||
-      measurements.saved_design_comments ||
-      []
-    const legacyAnnotations: ImageAnnotation[] =
-      (orderAny.image_annotations?.length ? orderAny.image_annotations : null) ||
-      measurements.image_annotations ||
-      []
-    const legacyDrawings: DrawingPath[] =
-      (orderAny.image_drawings?.length ? orderAny.image_drawings : null) ||
-      measurements.image_drawings ||
-      []
-    const legacyImage: string | null = measurements.custom_design_image || null
-
-    setIsGeneratingSnapshot(true)
-    const snapshots: DesignCommentSnapshot[] = []
-
-    try {
-      // إنشاء snapshots للتعليقات المحفوظة
-      for (let i = 0; i < savedComments.length; i++) {
-        const comment = savedComments[i]
-        const commentImage =
-          comment.image && comment.image !== 'custom'
-            ? comment.image
-            : legacyImage
-        const snapshot = await generateSingleSnapshot(
-          comment.annotations || [],
-          comment.drawings || [],
-          commentImage,
-          comment.title || `التعليق ${i + 1}`,
-          comment.id,
-          comment.compositeImage // تمرير الصورة المركّبة المحفوظة
-        )
-        if (snapshot) snapshots.push(snapshot)
-      }
-
-      // إذا لم تكن هناك تعليقات محفوظة، استخدم التعليقات القديمة
-      if (savedComments.length === 0 && (legacyAnnotations.length > 0 || legacyDrawings.length > 0 || legacyImage)) {
-        const snapshot = await generateSingleSnapshot(
-          legacyAnnotations,
-          legacyDrawings,
-          legacyImage,
-          'تعليقات التصميم',
-          'legacy',
-          null // لا توجد صورة مركّبة للبيانات القديمة
-        )
-        if (snapshot) snapshots.push(snapshot)
-      }
-
-      setDesignCommentsSnapshots(snapshots)
-      // تحديد اول صورة امام و اول ظهر خلف بشكل افتراضي والباقي غير محدد بشكل افتراضي
-      const firstFront = snapshots.find(s => s.title.includes('أمام') || s.title.toLowerCase().includes('front'))
-      const firstBack = snapshots.find(s => s.title.includes('خلف') || s.title.toLowerCase().includes('back'))
-
-      const defaultSelectedIds: string[] = []
-      if (firstFront) defaultSelectedIds.push(firstFront.id)
-      if (firstBack) defaultSelectedIds.push(firstBack.id)
-
-      setSelectedCommentsIds(defaultSelectedIds)
-
-      // بناء snapshots الهندية من compositeImageHi المحفوظ في كل تعليق
-      const hindiSnapshots: DesignCommentSnapshot[] = []
-      for (let i = 0; i < savedComments.length; i++) {
-        const comment = savedComments[i] as any
-        if (!comment.compositeImageHi) continue
-        const title = comment.title || `التعليق ${i + 1}`
-        hindiSnapshots.push({
-          id: comment.id + '_hi',
-          title: title + ' (हिंदी)',
-          imageDataUrl: comment.compositeImageHi,
-          transcriptions: [],
-          hiddenTranscriptions: [],
-          translatedTexts: []
-        })
-      }
-      setHindiDesignCommentsSnapshots(hindiSnapshots)
-      if (hindiSnapshots.length > 0) setIncludeHindiPrint(true)
-    } catch (error) {
-      console.error('Error generating snapshots:', error)
-    } finally {
-      setIsGeneratingSnapshot(false)
-    }
-  }, [order.measurements])
-
-  // تهيئة الصور المحددة للطباعة من الطلب
   useEffect(() => {
-    if (isOpen && order) {
-      // تحديد أول صورتين تلقائياً
-      const images = order.images || []
-      const imageOnlyList = images.filter(img =>
-        !img.includes('.mp4') && !img.includes('.mov') && !img.includes('.avi') && !img.includes('.webm') && !img.includes('video')
-      )
-      setPrintableImages([])
-      setDesignComments(order.notes || '')
+    if (loadingDetails) return
+    let cancelled = false
+    const generateAllSnapshots = async () => {
+      const measurements = savedMeasurements || {}
+      // migration 30: الأعمدة المستقلة تتفوق على البيانات القديمة داخل measurements
+      const savedComments: SavedDesignComment[] =
+        (design_comments?.length ? design_comments : null) ||
+        measurements.saved_design_comments ||
+        []
+      const legacyAnnotations: ImageAnnotation[] =
+        (image_annotations?.length ? image_annotations : null) ||
+        measurements.image_annotations ||
+        []
+      const legacyDrawings: DrawingPath[] =
+        (image_drawings?.length ? image_drawings : null) ||
+        measurements.image_drawings ||
+        []
+      const legacyImage: string | null = measurements.custom_design_image || null
 
-      // تحديد جميع نصوص ملخص التصميم افتراضياً (المستخدم يلغي ما لا يريد طباعته)
-      const summaryNotes = (order.design_summary_notes || []).filter(
-        note => note.transcription && note.transcription.trim()
-      )
-      setSelectedSummaryNoteIds(summaryNotes.map(note => note.id))
+      setIsGeneratingSnapshot(true)
+      const snapshots: DesignCommentSnapshot[] = []
 
-      // إعادة توليد التعليقات عند تحديث البيانات
-      // يحدث هذا عندما يتم جلب fullOrder (مع measurements)
-      generateAllSnapshots()
+      try {
+        // إنشاء snapshots للتعليقات المحفوظة
+        for (let i = 0; i < savedComments.length; i++) {
+          const comment = savedComments[i]
+          const commentImage =
+            comment.image && comment.image !== 'custom'
+              ? comment.image
+              : legacyImage
+          const snapshot = await generateSingleSnapshot(
+            comment.annotations || [],
+            comment.drawings || [],
+            commentImage,
+            comment.title || `التعليق ${i + 1}`,
+            comment.id,
+            comment.compositeImage // تمرير الصورة المركّبة المحفوظة
+          )
+          if (snapshot) snapshots.push(snapshot)
+        }
+
+        // إذا لم تكن هناك تعليقات محفوظة، استخدم التعليقات القديمة
+        if (savedComments.length === 0 && (legacyAnnotations.length > 0 || legacyDrawings.length > 0 || legacyImage)) {
+          const snapshot = await generateSingleSnapshot(
+            legacyAnnotations,
+            legacyDrawings,
+            legacyImage,
+            'تعليقات التصميم',
+            'legacy',
+            null // لا توجد صورة مركّبة للبيانات القديمة
+          )
+          if (snapshot) snapshots.push(snapshot)
+        }
+
+        if (cancelled) return
+        setDesignCommentsSnapshots(snapshots)
+        // تحديد اول صورة امام و اول ظهر خلف بشكل افتراضي والباقي غير محدد بشكل افتراضي
+        const firstFront = snapshots.find(s => s.title.includes('أمام') || s.title.toLowerCase().includes('front'))
+        const firstBack = snapshots.find(s => s.title.includes('خلف') || s.title.toLowerCase().includes('back'))
+
+        const defaultSelectedIds: string[] = []
+        if (firstFront) defaultSelectedIds.push(firstFront.id)
+        if (firstBack) defaultSelectedIds.push(firstBack.id)
+
+        setSelectedCommentsIds(defaultSelectedIds)
+
+        // بناء snapshots الهندية من compositeImageHi المحفوظ في كل تعليق
+        const hindiSnapshots: DesignCommentSnapshot[] = []
+        for (let i = 0; i < savedComments.length; i++) {
+          const comment = savedComments[i] as any
+          if (!comment.compositeImageHi) continue
+          const title = comment.title || `التعليق ${i + 1}`
+          hindiSnapshots.push({
+            id: comment.id + '_hi',
+            title: title + ' (हिंदी)',
+            imageDataUrl: comment.compositeImageHi,
+            transcriptions: [],
+            hiddenTranscriptions: [],
+            translatedTexts: []
+          })
+        }
+        setHindiDesignCommentsSnapshots(hindiSnapshots)
+      } catch (error) {
+        console.error('Error generating snapshots:', error)
+      } finally {
+        if (!cancelled) setIsGeneratingSnapshot(false)
+      }
     }
-  }, [isOpen, order, generateAllSnapshots])
+    void generateAllSnapshots()
+    return () => { cancelled = true }
+  }, [savedMeasurements, design_comments, image_annotations, image_drawings, loadingDetails])
 
   // تبديل حالة الطباعة للصورة
   const togglePrintable = (imageUrl: string) => {
-    if (printableImages.includes(imageUrl)) {
-      setPrintableImages(printableImages.filter(img => img !== imageUrl))
-    } else {
-      setPrintableImages([...printableImages, imageUrl])
-    }
-  }
-
-  // تحديد جميع الصور
-  const selectAllImages = () => {
-    const allImages = (order.images || []).filter(img =>
-      !img.includes('.mp4') && !img.includes('.mov') && !img.includes('.avi') && !img.includes('.webm') && !img.includes('video')
-    )
-    setPrintableImages(allImages)
-  }
-
-  // إلغاء تحديد جميع الصور
-  const deselectAllImages = () => {
-    setPrintableImages([])
+    setPrintableImages(previous => previous.includes(imageUrl)
+      ? previous.filter(image => image !== imageUrl)
+      : [...previous, imageUrl])
   }
 
   // تبديل حالة تحديد تعليق للطباعة
@@ -534,14 +502,14 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
 
   // تبديل حالة تحديد نص ملخص التصميم للطباعة
   const toggleSummaryNote = (noteId: string) => {
-    setSelectedSummaryNoteIds(prev =>
-      prev.includes(noteId) ? prev.filter(id => id !== noteId) : [...prev, noteId]
-    )
+    setSelectedSummaryNoteIds(selectedSummaryNoteIds.includes(noteId)
+      ? selectedSummaryNoteIds.filter(id => id !== noteId)
+      : [...selectedSummaryNoteIds, noteId])
   }
 
   // تحديد جميع نصوص ملخص التصميم
   const selectAllSummaryNotes = () => {
-    setSelectedSummaryNoteIds(designSummaryNotes.map(note => note.id))
+    setSelectedSummaryNoteIds(null)
   }
 
   // إلغاء تحديد جميع نصوص ملخص التصميم
@@ -569,9 +537,9 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
       position: relative;
       box-sizing: border-box;
     }
-    .print-page:last-child { page-break-after: auto; }
+    .print-layout:last-child > .print-page:last-child { page-break-after: auto; }
     /* منع انقلاب الصفحات في الطباعة على الوجهين */
-    .page-front-image, .design-comment-page, .page-back {
+    .page-front-image, .design-comment-page {
       transform: rotate(0deg) !important;
       -webkit-transform: rotate(0deg) !important;
     }
@@ -617,8 +585,8 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
     .note-number { color: #059669; font-weight: bold; flex-shrink: 0; }
     .note-text { color: #374151; }
     .print-right-column { width: 70%; display: flex; flex-direction: column; gap: 10px; }
-    .print-comments { width: 100%; height: 75%; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; }
-    .print-design-summary { flex: 1; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; background: #f0fdf4; overflow: hidden; }
+    .print-comments { width: 100%; height: 75%; min-height: 0; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; }
+    .print-design-summary { flex: 1 0 auto; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; background: #f0fdf4; }
     .design-summary-list { display: flex; flex-direction: column; gap: 4px; }
     .design-summary-item { display: flex; gap: 6px; font-size: 11px; line-height: 1.5; padding: 3px 0; border-bottom: 1px dashed #d1fae5; }
     .design-summary-item:last-child { border-bottom: none; }
@@ -633,8 +601,12 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
     .text-comments-section { border-top: 1px dashed #d1d5db; padding-top: 8px; margin-top: auto; }
     .notes-label { font-weight: bold; color: #ec4899; font-size: 12px; margin-bottom: 4px; }
     .text-comments { padding: 4px; font-size: 12px; line-height: 1.5; color: #333; }
-    .page-back { display: flex; flex-direction: column; align-items: center; }
-    .images-title { font-size: 20px; font-weight: bold; color: #ec4899; margin: 0 0 20px 0; text-align: center; }
+    .bilingual-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .bilingual-summary section { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 12px; }
+    .design-summary-item .note-text { white-space: pre-line; overflow-wrap: anywhere; }
+    .design-details-page .image-container { break-inside: avoid; aspect-ratio: auto; height: 75mm; }
+    .design-details-page .design-image { object-fit: contain; height: 100%; }
+    .design-details-page .section-title { break-after: avoid; }
     .images-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 100%; }
     .image-container { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; aspect-ratio: 1; }
     .design-image { width: 100%; height: 100%; object-fit: cover; }
@@ -709,6 +681,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         transform: none !important;
       }
     }
+    @media print { .print-page.design-details-page { break-inside: auto; } }
     @media screen {
       .mobile-print-btn { display: block; }
     }
@@ -758,7 +731,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>طباعة الطلب - ${order.client_name}</title>
+          <title>طباعة الطلب</title>
           <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
           <style>
             ${getPrintStyles()}
@@ -814,6 +787,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         </body>
         </html>
       `)
+      frameDoc.title = `طباعة الطلب - ${order.client_name}`
       frameDoc.close()
 
       // مراقبة إزالة الـ iframe (عند ضغط المستخدم زر "إغلاق" بعد الطباعة)
@@ -841,14 +815,13 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>طباعة الطلب - ${order.client_name}</title>
+          <title>طباعة الطلب</title>
           <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
           <style>${getPrintStyles()}</style>
         </head>
         <body>
           <div class="print-container">${printContent}</div>
           <script>
-            document.title = 'طباعة الطلب - ${order.client_name}';
             window.onload = function() {
               setTimeout(function() {
                 window.print();
@@ -859,6 +832,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         </body>
         </html>
       `)
+      printWindow.document.title = `طباعة الطلب - ${order.client_name}`
       printWindow.document.close()
 
       // مراقبة إغلاق نافذة الطباعة للعودة مباشرة إلى صفحة الطلبات الحديثة
@@ -872,12 +846,11 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
     }
   }
 
-  if (!isOpen) return null
-
-  const images = order.images || []
-  const imageOnlyList = images.filter(img =>
-    !img.includes('.mp4') && !img.includes('.mov') && !img.includes('.avi') && !img.includes('.webm') && !img.includes('video')
-  )
+  const imageOnlyList = (order.images || []).filter(image => !isVideoFile(image))
+  const skipImagesAndPrint = () => {
+    flushSync(() => setPrintableImages([]))
+    handlePrint()
+  }
 
   return (
     <AnimatePresence>
@@ -892,17 +865,24 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
-          className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="print-step-title"
+          dir="rtl"
+          className="flex flex-col bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90dvh] overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* رأس المودال */}
           <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Printer className="w-6 h-6" />
-              <h2 className="text-xl font-bold">طباعة الطلب</h2>
+              <h2 id="print-step-title" className="text-xl font-bold">
+                {step === 'setup' ? '١ من ٢ · تهيئة الطباعة' : '٢ من ٢ · صور التصميم الإضافية'}
+              </h2>
             </div>
             <button
               onClick={onClose}
+              aria-label="إغلاق"
               className="p-2 hover:bg-white/20 rounded-full transition-colors"
             >
               <X className="w-5 h-5" />
@@ -910,184 +890,193 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
           </div>
 
           {/* محتوى المودال */}
-          <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-            {/* معلومات الطلب */}
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="font-bold text-gray-800 mb-2">معلومات الطلب:</h3>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <p><span className="text-gray-600">الزبونة:</span> {order.client_name}</p>
-                <p><span className="text-gray-600">الهاتف:</span> {order.client_phone}</p>
-                <p><span className="text-gray-600">رقم الطلب:</span> #{order.order_number || order.id.slice(0, 8)}</p>
-                <p><span className="text-gray-600">موعد التسليم:</span> {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn')}</p>
-              </div>
-            </div>
-
-            {/* تعليقات التصميم المتعددة - مع إمكانية الاختيار */}
-            {(isGeneratingSnapshot || designCommentsSnapshots.length > 0) && (
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block font-bold text-gray-800">
-                    اختر تعليقات التصميم للطباعة ({selectedCommentsIds.length} من {designCommentsSnapshots.length}):
-                  </label>
-                  {designCommentsSnapshots.length > 0 && !isGeneratingSnapshot && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={selectAllComments}
-                        className="text-xs px-3 py-1 bg-pink-100 text-pink-700 rounded-full hover:bg-pink-200 transition-colors"
-                      >
-                        تحديد الكل
+          <div key={step} className="min-h-0 overflow-y-auto p-4 sm:p-6">
+            {step === 'setup' && (
+              <>
+                {loadingDetails && (
+                  <div role="status" className="mb-4 text-sm text-gray-600">
+                    {loadError ? (
+                      <button onClick={() => { setLoadError(false); setAttempt(value => value + 1) }}>
+                        تعذّر تحميل تفاصيل الطلب. إعادة المحاولة
                       </button>
-                      <button
-                        onClick={deselectAllComments}
-                        className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
-                      >
-                        إلغاء الكل
-                      </button>
-                    </div>
-                  )}
+                    ) : 'جارٍ تحميل تفاصيل الطلب…'}
+                  </div>
+                )}
+                {/* معلومات الطلب */}
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                  <h3 className="font-bold text-gray-800 mb-2">معلومات الطلب:</h3>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <p><span className="text-gray-600">الزبونة:</span> {order.client_name}</p>
+                    <p><span className="text-gray-600">الهاتف:</span> {order.client_phone}</p>
+                    <p><span className="text-gray-600">رقم الطلب:</span> #{order.order_number || order.id.slice(0, 8)}</p>
+                    <p><span className="text-gray-600">موعد التسليم:</span> {formatGregorianDate(order.due_date, 'ar-SA-u-nu-latn')}</p>
+                  </div>
                 </div>
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  {isGeneratingSnapshot ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="w-6 h-6 text-pink-500 animate-spin" />
-                      <span className="mr-2 text-gray-600">جاري إنشاء صور التعليقات...</span>
+
+                {/* تعليقات التصميم المتعددة - مع إمكانية الاختيار */}
+                {(isGeneratingSnapshot || designCommentsSnapshots.length > 0) && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block font-bold text-gray-800">
+                        اختر تعليقات التصميم للطباعة ({selectedCommentsIds.length} من {designCommentsSnapshots.length}):
+                      </label>
+                      {designCommentsSnapshots.length > 0 && !isGeneratingSnapshot && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={selectAllComments}
+                            className="text-xs px-3 py-1 bg-pink-100 text-pink-700 rounded-full hover:bg-pink-200 transition-colors"
+                          >
+                            تحديد الكل
+                          </button>
+                          <button
+                            onClick={deselectAllComments}
+                            className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
+                          >
+                            إلغاء الكل
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {designCommentsSnapshots.map((snapshot) => {
-                        const isSelected = selectedCommentsIds.includes(snapshot.id)
-                        const selectedIndex = selectedCommentsIds.indexOf(snapshot.id)
+                    <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                      {isGeneratingSnapshot ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="w-6 h-6 text-pink-500 animate-spin" />
+                          <span className="mr-2 text-gray-600">جاري إنشاء صور التعليقات...</span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          {designCommentsSnapshots.map((snapshot) => {
+                            const isSelected = selectedCommentsIds.includes(snapshot.id)
+                            return (
+                              <div
+                                key={snapshot.id}
+                                onClick={() => toggleCommentSelection(snapshot.id)}
+                                className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${isSelected ? 'border-pink-500 ring-2 ring-pink-300' : 'border-gray-200 hover:border-pink-300'
+                                  }`}
+                              >
+                                <img
+                                  src={snapshot.imageDataUrl}
+                                  alt={snapshot.title}
+                                  className="w-full h-auto"
+                                />
+                                {isSelected && (
+                                  <div className="absolute inset-0 bg-pink-500/20 flex items-center justify-center">
+                                    <div className="bg-pink-500 text-white rounded-full p-2">
+                                      <Check className="w-5 h-5" />
+                                    </div>
+                                  </div>
+                                )}
+                                <p className="text-xs text-gray-600 mt-1 text-center p-1">{snapshot.title}</p>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    {selectedCommentsIds.length > 0 && (
+                      <p className="mt-2 text-sm text-pink-600">
+                        سيتم طباعة {selectedCommentsIds.length} تعليق تصميم
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* اختيار نصوص ملخص التصميم للطباعة (النصوص المحوّلة من الصوت) */}
+                {designSummaryNotes.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block font-bold text-gray-800">
+                        اختر ملخصات التصميم للطباعة ({selectedSummaryNoteIds.length} من {designSummaryNotes.length}):
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={selectAllSummaryNotes}
+                          className="text-xs px-3 py-1 bg-pink-100 text-pink-700 rounded-full hover:bg-pink-200 transition-colors"
+                        >
+                          تحديد الكل
+                        </button>
+                        <button
+                          onClick={deselectAllSummaryNotes}
+                          className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
+                        >
+                          إلغاء الكل
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">اضغط على أي نص لإلغاء تحديده فلا تتم طباعته</p>
+                    <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 flex flex-col gap-2">
+                      {designSummaryNotes.map((note, idx) => {
+                        const isSelected = selectedSummaryNoteIds.includes(note.id)
+                        const lines = (note.transcription || originalSummary(note)).split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
                         return (
                           <div
-                            key={snapshot.id}
-                            onClick={() => toggleCommentSelection(snapshot.id)}
-                            className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${isSelected ? 'border-pink-500 ring-2 ring-pink-300' : 'border-gray-200 hover:border-pink-300'
-                              }`}
+                            key={note.id}
+                            onClick={() => toggleSummaryNote(note.id)}
+                            className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-all ${
+                              isSelected
+                                ? 'border-pink-500 bg-pink-50'
+                                : 'border-gray-200 bg-white opacity-60 hover:opacity-100'
+                            }`}
                           >
-                            <img
-                              src={snapshot.imageDataUrl}
-                              alt={snapshot.title}
-                              className="w-full h-auto"
-                            />
-                            {isSelected && (
-                              <div className="absolute inset-0 bg-pink-500/20 flex items-center justify-center">
-                                <div className="bg-pink-500 text-white rounded-full p-2">
-                                  <Check className="w-5 h-5" />
-                                </div>
-                              </div>
-                            )}
-                            {isSelected && (
-                              <div className="absolute top-2 right-2 bg-pink-500 text-white text-xs px-2 py-1 rounded-full">
-                                صفحة {selectedIndex + 2}
-                              </div>
-                            )}
-                            <p className="text-xs text-gray-600 mt-1 text-center p-1">{snapshot.title}</p>
+                            <div
+                              className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center border-2 ${
+                                isSelected ? 'bg-pink-500 border-pink-500 text-white' : 'border-gray-300 bg-white'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3.5 h-3.5" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-pink-600 font-bold text-sm ml-1">{idx + 1}.</span>
+                              <span
+                                className={`text-sm ${isSelected ? 'text-gray-800' : 'text-gray-500 line-through'}`}
+                                dir="auto"
+                              >
+                                {lines.map((line, i) => (
+                                  <span key={i}>{i > 0 && <br />}{line}</span>
+                                ))}
+                              </span>
+                            </div>
                           </div>
                         )
                       })}
                     </div>
-                  )}
-                </div>
-                {selectedCommentsIds.length > 0 && (
-                  <p className="mt-2 text-sm text-pink-600">
-                    سيتم طباعة {selectedCommentsIds.length} تعليق تصميم
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* اختيار نصوص ملخص التصميم للطباعة (النصوص المحوّلة من الصوت) */}
-            {designSummaryNotes.length > 0 && (
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block font-bold text-gray-800">
-                    اختر نصوص ملخص التصميم للطباعة ({selectedSummaryNoteIds.length} من {designSummaryNotes.length}):
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={selectAllSummaryNotes}
-                      className="text-xs px-3 py-1 bg-pink-100 text-pink-700 rounded-full hover:bg-pink-200 transition-colors"
-                    >
-                      تحديد الكل
-                    </button>
-                    <button
-                      onClick={deselectAllSummaryNotes}
-                      className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
-                    >
-                      إلغاء الكل
-                    </button>
                   </div>
-                </div>
-                <p className="text-xs text-gray-500 mb-2">اضغط على أي نص لإلغاء تحديده فلا تتم طباعته</p>
-                <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 flex flex-col gap-2">
-                  {designSummaryNotes.map((note, idx) => {
-                    const isSelected = selectedSummaryNoteIds.includes(note.id)
-                    const lines = note.transcription!.split(/<end>|\n/gi).map(s => s.trim()).filter(Boolean)
-                    return (
-                      <div
-                        key={note.id}
-                        onClick={() => toggleSummaryNote(note.id)}
-                        className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-all ${
-                          isSelected
-                            ? 'border-pink-500 bg-pink-50'
-                            : 'border-gray-200 bg-white opacity-60 hover:opacity-100'
-                        }`}
-                      >
-                        <div
-                          className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center border-2 ${
-                            isSelected ? 'bg-pink-500 border-pink-500 text-white' : 'border-gray-300 bg-white'
-                          }`}
-                        >
-                          {isSelected && <Check className="w-3.5 h-3.5" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-pink-600 font-bold text-sm ml-1">{idx + 1}.</span>
-                          <span
-                            className={`text-sm ${isSelected ? 'text-gray-800' : 'text-gray-500 line-through'}`}
-                            dir="auto"
-                          >
-                            {lines.map((line, i) => (
-                              <span key={i}>{i > 0 && <br />}{line}</span>
-                            ))}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* اختيار الصور للطباعة */}
-            {imageOnlyList.length > 0 && (
+              </>
+            )}
+            {step === 'images' && (
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-bold text-gray-800 flex items-center gap-2">
                     <ImageIcon className="w-5 h-5 text-pink-500" />
-                    اختر الصور للطباعة:
+                    اختر الصور الإضافية للطباعة
                   </h3>
-                  <div className="flex gap-2">
+                  {imageOnlyList.length > 0 && <div className="flex gap-2">
                     <button
-                      onClick={selectAllImages}
+                      onClick={() => setPrintableImages(imageOnlyList)}
                       className="text-xs px-3 py-1 bg-pink-100 text-pink-700 rounded-full hover:bg-pink-200 transition-colors"
                     >
                       تحديد الكل
                     </button>
                     <button
-                      onClick={deselectAllImages}
+                      onClick={() => setPrintableImages([])}
                       className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
                     >
                       إلغاء الكل
                     </button>
-                  </div>
+                  </div>}
                 </div>
 
+                {imageOnlyList.length === 0 && <p className="text-sm text-gray-500">لا توجد صور إضافية لهذا الطلب.</p>}
                 <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {imageOnlyList.map((image, index) => {
                     const isSelected = printableImages.includes(image)
                     return (
-                      <div
-                        key={index}
+                      <button
+                        type="button"
+                        key={image}
+                        aria-pressed={isSelected}
                         onClick={() => togglePrintable(image)}
                         className={`relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${isSelected ? 'border-pink-500 ring-2 ring-pink-300' : 'border-gray-200 hover:border-pink-300'
                           }`}
@@ -1103,7 +1092,7 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
                         <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded">
                           {index + 1}
                         </div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -1116,39 +1105,27 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
               </div>
             )}
 
-            {/* خيار الطباعة بالهندية */}
-            {hindiDesignCommentsSnapshots.length > 0 && (
-              <div className="pt-2">
-                <label className="flex items-center gap-3 cursor-pointer bg-orange-50 border border-orange-200 rounded-lg p-3 hover:bg-orange-100 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={includeHindiPrint}
-                    onChange={(e) => setIncludeHindiPrint(e.target.checked)}
-                    className="w-4 h-4 accent-orange-500"
-                  />
-                  <div>
-                    <span className="font-medium text-orange-800">طباعة نسخة هندية (हिंदी)</span>
-                    <p className="text-xs text-orange-600 mt-0.5">سيتم طباعة الطلب مرتين: الأولى بالعربية والثانية بالهندية</p>
-                  </div>
-                </label>
-              </div>
-            )}
           </div>
 
           {/* أزرار الإجراءات */}
-          <div className="border-t border-gray-200 p-4 bg-gray-50 flex justify-between items-center">
+          <div className="shrink-0 border-t border-gray-200 p-3 sm:p-4 bg-gray-50 flex flex-wrap justify-between items-center gap-2">
             <button
-              onClick={onClose}
-              className="px-6 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+              onClick={step === 'setup' ? onClose : () => setStep('setup')}
+              className="px-3 py-2 text-gray-700 hover:bg-gray-200 rounded-lg"
             >
-              إلغاء
+              {step === 'setup' ? 'إلغاء' : 'رجوع'}
             </button>
+            {step === 'images' && (
+              <button onClick={skipImagesAndPrint} className="px-3 py-2 border border-gray-300 bg-white rounded-lg text-gray-700">
+                عدم طباعة صور إضافية
+              </button>
+            )}
             <button
-              onClick={handlePrint}
-              className="px-6 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 transition-colors flex items-center gap-2"
+              onClick={step === 'setup' ? () => setStep('images') : handlePrint}
+              disabled={loadingDetails || isGeneratingSnapshot || (step === 'images' && !printableImages.length)}
+              className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg flex items-center gap-2 disabled:opacity-50"
             >
-              <Printer className="w-5 h-5" />
-              طباعة الطلب
+              {step === 'setup' ? 'التالي' : <><Printer className="w-5 h-5" />طباعة النسختين</>}
             </button>
           </div>
         </motion.div>
@@ -1156,14 +1133,17 @@ export default function PrintOrderModal({ isOpen, onClose, order: initialOrder, 
         {/* مكون الطباعة المخفي */}
         <div className="hidden">
           <div ref={printRef}>
-            <OrderPrintLayout
-              order={order}
-              printableImages={printableImages}
-              designComments={designComments}
-              designCommentsSnapshots={selectedCommentsSnapshots}
-              hindiDesignCommentsSnapshots={includeHindiPrint ? hindiDesignCommentsSnapshots : undefined}
-              selectedSummaryNoteIds={selectedSummaryNoteIds}
-            />
+            {(['ar', 'hi'] as const).map(language => (
+              <OrderPrintLayout
+                key={language}
+                order={order}
+                printableImages={printableImages}
+                designCommentsSnapshots={language === 'ar' ? selectedCommentsSnapshots : selectedCommentsSnapshots.map(snapshot =>
+                  hindiDesignCommentsSnapshots.find(hindi => hindi.id === snapshot.id + '_hi') ?? snapshot
+                )}
+                selectedSummaryNoteIds={selectedSummaryNoteIds}
+              />
+            ))}
           </div>
         </div>
       </motion.div>

@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import { useEffect, useState } from 'react'
 import { CheckCircle, Clock, Loader2, Shirt } from 'lucide-react'
 import { orderService, type Order } from '@/lib/services/order-service'
@@ -126,6 +127,7 @@ export default function ShakOrdersTab({ workerId, refreshKey, onOrderClick }: {
                 <strong className="text-sm text-gray-800">{order.client_name}</strong>
                 <span className="text-xs text-gray-500">#{order.order_number}</span>
               </span>
+              <OrderTakerLabel name={order.taken_by} isArabic={isArabic} />
               {view === 'completed' ? (
                 <span className="block text-xs text-green-700">
                   {t('shak_done') || 'انتهى عمل الشك'}: {formatDate(order.shak_completed_at)}

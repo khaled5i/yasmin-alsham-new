@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import { useState, useEffect, useMemo, useRef, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -1471,6 +1472,7 @@ function OrdersPageInner() {
                           </div>
 
                           <h3 className="font-bold text-gray-900 text-lg mb-1 truncate">{order.client_name}</h3>
+                          <OrderTakerLabel name={order.taken_by} isArabic={isArabic} />
                           <p className="text-sm text-gray-500 mb-2">
                             <span className="font-medium">{t('order_number') || 'رقم الطلب:'}</span> {order.order_number || order.id}
                           </p>
@@ -1588,6 +1590,7 @@ function OrdersPageInner() {
                         <h3 className="font-semibold text-gray-900 mb-1">
                           {order.client_name}
                         </h3>
+                        <OrderTakerLabel name={order.taken_by} isArabic={isArabic} />
                         <p className="text-sm text-gray-500 mb-2">
                           <span className="font-medium">{t('order_number') || (isArabic ? 'رقم الطلب:' : 'Order #')}</span> {order.order_number || order.id}
                         </p>

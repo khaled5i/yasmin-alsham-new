@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import React, { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Package, Clock, CheckCircle, AlertCircle, Phone, MessageSquare, Ruler, Scissors, CalendarDays, ArrowRight } from 'lucide-react'
@@ -27,6 +28,7 @@ const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible
 interface OrderInfo {
   order_number: string
   client_name: string
+  taken_by?: string | null
   client_phone: string
   order_date: string
   due_date: string
@@ -59,6 +61,7 @@ export default function TrackOrderPage() {
   const toOrderInfo = (order: any): OrderInfo => ({
     order_number: order.order_number,
     client_name: order.client_name,
+    taken_by: order.taken_by,
     client_phone: order.client_phone,
     order_date: order.created_at,
     due_date: order.due_date,
@@ -284,6 +287,7 @@ export default function TrackOrderPage() {
               <div className={field}>
                 <span className={fieldLabel}>الاسم</span>
                 <p className="truncate text-base font-semibold text-[#211b19]">{orderData.client_name}</p>
+                <OrderTakerLabel name={orderData.taken_by} />
               </div>
               {searchType === 'order' ? (
                 <div className={field}>

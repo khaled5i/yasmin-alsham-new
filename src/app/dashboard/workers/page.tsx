@@ -34,6 +34,7 @@ import { validatePhoneLength, getValidationErrorMessage } from '@/utils/inputVal
 import { WORKER_TYPES_OPTIONS, getWorkerTypeName, WORKER_TYPE_DESCRIPTIONS } from '@/lib/worker-types'
 import type { WorkerType } from '@/lib/services/worker-service'
 import StaffPermissionsEditor, { type StaffPermissionsTarget } from '@/components/workers/StaffPermissionsEditor'
+import OwnerAccountsPanel from '@/components/workers/OwnerAccountsPanel'
 import { OWNER_ROLE_LABEL, GENERAL_MANAGER_LABEL } from '@/lib/staff-permissions'
 
 export default function WorkersPage() {
@@ -427,6 +428,9 @@ export default function WorkersPage() {
             {' '}{GENERAL_MANAGER_LABEL} يبدأ بكل الصلاحيات، وبقية العمال يبدؤون بصلاحيات نوعهم المعتادة.
           </p>
         </motion.div>
+
+        {/* حسابات المدير الأكبر: إضافة حساب جديد وحذف القديم */}
+        <OwnerAccountsPanel />
 
         {/* رسائل الحالة */}
         {error && (

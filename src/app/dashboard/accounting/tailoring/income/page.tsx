@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
@@ -727,6 +728,7 @@ function IncomePageContent() {
                     <div className="min-w-0">
                       <p className="font-bold text-gray-800">طلب {order.order_number}</p>
                       <p className="truncate text-xs text-gray-500">{order.customer_name}</p>
+                      <OrderTakerLabel name={order.taken_by} />
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-amber-700" dir="ltr">

@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -493,6 +494,7 @@ load(g);load(l);
                             <div className="flex items-start justify-between mb-2 gap-2">
                               <div>
                                 <h3 className="font-semibold text-gray-900 text-sm">{order.client_name}</h3>
+                                <OrderTakerLabel name={order.taken_by} />
                                 <p className="text-xs text-gray-400 mt-0.5">
                                   #{order.order_number || order.id.slice(0, 8)}
                                 </p>

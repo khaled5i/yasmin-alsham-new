@@ -33,6 +33,7 @@ import DatePickerForProof from './DatePickerForProof'
 import DatePickerForSecondProof from './DatePickerForSecondProof'
 import InteractiveImageAnnotation, { ImageAnnotation, DrawingPath, SavedDesignComment, InteractiveImageAnnotationRef, DesignSummaryNote } from './InteractiveImageAnnotation'
 import DesignSummarySection from './DesignSummarySection'
+import { designImagesFromComments } from '@/lib/design-summary-images'
 import { Order, orderService } from '@/lib/services/order-service'
 import { issueOrderPaymentReceipt } from '@/lib/services/order-payment-receipt'
 import { recordOrderAdditionalPayment } from '@/lib/services/simple-accounting-service'
@@ -88,6 +89,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
   }
   const voiceSessionVersion = voiceSessionRef.current.version
   const { t, isArabic } = useTranslation()
+  const summaryBusyRef = useRef(false)
   const voiceBusyRef = useRef(false)
   const annotationRef = useRef<InteractiveImageAnnotationRef>(null)
   const initialDesignStateRef = useRef<{ annotations: string; drawings: string; comments: string; hasCustomImage: boolean }>({
@@ -635,7 +637,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
-    if (voiceBusyRef.current || annotationRef.current?.isTranscribing()) {
+    if (voiceBusyRef.current || summaryBusyRef.current || annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return
     }
@@ -880,7 +882,7 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
       return
     }
 
-    if (voiceBusyRef.current || annotationRef.current?.isTranscribing()) {
+    if (voiceBusyRef.current || summaryBusyRef.current || annotationRef.current?.isTranscribing()) {
       setSaveError('جارٍ تحويل التسجيل الصوتي إلى نص. يرجى الانتظار لحظات حتى يظهر النص ثم احفظ الطلب.')
       return
     }
@@ -1528,7 +1530,9 @@ export default function EditOrderModal({ order: initialOrder, isOpen, onClose, o
                 {formData.designSummaryNotes.length > 0 && (
                   <DesignSummarySection
                     notes={formData.designSummaryNotes}
+                    onBusyChange={busy => { summaryBusyRef.current = busy }}
                     onNotesChange={(notes) => handleInputChange('designSummaryNotes', notes)}
+                    getDesignImages={() => designImagesFromComments(formData.savedDesignComments)}
                   />
                 )}
 

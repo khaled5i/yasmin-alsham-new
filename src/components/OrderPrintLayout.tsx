@@ -1,5 +1,6 @@
 'use client'
 
+import { hasRefinedSummary, originalSummary, printableSummaryNotes, savedHindiSummary } from '@/lib/design-summary-text'
 import { forwardRef } from 'react'
 import { Order } from '@/lib/services/order-service'
 import { parseDateForDisplay, shiftDate } from '@/lib/date-utils'
@@ -18,23 +19,12 @@ interface DesignCommentSnapshot {
 interface OrderPrintLayoutProps {
   order: Order
   printableImages: string[]
-  designComments?: string
   designCommentsSnapshots?: DesignCommentSnapshot[] // قائمة التعليقات المتعددة
-  hindiDesignCommentsSnapshots?: DesignCommentSnapshot[] // النسخة الهندية
   selectedSummaryNoteIds?: string[] // معرّفات نصوص ملخص التصميم المحددة للطباعة (إن لم تُمرّر تُطبع الكل)
 }
 
-/**
- * مكون تخطيط طباعة الطلب
- * ترتيب الصفحات:
- * - الصفحة 1: معلومات الطلب + المقاسات + صورة الخلف (أو الأمام أو أول صورة تصميم)
- * - الصفحة 2: صورة الأمام (إن وجدت)
- * - الصفحة 3+: كل تعليق تصميم في صفحة منفصلة
- * - صفحات هندية: إذا وجدت hindiDesignCommentsSnapshots
- * - الصفحة الأخيرة: باقي صور التصميم
- */
 const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
-  ({ order, printableImages, designComments, designCommentsSnapshots = [], hindiDesignCommentsSnapshots, selectedSummaryNoteIds }, ref) => {
+  ({ order, printableImages, designCommentsSnapshots = [], selectedSummaryNoteIds }, ref) => {
 
     // الحصول على اسم المقاس بالعربية
     const getMeasurementLabel = (key: string): string => {
@@ -106,7 +96,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
 
       // إذا لم توجد صورة خلف، نستخدم الصورة الأولى من القائمة العامة (بشرط ألا تكون هي صورة الأمام)
       const frontSnapshot = designCommentsSnapshots.find(s =>
-        s.title.includes('الأمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
+        s.title.includes('أمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
       )
 
       const firstAvailable = printableImages.find(img => img !== frontSnapshot?.imageDataUrl)
@@ -117,7 +107,7 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
     const getFrontPageImage = () => {
       // البحث عن صورة الأمام بشكل صريح
       const frontSnapshot = designCommentsSnapshots.find(s =>
-        s.title.includes('الأمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
+        s.title.includes('أمام') || s.title.includes('امام') || s.title.toLowerCase().includes('front')
       )
       if (frontSnapshot) return frontSnapshot.imageDataUrl
 
@@ -130,13 +120,6 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       return candidate?.imageDataUrl || null
     }
 
-    // تحديد صور التصميم المتبقية (صور الطلب المحددة من قِبَل المستخدم)
-    // ملاحظة: printableImages (صور الطلب) و designCommentsSnapshots (صور Canvas المرسومة)
-    // مصفوفتان مستقلتان تماماً، لذا نعرض جميع الصور المحددة دون حذف أي منها
-    const getRemainingDesignImages = () => {
-      return printableImages
-    }
-
     // تصفية تعليقات التصميم لاستبعاد الخلف والأمام المستخدمين
     const getFilteredDesignComments = () => {
       const frontImgUrl = getFrontPageImage()
@@ -147,60 +130,13 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       )
     }
 
-    // للتشخيص - عناوين الـ snapshots المتاحة
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[Hindi Debug] designCommentsSnapshots titles:', designCommentsSnapshots.map(s => s.title))
-      console.log('[Hindi Debug] hindiDesignCommentsSnapshots titles:', hindiDesignCommentsSnapshots?.map(s => s.title))
-    }
-
-    // الحصول على صورة الخلف الهندية مباشرةً من hindiDesignCommentsSnapshots
-    const getHindiBackUrl = (): string | null => {
-      if (!hindiDesignCommentsSnapshots?.length) return null
-      // محاولة 1: البحث بالعنوان
-      const byTitle = hindiDesignCommentsSnapshots.find(h =>
-        h.title.includes('الخلف') || h.title.includes('خلف') || h.title.toLowerCase().includes('back')
-      )
-      if (byTitle) return byTitle.imageDataUrl
-      // محاولة 2: البحث بمطابقة ID مع الـ snapshot الأصلي
-      const backSnap = designCommentsSnapshots.find(s =>
-        s.title.includes('الخلف') || s.title.includes('خلف') || s.title.toLowerCase().includes('back')
-      )
-      if (backSnap) {
-        const byId = hindiDesignCommentsSnapshots.find(h => h.id === backSnap.id + '_hi')
-        if (byId) return byId.imageDataUrl
-      }
-      // لم يوجد نسخة هندية للخلف → null (سيُستخدم الخلف العربي)
-      return null
-    }
-
-    // الحصول على صورة الأمام الهندية مباشرةً من hindiDesignCommentsSnapshots
-    const getHindiFrontUrl = (): string | null => {
-      if (!hindiDesignCommentsSnapshots?.length) return null
-      // محاولة 1: البحث بالعنوان
-      const byTitle = hindiDesignCommentsSnapshots.find(h =>
-        h.title.includes('الأمام') || h.title.includes('أمام') || h.title.toLowerCase().includes('front')
-      )
-      if (byTitle) return byTitle.imageDataUrl
-      // محاولة 2: البحث بمطابقة ID مع الـ snapshot الأصلي
-      const frontSnap = designCommentsSnapshots.find(s =>
-        s.title.includes('الأمام') || s.title.includes('أمام') || s.title.toLowerCase().includes('front')
-      )
-      if (frontSnap) {
-        const byId = hindiDesignCommentsSnapshots.find(h => h.id === frontSnap.id + '_hi')
-        if (byId) return byId.imageDataUrl
-      }
-      // لم يوجد نسخة هندية للأمام → null (سيُستخدم الأمام العربي)
-      return null
-    }
-
     const allNotes = getAllNotes()
 
-    // ملخص التصميم (migration 50) - النصوص المحوّلة من التسجيلات الصوتية
-    // عند تمرير selectedSummaryNoteIds نطبع فقط النصوص المحددة، وإلا نطبع الكل
-    const designSummaryNotes = (order.design_summary_notes || []).filter(
-      note => note.transcription && note.transcription.trim() &&
-        (!selectedSummaryNoteIds || selectedSummaryNoteIds.includes(note.id))
+    const selectedNotes = printableSummaryNotes(order).filter(
+      note => !selectedSummaryNoteIds || selectedSummaryNoteIds.includes(note.id)
     )
+    const refinedNotes = selectedNotes.filter(hasRefinedSummary)
+    const printText = (value: string) => value.replace(/<end>/gi, '\n').trim()
 
     // دالة لرسم الصفحة الأولى (مع إمكانية تمرير صورة خلف بديلة)
     const renderMainPage = (backImageUrl: string | null) => (
@@ -257,6 +193,12 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
                 <span className="info-value" dir="ltr" style={{ fontWeight: 'bold' }}>#{order.order_number || order.id.slice(0, 8)}</span>
               </div>
               </div>
+              {order.taken_by && (
+                <div className="info-item-inline" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                  <span className="info-label">استلم الطلب:</span>
+                  <bdi className="info-value">{order.taken_by}</bdi>
+                </div>
+              )}
               <div className="info-item-inline" style={{ marginRight: 'auto' }}>
                 <span className="info-label">تاريخ الطلب:</span>
                 <span className="info-value">{formatDate(order.order_received_date || order.created_at)}</span>
@@ -362,23 +304,18 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
               </div>
             </div>
 
-            {/* ملخص التصميم - يُعرض فقط عند وجود ملخص، وإلا يبقى المكان فارغاً */}
-            {designSummaryNotes.length > 0 && (
-              <div className="print-design-summary">
-                <h3 className="section-title section-title-compact" style={{ textAlign: 'center', marginBottom: '8px' }}>ملخص التصميم</h3>
+            {selectedNotes.length > 0 && (
+              <section className="print-design-summary" lang="ar" dir="rtl">
+                <h3 className="section-title section-title-compact">ملخص التصميم الأصلي</h3>
                 <div className="design-summary-list">
-                  {designSummaryNotes.map((note, idx) => (
+                  {selectedNotes.map((note, index) => (
                     <div key={note.id} className="design-summary-item">
-                      <span className="note-number">{idx + 1}.</span>
-                      <span className="note-text">
-                        {note.transcription!.split(/<end>|\n/gi).filter(s => s.trim()).map((line, i) => (
-                          <span key={i}>{i > 0 && <br />}{line.trim()}</span>
-                        ))}
-                      </span>
+                      <span className="note-number">{index + 1}.</span>
+                      <span className="note-text">{printText(originalSummary(note))}</span>
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
           </div>
         </div>
@@ -415,9 +352,6 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
       )
     }
 
-    const hindiBackUrl = getHindiBackUrl() || getFirstPageImage()
-    const hindiFrontUrl = getHindiFrontUrl() || getFrontPageImage()
-
     return (
       <div ref={ref} className="print-layout" dir="rtl">
         {/* ========== الصفحة الأولى - معلومات + مقاسات + صورة الخلف ========== */}
@@ -425,6 +359,42 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
 
         {/* ========== الصفحة الثانية - صورة الأمام (إن وجدت) ========== */}
         {renderFrontPage(getFrontPageImage())}
+
+        {(refinedNotes.length > 0 || printableImages.length > 0) && (
+          <div className="print-page design-details-page">
+            {refinedNotes.length > 0 && (
+              <div className="bilingual-summary" dir="rtl">
+                {(['ar', 'hi'] as const).map(language => (
+                  <section key={language} lang={language} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+                    <h3 className="section-title section-title-compact">
+                      {language === 'ar' ? 'ملخص التصميم المحسّن' : 'डिज़ाइन का सारांश'}
+                    </h3>
+                    {refinedNotes.map((note, index) => (
+                      <div key={note.id} className="design-summary-item">
+                        <span className="note-number">{index + 1}.</span>
+                        <span className="note-text">{printText(language === 'ar'
+                          ? note.transcription!
+                          : savedHindiSummary(note) || 'हिंदी अनुवाद उपलब्ध नहीं है।')}</span>
+                      </div>
+                    ))}
+                  </section>
+                ))}
+              </div>
+            )}
+            {printableImages.length > 0 && (
+              <section>
+                <h2 className="section-title">صور التصميم الإضافية</h2>
+                <div className="images-grid">
+                  {printableImages.map((image, index) => (
+                    <div key={image} className="image-container">
+                      <img src={image} alt={`صورة التصميم ${index + 1}`} className="design-image" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
 
         {/* ========== صفحات تعليقات التصميم (كل تعليق في صفحة منفصلة) ========== */}
         {getFilteredDesignComments().map((snapshot) => (
@@ -440,32 +410,6 @@ const OrderPrintLayout = forwardRef<HTMLDivElement, OrderPrintLayoutProps>(
             </div>
           </div>
         ))}
-
-        {/* ========== النسخة الهندية - تكرار كامل للطلب مع صور التصميم الهندية فقط ========== */}
-        {hindiDesignCommentsSnapshots && hindiDesignCommentsSnapshots.length > 0 && (
-          <>
-            {renderMainPage(hindiBackUrl)}
-            {renderFrontPage(hindiFrontUrl)}
-          </>
-        )}
-
-        {/* ========== صفحة الصور المتبقية ========== */}
-        {getRemainingDesignImages().length > 0 && (
-          <div className="print-page page-back">
-            <h2 className="images-title">صور التصميم الإضافية</h2>
-            <div className="images-grid">
-              {getRemainingDesignImages().map((image, index) => (
-                <div key={index} className="image-container">
-                  <img
-                    src={image}
-                    alt={`صورة التصميم ${index + 1}`}
-                    className="design-image"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     )
   }

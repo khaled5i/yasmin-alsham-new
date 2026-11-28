@@ -38,6 +38,7 @@ const ORDER_LIST_COLUMNS = [
   'cutter_name',
   'cut_at',
   'client_name',
+  'taken_by',
   'client_phone',
   'client_email',
   'description',
@@ -338,6 +339,9 @@ export interface Order {
     timestamp: number
     duration?: number
     transcription?: string
+    sourceTranscription?: string
+    translatedText?: string
+    translationLanguage?: string
   }>
 }
 
@@ -457,6 +461,9 @@ export interface CreateOrderData {
     timestamp: number
     duration?: number
     transcription?: string
+    sourceTranscription?: string
+    translatedText?: string
+    translationLanguage?: string
   }>
   // حقول محاسبية
   branch?: Branch
@@ -618,6 +625,9 @@ export interface UpdateOrderData {
     timestamp: number
     duration?: number
     transcription?: string
+    sourceTranscription?: string
+    translatedText?: string
+    translationLanguage?: string
   }>
 }
 
@@ -1259,7 +1269,7 @@ export const orderService = {
    * لا تجلب سوى ما تحتاجه واجهة الاختيار: المعرّف والاسم وموعد التسليم.
    */
   async getCompletedOrdersForBulkSilentDelivery(): Promise<{
-    data: Array<{ id: string; client_name: string; due_date: string }>
+    data: Array<{ id: string; client_name: string; taken_by: string | null; due_date: string }>
     error: string | null
   }> {
     if (!isSupabaseConfigured()) {
@@ -1269,7 +1279,7 @@ export const orderService = {
     try {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, client_name, due_date')
+        .select('id, client_name, taken_by, due_date')
         .eq('status', 'completed')
         .order('due_date', { ascending: true, nullsFirst: false })
 

@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { CalendarDays, CheckCheck, LoaderCircle, VolumeX, X } from 'lucide-react'
@@ -8,6 +9,7 @@ import { formatGregorianDate } from '@/lib/date-utils'
 
 export interface BulkSilentDeliveryItem {
   id: string
+  taken_by?: string | null
   client_name: string
   due_date: string
 }
@@ -168,6 +170,7 @@ export default function BulkSilentDeliveryModal({
                       />
                       <span className="truncate pe-3 text-sm font-bold text-slate-800">
                         {order.client_name || (isArabic ? 'بدون اسم' : 'Unnamed')}
+                        <OrderTakerLabel name={order.taken_by} isArabic={isArabic} />
                       </span>
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 sm:text-sm">
                         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-400" />

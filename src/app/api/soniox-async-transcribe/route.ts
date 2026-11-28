@@ -1,3 +1,4 @@
+import { formatWorkshopInstructions, workshopSpeechContext } from '@/lib/workshop-speech'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveStaff } from '@/lib/server/api-auth'
 
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
         file_id: fileId,
         model: MODEL,
         language_hints: ['ar'],
+        context: workshopSpeechContext,
       }),
     })
     if (!txRes.ok) {
@@ -108,7 +110,8 @@ export async function POST(request: NextRequest) {
         )
         const transcriptData = await transcriptRes.json() as { text?: string }
         const text = (transcriptData.text || '').trim()
-        return NextResponse.json({ text, success: true })
+        const transcript = formData.get('purpose') === 'design-summary' ? text : formatWorkshopInstructions(text)
+        return NextResponse.json({ text: transcript, success: true })
       }
 
       if (statusData.status === 'failed') {

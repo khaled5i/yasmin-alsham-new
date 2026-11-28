@@ -1,3 +1,4 @@
+import { formatWorkshopInstructions, workshopSpeechContext } from '@/lib/workshop-speech'
 import { requirePaidStaff } from '@/lib/server/staff-ai-access'
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
       file: file,
       model: WHISPER_MODEL,
       language: language,
+      prompt: [workshopSpeechContext.text, ...workshopSpeechContext.terms].join('، '),
       response_format: 'json'
     })
 
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
       .trim()
 
     return NextResponse.json({
-      text: cleanedText,
+      text: formatWorkshopInstructions(cleanedText),
       language: language,
       success: true
     })

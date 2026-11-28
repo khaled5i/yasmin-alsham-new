@@ -1,5 +1,6 @@
 'use client'
 
+import { formatWorkshopInstructions, workshopSpeechContext } from '@/lib/workshop-speech'
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion'
@@ -425,6 +426,9 @@ export interface DesignSummaryNote {
   timestamp: number
   duration?: number
   transcription?: string
+  sourceTranscription?: string
+  translatedText?: string
+  translationLanguage?: string
 }
 
 interface InteractiveImageAnnotationProps {
@@ -3122,7 +3126,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
     soxFinalTokensRef.current = []
     soxFinishedRef.current = false
 
-    const cleanText = (t: string) => t.replace(/<end>/gi, '\n').replace(/\n{2,}/g, '\n').trim()
+    const cleanText = formatWorkshopInstructions
 
     const reader = new FileReader()
     reader.onloadend = () => {
@@ -3138,49 +3142,13 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
           data: base64,
           timestamp: Date.now(),
           duration,
-          transcription: cleaned || undefined
+          sourceTranscription: cleaned || undefined
         }
         onDesignSummaryNotesChange?.([...designSummaryNotesRef.current, newNote])
         setIsDesignSummaryRecording(false)
         setLiveTranscription('')
         setTranscribingId(null)
 
-        // التحويل من الملف المسجّل (async) — نُعيد ترميزه إلى WAV نظيف أولاً
-        // لأن webm الخام من MediaRecorder يجعل معالج Soniox يتوقّف (timed out)
-        {
-          setAsyncTranscribingId('__design_summary__')
-          const audioBlob = new Blob([blob], { type: mimeType })
-          const ext = mimeType.split('/')[1]?.split(';')[0] || 'webm'
-          ;(async () => {
-            try {
-              let uploadBlob: Blob = audioBlob
-              let filename = `recording.${ext}`
-              try {
-                uploadBlob = await recordingBlobToWav(audioBlob)
-                filename = 'recording.wav'
-              } catch (convErr) {
-                console.warn('WAV conversion failed, sending original recording:', convErr)
-              }
-              const form = new FormData()
-              form.append('audio', uploadBlob, filename)
-              // trailing slash لتجنّب توجيه 308 (trailingSlash:true) الذي يرفع الصوت مرتين
-              const res = await fetch('/api/soniox-async-transcribe/', { method: 'POST', headers: await getAuthHeader(), body: form })
-              const body = await res.json().catch(() => ({}))
-              if (!res.ok) throw new Error(body?.message || body?.error || res.statusText)
-              const text: string = body.text
-              if (text) {
-                const updated = designSummaryNotesRef.current.map(n =>
-                  n.id === noteId ? { ...n, transcription: cleanText(text) } : n
-                )
-                onDesignSummaryNotesChange?.(updated)
-              }
-            } catch (err) {
-              console.error('Summary async transcription failed:', err)
-            } finally {
-              setAsyncTranscribingId(null)
-            }
-          })()
-        }
         return
       }
 
@@ -3342,6 +3310,7 @@ const InteractiveImageAnnotation = forwardRef<InteractiveImageAnnotationRef, Int
               ws.send(JSON.stringify({
                 model: 'stt-rt-v6',
                 language_hints: ['ar'],
+                context: workshopSpeechContext,
                 audio_format: 'pcm_s16le',
                 sample_rate: sampleRate,
                 num_channels: 1,

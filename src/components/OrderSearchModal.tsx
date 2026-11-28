@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import { useState, useEffect, useMemo } from 'react'
 import { Search, Loader2, Package, CalendarClock, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -167,6 +168,7 @@ export default function OrderSearchModal({
                     className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-start transition hover:border-pink-300 hover:bg-pink-50/50 active:bg-pink-50"
                   >
                     <div className="min-w-0 flex-1">
+                      <OrderTakerLabel name={order.taken_by} isArabic={isArabic} />
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="truncate text-[15px] font-extrabold text-slate-900">
                           {order.client_name || tr('بدون اسم', 'No name')}

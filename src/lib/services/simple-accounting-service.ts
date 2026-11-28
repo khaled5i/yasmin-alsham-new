@@ -1130,6 +1130,7 @@ export async function getDeliveredOrdersIncome(
  * ولم تُسجَّل (طلبات ما قبل تفعيل تفصيل طرق الدفع).
  */
 export interface UnrecordedDeliveredOrder {
+  taken_by: string | null
   id: string
   order_number: string
   customer_name: string
@@ -1147,7 +1148,7 @@ export async function getUnrecordedDeliveredOrders(
   try {
     const { data, error } = await supabase
       .from('orders')
-      .select('id, order_number, client_name, price, paid_amount, delivery_date, order_received_date, updated_at, created_at')
+      .select('id, order_number, client_name, taken_by, price, paid_amount, delivery_date, order_received_date, updated_at, created_at')
       .eq('branch', branch)
       .eq('status', 'delivered')
       .order('created_at', { ascending: false })
@@ -1158,7 +1159,7 @@ export async function getUnrecordedDeliveredOrders(
       return []
     }
 
-    return ((data || []) as OrderIncomeRow[])
+    return (data || [])
       .map(order => {
         const price = Number(order.price) || 0
         const paid = Number(order.paid_amount) || 0
@@ -1166,6 +1167,7 @@ export async function getUnrecordedDeliveredOrders(
           id: order.id,
           order_number: order.order_number || order.id.substring(0, 8),
           customer_name: order.client_name || 'عميل',
+          taken_by: order.taken_by,
           price,
           paid_amount: paid,
           outstanding: Number(Math.max(0, price - paid).toFixed(2)),

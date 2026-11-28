@@ -1,5 +1,6 @@
 'use client'
 
+import OrderTakerLabel from '@/components/OrderTakerLabel'
 import { getAuthHeader } from '@/lib/client-auth'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -59,6 +60,7 @@ import PrintOrderModal from './PrintOrderModal'
 import { MEASUREMENT_ORDER, getMeasurementLabelWithSymbol } from '@/types/measurements'
 import { ImageAnnotation, DrawingPath, SavedDesignComment, DesignSummaryNote } from './InteractiveImageAnnotation'
 import DesignSummarySection from './DesignSummarySection'
+import { designImagesFromComments } from '@/lib/design-summary-images'
 import OrderAlterationsSection from './OrderAlterationsSection'
 import OrderWorkerAssignmentModal from './OrderWorkerAssignmentModal'
 import { renderDrawingsOnCanvas } from '@/lib/canvas-renderer'
@@ -359,6 +361,11 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   const [translatingAnnotationId, setTranslatingAnnotationId] = useState<string | null>(null)
   const [showAnnotationLanguageDropdown, setShowAnnotationLanguageDropdown] = useState<string | null>(null)
   const [showHindiComments, setShowHindiComments] = useState(false)
+  const [showHindiSummary, setShowHindiSummary] = useState(autoTranslateAlterationsToHindi)
+  useEffect(() => {
+    setShowHindiSummary(autoTranslateAlterationsToHindi)
+    setShowHindiComments(false)
+  }, [initialOrder?.id, isOpen, autoTranslateAlterationsToHindi])
   const resolveCommentImageSrc = useCallback((comment: SavedDesignComment): string => {
     // البنية الجديدة: صورة العرض محفوظة داخل التعليق (base64 أو رابط Storage)
     if (comment.image && comment.image.startsWith('data:')) return comment.image
@@ -1265,7 +1272,10 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
   // زر التبديل للهندية — يظهر فقط إذا وُجدت ترجمة هندية محفوظة
   const designCommentsHindiToggle = savedDesignComments.some(c => c.annotations?.some((a: any) => a.hindiText)) ? (
     <button
-      onClick={() => setShowHindiComments(!showHindiComments)}
+      onClick={() => {
+        setShowHindiComments(!showHindiComments)
+        setShowHindiSummary(!showHindiComments)
+      }}
       className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${
         showHindiComments
           ? 'bg-orange-500 text-white border-orange-500'
@@ -1915,15 +1925,16 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
     const workersTile = (
       <div className="min-w-0 rounded-xl bg-slate-50 px-3 py-2">
         <dt className="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-500">
-          <span className="flex items-center gap-1">
+          <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
             <UserCheck className="h-3 w-3" />
             {t('workers')}
+            <OrderTakerLabel name={order.taken_by} isArabic={isArabic} compact />
           </span>
           {canEditAssignment ? (
             <button
               type="button"
               onClick={() => setShowWorkerAssignment(true)}
-              className="-my-1 -me-1.5 rounded-md px-1.5 py-1 text-[11px] font-bold text-pink-700 transition-colors hover:bg-pink-100"
+              className="-my-1 -me-1.5 shrink-0 rounded-md px-1.5 py-1 text-[11px] font-bold text-pink-700 transition-colors hover:bg-pink-100"
               aria-label={isArabic ? 'اختيار العمال' : 'Assign workers'}
             >
               {isArabic ? 'اختيار' : 'Assign'}
@@ -2140,14 +2151,19 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
         {canManageDesignSummary ? (
           <DesignSummarySection
             notes={designSummaryNotes}
+            showHindi={showHindiSummary}
+            onToggleHindi={() => setShowHindiSummary(current => !current)}
             onNotesChange={handleDesignSummaryNotesChange}
             allowRecording
+            getDesignImages={() => designImagesFromComments(savedDesignComments)}
             saveStatus={designSummarySaveStatus}
             variant="compact"
           />
         ) : designSummaryNotes.length > 0 ? (
           <DesignSummarySection
             notes={designSummaryNotes}
+            showHindi={showHindiSummary}
+            onToggleHindi={() => setShowHindiSummary(current => !current)}
             onNotesChange={() => {}}
             readOnly
             variant="compact"
@@ -2609,13 +2625,14 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
 
                   {/* ملخص العمال مع نافذة واحدة للتعيين */}
                   <div className="bg-white p-2 sm:p-3 rounded-lg">
-                    <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
-                      <span className="flex items-center gap-1 text-xs font-medium text-gray-600 sm:text-sm">
+                    <div className="mb-1 flex items-center justify-between gap-1">
+                      <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-gray-600 sm:text-sm">
                         <UserCheck className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" />
                         {t('workers')}
+                        <OrderTakerLabel name={order.taken_by} isArabic={isArabic} compact />
                       </span>
                       {canEditAssignment && (
-                        <button type="button" onClick={() => setShowWorkerAssignment(true)} className="rounded-md bg-pink-50 px-2 py-1 text-xs font-medium text-pink-700 transition-colors hover:bg-pink-100">
+                        <button type="button" onClick={() => setShowWorkerAssignment(true)} className="shrink-0 rounded-md bg-pink-50 px-2 py-1 text-xs font-medium text-pink-700 transition-colors hover:bg-pink-100">
                           {isArabic ? 'اختيار العمال' : 'Assign workers'}
                         </button>
                       )}
@@ -2903,13 +2920,18 @@ export default function OrderModal({ order: initialOrder, workers, isOpen, onClo
               {canManageDesignSummary ? (
                 <DesignSummarySection
                   notes={designSummaryNotes}
+                  showHindi={showHindiSummary}
+                  onToggleHindi={() => setShowHindiSummary(current => !current)}
                   onNotesChange={handleDesignSummaryNotesChange}
                   allowRecording
+                  getDesignImages={() => designImagesFromComments(savedDesignComments)}
                   saveStatus={designSummarySaveStatus}
                 />
               ) : designSummaryNotes.length > 0 ? (
                 <DesignSummarySection
                   notes={designSummaryNotes}
+                  showHindi={showHindiSummary}
+                  onToggleHindi={() => setShowHindiSummary(current => !current)}
                   onNotesChange={() => {}}
                   readOnly
                 />

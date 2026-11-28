@@ -1,4 +1,4 @@
 {
     "chatgpt.openOnStartup": true,
-    "chatgpt.runCodexInWindowsSubsystemForLinux": true
+    "chatgpt.runCodexInWindowsSubsystemForLinux": false
 }

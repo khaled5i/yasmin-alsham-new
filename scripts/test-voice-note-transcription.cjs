@@ -53,16 +53,16 @@ function initializer(file, name) {
 const saveForms = [
   ['src/app/dashboard/add-order/page.tsx', ['handleSubmit', 'handleSubmitAndSendWhatsApp', 'handleSubmitAsPreBooking', 'handleSubmitAndPrint']],
   ['src/components/EditOrderModal.tsx', ['handleSubmit', 'handleSubmitAndSendWhatsApp']],
-  ['src/app/dashboard/alterations/add/page.tsx', ['handleSubmit', 'handleSubmitAndSendWhatsApp']],
+  ['src/app/dashboard/alterations/add/page.tsx', ['performSubmit', 'performSubmitAndSendWhatsApp']],
 ]
 for (const [file, handlers] of saveForms) for (const handler of handlers) {
   test(`${file}: ${handler} refuses saving a pending recording`, async () => {
     let warning = ''
     const context = {
-      useCallback: fn => fn, voiceBusyRef: { current: true }, errorVoiceBusyRef: { current: false },
+      useCallback: fn => fn, voiceBusyRef: { current: true }, summaryBusyRef: { current: false }, errorVoiceBusyRef: { current: false },
       annotationRef: { current: null }, isSubmittingRef: { current: false },
       requireBasicInformation: () => true, requireDesignSummary: () => true,
-      formData: { clientName: 'Test', clientPhone: 'synthetic', price: 1, dueDate: 'synthetic', hasSecondProof: 'no', hasShakWork: 'no', errorType: 'test' },
+      formData: { clientName: 'Test', clientPhone: 'synthetic', price: 1, dueDate: 'synthetic', hasSecondProof: 'no', hasShakWork: 'no', errorType: 'test', takenBy: 'staff' },
       order: { id: 'synthetic' }, effectiveOrderId: 'synthetic', isArabic: true,
       setSaveError: text => { warning = text }, toast: { error: text => { warning = text } },
       setIsSubmitting: () => assert.fail('saving began before transcription finished'),
@@ -73,11 +73,12 @@ for (const [file, handlers] of saveForms) for (const handler of handlers) {
     vm.runInNewContext(compile('globalThis.submit = ' + initializer(file, handler)), context)
     await context.submit({ preventDefault() {} })
     assert.ok(warning.includes('تحويل'))
-    if (file.includes('alterations')) {
-      context.voiceBusyRef.current = false; context.errorVoiceBusyRef.current = true; warning = ''
-      await context.submit({ preventDefault() {} })
-      assert.ok(warning.includes('تحويل'))
-    }
+    context.voiceBusyRef.current = false
+    if (file.includes('alterations')) context.errorVoiceBusyRef.current = true
+    else context.summaryBusyRef.current = true
+    warning = ''
+    await context.submit({ preventDefault() {} })
+    assert.ok(warning.includes('تحويل'))
   })
 }
 
